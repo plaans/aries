@@ -9,6 +9,12 @@ def upper_camel(s: str) -> str:
     words = s.split("_")
     return "".join(map(lambda w: w.capitalize(), words))
 
+def snake(s: str) -> str:
+    return re.sub(
+        "[A-Z]",
+        lambda m: "_" + m.group(0).lower(),
+        s
+    ).removeprefix("_")
 
 def fix_as_bs(s: str) -> str:
     if len(s) == 2:
@@ -39,6 +45,8 @@ class ArgType:
         self.is_array = is_array
         self.rust_rc_type = f"Rc<{self.rust_inner_type}>"
         self.rust_type = f"Vec<{self.rust_rc_type}>" if self.is_array else self.rust_rc_type
+        self.rust_import = f"use crate::{self.rust_inner_type_mod}::{self.rust_inner_type};\n"
+        self.rust_from_expr_fn =  snake(rust_inner_type) + ("_array" if self.is_array else "") + "_from_expr"
 
     def from_str(self, s: str) -> ArgType:
         if s == self.flatzinc_type:
@@ -47,9 +55,6 @@ class ArgType:
 
     def __str__(self) -> str:
         return self.flatzinc_type
-
-    def rust_import(self) -> str:
-        return f"use crate::{self.rust_inner_type_mod}::{self.rust_inner_type};\n"
 
 
 class ArgTypeFactory:
@@ -145,7 +150,7 @@ class Predicate:
         imports = "use std::rc::Rc;\n"
         imports += "\n"
         imports += "use crate::constraint::Constraint;\n"
-        type_imports = set(arg.type.rust_import() for arg in self.args)
+        type_imports = set(arg.type.rust_import for arg in self.args)
         for type_import in sorted(type_imports):
             imports += type_import
         return imports
@@ -172,13 +177,36 @@ class Predicate:
         getters = "\n".join(arg.rust_getter() for arg in self.args)
         return getters
 
+    def rust_from_item(self) -> str:
+        from_item = TAB + "pub fn from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<Self> {\n"
+        from_item += 2*TAB + "anyhow::ensure!(\n"
+        from_item += 3*TAB + "item.id.as_str() == Self::NAME,\n"
+        from_item += 3*TAB + "\"'{}' expected but received '{}'\",\n"
+        from_item += 3*TAB + "Self::NAME,\n"
+        from_item += 3*TAB + "item.id,\n"
+        from_item += 2*TAB + ");\n"
+        from_item += 2*TAB + "anyhow::ensure!(\n"
+        from_item += 3*TAB + "item.exprs.len() == Self::NB_ARGS,\n"
+        from_item += 3*TAB + "\"{} args expected but received {}\",\n"
+        from_item += 3*TAB + "Self::NB_ARGS,\n"
+        from_item += 3*TAB + "item.exprs.len(),\n"
+        from_item += 2*TAB + ");\n"
+        for i, arg in enumerate(self.args):
+            from_item += 2*TAB + f"let {arg.identifier} = {arg.type.rust_from_expr_fn}(item.exprs[{i}], model);\n"
+        from_item += 2*TAB + "Ok(Self::new(" + ", ".join(arg.identifier for arg in self.args) + "));\n"
+        from_item += TAB + "}\n"
+        return from_item
+
     def rust_impl(self) -> str:
         impl = f"impl {self.rust_name} {{\n"
         impl += TAB + f'pub const NAME: &str = "{self.identifier}";\n'
+        impl += TAB + f'pub const NB_ARGS: usize = {len(self.args)};\n'
         impl += "\n"
         impl += self.rust_new()
         impl += "\n"
         impl += self.rust_getters()
+        impl += "\n"
+        impl += self.rust_from_item()
         impl += "}\n"
         return impl
 
@@ -196,12 +224,12 @@ class Predicate:
         return try_from
 
     def rust_from_for_constraint(self) -> str:
-        try_from = f"impl From<{self.rust_name}> for Constraint {{\n"
-        try_from += TAB + f"fn from(value: {self.rust_name}) -> Self {{\n"
-        try_from += 2*TAB + f"Self::{self.rust_name}(value)\n"
-        try_from += TAB + "}\n"
-        try_from += "}\n"
-        return try_from
+        from_for = f"impl From<{self.rust_name}> for Constraint {{\n"
+        from_for += TAB + f"fn from(value: {self.rust_name}) -> Self {{\n"
+        from_for += 2*TAB + f"Self::{self.rust_name}(value)\n"
+        from_for += TAB + "}\n"
+        from_for += "}\n"
+        return from_for
 
     def rust_file(self) -> str:
         file = self.rust_imports()
