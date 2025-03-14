@@ -25,7 +25,7 @@ class WarmUpScenario:
     problem: Problem
     plan: str
     quality: float
-    timeout: int = 600
+    timeout: int = 300
 
     def __str__(self):
         return self.uid

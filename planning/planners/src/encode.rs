@@ -242,7 +242,36 @@ pub fn add_causal_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionIn
 ///
 /// Returns the literals that are true iff the variables are matching the line.
 fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>, presence: Lit) -> Vec<Lit> {
-    let match_a_line = table
+    // Returns a conjunction of literals that are true iff the variable is equal to the value
+    let equals = |var: Atom, val: Cst, model: &mut Model| match var {
+        Atom::Bool(lit) => {
+            let Cst::Bool(val) = val else { unreachable!() };
+            vec![if val { lit } else { !lit }]
+        }
+        Atom::Int(iatom) => {
+            let Cst::Int(val) = val else { unreachable!() };
+            vec![model.reify(leq(iatom, val)), model.reify(geq(iatom, val))]
+        }
+        Atom::Fixed(fatom) => {
+            let Cst::Fixed(val) = val else { unreachable!() };
+            vec![model.reify(f_leq(fatom, val)), model.reify(f_geq(fatom, val))]
+        }
+        Atom::Sym(satom) => {
+            let Cst::Sym(val) = val else { unreachable!() };
+            vec![model.reify(eq(satom, val))]
+        }
+    };
+    let reif_equals = |var: Atom, val: Cst, model: &mut Model| {
+        let lits = equals(var, val, model);
+        if lits.len() == 1 {
+            lits[0]
+        } else {
+            model.reify(and(lits))
+        }
+    };
+
+    // Force to match at least one line
+    let match_line = table
         .lines()
         // Check that the table line has the same number of values as the variables
         .inspect(|line| {
@@ -253,33 +282,111 @@ fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>,
             variables
                 .iter()
                 .zip(line.iter())
-                .flat_map(|(&var, &val)| match var {
-                    Atom::Bool(lit) => {
-                        let Cst::Bool(val) = val else { unreachable!() };
-                        vec![if val { lit } else { !lit }]
-                    }
-                    Atom::Int(iatom) => {
-                        let Cst::Int(val) = val else { unreachable!() };
-                        vec![model.reify(leq(iatom, val)), model.reify(geq(iatom, val))]
-                    }
-                    Atom::Fixed(fatom) => {
-                        let Cst::Fixed(val) = val else { unreachable!() };
-                        vec![model.reify(f_leq(fatom, val)), model.reify(f_geq(fatom, val))]
-                    }
-                    Atom::Sym(satom) => {
-                        let Cst::Sym(val) = val else { unreachable!() };
-                        vec![model.reify(eq(satom, val))]
-                    }
-                })
+                .flat_map(|(&var, &val)| equals(var, val, model))
                 .collect_vec()
         })
         .collect_vec() // collect to require unique access to `*model` at the same time
         .into_iter()
         .map(|supported_by_line| model.reify(and(supported_by_line)))
         .collect_vec();
-    // Force to match at least one line
-    model.enforce(or(match_a_line.clone()), [presence]);
-    match_a_line
+    model.enforce(or(match_line.clone()), [presence]);
+
+    // Reduce the domain of each variable to the values in the table
+    variables
+        .iter()
+        .zip(table.columns())
+        .map(|(&var, column)| (var, column.into_iter().unique().sorted().collect_vec()))
+        .map(|(var, column)| {
+            column
+                .into_iter()
+                .map(|&val| reif_equals(var, val, model))
+                .collect_vec()
+        })
+        .collect_vec() // collect to require unique access to `*model` at the same time
+        .into_iter()
+        .for_each(|allowed_values| model.enforce(or(allowed_values), [presence]));
+
+    // Add a redundant constraint such that the variable is either supported by the line or not match the value
+    let support_table = match_line.iter().zip(table.lines()).collect_vec();
+    variables
+        .iter()
+        .enumerate()
+        .zip(table.columns())
+        .map(|(var, column)| (var, column.into_iter().unique().sorted().collect_vec()))
+        .for_each(|((idx, &var), column)| {
+            let support_column = support_table.iter().map(|(lit, line)| (lit, line[idx])).collect_vec();
+            match var {
+                Atom::Bool(_) => unimplemented!(),
+                Atom::Int(var) => {
+                    column
+                        .into_iter()
+                        .map(|&val| match val {
+                            Cst::Int(n) => n,
+                            _ => panic!(),
+                        })
+                        .for_each(|n| {
+                            let mut ge_clause = vec![!var.ge_lit(n)];
+                            let mut le_clause = vec![!var.le_lit(n)];
+                            support_column
+                                .iter()
+                                .map(|(&&lit, val)| match val {
+                                    Cst::Int(n) => (lit, n),
+                                    _ => panic!(),
+                                })
+                                .for_each(|(lit, &val)| {
+                                    if val >= n {
+                                        ge_clause.push(lit);
+                                    }
+                                    if val <= n {
+                                        le_clause.push(lit);
+                                    }
+                                });
+                            model.enforce(or(ge_clause), [presence]);
+                            model.enforce(or(le_clause), [presence]);
+                        });
+                }
+                Atom::Fixed(var) => {
+                    column
+                        .into_iter()
+                        .map(|&val| match val {
+                            Cst::Fixed(f) => f,
+                            _ => panic!(),
+                        })
+                        .for_each(|f| {
+                            let mut ge_clause = vec![!var.num.ge_lit(f.numer() * var.denom / f.denom())];
+                            let mut le_clause = vec![!var.num.le_lit(f.numer() * var.denom / f.denom())];
+                            support_column
+                                .iter()
+                                .map(|(&&lit, val)| match val {
+                                    Cst::Fixed(f) => (lit, f),
+                                    _ => panic!(),
+                                })
+                                .for_each(|(lit, &val)| {
+                                    if val >= f {
+                                        ge_clause.push(lit);
+                                    }
+                                    if val <= f {
+                                        le_clause.push(lit);
+                                    }
+                                });
+                            model.enforce(or(ge_clause), [presence]);
+                            model.enforce(or(le_clause), [presence]);
+                        });
+                }
+                Atom::Sym(var) => {
+                    column.into_iter().for_each(|&val| {
+                        let mut clause = vec![!reif_equals(var.into(), val, model)];
+                        support_column
+                            .iter()
+                            .filter(|(_, v)| *v == val)
+                            .for_each(|(&&lit, _)| clause.push(lit));
+                        model.enforce(or(clause), [presence]);
+                    });
+                }
+            }
+        });
+
+    match_line
 }
 
 /// Enforce the list of variables to cover the table.
