@@ -257,6 +257,10 @@ impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
 
 impl Strat {
     /// Configure the given solver to follow the strategy.
+    /// 
+    /// WARNING: This function should be called before any assumptions are pushed !
+    /// Otherwise, this will result in a bug in the `save_state` method in `solver_impl.rs`
+    /// (the decision level of the brancher and the model won't match).
     pub fn adapt_solver(self, solver: &mut Solver, problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) {
         match self {
             Strat::Activity => {
