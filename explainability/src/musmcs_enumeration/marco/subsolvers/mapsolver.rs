@@ -22,7 +22,7 @@ fn signed_var_of_same_sign(var: VarRef, svar: SignedVar) -> SignedVar {
 }
 
 type DummyLabel = u8;
-type SolveFn = dyn FnMut(&mut Solver<DummyLabel>) -> Result<Option<Arc<SavedAssignment>>, Exit>;
+type SolveFn = dyn Fn(&mut Solver<DummyLabel>) -> Result<Option<Arc<SavedAssignment>>, Exit>;
 
 pub struct MapSolver {
     solver: Solver<DummyLabel>,
@@ -49,7 +49,7 @@ pub struct MapSolver {
     /// However, the implementation for this could be messy / complicated, and would stray
     /// too far from the pseudo-code / "standard" of the MARCO algorithm.
     vars_translate_out: BTreeMap<VarRef, SignedVar>,
-    /// These literals represent soft constraints in the map solver (self).
+    /// These literals represent soft constraints in the map solver (this struct).
     /// Their variables are the same as the keys of `vars_translate_out`.
     literals: BTreeSet<Lit>,
     solve_fn: Box<SolveFn>,

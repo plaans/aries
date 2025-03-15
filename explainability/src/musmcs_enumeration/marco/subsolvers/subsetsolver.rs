@@ -1,83 +1,117 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 use aries::core::Lit;
-use aries::model::Label;
-use aries::solver::{Exit, Solver, UnsatCore};
+use aries::model::{Label, Model};
+use aries::reif::Reifiable;
+use aries::solver::{Exit, UnsatCore};
+
+pub trait SubsetSolverImpl<Lbl: Label> {
+    fn get_model(&mut self) -> &mut Model<Lbl>;
+    fn find_unsat_core(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>;
+}
 
 pub struct SubsetSolver<Lbl: Label> {
-    pub solver: Solver<Lbl>,
-    soft_constraints_reifications: Arc<BTreeSet<Lit>>,
-    /// Used for an optimization. Set of (soft constraint reification) literals
-    /// that have been found to constitute a singleton MCS, i.e. belonging to all MUSes.
-    pub necessarily_in_all_muses: BTreeSet<Lit>,
+    /// These literals reify / represent soft constraints in the subset solver (this struct).
+    literals: BTreeSet<Lit>,
+    literals_known_to_be_necessarily_in_every_mus: BTreeSet<Lit>,
+
+    subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
 }
 
 impl<Lbl: Label> SubsetSolver<Lbl> {
-    pub fn new(solver: Solver<Lbl>, soft_constraints_reifications: Arc<BTreeSet<Lit>>) -> Self {
-        SubsetSolver::<Lbl> {
-            solver,
-            soft_constraints_reifications,
-            necessarily_in_all_muses: BTreeSet::new(),
+
+    pub fn new(
+        soft_constraints_reif_literals: impl IntoIterator<Item = Lit>,
+        mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+    ) -> Self {
+ 
+        let literals = soft_constraints_reif_literals
+            .into_iter()
+            .inspect(|&l| { assert!(subset_solver_impl.get_model().check_reified(l).is_some()) })
+            .collect();
+
+        Self {
+            literals,
+            literals_known_to_be_necessarily_in_every_mus: BTreeSet::new(),
+            subset_solver_impl,
         }
     }
 
-    pub fn check_subset(
-        &mut self,
-        seed: &BTreeSet<Lit>,
-        find_unsat_core_fn: impl Fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>,
-    ) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
-        let res = find_unsat_core_fn(&mut self.solver, seed)?;
+    pub fn get_expr_reification<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+        self.subset_solver_impl.get_model().check_reified(expr)
+    }
+
+    pub fn get_soft_constraints_reif_literals(&self) -> &BTreeSet<Lit> {
+        &self.literals
+    }
+
+    pub fn get_soft_constraints_known_to_be_necessarily_in_every_mus(&self) -> &BTreeSet<Lit> {
+        &self.literals_known_to_be_necessarily_in_every_mus
+    }
+
+    pub fn register_soft_constraint_as_necessarily_in_every_mus(&mut self, soft_constraint_reif_lit: Lit) {
+        self.literals_known_to_be_necessarily_in_every_mus.insert(soft_constraint_reif_lit);
+    }
+
+    fn find_unsat_core(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit> {
+        self.subset_solver_impl.find_unsat_core(subset)
+    }
+
+    pub fn find_all_sat_with_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Option<BTreeSet<Lit>>, Exit> {
+        if self.check_subset(&subset)?.is_ok() {
+            let mut res = self.get_soft_constraints_reif_literals().clone();
+            res.retain(|&l| self.subset_solver_impl.get_model().state.entails(l));
+            Ok(Some(res))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
+        let res = self.find_unsat_core(subset)?;
         // NOTE: any resetting (or not!) of the solver is assumed to be done in `solve_fn`
         Ok(res.map_err(|unsat_core| {
             unsat_core
                 .literals()
                 .iter()
-                .chain(&self.necessarily_in_all_muses)
+                .chain(self.get_soft_constraints_known_to_be_necessarily_in_every_mus())
                 .copied()
                 .collect()
         }))
     }
 
-    pub fn grow(
-        &mut self,
-        seed: &BTreeSet<Lit>,
-        find_unsat_core_fn: impl Fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>,
-    ) -> Result<(BTreeSet<Lit>, Option<BTreeSet<Lit>>), Exit> {
-        let mut mss = seed.clone();
-        for &lit in self.soft_constraints_reifications.clone().difference(seed) {
+    pub fn grow(&mut self, subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, BTreeSet<Lit>), Exit> {
+        let mut mss = subset.clone();
+        let complement = self.get_soft_constraints_reif_literals().difference(subset).copied().collect::<Vec<Lit>>();
+        for lit in complement {
             mss.insert(lit);
-            if self.check_subset(&mss, &find_unsat_core_fn)?.is_err() {
+            if self.check_subset(&mss)?.is_err() {
                 mss.remove(&lit);
             }
         }
-        let mcs: BTreeSet<Lit> = self.soft_constraints_reifications.difference(&mss).copied().collect();
+        let mcs: BTreeSet<Lit> = self.get_soft_constraints_reif_literals().difference(&mss).copied().collect();
 
         // If the found correction set only has 1 element,
         // then that element is added to those that are known to be in all unsatisfiable sets.
         if mcs.len() == 1 {
-            self.necessarily_in_all_muses.insert(*mcs.first().unwrap());
+            self.register_soft_constraint_as_necessarily_in_every_mus(*mcs.first().unwrap());
         }
-        Ok((mss, Some(mcs)))
+        Ok((mss, mcs))
     }
 
-    pub fn shrink(
-        &mut self,
-        seed: &BTreeSet<Lit>,
-        find_unsat_core_fn: impl Fn(&mut Solver<Lbl>, &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>,
-    ) -> Result<BTreeSet<Lit>, Exit> {
-        let mut mus: BTreeSet<Lit> = seed.clone();
-        for &lit in seed {
+    pub fn shrink(&mut self, subset: &BTreeSet<Lit>) -> Result<BTreeSet<Lit>, Exit> {
+        let mut mus: BTreeSet<Lit> = subset.clone();
+        for &lit in subset {
             if !mus.contains(&lit) {
                 continue;
             }
             // Optimization: if the literal has been determined to belong to all muses,
             // no need to check if, without it, the set would be satisfiable (because it obviously would be).
-            if self.necessarily_in_all_muses.contains(&lit) {
+            if self.get_soft_constraints_known_to_be_necessarily_in_every_mus().contains(&lit) {
                 continue;
             }
             mus.remove(&lit);
-            if let Err(unsat_core) = self.check_subset(&mus, &find_unsat_core_fn)? {
+            if let Err(unsat_core) = self.check_subset(&mus)? {
                 mus = unsat_core;
             } else {
                 debug_assert!(!mus.contains(&lit));
