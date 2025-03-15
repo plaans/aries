@@ -119,6 +119,9 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// 
     /// In case of unsatisfiability, will return an unsat core of the assumptions pushed to the worker solvers
     /// (they need to all be the same assumptions, in the same order).
+    /// 
+    /// WARNING: See bug description in `incremental_push` documentation `solve_impl.rs`.
+    /// Currently, as a workaround, pushing assumptions should be done in the `adapt` closure given to `new`.
     pub fn incremental_solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
         assert!(
             self.solvers.iter()

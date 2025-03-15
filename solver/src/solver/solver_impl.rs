@@ -148,7 +148,7 @@ impl<Lbl: Label> Solver<Lbl> {
         match expr {
             &ReifExpr::Lit(lit) => {
                 let expr_scope = self.model.presence_literal(lit.variable());
-                assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
+                // assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
                 self.add_clause([!value, lit], scope)?; // value => lit
                 self.add_clause([!lit, value], scope)?; // lit => value
                 Ok(())
@@ -587,6 +587,21 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Incremental solving: pushes (assumes and propagates) an assumption literal.
     /// In case of failure (unsatisfiability encountered), returns an unsat core.
+    /// 
+    /// WARNING/BUG !!!
+    /// 
+    /// It is currently impossible to set a brancher for the solver
+    /// after making assumptions. This is due to the fact that most branchers' current implementations
+    /// not only assume their internal initial level to be DecLvl::ROOT,
+    /// but also have complex internal management of their trail, which makes
+    /// it impossible to have a straightforward fix for this problem without
+    /// changing the branchers' implementation to account for the solver
+    /// possibly having a non-empty trail at the time of the brancher's attachment to it.
+    /// 
+    /// A "good location" to make these changes could be the `import_vars` method of the branchers.
+    /// 
+    /// Currently, trying to push assumptions before attaching a brancher
+    /// will result in a failure at `assert_eq!(self.brancher.save_state(), n)` in `save_state`.
     pub fn incremental_push(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
         if self.last_assumption_level == DecLvl::ROOT {
             match self.propagate_and_backtrack_to_consistent() {
@@ -609,7 +624,7 @@ impl<Lbl: Label> Solver<Lbl> {
         assumptions: impl IntoIterator<Item = Lit>,
     ) -> Result<(), (Vec<Lit>, UnsatCore)> {
         let mut successfully_pushed = vec![];
-        for lit in assumptions.into_iter() {
+        for lit in assumptions.into_iter().sorted() {
             match self.incremental_push(lit) {
                 Ok(_) => successfully_pushed.push(lit),
                 Err(unsat_core) => return Err((successfully_pushed, unsat_core)),
