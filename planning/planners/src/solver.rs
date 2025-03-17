@@ -18,6 +18,7 @@ use aries::solver::search::activity::*;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::{Brancher, SearchControl};
+use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
@@ -96,6 +97,97 @@ impl FromStr for Metric {
     }
 }
 
+pub struct WarmingResult {
+    pub result: SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>,
+    pub cost: Option<IntCst>,
+}
+
+pub fn preprocess(problem: &mut Problem) -> Arc<Metadata> {
+    if PRINT_RAW_MODEL.get() {
+        Printer::print_problem(problem);
+    }
+    println!("===== Preprocessing ======");
+    aries_planning::chronicles::preprocessing::preprocess(problem);
+    println!("==========================");
+    if PRINT_MODEL.get() {
+        Printer::print_problem(problem);
+    }
+    Arc::new(analysis::analyse(problem))
+}
+
+/// Search for a plan based on the `base_problem` that reproduce the given `plan`.
+#[allow(clippy::too_many_arguments)]
+pub fn reproduce(
+    pb: &mut FiniteProblem,
+    base_problem: Problem,
+    strategies: &[Strat],
+    metric: Option<Metric>,
+    htn_mode: bool,
+    warm_up_plan: Option<Vec<ActionInstance>>,
+    on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
+    deadline: Option<Instant>,
+) -> Result<Option<WarmingResult>> {
+    if warm_up_plan.is_none() {
+        return Ok(None);
+    }
+    let plan = &warm_up_plan.unwrap();
+    let start = Instant::now();
+
+    println!("===== Warming up ======");
+    populate_with_warm_up_plan(pb, &base_problem, plan, 0)?;
+
+    let mut constrained_pb = pb.clone();
+    match WARM_UP.get() {
+        WarmUpType::None => {}
+        WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, plan)?,
+        WarmUpType::Causal => add_causal_same_plan_constraints(&mut constrained_pb, plan)?,
+    };
+
+    let pb = Arc::new(pb.clone());
+    let constrained_pb = Arc::new(constrained_pb.clone());
+    let on_new_valid_assignment = {
+        let constrained_pb = constrained_pb.clone();
+        let on_new_sol = on_new_sol.clone();
+        move |ass: Arc<SavedAssignment>| on_new_sol(&constrained_pb, ass)
+    };
+
+    println!("  [{:.3}s] Warm Up Populated", start.elapsed().as_secs_f32());
+    let result = solve_finite_problem(
+        constrained_pb.clone(),
+        strategies,
+        metric,
+        false, // Do not try to optimize for the moment
+        htn_mode,
+        on_new_valid_assignment,
+        None,
+        deadline,
+        INT_CST_MAX,
+    );
+    println!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
+    println!("=======================");
+
+    let warming_result = match result {
+        SolverResult::Sol((sol, cost)) => WarmingResult {
+            result: SolverResult::Sol((pb, sol)),
+            cost,
+        },
+        SolverResult::Timeout(Some((sol, cost))) => WarmingResult {
+            result: SolverResult::Timeout(Some((pb, sol))),
+            cost,
+        },
+        SolverResult::Timeout(None) => WarmingResult {
+            result: SolverResult::Timeout(None),
+            cost: None,
+        },
+        SolverResult::Unsat => WarmingResult {
+            result: SolverResult::Unsat,
+            cost: None,
+        },
+    };
+
+    Ok(Some(warming_result))
+}
+
 /// Search for plan based on the `base_problem`.
 ///
 /// The solver will look for plan by generating subproblem of increasing `depth`
@@ -118,30 +210,63 @@ pub fn solve(
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
-    if PRINT_RAW_MODEL.get() {
-        Printer::print_problem(&base_problem);
-    }
-    println!("===== Preprocessing ======");
-    aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
-    println!("==========================");
-    if PRINT_MODEL.get() {
-        Printer::print_problem(&base_problem);
-    }
+    let metadata = preprocess(&mut base_problem);
+    let init_pb = FiniteProblem {
+        model: base_problem.context.model.clone(),
+        origin: base_problem.context.origin(),
+        horizon: base_problem.context.horizon(),
+        makespan_ub: base_problem.context.makespan_ub(),
+        chronicles: base_problem.chronicles.clone(),
+        meta: metadata.clone(),
+    };
 
-    let metadata = Arc::new(analysis::analyse(&base_problem));
-    let mut best_cost = INT_CST_MAX + 1;
+    let warming_result = reproduce(
+        &mut init_pb.clone(),
+        base_problem.clone(),
+        strategies,
+        metric,
+        htn_mode,
+        warm_up_plan.clone(),
+        on_new_sol.clone(),
+        deadline,
+    )?;
+
+    let mut best_cost = warming_result
+        .as_ref()
+        .and_then(|res| res.cost)
+        .unwrap_or(INT_CST_MAX + 1);
+    let initial_solution: Option<Arc<Domains>> =
+        warming_result
+            .as_ref()
+            .map(|res| &res.result)
+            .and_then(|res| match res {
+                SolverResult::Sol((_, sol)) => Some(sol.clone()),
+                _ => None,
+            });
+
+    if warm_up_plan.is_some() {
+        if let Some(solver_result) = warming_result.as_ref().map(|res| res.result.clone()) {
+            // A solution has been found and there is no metric to optimize, stop here.
+            if metric.is_none() {
+                return Ok(solver_result);
+            }
+            // A solution has been found but the initial solution is empty, stop here.
+            else if initial_solution.is_none() {
+                println!("No solution found for the warm-up plan");
+                return Ok(SolverResult::Unsat);
+            }
+        }
+        // No solution found for the warm-up plan, stop here.
+        else {
+            println!("No solution found for the warm-up plan");
+            return Ok(SolverResult::Unsat);
+        }
+    }
 
     let start = Instant::now();
     for depth in min_depth..=max_depth {
         // Build the finite problem.
-        let mut pb = FiniteProblem {
-            model: base_problem.context.model.clone(),
-            origin: base_problem.context.origin(),
-            horizon: base_problem.context.horizon(),
-            makespan_ub: base_problem.context.makespan_ub(),
-            chronicles: base_problem.chronicles.clone(),
-            meta: metadata.clone(),
-        };
+        let mut pb = init_pb.clone();
 
         // Log current depth.
         let depth_string = if depth == u32::MAX {
@@ -160,71 +285,12 @@ pub fn solve(
             populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
         }
 
-        // Search for an initial solution that satisfies the warm-up plan.
-        let warming_assignment = if let Some(ref plan) = warm_up_plan {
-            let mut constrained_pb = pb.clone();
-
-            match WARM_UP.get() {
-                WarmUpType::None => {}
-                WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, plan)?,
-                WarmUpType::Causal => add_causal_same_plan_constraints(&mut constrained_pb, plan)?,
-            };
-
-            let constrained_pb = Arc::new(constrained_pb);
-            let on_new_valid_assignment = {
-                let constrained_pb = constrained_pb.clone();
-                let on_new_sol = on_new_sol.clone();
-                move |ass: Arc<SavedAssignment>| on_new_sol(&constrained_pb, ass)
-            };
-
-            println!("  [{:.3}s] Warm Up Populated", start.elapsed().as_secs_f32());
-            let result = solve_finite_problem(
-                constrained_pb.clone(),
-                strategies,
-                metric,
-                false, // Do not try to optimize for the moment
-                htn_mode,
-                on_new_valid_assignment,
-                None,
-                deadline,
-                best_cost - 1,
-            );
-            println!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
-
-            match result {
-                SolverResult::Sol((sol, cost)) => {
-                    if metric.is_some() && depth < max_depth {
-                        let cost = cost.expect("Not cost provided in optimization problem");
-                        assert!(cost < best_cost);
-                        best_cost = cost;
-                    }
-                    Some(sol)
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
-
         let pb = Arc::new(pb);
         let on_new_valid_assignment = {
             let pb = pb.clone();
             let on_new_sol = on_new_sol.clone();
             move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
         };
-
-        if warm_up_plan.is_some() {
-            // An initial solution has been found and there is no metric to optimize, stop here.
-            if let Some(ref warming_assignment) = warming_assignment {
-                if metric.is_none() {
-                    return Ok(SolverResult::Sol((pb, warming_assignment.clone())));
-                }
-            } else {
-                // No solution found for the warm-up plan.
-                println!("No solution found for the warm-up plan");
-                return Ok(SolverResult::Unsat);
-            }
-        }
 
         // Solve the initial problem with the warming assignment if any.
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
@@ -235,7 +301,7 @@ pub fn solve(
             true,
             htn_mode,
             on_new_valid_assignment,
-            warming_assignment,
+            if depth != 0 { None } else { initial_solution.clone() },
             deadline,
             best_cost - 1,
         );
@@ -246,7 +312,10 @@ pub fn solve(
             SolverResult::Unsat => {} // continue (increase depth)
             SolverResult::Sol((_, (_, cost))) if metric.is_some() && depth < max_depth => {
                 let cost = cost.expect("Not cost provided in optimization problem");
-                assert!(cost < best_cost);
+                assert!(
+                    cost < best_cost,
+                    "New cost ({cost}) isn't better than the current best ({best_cost})"
+                );
                 best_cost = cost; // continue with new cost bound
             }
             other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
