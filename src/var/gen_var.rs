@@ -6,7 +6,7 @@ use crate::domain::IntDomain;
 use crate::traits::Flatzinc;
 use crate::traits::Name;
 
-const COUNTER: AtomicUsize = AtomicUsize::new(0);
+static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct GenVar<D> {
@@ -49,5 +49,26 @@ impl Flatzinc for VarBool {
 impl Flatzinc for VarInt {
     fn fzn(&self) -> String {
         format!("var int: {};\n", self.name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::domain::IntRange;
+
+    use super::*;
+
+    #[test]
+    fn id() -> anyhow::Result<()> {
+        let x = VarBool::new(BoolDomain, "x".to_string());
+        let y = VarBool::new(BoolDomain, "y".to_string());
+        let z = VarInt::new(IntRange::new(1, 2)?.into(), "y".to_string());
+
+
+        assert_ne!(x.id(), y.id());
+        assert_ne!(y.id(), z.id());
+        assert_ne!(x.id(), z.id());
+
+        Ok(())
     }
 }
