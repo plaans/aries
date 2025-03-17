@@ -16,7 +16,7 @@ pub enum BasicVar {
 }
 
 impl Name for BasicVar {
-    fn name(&self) -> &Option<String> {
+    fn name(&self) -> &String {
         match self {
             BasicVar::Bool(v) => v.name(),
             BasicVar::Int(v) => v.name(),

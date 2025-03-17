@@ -109,7 +109,10 @@ impl Model {
     /// Get the bool array variable with the given name.
     ///
     /// Fail if no bool array variable has the given name.
-    pub fn get_var_bool_array(&self, name: &String) -> Result<Rc<VarBoolArray>> {
+    pub fn get_var_bool_array(
+        &self,
+        name: &String,
+    ) -> Result<Rc<VarBoolArray>> {
         self.get_variable(name)?.clone().try_into()
     }
 
@@ -156,12 +159,11 @@ impl Model {
     /// Fail if the variable name is already taken.
     fn add_var(&mut self, variable: impl Into<Var>) -> Result<()> {
         let variable = variable.into();
-        if let Some(name) = variable.name() {
-            if self.contains_name(name) {
-                bail!("variable '{}' is already defined", name);
-            } else {
-                self.name_var.insert(name.clone(), variable.clone());
-            }
+        let name = variable.name();
+        if self.contains_name(name) {
+            bail!("variable '{}' is already defined", name);
+        } else {
+            self.name_var.insert(name.clone(), variable.clone());
         }
         self.variables.push(variable);
         Ok(())
@@ -190,7 +192,11 @@ impl Model {
     /// Transform the model into an optimization problem on the given variable.
     ///
     /// Fail if the variable is not in the model.
-    pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVar>) -> Result<()> {
+    pub fn optimize(
+        &mut self,
+        goal: Goal,
+        variable: impl Into<BasicVar>,
+    ) -> Result<()> {
         let variable = variable.into();
         ensure!(
             self.variables.contains(&variable.clone().into()),
@@ -217,7 +223,11 @@ impl Model {
     }
 
     /// Create a new integer variable and add it to the model.
-    pub fn new_var_int(&mut self, domain: IntDomain, name: Option<String>) -> Result<Rc<VarInt>> {
+    pub fn new_var_int(
+        &mut self,
+        domain: IntDomain,
+        name: String,
+    ) -> Result<Rc<VarInt>> {
         let variable: Rc<VarInt> = VarInt::new(domain, name).into();
         self.add_var(variable.clone())?;
         Ok(variable)
@@ -227,7 +237,7 @@ impl Model {
     pub fn new_var_bool(
         &mut self,
         domain: BoolDomain,
-        name: Option<String>,
+        name: String,
     ) -> Result<Rc<VarBool>> {
         let variable: Rc<VarBool> = VarBool::new(domain, name).into();
         self.add_var(variable.clone())?;
@@ -237,7 +247,11 @@ impl Model {
     /// Create a new integer parameter and add it to the model.
     ///
     /// Fail if the parameter name is already taken.
-    pub fn new_par_int(&mut self, name: String, value: Int) -> Result<Rc<ParInt>> {
+    pub fn new_par_int(
+        &mut self,
+        name: String,
+        value: Int,
+    ) -> Result<Rc<ParInt>> {
         let parameter: Rc<ParInt> = ParInt::new(name, value).into();
         self.add_par(parameter.clone())?;
         Ok(parameter)
@@ -246,7 +260,11 @@ impl Model {
     /// Create a new boolean parameter and add it to the model.
     ///
     /// Fail if the parameter name is already taken.
-    pub fn new_par_bool(&mut self, name: String, value: bool) -> Result<Rc<ParBool>> {
+    pub fn new_par_bool(
+        &mut self,
+        name: String,
+        value: bool,
+    ) -> Result<Rc<ParBool>> {
         let parameter: Rc<ParBool> = ParBool::new(name, value).into();
         self.add_par(parameter.clone())?;
         Ok(parameter)
@@ -300,14 +318,15 @@ mod tests {
     ///  - t = 4
     ///  - s = true
     ///  - c: y = x
-    fn simple_model() -> (Rc<VarInt>, Rc<VarInt>, Rc<ParInt>, Rc<ParBool>, Model) {
+    fn simple_model() -> (Rc<VarInt>, Rc<VarInt>, Rc<ParInt>, Rc<ParBool>, Model)
+    {
         let domain_x: IntDomain = IntRange::new(2, 5).unwrap().into();
         let domain_y: IntDomain = IntRange::new(-3, 3).unwrap().into();
 
         let mut model = Model::new();
 
-        let x = model.new_var_int(domain_x, Some("x".to_string())).unwrap();
-        let y = model.new_var_int(domain_y, Some("y".to_string())).unwrap();
+        let x = model.new_var_int(domain_x, "x".to_string()).unwrap();
+        let y = model.new_var_int(domain_y, "y".to_string()).unwrap();
         let t = model.new_par_int("t".to_string(), 4).unwrap();
         let s = model.new_par_bool("s".to_string(), true).unwrap();
 
@@ -347,7 +366,7 @@ mod tests {
         let (x, y, t, s, mut model) = simple_model();
 
         let domain_z = IntRange::new(3, 9).unwrap().into();
-        let z = model.new_var_int(domain_z, Some("z".to_string())).unwrap();
+        let z = model.new_var_int(domain_z, "z".to_string()).unwrap();
 
         model.optimize(Goal::Maximize, z.clone()).unwrap();
 
@@ -389,11 +408,11 @@ mod tests {
         let (x, y, t, s, model) = simple_model();
 
         assert_eq!(
-            *model.get_variable(&x.name().clone().unwrap()).unwrap(),
+            *model.get_variable(&x.name()).unwrap(),
             Var::from(x.clone())
         );
         assert_eq!(
-            *model.get_variable(&y.name().clone().unwrap()).unwrap(),
+            *model.get_variable(&y.name()).unwrap(),
             Var::from(y.clone())
         );
         assert!(model.get_variable(t.name()).is_err());
@@ -410,20 +429,20 @@ mod tests {
         let (x, y, t, s, model) = simple_model();
         let unknown = "unknown".to_string();
 
-        assert!(!model.contains_par_name(&x.name().clone().unwrap()));
-        assert!(!model.contains_par_name(&y.name().clone().unwrap()));
+        assert!(!model.contains_par_name(&x.name()));
+        assert!(!model.contains_par_name(&y.name()));
         assert!(model.contains_par_name(t.name()));
         assert!(model.contains_par_name(s.name()));
         assert!(!model.contains_par_name(&unknown));
 
-        assert!(model.contains_var_name(&x.name().clone().unwrap()));
-        assert!(model.contains_var_name(&y.name().clone().unwrap()));
+        assert!(model.contains_var_name(&x.name()));
+        assert!(model.contains_var_name(&y.name()));
         assert!(!model.contains_var_name(t.name()));
         assert!(!model.contains_var_name(s.name()));
         assert!(!model.contains_var_name(&unknown));
 
-        assert!(model.contains_name(&x.name().clone().unwrap()));
-        assert!(model.contains_name(&y.name().clone().unwrap()));
+        assert!(model.contains_name(&x.name()));
+        assert!(model.contains_name(&y.name()));
         assert!(model.contains_name(t.name()));
         assert!(model.contains_name(s.name()));
         assert!(!model.contains_name(&unknown));
@@ -433,12 +452,8 @@ mod tests {
     fn same_name() {
         let mut model = Model::new();
 
-        let _x = model
-            .new_var_bool(BoolDomain, Some("x".to_string()))
-            .unwrap();
-        assert!(model
-            .new_var_bool(BoolDomain, Some("x".to_string()))
-            .is_err());
+        let _x = model.new_var_bool(BoolDomain, "x".to_string()).unwrap();
+        assert!(model.new_var_bool(BoolDomain, "x".to_string()).is_err());
         assert!(model.new_par_int("x".to_string(), 5).is_err());
     }
 }

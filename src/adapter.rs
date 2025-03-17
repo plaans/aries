@@ -18,14 +18,20 @@ pub fn goal_from_optim_type(optim: &OptimizationType) -> Goal {
     }
 }
 
-pub fn var_bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Rc<VarBool>> {
+pub fn var_bool_from_expr(
+    expr: &Expr,
+    model: &Model,
+) -> anyhow::Result<Rc<VarBool>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_bool(&id),
         _ => bail!("not a varbool"),
     }
 }
 
-pub fn var_int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Rc<VarInt>> {
+pub fn var_int_from_expr(
+    expr: &Expr,
+    model: &Model,
+) -> anyhow::Result<Rc<VarInt>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_int(&id),
         _ => bail!("not a varint"),
@@ -47,7 +53,10 @@ pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
     }
 }
 
-pub fn var_bool_vec_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Vec<Rc<VarBool>>> {
+pub fn var_bool_vec_from_expr(
+    expr: &Expr,
+    model: &Model,
+) -> anyhow::Result<Vec<Rc<VarBool>>> {
     match expr {
         Expr::VarParIdentifier(id) => {
             Ok(model.get_var_bool_array(id)?.variables().cloned().collect())
@@ -60,7 +69,10 @@ pub fn var_bool_vec_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Vec<
     }
 }
 
-pub fn var_bool_from_bool_expr(expr: &BoolExpr, model: &Model) -> anyhow::Result<Rc<VarBool>> {
+pub fn var_bool_from_bool_expr(
+    expr: &BoolExpr,
+    model: &Model,
+) -> anyhow::Result<Rc<VarBool>> {
     match expr {
         BoolExpr::VarParIdentifier(id) => model.get_var_bool(&id),
         BoolExpr::Bool(_) => bail!("unexpected bool literal"),

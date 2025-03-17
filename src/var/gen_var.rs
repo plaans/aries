@@ -12,11 +12,11 @@ const COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct GenVar<D> {
     id: usize,
     domain: D,
-    name: Option<String>,
+    name: String,
 }
 
 impl<D> GenVar<D> {
-    pub(crate) fn new(domain: D, name: Option<String>) -> Self {
+    pub(crate) fn new(domain: D, name: String) -> Self {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
         Self { id, name, domain }
     }
@@ -31,7 +31,7 @@ impl<D> GenVar<D> {
 }
 
 impl<D> Name for GenVar<D> {
-    fn name(&self) -> &Option<String> {
+    fn name(&self) -> &String {
         &self.name
     }
 }
@@ -41,21 +41,13 @@ pub type VarInt = GenVar<IntDomain>;
 
 impl Flatzinc for VarBool {
     fn fzn(&self) -> String {
-        let name = match &self.name {
-            Some(n) => n,
-            None => "?",
-        };
-        format!("var bool: {name};\n")
+        format!("var bool: {};\n", self.name)
     }
 }
 
 // TODO: add domain
 impl Flatzinc for VarInt {
     fn fzn(&self) -> String {
-        let name = match &self.name {
-            Some(n) => n,
-            None => "?",
-        };
-        format!("var int: {name};\n")
+        format!("var int: {};\n", self.name)
     }
 }

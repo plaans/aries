@@ -1,3 +1,3 @@
 pub trait Name {
-    fn name(&self) -> &Option<String>;
+    fn name(&self) -> &String;
 }

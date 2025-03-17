@@ -23,7 +23,7 @@ pub enum Var {
 }
 
 impl Name for Var {
-    fn name(&self) -> &Option<String> {
+    fn name(&self) -> &String {
         match self {
             Var::Bool(v) => v.name(),
             Var::Int(v) => v.name(),

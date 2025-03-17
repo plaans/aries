@@ -8,11 +8,11 @@ use crate::var::VarInt;
 #[derive(Clone, Eq, Debug)]
 pub struct GenArrayVariable<T> {
     variables: Vec<T>,
-    name: Option<String>,
+    name: String,
 }
 
 impl<T> GenArrayVariable<T> {
-    pub fn new(variables: Vec<T>, name: Option<String>) -> Self {
+    pub fn new(variables: Vec<T>, name: String) -> Self {
         Self { variables, name }
     }
 
@@ -26,7 +26,7 @@ impl<T> GenArrayVariable<T> {
 }
 
 impl<T> Name for GenArrayVariable<T> {
-    fn name(&self) -> &Option<String> {
+    fn name(&self) -> &String {
         &self.name
     }
 }

@@ -22,7 +22,8 @@ pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
     let content = content.into();
 
     for (i, line) in content.lines().enumerate() {
-        parse_line(line, &mut model).context(format!("parsing failure at line {i}"))?;
+        parse_line(line, &mut model)
+            .context(format!("parsing failure at line {i}"))?;
     }
     Ok(model)
 }
@@ -31,16 +32,25 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
     let statement = flatzinc::Stmt::from_str(line).map_err(|e| anyhow!(e))?;
     match statement {
         Stmt::Comment(_) => {}
-        Stmt::Parameter(par_decl_item) => parse_par_decl_item(par_decl_item, model)?,
-        Stmt::Variable(var_decl_item) => parse_var_decl_item(var_decl_item, model)?,
-        Stmt::Constraint(constraint_item) => parse_constraint_item(constraint_item, model)?,
+        Stmt::Parameter(par_decl_item) => {
+            parse_par_decl_item(par_decl_item, model)?
+        }
+        Stmt::Variable(var_decl_item) => {
+            parse_var_decl_item(var_decl_item, model)?
+        }
+        Stmt::Constraint(constraint_item) => {
+            parse_constraint_item(constraint_item, model)?
+        }
         Stmt::SolveItem(solve_item) => parse_solve_item(solve_item, model)?,
         _ => todo!(),
     }
     Ok(())
 }
 
-pub fn parse_par_decl_item(par_decl_item: ParDeclItem, model: &mut Model) -> anyhow::Result<()> {
+pub fn parse_par_decl_item(
+    par_decl_item: ParDeclItem,
+    model: &mut Model,
+) -> anyhow::Result<()> {
     match par_decl_item {
         ParDeclItem::Bool { id, bool } => {
             model.new_par_bool(id, bool)?;
@@ -53,14 +63,17 @@ pub fn parse_par_decl_item(par_decl_item: ParDeclItem, model: &mut Model) -> any
     Ok(())
 }
 
-pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> anyhow::Result<()> {
+pub fn parse_var_decl_item(
+    var_decl_item: VarDeclItem,
+    model: &mut Model,
+) -> anyhow::Result<()> {
     match var_decl_item {
         VarDeclItem::Bool {
             id,
             expr: _,
             annos: _,
         } => {
-            model.new_var_bool(BoolDomain, Some(id))?;
+            model.new_var_bool(BoolDomain, id)?;
         }
         VarDeclItem::IntInRange {
             id,
@@ -69,28 +82,38 @@ pub fn parse_var_decl_item(var_decl_item: VarDeclItem, model: &mut Model) -> any
             expr: _,
             annos: _,
         } => {
-            let domain = IntRange::new(lb.try_into().unwrap(), ub.try_into().unwrap()).unwrap();
-            model.new_var_int(domain.into(), Some(id))?;
+            let domain =
+                IntRange::new(lb.try_into().unwrap(), ub.try_into().unwrap())
+                    .unwrap();
+            model.new_var_int(domain.into(), id)?;
         }
         _ => todo!(),
     }
     Ok(())
 }
 
-pub fn parse_constraint_item(c_item: ConstraintItem, model: &mut Model) -> anyhow::Result<()> {
+pub fn parse_constraint_item(
+    c_item: ConstraintItem,
+    model: &mut Model,
+) -> anyhow::Result<()> {
     match c_item.id.as_str() {
         BoolEq::NAME => {
-            model.add_constraint(BoolEq::try_from_item(c_item, model)?.into())?;
+            model
+                .add_constraint(BoolEq::try_from_item(c_item, model)?.into())?;
         }
         IntEq::NAME => {
-            model.add_constraint(IntEq::try_from_item(c_item, model)?.into())?;
+            model
+                .add_constraint(IntEq::try_from_item(c_item, model)?.into())?;
         }
         _ => anyhow::bail!(format!("unkown constraint '{}'", c_item.id)),
     }
     Ok(())
 }
 
-pub fn parse_solve_item(s_item: flatzinc::SolveItem, model: &mut Model) -> anyhow::Result<()> {
+pub fn parse_solve_item(
+    s_item: flatzinc::SolveItem,
+    model: &mut Model,
+) -> anyhow::Result<()> {
     match s_item.goal {
         flatzinc::Goal::Satisfy => {}
         flatzinc::Goal::OptimizeBool(optim, expr) => {
@@ -163,10 +186,10 @@ mod tests {
         assert_eq!(model.nb_variables(), 1);
         assert_eq!(model.nb_constraints(), 0);
 
-        let name_x = Some("x".to_string());
+        let name_x = "x".to_string();
         let domain_x: IntDomain = IntRange::new(-7, 8).unwrap().into();
 
-        let x = model.get_var_int(&name_x.clone().unwrap())?;
+        let x = model.get_var_int(&name_x)?;
 
         assert_eq!(x.name(), &name_x);
         assert_eq!(x.domain(), &domain_x);
@@ -234,7 +257,6 @@ mod tests {
 
         assert_eq!(int_eq.a(), &x);
         assert_eq!(int_eq.b(), &y);
-
 
         Ok(())
     }

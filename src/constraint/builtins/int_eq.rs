@@ -31,7 +31,10 @@ impl IntEq {
         &self.b
     }
 
-    pub fn try_from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<Self> {
+    pub fn try_from_item(
+        item: ConstraintItem,
+        model: &Model,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             item.id.as_str() == Self::NAME,
             "'{}' expected but received '{}'",
