@@ -22,7 +22,10 @@ impl<T: Flatzinc> Flatzinc for Vec<T> {
     fn fzn(&self) -> String {
         format!(
             "[{}]",
-            self.iter().map(|x| x.fzn()).collect::<Vec<String>>().join(", "),
+            self.iter()
+                .map(|x| x.fzn())
+                .collect::<Vec<String>>()
+                .join(", "),
         )
     }
 }

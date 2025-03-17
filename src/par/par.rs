@@ -2,10 +2,10 @@ use std::rc::Rc;
 
 use transitive::Transitive;
 
-use crate::par::ParBoolArray;
 use crate::par::ParBool;
-use crate::par::ParIntArray;
+use crate::par::ParBoolArray;
 use crate::par::ParInt;
+use crate::par::ParIntArray;
 use crate::parvar::ParVar;
 use crate::traits::Flatzinc;
 
@@ -67,7 +67,6 @@ impl From<Rc<ParIntArray>> for Par {
         Self::IntArray(value)
     }
 }
-
 
 impl TryFrom<ParVar> for Par {
     type Error = anyhow::Error;

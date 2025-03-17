@@ -15,7 +15,7 @@ impl<T> GenArrayVariable<T> {
     pub fn new(variables: Vec<T>, name: Option<String>) -> Self {
         Self { variables, name }
     }
-    
+
     pub fn variables(&self) -> impl Iterator<Item = &T> {
         self.variables.iter()
     }

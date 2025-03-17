@@ -9,9 +9,9 @@ use anyhow::Result;
 use crate::constraint::Constraint;
 use crate::domain::BoolDomain;
 use crate::domain::IntDomain;
+use crate::par::Par;
 use crate::par::ParBool;
 use crate::par::ParInt;
-use crate::par::Par;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
@@ -19,10 +19,10 @@ use crate::traits::Flatzinc;
 use crate::traits::Name;
 use crate::types::Int;
 use crate::var::BasicVar;
+use crate::var::Var;
 use crate::var::VarBool;
 use crate::var::VarBoolArray;
 use crate::var::VarInt;
-use crate::var::Var;
 use crate::var::VarIntArray;
 
 #[derive(Debug)]
@@ -36,7 +36,6 @@ pub struct Model {
 }
 
 impl Model {
-
     /// Create a new empty satisfaction model.
     pub fn new() -> Self {
         let parameters = Vec::new();
@@ -45,7 +44,14 @@ impl Model {
         let solve_item = SolveItem::Satisfy;
         let name_par = HashMap::new();
         let name_var = HashMap::new();
-        Model { parameters, variables, constraints, solve_item, name_par, name_var }
+        Model {
+            parameters,
+            variables,
+            constraints,
+            solve_item,
+            name_par,
+            name_var,
+        }
     }
 
     /// Return the solve item.
@@ -84,58 +90,60 @@ impl Model {
     }
 
     /// Get the variable with the given name.
-    /// 
+    ///
     /// Fail if no variable has the given name.
     pub fn get_variable(&self, name: &String) -> Result<&Var> {
-        self.name_var.get(name)
+        self.name_var
+            .get(name)
             .ok_or_else(|| anyhow!("variable '{}' is not defined", name))
     }
 
     /// Get the int variable with the given name.
-    /// 
+    ///
     /// Fail if no int variable has the given name.
     pub fn get_var_int(&self, name: &String) -> Result<Rc<VarInt>> {
         self.get_variable(name)?.clone().try_into()
     }
 
     /// Get the int array variable with the given name.
-    /// 
+    ///
     /// Fail if no int array variable has the given name.
     pub fn get_var_int_array(&self, name: &String) -> Result<Rc<VarIntArray>> {
         self.get_variable(name)?.clone().try_into()
     }
 
     /// Get the bool variable with the given name.
-    /// 
+    ///
     /// Fail if no bool variable has the given name.
     pub fn get_var_bool(&self, name: &String) -> Result<Rc<VarBool>> {
         self.get_variable(name)?.clone().try_into()
     }
 
     /// Get the bool array variable with the given name.
-    /// 
+    ///
     /// Fail if no bool array variable has the given name.
     pub fn get_var_bool_array(&self, name: &String) -> Result<Rc<VarBoolArray>> {
         self.get_variable(name)?.clone().try_into()
     }
 
     /// Get the parameter with the given name.
-    /// 
+    ///
     /// Fail if no parameter has the given name.
     pub fn get_par(&self, name: &String) -> Result<&Par> {
-        self.name_par.get(name)
+        self.name_par
+            .get(name)
             .ok_or_else(|| anyhow!("parameter '{}' is not defined", name))
     }
 
     /// Get the int parameter with the given name.
-    /// 
+    ///
     /// Fail if no int parameter has the given name.
     pub fn get_par_int(&self, name: &String) -> Result<Rc<ParInt>> {
         self.get_par(name)?.clone().try_into()
     }
 
     /// Get the bool parameter with the given name.
-    /// 
+    ///
     /// Fail if no bool parameter has the given name.
     pub fn get_par_bool(&self, name: &String) -> Result<Rc<ParBool>> {
         self.get_par(name)?.clone().try_into()
@@ -157,7 +165,7 @@ impl Model {
     }
 
     /// Add the given variable to the model.
-    /// 
+    ///
     /// Fail if the variable name is already taken.
     fn add_var(&mut self, variable: impl Into<Var>) -> Result<()> {
         let variable = variable.into();
@@ -173,14 +181,15 @@ impl Model {
     }
 
     /// Add the given parameter to the model.
-    /// 
+    ///
     /// Fail if the parameter name is already taken.
     fn add_par(&mut self, parameter: impl Into<Par>) -> Result<()> {
         let parameter = parameter.into();
         if self.contains_name(parameter.name()) {
             bail!("parameter '{}' is already defined", parameter.name());
         } else {
-            self.name_par.insert(parameter.name().clone(), parameter.clone());
+            self.name_par
+                .insert(parameter.name().clone(), parameter.clone());
         }
         self.parameters.push(parameter);
         Ok(())
@@ -192,25 +201,29 @@ impl Model {
     }
 
     /// Transform the model into an optimization problem on the given variable.
-    /// 
+    ///
     /// Fail if the variable is not in the model.
     pub fn optimize(&mut self, goal: Goal, variable: impl Into<BasicVar>) -> Result<()> {
         let variable = variable.into();
-        ensure!(self.variables.contains(&variable.clone().into()), "variable '{:?}' is not defined", variable.name());
+        ensure!(
+            self.variables.contains(&variable.clone().into()),
+            "variable '{:?}' is not defined",
+            variable.name()
+        );
         let objective = Objective::new(goal, variable);
         self.solve_item = SolveItem::Optimize(objective);
         Ok(())
     }
 
     /// Transform the model into an minimization problem on the given variable.
-    /// 
+    ///
     /// Fail if the variable is not in the model.
     pub fn minimize(&mut self, variable: impl Into<BasicVar>) -> Result<()> {
         self.optimize(Goal::Minimize, variable)
     }
 
     /// Transform the model into an maximization problem on the given variable.
-    /// 
+    ///
     /// Fail if the variable is not in the model.
     pub fn maximize(&mut self, variable: impl Into<BasicVar>) -> Result<()> {
         self.optimize(Goal::Maximize, variable)
@@ -224,14 +237,18 @@ impl Model {
     }
 
     /// Create a new boolean variable and add it to the model.
-    pub fn new_var_bool(&mut self, domain: BoolDomain, name: Option<String>) -> Result<Rc<VarBool>> {
+    pub fn new_var_bool(
+        &mut self,
+        domain: BoolDomain,
+        name: Option<String>,
+    ) -> Result<Rc<VarBool>> {
         let variable: Rc<VarBool> = VarBool::new(domain, name).into();
         self.add_var(variable.clone())?;
         Ok(variable)
     }
 
     /// Create a new integer parameter and add it to the model.
-    /// 
+    ///
     /// Fail if the parameter name is already taken.
     pub fn new_par_int(&mut self, name: String, value: Int) -> Result<Rc<ParInt>> {
         let parameter: Rc<ParInt> = ParInt::new(name, value).into();
@@ -240,7 +257,7 @@ impl Model {
     }
 
     /// Create a new boolean parameter and add it to the model.
-    /// 
+    ///
     /// Fail if the parameter name is already taken.
     pub fn new_par_bool(&mut self, name: String, value: bool) -> Result<Rc<ParBool>> {
         let parameter: Rc<ParBool> = ParBool::new(name, value).into();
@@ -250,7 +267,7 @@ impl Model {
 
     /// Add the given constraint to the model.
     /// If needed, its arguments are added to the model.
-    /// 
+    ///
     /// TODO: the constraint args might be unkown from the model
     pub fn add_constraint(&mut self, constraint: Constraint) -> Result<()> {
         self.constraints.push(constraint);
@@ -276,7 +293,7 @@ mod tests {
     use super::*;
 
     /// Return a simple satisfaction model, its variables and parameters.
-    /// 
+    ///
     /// It has two variables, two parameters and one constraint:
     ///  - x int in \[2,5\]
     ///  - y int in \[-3,3\]
@@ -284,8 +301,8 @@ mod tests {
     ///  - s = true
     ///  - c: y = x
     fn simple_model() -> (Rc<VarInt>, Rc<VarInt>, Rc<ParInt>, Rc<ParBool>, Model) {
-        let domain_x: IntDomain = IntRange::new(2,5).unwrap().into();
-        let domain_y: IntDomain = IntRange::new(-3,3).unwrap().into();
+        let domain_x: IntDomain = IntRange::new(2, 5).unwrap().into();
+        let domain_y: IntDomain = IntRange::new(-3, 3).unwrap().into();
 
         let mut model = Model::new();
 
@@ -329,7 +346,7 @@ mod tests {
     fn basic_min_model() {
         let (x, y, t, s, mut model) = simple_model();
 
-        let domain_z = IntRange::new(3,9).unwrap().into();
+        let domain_z = IntRange::new(3, 9).unwrap().into();
         let z = model.new_var_int(domain_z, Some("z".to_string())).unwrap();
 
         model.optimize(Goal::Maximize, z.clone()).unwrap();
@@ -371,11 +388,17 @@ mod tests {
     fn get_vars_and_pars() {
         let (x, y, t, s, model) = simple_model();
 
-        assert_eq!(*model.get_variable(&x.name().clone().unwrap()).unwrap(), Var::from(x.clone()));
-        assert_eq!(*model.get_variable(&y.name().clone().unwrap()).unwrap(), Var::from(y.clone()));
+        assert_eq!(
+            *model.get_variable(&x.name().clone().unwrap()).unwrap(),
+            Var::from(x.clone())
+        );
+        assert_eq!(
+            *model.get_variable(&y.name().clone().unwrap()).unwrap(),
+            Var::from(y.clone())
+        );
         assert!(model.get_variable(t.name()).is_err());
         assert!(model.get_variable(s.name()).is_err());
-        
+
         assert_eq!(*model.get_par(t.name()).unwrap(), Par::from(t.clone()));
         assert_eq!(*model.get_par(s.name()).unwrap(), Par::from(s.clone()));
         // assert!(model.get_par(&x.name().unwrap()).is_err());
@@ -410,8 +433,12 @@ mod tests {
     fn same_name() {
         let mut model = Model::new();
 
-        let _x = model.new_var_bool(BoolDomain, Some("x".to_string())).unwrap();
-        assert!(model.new_var_bool(BoolDomain, Some("x".to_string())).is_err());
+        let _x = model
+            .new_var_bool(BoolDomain, Some("x".to_string()))
+            .unwrap();
+        assert!(model
+            .new_var_bool(BoolDomain, Some("x".to_string()))
+            .is_err());
         assert!(model.new_par_int("x".to_string(), 5).is_err());
     }
 }

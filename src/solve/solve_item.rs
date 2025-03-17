@@ -39,10 +39,10 @@ mod tests {
     fn objective_variable() {
         let x: BasicVar = VarBool::new(BoolDomain, None).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
-        
+
         let sat_item = SolveItem::Satisfy;
         let opt_item = SolveItem::Optimize(objective);
-        
+
         assert_eq!(sat_item.variable(), None);
         assert_eq!(opt_item.variable(), Some(&x));
     }
@@ -51,10 +51,10 @@ mod tests {
     fn is_thing() {
         let x: BasicVar = VarBool::new(BoolDomain, None).into();
         let objective = Objective::new(Goal::Maximize, x.clone());
-        
+
         let sat_item = SolveItem::Satisfy;
         let opt_item = SolveItem::Optimize(objective);
-        
+
         assert!(sat_item.is_satisfy());
         assert!(!sat_item.is_optimize());
         assert!(opt_item.is_optimize());

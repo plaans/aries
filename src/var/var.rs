@@ -6,11 +6,10 @@ use crate::parvar::ParVar;
 use crate::traits::Flatzinc;
 use crate::traits::Name;
 use crate::var::BasicVar;
-use crate::var::VarBoolArray;
 use crate::var::VarBool;
-use crate::var::VarIntArray;
+use crate::var::VarBoolArray;
 use crate::var::VarInt;
-
+use crate::var::VarIntArray;
 
 #[derive(Transitive)]
 #[transitive(from(VarBool, Rc<VarBool>))]

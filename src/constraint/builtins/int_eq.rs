@@ -52,7 +52,12 @@ impl IntEq {
 
 impl Flatzinc for IntEq {
     fn fzn(&self) -> String {
-        format!("{}({:?}, {:?});\n", Self::NAME, self.a.name(), self.b.name())
+        format!(
+            "{}({:?}, {:?});\n",
+            Self::NAME,
+            self.a.name(),
+            self.b.name()
+        )
     }
 }
 

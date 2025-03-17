@@ -3,7 +3,6 @@ use std::hash::Hash;
 use crate::traits::Flatzinc;
 use crate::types::Int;
 
-
 #[derive(Eq, Hash, Debug)]
 pub struct GenPar<T> {
     name: String,
@@ -58,16 +57,25 @@ impl Flatzinc for ParInt {
 
 impl Flatzinc for ParBoolArray {
     fn fzn(&self) -> String {
-        format!("array [1..{}] of bool: {} = {};\n", self.value.len(), self.name, self.value.fzn())
+        format!(
+            "array [1..{}] of bool: {} = {};\n",
+            self.value.len(),
+            self.name,
+            self.value.fzn()
+        )
     }
 }
 
 impl Flatzinc for ParIntArray {
     fn fzn(&self) -> String {
-        format!("array [1..{}] of int: {} = {};\n", self.value.len(), self.name, self.value.fzn())
+        format!(
+            "array [1..{}] of int: {} = {};\n",
+            self.value.len(),
+            self.name,
+            self.value.fzn()
+        )
     }
 }
-
 
 #[cfg(test)]
 mod tests {

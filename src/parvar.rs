@@ -3,9 +3,9 @@ use std::rc::Rc;
 use transitive::Transitive;
 
 use crate::par::Par;
+use crate::var::Var;
 use crate::var::VarBool;
 use crate::var::VarInt;
-use crate::var::Var;
 
 // Workaround to transitive crate issue
 // https://github.com/bobozaur/transitive/issues/11

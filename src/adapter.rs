@@ -49,12 +49,9 @@ pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
 
 pub fn var_bool_vec_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Vec<Rc<VarBool>>> {
     match expr {
-        Expr::VarParIdentifier(id) => Ok(
-            model.get_var_bool_array(id)?
-                .variables()
-                .cloned()
-                .collect()
-        ),
+        Expr::VarParIdentifier(id) => {
+            Ok(model.get_var_bool_array(id)?.variables().cloned().collect())
+        }
         Expr::ArrayOfBool(v) => v
             .iter()
             .map(|e| var_bool_from_bool_expr(e, model))

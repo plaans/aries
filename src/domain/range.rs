@@ -10,9 +10,8 @@ pub struct Range<T: PartialOrd> {
 }
 
 impl<T: PartialOrd> Range<T> {
-
     /// Create a `Range` with the given bounds.
-    /// 
+    ///
     /// Return an `Error` if the lower bound is greater than the upper bound.
     pub fn new(lb: T, ub: T) -> Result<Range<T>> {
         ensure!(lb <= ub, "lb is greater than ub");
@@ -39,11 +38,7 @@ mod tests {
 
     #[test]
     fn getters() {
-        let attrs_ok = [
-            (-2, 1,  true),
-            ( 1, 1,  true),
-            ( 3, 2, false),
-        ];
+        let attrs_ok = [(-2, 1, true), (1, 1, true), (3, 2, false)];
         for (lb, ub, ok) in attrs_ok {
             let var = Range::new(lb, ub);
             if ok {

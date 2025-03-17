@@ -52,7 +52,12 @@ impl BoolEq {
 
 impl Flatzinc for BoolEq {
     fn fzn(&self) -> String {
-        format!("{}({:?}, {:?});\n", Self::NAME, self.a.name(), self.b.name())
+        format!(
+            "{}({:?}, {:?});\n",
+            Self::NAME,
+            self.a.name(),
+            self.b.name()
+        )
     }
 }
 
