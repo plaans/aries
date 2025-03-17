@@ -111,7 +111,6 @@ pub fn parse_solve_item(s_item: flatzinc::SolveItem, model: &mut Model) -> anyho
 #[cfg(test)]
 mod tests {
     use crate::domain::IntDomain;
-    use crate::traits::Flatzinc;
     use crate::traits::Name;
 
     use super::*;
@@ -207,7 +206,6 @@ mod tests {
     #[test]
     fn int_eq() -> anyhow::Result<()> {
         const CONTENT: &str = "\
-        int: p = 3;\n\
         var 1..9: x;\n\
         var 0..2: y;\n\
         constraint int_eq(x,y);\n\
@@ -215,7 +213,7 @@ mod tests {
 
         let model = parse_model(CONTENT)?;
 
-        assert_eq!(model.nb_parameters(), 1);
+        assert_eq!(model.nb_parameters(), 0);
         assert_eq!(model.nb_variables(), 2);
         assert_eq!(model.nb_constraints(), 1);
 
@@ -237,8 +235,6 @@ mod tests {
         assert_eq!(int_eq.a(), &x);
         assert_eq!(int_eq.b(), &y);
 
-        println!("{}", model.fzn());
-        panic!();
 
         Ok(())
     }

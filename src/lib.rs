@@ -6,6 +6,7 @@ pub mod par;
 pub mod parser;
 pub mod parvar;
 pub mod solve;
+pub mod solver;
 pub mod traits;
 pub mod types;
 pub mod var;
