@@ -8,4 +8,5 @@ edition = "2021"
 anyhow = "1.0.95"
 aries = { path = "../aries/solver" }
 flatzinc = "0.3.21"
+test_each_file = "0.3.4"
 transitive = "1.0.1"

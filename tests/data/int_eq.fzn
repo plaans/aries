@@ -1,0 +1,3 @@
+var 1..3: x;
+var 3..6: y;
+constraint int_eq(x,y);

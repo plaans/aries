@@ -88,7 +88,7 @@ impl Solver {
 
     /// Solve the flatzinc model.
     ///
-    /// For now the results are printed.
+    /// If the problem is sat, the aries domains are mapped to assignments.
     pub fn solve(&self) -> Result<Option<Vec<Assignment>>, Exit> {
         let mut aries_solver = AriesSolver::new(self.aries_model.clone());
 

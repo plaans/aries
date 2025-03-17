@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use crate::traits::Flatzinc;
+use crate::traits::Name;
 use crate::types::Int;
 use crate::var::VarBool;
 use crate::var::VarInt;
@@ -8,4 +10,17 @@ use crate::var::VarInt;
 pub enum Assignment {
     Bool(Rc<VarBool>, bool),
     Int(Rc<VarInt>, Int),
+}
+
+impl Flatzinc for Assignment {
+    fn fzn(&self) -> String {
+        match self {
+            Assignment::Bool(var, value) => {
+                format!("{} = {};", var.name(), value)
+            }
+            Assignment::Int(var, value) => {
+                format!("{} = {};", var.name(), value)
+            }
+        }
+    }
 }
