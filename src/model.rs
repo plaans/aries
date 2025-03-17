@@ -38,20 +38,7 @@ pub struct Model {
 impl Model {
     /// Create a new empty satisfaction model.
     pub fn new() -> Self {
-        let parameters = Vec::new();
-        let variables = Vec::new();
-        let constraints = Vec::new();
-        let solve_item = SolveItem::Satisfy;
-        let name_par = HashMap::new();
-        let name_var = HashMap::new();
-        Model {
-            parameters,
-            variables,
-            constraints,
-            solve_item,
-            name_par,
-            name_var,
-        }
+        Self::default()
     }
 
     /// Return the solve item.
@@ -272,6 +259,19 @@ impl Model {
     pub fn add_constraint(&mut self, constraint: Constraint) -> Result<()> {
         self.constraints.push(constraint);
         Ok(())
+    }
+}
+
+impl Default for Model {
+    fn default() -> Self {
+        Self {
+            parameters: Default::default(),
+            variables: Default::default(),
+            constraints: Default::default(),
+            solve_item: Default::default(),
+            name_par: Default::default(),
+            name_var: Default::default(),
+        }
     }
 }
 

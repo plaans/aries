@@ -27,6 +27,12 @@ impl SolveItem {
     }
 }
 
+impl Default for SolveItem {
+    fn default() -> Self {
+        Self::Satisfy
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::domain::BoolDomain;
