@@ -64,7 +64,6 @@ mod tests {
         let y = VarBool::new(BoolDomain, "y".to_string());
         let z = VarInt::new(IntRange::new(1, 2)?.into(), "y".to_string());
 
-
         assert_ne!(x.id(), y.id());
         assert_ne!(y.id(), z.id());
         assert_ne!(x.id(), z.id());

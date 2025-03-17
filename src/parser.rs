@@ -98,12 +98,10 @@ pub fn parse_constraint_item(
 ) -> anyhow::Result<()> {
     match c_item.id.as_str() {
         BoolEq::NAME => {
-            model
-                .add_constraint(BoolEq::try_from_item(c_item, model)?.into())?;
+            model.add_constraint(BoolEq::try_from_item(c_item, model)?.into());
         }
         IntEq::NAME => {
-            model
-                .add_constraint(IntEq::try_from_item(c_item, model)?.into())?;
+            model.add_constraint(IntEq::try_from_item(c_item, model)?.into());
         }
         _ => anyhow::bail!(format!("unkown constraint '{}'", c_item.id)),
     }

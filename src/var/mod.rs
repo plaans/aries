@@ -1,8 +1,10 @@
+mod assignment;
 mod basic_var;
 mod gen_var;
 mod var;
 mod var_array;
 
+pub use assignment::Assignment;
 pub use basic_var::BasicVar;
 pub use gen_var::GenVar;
 pub use gen_var::VarBool;

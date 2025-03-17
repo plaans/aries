@@ -274,9 +274,8 @@ impl Model {
     /// If needed, its arguments are added to the model.
     ///
     /// TODO: the constraint args might be unkown from the model
-    pub fn add_constraint(&mut self, constraint: Constraint) -> Result<()> {
+    pub fn add_constraint(&mut self, constraint: Constraint) {
         self.constraints.push(constraint);
-        Ok(())
     }
 }
 
@@ -331,7 +330,7 @@ mod tests {
         let s = model.new_par_bool("s".to_string(), true).unwrap();
 
         let c = IntEq::new(x.clone(), y.clone());
-        model.add_constraint(c.into()).unwrap();
+        model.add_constraint(c.into());
 
         (x, y, t, s, model)
     }
