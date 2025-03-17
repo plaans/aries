@@ -15,6 +15,7 @@ pub struct ParSolver<Lbl> {
 
 pub type Solution = Arc<SavedAssignment>;
 
+#[derive(Clone)]
 pub enum SolverResult<Solution> {
     /// The solver terminated with a solution.
     Sol(Solution),

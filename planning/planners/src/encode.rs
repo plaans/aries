@@ -62,36 +62,39 @@ pub fn populate_with_warm_up_plan(
     plan: &[ActionInstance],
     depth: u32,
 ) -> Result<()> {
-    debug_assert_eq!(depth, 0, "Warm-up plan does not support decomposition");
-    plan.iter().try_for_each(|action| {
-        // Find the template that corresponds to the action
-        let template_id = spec
-            .templates
-            .iter()
-            .position(|t| format!("{}", t.label) == action.name)
-            .context("Unknown action in warm-up plan")?;
-        let template = &spec.templates[template_id];
+    plan.iter()
+        // Create one instance for each action in the plan
+        .try_for_each(|action| {
+            // Find the template that corresponds to the action
+            let template_id = spec
+                .templates
+                .iter()
+                .position(|t| format!("{}", t.label) == action.name)
+                .context("Unknown action in warm-up plan")?;
+            let template = &spec.templates[template_id];
 
-        // Find the current number of instances of the action template
-        let generation_id = pb
-            .chronicles
-            .iter()
-            .filter(|c| match &c.origin {
-                ChronicleOrigin::FreeAction { template_id: id, .. } => *id == template_id,
-                _ => false,
-            })
-            .count();
+            // Find the current number of instances of the action template
+            let generation_id = pb
+                .chronicles
+                .iter()
+                .filter(|c| match &c.origin {
+                    ChronicleOrigin::FreeAction { template_id: id, .. } => *id == template_id,
+                    _ => false,
+                })
+                .count();
 
-        // Instantiate the action template
-        let origin = ChronicleOrigin::FreeAction {
-            template_id,
-            generation_id,
-        };
-        let instance_id = pb.chronicles.len();
-        let instance = instantiate(instance_id, template, origin, Lit::TRUE, Sub::empty(), pb)?;
-        pb.chronicles.push(instance);
-        Ok::<(), anyhow::Error>(())
-    })
+            // Instantiate the action template
+            let origin = ChronicleOrigin::FreeAction {
+                template_id,
+                generation_id,
+            };
+            let instance_id = pb.chronicles.len();
+            let instance = instantiate(instance_id, template, origin, Lit::TRUE, Sub::empty(), pb)?;
+            pb.chronicles.push(instance);
+            Ok::<(), anyhow::Error>(())
+        })
+        // Create one instance for each depth of decomposition
+        .and_then(|_| populate_with_template_instances(pb, spec, |_| Some(depth)))
 }
 
 /// Enforce some constraints to force `plan` to be the only solution of `pb`.
