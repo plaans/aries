@@ -291,10 +291,9 @@ pub fn problem_to_chronicles(problem: &Problem) -> Result<aries_planning::chroni
     })
 }
 
-/// TODO: return presence literals as well, in a map ?
-/// for subtasks at least, could also do the following (very brutal):
-/// look through chronicle instances to see which one has that task as a (the only) subtask
-pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String, usize>, HashMap<usize, usize>, aries_planning::chronicles::Problem), Error> {
+pub fn beluga_problem_to_chronicles(
+    problem: &Problem
+) -> Result<(HashMap<String, usize>, HashMap<String, usize>, HashMap<usize, usize>, aries_planning::chronicles::Problem), Error> {
     let mut context = build_context(problem)?;
     let (context_origin, context_horizon) = (context.origin(), context.horizon());
 
@@ -322,40 +321,15 @@ pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String
     );
 
     factory.add_initial_state(&problem.initial_state, &problem.fluents)?;
-    factory.add_timed_effects(&problem.timed_effects)?;
-    factory.add_goals(&problem.goals)?;
-    factory.add_final_value_metric(&problem.metrics)?;
+    assert!(problem.timed_effects.is_empty());
+    assert!(problem.goals.is_empty());
+    assert!(problem.metrics.is_empty());
 
-    // let mut ch_instances = vec![factory.build_instance(ChronicleOrigin::Original)?];
     let mut ch_instances = vec![];
-    //     ChronicleInstance {
-    //         parameters: factory.variables.iter().map(|&v| v.into()).collect(),
-    //         origin: ChronicleOrigin::Original,
-    //         chronicle: factory.chronicle.clone(),
-    //     }
-    // ];
-    let mut subtask_id_to_ch_instance_index_map: HashMap<String, usize> = HashMap::new();
-    let mut constraint_index_to_ch_instance_index_map: HashMap<usize, usize> = HashMap::new();
 
-    // for goal in &problem.goals {
-    //     let container = Container::Base;
-    //     let presence = context.model.new_presence_variable(Lit::TRUE, container / VarType::Presence).true_lit();
-    //     // let presence = context.model.state.new_var(0, 1).geq(1);
-    //     factory = ChronicleFactory::new(
-    //         &mut context,
-    //         make_orig_ch_with_presence(presence),
-    //         container,
-    //         vec![],
-    //     );
-    //     factory.add_goal(goal)?;
-    // 
-    //     ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
-    // 
-    //     // force to be present:
-    //     context.model.enforce(presence, []);
-    //     //// doesn't work:
-    //     // ch_instances.last_mut().unwrap().chronicle.constraints.push(Constraint::atom(presence));
-    // }
+    let mut non_swap_subtask_id_to_ch_instance_index_map: HashMap<String, usize> = HashMap::new();
+    let mut swap_subtask_id_to_ch_instance_index_map: HashMap<String, usize> = HashMap::new();
+    let mut constraint_index_to_ch_instance_index_map: HashMap<usize, usize> = HashMap::new();
 
     if let Some(hierarchy) = &problem.hierarchy {
         let tn = hierarchy
@@ -370,19 +344,11 @@ pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String
 
         let mut variables = factory.variables.clone();
         let mut env = factory.env.clone();
-        
-        // // let dummy_ch = make_orig_ch_with_presence(Lit::TRUE);
-        // factory = ChronicleFactory::new(
-        //     &mut context,
-        //     make_orig_ch_with_presence(Lit::TRUE),
-        //     Container::Base,
-        //     vec![],
-        // );
 
         for subtask in &tn.subtasks {
             let container = Container::Base;
             let presence = context.model.new_presence_variable(Lit::TRUE, container / VarType::Presence).true_lit();
-            // let presence = context.model.state.new_var(0, 1).geq(1);
+
             factory = ChronicleFactory::with_env(
                 &mut context,
                 make_orig_ch_with_presence(presence),
@@ -398,18 +364,28 @@ pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String
             env = factory.env.clone();    
 
             ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
-            subtask_id_to_ch_instance_index_map.insert(subtask.id.clone(), ch_instances.len() - 1);
-            
-            // // force to be present:
-            // context.model.enforce(presence, []);
-            // //// doesn't work:
-            // // ch_instances.last_mut().unwrap().chronicle.constraints.push(Constraint::atom(presence));
+            if subtask.task_name.starts_with("do_swap") {
+                let is_noop_swap_id = {
+                    ch_instances.last().unwrap().chronicle.subtasks[0].task_name[1].variable()
+                };
+                context.model.enforce(
+                    expr::eq(is_noop_swap_id.leq(0), ch_instances.last().unwrap().chronicle.presence),
+                    [],
+                );
+                // context.model.enforce(
+                //     ch_instances.last().unwrap().chronicle.presence,
+                //     [],
+                // );
+                swap_subtask_id_to_ch_instance_index_map.insert(subtask.id.clone(), ch_instances.len() - 1);
+            } else {
+                non_swap_subtask_id_to_ch_instance_index_map.insert(subtask.id.clone(), ch_instances.len() - 1);
+            }
         }
 
         for (i, constraint) in tn.constraints.iter().enumerate() {
             let container = Container::Base;
             let presence = context.model.new_presence_variable(Lit::TRUE, container / VarType::Presence).true_lit();
-            // let presence = context.model.state.new_var(0, 1).geq(1);
+
             factory = ChronicleFactory::with_env(
                 &mut context,
                 make_orig_ch_with_presence(presence),
@@ -426,11 +402,6 @@ pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String
         
             ch_instances.push(factory.build_instance(ChronicleOrigin::Original)?);
             constraint_index_to_ch_instance_index_map.insert(i, ch_instances.len() - 1);
-        
-            // // force to be present:
-            // context.model.enforce(presence, []);
-            // //// doesn't work:
-            // // ch_instances.last_mut().unwrap().chronicle.constraints.push(Constraint::atom(presence));
         }
         factory = ChronicleFactory::with_env(
             &mut context,
@@ -483,7 +454,8 @@ pub fn beluga_problem_to_chronicles(problem: &Problem) -> Result<(HashMap<String
     }
 
     Ok((
-        subtask_id_to_ch_instance_index_map,
+        non_swap_subtask_id_to_ch_instance_index_map,
+        swap_subtask_id_to_ch_instance_index_map,
         constraint_index_to_ch_instance_index_map,
         aries_planning::chronicles::Problem {
             context,
