@@ -1,2 +1,5 @@
 #[derive(PartialEq, Eq, Debug)]
-pub struct BoolDomain;
+pub enum BoolDomain {
+    Singleton(bool),
+    Both,
+}

@@ -1,0 +1,2 @@
+bool: p = true;
+var bool: x = p;

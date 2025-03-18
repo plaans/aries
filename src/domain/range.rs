@@ -28,6 +28,11 @@ impl<T: PartialOrd> Range<T> {
     pub fn ub(&self) -> &T {
         &self.ub
     }
+
+    /// Return both lower and upper bounds.
+    pub fn bounds(&self) -> (&T, &T) {
+        (&self.lb, &self.ub)
+    }
 }
 
 pub type IntRange = Range<Int>;
@@ -45,6 +50,7 @@ mod tests {
                 let var = var.expect("var should be Ok");
                 assert_eq!(*var.lb(), lb);
                 assert_eq!(*var.ub(), ub);
+                assert_eq!(var.bounds(), (&lb, &ub));
             } else {
                 assert!(var.is_err());
             }

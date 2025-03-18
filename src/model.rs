@@ -451,8 +451,12 @@ mod tests {
     fn same_name() {
         let mut model = Model::new();
 
-        let _x = model.new_var_bool(BoolDomain, "x".to_string()).unwrap();
-        assert!(model.new_var_bool(BoolDomain, "x".to_string()).is_err());
+        let _x = model
+            .new_var_bool(BoolDomain::Both, "x".to_string())
+            .unwrap();
+        assert!(model
+            .new_var_bool(BoolDomain::Both, "x".to_string())
+            .is_err());
         assert!(model.new_par_int("x".to_string(), 5).is_err());
     }
 }

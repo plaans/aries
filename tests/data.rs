@@ -7,6 +7,7 @@ test_each_file! { for ["fzn", "dzn"] in "./tests/data" => test }
 
 fn test([input, output]: [&str; 2]) {
     let model = parse_model(input).unwrap();
+    dbg!(&model);
 
     let solver = Solver::new(model);
 

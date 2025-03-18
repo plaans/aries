@@ -2,19 +2,24 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use anyhow::bail;
+use anyhow::ensure;
 use anyhow::Context;
 use flatzinc::ConstraintItem;
 use flatzinc::ParDeclItem;
 use flatzinc::Stmt;
 use flatzinc::VarDeclItem;
 
+use crate::adapter::bool_from_bool_expr;
 use crate::adapter::goal_from_optim_type;
+use crate::adapter::int_from_int_expr;
 use crate::adapter::var_bool_from_expr;
 use crate::adapter::var_int_from_expr;
 use crate::constraint::builtins::*;
 use crate::domain::BoolDomain;
+use crate::domain::IntDomain;
 use crate::domain::IntRange;
 use crate::model::Model;
+use crate::types::Int;
 
 pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
     let mut model = Model::new();
@@ -68,23 +73,37 @@ pub fn parse_var_decl_item(
     model: &mut Model,
 ) -> anyhow::Result<()> {
     match var_decl_item {
-        VarDeclItem::Bool {
-            id,
-            expr: _,
-            annos: _,
-        } => {
-            model.new_var_bool(BoolDomain, id)?;
-        }
+        VarDeclItem::Bool { id, expr, annos: _ } => match expr {
+            Some(e) => {
+                let value = bool_from_bool_expr(&e, model)?;
+                model.new_var_bool(BoolDomain::Singleton(value), id)?;
+            }
+            None => {
+                model.new_var_bool(BoolDomain::Both, id)?;
+            }
+        },
         VarDeclItem::IntInRange {
             id,
             lb,
             ub,
-            expr: _,
+            expr,
             annos: _,
         } => {
-            let domain =
-                IntRange::new(lb.try_into().unwrap(), ub.try_into().unwrap())
-                    .unwrap();
+            let lb = Int::try_from(lb).unwrap();
+            let ub = Int::try_from(ub).unwrap();
+            let domain = if let Some(e) = expr {
+                let value = int_from_int_expr(&e, model)?;
+                ensure!(
+                    lb <= value && value <= ub,
+                    "{} is not in {}..{}",
+                    value,
+                    lb,
+                    ub
+                );
+                IntDomain::Singleton(value)
+            } else {
+                IntRange::new(lb, ub)?.into()
+            };
             model.new_var_int(domain.into(), id)?;
         }
         _ => todo!(),

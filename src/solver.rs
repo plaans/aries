@@ -10,7 +10,10 @@ use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
 
 use crate::constraint::Constraint as FznConstraint;
+use crate::domain::BoolDomain;
+use crate::domain::IntDomain;
 use crate::model::Model as FznModel;
+use crate::types::as_int;
 use crate::var::Assignment;
 use crate::var::Var as FznVar;
 use crate::var::VarBool;
@@ -53,18 +56,23 @@ impl Solver {
     }
 
     fn add_var_bool(&mut self, var_bool: &VarBool) {
-        let bvar = self.aries_model.new_bvar(*var_bool.id());
-        self.translation.insert(*var_bool.id(), bvar.into());
+        let ivar = match var_bool.domain() {
+            BoolDomain::Singleton(b) => {
+                let x = as_int(*b);
+                self.aries_model.new_ivar(x, x, *var_bool.id())
+            }
+            BoolDomain::Both => self.aries_model.new_bvar(*var_bool.id()).int_view(),
+        };
+        self.translation.insert(*var_bool.id(), ivar.into());
     }
 
     fn add_var_int(&mut self, var_int: &VarInt) {
-        let range = match var_int.domain() {
-            crate::domain::IntDomain::Range(range) => range,
-            crate::domain::IntDomain::Set(_) => todo!(),
+        let (lb, ub) = match var_int.domain() {
+            IntDomain::Range(range) => range.bounds(),
+            IntDomain::Set(_) => todo!(),
+            IntDomain::Singleton(x) => (x, x),
         };
-        let ivar =
-            self.aries_model
-                .new_ivar(*range.lb(), *range.ub(), *var_int.id());
+        let ivar = self.aries_model.new_ivar(*lb, *ub, *var_int.id());
         self.translation.insert(*var_int.id(), ivar.into());
     }
 
@@ -204,8 +212,8 @@ mod tests {
     fn bool_eq() -> anyhow::Result<()> {
         let mut fzn_model = Model::new();
 
-        let x = fzn_model.new_var_bool(BoolDomain, "x".to_string())?;
-        let y = fzn_model.new_var_bool(BoolDomain, "y".to_string())?;
+        let x = fzn_model.new_var_bool(BoolDomain::Both, "x".to_string())?;
+        let y = fzn_model.new_var_bool(BoolDomain::Both, "y".to_string())?;
 
         let bool_eq = BoolEq::new(x.clone(), y.clone());
 

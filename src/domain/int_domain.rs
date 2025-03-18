@@ -1,8 +1,11 @@
+use crate::types::Int;
+
 use super::range::IntRange;
 use super::set::IntSet;
 
 #[derive(Hash, PartialEq, Eq, Debug, Clone)]
 pub enum IntDomain {
+    Singleton(Int),
     Range(IntRange),
     Set(IntSet),
 }

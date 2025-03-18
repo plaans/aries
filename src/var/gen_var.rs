@@ -60,8 +60,8 @@ mod tests {
 
     #[test]
     fn id() -> anyhow::Result<()> {
-        let x = VarBool::new(BoolDomain, "x".to_string());
-        let y = VarBool::new(BoolDomain, "y".to_string());
+        let x = VarBool::new(BoolDomain::Both, "x".to_string());
+        let y = VarBool::new(BoolDomain::Both, "y".to_string());
         let z = VarInt::new(IntRange::new(1, 2)?.into(), "y".to_string());
 
         assert_ne!(x.id(), y.id());

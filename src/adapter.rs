@@ -3,6 +3,7 @@ use std::rc::Rc;
 use anyhow::bail;
 use flatzinc::BoolExpr;
 use flatzinc::Expr;
+use flatzinc::IntExpr;
 use flatzinc::OptimizationType;
 
 use crate::model::Model;
@@ -42,6 +43,23 @@ pub fn bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<bool> {
     match expr {
         Expr::VarParIdentifier(id) => Ok(*model.get_par_bool(id)?.value()),
         _ => bail!("not a varbool"),
+    }
+}
+
+pub fn bool_from_bool_expr(
+    expr: &BoolExpr,
+    model: &Model,
+) -> anyhow::Result<bool> {
+    match expr {
+        BoolExpr::Bool(b) => Ok(*b),
+        BoolExpr::VarParIdentifier(id) => Ok(*model.get_par_bool(id)?.value()),
+    }
+}
+
+pub fn int_from_int_expr(expr: &IntExpr, model: &Model) -> anyhow::Result<Int> {
+    match expr {
+        IntExpr::Int(x) => Ok(*x as Int),
+        IntExpr::VarParIdentifier(id) => Ok(*model.get_par_int(id)?.value()),
     }
 }
 

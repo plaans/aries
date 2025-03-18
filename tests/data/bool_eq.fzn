@@ -1,0 +1,3 @@
+var bool: x;
+var bool: y;
+constraint bool_eq(x,y);
