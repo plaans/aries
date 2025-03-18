@@ -1,0 +1,23 @@
+[package]
+authors = ["Nika Beriachvili <nika.beriachvili@laas.fr>"]
+edition = "2021"
+name = "beluga_study"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aries = { path = "../../solver" }
+aries_planners = { path = "../planners" }
+aries_planning = { path = "../planning" }
+aries_grpc_server = { path = "../grpc/server" }
+unified_planning = { path = "../grpc/api" }
+aries_explainability = { path = "../../explainability" }
+anyhow = { workspace = true }
+prost = { workspace = true }
+itertools = { workspace = true }
+serde_json = { version = "1.0", features = ["raw_value"] }
+
+[[bin]]
+name = "beluga"
+path = "src/bin/main.rs"

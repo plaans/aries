@@ -14,6 +14,7 @@ members = [
     "examples/knapsack",
     "validator",
     "explainability",
+    "planning/beluga_study",
 ]
 resolver = "2"
 
