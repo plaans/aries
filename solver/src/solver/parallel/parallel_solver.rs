@@ -115,6 +115,28 @@ impl<Lbl: Label> ParSolver<Lbl> {
         rcv
     }
 
+    pub fn incremental_push_all(&mut self, assumptions: Vec<Lit>) -> Result<(), UnsatCore> {
+        let mut res: Result<(), UnsatCore> = Ok(());
+        for s in self.solvers.iter_mut() {
+            match s {
+                Worker::Running(_) => panic!(),
+                Worker::Halting => panic!(),
+                Worker::Idle(s) => {
+                    if let Err((_, unsat_core)) = s.incremental_push_all(assumptions.clone()) {
+                        if let Err(ref uc) = res {
+                            if unsat_core.literals().len() < uc.literals().len() {
+                                res = Err(unsat_core);
+                            }
+                        } else {
+                            res = Err(unsat_core);
+                        }
+                    }
+                },
+            }
+        }
+        res
+    }
+
     /// Solve the problem that was given on initialization, using all available solvers.
     /// 
     /// In case of unsatisfiability, will return an unsat core of the assumptions pushed to the worker solvers
@@ -123,7 +145,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// WARNING: See bug description in `incremental_push` documentation `solve_impl.rs`.
     /// Currently, as a workaround, pushing assumptions should be done in the `adapt` closure given to `new`.
     pub fn incremental_solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
-        assert!(
+        debug_assert!(
             self.solvers.iter()
                 .map(|s| match s {
                         Worker::Running(_) => panic!(),
