@@ -5,7 +5,7 @@ use aries::model::Label;
 use aries::reif::Reifiable;
 use aries::solver::Exit;
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Instant};
 
 use crate::musmcs_enumeration::{MusMcsEnumerationConfig, MusMcsEnumerationResult};
 use subsolvers::{MapSolver, SubsetSolver, SubsetSolverImpl};
@@ -70,11 +70,34 @@ impl<Lbl: Label> Marco<Lbl> {
         self.subset_solver.register_soft_constraint_as_necessarily_in_every_mus(soft_constraint_reif_lit)
     }
 
-    pub fn run(&mut self) -> Result<MusMcsEnumerationResult, Exit> {
-        let mut result = MusMcsEnumerationResult {
-            muses: self.config.return_muses.then(Vec::<BTreeSet<Lit>>::new),
-            mcses: self.config.return_mcses.then(Vec::<BTreeSet<Lit>>::new),
-        };
+    pub fn run(&mut self) -> Result<MusMcsEnumerationResult, MusMcsEnumerationResult> {
+        let mut muses = self.config.return_muses.then(Vec::<BTreeSet<Lit>>::new);
+        let mut mcses = self.config.return_mcses.then(Vec::<BTreeSet<Lit>>::new);
+
+        let start = Instant::now();
+        if self._run(&mut muses, &mut mcses).is_ok() {
+            debug_assert!(muses.as_ref().is_none_or(|v| v.iter().all_unique()));
+            debug_assert!(mcses.as_ref().is_none_or(|v| v.iter().all_unique()));
+            Ok(MusMcsEnumerationResult {
+                muses,
+                mcses,
+                complete: Some(true),
+                run_time: Some(start.elapsed()),
+            })
+        } else {
+            // Even if the algorithm exits / is interrupted, return the (incomplete) result.
+            debug_assert!(muses.as_ref().is_none_or(|v| v.iter().all_unique()));
+            debug_assert!(mcses.as_ref().is_none_or(|v| v.iter().all_unique()));
+            Ok(MusMcsEnumerationResult {
+                muses,
+                mcses,
+                complete: Some(false),
+                run_time: Some(start.elapsed()),
+            })
+        }
+    }
+
+    fn _run(&mut self, muses: &mut Option<Vec<BTreeSet<Lit>>>, mcses: &mut Option<Vec<BTreeSet<Lit>>>) -> Result<(), Exit> {
         while let Some(next_seed) = self.map_solver.find_unexplored_seed()? {
             let seed = next_seed;
             if self
@@ -82,9 +105,11 @@ impl<Lbl: Label> Marco<Lbl> {
                 .check_subset(&seed)?
                 .is_ok()
             {
-                if let Some(ref mut mcses) = result.mcses {
+                if let Some(mcses) = mcses {
                     let (mss, mcs) = self.subset_solver.grow(&seed)?;
                     self.map_solver.block_down(&mss);
+                    println!("mcs: {mcs:?}");
+                    assert!(mcses.iter().all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
                     mcses.push(mcs);
                 } else {
                     self.case_seed_sat_only_muses_optimization(&seed)?;
@@ -92,12 +117,14 @@ impl<Lbl: Label> Marco<Lbl> {
             } else {
                 let mus = self.subset_solver.shrink(&seed)?;
                 self.map_solver.block_up(&mus);
-                if let Some(ref mut muses) = result.muses {
+                if let Some(muses) = muses {
+                    println!("mus: {mus:?}");
+                    assert!(muses.iter().all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
                     muses.push(mus);
                 }
             }
         }
-        Ok(result)
+        Ok(())
     }
 
     fn case_seed_sat_only_muses_optimization(&mut self, seed: &BTreeSet<Lit>) -> Result<(), Exit> {
