@@ -6,7 +6,6 @@ use crate::adapter::var_int_from_expr;
 use crate::constraint::Constraint;
 use crate::model::Model;
 use crate::traits::Flatzinc;
-use crate::traits::Name;
 use crate::var::VarInt;
 
 #[derive(Clone, Debug)]
@@ -55,12 +54,7 @@ impl IntEq {
 
 impl Flatzinc for IntEq {
     fn fzn(&self) -> String {
-        format!(
-            "{}({:?}, {:?});\n",
-            Self::NAME,
-            self.a.name(),
-            self.b.name()
-        )
+        format!("{}({:?}, {:?});\n", Self::NAME, self.a.fzn(), self.b.fzn())
     }
 }
 

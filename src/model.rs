@@ -273,7 +273,7 @@ impl Model {
     /// Add the given constraint to the model.
     /// If needed, its arguments are added to the model.
     ///
-    /// TODO: the constraint args might be unkown from the model
+    /// TODO: the constraint args might be unknown from the model
     pub fn add_constraint(&mut self, constraint: Constraint) {
         self.constraints.push(constraint);
     }

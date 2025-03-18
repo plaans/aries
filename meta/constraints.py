@@ -38,17 +38,13 @@ class Identifier:
 
 class ArgType:
 
-    def __init__(self, flatzinc_type: str, rust_inner_type: str, is_array: bool) -> None:
+    def __init__(self, flatzinc_type: str, rust_type: str, rust_import: str, rust_expr_fn: str) -> None:
         self.flatzinc_type = flatzinc_type
-        self.rust_inner_type = rust_inner_type
-        self.is_var = "var" in flatzinc_type
-        self.rust_inner_type_mod = "var" if self.is_var else "par"
-        self.is_array = is_array
-        self.rust_rc_type = f"Rc<{self.rust_inner_type}>"
-        self.rust_type = f"Vec<{self.rust_rc_type}>" if self.is_array else self.rust_rc_type
-        self.rust_import = f"use crate::{self.rust_inner_type_mod}::{self.rust_inner_type};\n"
-        self.rust_from_expr_fn = snake(rust_inner_type).removeprefix("par_") + \
-            ("_vec" if self.is_array else "") + "_from_expr"
+        self.rust_type = rust_type
+        self.rust_import = rust_import
+        self.rust_expr_fn = rust_expr_fn
+        self.need_rc = "Rc" in rust_type
+        self.is_array = "Vec" in rust_type
 
     def from_str(self, s: str) -> ArgType:
         if s == self.flatzinc_type:
@@ -76,14 +72,54 @@ class ArgTypeFactory:
 class Arg:
     ARG_TYPE_FACTORY = ArgTypeFactory(
         [
-            ArgType("int", "ParInt", False),
-            ArgType("var int", "VarInt", False),
-            ArgType("array [int] of int", "ParInt", True),
-            ArgType("array [int] of var int", "VarInt", True),
-            ArgType("bool", "ParBool", False),
-            ArgType("var bool", "VarBool", False),
-            ArgType("array [int] of bool", "ParBool", True),
-            ArgType("array [int] of var bool", "VarBool", True),
+            ArgType(
+                flatzinc_type="int",
+                rust_type="Int",
+                rust_import="use crate::types::Int;\n",
+                rust_expr_fn="int_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="var int",
+                rust_type="Rc<VarInt>",
+                rust_import="use crate::var::VarInt;\n",
+                rust_expr_fn="var_int_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="array [int] of int",
+                rust_type="Vec<Int>",
+                rust_import="use crate::types::Int;\n",
+                rust_expr_fn="vec_int_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="array [int] of var int",
+                rust_type="Vec<Rc<VarInt>>",
+                rust_import="use crate::var::VarInt;\n",
+                rust_expr_fn="vec_var_int_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="bool",
+                rust_type="bool",
+                rust_import="",
+                rust_expr_fn="bool_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="var bool",
+                rust_type="Rc<VarBool>",
+                rust_import="use crate::var::VarBool;\n",
+                rust_expr_fn="var_bool_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="array [int] of bool",
+                rust_type="Vec<bool>",
+                rust_import="",
+                rust_expr_fn="vec_bool_from_expr",
+            ),
+            ArgType(
+                flatzinc_type="array [int] of var bool",
+                rust_type="Vec<Rc<VarBool>>",
+                rust_import="use crate::var::VarBool;\n",
+                rust_expr_fn="vec_var_bool_from_expr",
+            ),
         ]
     )
 
@@ -153,13 +189,12 @@ class Predicate:
         imports += "\n"
         imports += "use flatzinc::ConstraintItem;\n"
         imports += "\n"
-        from_expr_fns = set(arg.type.rust_from_expr_fn for arg in self.args)
+        from_expr_fns = set(arg.type.rust_expr_fn for arg in self.args)
         for from_expr_fn in sorted(from_expr_fns):
             imports += f"use crate::adapter::{from_expr_fn};\n"
         imports += "use crate::constraint::Constraint;\n"
         imports += "use crate::model::Model;\n"
         imports += "use crate::traits::Flatzinc;\n"
-        imports += "use crate::traits::Name;\n"
         type_imports = set(arg.type.rust_import for arg in self.args)
         for type_import in sorted(type_imports):
             imports += type_import
@@ -202,7 +237,7 @@ class Predicate:
         try_from += 3*TAB + "item.exprs.len(),\n"
         try_from += 2*TAB + ");\n"
         for i, arg in enumerate(self.args):
-            try_from += 2*TAB + f"let {arg.identifier} = {arg.type.rust_from_expr_fn}(&item.exprs[{i}], model)?;\n"
+            try_from += 2*TAB + f"let {arg.identifier} = {arg.type.rust_expr_fn}(&item.exprs[{i}], model)?;\n"
         try_from += 2*TAB + "Ok(Self::new(" + ", ".join(arg.identifier for arg in self.args) + "))\n"
         try_from += TAB + "}\n"
         return try_from
@@ -226,7 +261,7 @@ class Predicate:
         fzn += 2*TAB + 'format!('
         fzn += '"{}(' + ", ".join(["{:?}"]*len(self.args))
         fzn += ');\\n", Self::NAME, '
-        fzn += ", ".join(f"self.{arg.identifier}.fzn()" if arg.type.is_array else f"self.{arg.identifier}.name()" for arg in self.args)
+        fzn += ", ".join(f"self.{arg.identifier}.fzn()" for arg in self.args)
         fzn += ")\n"
         fzn += TAB + "}\n"
         fzn += "}\n"
