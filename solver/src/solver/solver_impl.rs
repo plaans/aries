@@ -606,10 +606,10 @@ impl<Lbl: Label> Solver<Lbl> {
     /// as well as the provided assumptions that were pushed successfully.
     pub fn incremental_push_all(
         &mut self,
-        assumptions: impl IntoIterator<Item = Lit>,
+        assumptions: Vec<Lit>,
     ) -> Result<(), (Vec<Lit>, UnsatCore)> {
         let mut successfully_pushed = vec![];
-        for lit in assumptions.into_iter() {
+        for lit in assumptions {
             match self.incremental_push(lit) {
                 Ok(_) => successfully_pushed.push(lit),
                 Err(unsat_core) => return Err((successfully_pushed, unsat_core)),
@@ -647,7 +647,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions on the stack)
     pub fn solve_with_assumptions(
         &mut self,
-        assumption_lits: impl IntoIterator<Item = Lit>,
+        assumptions: Vec<Lit>,
     ) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
@@ -663,7 +663,7 @@ impl<Lbl: Label> Solver<Lbl> {
             }
         };
 
-        for lit in assumption_lits {
+        for lit in assumptions {
             if let Err(unsat_core) = self.assume_and_propagate(lit) {
                 return Ok(Err(unsat_core));
             }
