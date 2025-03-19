@@ -262,6 +262,13 @@ pub fn solve(
                 println!("No solution found for the warm-up plan");
                 return Ok(SolverResult::Unsat);
             }
+            // A solution has been found and the optimization process can start.
+            else {
+                on_new_sol(
+                    &warmed_pb.clone().expect("No warm-up problem"),
+                    initial_solution.as_ref().unwrap().1.clone(),
+                );
+            }
         }
         // No solution found for the warm-up plan, stop here.
         else {
