@@ -16,4 +16,5 @@ X_INTRODUCED_14_ = 3;
 X_INTRODUCED_15_ = 3;
 X_INTRODUCED_16_ = 3;
 X_INTRODUCED_17_ = 3;
+x = [5, 5, 5, 5, 5, 5, 5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3];
 ----------

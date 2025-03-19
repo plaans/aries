@@ -11,7 +11,9 @@ use crate::domain::BoolDomain;
 use crate::domain::IntDomain;
 use crate::par::Par;
 use crate::par::ParBool;
+use crate::par::ParBoolArray;
 use crate::par::ParInt;
+use crate::par::ParIntArray;
 use crate::solve::Goal;
 use crate::solve::Objective;
 use crate::solve::SolveItem;
@@ -132,6 +134,13 @@ impl Model {
         self.get_par(name)?.clone().try_into()
     }
 
+    /// Get the array of int parameter with the given name.
+    ///
+    /// Fail if no array of int parameter has the given name.
+    pub fn get_par_int_array(&self, name: &String) -> Result<Rc<ParIntArray>> {
+        self.get_par(name)?.clone().try_into()
+    }
+
     /// Get the bool parameter with the given name.
     ///
     /// Fail if no bool parameter has the given name.
@@ -244,6 +253,30 @@ impl Model {
         Ok(variable)
     }
 
+    /// Create a new boolean variable array and add it to the model.
+    pub fn new_var_bool_array(
+        &mut self,
+        variables: Vec<Rc<VarBool>>,
+        name: String,
+    ) -> Result<Rc<VarBoolArray>> {
+        let variable: Rc<VarBoolArray> =
+            VarBoolArray::new(variables, name).into();
+        self.add_var(variable.clone())?;
+        Ok(variable)
+    }
+
+    /// Create a new integer variable array and add it to the model.
+    pub fn new_var_int_array(
+        &mut self,
+        variables: Vec<Rc<VarInt>>,
+        name: String,
+    ) -> Result<Rc<VarIntArray>> {
+        let variable: Rc<VarIntArray> =
+            VarIntArray::new(variables, name).into();
+        self.add_var(variable.clone())?;
+        Ok(variable)
+    }
+
     /// Create a new integer parameter and add it to the model.
     ///
     /// Fail if the parameter name is already taken.
@@ -253,6 +286,32 @@ impl Model {
         value: Int,
     ) -> Result<Rc<ParInt>> {
         let parameter: Rc<ParInt> = ParInt::new(name, value).into();
+        self.add_par(parameter.clone())?;
+        Ok(parameter)
+    }
+
+    /// Create a new array of boolean parameters and add it to the model.
+    ///
+    /// Fail if the name is already taken.
+    pub fn new_par_bool_array(
+        &mut self,
+        name: String,
+        value: Vec<bool>,
+    ) -> Result<Rc<ParBoolArray>> {
+        let parameter: Rc<ParBoolArray> = ParBoolArray::new(name, value).into();
+        self.add_par(parameter.clone())?;
+        Ok(parameter)
+    }
+
+    /// Create a new array of integer parameters and add it to the model.
+    ///
+    /// Fail if the name is already taken.
+    pub fn new_par_int_array(
+        &mut self,
+        name: String,
+        value: Vec<Int>,
+    ) -> Result<Rc<ParIntArray>> {
+        let parameter: Rc<ParIntArray> = ParIntArray::new(name, value).into();
         self.add_par(parameter.clone())?;
         Ok(parameter)
     }

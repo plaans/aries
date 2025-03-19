@@ -1,17 +1,19 @@
+use std::rc::Rc;
 use std::str::FromStr;
 
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
+use flatzinc::ArrayOfIntExpr;
 use flatzinc::ConstraintItem;
 use flatzinc::ParDeclItem;
 use flatzinc::Stmt;
 use flatzinc::VarDeclItem;
 
-use crate::adapter::bool_from_bool_expr;
+use crate::adapter::bool_from_expr;
 use crate::adapter::goal_from_optim_type;
-use crate::adapter::int_from_int_expr;
+use crate::adapter::int_from_expr;
 use crate::adapter::var_bool_from_expr;
 use crate::adapter::var_int_from_expr;
 use crate::constraint::builtins::*;
@@ -20,6 +22,7 @@ use crate::domain::IntDomain;
 use crate::domain::IntRange;
 use crate::model::Model;
 use crate::types::Int;
+use crate::var::VarInt;
 
 pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
     let mut model = Model::new();
@@ -63,6 +66,10 @@ pub fn parse_par_decl_item(
         ParDeclItem::Int { id, int } => {
             model.new_par_int(id, int.try_into()?)?;
         }
+        ParDeclItem::ArrayOfInt { ix: _, id, v } => {
+            let value: Vec<Int> = v.iter().map(|x| *x as Int).collect();
+            model.new_par_int_array(id, value)?;
+        }
         _ => todo!(),
     }
     Ok(())
@@ -75,7 +82,7 @@ pub fn parse_var_decl_item(
     match var_decl_item {
         VarDeclItem::Bool { id, expr, annos: _ } => match expr {
             Some(e) => {
-                let value = bool_from_bool_expr(&e, model)?;
+                let value = bool_from_expr(&e.into(), model)?;
                 model.new_var_bool(BoolDomain::Singleton(value), id)?;
             }
             None => {
@@ -92,7 +99,7 @@ pub fn parse_var_decl_item(
             let lb = Int::try_from(lb).unwrap();
             let ub = Int::try_from(ub).unwrap();
             let domain = if let Some(e) = expr {
-                let value = int_from_int_expr(&e, model)?;
+                let value = int_from_expr(&e.into(), model)?;
                 ensure!(
                     lb <= value && value <= ub,
                     "{} is not in {}..{}",
@@ -105,6 +112,31 @@ pub fn parse_var_decl_item(
                 IntRange::new(lb, ub)?.into()
             };
             model.new_var_int(domain.into(), id)?;
+        }
+        VarDeclItem::ArrayOfInt {
+            ix: _,
+            id,
+            annos: _,
+            array_expr,
+        } => {
+            let e = array_expr.expect("expected array expression");
+            match e {
+                ArrayOfIntExpr::Array(int_exprs) => {
+                    let vars: anyhow::Result<Vec<Rc<VarInt>>> = int_exprs
+                        .iter()
+                        .cloned()
+                        .map(|e| var_int_from_expr(&e.into(), model))
+                        .collect();
+                    model.new_var_int_array(vars?, id)?;
+                }
+                ArrayOfIntExpr::VarParIdentifier(id) => {
+                    let var = model.get_var_int_array(&id)?;
+                    model.new_var_int_array(
+                        var.variables().cloned().collect(),
+                        id,
+                    )?;
+                }
+            };
         }
         _ => todo!(),
     }

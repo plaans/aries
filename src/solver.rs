@@ -54,7 +54,7 @@ impl Solver {
             FznVar::Bool(v) => self.add_var_bool(v),
             FznVar::Int(v) => self.add_var_int(v),
             FznVar::BoolArray(_) => todo!(),
-            FznVar::IntArray(_) => todo!(),
+            FznVar::IntArray(_) => { /* Do nothing */ }
         }
     }
 
@@ -110,14 +110,22 @@ impl Solver {
                     };
                     sum.push(item);
                 }
-                let linear_leq = NFLinearLeq { sum, upper_bound: *lin.c() };
+                let linear_leq = NFLinearLeq {
+                    sum,
+                    upper_bound: *lin.c(),
+                };
                 let rev_linear_leq = reversed_leq(&linear_leq);
                 let reif_expr = ReifExpr::Linear(linear_leq);
                 let rev_reif_expr = ReifExpr::Linear(rev_linear_leq);
-                let aries_constraint = AriesConstraint::Reified(reif_expr, Lit::TRUE);
-                let rev_aries_constraint = AriesConstraint::Reified(rev_reif_expr, Lit::TRUE);
+                let aries_constraint =
+                    AriesConstraint::Reified(reif_expr, Lit::TRUE);
+                let rev_aries_constraint =
+                    AriesConstraint::Reified(rev_reif_expr, Lit::TRUE);
                 self.aries_model.shape.constraints.push(aries_constraint);
-                self.aries_model.shape.constraints.push(rev_aries_constraint);
+                self.aries_model
+                    .shape
+                    .constraints
+                    .push(rev_aries_constraint);
             }
         };
     }
@@ -162,8 +170,17 @@ impl Solver {
                 debug_assert_eq!(lb, ub);
                 Assignment::Int(v.clone(), lb)
             }
-            FznVar::BoolArray(_) => todo!(),
-            FznVar::IntArray(_) => todo!(),
+            FznVar::IntArray(var) => {
+                let mut values = Vec::new();
+                for v in var.variables() {
+                    let var_ref = self.translation.get(v.id()).unwrap();
+                    let (lb, ub) = domains.bounds(*var_ref);
+                    debug_assert_eq!(lb, ub);
+                    values.push(lb);
+                }
+                Assignment::IntArray(var.clone(), values)
+            }
+            FznVar::BoolArray(_) => todo!("bool array assignment"),
         }
     }
 }

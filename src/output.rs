@@ -3,7 +3,7 @@ use crate::var::Assignment;
 
 const UNSAT: &str = "=====UNSATISFIABLE=====";
 const END_OF_SOLUTION: &str = "----------";
-const END_OF_SEARCH: &str = "==========";
+const _END_OF_SEARCH: &str = "==========";
 
 pub fn make_output(result: Option<Vec<Assignment>>) -> String {
     match result {
