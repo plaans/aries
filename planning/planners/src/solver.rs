@@ -97,10 +97,7 @@ impl FromStr for Metric {
     }
 }
 
-pub struct WarmingResult {
-    pub result: SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>,
-    pub cost: Option<IntCst>,
-}
+pub type WarmingResult = SolverResult<(Arc<FiniteProblem>, Arc<Domains>, Option<IntCst>)>;
 
 pub fn preprocess(problem: &mut Problem) -> Arc<Metadata> {
     if PRINT_RAW_MODEL.get() {
@@ -167,22 +164,10 @@ pub fn reproduce(
     println!("=======================");
 
     let warming_result = match result {
-        SolverResult::Sol((sol, cost)) => WarmingResult {
-            result: SolverResult::Sol((pb, sol)),
-            cost,
-        },
-        SolverResult::Timeout(Some((sol, cost))) => WarmingResult {
-            result: SolverResult::Timeout(Some((pb, sol))),
-            cost,
-        },
-        SolverResult::Timeout(None) => WarmingResult {
-            result: SolverResult::Timeout(None),
-            cost: None,
-        },
-        SolverResult::Unsat => WarmingResult {
-            result: SolverResult::Unsat,
-            cost: None,
-        },
+        SolverResult::Sol((sol, cost)) => SolverResult::Sol((pb, sol, cost)),
+        SolverResult::Timeout(Some((sol, cost))) => SolverResult::Timeout(Some((pb, sol, cost))),
+        SolverResult::Timeout(None) => SolverResult::Timeout(None),
+        SolverResult::Unsat => SolverResult::Unsat,
     };
 
     Ok(Some(warming_result))
@@ -231,31 +216,22 @@ pub fn solve(
         deadline,
     )?;
 
-    let mut best_cost = warming_result
-        .as_ref()
-        .and_then(|res| res.cost)
-        .unwrap_or(INT_CST_MAX + 1);
-    let warmed_pb = warming_result
-        .as_ref()
-        .map(|res| &res.result)
-        .and_then(|res| match res {
-            SolverResult::Sol((pb, _)) => Some(pb.clone()),
-            _ => None,
-        });
-    let initial_solution: Option<(IntCst, Arc<Domains>)> =
-        warming_result
-            .as_ref()
-            .map(|res| &res.result)
-            .and_then(|res| match res {
-                SolverResult::Sol((_, sol)) => Some((best_cost, sol.clone())),
-                _ => None,
-            });
+    let warmed_pb = warming_result.as_ref().and_then(|res| match res {
+        SolverResult::Sol((pb, _, _)) => Some(pb.clone()),
+        _ => None,
+    });
+    let mut best = warming_result.as_ref().and_then(|res| match res {
+        SolverResult::Sol((pb, sol, cost)) => Some((pb.clone(), sol.clone(), cost.unwrap_or(INT_CST_MAX + 1))),
+        _ => None,
+    });
+    let initial_solution = best.as_ref().map(|(_, sol, cost)| (*cost, sol.clone()));
+    let best_cost = |best: &Option<(Arc<_>, Arc<_>, i32)>| best.as_ref().map(|(_, _, c)| *c).unwrap_or(INT_CST_MAX + 1);
 
     if warm_up_plan.is_some() {
-        if let Some(solver_result) = warming_result.as_ref().map(|res| res.result.clone()) {
+        if let Some(warming_result) = warming_result {
             // A solution has been found and there is no metric to optimize, stop here.
             if metric.is_none() {
-                return Ok(solver_result);
+                return Ok(warming_result.map(|(pb, sol, _)| (pb, sol)));
             }
             // A solution has been found but the initial solution is empty, stop here.
             else if initial_solution.is_none() {
@@ -263,6 +239,7 @@ pub fn solve(
                 return Ok(SolverResult::Unsat);
             }
             // A solution has been found and the optimization process can start.
+            // Notify the user of the initial solution.
             else {
                 on_new_sol(
                     &warmed_pb.clone().expect("No warm-up problem"),
@@ -279,15 +256,12 @@ pub fn solve(
 
     let start = Instant::now();
     for depth in min_depth..=max_depth {
-        // Build the finite problem.
-        let mut pb: FiniteProblem = if depth == min_depth {
-            warmed_pb
-                .clone()
-                .map(|pb| pb.as_ref().clone())
-                .unwrap_or(init_pb.clone())
-        } else {
-            init_pb.clone()
-        };
+        // Get the finite problem.
+        let mut pb: FiniteProblem = warmed_pb
+            .as_ref()
+            .filter(|_| depth == min_depth)
+            .map(|pb| pb.as_ref().clone())
+            .unwrap_or(init_pb.clone());
 
         // Log current depth.
         let depth_string = if depth == u32::MAX {
@@ -326,21 +300,23 @@ pub fn solve(
             on_new_valid_assignment,
             if depth != 0 { None } else { initial_solution.clone() },
             deadline,
-            best_cost - 1,
+            best_cost(&best) - 1,
         );
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
             SolverResult::Unsat => {} // continue (increase depth)
-            SolverResult::Sol((_, (_, cost))) if metric.is_some() && depth < max_depth => {
+            SolverResult::Sol((pb, (sol, cost))) if metric.is_some() && depth < max_depth => {
                 let cost = cost.expect("Not cost provided in optimization problem");
                 assert!(
-                    cost < best_cost,
-                    "New cost ({cost}) isn't better than the current best ({best_cost})"
+                    cost < best_cost(&best),
+                    "New cost ({cost}) isn't better than the current best ({})",
+                    best_cost(&best)
                 );
-                best_cost = cost; // continue with new cost bound
+                best = Some((pb, sol, cost)); // continue with new cost bound
             }
+            SolverResult::Timeout(None) => return Ok(SolverResult::Timeout(best.map(|(pb, sol, _)| (pb, sol)))), // stop here with the current best solution
             other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
         }
     }
