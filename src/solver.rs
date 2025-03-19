@@ -2,11 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use aries::core::state::Domains;
-use aries::core::Lit;
 use aries::core::VarRef;
 use aries::model::lang::linear::NFLinearLeq;
 use aries::model::lang::linear::NFLinearSumItem;
-use aries::model::Constraint as AriesConstraint;
 use aries::model::Model as AriesModel;
 use aries::reif::ReifExpr;
 use aries::solver::Exit;
@@ -89,17 +87,13 @@ impl Solver {
                 let var_ref_a = self.translation.get(c.a().id()).unwrap();
                 let var_ref_b = self.translation.get(c.b().id()).unwrap();
                 let reif_expr = ReifExpr::Eq(*var_ref_a, *var_ref_b);
-                let aries_constraint =
-                    AriesConstraint::Reified(reif_expr, Lit::TRUE);
-                self.aries_model.shape.constraints.push(aries_constraint);
+                self.aries_model.enforce(reif_expr, []);
             }
             FznConstraint::BoolEq(c) => {
                 let var_ref_a = self.translation.get(c.a().id()).unwrap();
                 let var_ref_b = self.translation.get(c.b().id()).unwrap();
                 let reif_expr = ReifExpr::Eq(*var_ref_a, *var_ref_b);
-                let aries_constraint =
-                    AriesConstraint::Reified(reif_expr, Lit::TRUE);
-                self.aries_model.shape.constraints.push(aries_constraint);
+                self.aries_model.enforce(reif_expr, []);
             }
             FznConstraint::IntLinLe(lin) => {
                 let mut sum = Vec::new();
@@ -116,8 +110,7 @@ impl Solver {
                     upper_bound: *lin.c(),
                 };
                 let reif_expr = ReifExpr::Linear(linear_leq);
-                let constraint = AriesConstraint::Reified(reif_expr, Lit::TRUE);
-                self.aries_model.shape.constraints.push(constraint);
+                self.aries_model.enforce(reif_expr, []);
             }
             FznConstraint::IntLinEq(lin) => {
                 let lin_le_1 = IntLinLe::new(
