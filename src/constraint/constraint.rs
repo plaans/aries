@@ -4,5 +4,6 @@ use crate::constraint::builtins::*;
 pub enum Constraint {
     IntEq(IntEq),
     IntLinEq(IntLinEq),
+    IntLinLe(IntLinLe),
     BoolEq(BoolEq),
 }

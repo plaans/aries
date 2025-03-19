@@ -1,0 +1,3 @@
+var 0..4: x;
+var 2..5: y;
+constraint int_lin_le([-3,-2], [x,y], -21);

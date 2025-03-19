@@ -12,6 +12,7 @@ use aries::reif::ReifExpr;
 use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
 
+use crate::constraint::builtins::IntLinLe;
 use crate::constraint::Constraint as FznConstraint;
 use crate::domain::BoolDomain;
 use crate::domain::IntDomain;
@@ -100,7 +101,7 @@ impl Solver {
                     AriesConstraint::Reified(reif_expr, Lit::TRUE);
                 self.aries_model.shape.constraints.push(aries_constraint);
             }
-            FznConstraint::IntLinEq(lin) => {
+            FznConstraint::IntLinLe(lin) => {
                 let mut sum = Vec::new();
                 for (factor, var) in lin.a().iter().zip(lin.b()) {
                     let var_ref = self.translation.get(var.id()).unwrap();
@@ -114,18 +115,23 @@ impl Solver {
                     sum,
                     upper_bound: *lin.c(),
                 };
-                let rev_linear_leq = reversed_leq(&linear_leq);
                 let reif_expr = ReifExpr::Linear(linear_leq);
-                let rev_reif_expr = ReifExpr::Linear(rev_linear_leq);
-                let aries_constraint =
-                    AriesConstraint::Reified(reif_expr, Lit::TRUE);
-                let rev_aries_constraint =
-                    AriesConstraint::Reified(rev_reif_expr, Lit::TRUE);
-                self.aries_model.shape.constraints.push(aries_constraint);
-                self.aries_model
-                    .shape
-                    .constraints
-                    .push(rev_aries_constraint);
+                let constraint = AriesConstraint::Reified(reif_expr, Lit::TRUE);
+                self.aries_model.shape.constraints.push(constraint);
+            }
+            FznConstraint::IntLinEq(lin) => {
+                let lin_le_1 = IntLinLe::new(
+                    lin.a().clone(),
+                    lin.b().clone(),
+                    lin.c().clone(),
+                );
+                let lin_le_2 = IntLinLe::new(
+                    lin.a().iter().map(|x| -x).collect(),
+                    lin.b().clone(),
+                    -lin.c(),
+                );
+                self.add_constraint(&lin_le_1.into());
+                self.add_constraint(&lin_le_2.into());
             }
         };
     }
@@ -182,14 +188,6 @@ impl Solver {
             }
             FznVar::BoolArray(_) => todo!("bool array assignment"),
         }
-    }
-}
-
-/// If input is a + b <= c return a + b >= c.
-fn reversed_leq(leq: &NFLinearLeq) -> NFLinearLeq {
-    NFLinearLeq {
-        sum: leq.sum.iter().copied().map(|x| -x).collect(),
-        upper_bound: -leq.upper_bound,
     }
 }
 

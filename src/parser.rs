@@ -158,6 +158,10 @@ pub fn parse_constraint_item(
             model
                 .add_constraint(IntLinEq::try_from_item(c_item, model)?.into());
         }
+        IntLinLe::NAME => {
+            model
+                .add_constraint(IntLinLe::try_from_item(c_item, model)?.into());
+        }
         _ => anyhow::bail!(format!("unknown constraint '{}'", c_item.id)),
     }
     Ok(())
