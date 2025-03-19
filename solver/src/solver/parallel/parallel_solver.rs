@@ -1,3 +1,4 @@
+use crate::core::IntCst;
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Label, ModelShape};
@@ -141,7 +142,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         on_improved_solution: impl Fn(Solution),
-        initial_solution: Option<Solution>,
+        initial_solution: Option<(IntCst, Solution)>,
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let objective = objective.into();

@@ -235,12 +235,19 @@ pub fn solve(
         .as_ref()
         .and_then(|res| res.cost)
         .unwrap_or(INT_CST_MAX + 1);
-    let initial_solution: Option<Arc<Domains>> =
+    let warmed_pb = warming_result
+        .as_ref()
+        .map(|res| &res.result)
+        .and_then(|res| match res {
+            SolverResult::Sol((pb, _)) => Some(pb.clone()),
+            _ => None,
+        });
+    let initial_solution: Option<(IntCst, Arc<Domains>)> =
         warming_result
             .as_ref()
             .map(|res| &res.result)
             .and_then(|res| match res {
-                SolverResult::Sol((_, sol)) => Some(sol.clone()),
+                SolverResult::Sol((_, sol)) => Some((best_cost, sol.clone())),
                 _ => None,
             });
 
@@ -266,7 +273,14 @@ pub fn solve(
     let start = Instant::now();
     for depth in min_depth..=max_depth {
         // Build the finite problem.
-        let mut pb = init_pb.clone();
+        let mut pb: FiniteProblem = if depth == min_depth {
+            warmed_pb
+                .clone()
+                .map(|pb| pb.as_ref().clone())
+                .unwrap_or(init_pb.clone())
+        } else {
+            init_pb.clone()
+        };
 
         // Log current depth.
         let depth_string = if depth == u32::MAX {
@@ -277,12 +291,14 @@ pub fn solve(
         println!("{depth_string} Solving with depth {depth_string}");
 
         // Populate the finite problem with the chronicle instances.
-        if htn_mode {
-            populate_with_task_network(&mut pb, &base_problem, depth)?;
-        } else if let Some(ref plan) = warm_up_plan {
-            populate_with_warm_up_plan(&mut pb, &base_problem, plan, depth)?;
-        } else {
-            populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
+        if depth != min_depth || warmed_pb.is_none() {
+            if htn_mode {
+                populate_with_task_network(&mut pb, &base_problem, depth)?;
+            } else if let Some(ref plan) = warm_up_plan {
+                populate_with_warm_up_plan(&mut pb, &base_problem, plan, depth)?;
+            } else {
+                populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
+            }
         }
 
         let pb = Arc::new(pb);
@@ -509,7 +525,7 @@ fn solve_finite_problem(
     minimize_metric: bool,
     htn_mode: bool,
     on_new_solution: impl Fn(Arc<SavedAssignment>),
-    initial_solution: Option<Arc<SavedAssignment>>,
+    initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
