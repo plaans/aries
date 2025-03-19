@@ -184,16 +184,16 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
         result = oneshot_planning(scenario)
 
         with subtest("Should returns exactly the same plan"):
-            assert str(result.plan) == str(scenario.plan)
-            assert result.quality == scenario.quality
+            assert str(result.plan) == str(scenario.plan), "Not the same plan"
+            assert result.quality == scenario.quality, "Not the same quality"
 
     def test_anytime(self, scenario: WarmUpScenario):
         results = list(anytime_planning(scenario))
 
         with subtest("The first plan should be exactly the same"):
             first_result = results[0]
-            assert str(first_result.plan) == str(scenario.plan)
-            assert first_result.quality == scenario.quality
+            assert str(first_result.plan) == str(scenario.plan), "Not the same first plan"
+            assert first_result.quality == scenario.quality, "Not the same first quality"
 
         with subtest("The plan is improved over time"):
             best = scenario.quality + 0.1
@@ -203,12 +203,12 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
                 assert result.quality is not None, f"Quality is None at {idx}"
                 assert result.quality < best, f"Quality is not improved at {idx}"
                 best = result.quality
-            assert best is not None
+            assert best is not None, "Best quality is None"
 
         with subtest("The last result should have a plan"):
             last_result = results[-1]
-            assert last_result.plan is not None
-            assert last_result.quality is not None
+            assert last_result.plan is not None, "Last plan is None"
+            assert last_result.quality is not None, "Last quality is None"
 
 
 class TestAriesCausalWarmUp(TestAriesWarmUp):
@@ -222,16 +222,16 @@ class TestAriesCausalWarmUp(TestAriesWarmUp):
         result = oneshot_planning(scenario)
 
         with subtest("Should returns a plan with at least the same quality"):
-            assert result.quality is not None
-            assert result.quality <= scenario.quality
+            assert result.quality is not None, "Quality is None"
+            assert result.quality <= scenario.quality, "Quality is not improved"
 
     def test_anytime(self, scenario: WarmUpScenario):
         results = list(anytime_planning(scenario))
 
         with subtest("The first plan should have at least the same quality"):
             first_result = results[0]
-            assert first_result.quality is not None
-            assert first_result.quality <= scenario.quality
+            assert first_result.quality is not None, "First quality is None"
+            assert first_result.quality <= scenario.quality, "First quality is not improved"
 
         with subtest("The plan is improved over time"):
             best = scenario.quality + 0.1
@@ -241,9 +241,9 @@ class TestAriesCausalWarmUp(TestAriesWarmUp):
                 assert result.quality is not None, f"Quality is None at {idx}"
                 assert result.quality < best, f"Quality is not improved at {idx}"
                 best = result.quality
-            assert best is not None
+            assert best is not None, "Best quality is None"
 
         with subtest("The last result should have a plan"):
             last_result = results[-1]
-            assert last_result.plan is not None
-            assert last_result.quality is not None
+            assert last_result.plan is not None, "Last plan is None"
+            assert last_result.quality is not None, "Last quality is None"
