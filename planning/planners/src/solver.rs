@@ -195,6 +195,7 @@ pub fn solve(
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
+    let default_best_cost = INT_CST_MAX + 1;
     let metadata = preprocess(&mut base_problem);
     let init_pb = FiniteProblem {
         model: base_problem.context.model.clone(),
@@ -221,11 +222,11 @@ pub fn solve(
         _ => None,
     });
     let mut best = warming_result.as_ref().and_then(|res| match res {
-        SolverResult::Sol((pb, sol, cost)) => Some((pb.clone(), sol.clone(), cost.unwrap_or(INT_CST_MAX + 1))),
+        SolverResult::Sol((pb, sol, cost)) => Some((pb.clone(), sol.clone(), cost.unwrap_or(default_best_cost))),
         _ => None,
     });
     let initial_solution = best.as_ref().map(|(_, sol, cost)| (*cost, sol.clone()));
-    let best_cost = |best: &Option<(Arc<_>, Arc<_>, i32)>| best.as_ref().map(|(_, _, c)| *c).unwrap_or(INT_CST_MAX + 1);
+    let best_cost = |b: &Option<(Arc<_>, Arc<_>, IntCst)>| b.as_ref().map(|(_, _, c)| *c).unwrap_or(default_best_cost);
 
     if warm_up_plan.is_some() {
         if let Some(warming_result) = warming_result {
