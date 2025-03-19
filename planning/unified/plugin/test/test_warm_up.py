@@ -15,6 +15,7 @@ from unified_planning.engines.results import (
     PlanGenerationResultStatus,
 )
 from unified_planning.io.pddl_reader import PDDLReader
+from unified_planning.model.metrics import MinimizeSequentialPlanLength
 from unified_planning.plans.plan import Plan, PlanKind
 from unified_planning.shortcuts import AnytimePlanner, OneshotPlanner, Problem
 
@@ -25,7 +26,7 @@ class WarmUpScenario:
     problem: Problem
     plan: str
     quality: float
-    timeout: int = 300
+    timeout: int = 1
 
     def __str__(self):
         return self.uid
@@ -90,16 +91,35 @@ class PlanningResult:
         raise ValueError(f"Unsupported plan kind: {plan.kind}")
 
 
+def _is_temporal(problem: Problem) -> bool:
+    return (
+        "CONTINUOUS_TIME" in problem.kind.features
+        or "DISCRETE_TIME" in problem.kind.features
+    )
+
+
 def _scenarios() -> Generator[WarmUpScenario, None, None]:
     fixtures_dir = Path(__file__).parent / "fixtures/warm_up"
+    first_print = True
     for domain_dir in fixtures_dir.iterdir():
         if not domain_dir.is_dir():
             continue
         domain_file = domain_dir / "domain.pddl"
         problem_file = domain_dir / "problem.pddl"
         for plan_file in domain_dir.glob("plan_*.txt"):
-            problem = PDDLReader().parse_problem(domain_file, problem_file)
+            problem: Problem = PDDLReader().parse_problem(domain_file, problem_file)
             problem.name = domain_dir.name
+            if not _is_temporal(problem) and (
+                len(problem.quality_metrics) == 0
+                or problem.quality_metrics[0].is_minimize_makespan()
+            ):
+                if first_print:
+                    print()
+                    first_print = False
+                print(f"🚨 Change the metric of non-temporal problem {problem.name}")
+                problem.clear_quality_metrics()
+                problem.add_quality_metric(MinimizeSequentialPlanLength())
+
             plan = plan_file.read_text()
             quality = float(plan_file.stem.split("_")[-1])
             uid = f"{domain_dir.name}/{quality}"
@@ -192,8 +212,12 @@ class TestAriesStrictWarmUp(TestAriesWarmUp):
 
         with subtest("The first plan should be exactly the same"):
             first_result = results[0]
-            assert str(first_result.plan) == str(scenario.plan), "Not the same first plan"
-            assert first_result.quality == scenario.quality, "Not the same first quality"
+            assert str(first_result.plan) == str(
+                scenario.plan
+            ), "Not the same first plan"
+            assert (
+                first_result.quality == scenario.quality
+            ), "Not the same first quality"
 
         with subtest("The plan is improved over time"):
             best = scenario.quality + 0.1
@@ -216,7 +240,7 @@ class TestAriesCausalWarmUp(TestAriesWarmUp):
         super().setup()
         os.environ["ARIES_LCP_SYMMETRY_BREAKING"] = "psp"
         os.environ["ARIES_WARM_UP"] = "causal"
-        os.environ["ARIES_USELESS_SUPPORTS"]="false"
+        os.environ["ARIES_USELESS_SUPPORTS"] = "false"
 
     def test_oneshot(self, scenario: WarmUpScenario):
         result = oneshot_planning(scenario)
@@ -231,7 +255,9 @@ class TestAriesCausalWarmUp(TestAriesWarmUp):
         with subtest("The first plan should have at least the same quality"):
             first_result = results[0]
             assert first_result.quality is not None, "First quality is None"
-            assert first_result.quality <= scenario.quality, "First quality is not improved"
+            assert (
+                first_result.quality <= scenario.quality
+            ), "First quality is not improved"
 
         with subtest("The plan is improved over time"):
             best = scenario.quality + 0.1
