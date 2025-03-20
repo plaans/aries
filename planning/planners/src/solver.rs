@@ -2,28 +2,31 @@ use crate::encode::{
     add_causal_same_plan_constraints, add_strict_same_plan_constraints, encode, populate_with_task_network,
     populate_with_template_instances, populate_with_warm_up_plan, EncodedProblem,
 };
-use crate::encoding::Encoding;
-use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
+use crate::encoding::{ChronicleId, Encoding};
+use crate::fmt::{extract_plan_actions, format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::search::{ForwardSearcher, ManualCausalSearch};
 use crate::Solver;
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use aries::core::state::Domains;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
 use aries::model::extensions::{AssignmentExt, SavedAssignment};
 use aries::model::lang::IAtom;
 use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
-use aries::solver::parallel::Solution;
+use aries::solver::parallel::{Solution, SolverResult};
 use aries::solver::search::activity::*;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::{Brancher, SearchControl};
+use aries::solver::Solver;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use itertools::Itertools;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -120,24 +123,19 @@ pub fn reproduce(
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
-    warm_up_plan: Option<Vec<ActionInstance>>,
+    warm_up_plan: Vec<ActionInstance>,
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
-) -> Result<Option<WarmingResult>> {
-    if warm_up_plan.is_none() {
-        return Ok(None);
-    }
-    let plan = &warm_up_plan.unwrap();
-    let start = Instant::now();
-
-    println!("===== Warming up ======");
-    populate_with_warm_up_plan(pb, &base_problem, plan, 0)?;
+    depth: u32,
+    start: Instant,
+) -> Result<WarmingResult> {
+    populate_with_warm_up_plan(pb, &base_problem, &warm_up_plan, depth)?;
 
     let mut constrained_pb = pb.clone();
     match WARM_UP.get() {
         WarmUpType::None => {}
-        WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, plan)?,
-        WarmUpType::Causal => add_causal_same_plan_constraints(&mut constrained_pb, plan)?,
+        WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, &warm_up_plan)?,
+        WarmUpType::Causal => add_causal_same_plan_constraints(&mut constrained_pb, &warm_up_plan)?,
     };
 
     let pb = Arc::new(pb.clone());
@@ -160,17 +158,9 @@ pub fn reproduce(
         deadline,
         INT_CST_MAX,
     );
-    println!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
-    println!("=======================");
+    print!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
 
-    let warming_result = match result {
-        SolverResult::Sol((sol, cost)) => SolverResult::Sol((pb, sol, cost)),
-        SolverResult::Timeout(Some((sol, cost))) => SolverResult::Timeout(Some((pb, sol, cost))),
-        SolverResult::Timeout(None) => SolverResult::Timeout(None),
-        SolverResult::Unsat => SolverResult::Unsat,
-    };
-
-    Ok(Some(warming_result))
+    Ok(result.map(|(sol, cost)| (pb, sol, cost)))
 }
 
 /// Search for plan based on the `base_problem`.
@@ -205,65 +195,67 @@ pub fn solve(
         chronicles: base_problem.chronicles.clone(),
         meta: metadata.clone(),
     };
-
-    let warming_result = reproduce(
-        &mut init_pb.clone(),
-        base_problem.clone(),
-        strategies,
-        metric,
-        htn_mode,
-        warm_up_plan.clone(),
-        on_new_sol.clone(),
-        deadline,
-    )?;
-
-    let warmed_pb = warming_result.as_ref().and_then(|res| match res {
-        SolverResult::Sol((pb, _, _)) => Some(pb.clone()),
-        _ => None,
-    });
-    let mut best = warming_result.as_ref().and_then(|res| match res {
-        SolverResult::Sol((pb, sol, cost)) => Some((pb.clone(), sol.clone(), cost.unwrap_or(default_best_cost))),
-        _ => None,
-    });
-    let initial_solution = best.as_ref().map(|(_, sol, cost)| (*cost, sol.clone()));
+    let mut best_plan = warm_up_plan.clone();
+    let mut best_sol = None;
     let best_cost = |b: &Option<(Arc<_>, Arc<_>, IntCst)>| b.as_ref().map(|(_, _, c)| *c).unwrap_or(default_best_cost);
 
-    if warm_up_plan.is_some() {
-        if let Some(warming_result) = warming_result {
-            // A solution has been found and there is no metric to optimize, stop here.
-            if metric.is_none() {
-                return Ok(warming_result.map(|(pb, sol, _)| (pb, sol)));
-            }
-            // A solution has been found but the initial solution is empty, stop here.
-            else if initial_solution.is_none() {
-                println!("No solution found for the warm-up plan");
-                return Ok(SolverResult::Unsat);
-            }
-            // A solution has been found and the optimization process can start.
-            // Notify the user of the initial solution.
-            else {
-                on_new_sol(
-                    &warmed_pb.clone().expect("No warm-up problem"),
-                    initial_solution.as_ref().unwrap().1.clone(),
-                );
-            }
-        }
-        // No solution found for the warm-up plan, stop here.
-        else {
-            println!("No solution found for the warm-up plan");
-            return Ok(SolverResult::Unsat);
-        }
-    }
+    // let warming_result = reproduce(
+    //     &mut init_pb.clone(),
+    //     base_problem.clone(),
+    //     strategies,
+    //     metric,
+    //     htn_mode,
+    //     warm_up_plan.clone(),
+    //     on_new_sol.clone(),
+    //     deadline,
+    // )?;
+
+    // let warmed_pb = warming_result.as_ref().and_then(|res| match res {
+    //     SolverResult::Sol((pb, _, _)) => Some(pb.clone()),
+    //     _ => None,
+    // });
+    // let mut best = warming_result.as_ref().and_then(|res| match res {
+    //     SolverResult::Sol((pb, sol, cost)) => Some((pb.clone(), sol.clone(), cost.unwrap_or(default_best_cost))),
+    //     _ => None,
+    // });
+    // let initial_solution = best.as_ref().map(|(_, sol, cost)| (*cost, sol.clone()));
+    // let best_cost = |b: &Option<(Arc<_>, Arc<_>, IntCst)>| b.as_ref().map(|(_, _, c)| *c).unwrap_or(default_best_cost);
+
+    // TODO: Return/Notify for first warm-up plan
+    // if warm_up_plan.is_some() {
+    //     println!("=== Got warm-up plan");
+    //     for action in warm_up_plan.as_ref().unwrap().iter() {
+    //         println!("  - {action:?}");
+    //     }
+
+    //     if let Some(warming_result) = warming_result {
+    //         // A solution has been found and there is no metric to optimize, stop here.
+    //         if metric.is_none() {
+    //             return Ok(warming_result.map(|(pb, sol, _)| (pb, sol)));
+    //         }
+    //         // A solution has been found but the initial solution is empty, stop here.
+    //         else if initial_solution.is_none() {
+    //             println!("No solution found for the warm-up plan");
+    //             return Ok(SolverResult::Unsat);
+    //         }
+    //         // A solution has been found and the optimization process can start.
+    //         // Notify the user of the initial solution.
+    //         else {
+    //             on_new_sol(
+    //                 &warmed_pb.clone().expect("No warm-up problem"),
+    //                 initial_solution.as_ref().unwrap().1.clone(),
+    //             );
+    //         }
+    //     }
+    //     // No solution found for the warm-up plan, stop here.
+    //     else {
+    //         println!("No solution found for the warm-up plan");
+    //         return Ok(SolverResult::Unsat);
+    //     }
+    // }
 
     let start = Instant::now();
     for depth in min_depth..=max_depth {
-        // Get the finite problem.
-        let mut pb: FiniteProblem = warmed_pb
-            .as_ref()
-            .filter(|_| depth == min_depth)
-            .map(|pb| pb.as_ref().clone())
-            .unwrap_or(init_pb.clone());
-
         // Log current depth.
         let depth_string = if depth == u32::MAX {
             "∞".to_string()
@@ -272,8 +264,74 @@ pub fn solve(
         };
         println!("{depth_string} Solving with depth {depth_string}");
 
+        // If there is a current best plan, try to reproduce it at the current depth to find an initial assignment.
+        let warming_result = if let Some(ref plan) = best_plan {
+            Some(reproduce(
+                &mut init_pb.clone(),
+                base_problem.clone(),
+                strategies,
+                metric,
+                htn_mode,
+                plan.clone(),
+                on_new_sol.clone(),
+                deadline,
+                depth,
+                start,
+            )?)
+        } else {
+            None
+        };
+
+        // Extract the information from the warming result.
+        let warmed_pb = warming_result.as_ref().and_then(|res| match res {
+            SolverResult::Sol((pb, _, _)) => Some(pb.clone()),
+            _ => None,
+        });
+        let initial_solution = warming_result.as_ref().and_then(|res| match res {
+            SolverResult::Sol((_, sol, cost)) => Some((cost.unwrap_or(default_best_cost), sol.clone())),
+            _ => None,
+        });
+
+        if best_plan.is_some() {}
+
+        // Return / Notify for the original warm-up plan
+        if warm_up_plan.is_some() && depth == min_depth {
+            if let Some(warming_result) = warming_result {
+                // A solution has been found and there is no metric to optimize, stop here.
+                if metric.is_none() {
+                    return Ok(warming_result.map(|(pb, sol, _)| (pb, sol)));
+                }
+                // TODO continue
+                // // A solution has been found but the initial solution is empty, stop here.
+                // else if initial_solution.is_none() {
+                //     println!("No solution found for the warm-up plan");
+                //     return Ok(SolverResult::Unsat);
+                // }
+                // A solution has been found and the optimization process can start.
+                // Notify the user of the initial solution.
+                else {
+                    on_new_sol(
+                        &warmed_pb.clone().expect("No warm-up problem"),
+                        initial_solution.as_ref().unwrap().1.clone(),
+                    );
+                }
+            }
+            // No solution found for the warm-up plan, stop here.
+            else {
+                println!("No solution found for the warm-up plan");
+                return Ok(SolverResult::Unsat);
+            }
+        }
+
+        // Get the finite problem.
+        let mut pb: FiniteProblem = warmed_pb
+            .as_ref()
+            .filter(|_| depth == min_depth)
+            .map(|pb| pb.as_ref().clone())
+            .unwrap_or(init_pb.clone());
+
         // Populate the finite problem with the chronicle instances.
-        if depth != min_depth || warmed_pb.is_none() {
+        if warmed_pb.is_none() {
             if htn_mode {
                 populate_with_task_network(&mut pb, &base_problem, depth)?;
             } else if let Some(ref plan) = warm_up_plan {
@@ -283,6 +341,7 @@ pub fn solve(
             }
         }
 
+        // Preparation for solving.
         let pb = Arc::new(pb);
         let on_new_valid_assignment = {
             let pb = pb.clone();
@@ -299,11 +358,16 @@ pub fn solve(
             true,
             htn_mode,
             on_new_valid_assignment,
-            if depth != 0 { None } else { initial_solution.clone() },
+            initial_solution.clone(),
             deadline,
-            best_cost(&best) - 1,
+            best_cost(&best_sol) - 1,
         );
-        println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
+        print!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
+        match result {
+            aries::solver::parallel::SolverResult::Sol(_) => println!(" => Solved"),
+            aries::solver::parallel::SolverResult::Unsat => println!(" => UNSAT"),
+            aries::solver::parallel::SolverResult::Timeout(_) => println!(" => Timeout"),
+        };
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
@@ -311,17 +375,86 @@ pub fn solve(
             SolverResult::Sol((pb, (sol, cost))) if metric.is_some() && depth < max_depth => {
                 let cost = cost.expect("Not cost provided in optimization problem");
                 assert!(
-                    cost < best_cost(&best),
+                    cost < best_cost(&best_sol),
                     "New cost ({cost}) isn't better than the current best ({})",
-                    best_cost(&best)
+                    best_cost(&best_sol)
                 );
-                best = Some((pb, sol, cost)); // continue with new cost bound
+                best_sol = Some((pb.clone(), sol.clone(), cost)); // continue with new cost bound
+                best_plan = Some(serialize_plan(&pb, &sol)?); // continue with new initial plan
             }
-            SolverResult::Timeout(None) => return Ok(SolverResult::Timeout(best.map(|(pb, sol, _)| (pb, sol)))), // stop here with the current best solution
+            SolverResult::Timeout(None) => return Ok(SolverResult::Timeout(best_sol.map(|(pb, sol, _)| (pb, sol)))), // stop here with the current best solution
             other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
         }
     }
     Ok(SolverResult::Unsat)
+}
+
+fn serialize_plan(problem: &FiniteProblem, assignment: &Domains) -> Result<Vec<ActionInstance>> {
+    // Retrieve all action chronicles present in the solution, with their chronicle_id
+    let chronicles = problem
+        .chronicles
+        .iter()
+        .enumerate()
+        .filter(|ch| {
+            matches!(
+                ch.1.chronicle.kind,
+                ChronicleKind::Action | ChronicleKind::DurativeAction
+            )
+        })
+        .filter(|ch| assignment.boolean_value_of(ch.1.chronicle.presence) == Some(true))
+        .collect_vec();
+
+    // Helper functions that return the ChronicleId of the chronicle refining the task
+    let refining_chronicle = |task_id: TaskId| -> Result<ChronicleId> {
+        chronicles
+            .iter()
+            .filter(|(_, ch)| matches!(&ch.origin, ChronicleOrigin::Refinement { refined, .. } if refined.iter().any(|tid| tid == &task_id)))
+            .map(|(i, _)| *i)
+            .collect_vec()
+            .first()
+            .context(format!("No chronicle refining task {:?}", &task_id))
+            .copied()
+    };
+
+    // Extract the action instances from the chronicles
+    chronicles
+        .iter()
+        // Check that the chronicle is an action and has no subtasks
+        .inspect(|(id, ch)| {
+            debug_assert!(
+                assignment.value(ch.chronicle.presence) != Some(true),
+                "Chronicle is absent"
+            );
+            debug_assert!(
+                matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction),
+                "Chronicle is not an action"
+            );
+            let subtasks: BTreeMap<String, String> = ch
+                .chronicle
+                .subtasks
+                .iter()
+                .enumerate()
+                .map(|(tid, t)| {
+                    let subtask_up_id = t.id.as_ref().cloned().unwrap_or_default();
+                    let subtask_id = TaskId {
+                        instance_id: *id,
+                        task_id: tid,
+                    };
+                    (subtask_up_id, refining_chronicle(subtask_id).unwrap().to_string())
+                })
+                .collect();
+            debug_assert!(subtasks.is_empty(), "Action with subtasks.");
+        })
+        // Extract the action instances
+        .try_fold(vec![], |mut actions, (_, ch)| {
+            actions.extend(extract_plan_actions(ch, problem, assignment)?);
+            Ok::<_, anyhow::Error>(actions)
+        })?
+        .iter()
+        // Sort the actions by start time
+        .sorted_by_key(|action| action.start)
+        .map(|action| Ok(action.clone()))
+        .try_collect()
 }
 
 /// This function mimics the instantiation of the subproblem, run the propagation and prints the result.
@@ -566,7 +699,7 @@ fn solve_finite_problem(
     });
 
     if let SolverResult::Sol(_) = result {
-        solver.print_stats()
+        // solver.print_stats()
     }
     result
 }
