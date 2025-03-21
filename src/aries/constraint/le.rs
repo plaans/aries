@@ -1,4 +1,4 @@
-use aries::model::lang::expr::eq;
+use aries::model::lang::expr::leq;
 use aries::model::lang::IVar;
 use aries::model::Label;
 use aries::model::Model;
@@ -6,13 +6,13 @@ use aries::model::Model;
 use crate::aries::Post;
 
 /// Represent the constraint:
-/// `a = b`
-pub struct Eq {
+/// `a <= b`
+pub struct Le {
     a: IVar,
     b: IVar,
 }
 
-impl Eq {
+impl Le {
     pub fn new(a: IVar, b: IVar) -> Self {
         Self { a, b }
     }
@@ -26,9 +26,9 @@ impl Eq {
     }
 }
 
-impl<Lbl: Label> Post<Lbl> for Eq {
+impl<Lbl: Label> Post<Lbl> for Le {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.enforce(eq(self.a, self.b), []);
+        model.enforce(leq(self.a, self.b), []);
     }
 }
 
@@ -43,10 +43,10 @@ mod tests {
     fn basic() {
         let (mut model, x, y) = basic_model_2();
 
-        let eq = Eq::new(x, y);
-        eq.post(&mut model);
+        let le = Le::new(x, y);
+        le.post(&mut model);
 
-        let verify = |x, y| x == y;
+        let verify = |x, y| x <= y;
 
         verify_all_2(x, y, model, verify);
     }

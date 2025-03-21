@@ -45,7 +45,7 @@ impl<Lbl: Label> Post<Lbl> for Abs {
         let lin_eq = LinEq::new(sum, 0);
         lin_eq.post(model);
 
-        // minus_a is now equal to -a
+        // minus_a is now equal to -plus_a
 
         let max = Max::new(vec![minus_a, plus_a], self.b);
         max.post(model);
