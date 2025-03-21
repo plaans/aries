@@ -75,25 +75,25 @@ class Arg:
             ArgType(
                 flatzinc_type="int",
                 rust_type="Int",
-                rust_import="use crate::types::Int;\n",
+                rust_import="use crate::fzn::types::Int;\n",
                 rust_expr_fn="int_from_expr",
             ),
             ArgType(
                 flatzinc_type="var int",
                 rust_type="Rc<VarInt>",
-                rust_import="use crate::var::VarInt;\n",
+                rust_import="use crate::fzn::var::VarInt;\n",
                 rust_expr_fn="var_int_from_expr",
             ),
             ArgType(
                 flatzinc_type="array [int] of int",
                 rust_type="Vec<Int>",
-                rust_import="use crate::types::Int;\n",
+                rust_import="use crate::fzn::types::Int;\n",
                 rust_expr_fn="vec_int_from_expr",
             ),
             ArgType(
                 flatzinc_type="array [int] of var int",
                 rust_type="Vec<Rc<VarInt>>",
-                rust_import="use crate::var::VarInt;\n",
+                rust_import="use crate::fzn::var::VarInt;\n",
                 rust_expr_fn="vec_var_int_from_expr",
             ),
             ArgType(
@@ -105,7 +105,7 @@ class Arg:
             ArgType(
                 flatzinc_type="var bool",
                 rust_type="Rc<VarBool>",
-                rust_import="use crate::var::VarBool;\n",
+                rust_import="use crate::fzn::var::VarBool;\n",
                 rust_expr_fn="var_bool_from_expr",
             ),
             ArgType(
@@ -117,7 +117,7 @@ class Arg:
             ArgType(
                 flatzinc_type="array [int] of var bool",
                 rust_type="Vec<Rc<VarBool>>",
-                rust_import="use crate::var::VarBool;\n",
+                rust_import="use crate::fzn::var::VarBool;\n",
                 rust_expr_fn="vec_var_bool_from_expr",
             ),
         ]
@@ -191,10 +191,10 @@ class Predicate:
         imports += "\n"
         from_expr_fns = set(arg.type.rust_expr_fn for arg in self.args)
         for from_expr_fn in sorted(from_expr_fns):
-            imports += f"use crate::adapter::{from_expr_fn};\n"
-        imports += "use crate::constraint::Constraint;\n"
-        imports += "use crate::model::Model;\n"
-        imports += "use crate::traits::Flatzinc;\n"
+            imports += f"use crate::fzn::parser::{from_expr_fn};\n"
+        imports += "use crate::fzn::constraint::Constraint;\n"
+        imports += "use crate::fzn::model::Model;\n"
+        imports += "use crate::fzn::Fzn;\n"
         type_imports = set(arg.type.rust_import for arg in self.args)
         for type_import in sorted(type_imports):
             imports += type_import
@@ -256,7 +256,7 @@ class Predicate:
         return impl
 
     def rust_impl_flatzinc(self) -> str:
-        fzn = f"impl Flatzinc for {self.rust_name} {{\n"
+        fzn = f"impl Fzn for {self.rust_name} {{\n"
         fzn += TAB + "fn fzn(&self) -> String {\n"
         fzn += 2*TAB + 'format!('
         fzn += '"{}(' + ", ".join(["{:?}"]*len(self.args))
@@ -343,7 +343,7 @@ class Constraint:
         self.predicates = predicates
 
     def rust_imports(self) -> str:
-        return "use crate::constraint::builtins::*;\n"
+        return "use crate::fzn::constraint::builtins::*;\n"
 
     def rust_enum(self) -> str:
         enum = "pub enum Constraint {\n"
