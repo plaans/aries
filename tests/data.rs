@@ -1,6 +1,6 @@
+use aries_fzn::aries::solver::Solver;
 use aries_fzn::fzn::output::make_output;
 use aries_fzn::fzn::parser::parse_model;
-use aries_fzn::aries::solver::Solver;
 use test_each_file::test_each_file;
 
 test_each_file! { for ["fzn", "dzn"] in "./tests/data" => test }

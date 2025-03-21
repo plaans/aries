@@ -1,2 +1,2 @@
-pub mod fzn;
 pub mod aries;
+pub mod fzn;
