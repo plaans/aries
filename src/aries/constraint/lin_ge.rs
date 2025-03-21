@@ -43,8 +43,8 @@ impl<Lbl: Label> Post<Lbl> for LinGe {
 
 #[cfg(test)]
 mod tests {
-    use crate::aries::constraint::test::verify_all_2;
     use crate::aries::constraint::test::basic_lin_model;
+    use crate::aries::constraint::test::verify_all_2;
 
     use super::*;
 
@@ -55,8 +55,8 @@ mod tests {
         let lin_ge = LinGe::new(sum, b);
         lin_ge.post(&mut model);
 
-        let check = |x, y| x*c_x + y*c_y >= b;
+        let verify = |x, y| x * c_x + y * c_y >= b;
 
-        verify_all_2(x, y, model, check);
+        verify_all_2(x, y, model, verify);
     }
 }

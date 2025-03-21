@@ -1,16 +1,14 @@
-use aries::model::extensions::AssignmentExt;
-use aries::model::lang::max::EqMax;
-use aries::model::lang::IAtom;
+use aries::model::lang::linear::NFLinearSumItem;
 use aries::model::lang::IVar;
 use aries::model::Label;
 use aries::model::Model;
 
+use crate::aries::constraint::LinEq;
+use crate::aries::constraint::Max;
 use crate::aries::Post;
 
 /// Represent the constraint:
 /// `b = abs(a)`
-///
-/// Endoded as `b = max(a,-a)`
 pub struct Abs {
     a: IVar,
     b: IVar,
@@ -32,50 +30,46 @@ impl Abs {
 
 impl<Lbl: Label> Post<Lbl> for Abs {
     fn post(&self, model: &mut Model<Lbl>) {
-        let lb = model.lower_bound(self.a);
-        let ub = model.upper_bound(self.b);
+        let (lb, ub) = model.state.bounds(self.a.into());
+
         let minus_a = model.state.new_var(-ub, -lb);
         let minus_a = IVar::new(minus_a);
-        let minus_a = IAtom::new(minus_a, 0);
-        let plus_a = IAtom::new(self.a, 0);
-        let eq_max = EqMax::new(self.b, [plus_a, minus_a]);
-        model.enforce(eq_max, []);
-        todo!("work in progresss...");
+
+        let plus_a = self.a;
+
+        let sum = vec![
+            NFLinearSumItem { var: plus_a.into(), factor: 1 },
+            NFLinearSumItem { var: minus_a.into(), factor: 1 }
+        ];
+
+        let lin_eq = LinEq::new(sum, 0);
+        lin_eq.post(model);
+
+        // minus_a is now equal to -a
+
+        let max = Max::new(vec![minus_a, plus_a], self.b);
+        max.post(model);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use aries::solver::Solver;
+    use aries::core::IntCst;
+
+    use crate::aries::constraint::test::basic_model_2;
+    use crate::aries::constraint::test::verify_all_2;
 
     use super::*;
 
-    fn _get_solutions(
-        a: IVar,
-        b: IVar,
-        model: Model<String>,
-    ) -> Vec<(i32, i32)> {
-        let mut solver = Solver::new(model);
-        solver
-            .enumerate(&[a.into(), b.into()])
-            .unwrap()
-            .iter()
-            .map(|v| (v[0], v[1]))
-            .collect()
-    }
+    #[test]
+    fn basic() {
+        let (mut model, x, y) = basic_model_2();
 
-    // #[test]
-    fn _b_from_a() {
-        let mut model: Model<String> = Model::new();
-
-        let a = model.new_ivar(-3, -3, "a".to_string());
-        let b = model.new_ivar(-5, 5, "b".to_string());
-
-        let abs = Abs::new(a, b);
+        let abs = Abs::new(x, y);
         abs.post(&mut model);
 
-        let solutions = _get_solutions(a, b, model);
+        let verify = |x: IntCst, y| y == x.abs();
 
-        assert_eq!(solutions, vec![(-3, 3)]);
+        verify_all_2(x, y, model, verify);
     }
 }
