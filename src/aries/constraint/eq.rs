@@ -34,14 +34,14 @@ impl<Lbl: Label> Post<Lbl> for Eq {
 
 #[cfg(test)]
 mod tests {
-    use crate::aries::constraint::test::basic_model_2;
+    use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::verify_all_2;
 
     use super::*;
 
     #[test]
     fn basic() {
-        let (mut model, x, y) = basic_model_2();
+        let (mut model, x, y) = basic_int_model_2();
 
         let eq = Eq::new(x, y);
         eq.post(&mut model);

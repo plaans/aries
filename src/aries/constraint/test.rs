@@ -1,6 +1,7 @@
 use aries::core::IntCst;
 use aries::core::VarRef;
 use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::BVar;
 use aries::model::lang::IVar;
 use aries::model::Model;
 use aries::solver::Solver;
@@ -116,7 +117,7 @@ fn gen_solutions_3(
 
 /// Verify all the (x,y,z) solutions of the model.
 ///
-/// (x,y,z) should be a solution iff `verify(x,y) == true`.
+/// (x,y,z) should be a solution iff `verify(x,y,z) == true`.
 pub(super) fn verify_all_3(
     x: impl Into<VarRef>,
     y: impl Into<VarRef>,
@@ -135,13 +136,13 @@ pub(super) fn verify_all_3(
 /// Prepare a basic model for the tests.
 /// Use it as follows.
 /// ```
-/// let (model, x, y) = basic_model_2();
+/// let (model, x, y) = basic_int_model_2();
 /// ```
 ///
 /// It has two variables:
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
-pub(super) fn basic_model_2() -> (Model<String>, IVar, IVar) {
+pub(super) fn basic_int_model_2() -> (Model<String>, IVar, IVar) {
     let mut model = Model::new();
 
     let x = model.new_ivar(-1, 7, "x".to_string());
@@ -150,18 +151,18 @@ pub(super) fn basic_model_2() -> (Model<String>, IVar, IVar) {
     (model, x, y)
 }
 
-/// Prepare a basic model for the tests.
+/// Prepare a basic integer model for the tests.
 /// Use it as follows.
 /// ```
-/// let (model, x, y, z) = basic_model_3();
+/// let (model, x, y, z) = basic_int_model_3();
 /// ```
 ///
 /// It has three variables:
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - z in \[-2,5\]
-pub(super) fn basic_model_3() -> (Model<String>, IVar, IVar, IVar) {
-    let (mut model, x, y) = basic_model_2();
+pub(super) fn basic_int_model_3() -> (Model<String>, IVar, IVar, IVar) {
+    let (mut model, x, y) = basic_int_model_2();
     let z = model.new_ivar(-2, 5, "z".to_string());
 
     (model, x, y, z)
@@ -187,7 +188,7 @@ pub(super) fn basic_lin_model() -> (
     IntCst,
     IntCst,
 ) {
-    let (model, x, y) = basic_model_2();
+    let (model, x, y) = basic_int_model_2();
 
     let c_x = 3;
     let c_y = 2;
@@ -205,4 +206,33 @@ pub(super) fn basic_lin_model() -> (
     ];
 
     (model, sum, x, y, c_x, c_y, b)
+}
+
+/// Prepare a basic boolean model for the tests.
+/// Use it as follows.
+/// ```
+/// let (model, x, y) = basic_bool_model_2();
+/// ```
+///
+/// It has two boolean variables: x, y.
+pub(super) fn basic_bool_model_2() -> (Model<String>, BVar, BVar) {
+    let mut model = Model::new();
+    let x = model.new_bvar("x".to_string());
+    let y = model.new_bvar("y".to_string());
+
+    (model, x, y)
+}
+
+/// Prepare a basic boolean model for the tests.
+/// Use it as follows.
+/// ```
+/// let (model, x, y, z) = basic_bool_model_3();
+/// ```
+///
+/// It has three boolean variables: x, y, z.
+pub(super) fn basic_bool_model_3() -> (Model<String>, BVar, BVar, BVar) {
+    let (mut model, x, y) = basic_bool_model_2();
+    let z = model.new_bvar("z".to_string());
+
+    (model, x, y, z)
 }

@@ -38,8 +38,14 @@ impl<Lbl: Label> Post<Lbl> for Abs {
         let plus_a = self.a;
 
         let sum = vec![
-            NFLinearSumItem { var: plus_a.into(), factor: 1 },
-            NFLinearSumItem { var: minus_a.into(), factor: 1 }
+            NFLinearSumItem {
+                var: plus_a.into(),
+                factor: 1,
+            },
+            NFLinearSumItem {
+                var: minus_a.into(),
+                factor: 1,
+            },
         ];
 
         let lin_eq = LinEq::new(sum, 0);
@@ -56,14 +62,14 @@ impl<Lbl: Label> Post<Lbl> for Abs {
 mod tests {
     use aries::core::IntCst;
 
-    use crate::aries::constraint::test::basic_model_2;
+    use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::verify_all_2;
 
     use super::*;
 
     #[test]
     fn basic() {
-        let (mut model, x, y) = basic_model_2();
+        let (mut model, x, y) = basic_int_model_2();
 
         let abs = Abs::new(x, y);
         abs.post(&mut model);

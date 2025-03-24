@@ -37,14 +37,14 @@ impl<Lbl: Label> Post<Lbl> for Max {
 mod tests {
     use aries::core::IntCst;
 
-    use crate::aries::constraint::test::basic_model_3;
+    use crate::aries::constraint::test::basic_int_model_3;
     use crate::aries::constraint::test::verify_all_3;
 
     use super::*;
 
     #[test]
     fn basic() {
-        let (mut model, x, y, z) = basic_model_3();
+        let (mut model, x, y, z) = basic_int_model_3();
 
         let max = Max::new(vec![x, y], z);
         max.post(&mut model);
