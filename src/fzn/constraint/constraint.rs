@@ -15,6 +15,7 @@ pub enum Constraint {
     IntLe(IntLe),
     IntLinEq(IntLinEq),
     IntLinLe(IntLinLe),
+    ArrayBoolAnd(ArrayBoolAnd),
     BoolEq(BoolEq),
 }
 
@@ -31,6 +32,7 @@ impl Encode for Constraint {
             Constraint::IntLe(c) => c.encode(translation),
             Constraint::IntLinEq(c) => c.encode(translation),
             Constraint::IntLinLe(c) => c.encode(translation),
+            Constraint::ArrayBoolAnd(c) => c.encode(translation),
             Constraint::BoolEq(c) => c.encode(translation),
         }
     }

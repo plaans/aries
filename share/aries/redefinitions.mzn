@@ -53,10 +53,10 @@ predicate int_lt_reif(var int: a, var int: b, var bool: r) =
     abort("int_lt_reif is not supported");
 
 predicate int_max(var int: a, var int: b, var int: c) =
-    array_int_maximum(c, [a, b]);
+    array_int_maximum(c, [a,b]);
 
 predicate int_min(var int: a, var int: b, var int: c) =
-    array_int_minimum(c, [a, b]);
+    array_int_minimum(c, [a,b]);
 
 predicate int_mod(var int: a, var int: b, var int: c) =
     abort("int_mod is not supported");
@@ -79,8 +79,8 @@ predicate int_times(var int: a, var int: b, var int: c) =
 predicate set_in(var int: x, set of int: S) =
     abort("set_in is not supported");
 
-predicate array_bool_and(array [int] of var bool: as, var bool: r) =
-    abort("array_bool_and is not supported");
+% predicate array_bool_and(array [int] of var bool: as, var bool: r) =
+%     abort("array_bool_and is not supported");
 
 predicate array_bool_element(var int: b, array [int] of bool: as, var bool: c) =
     abort("array_bool_element is not supported");
@@ -95,7 +95,7 @@ predicate bool2int(var bool: a, var int: b) =
     abort("bool2int is not supported");
 
 predicate bool_and(var bool: a, var bool: b, var bool: r) =
-    abort("bool_and is not supported");
+    array_bool_and([a,b], r);
 
 predicate bool_clause(array [int] of var bool: as, array [int] of var bool: bs) =
     abort("bool_clause is not supported");

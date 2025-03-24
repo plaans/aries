@@ -53,7 +53,8 @@ pub fn var_int_from_expr(
 pub fn bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<bool> {
     match expr {
         Expr::VarParIdentifier(id) => Ok(*model.get_par_bool(id)?.value()),
-        _ => bail!("not a varbool"),
+        Expr::Bool(b) => Ok(*b),
+        _ => bail!("not a bool"),
     }
 }
 
@@ -65,7 +66,7 @@ pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
     }
 }
 
-pub fn _vec_var_bool_from_expr(
+pub fn vec_var_bool_from_expr(
     expr: &Expr,
     model: &Model,
 ) -> anyhow::Result<Vec<Rc<VarBool>>> {
@@ -246,6 +247,7 @@ pub fn parse_constraint_item(
     m: &mut Model,
 ) -> anyhow::Result<()> {
     let constraint = match c.id.as_str() {
+        ArrayBoolAnd::NAME => ArrayBoolAnd::try_from_item(c, m)?.into(),
         ArrayIntMaximum::NAME => ArrayIntMaximum::try_from_item(c, m)?.into(),
         ArrayIntMinimum::NAME => ArrayIntMinimum::try_from_item(c, m)?.into(),
         BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),

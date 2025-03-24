@@ -1,0 +1,5 @@
+var bool: x;
+var bool: y;
+var bool: z;
+var bool: r = true;
+constraint array_bool_and([x,y,z], r);
