@@ -82,7 +82,10 @@ impl From<BoolEq> for Constraint {
 }
 
 impl Encode for BoolEq {
-    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<(dyn Post<usize>)> {
+    fn encode(
+        &self,
+        translation: &HashMap<usize, VarRef>,
+    ) -> Box<(dyn Post<usize>)> {
         let a = translation.get(self.a.id()).unwrap();
         let b = translation.get(self.b.id()).unwrap();
         Box::new(Eq::new(IVar::new(*a), IVar::new(*b)))

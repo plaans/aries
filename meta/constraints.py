@@ -359,7 +359,14 @@ class Constraint:
         self.predicates = predicates
 
     def rust_imports(self) -> str:
-        return "use crate::fzn::constraint::builtins::*;\n"
+        imports = "use std::collections::HashMap;\n"
+        imports += "\n"
+        imports += "use aries::core::VarRef;\n"
+        imports += "\n"
+        imports += "use crate::aries::Post;\n"
+        imports += "use crate::fzn::constraint::builtins::*;\n"
+        imports += "use crate::fzn::constraint::Encode;\n"
+        return imports
 
     def rust_enum(self) -> str:
         enum = "pub enum Constraint {\n"
@@ -368,11 +375,24 @@ class Constraint:
         enum += "}\n"
         return enum
 
+    def rust_impl_encode(self) -> str:
+        impl = "impl Encode for Constraint {\n"
+        impl += TAB + "fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<dyn Post<usize>> {\n"
+        impl += 2*TAB + "match self {\n"
+        for predicate in self.predicates:
+            impl += 3*TAB + f"Constraint::{predicate.rust_name}(c) => c.encode(translation),\n"
+        impl += 2*TAB + "}\n"
+        impl += TAB + "}\n"
+        impl += "}\n"
+        return impl
+
     def rust_file(self) -> str:
         file = self.rust_imports()
         file += "\n"
         file += self.DERIVE
         file += self.rust_enum()
+        file += "\n"
+        file += self.rust_impl_encode()
         return file
 
 

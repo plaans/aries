@@ -1,0 +1,5 @@
+var 1..1: x;
+var 4..8: y;
+var 2..5: z;
+var 0..9: m;
+constraint array_int_minimum(m, [x,y,z]);

@@ -79,7 +79,9 @@ impl Solver {
 
     /// Add the given flatzinc constraint to the aries model.
     fn add_constraint(&mut self, constraint: &FznConstraint) {
-        constraint.encode(&self.translation).post(&mut self.aries_model);
+        constraint
+            .encode(&self.translation)
+            .post(&mut self.aries_model);
     }
 
     /// Solve the flatzinc model.

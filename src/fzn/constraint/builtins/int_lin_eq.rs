@@ -97,7 +97,10 @@ impl From<IntLinEq> for Constraint {
 }
 
 impl Encode for IntLinEq {
-    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<dyn Post<usize>> {
+    fn encode(
+        &self,
+        translation: &HashMap<usize, VarRef>,
+    ) -> Box<dyn Post<usize>> {
         let translate = |v: Rc<VarInt>| translation.get(v.id()).unwrap();
         let sum = self
             .a

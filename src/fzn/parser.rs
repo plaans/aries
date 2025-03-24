@@ -242,26 +242,19 @@ pub fn parse_var_decl_item(
 }
 
 pub fn parse_constraint_item(
-    c_item: ConstraintItem,
-    model: &mut Model,
+    c: ConstraintItem,
+    m: &mut Model,
 ) -> anyhow::Result<()> {
-    match c_item.id.as_str() {
-        BoolEq::NAME => {
-            model.add_constraint(BoolEq::try_from_item(c_item, model)?.into());
-        }
-        IntEq::NAME => {
-            model.add_constraint(IntEq::try_from_item(c_item, model)?.into());
-        }
-        IntLinEq::NAME => {
-            model
-                .add_constraint(IntLinEq::try_from_item(c_item, model)?.into());
-        }
-        IntLinLe::NAME => {
-            model
-                .add_constraint(IntLinLe::try_from_item(c_item, model)?.into());
-        }
-        _ => anyhow::bail!(format!("unknown constraint '{}'", c_item.id)),
-    }
+    let constraint = match c.id.as_str() {
+        ArrayIntMaximum::NAME => ArrayIntMaximum::try_from_item(c, m)?.into(),
+        ArrayIntMinimum::NAME => ArrayIntMinimum::try_from_item(c, m)?.into(),
+        BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),
+        IntEq::NAME => IntEq::try_from_item(c, m)?.into(),
+        IntLinEq::NAME => IntLinEq::try_from_item(c, m)?.into(),
+        IntLinLe::NAME => IntLinLe::try_from_item(c, m)?.into(),
+        _ => anyhow::bail!(format!("unknown constraint '{}'", c.id)),
+    };
+    m.add_constraint(constraint);
     Ok(())
 }
 

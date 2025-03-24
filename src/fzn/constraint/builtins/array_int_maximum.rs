@@ -5,35 +5,36 @@ use aries::core::VarRef;
 use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::Eq;
+use crate::aries::constraint::Max;
 use crate::aries::Post;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
 use crate::fzn::parser::var_int_from_expr;
+use crate::fzn::parser::vec_var_int_from_expr;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
 #[derive(Clone, Debug)]
-pub struct IntEq {
-    a: Rc<VarInt>,
-    b: Rc<VarInt>,
+pub struct ArrayIntMaximum {
+    m: Rc<VarInt>,
+    x: Vec<Rc<VarInt>>,
 }
 
-impl IntEq {
-    pub const NAME: &str = "int_eq";
+impl ArrayIntMaximum {
+    pub const NAME: &str = "array_int_maximum";
     pub const NB_ARGS: usize = 2;
 
-    pub fn new(a: Rc<VarInt>, b: Rc<VarInt>) -> Self {
-        Self { a, b }
+    pub fn new(m: Rc<VarInt>, x: Vec<Rc<VarInt>>) -> Self {
+        Self { m, x }
     }
 
-    pub fn a(&self) -> &Rc<VarInt> {
-        &self.a
+    pub fn m(&self) -> &Rc<VarInt> {
+        &self.m
     }
 
-    pub fn b(&self) -> &Rc<VarInt> {
-        &self.b
+    pub fn x(&self) -> &Vec<Rc<VarInt>> {
+        &self.x
     }
 
     pub fn try_from_item(
@@ -52,42 +53,43 @@ impl IntEq {
             Self::NB_ARGS,
             item.exprs.len(),
         );
-        let a = var_int_from_expr(&item.exprs[0], model)?;
-        let b = var_int_from_expr(&item.exprs[1], model)?;
-        Ok(Self::new(a, b))
+        let m = var_int_from_expr(&item.exprs[0], model)?;
+        let x = vec_var_int_from_expr(&item.exprs[1], model)?;
+        Ok(Self::new(m, x))
     }
 }
 
-impl Fzn for IntEq {
+impl Fzn for ArrayIntMaximum {
     fn fzn(&self) -> String {
-        format!("{}({:?}, {:?});\n", Self::NAME, self.a.fzn(), self.b.fzn())
+        format!("{}({:?}, {:?});\n", Self::NAME, self.m.fzn(), self.x.fzn())
     }
 }
 
-impl TryFrom<Constraint> for IntEq {
+impl TryFrom<Constraint> for ArrayIntMaximum {
     type Error = anyhow::Error;
 
     fn try_from(value: Constraint) -> Result<Self, Self::Error> {
         match value {
-            Constraint::IntEq(c) => Ok(c),
+            Constraint::ArrayIntMaximum(c) => Ok(c),
             _ => anyhow::bail!("unable to downcast to {}", Self::NAME),
         }
     }
 }
 
-impl From<IntEq> for Constraint {
-    fn from(value: IntEq) -> Self {
-        Self::IntEq(value)
+impl From<ArrayIntMaximum> for Constraint {
+    fn from(value: ArrayIntMaximum) -> Self {
+        Self::ArrayIntMaximum(value)
     }
 }
 
-impl Encode for IntEq {
+impl Encode for ArrayIntMaximum {
     fn encode(
         &self,
         translation: &HashMap<usize, VarRef>,
-    ) -> Box<(dyn Post<usize>)> {
-        let a = translation.get(self.a.id()).unwrap();
-        let b = translation.get(self.b.id()).unwrap();
-        Box::new(Eq::new(IVar::new(*a), IVar::new(*b)))
+    ) -> Box<dyn Post<usize>> {
+        let translate =
+            |v: &Rc<VarInt>| IVar::new(*translation.get(v.id()).unwrap());
+        let items = self.x.iter().map(translate).collect();
+        Box::new(Max::new(items, translate(&self.m)))
     }
 }
