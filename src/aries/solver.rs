@@ -3,15 +3,12 @@ use std::sync::Arc;
 
 use aries::core::state::Domains;
 use aries::core::VarRef;
-use aries::model::lang::linear::NFLinearLeq;
-use aries::model::lang::linear::NFLinearSumItem;
 use aries::model::Model as AriesModel;
-use aries::reif::ReifExpr;
 use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
 
-use crate::fzn::constraint::builtins::IntLinLe;
 use crate::fzn::constraint::Constraint as FznConstraint;
+use crate::fzn::constraint::Encode;
 use crate::fzn::domain::BoolDomain;
 use crate::fzn::domain::IntDomain;
 use crate::fzn::model::Model as FznModel;
@@ -82,51 +79,7 @@ impl Solver {
 
     /// Add the given flatzinc constraint to the aries model.
     fn add_constraint(&mut self, constraint: &FznConstraint) {
-        match constraint {
-            FznConstraint::IntEq(c) => {
-                let var_ref_a = self.translation.get(c.a().id()).unwrap();
-                let var_ref_b = self.translation.get(c.b().id()).unwrap();
-                let reif_expr = ReifExpr::Eq(*var_ref_a, *var_ref_b);
-                self.aries_model.enforce(reif_expr, []);
-            }
-            FznConstraint::BoolEq(c) => {
-                let var_ref_a = self.translation.get(c.a().id()).unwrap();
-                let var_ref_b = self.translation.get(c.b().id()).unwrap();
-                let reif_expr = ReifExpr::Eq(*var_ref_a, *var_ref_b);
-                self.aries_model.enforce(reif_expr, []);
-            }
-            FznConstraint::IntLinLe(lin) => {
-                let mut sum = Vec::new();
-                for (factor, var) in lin.a().iter().zip(lin.b()) {
-                    let var_ref = self.translation.get(var.id()).unwrap();
-                    let item = NFLinearSumItem {
-                        var: *var_ref,
-                        factor: *factor,
-                    };
-                    sum.push(item);
-                }
-                let linear_leq = NFLinearLeq {
-                    sum,
-                    upper_bound: *lin.c(),
-                };
-                let reif_expr = ReifExpr::Linear(linear_leq);
-                self.aries_model.enforce(reif_expr, []);
-            }
-            FznConstraint::IntLinEq(lin) => {
-                let lin_le_1 = IntLinLe::new(
-                    lin.a().clone(),
-                    lin.b().clone(),
-                    *lin.c(),
-                );
-                let lin_le_2 = IntLinLe::new(
-                    lin.a().iter().map(|x| -x).collect(),
-                    lin.b().clone(),
-                    -lin.c(),
-                );
-                self.add_constraint(&lin_le_1.into());
-                self.add_constraint(&lin_le_2.into());
-            }
-        };
+        constraint.encode(&self.translation).post(&mut self.aries_model);
     }
 
     /// Solve the flatzinc model.

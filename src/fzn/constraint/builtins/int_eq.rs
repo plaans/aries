@@ -1,8 +1,14 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
+use aries::core::VarRef;
+use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
+use crate::aries::constraint::Eq;
+use crate::aries::Post;
 use crate::fzn::constraint::Constraint;
+use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
 use crate::fzn::parser::var_int_from_expr;
 use crate::fzn::var::VarInt;
@@ -72,5 +78,13 @@ impl TryFrom<Constraint> for IntEq {
 impl From<IntEq> for Constraint {
     fn from(value: IntEq) -> Self {
         Self::IntEq(value)
+    }
+}
+
+impl Encode for IntEq {
+    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<(dyn Post<usize>)> {
+        let a = translation.get(self.a.id()).unwrap();
+        let b = translation.get(self.b.id()).unwrap();
+        Box::new(Eq::new(IVar::new(*a), IVar::new(*b)))
     }
 }

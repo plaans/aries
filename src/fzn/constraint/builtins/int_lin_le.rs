@@ -1,8 +1,14 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
+use aries::core::VarRef;
+use aries::model::lang::linear::NFLinearSumItem;
 use flatzinc::ConstraintItem;
 
+use crate::aries::constraint::LinLe;
+use crate::aries::Post;
 use crate::fzn::constraint::Constraint;
+use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
 use crate::fzn::parser::int_from_expr;
 use crate::fzn::parser::vec_int_from_expr;
@@ -87,5 +93,21 @@ impl TryFrom<Constraint> for IntLinLe {
 impl From<IntLinLe> for Constraint {
     fn from(value: IntLinLe) -> Self {
         Self::IntLinLe(value)
+    }
+}
+
+impl Encode for IntLinLe {
+    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<dyn Post<usize>> {
+        let translate = |v: Rc<VarInt>| translation.get(v.id()).unwrap();
+        let sum = self
+            .a
+            .iter()
+            .zip(self.b.clone())
+            .map(|x| NFLinearSumItem {
+                var: *translate(x.1),
+                factor: *x.0,
+            })
+            .collect();
+        Box::new(LinLe::new(sum, self.c))
     }
 }

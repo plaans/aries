@@ -2,6 +2,22 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
+import sys
+from typing import TextIO
+import warnings
+
+def print_warning(
+    message: Warning | str,
+    category: type[Warning],
+    filename: str,
+    lineno: int,
+    file: TextIO | None = None,
+    line: str | None = None
+) -> None:
+    print("WARNING:", message, file=sys.stderr)
+
+
+warnings.showwarning = print_warning
 
 TAB = " " * 4
 
@@ -367,13 +383,16 @@ def output_dir(s: str) -> Path:
     if not path.is_dir():
         raise argparse.ArgumentTypeError(f"{path} is not a directory")
     if any(path.iterdir()):
-        raise argparse.ArgumentTypeError(f"{path} is not empty")
+        warnings.warn(f"{path} is not empty")
     return path
 
 
 def write_files(l: list[tuple[Path, str]]) -> None:
     for path, content in l:
-        path.write_text(content)
+        if path.exists():
+            warnings.warn(f"{path} already exists")
+        else:
+            path.write_text(content)
 
 
 def print_files(l: list[tuple[Path, str]]) -> None:
