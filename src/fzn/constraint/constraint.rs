@@ -10,7 +10,9 @@ use crate::fzn::constraint::Encode;
 pub enum Constraint {
     ArrayIntMaximum(ArrayIntMaximum),
     ArrayIntMinimum(ArrayIntMinimum),
+    IntAbs(IntAbs),
     IntEq(IntEq),
+    IntLe(IntLe),
     IntLinEq(IntLinEq),
     IntLinLe(IntLinLe),
     BoolEq(BoolEq),
@@ -24,7 +26,9 @@ impl Encode for Constraint {
         match self {
             Constraint::ArrayIntMaximum(c) => c.encode(translation),
             Constraint::ArrayIntMinimum(c) => c.encode(translation),
+            Constraint::IntAbs(c) => c.encode(translation),
             Constraint::IntEq(c) => c.encode(translation),
+            Constraint::IntLe(c) => c.encode(translation),
             Constraint::IntLinEq(c) => c.encode(translation),
             Constraint::IntLinLe(c) => c.encode(translation),
             Constraint::BoolEq(c) => c.encode(translation),

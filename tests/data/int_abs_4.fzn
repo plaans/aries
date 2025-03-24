@@ -1,0 +1,5 @@
+var -9..9: x;
+var 3..3: y;
+var 0..0: zero = 0;
+constraint int_abs(x, y);
+constraint int_le(zero, x);

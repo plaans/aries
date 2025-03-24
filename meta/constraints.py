@@ -6,18 +6,11 @@ import sys
 from typing import TextIO
 import warnings
 
-def print_warning(
-    message: Warning | str,
-    category: type[Warning],
-    filename: str,
-    lineno: int,
-    file: TextIO | None = None,
-    line: str | None = None
-) -> None:
-    print("WARNING:", message, file=sys.stderr)
+def warn(msg: str) -> None:
+    print("WARN:", msg, file=sys.stderr)
 
-
-warnings.showwarning = print_warning
+def info(msg: str) -> None:
+    print("INFO:", msg)
 
 TAB = " " * 4
 
@@ -403,15 +396,16 @@ def output_dir(s: str) -> Path:
     if not path.is_dir():
         raise argparse.ArgumentTypeError(f"{path} is not a directory")
     if any(path.iterdir()):
-        warnings.warn(f"{path} is not empty")
+        warn(f"{path} is not empty")
     return path
 
 
 def write_files(l: list[tuple[Path, str]]) -> None:
     for path, content in l:
         if path.exists():
-            warnings.warn(f"{path} already exists")
+            warn(f"{path} already exists")
         else:
+            info(f"{path} created")
             path.write_text(content)
 
 

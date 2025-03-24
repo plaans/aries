@@ -1,13 +1,17 @@
 mod array_int_maximum;
 mod array_int_minimum;
 mod bool_eq;
+mod int_abs;
 mod int_eq;
+mod int_le;
 mod int_lin_eq;
 mod int_lin_le;
 
 pub use array_int_maximum::ArrayIntMaximum;
 pub use array_int_minimum::ArrayIntMinimum;
 pub use bool_eq::BoolEq;
+pub use int_abs::IntAbs;
 pub use int_eq::IntEq;
+pub use int_le::IntLe;
 pub use int_lin_eq::IntLinEq;
 pub use int_lin_le::IntLinLe;

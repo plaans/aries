@@ -10,8 +10,8 @@ predicate array_int_element(var int: b, array [int] of int: as, var int: c) =
 predicate array_var_int_element(var int: b, array [int] of var int: as, var int: c) =
     abort("array_var_int_element is not supported");
 
-predicate int_abs(var int: a, var int: b) =
-    abort("int_abs is not supported");
+% predicate int_abs(var int: a, var int: b) =
+%     abort("int_abs is not supported");
 
 predicate int_div(var int: a, var int: b, var int: c) =
     abort("int_div is not supported");
@@ -22,8 +22,8 @@ predicate int_div(var int: a, var int: b, var int: c) =
 predicate int_eq_reif(var int: a, var int: b, var bool: r) =
     abort("int_eq_reif is not supported");
 
-predicate int_le(var int: a, var int: b) =
-    abort("int_le is not supported");
+% predicate int_le(var int: a, var int: b) =
+%     abort("int_le is not supported");
 
 predicate int_le_reif(var int: a, var int: b, var bool: r) =
     abort("int_le_reif is not supported");
@@ -53,10 +53,10 @@ predicate int_lt_reif(var int: a, var int: b, var bool: r) =
     abort("int_lt_reif is not supported");
 
 predicate int_max(var int: a, var int: b, var int: c) =
-    abort("int_max is not supported");
+    array_int_maximum(c, [a, b]);
 
 predicate int_min(var int: a, var int: b, var int: c) =
-    abort("int_min is not supported");
+    array_int_minimum(c, [a, b]);
 
 predicate int_mod(var int: a, var int: b, var int: c) =
     abort("int_mod is not supported");

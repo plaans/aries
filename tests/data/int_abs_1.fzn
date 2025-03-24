@@ -1,0 +1,3 @@
+var -5..-5: x;
+var -9..9: y;
+constraint int_abs(x,y);

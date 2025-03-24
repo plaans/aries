@@ -1,0 +1,6 @@
+var 1..9: x;
+var 1..9: y;
+var 5..5: z;
+constraint int_le(x,y);
+constraint int_le(y,z);
+constraint int_le(z,x);
