@@ -7,6 +7,7 @@ mod int_eq;
 mod int_le;
 mod int_lin_eq;
 mod int_lin_le;
+mod int_ne;
 
 pub use array_bool_and::ArrayBoolAnd;
 pub use array_int_maximum::ArrayIntMaximum;
@@ -17,3 +18,4 @@ pub use int_eq::IntEq;
 pub use int_le::IntLe;
 pub use int_lin_eq::IntLinEq;
 pub use int_lin_le::IntLinLe;
+pub use int_ne::IntNe;
