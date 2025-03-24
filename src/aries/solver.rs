@@ -21,6 +21,7 @@ use crate::fzn::var::Var as FznVar;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 
+#[derive(Default)]
 pub struct Solver {
     fzn_model: FznModel,
     aries_model: AriesModel<usize>,
@@ -31,7 +32,7 @@ impl Solver {
     pub fn new(fzn_model: FznModel) -> Self {
         let mut solver = Self::default();
         for var in fzn_model.variables() {
-            solver.add_var(&var);
+            solver.add_var(var);
         }
         for constraint in fzn_model.constraints() {
             solver.add_constraint(constraint);
@@ -115,7 +116,7 @@ impl Solver {
                 let lin_le_1 = IntLinLe::new(
                     lin.a().clone(),
                     lin.b().clone(),
-                    lin.c().clone(),
+                    *lin.c(),
                 );
                 let lin_le_2 = IntLinLe::new(
                     lin.a().iter().map(|x| -x).collect(),
@@ -179,16 +180,6 @@ impl Solver {
                 Assignment::IntArray(var.clone(), values)
             }
             FznVar::BoolArray(_) => todo!("bool array assignment"),
-        }
-    }
-}
-
-impl Default for Solver {
-    fn default() -> Self {
-        Self {
-            fzn_model: Default::default(),
-            aries_model: Default::default(),
-            translation: Default::default(),
         }
     }
 }

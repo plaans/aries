@@ -35,7 +35,7 @@ pub fn var_bool_from_expr(
     model: &Model,
 ) -> anyhow::Result<Rc<VarBool>> {
     match expr {
-        Expr::VarParIdentifier(id) => model.get_var_bool(&id),
+        Expr::VarParIdentifier(id) => model.get_var_bool(id),
         _ => bail!("not a varbool"),
     }
 }
@@ -45,7 +45,7 @@ pub fn var_int_from_expr(
     model: &Model,
 ) -> anyhow::Result<Rc<VarInt>> {
     match expr {
-        Expr::VarParIdentifier(id) => model.get_var_int(&id),
+        Expr::VarParIdentifier(id) => model.get_var_int(id),
         _ => bail!("not a varint"),
     }
 }
@@ -209,7 +209,7 @@ pub fn parse_var_decl_item(
             } else {
                 IntRange::new(lb, ub)?.into()
             };
-            model.new_var_int(domain.into(), id)?;
+            model.new_var_int(domain, id)?;
         }
         VarDeclItem::ArrayOfInt {
             ix: _,

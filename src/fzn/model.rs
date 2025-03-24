@@ -27,7 +27,7 @@ use crate::fzn::var::VarIntArray;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Model {
     parameters: Vec<Par>,
     variables: Vec<Var>,
@@ -335,19 +335,6 @@ impl Model {
     /// TODO: the constraint args might be unknown from the model
     pub fn add_constraint(&mut self, constraint: Constraint) {
         self.constraints.push(constraint);
-    }
-}
-
-impl Default for Model {
-    fn default() -> Self {
-        Self {
-            parameters: Default::default(),
-            variables: Default::default(),
-            constraints: Default::default(),
-            solve_item: Default::default(),
-            name_par: Default::default(),
-            name_var: Default::default(),
-        }
     }
 }
 
