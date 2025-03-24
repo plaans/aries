@@ -455,6 +455,16 @@ pub struct Hierarchy {
     #[prost(message, optional, tag = "3")]
     pub initial_task_network: ::core::option::Option<TaskNetwork>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScopedConstraint {
+    #[prost(message, optional, tag = "1")]
+    pub constraint: ::core::option::Option<Expression>,
+    /// a list of boolean expressiosn that condition the constraint
+    /// If all expressions in the scope are true, then constraint must hold
+    #[prost(message, repeated, tag = "2")]
+    pub scope: ::prost::alloc::vec::Vec<Expression>,
+}
 /// Activity in a scheduling problem.
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -462,6 +472,9 @@ pub struct Activity {
     /// Name of the activity that must uniquely identify it.
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
+    /// If true, the activity is optional and might absent from a solution.
+    #[prost(bool, tag = "7")]
+    pub optional: bool,
     /// Typed and named parameters of the activity.
     #[prost(message, repeated, tag = "2")]
     pub parameters: ::prost::alloc::vec::Vec<Parameter>,
@@ -491,6 +504,9 @@ pub struct SchedulingExtension {
     /// All constraints in the base problem.
     #[prost(message, repeated, tag = "5")]
     pub constraints: ::prost::alloc::vec::Vec<Expression>,
+    /// feature: OPTIONAL_SCHEDULING
+    #[prost(message, repeated, tag = "6")]
+    pub scoped_constraints: ::prost::alloc::vec::Vec<ScopedConstraint>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
