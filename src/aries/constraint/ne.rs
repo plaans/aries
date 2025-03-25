@@ -1,5 +1,5 @@
 use aries::model::lang::expr::neq;
-use aries::model::lang::IVar;
+use aries::model::lang::IAtom;
 use aries::model::Label;
 use aries::model::Model;
 
@@ -8,20 +8,22 @@ use crate::aries::Post;
 /// Represent the constraint:
 /// `a != b`
 pub struct Ne {
-    a: IVar,
-    b: IVar,
+    a: IAtom,
+    b: IAtom,
 }
 
 impl Ne {
-    pub fn new(a: IVar, b: IVar) -> Self {
+    pub fn new(a: impl Into<IAtom>, b: impl Into<IAtom>) -> Self {
+        let a = a.into();
+        let b = b.into();
         Self { a, b }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &IAtom {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &IAtom {
         &self.b
     }
 }
