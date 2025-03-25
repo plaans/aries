@@ -83,7 +83,7 @@ impl TryFrom<ParVar> for Var {
     fn try_from(value: ParVar) -> Result<Self, Self::Error> {
         match value {
             ParVar::Var(v) => Ok(v),
-            _ => anyhow::bail!("unable to downcast"),
+            _ => anyhow::bail!("unable to downcast to Var"),
         }
     }
 }
@@ -94,7 +94,7 @@ impl TryFrom<Var> for Rc<VarBool> {
     fn try_from(value: Var) -> Result<Self, Self::Error> {
         match value {
             Var::Bool(p) => Ok(p),
-            _ => anyhow::bail!("unable to downcast"),
+            _ => anyhow::bail!("unable to downcast {value:?} to VarBool"),
         }
     }
 }
@@ -105,7 +105,7 @@ impl TryFrom<Var> for Rc<VarInt> {
     fn try_from(value: Var) -> Result<Self, Self::Error> {
         match value {
             Var::Int(p) => Ok(p),
-            _ => anyhow::bail!("unable to downcast"),
+            _ => anyhow::bail!("unable to downcast to VarInt"),
         }
     }
 }
@@ -116,7 +116,7 @@ impl TryFrom<Var> for Rc<VarBoolArray> {
     fn try_from(value: Var) -> Result<Self, Self::Error> {
         match value {
             Var::BoolArray(p) => Ok(p),
-            _ => anyhow::bail!("unable to downcast"),
+            _ => anyhow::bail!("unable to downcast to VarBoolArray"),
         }
     }
 }
@@ -127,7 +127,7 @@ impl TryFrom<Var> for Rc<VarIntArray> {
     fn try_from(value: Var) -> Result<Self, Self::Error> {
         match value {
             Var::IntArray(p) => Ok(p),
-            _ => anyhow::bail!("unable to downcast"),
+            _ => anyhow::bail!("unable to downcast to VarIntArray"),
         }
     }
 }

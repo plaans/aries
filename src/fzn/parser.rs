@@ -20,6 +20,7 @@ use crate::fzn::domain::IntRange;
 use crate::fzn::model::Model;
 use crate::fzn::solve::Goal;
 use crate::fzn::types::Int;
+use crate::fzn::var::BasicVar;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 
@@ -47,6 +48,18 @@ pub fn var_int_from_expr(
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_int(id),
         _ => bail!("not a varint"),
+    }
+}
+
+pub fn basic_var_from_expr(
+    expr: &Expr,
+    model: &Model,
+) -> anyhow::Result<BasicVar> {
+    match expr {
+        Expr::VarParIdentifier(id) => {
+            model.get_variable(id)?.clone().try_into()
+        }
+        _ => bail!("not a basic var"),
     }
 }
 
@@ -130,7 +143,7 @@ pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
 
     for (i, line) in content.lines().enumerate() {
         parse_line(line, &mut model)
-            .context(format!("parsing failure at line {i}"))?;
+            .context(format!("parsing failure at line {}", i + 1))?;
     }
     Ok(model)
 }
@@ -264,6 +277,7 @@ pub fn parse_constraint_item(
     Ok(())
 }
 
+// The optimize items do not rely on the type since flatzinc crate is not able to infer types for identifier
 pub fn parse_solve_item(
     s_item: flatzinc::SolveItem,
     model: &mut Model,
@@ -272,12 +286,12 @@ pub fn parse_solve_item(
         flatzinc::Goal::Satisfy => {}
         flatzinc::Goal::OptimizeBool(optim, expr) => {
             let goal = goal_from_optim_type(&optim);
-            let variable = var_bool_from_expr(&expr.into(), model)?;
+            let variable = basic_var_from_expr(&expr.into(), model)?;
             model.optimize(goal, variable)?;
         }
         flatzinc::Goal::OptimizeInt(optim, expr) => {
             let goal = goal_from_optim_type(&optim);
-            let variable = var_int_from_expr(&expr.into(), model)?;
+            let variable = basic_var_from_expr(&expr.into(), model)?;
             model.optimize(goal, variable)?;
         }
         _ => bail!("goal '{:?}' is not implemented", s_item.goal),

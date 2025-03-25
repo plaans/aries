@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
+use anyhow::bail;
 use transitive::Transitive;
 
+use crate::fzn::var::Var;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 use crate::fzn::Name;
@@ -33,5 +35,22 @@ impl From<Rc<VarBool>> for BasicVar {
 impl From<Rc<VarInt>> for BasicVar {
     fn from(value: Rc<VarInt>) -> Self {
         Self::Int(value)
+    }
+}
+
+impl TryFrom<Var> for BasicVar {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Var) -> Result<Self, Self::Error> {
+        match value {
+            Var::Bool(v) => Ok(Self::Bool(v)),
+            Var::Int(v) => Ok(Self::Int(v)),
+            Var::BoolArray(_) => {
+                bail!("unable to downcast bool array to basic var")
+            }
+            Var::IntArray(_) => {
+                bail!("unable to downcast int array to basic var")
+            }
+        }
     }
 }

@@ -7,15 +7,15 @@ use flatzinc::ConstraintItem;
 
 use crate::aries::constraint::LinNe;
 use crate::aries::Post;
+use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
+use crate::fzn::model::Model;
 use crate::fzn::parser::int_from_expr;
 use crate::fzn::parser::vec_int_from_expr;
 use crate::fzn::parser::vec_var_int_from_expr;
-use crate::fzn::constraint::Constraint;
-use crate::fzn::model::Model;
-use crate::fzn::Fzn;
 use crate::fzn::types::Int;
 use crate::fzn::var::VarInt;
+use crate::fzn::Fzn;
 
 #[derive(Clone, Debug)]
 pub struct IntLinNe {
@@ -44,7 +44,10 @@ impl IntLinNe {
         &self.c
     }
 
-    pub fn try_from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<Self> {
+    pub fn try_from_item(
+        item: ConstraintItem,
+        model: &Model,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             item.id.as_str() == Self::NAME,
             "'{}' expected but received '{}'",
@@ -66,7 +69,13 @@ impl IntLinNe {
 
 impl Fzn for IntLinNe {
     fn fzn(&self) -> String {
-        format!("{}({:?}, {:?}, {:?});\n", Self::NAME, self.a.fzn(), self.b.fzn(), self.c.fzn())
+        format!(
+            "{}({:?}, {:?}, {:?});\n",
+            Self::NAME,
+            self.a.fzn(),
+            self.b.fzn(),
+            self.c.fzn()
+        )
     }
 }
 

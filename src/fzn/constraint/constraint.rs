@@ -22,7 +22,10 @@ pub enum Constraint {
 }
 
 impl Encode for Constraint {
-    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<dyn Post<usize>> {
+    fn encode(
+        &self,
+        translation: &HashMap<usize, VarRef>,
+    ) -> Box<dyn Post<usize>> {
         match self {
             Constraint::ArrayIntMaximum(c) => c.encode(translation),
             Constraint::ArrayIntMinimum(c) => c.encode(translation),
