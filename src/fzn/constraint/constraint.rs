@@ -15,16 +15,14 @@ pub enum Constraint {
     IntLe(IntLe),
     IntLinEq(IntLinEq),
     IntLinLe(IntLinLe),
+    IntLinNe(IntLinNe),
     IntNe(IntNe),
     ArrayBoolAnd(ArrayBoolAnd),
     BoolEq(BoolEq),
 }
 
 impl Encode for Constraint {
-    fn encode(
-        &self,
-        translation: &HashMap<usize, VarRef>,
-    ) -> Box<dyn Post<usize>> {
+    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<dyn Post<usize>> {
         match self {
             Constraint::ArrayIntMaximum(c) => c.encode(translation),
             Constraint::ArrayIntMinimum(c) => c.encode(translation),
@@ -33,6 +31,7 @@ impl Encode for Constraint {
             Constraint::IntLe(c) => c.encode(translation),
             Constraint::IntLinEq(c) => c.encode(translation),
             Constraint::IntLinLe(c) => c.encode(translation),
+            Constraint::IntLinNe(c) => c.encode(translation),
             Constraint::IntNe(c) => c.encode(translation),
             Constraint::ArrayBoolAnd(c) => c.encode(translation),
             Constraint::BoolEq(c) => c.encode(translation),

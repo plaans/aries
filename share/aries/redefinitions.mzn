@@ -40,8 +40,8 @@ predicate int_lin_eq_reif(array [int] of int: as, array [int] of var int: bs, in
 predicate int_lin_le_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r) =
     abort("int_lin_le_reif is not supported");
 
-predicate int_lin_ne(array [int] of int: as, array [int] of var int: bs, int: c) =
-    abort("int_lin_ne is not supported");
+% predicate int_lin_ne(array [int] of int: as, array [int] of var int: bs, int: c) =
+%     abort("int_lin_ne is not supported");
 
 predicate int_lin_ne_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r) =
     abort("int_lin_ne_reif is not supported");
