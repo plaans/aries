@@ -1,2 +1,2 @@
 bool: p = true;
-var bool: x = p;
+var bool: x:: output_var = p;

@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
+use flatzinc::Annotation;
 use flatzinc::ArrayOfIntExpr;
 use flatzinc::ConstraintItem;
 use flatzinc::Expr;
@@ -39,6 +40,13 @@ pub fn var_bool_from_expr(
         Expr::VarParIdentifier(id) => model.get_var_bool(id),
         _ => bail!("not a varbool"),
     }
+}
+
+/// Return `true` iff the annotation asks for output.
+///
+/// Remark: it only check the annotation id.
+pub fn is_output_anno(anno: &Annotation) -> bool {
+    ["output_var", "output_array"].contains(&anno.id.as_str())
 }
 
 pub fn var_int_from_expr(
@@ -192,22 +200,30 @@ pub fn parse_var_decl_item(
     model: &mut Model,
 ) -> anyhow::Result<()> {
     match var_decl_item {
-        VarDeclItem::Bool { id, expr, annos: _ } => match expr {
-            Some(e) => {
-                let value = bool_from_expr(&e.into(), model)?;
-                model.new_var_bool(BoolDomain::Singleton(value), id)?;
+        VarDeclItem::Bool { id, expr, annos } => {
+            let output = annos.iter().any(is_output_anno);
+            match expr {
+                Some(e) => {
+                    let value = bool_from_expr(&e.into(), model)?;
+                    model.new_var_bool(
+                        BoolDomain::Singleton(value),
+                        id,
+                        output,
+                    )?;
+                }
+                None => {
+                    model.new_var_bool(BoolDomain::Both, id, output)?;
+                }
             }
-            None => {
-                model.new_var_bool(BoolDomain::Both, id)?;
-            }
-        },
+        }
         VarDeclItem::IntInRange {
             id,
             lb,
             ub,
             expr,
-            annos: _,
+            annos,
         } => {
+            let output = annos.iter().any(is_output_anno);
             let lb = Int::try_from(lb).unwrap();
             let ub = Int::try_from(ub).unwrap();
             let domain = if let Some(e) = expr {
@@ -223,14 +239,15 @@ pub fn parse_var_decl_item(
             } else {
                 IntRange::new(lb, ub)?.into()
             };
-            model.new_var_int(domain, id)?;
+            model.new_var_int(domain, id, output)?;
         }
         VarDeclItem::ArrayOfInt {
             ix: _,
             id,
-            annos: _,
+            annos,
             array_expr,
         } => {
+            let output = annos.iter().any(is_output_anno);
             let e = array_expr.expect("expected array expression");
             match e {
                 ArrayOfIntExpr::Array(int_exprs) => {
@@ -239,13 +256,14 @@ pub fn parse_var_decl_item(
                         .cloned()
                         .map(|e| var_int_from_expr(&e.into(), model))
                         .collect();
-                    model.new_var_int_array(vars?, id)?;
+                    model.new_var_int_array(vars?, id, output)?;
                 }
                 ArrayOfIntExpr::VarParIdentifier(id) => {
                     let var = model.get_var_int_array(&id)?;
                     model.new_var_int_array(
                         var.variables().cloned().collect(),
                         id,
+                        output,
                     )?;
                 }
             };

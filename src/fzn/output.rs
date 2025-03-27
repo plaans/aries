@@ -10,8 +10,10 @@ pub fn make_output(result: Option<Vec<Assignment>>) -> String {
         Some(assignements) => {
             let mut output = String::new();
             for assignment in assignements {
-                output += assignment.fzn().as_str();
-                output += "\n";
+                if assignment.output() {
+                    output += assignment.fzn().as_str();
+                    output += "\n";
+                }
             }
             output += END_OF_SOLUTION;
             output

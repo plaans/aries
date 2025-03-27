@@ -1,1 +1,1 @@
-var bool: x;
+var bool: x:: output_var;

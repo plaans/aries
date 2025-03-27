@@ -9,11 +9,16 @@ use crate::fzn::Name;
 pub struct GenArrayVariable<T> {
     variables: Vec<T>,
     name: String,
+    output: bool,
 }
 
 impl<T> GenArrayVariable<T> {
-    pub fn new(variables: Vec<T>, name: String) -> Self {
-        Self { variables, name }
+    pub fn new(variables: Vec<T>, name: String, output: bool) -> Self {
+        Self {
+            variables,
+            name,
+            output,
+        }
     }
 
     pub fn variables(&self) -> impl Iterator<Item = &T> {
@@ -22,6 +27,10 @@ impl<T> GenArrayVariable<T> {
 
     pub fn len(&self) -> usize {
         self.variables.len()
+    }
+
+    pub fn output(&self) -> bool {
+        self.output
     }
 }
 

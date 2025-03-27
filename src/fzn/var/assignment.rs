@@ -14,6 +14,16 @@ pub enum Assignment {
     IntArray(Rc<VarIntArray>, Vec<Int>),
 }
 
+impl Assignment {
+    pub fn output(&self) -> bool {
+        match self {
+            Assignment::Bool(v, _) => v.output(),
+            Assignment::Int(v, _) => v.output(),
+            Assignment::IntArray(v, _) => v.output(),
+        }
+    }
+}
+
 impl Fzn for Assignment {
     fn fzn(&self) -> String {
         match self {

@@ -1,5 +1,5 @@
-var 0..4: x;
-var 1..6: y;
-var 4..8: z;
-var 7..7: m;
+var 0..4: x:: output_var;
+var 1..6: y:: output_var;
+var 4..8: z:: output_var;
+var 7..7: m:: output_var;
 constraint array_int_maximum(m, [x,y,z]);

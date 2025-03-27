@@ -13,12 +13,18 @@ pub struct GenVar<D> {
     id: usize,
     domain: D,
     name: String,
+    output: bool,
 }
 
 impl<D> GenVar<D> {
-    pub(crate) fn new(domain: D, name: String) -> Self {
+    pub(crate) fn new(domain: D, name: String, output: bool) -> Self {
         let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-        Self { id, name, domain }
+        Self {
+            id,
+            name,
+            domain,
+            output,
+        }
     }
 
     pub fn id(&self) -> &usize {
@@ -27,6 +33,10 @@ impl<D> GenVar<D> {
 
     pub fn domain(&self) -> &D {
         &self.domain
+    }
+
+    pub fn output(&self) -> bool {
+        self.output
     }
 }
 
@@ -60,9 +70,10 @@ mod tests {
 
     #[test]
     fn id() -> anyhow::Result<()> {
-        let x = VarBool::new(BoolDomain::Both, "x".to_string());
-        let y = VarBool::new(BoolDomain::Both, "y".to_string());
-        let z = VarInt::new(IntRange::new(1, 2)?.into(), "y".to_string());
+        let x = VarBool::new(BoolDomain::Both, "x".to_string(), false);
+        let y = VarBool::new(BoolDomain::Both, "y".to_string(), false);
+        let z =
+            VarInt::new(IntRange::new(1, 2)?.into(), "y".to_string(), false);
 
         assert_ne!(x.id(), y.id());
         assert_ne!(y.id(), z.id());

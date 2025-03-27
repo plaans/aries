@@ -1,5 +1,5 @@
-var bool: x;
-var bool: y;
-var bool: z;
+var bool: x:: output_var;
+var bool: y:: output_var;
+var bool: z:: output_var;
 var bool: r = true;
 constraint array_bool_and([x,y,z], r);

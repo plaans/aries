@@ -156,8 +156,10 @@ mod tests {
         let domain_x = IntRange::new(0, 3)?;
         let domain_y = IntRange::new(4, 5)?;
 
-        let x = fzn_model.new_var_int(domain_x.into(), "x".to_string())?;
-        let y = fzn_model.new_var_int(domain_y.into(), "y".to_string())?;
+        let x =
+            fzn_model.new_var_int(domain_x.into(), "x".to_string(), false)?;
+        let y =
+            fzn_model.new_var_int(domain_y.into(), "y".to_string(), false)?;
 
         let int_eq = IntEq::new(x, y);
 
@@ -178,8 +180,10 @@ mod tests {
         let domain_x = IntRange::new(0, 3)?;
         let domain_y = IntRange::new(3, 5)?;
 
-        let x = fzn_model.new_var_int(domain_x.into(), "x".to_string())?;
-        let y = fzn_model.new_var_int(domain_y.into(), "y".to_string())?;
+        let x =
+            fzn_model.new_var_int(domain_x.into(), "x".to_string(), false)?;
+        let y =
+            fzn_model.new_var_int(domain_y.into(), "y".to_string(), false)?;
 
         let int_eq = IntEq::new(x.clone(), y.clone());
 
@@ -201,8 +205,10 @@ mod tests {
     fn bool_eq() -> anyhow::Result<()> {
         let mut fzn_model = Model::new();
 
-        let x = fzn_model.new_var_bool(BoolDomain::Both, "x".to_string())?;
-        let y = fzn_model.new_var_bool(BoolDomain::Both, "y".to_string())?;
+        let x =
+            fzn_model.new_var_bool(BoolDomain::Both, "x".to_string(), false)?;
+        let y =
+            fzn_model.new_var_bool(BoolDomain::Both, "y".to_string(), false)?;
 
         let bool_eq = BoolEq::new(x.clone(), y.clone());
 

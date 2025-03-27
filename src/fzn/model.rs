@@ -236,8 +236,9 @@ impl Model {
         &mut self,
         domain: IntDomain,
         name: String,
+        output: bool,
     ) -> Result<Rc<VarInt>> {
-        let variable: Rc<VarInt> = VarInt::new(domain, name).into();
+        let variable: Rc<VarInt> = VarInt::new(domain, name, output).into();
         self.add_var(variable.clone())?;
         Ok(variable)
     }
@@ -247,8 +248,9 @@ impl Model {
         &mut self,
         domain: BoolDomain,
         name: String,
+        output: bool,
     ) -> Result<Rc<VarBool>> {
-        let variable: Rc<VarBool> = VarBool::new(domain, name).into();
+        let variable: Rc<VarBool> = VarBool::new(domain, name, output).into();
         self.add_var(variable.clone())?;
         Ok(variable)
     }
@@ -258,9 +260,10 @@ impl Model {
         &mut self,
         variables: Vec<Rc<VarBool>>,
         name: String,
+        output: bool,
     ) -> Result<Rc<VarBoolArray>> {
         let variable: Rc<VarBoolArray> =
-            VarBoolArray::new(variables, name).into();
+            VarBoolArray::new(variables, name, output).into();
         self.add_var(variable.clone())?;
         Ok(variable)
     }
@@ -270,9 +273,10 @@ impl Model {
         &mut self,
         variables: Vec<Rc<VarInt>>,
         name: String,
+        output: bool,
     ) -> Result<Rc<VarIntArray>> {
         let variable: Rc<VarIntArray> =
-            VarIntArray::new(variables, name).into();
+            VarIntArray::new(variables, name, output).into();
         self.add_var(variable.clone())?;
         Ok(variable)
     }
@@ -370,8 +374,8 @@ mod tests {
 
         let mut model = Model::new();
 
-        let x = model.new_var_int(domain_x, "x".to_string()).unwrap();
-        let y = model.new_var_int(domain_y, "y".to_string()).unwrap();
+        let x = model.new_var_int(domain_x, "x".to_string(), false).unwrap();
+        let y = model.new_var_int(domain_y, "y".to_string(), false).unwrap();
         let t = model.new_par_int("t".to_string(), 4).unwrap();
         let s = model.new_par_bool("s".to_string(), true).unwrap();
 
@@ -411,7 +415,7 @@ mod tests {
         let (x, y, t, s, mut model) = simple_model();
 
         let domain_z = IntRange::new(3, 9).unwrap().into();
-        let z = model.new_var_int(domain_z, "z".to_string()).unwrap();
+        let z = model.new_var_int(domain_z, "z".to_string(), false).unwrap();
 
         model.optimize(Goal::Maximize, z.clone()).unwrap();
 
@@ -498,10 +502,10 @@ mod tests {
         let mut model = Model::new();
 
         let _x = model
-            .new_var_bool(BoolDomain::Both, "x".to_string())
+            .new_var_bool(BoolDomain::Both, "x".to_string(), false)
             .unwrap();
         assert!(model
-            .new_var_bool(BoolDomain::Both, "x".to_string())
+            .new_var_bool(BoolDomain::Both, "x".to_string(), false)
             .is_err());
         assert!(model.new_par_int("x".to_string(), 5).is_err());
     }
