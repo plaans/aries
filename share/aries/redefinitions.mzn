@@ -19,8 +19,8 @@ predicate int_div(var int: a, var int: b, var int: c) =
 % predicate int_eq(var int: a, var int: b) =
 %     abort("int_eq is not supported");
 
-predicate int_eq_reif(var int: a, var int: b, var bool: r) =
-    abort("int_eq_reif is not supported");
+% predicate int_eq_reif(var int: a, var int: b, var bool: r) =
+%     abort("int_eq_reif is not supported");
 
 % predicate int_le(var int: a, var int: b) =
 %     abort("int_le is not supported");
