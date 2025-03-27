@@ -96,8 +96,8 @@ predicate array_bool_xor(array [int] of var bool: as) =
 predicate array_var_bool_element(var int: b, array [int] of var bool: as, var bool: c) =
     abort("array_var_bool_element is not supported");
 
-predicate bool2int(var bool: a, var int: b) =
-    abort("bool2int is not supported");
+% predicate bool2int(var bool: a, var int: b) =
+%     abort("bool2int is not supported");
 
 predicate bool_and(var bool: a, var bool: b, var bool: r) =
     array_bool_and([a,b], r);

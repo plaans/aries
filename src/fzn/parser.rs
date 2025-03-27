@@ -284,6 +284,7 @@ pub fn parse_constraint_item(
         ArrayIntMinimum::NAME => ArrayIntMinimum::try_from_item(c, m)?.into(),
         BoolClause::NAME => BoolClause::try_from_item(c, m)?.into(),
         BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),
+        Bool2Int::NAME => Bool2Int::try_from_item(c, m)?.into(),
         IntAbs::NAME => IntAbs::try_from_item(c, m)?.into(),
         IntEq::NAME => IntEq::try_from_item(c, m)?.into(),
         IntEqReif::NAME => IntEqReif::try_from_item(c, m)?.into(),
