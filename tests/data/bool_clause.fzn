@@ -1,0 +1,3 @@
+var bool: a:: output_var = true;
+var bool: b:: output_var;
+constraint bool_clause([b], [a]);

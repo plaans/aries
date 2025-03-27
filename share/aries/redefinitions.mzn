@@ -7,8 +7,13 @@ predicate array_int_element(var int: b, array [int] of int: as, var int: c) =
 % predicate array_int_minimum(var int: m, array [int] of var int: x) =
 %     abort("array_int_minimum is not supported");
 
-predicate array_var_int_element(var int: b, array [int] of var int: as, var int: c) =
-    abort("array_var_int_element is not supported");
+predicate array_var_int_element(var int: b, array [int] of var int: as, var int: c) = let {
+        set of int: indices = index_set(as),
+        array [indices] of var bool: r
+    } in
+    exists (i in indices) (r[i]) /\
+    forall (i in indices) (int_eq_reif(b, i, r[i])) /\
+    forall (i in indices) (int_eq_reif(c, as[i], r[i]));
 
 % predicate int_abs(var int: a, var int: b) =
 %     abort("int_abs is not supported");
@@ -97,8 +102,8 @@ predicate bool2int(var bool: a, var int: b) =
 predicate bool_and(var bool: a, var bool: b, var bool: r) =
     array_bool_and([a,b], r);
 
-predicate bool_clause(array [int] of var bool: as, array [int] of var bool: bs) =
-    abort("bool_clause is not supported");
+% predicate bool_clause(array [int] of var bool: as, array [int] of var bool: bs) =
+%     abort("bool_clause is not supported");
 
 % predicate bool_eq(var bool: a, var bool: b) =
 %     abort("bool_eq is not supported");

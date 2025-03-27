@@ -282,6 +282,7 @@ pub fn parse_constraint_item(
         ArrayBoolAnd::NAME => ArrayBoolAnd::try_from_item(c, m)?.into(),
         ArrayIntMaximum::NAME => ArrayIntMaximum::try_from_item(c, m)?.into(),
         ArrayIntMinimum::NAME => ArrayIntMinimum::try_from_item(c, m)?.into(),
+        BoolClause::NAME => BoolClause::try_from_item(c, m)?.into(),
         BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),
         IntAbs::NAME => IntAbs::try_from_item(c, m)?.into(),
         IntEq::NAME => IntEq::try_from_item(c, m)?.into(),
