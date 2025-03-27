@@ -236,3 +236,21 @@ pub(super) fn basic_bool_model_3() -> (Model<String>, BVar, BVar, BVar) {
 
     (model, x, y, z)
 }
+
+/// Prepare a basic model for the tests.
+/// Use it as follows.
+/// ```
+/// let (model, x, y, r) = basic_reif_model();
+/// ```
+///
+/// It has two variables:
+///  - x in \[-1,7\]
+///  - y in \[-4,6\]
+///  - r bool
+pub(super) fn basic_reif_model() -> (Model<String>, IVar, IVar, BVar) {
+    let (mut model, x, y) = basic_int_model_2();
+
+    let r = model.new_bvar("r".to_string());
+
+    (model, x, y, r)
+}

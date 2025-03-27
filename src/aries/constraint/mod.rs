@@ -1,6 +1,7 @@
 mod abs;
 mod and_reif;
 mod eq;
+mod eq_reif;
 mod le;
 mod lin_eq;
 mod lin_ge;
@@ -14,6 +15,7 @@ mod or_reif;
 pub use abs::Abs;
 pub use and_reif::AndReif;
 pub use eq::Eq;
+pub use eq_reif::EqReif;
 pub use le::Le;
 pub use lin_eq::LinEq;
 pub use lin_ge::LinGe;
