@@ -51,10 +51,11 @@ pub fn is_output_anno(anno: &Annotation) -> bool {
 
 pub fn var_int_from_expr(
     expr: &Expr,
-    model: &Model,
+    model: &mut Model,
 ) -> anyhow::Result<Rc<VarInt>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_int(id),
+        Expr::Int(x) => Ok(model.new_var_int_const((*x).try_into()?)),
         _ => bail!("not a varint"),
     }
 }
@@ -123,7 +124,7 @@ pub fn vec_int_from_expr(
 
 pub fn vec_var_int_from_expr(
     expr: &Expr,
-    model: &Model,
+    model: &mut Model,
 ) -> anyhow::Result<Vec<Rc<VarInt>>> {
     match expr {
         Expr::VarParIdentifier(id) => {

@@ -46,7 +46,7 @@ impl IntLinNe {
 
     pub fn try_from_item(
         item: ConstraintItem,
-        model: &Model,
+        model: &mut Model,
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             item.id.as_str() == Self::NAME,

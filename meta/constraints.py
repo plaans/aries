@@ -232,7 +232,7 @@ class Predicate:
         return getters
 
     def rust_try_from_item(self) -> str:
-        try_from = TAB + "pub fn try_from_item(item: ConstraintItem, model: &Model) -> anyhow::Result<Self> {\n"
+        try_from = TAB + "pub fn try_from_item(item: ConstraintItem, model: &mut Model) -> anyhow::Result<Self> {\n"
         try_from += 2*TAB + "anyhow::ensure!(\n"
         try_from += 3*TAB + "item.id.as_str() == Self::NAME,\n"
         try_from += 3*TAB + "\"'{}' expected but received '{}'\",\n"

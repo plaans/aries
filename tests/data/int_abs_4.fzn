@@ -1,3 +1,4 @@
+% positive solution of abs(x) = 3
 var -9..9: x:: output_var;
 var 3..3: y:: output_var;
 var 0..0: zero = 0;

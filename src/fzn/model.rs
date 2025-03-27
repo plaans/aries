@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Result;
+use aries::core::IntCst;
 
 use crate::fzn::constraint::Constraint;
 use crate::fzn::domain::BoolDomain;
@@ -35,6 +36,7 @@ pub struct Model {
     solve_item: SolveItem,
     name_par: HashMap<String, Par>,
     name_var: HashMap<String, Var>,
+    const_var: HashMap<IntCst, Rc<VarInt>>,
 }
 
 impl Model {
@@ -241,6 +243,23 @@ impl Model {
         let variable: Rc<VarInt> = VarInt::new(domain, name, output).into();
         self.add_var(variable.clone())?;
         Ok(variable)
+    }
+
+    /// Return a new constant integer variable.
+    ///
+    /// Only one constant variable is created per constant value.
+    /// It allows to use integer constant in place of varint.
+    pub fn new_var_int_const(&mut self, value: Int) -> Rc<VarInt> {
+        if let Some(var) = self.const_var.get(&value) {
+            var.clone()
+        } else {
+            let domain = IntDomain::Singleton(value);
+            let name = format!("_CONST_{}_", value);
+            let var: Rc<VarInt> = VarInt::new(domain, name, false).into();
+            self.const_var.insert(value, var.clone());
+            self.add_var(var.clone()).unwrap();
+            var
+        }
     }
 
     /// Create a new boolean variable and add it to the model.
