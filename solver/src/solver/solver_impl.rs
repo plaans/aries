@@ -783,23 +783,21 @@ impl<Lbl: Label> Solver<Lbl> {
             return Ok(None);
         }
 
-        let mut at_solution = |solver: &Self, sol: &Arc<Domains>| {
-            // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
-            // notify other solvers that we have found a new solution
-            solver.sync.notify_solution_found(sol.clone());
-            let objective_value = sol.var_domain(objective).lb;
-            on_new_solution(objective_value, sol);
-            if STATS_AT_SOLUTION.get() {
-                println!("*********  New sol: {objective_value} *********");
-                solver.print_stats();
-            }
-            sol.clone()
-        };
-
         loop {
-            // Use the initial solution if provided, otherwise search for a new one
             let sol = match self.search()? {
-                SearchResult::AtSolution => at_solution(self, &Arc::new(self.model.state.clone())),
+                SearchResult::AtSolution => {
+                    // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
+                    // notify other solvers that we have found a new solution
+                    let sol = Arc::new(self.model.state.clone());
+                    self.sync.notify_solution_found(sol.clone());
+                    let objective_value = sol.var_domain(objective).lb;
+                    on_new_solution(objective_value, &sol);
+                    if STATS_AT_SOLUTION.get() {
+                        println!("*********  New sol: {objective_value} *********");
+                        self.print_stats();
+                    }
+                    sol
+                }
                 SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
                 SearchResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
             };
