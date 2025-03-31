@@ -284,7 +284,7 @@ impl Encoding {
     }
 }
 
-pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32) -> (Model, Encoding) {
+pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_constraints: bool) -> (Model, Encoding) {
     let lower_bound = u32_to_cst(lower_bound);
     let upper_bound = u32_to_cst(upper_bound);
     let mut m = Model::new();

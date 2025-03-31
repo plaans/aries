@@ -254,7 +254,7 @@ pub fn extract_plan_actions(
     })
 }
 
-fn str(r: Rational32) -> String {
+fn str(r: Rational) -> String {
     let scale = TIME_SCALE.get();
     if scale % r.denom() != 0 {
         // default to formatting float

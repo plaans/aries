@@ -189,7 +189,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
 
     let is_num = |cond_id: &CondID| {
         let instance = &pb.chronicles[cond_id.instance_id];
-        let cond = instance.chronicle.conditions.get(cond_id.cond_id);
+        let cond = instance.chronicle.conditions.get(match cond_id.cond_id {
+            analysis::CondOrigin::ExplicitCondition(v) => v,
+            analysis::CondOrigin::PostIncrease(_) => instance.chronicle.conditions.len() + 1, // Force out of bounds to return None
+        });
         if let Some(cond) = cond {
             cond.state_var.fluent.return_type().is_numeric()
         } else {
@@ -225,7 +228,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             // important: order must be made by template so that conditions of the same template are grouped
             // The consequence of grouping is that swapping raws (instances of the same template) does not affect the order with respect to the columns of the other templates
             // note that two instances of the same template will have the same hierarchy level, so it is safe to first group by hierarchy level
-            (hier_level, penalty, template, generation)
+            (hier_level, template, penalty, generation)
         };
         conds.into_iter().sorted_by_key(sort_key).collect_vec()
     };
