@@ -12,6 +12,8 @@ use crate::fzn::constraint::Encode;
 use crate::fzn::domain::BoolDomain;
 use crate::fzn::domain::IntDomain;
 use crate::fzn::model::Model as FznModel;
+use crate::fzn::solve::Goal;
+use crate::fzn::solve::SolveItem;
 use crate::fzn::types::as_int;
 use crate::fzn::var::Assignment;
 use crate::fzn::var::Var as FznVar;
@@ -90,18 +92,44 @@ impl Solver {
     pub fn solve(&self) -> Result<Option<Vec<Assignment>>, Exit> {
         let mut aries_solver = AriesSolver::new(self.aries_model.clone());
 
-        let res = match aries_solver.solve()? {
-            Some(a) => {
-                let mut assignments = Vec::new();
-                for var in self.fzn_model.variables() {
-                    let assignment = self.make_assignment(var, &a);
-                    assignments.push(assignment);
-                }
-                Some(assignments)
+        match self.fzn_model.solve_item() {
+            SolveItem::Satisfy => {
+                let res = match aries_solver.solve()? {
+                    Some(a) => {
+                        let mut assignments = Vec::new();
+                        for var in self.fzn_model.variables() {
+                            let assignment = self.make_assignment(var, &a);
+                            assignments.push(assignment);
+                        }
+                        Some(assignments)
+                    }
+                    None => None,
+                };
+                Ok(res)
             }
-            None => None,
-        };
-        Ok(res)
+            SolveItem::Optimize(objective) => {
+                let obj_var = objective.variable();
+                let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
+                let is_minimize = objective.goal() == &Goal::Minimize;
+                let aries_res = if is_minimize {
+                    aries_solver.minimize(obj_var_ref)?
+                } else {
+                    aries_solver.maximize(obj_var_ref)?
+                };
+                let res = match aries_res {
+                    Some((_, a)) => {
+                        let mut assignments = Vec::new();
+                        for var in self.fzn_model.variables() {
+                            let assignment = self.make_assignment(var, &a);
+                            assignments.push(assignment);
+                        }
+                        Some(assignments)
+                    }
+                    None => None,
+                };
+                Ok(res)
+            }
+        }
     }
 
     fn make_assignment(

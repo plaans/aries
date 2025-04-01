@@ -17,6 +17,15 @@ pub enum BasicVar {
     Int(Rc<VarInt>),
 }
 
+impl BasicVar {
+    pub fn id(&self) -> &usize {
+        match self {
+            BasicVar::Bool(v) => v.id(),
+            BasicVar::Int(v) => v.id(),
+        }
+    }
+}
+
 impl Name for BasicVar {
     fn name(&self) -> &String {
         match self {
