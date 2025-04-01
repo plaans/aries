@@ -269,7 +269,103 @@ pub fn parse_var_decl_item(
                 }
             };
         }
-        _ => todo!(),
+        VarDeclItem::Int {
+            id: _,
+            expr: _,
+            annos: _,
+        } => todo!("unbounded int are not supported"),
+        VarDeclItem::IntInSet {
+            id: _,
+            set: _,
+            expr: _,
+            annos: _,
+        } => todo!("int in set are not supported"),
+        VarDeclItem::Float {
+            id: _,
+            expr: _,
+            annos: _,
+        } => bail!("float are not supported"),
+        VarDeclItem::BoundedFloat {
+            id: _,
+            lb: _,
+            ub: _,
+            expr: _,
+            annos: _,
+        } => bail!("float int are not supported"),
+        VarDeclItem::SetOfInt {
+            id: _,
+            expr: _,
+            annos: _,
+        } => bail!("set of int are not supported"),
+        VarDeclItem::SubSetOfIntSet {
+            id: _,
+            set: _,
+            expr: _,
+            annos: _,
+        } => bail!("subset of int set are not supported"),
+        VarDeclItem::SubSetOfIntRange {
+            id: _,
+            lb: _,
+            ub: _,
+            expr: _,
+            annos: _,
+        } => bail!("subset of int range are not supported"),
+        VarDeclItem::ArrayOfBool {
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => todo!("array of bool are not supported"),
+        VarDeclItem::ArrayOfIntInRange {
+            lb: _,
+            ub: _,
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => todo!("array of int in range are not supported"),
+        VarDeclItem::ArrayOfIntInSet {
+            set: _,
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => todo!("array of int in set are not supported"),
+        VarDeclItem::ArrayOfFloat {
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => bail!("float are not supported"),
+        VarDeclItem::ArrayOfBoundedFloat {
+            lb: _,
+            ub: _,
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => bail!("float are not supported"),
+        VarDeclItem::ArrayOfSet {
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => bail!("array of set are not supported"),
+        VarDeclItem::ArrayOfSubSetOfIntRange {
+            ub: _,
+            lb: _,
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => bail!("array of set of int range are not supported"),
+        VarDeclItem::ArrayOfSubSetOfIntSet {
+            set: _,
+            ix: _,
+            id: _,
+            annos: _,
+            array_expr: _,
+        } => bail!("array of subset of int set are not supported"),
     }
     Ok(())
 }

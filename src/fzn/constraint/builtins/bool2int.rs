@@ -7,14 +7,14 @@ use flatzinc::ConstraintItem;
 
 use crate::aries::constraint::Eq;
 use crate::aries::Post;
+use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
+use crate::fzn::model::Model;
 use crate::fzn::parser::var_bool_from_expr;
 use crate::fzn::parser::var_int_from_expr;
-use crate::fzn::constraint::Constraint;
-use crate::fzn::model::Model;
-use crate::fzn::Fzn;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
+use crate::fzn::Fzn;
 
 #[derive(Clone, Debug)]
 pub struct Bool2Int {
@@ -38,7 +38,10 @@ impl Bool2Int {
         &self.b
     }
 
-    pub fn try_from_item(item: ConstraintItem, model: &mut Model) -> anyhow::Result<Self> {
+    pub fn try_from_item(
+        item: ConstraintItem,
+        model: &mut Model,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             item.id.as_str() == Self::NAME,
             "'{}' expected but received '{}'",
