@@ -1,9 +1,9 @@
 use crate::fzn::var::Assignment;
 use crate::fzn::Fzn;
 
-const UNSAT: &str = "=====UNSATISFIABLE=====";
-const END_OF_SOLUTION: &str = "----------";
-const _END_OF_SEARCH: &str = "==========";
+pub const UNSAT: &str = "=====UNSATISFIABLE=====";
+pub const END_OF_SOLUTION: &str = "----------";
+pub const END_OF_SEARCH: &str = "==========";
 
 pub fn make_output(result: Option<Vec<Assignment>>) -> String {
     match result {

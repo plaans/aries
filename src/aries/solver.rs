@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use aries::core::state::Domains;
+use aries::core::IntCst;
 use aries::core::VarRef;
 use aries::model::Model as AriesModel;
 use aries::solver::Exit;
@@ -88,7 +88,7 @@ impl Solver {
 
     /// Solve the flatzinc model.
     ///
-    /// If the problem is sat, the aries domains are mapped to assignments.
+    /// If the problem is satisfiable, the aries domains are mapped to assignments.
     pub fn solve(&self) -> Result<Option<Vec<Assignment>>, Exit> {
         let mut aries_solver = AriesSolver::new(self.aries_model.clone());
 
@@ -132,11 +132,43 @@ impl Solver {
         }
     }
 
-    fn make_assignment(
-        &self,
-        var: &FznVar,
-        domains: &Arc<Domains>,
-    ) -> Assignment {
+    /// Solve the flatzinc model with a call back for new solution.
+    ///
+    /// Warning: for satisfaction models, the callback
+    pub fn solve_with<F>(&self, mut f: F) -> anyhow::Result<()>
+    where
+        F: FnMut(Vec<Assignment>) -> (),
+    {
+        let mut aries_solver = AriesSolver::new(self.aries_model.clone());
+
+        match self.fzn_model.solve_item() {
+            SolveItem::Satisfy => {
+                if let Some(domains) = aries_solver.solve()? {
+                    let assignments = self.make_assignments(&domains);
+                    f(assignments);
+                }
+                Ok(())
+            }
+            SolveItem::Optimize(objective) => {
+                let obj_var = objective.variable();
+                let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
+                let is_minimize = objective.goal() == &Goal::Minimize;
+                let g = |_: IntCst, d: &Domains| f(self.make_assignments(d));
+                let aries_res = if is_minimize {
+                    aries_solver.minimize_with(obj_var_ref, g)?
+                } else {
+                    aries_solver.maximize_with(obj_var_ref, g)?
+                };
+                if let Some((_, domains)) = aries_res {
+                    let assignments = self.make_assignments(&domains);
+                    f(assignments);
+                };
+                Ok(())
+            }
+        }
+    }
+
+    fn make_assignment(&self, var: &FznVar, domains: &Domains) -> Assignment {
         match var {
             FznVar::Bool(v) => {
                 let var_ref = self.translation.get(v.id()).unwrap();
@@ -165,15 +197,27 @@ impl Solver {
             FznVar::BoolArray(_) => todo!("bool array assignment"),
         }
     }
+
+    /// Make assignements for all flatzinc variables.
+    fn make_assignments(&self, domains: &Domains) -> Vec<Assignment> {
+        self.fzn_model
+            .variables()
+            .map(|v| self.make_assignment(v, domains))
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use crate::fzn::constraint::builtins::BoolEq;
     use crate::fzn::constraint::builtins::IntEq;
+    use crate::fzn::constraint::builtins::IntNe;
     use crate::fzn::domain::BoolDomain;
     use crate::fzn::domain::IntRange;
     use crate::fzn::model::Model;
+    use crate::fzn::types::Int;
 
     use super::*;
 
@@ -259,6 +303,38 @@ mod tests {
             assignments.contains(&x_false) && assignments.contains(&y_false);
 
         assert!(both_true || both_false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn max_solve_with() -> anyhow::Result<()> {
+        let mut fzn_model = FznModel::new();
+
+        let domain_x = IntRange::new(1, 3)?.into();
+        let domain_y = IntRange::new(2, 4)?.into();
+        let x = fzn_model.new_var_int(domain_x, "x".to_string(), false)?;
+        let y = fzn_model.new_var_int(domain_y, "y".to_string(), false)?;
+        fzn_model.maximize(x.clone()).unwrap();
+
+        fzn_model.add_constraint(IntNe::new(x.clone(), y.clone()).into());
+
+        let solver = Solver::new(fzn_model);
+
+        let mut solutions = Vec::new();
+        let f = |solution| solutions.push(solution);
+        solver.solve_with(f).unwrap();
+
+        // Check objective is increasing
+        let mut objective = Int::MIN;
+        for solution in solutions {
+            // Assume x is in position 0
+            let (x_sol, value): (Rc<VarInt>, Int) =
+                solution[0].clone().try_into().unwrap();
+            assert_eq!(x_sol, x);
+            assert!(value >= objective);
+            objective = value;
+        }
 
         Ok(())
     }

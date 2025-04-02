@@ -24,6 +24,38 @@ impl Assignment {
     }
 }
 
+impl TryFrom<Assignment> for (Rc<VarBool>, bool) {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Assignment) -> Result<Self, Self::Error> {
+        match value {
+            Assignment::Bool(v, x) => Ok((v, x)),
+            Assignment::Int(v, _) => {
+                anyhow::bail!(format!("{} is not a var bool", v.name()))
+            }
+            Assignment::IntArray(v, _) => {
+                anyhow::bail!(format!("{} is not a var bool", v.name()))
+            }
+        }
+    }
+}
+
+impl TryFrom<Assignment> for (Rc<VarInt>, Int) {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Assignment) -> Result<Self, Self::Error> {
+        match value {
+            Assignment::Bool(v, _) => {
+                anyhow::bail!(format!("{} is not a var int", v.name()))
+            }
+            Assignment::Int(v, x) => Ok((v, x)),
+            Assignment::IntArray(v, _) => {
+                anyhow::bail!(format!("{} is not a var int", v.name()))
+            }
+        }
+    }
+}
+
 impl Fzn for Assignment {
     fn fzn(&self) -> String {
         match self {

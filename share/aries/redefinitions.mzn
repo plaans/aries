@@ -1,9 +1,11 @@
 predicate array_int_element(var int: b, array [int] of int: as, var int: c) =
     abort("array_int_element is not supported");
 
+% This predicate is in redefinitions 2.0
 % predicate array_int_maximum(var int: m, array [int] of var int: x) =
 %     abort("array_int_maximum is not supported");
 
+% This predicate is in redefinitions 2.0
 % predicate array_int_minimum(var int: m, array [int] of var int: x) =
 %     abort("array_int_minimum is not supported");
 

@@ -3,5 +3,7 @@ use aries_fzn::cli::run;
 
 fn main() {
     let args = parse_args();
-    run(&args);
+    if let Err(e) = run(&args) {
+        eprintln!("{e}")
+    }
 }

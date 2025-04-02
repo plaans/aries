@@ -104,10 +104,10 @@ impl Encode for BoolClause {
             |v: &Rc<VarBool>| BVar::new(*translation.get(v.id()).unwrap());
         let mut literals = Vec::with_capacity(self.a.len() + self.b.len());
         for v in &self.a {
-            literals.push(translate(&v).true_lit());
+            literals.push(translate(v).true_lit());
         }
         for v in &self.b {
-            literals.push(translate(&v).false_lit());
+            literals.push(translate(v).false_lit());
         }
 
         Box::new(Lits { literals })
