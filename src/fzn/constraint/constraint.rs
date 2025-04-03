@@ -6,6 +6,7 @@ use crate::aries::Post;
 use crate::fzn::constraint::builtins::*;
 use crate::fzn::constraint::Encode;
 
+/// A flatzinc constraint.
 #[derive(Clone, Debug)]
 pub enum Constraint {
     ArrayIntMaximum(ArrayIntMaximum),

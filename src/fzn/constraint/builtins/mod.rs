@@ -1,3 +1,5 @@
+//! Flatzinc builtins.
+
 mod array_bool_and;
 mod array_int_maximum;
 mod array_int_minimum;

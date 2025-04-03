@@ -1,3 +1,5 @@
+//! Flatzinc constraint.
+
 pub mod builtins;
 mod constraint;
 mod encode;

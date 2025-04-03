@@ -1,3 +1,5 @@
+//! Flatzinc model.
+
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -28,6 +30,9 @@ use crate::fzn::var::VarIntArray;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
 
+/// Flatzinc model.
+/// 
+/// It contains all the information of a fzn file.
 #[derive(Default, Debug)]
 pub struct Model {
     parameters: Vec<Par>,

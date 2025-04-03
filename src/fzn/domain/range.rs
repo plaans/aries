@@ -36,6 +36,7 @@ impl<T: PartialOrd> Range<T> {
     }
 }
 
+/// Integer range.
 pub type IntRange = Range<Int>;
 
 #[cfg(test)]

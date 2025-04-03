@@ -1,3 +1,5 @@
+//! Flatzinc modelization.
+
 pub mod constraint;
 pub mod domain;
 pub mod model;

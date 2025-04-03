@@ -1,3 +1,5 @@
+//! Flatzinc parameter.
+
 mod gen_par;
 mod par;
 

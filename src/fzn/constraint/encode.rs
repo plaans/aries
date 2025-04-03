@@ -4,6 +4,7 @@ use aries::core::VarRef;
 
 use crate::aries::Post;
 
+/// Encode flatzinc constraint into aries constraint.
 pub trait Encode {
     fn encode(
         &self,

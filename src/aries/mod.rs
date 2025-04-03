@@ -1,3 +1,5 @@
+//! Flatzinc solving using aries.
+
 mod post;
 
 pub mod constraint;

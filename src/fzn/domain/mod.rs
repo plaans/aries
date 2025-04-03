@@ -1,3 +1,5 @@
+//! Flatzinc variable domain.
+
 mod bool_domain;
 mod int_domain;
 mod range;

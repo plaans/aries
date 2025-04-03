@@ -102,7 +102,7 @@ mod tests {
     }
 
     /// Return a LinNe of the form x*c_x + y*c_y != b
-    /// 
+    ///
     /// With 2 variables:
     ///  - x in \[-1,7\]
     ///  - x in \[-4,6\]
@@ -128,15 +128,14 @@ mod tests {
 
     #[test]
     fn is_ne() {
-
         let data = [
-            ( 1,  1,  0, false),
-            (-1, -1,  0, false),
-            ( 1, -1,  0, true),
-            (-1,  1,  0, true),
-            ( 1, -1,  2, false),
-            (-1,  1,  1, false),
-            ( 5,  2,  0, false),
+            (1, 1, 0, false),
+            (-1, -1, 0, false),
+            (1, -1, 0, true),
+            (-1, 1, 0, true),
+            (1, -1, 2, false),
+            (-1, 1, 1, false),
+            (5, 2, 0, false),
         ];
 
         for (c_x, c_y, b, is_ne) in data {

@@ -2,6 +2,7 @@ use crate::fzn::types::Int;
 
 use super::range::IntRange;
 
+/// Intger domain.
 #[derive(Hash, PartialEq, Eq, Debug, Clone)]
 pub enum IntDomain {
     Singleton(Int),

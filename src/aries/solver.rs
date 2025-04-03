@@ -137,7 +137,7 @@ impl Solver {
     /// Warning: for satisfaction models, the callback
     pub fn solve_with<F>(&self, mut f: F) -> anyhow::Result<()>
     where
-        F: FnMut(Vec<Assignment>) -> (),
+        F: FnMut(Vec<Assignment>),
     {
         let mut aries_solver = AriesSolver::new(self.aries_model.clone());
 
@@ -340,7 +340,5 @@ mod tests {
     }
 
     #[test]
-    fn aries_int_ne() {
-
-    }
+    fn aries_int_ne() {}
 }

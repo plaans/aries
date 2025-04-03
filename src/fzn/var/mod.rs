@@ -1,3 +1,5 @@
+//! Flatzinc variable.
+
 mod assignment;
 mod basic_var;
 mod gen_var;

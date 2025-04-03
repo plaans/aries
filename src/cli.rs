@@ -1,3 +1,5 @@
+//! Command line interface.
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -9,6 +11,7 @@ use crate::fzn::output;
 use crate::fzn::output::make_output;
 use crate::fzn::parser::parse_model;
 
+/// Command line arguments.
 #[derive(Parser, Debug)]
 #[command(
     version,
@@ -83,10 +86,12 @@ pub struct Args {
     pub model: PathBuf,
 }
 
+/// Return command line args.
 pub fn parse_args() -> Args {
     Args::parse()
 }
 
+/// Run the solver with the given args.
 pub fn run(args: &Args) -> anyhow::Result<()> {
     let content = fs::read_to_string(&args.model)?;
     let model = parse_model(content)?;
