@@ -7,6 +7,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `a = b`
+#[derive(Debug)]
 pub struct Eq {
     a: IVar,
     b: IVar,

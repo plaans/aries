@@ -7,6 +7,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `a != b`
+#[derive(Debug)]
 pub struct Ne {
     a: IAtom,
     b: IAtom,

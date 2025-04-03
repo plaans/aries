@@ -338,4 +338,9 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn aries_int_ne() {
+
+    }
 }

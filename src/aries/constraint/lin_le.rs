@@ -11,6 +11,7 @@ use crate::aries::Post;
 /// `sum(v_i * c_i) <= ub`
 ///
 /// where `v_i` are variables, ub and `c_i` constants
+#[derive(Debug)]
 pub struct LinLe {
     items: Vec<NFLinearSumItem>,
     ub: IntCst,

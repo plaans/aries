@@ -7,6 +7,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `v = max(v_i)`
+#[derive(Debug)]
 pub struct Max {
     items: Vec<IVar>,
     var: IVar,

@@ -8,6 +8,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `a = b <-> r`
+#[derive(Debug)]
 pub struct EqReif {
     a: IVar,
     b: IVar,

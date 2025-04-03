@@ -12,6 +12,7 @@ use crate::aries::Post;
 /// `sum(v_i * c_i) != b`
 ///
 /// where `v_i` are variables, b and `c_i` constants
+#[derive(Debug)]
 pub struct LinNe {
     sum: Vec<NFLinearSumItem>,
     b: IntCst,
@@ -32,15 +33,16 @@ impl LinNe {
 
     /// Return true if it can be viewed as a basic not equal constraint.
     ///
-    /// It is the case iff two coeffs are \[-1, 1\] or \[1, -1\].
+    /// It is the case both conditions are met:
+    ///  - coeffs are \[-1, 1\] or \[1, -1\]
+    ///  - right term is 0
     fn is_ne(&self) -> bool {
-        if self.sum.len() != 2 {
+        if self.b != 0 || self.sum.len() != 2 {
             return false;
         }
         let f0 = self.sum[0].factor;
         let f1 = self.sum[1].factor;
-        let (f0, f1) = (f0.min(f1), f0.max(f1));
-        (f0, f1) == (-1, 1)
+        (f0, f1) == (-1, 1) || (f0, f1) == (1, -1)
     }
 }
 
@@ -64,10 +66,6 @@ impl<Lbl: Label> Post<Lbl> for LinNe {
 
         let sum_lb = self.sum.iter().map(ilb).sum();
         let sum_ub = self.sum.iter().map(iub).sum();
-
-        dbg!(&self.sum);
-        dbg!(&sum_lb);
-        dbg!(&sum_ub);
 
         let var_sum = model.state.new_var(sum_lb, sum_ub);
 
@@ -103,27 +101,48 @@ mod tests {
         verify_all_2(x, y, model, verify);
     }
 
-    #[test]
-    fn is_ne() {
+    /// Return a LinNe of the form x*c_x + y*c_y != b
+    /// 
+    /// With 2 variables:
+    ///  - x in \[-1,7\]
+    ///  - x in \[-4,6\]
+    fn make_lin_ne(c_x: IntCst, c_y: IntCst, b: IntCst) -> LinNe {
         let mut model: Model<&str> = Model::new();
 
-        let x = model.new_ivar(1, 3, "x");
-        let y = model.new_ivar(1, 3, "y");
+        let x = model.new_ivar(-1, 7, "x");
+        let y = model.new_ivar(-4, 6, "y");
 
         let sum = vec![
             NFLinearSumItem {
                 var: x.into(),
-                factor: 1,
+                factor: c_x,
             },
             NFLinearSumItem {
                 var: y.into(),
-                factor: -1,
+                factor: c_y,
             },
         ];
 
-        // x - y != 0
-        let lin_ne = LinNe::new(sum, 0);
+        LinNe::new(sum, b)
+    }
 
-        assert!(lin_ne.is_ne());
+    #[test]
+    fn is_ne() {
+
+        let data = [
+            ( 1,  1,  0, false),
+            (-1, -1,  0, false),
+            ( 1, -1,  0, true),
+            (-1,  1,  0, true),
+            ( 1, -1,  2, false),
+            (-1,  1,  1, false),
+            ( 5,  2,  0, false),
+        ];
+
+        for (c_x, c_y, b, is_ne) in data {
+            let lin_ne = make_lin_ne(c_x, c_y, b);
+            dbg!(&lin_ne);
+            assert_eq!(lin_ne.is_ne(), is_ne);
+        }
     }
 }

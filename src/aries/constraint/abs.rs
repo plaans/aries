@@ -9,6 +9,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `b = abs(a)`
+#[derive(Debug)]
 pub struct Abs {
     a: IVar,
     b: IVar,

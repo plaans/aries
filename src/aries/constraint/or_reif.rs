@@ -7,6 +7,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `v = or(v_i)`
+#[derive(Debug)]
 pub struct OrReif {
     items: Vec<BVar>,
     var: BVar,

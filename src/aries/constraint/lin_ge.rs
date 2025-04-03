@@ -10,6 +10,7 @@ use crate::aries::Post;
 /// `sum(v_i * c_i) >= lb`
 ///
 /// where `v_i` are variables, lb and `c_i` constants
+#[derive(Debug)]
 pub struct LinGe {
     items: Vec<NFLinearSumItem>,
     lb: IntCst,

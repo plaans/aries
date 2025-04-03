@@ -7,6 +7,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `v = and(v_i)`
+#[derive(Debug)]
 pub struct AndReif {
     items: Vec<BVar>,
     var: BVar,

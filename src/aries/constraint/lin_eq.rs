@@ -11,6 +11,7 @@ use crate::aries::Post;
 /// `sum(v_i * c_i) = b`
 ///
 /// where `v_i` are variables, b and `c_i` constants
+#[derive(Debug)]
 pub struct LinEq {
     sum: Vec<NFLinearSumItem>,
     b: IntCst,

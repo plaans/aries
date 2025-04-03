@@ -7,6 +7,7 @@ use crate::aries::Post;
 
 /// Represent the constraint:
 /// `v = min(v_i)`
+#[derive(Debug)]
 pub struct Min {
     items: Vec<IVar>,
     var: IVar,
