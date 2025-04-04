@@ -4,8 +4,9 @@ use aries::core::VarRef;
 
 use crate::aries::Post;
 
-/// Encode flatzinc constraint into aries constraint.
+/// Used to encode a flatzinc constraint into aries constraint.
 pub trait Encode {
+    /// Return postable aries constraint.
     fn encode(
         &self,
         translation: &HashMap<usize, VarRef>,

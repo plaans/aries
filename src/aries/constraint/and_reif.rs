@@ -5,8 +5,10 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `v = and(v_i)`
+/// Reified and constraint.
+///
+/// `b = and(v[i])`
+/// where `v[i]` are boolean variables.
 #[derive(Debug)]
 pub struct AndReif {
     items: Vec<BVar>,

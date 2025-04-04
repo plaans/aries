@@ -7,6 +7,12 @@ use crate::fzn::var::VarIntArray;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
 
+/// Variable assignment.
+/// 
+/// It is used to define a solution.
+/// ```flatzinc
+/// x = 4;
+/// ```
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Assignment {
     Bool(Rc<VarBool>, bool),

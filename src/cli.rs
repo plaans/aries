@@ -6,7 +6,7 @@ use std::path::PathBuf;
 // use clap::value_parser;
 use clap::Parser;
 
-use crate::aries::solver::Solver;
+use crate::aries::Solver;
 use crate::fzn::output;
 use crate::fzn::output::make_output;
 use crate::fzn::parser::parse_model;
@@ -94,7 +94,7 @@ pub fn parse_args() -> Args {
 /// Run the solver with the given args.
 pub fn run(args: &Args) -> anyhow::Result<()> {
     let content = fs::read_to_string(&args.model)?;
-    let model = parse_model(content)?;
+    let model = parse_model(content.as_str())?;
     let solver = Solver::new(model);
     if args.intermediate {
         let mut unsat = true;

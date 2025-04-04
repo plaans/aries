@@ -2,7 +2,9 @@ use std::rc::Rc;
 
 use crate::fzn::types::Int;
 
+/// Used to get a flatzinc string representation.
 pub trait Fzn {
+    /// Return flatzinc string representation.
     fn fzn(&self) -> String;
 }
 

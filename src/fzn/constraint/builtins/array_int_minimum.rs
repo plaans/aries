@@ -15,6 +15,12 @@ use crate::fzn::parser::vec_var_int_from_expr;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Integer array minimum constraint.
+///
+/// ```flatzinc
+/// constraint array_int_minimum([x,y,3], z);
+/// % z = min(x,y,3)
+/// ```
 #[derive(Clone, Debug)]
 pub struct ArrayIntMinimum {
     m: Rc<VarInt>,

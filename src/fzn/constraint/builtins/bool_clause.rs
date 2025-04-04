@@ -16,6 +16,12 @@ use crate::fzn::parser::vec_var_bool_from_expr;
 use crate::fzn::var::VarBool;
 use crate::fzn::Fzn;
 
+/// Boolean clause constraint.
+///
+/// ```flatzinc
+/// constraint bool_clause([a,b], [c]);
+/// % a \/ b \/ not c
+/// ```
 #[derive(Clone, Debug)]
 pub struct BoolClause {
     a: Vec<Rc<VarBool>>,

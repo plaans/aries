@@ -5,8 +5,10 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `v = max(v_i)`
+/// Maximum constraint.
+///
+/// `x = max(v[i])`
+/// where `v[i]` are variables.
 #[derive(Debug)]
 pub struct Max {
     items: Vec<IVar>,

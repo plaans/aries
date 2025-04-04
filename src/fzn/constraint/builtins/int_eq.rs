@@ -14,6 +14,12 @@ use crate::fzn::parser::var_int_from_expr;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Integer equality constraint.
+///
+/// ```flatzinc
+/// constraint int_eq(x,y);
+/// % x = y
+/// ```
 #[derive(Clone, Debug)]
 pub struct IntEq {
     a: Rc<VarInt>,

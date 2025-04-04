@@ -14,6 +14,12 @@ use crate::fzn::parser::var_bool_from_expr;
 use crate::fzn::var::VarBool;
 use crate::fzn::Fzn;
 
+/// Boolean equality constraint.
+///
+/// ```flatzinc
+/// constraint bool_eq(a,b);
+/// % a = b
+/// ```
 #[derive(Clone, Debug)]
 pub struct BoolEq {
     a: Rc<VarBool>,

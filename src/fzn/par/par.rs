@@ -9,6 +9,11 @@ use crate::fzn::par::ParIntArray;
 use crate::fzn::parvar::ParVar;
 use crate::fzn::Fzn;
 
+/// Flatzinc parameter.
+///
+/// ```flatzinc
+/// int: p = 3;
+/// ```
 #[derive(Transitive)]
 #[transitive(from(ParBool, Rc<ParBool>))]
 #[transitive(from(ParInt, Rc<ParInt>))]

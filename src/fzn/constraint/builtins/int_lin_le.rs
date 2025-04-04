@@ -17,6 +17,12 @@ use crate::fzn::types::Int;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Integer linear less or equal constraint.
+///
+/// ```flatzinc
+/// constraint int_lin_le([1,-1,3], [x,y,z], 5);
+/// % x - y + 3*z <= 5
+/// ```
 #[derive(Clone, Debug)]
 pub struct IntLinLe {
     a: Vec<Int>,

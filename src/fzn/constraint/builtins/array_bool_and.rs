@@ -15,6 +15,12 @@ use crate::fzn::parser::vec_var_bool_from_expr;
 use crate::fzn::var::VarBool;
 use crate::fzn::Fzn;
 
+/// Boolean arrray and constraint.
+///
+/// ```flatzinc
+/// constraint array_bool_and([a,b,c], r);
+/// % r = a /\ b /\ c
+/// ```
 #[derive(Clone, Debug)]
 pub struct ArrayBoolAnd {
     a: Vec<Rc<VarBool>>,

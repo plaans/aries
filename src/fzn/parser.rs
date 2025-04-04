@@ -1,3 +1,5 @@
+//! Flatzinc parsing.
+
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -25,20 +27,11 @@ use crate::fzn::var::BasicVar;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 
+/// Convert a flatzinc [OptimizationType] into a [Goal].
 pub fn goal_from_optim_type(optim: &OptimizationType) -> Goal {
     match optim {
         OptimizationType::Minimize => Goal::Minimize,
         OptimizationType::Maximize => Goal::Maximize,
-    }
-}
-
-pub fn var_bool_from_expr(
-    expr: &Expr,
-    model: &Model,
-) -> anyhow::Result<Rc<VarBool>> {
-    match expr {
-        Expr::VarParIdentifier(id) => model.get_var_bool(id),
-        _ => bail!("not a varbool"),
     }
 }
 
@@ -49,6 +42,18 @@ pub fn is_output_anno(anno: &Annotation) -> bool {
     ["output_var", "output_array"].contains(&anno.id.as_str())
 }
 
+/// Convert a flatzinc [Expr] into a [VarBool].
+pub fn var_bool_from_expr(
+    expr: &Expr,
+    model: &Model,
+) -> anyhow::Result<Rc<VarBool>> {
+    match expr {
+        Expr::VarParIdentifier(id) => model.get_var_bool(id),
+        _ => bail!("not a varbool"),
+    }
+}
+
+/// Convert a flatzinc [Expr] into a [VarInt].
 pub fn var_int_from_expr(
     expr: &Expr,
     model: &mut Model,
@@ -60,6 +65,7 @@ pub fn var_int_from_expr(
     }
 }
 
+/// Convert a flatzinc [Expr] into a [BasicVar].
 pub fn basic_var_from_expr(
     expr: &Expr,
     model: &Model,
@@ -72,6 +78,7 @@ pub fn basic_var_from_expr(
     }
 }
 
+/// Convert a flatzinc [Expr] into a boolean.
 pub fn bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<bool> {
     match expr {
         Expr::VarParIdentifier(id) => Ok(*model.get_par_bool(id)?.value()),
@@ -80,6 +87,7 @@ pub fn bool_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<bool> {
     }
 }
 
+/// Convert a flatzinc [Expr] into an [Int].
 pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
     match expr {
         Expr::VarParIdentifier(id) => Ok(*model.get_par_int(id)?.value()),
@@ -88,6 +96,7 @@ pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
     }
 }
 
+/// Convert a flatzinc [Expr] into a vector of [VarBool].
 pub fn vec_var_bool_from_expr(
     expr: &Expr,
     model: &Model,
@@ -105,6 +114,7 @@ pub fn vec_var_bool_from_expr(
     }
 }
 
+/// Convert a flatzinc [Expr] into a vector of [Int].
 pub fn vec_int_from_expr(
     expr: &Expr,
     model: &Model,
@@ -122,6 +132,7 @@ pub fn vec_int_from_expr(
     }
 }
 
+/// Convert a flatzinc [Expr] into a vector of [VarInt].
 pub fn vec_var_int_from_expr(
     expr: &Expr,
     model: &mut Model,
@@ -145,10 +156,9 @@ pub fn vec_var_int_from_expr(
     }
 }
 
-pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
+/// Parse a flatzinc string into a new [Model].
+pub fn parse_model(content: &str) -> anyhow::Result<Model> {
     let mut model = Model::new();
-
-    let content = content.into();
 
     for (i, line) in content.lines().enumerate() {
         parse_line(line, &mut model)
@@ -157,6 +167,7 @@ pub fn parse_model(content: impl Into<String>) -> anyhow::Result<Model> {
     Ok(model)
 }
 
+/// Update the model with the given flatzinc line.
 pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
     let statement = flatzinc::Stmt::from_str(line).map_err(|e| anyhow!(e))?;
     match statement {
@@ -176,6 +187,7 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Update the model with the given parameter declaration.
 pub fn parse_par_decl_item(
     par_decl_item: ParDeclItem,
     model: &mut Model,
@@ -196,6 +208,7 @@ pub fn parse_par_decl_item(
     Ok(())
 }
 
+/// Update the model with a variable declaration.
 pub fn parse_var_decl_item(
     var_decl_item: VarDeclItem,
     model: &mut Model,
@@ -370,6 +383,7 @@ pub fn parse_var_decl_item(
     Ok(())
 }
 
+/// Update the model with the given constraint item.
 pub fn parse_constraint_item(
     c: ConstraintItem,
     m: &mut Model,
@@ -396,6 +410,7 @@ pub fn parse_constraint_item(
 }
 
 // The optimize items do not rely on the type since flatzinc crate is not able to infer types for identifier
+/// Update the model with the given solve item.
 pub fn parse_solve_item(
     s_item: flatzinc::SolveItem,
     model: &mut Model,

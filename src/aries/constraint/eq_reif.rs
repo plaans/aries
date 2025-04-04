@@ -6,8 +6,9 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `a = b <-> r`
+/// Reified equality constraint.
+///
+/// `r <-> a = b`
 #[derive(Debug)]
 pub struct EqReif {
     a: IVar,

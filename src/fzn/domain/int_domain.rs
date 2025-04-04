@@ -3,6 +3,10 @@ use crate::fzn::types::Int;
 use super::range::IntRange;
 
 /// Intger domain.
+///
+/// ```flatzinc
+/// var 1..5: x;
+/// ```
 #[derive(Hash, PartialEq, Eq, Debug, Clone)]
 pub enum IntDomain {
     Singleton(Int),

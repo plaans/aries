@@ -1,4 +1,4 @@
-//! Flatzinc builtins.
+//! Flatzinc builtin constraints.
 
 mod array_bool_and;
 mod array_int_maximum;

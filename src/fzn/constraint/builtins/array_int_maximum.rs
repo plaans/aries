@@ -15,6 +15,12 @@ use crate::fzn::parser::vec_var_int_from_expr;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Integer array maximum constraint.
+///
+/// ```flatzinc
+/// constraint array_int_maximum([x,y,0], z);
+/// % z = max(x,y,0)
+/// ```
 #[derive(Clone, Debug)]
 pub struct ArrayIntMaximum {
     m: Rc<VarInt>,

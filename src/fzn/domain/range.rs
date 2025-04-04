@@ -37,6 +37,10 @@ impl<T: PartialOrd> Range<T> {
 }
 
 /// Integer range.
+///
+/// ```flatzinc
+/// var 1..9: x;
+/// ```
 pub type IntRange = Range<Int>;
 
 #[cfg(test)]

@@ -8,6 +8,11 @@ use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 use crate::fzn::Name;
 
+/// Basic flatzinc variable.
+/// 
+/// ```flatzinc
+/// var 2..6: x;
+/// ```
 #[derive(Transitive)]
 #[transitive(from(VarBool, Rc<VarBool>))]
 #[transitive(from(VarInt, Rc<VarInt>))]

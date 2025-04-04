@@ -1,3 +1,9 @@
+//! Module to easily test aries constraints.
+//!
+//! It provides two kinds of function:
+//!  - basic model generators
+//!  - solution checking by enumerating all possibilities
+
 use aries::core::IntCst;
 use aries::core::VarRef;
 use aries::model::lang::linear::NFLinearSumItem;

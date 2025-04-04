@@ -8,10 +8,10 @@ use crate::aries::constraint::LinEq;
 use crate::aries::constraint::Ne;
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `sum(v_i * c_i) != b`
+/// Linear not equal constraint.
 ///
-/// where `v_i` are variables, b and `c_i` constants
+/// `sum(v[i] * c[i]) != b`
+/// where `v[i]` are variables, `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinNe {
     sum: Vec<NFLinearSumItem>,

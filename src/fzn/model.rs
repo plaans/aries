@@ -30,9 +30,14 @@ use crate::fzn::var::VarIntArray;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
 
-/// Flatzinc model.
-/// 
-/// It contains all the information of a fzn file.
+/// Flatzinc model in memory.
+///
+/// ```flatzinc
+/// var 1..5: x;
+/// var 3..6: y;
+/// constraint int_eq(x,y);
+/// solve maximize x;
+/// ```
 #[derive(Default, Debug)]
 pub struct Model {
     parameters: Vec<Par>,

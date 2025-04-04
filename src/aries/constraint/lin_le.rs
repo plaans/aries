@@ -7,10 +7,10 @@ use aries::reif::ReifExpr;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `sum(v_i * c_i) <= ub`
+/// Linear less or equal constraint.
 ///
-/// where `v_i` are variables, ub and `c_i` constants
+/// `sum(v[i] * c[i]) <= b`
+/// where `v[i]` are variables, `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinLe {
     items: Vec<NFLinearSumItem>,

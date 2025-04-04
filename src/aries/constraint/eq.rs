@@ -5,7 +5,8 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
+/// Equality constraint.
+///
 /// `a = b`
 #[derive(Debug)]
 pub struct Eq {

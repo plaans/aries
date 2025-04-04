@@ -7,6 +7,10 @@ use crate::fzn::constraint::builtins::*;
 use crate::fzn::constraint::Encode;
 
 /// A flatzinc constraint.
+///
+/// ```flatzinc
+/// constraint int_le(x,y);
+/// ```
 #[derive(Clone, Debug)]
 pub enum Constraint {
     ArrayIntMaximum(ArrayIntMaximum),

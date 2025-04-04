@@ -300,6 +300,7 @@ class Predicate:
     def rust_file(self) -> str:
         file = self.rust_imports()
         file += "\n"
+        file += self.rust_doc()
         file += self.DERIVE
         file += self.rust_struct()
         file += "\n"

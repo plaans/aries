@@ -14,6 +14,12 @@ use crate::fzn::parser::var_int_from_expr;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Integer absolute value constraint.
+///
+/// ```flatzinc
+/// constraint int_abs(x,y);
+/// % y = abs(a)
+/// ```
 #[derive(Clone, Debug)]
 pub struct IntAbs {
     a: Rc<VarInt>,

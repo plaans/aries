@@ -3,16 +3,16 @@
 use crate::fzn::var::Assignment;
 use crate::fzn::Fzn;
 
-/// Message when the problem is unsatisfiable.
+/// Message to indicate the problem is unsatisfiable.
 pub const UNSAT: &str = "=====UNSATISFIABLE=====";
 
-/// Message when at the end of a solution.
+/// Message to indicate the end of a solution.
 pub const END_OF_SOLUTION: &str = "----------";
 
-/// Message when all solutions are printed.
+/// Message when to indicate all solutions have been found.
 pub const END_OF_SEARCH: &str = "==========";
 
-/// Create a string representing the output for a solution.
+/// Create a string representing the output for a problem result.
 pub fn make_output(result: Option<Vec<Assignment>>) -> String {
     match result {
         Some(assignements) => {

@@ -16,6 +16,12 @@ use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Boolean to integer constraint.
+///
+/// ```flatzinc
+/// constraint bool2int(b,x);
+/// % x in {0,1} and (b <-> x = 1)
+/// ```
 #[derive(Clone, Debug)]
 pub struct Bool2Int {
     a: Rc<VarBool>,

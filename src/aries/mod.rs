@@ -1,8 +1,9 @@
-//! Flatzinc solving using aries.
+//! Flatzinc problem solving using aries.
 
 mod post;
+mod solver;
 
 pub mod constraint;
-pub mod solver;
 
 pub use post::Post;
+pub use solver::Solver;

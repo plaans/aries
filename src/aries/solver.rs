@@ -20,6 +20,9 @@ use crate::fzn::var::Var as FznVar;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 
+/// Flatzinc solver using aries.
+///
+/// It is responsible to translate flatzinc objects into aries objects.
 #[derive(Default)]
 pub struct Solver {
     fzn_model: FznModel,

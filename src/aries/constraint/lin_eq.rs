@@ -7,10 +7,10 @@ use crate::aries::constraint::LinGe;
 use crate::aries::constraint::LinLe;
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `sum(v_i * c_i) = b`
+/// Linear equality constraint.
 ///
-/// where `v_i` are variables, b and `c_i` constants
+/// `sum(v[i] * c[i]) = b`
+/// where `v[i]` are variables, `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinEq {
     sum: Vec<NFLinearSumItem>,

@@ -14,6 +14,12 @@ use crate::fzn::parser::var_int_from_expr;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Integer less or equal constraint.
+///
+/// ```flatzinc
+/// constraint int_le(x,y);
+/// % x <= y
+/// ```
 #[derive(Clone, Debug)]
 pub struct IntLe {
     a: Rc<VarInt>,

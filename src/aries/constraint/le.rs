@@ -5,7 +5,8 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
+/// Less or equal constraint.
+///
 /// `a <= b`
 #[derive(Debug)]
 pub struct Le {

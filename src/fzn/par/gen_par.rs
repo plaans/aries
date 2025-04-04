@@ -37,10 +37,32 @@ impl<T: PartialEq> PartialEq for GenPar<T> {
     }
 }
 
+/// Boolean parameter.
+///
+/// ```flatzinc
+/// bool: p = true;
+/// ```
 pub type ParBool = GenPar<bool>;
+
+/// Integer parameter.
+///
+/// ```flatzinc
+/// int: p = 3;
+/// ```
 pub type ParInt = GenPar<Int>;
 
+/// Boolean array parameter.
+///
+/// ```flatzinc
+/// array [1..2] of bool: p = [true, false];
+/// ```
 pub type ParBoolArray = GenPar<Vec<bool>>;
+
+/// Integer array parameter.
+///
+/// ```flatzinc
+/// array [1..3] of int: p = [2, 4, 8];
+/// ```
 pub type ParIntArray = GenPar<Vec<Int>>;
 
 impl Fzn for ParBool {

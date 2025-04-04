@@ -17,6 +17,12 @@ use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Reified integer equality constraint.
+///
+/// ```flatzinc
+/// constraint int_eq_reif(x,y,r);
+/// % r <-> x = y
+/// ```
 #[derive(Clone, Debug)]
 pub struct IntEqReif {
     a: Rc<VarInt>,

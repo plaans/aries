@@ -5,8 +5,10 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `v = min(v_i)`
+/// Minimum constraint.
+///
+/// `x = min(v[i])`
+/// where `v[i]` are variables.
 #[derive(Debug)]
 pub struct Min {
     items: Vec<IVar>,

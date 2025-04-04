@@ -5,8 +5,10 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `v = or(v_i)`
+/// Reified or constraint.
+///
+/// `b = or(v[i])`
+/// where `v[i]` are boolean variables.
 #[derive(Debug)]
 pub struct OrReif {
     items: Vec<BVar>,

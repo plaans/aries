@@ -11,6 +11,11 @@ use crate::fzn::var::VarIntArray;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
 
+/// Flatzinc variable.
+/// 
+/// ```flatzinc
+/// var bool: b;
+/// ```
 #[derive(Transitive)]
 #[transitive(from(VarBool, Rc<VarBool>))]
 #[transitive(from(VarInt, Rc<VarInt>))]

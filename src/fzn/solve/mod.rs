@@ -1,6 +1,8 @@
-pub mod goal;
-pub mod objective;
-pub mod solve_item;
+//! Flatzinc solve.
+
+mod goal;
+mod objective;
+mod solve_item;
 
 pub use goal::Goal;
 pub use objective::Objective;

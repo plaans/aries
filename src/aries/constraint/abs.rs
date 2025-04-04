@@ -7,7 +7,8 @@ use crate::aries::constraint::LinEq;
 use crate::aries::constraint::Max;
 use crate::aries::Post;
 
-/// Represent the constraint:
+/// Absolute value constraint.
+///
 /// `b = abs(a)`
 #[derive(Debug)]
 pub struct Abs {

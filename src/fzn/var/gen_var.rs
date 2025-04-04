@@ -8,6 +8,7 @@ use crate::fzn::Name;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
+/// Generic variable.
 #[derive(PartialEq, Eq, Debug)]
 pub struct GenVar<D> {
     id: usize,
@@ -46,7 +47,18 @@ impl<D> Name for GenVar<D> {
     }
 }
 
+/// Boolean variable.
+/// 
+/// ```flatzinc
+/// var bool: b;
+/// ```
 pub type VarBool = GenVar<BoolDomain>;
+
+/// Integer variable.
+/// 
+/// ```flatzinc
+/// var 1..3: x;
+/// ```
 pub type VarInt = GenVar<IntDomain>;
 
 impl Fzn for VarBool {

@@ -1,6 +1,11 @@
 use crate::fzn::solve::Objective;
 use crate::fzn::var::BasicVar;
 
+/// Flatzinc solve item.
+///
+/// ```flatzinc
+/// solve satisfy;
+/// ```
 #[derive(PartialEq, Debug)]
 pub enum SolveItem {
     Satisfy,

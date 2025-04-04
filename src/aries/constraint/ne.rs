@@ -5,7 +5,8 @@ use aries::model::Model;
 
 use crate::aries::Post;
 
-/// Represent the constraint:
+/// Not equal constraint.
+///
 /// `a != b`
 #[derive(Debug)]
 pub struct Ne {

@@ -6,10 +6,10 @@ use aries::model::Model;
 use crate::aries::constraint::LinLe;
 use crate::aries::Post;
 
-/// Represent the constraint:
-/// `sum(v_i * c_i) >= lb`
+/// Linear greater or equal constraint.
 ///
-/// where `v_i` are variables, lb and `c_i` constants
+/// `sum(v[i] * c[i]) >= b`
+/// where `v[i]` are variables, `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinGe {
     items: Vec<NFLinearSumItem>,

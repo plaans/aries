@@ -1,3 +1,5 @@
+//! Aries constraints.
+
 mod abs;
 mod and_reif;
 mod eq;
