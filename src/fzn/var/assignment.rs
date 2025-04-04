@@ -8,7 +8,7 @@ use crate::fzn::Fzn;
 use crate::fzn::Name;
 
 /// Variable assignment.
-/// 
+///
 /// It is used to define a solution.
 /// ```flatzinc
 /// x = 4;

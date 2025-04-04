@@ -12,7 +12,7 @@ use crate::fzn::Fzn;
 use crate::fzn::Name;
 
 /// Flatzinc variable.
-/// 
+///
 /// ```flatzinc
 /// var bool: b;
 /// ```

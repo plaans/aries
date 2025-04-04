@@ -9,7 +9,7 @@ use crate::fzn::var::VarInt;
 use crate::fzn::Name;
 
 /// Basic flatzinc variable.
-/// 
+///
 /// ```flatzinc
 /// var 2..6: x;
 /// ```

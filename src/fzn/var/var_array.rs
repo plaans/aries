@@ -54,14 +54,14 @@ impl<T: PartialEq> PartialEq for GenArrayVariable<T> {
 }
 
 /// Boolean array variable.
-/// 
+///
 /// ```flatzinc
 /// array [1..2] of var bool: b;
 /// ```
 pub type VarBoolArray = GenArrayVariable<Rc<VarBool>>;
 
 /// Integer array variable.
-/// 
+///
 /// ```flatzinc
 /// array [1..3] of var 2..3: x;
 /// ```

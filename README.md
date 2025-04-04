@@ -2,8 +2,16 @@
 
 aries-fzn is a Rust crate which aims to make Aries solver compatible with Minizinc. Minizinc problems are compiled to flatzinc which is the format supported by this crate.
 
-Titouan Seraud - [titouan.seraud@laas.fr](titouan.seraud@laas.fr)
+Titouan Seraud - [titouan.seraud@laas.fr](titouan.seraud@laas.fr) <!-- titouan.seraud@insa-toulouse.fr -->
 
+<details>
+<summary><b>Table of contents</b></summary>
+
+- [Installation](#installation)
+- [Usage](#usage)
+- [Documentation](#documentation)
+- [Useful links](#useful-links)
+</details>
 
 ## Installation
 
@@ -20,15 +28,31 @@ Declare aries solver to minizinc by adding `share` directory to `MZN_SOLVER_PATH
 export MZN_SOLVER_PATH=$PWD/share
 ```
 
-Aries solver should now be available. For 
+Minizinc should now detect aries via the file [aries.msc](share/aries.msc). You can check the solver is available using the following command.
 ```bash
 minizinc --solvers
 ```
 
 
 ## Usage
-
 To solve a problem using aries use `--solver` option. For example you can solve nqueens using the following command.
 ```bash
 minizinc --solver aries examples/nqueens.mzn -D n=8
 ```
+
+
+## Documentation
+The code is documented using Rust doc comments. Use cargo to create the documentation webpage.
+```bash
+cargo doc
+```
+You should now have access to the entry point [target/doc/aries_fzn/index.html](target/doc/aries_fzn/index.html).
+
+Other useful documentation can be found under the [doc](doc) directory.
+
+
+## Useful links
+ - [Rust book](https://doc.rust-lang.org/stable/book/)
+ - [Minizinc documentation](https://docs.minizinc.dev/en/stable/index.html)
+ - [Minizinc playground](https://play.minizinc.dev/)
+ - [Graphviz](https://graphviz.org/)

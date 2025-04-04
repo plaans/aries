@@ -48,14 +48,14 @@ impl<D> Name for GenVar<D> {
 }
 
 /// Boolean variable.
-/// 
+///
 /// ```flatzinc
 /// var bool: b;
 /// ```
 pub type VarBool = GenVar<BoolDomain>;
 
 /// Integer variable.
-/// 
+///
 /// ```flatzinc
 /// var 1..3: x;
 /// ```
