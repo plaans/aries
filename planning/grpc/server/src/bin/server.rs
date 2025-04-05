@@ -2,6 +2,7 @@ use anyhow::{bail, ensure, Context, Error};
 use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
+use aries_grpc_server::warm_up::plan_from_option;
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
@@ -59,6 +60,11 @@ struct SolveArgs {
 
     #[clap(flatten)]
     conf: SolverConfiguration,
+
+    /// File containing the warm-up plan.
+    /// If both `warm_up_plan` and `warm_up_file` are provided, the plan will be used.
+    #[clap(short, long)]
+    pub warm_up_file: Option<String>,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -84,6 +90,11 @@ pub struct SolverConfiguration {
     /// Allowed values: forward | activity | activity-bool | activity-bool-light | causal
     #[clap(long = "strategy", short = 's')]
     strategies: Vec<Strat>,
+
+    /// If provided, the solver will run the warm-up plan before starting the search.
+    /// If both `warm_up_plan` and `warm_up_file` are provided, the plan will be used.
+    #[clap(long)]
+    pub warm_up_plan: Option<String>,
 }
 
 impl Default for SolverConfiguration {
@@ -94,6 +105,7 @@ impl Default for SolverConfiguration {
             min_depth: 0,
             max_depth: u32::MAX,
             strategies: Vec::new(),
+            warm_up_plan: None,
         }
     }
 }
@@ -113,6 +125,7 @@ impl SolverConfiguration {
                 "max_depth" | "max-depth" => {
                     self.max_depth = value.parse().context("Unreadable value for `max-depth`.)?")?
                 }
+                "warm_up_plan" | "warm-up-plan" => self.warm_up_plan = Some(value.clone()),
                 _ => bail!("Unknown config key: {key}"),
             }
         }
@@ -184,6 +197,8 @@ fn solve_blocking(
         conf.min_depth
     };
 
+    let warm_up_plan = plan_from_option(conf.warm_up_plan.clone(), &base_problem)?;
+
     // callback that will be invoked each time an intermediate solution is found
     let on_new_solution = |pb: &FiniteProblem, ass: Arc<SavedAssignment>| {
         let plan = serialize_plan(&problem, pb, &ass);
@@ -200,6 +215,7 @@ fn solve_blocking(
         &conf.strategies,
         metric,
         htn_mode,
+        warm_up_plan.clone(),
         on_new_solution,
         deadline,
     )?;
@@ -461,7 +477,14 @@ async fn main() -> Result<(), Error> {
             let problem = std::fs::read(&solve_args.problem_file)?;
             let problem = Problem::decode(problem.as_slice())?;
             let problem = Arc::new(problem);
-            let conf = Arc::new(solve_args.conf.clone());
+            let warm_up_plan = solve_args
+                .warm_up_file
+                .as_ref()
+                .map(std::fs::read_to_string)
+                .transpose()?;
+            let mut conf = solve_args.conf.clone();
+            conf.warm_up_plan = conf.warm_up_plan.or(warm_up_plan);
+            let conf = Arc::new(conf);
 
             let answer = solve(problem, |_| {}, conf).await;
 
