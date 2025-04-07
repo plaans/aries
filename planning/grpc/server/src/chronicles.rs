@@ -1047,8 +1047,13 @@ impl<'a> ChronicleFactory<'a> {
                     }
                     "up:not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
-                        let not_value = !Lit::try_from(value)?;
-                        self.bind_to(&params[0], not_value.into(), span)?;
+                        let not_param0 = !Lit::try_from(self.reify(&params[0], span)?)?;
+                        let value = Lit::try_from(value)?;
+                        self.chronicle.constraints.push(Constraint {
+                            variables: vec![not_param0.into()],
+                            tpe: ConstraintType::Or,
+                            value: Some(value),
+                        });
                     }
                     "up:implies" => {
                         ensure!(params.len() == 2, "operator `implies` must have exactly 2 arguments");
