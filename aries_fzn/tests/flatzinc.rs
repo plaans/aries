@@ -8,7 +8,7 @@ use aries_fzn::fzn::output::make_output;
 use aries_fzn::fzn::parser::parse_model;
 use test_each_file::test_each_file;
 
-test_each_file! { for ["fzn", "dzn"] in "./tests/flatzinc" => test }
+test_each_file! { for ["fzn", "dzn"] in "./aries_fzn/tests/flatzinc" => test }
 
 /// Test the solver ont the given flatzinc input.
 fn test([input, output]: [&str; 2]) {

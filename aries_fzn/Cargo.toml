@@ -1,13 +1,14 @@
 [package]
-name = "aries-fzn"
+name = "aries_fzn"
 authors = ["Titouan Seraud <titouan.seraud@laas.fr>"]
 version = "0.1.0"
 edition = "2021"
+readme = "README.md"
 
 [dependencies]
-anyhow = "1.0.95"
-aries = { path = "../aries/solver" }
-clap = { version = "4.5.32", features = ["derive"] }
+anyhow = { workspace = true }
+aries = { path = "../solver" }
+clap = { workspace = true }
 flatzinc = "0.3.21"
 transitive = "1.1.0"
 

@@ -86,7 +86,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries-fzn"
+name = "aries_fzn"
 version = "0.1.0"
 dependencies = [
  "anyhow",

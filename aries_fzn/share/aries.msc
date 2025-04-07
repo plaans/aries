@@ -4,7 +4,7 @@
     "description": "CP solver from the LAAS-CNRS",
     "version": "0.1.0",
     "mznlib": "./aries",
-    "executable": "../target/release/aries-fzn",
+    "executable": "../../target/release/aries_fzn",
     "tags": ["cp","int"],
     "stdFlags": [
       "-i"

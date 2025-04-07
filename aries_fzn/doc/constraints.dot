@@ -1,5 +1,5 @@
 // This document describes constraint encoding from minizinc to aries.
-// To visualize this document, use Graphviz.
+// Use Graphviz to generate the graph.
 
 digraph constraints {
     label="Constraint endoding from minizinc to aries.\nSquare constraints are implemented, round ones are to be done."
