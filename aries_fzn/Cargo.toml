@@ -1,0 +1,15 @@
+[package]
+name = "aries-fzn"
+authors = ["Titouan Seraud <titouan.seraud@laas.fr>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.95"
+aries = { path = "../aries/solver" }
+clap = { version = "4.5.32", features = ["derive"] }
+flatzinc = "0.3.21"
+transitive = "1.1.0"
+
+[dev-dependencies]
+test_each_file = "0.3.4"

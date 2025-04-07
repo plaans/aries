@@ -1,0 +1,4 @@
+% y = abs(5)
+var 5..5: x:: output_var;
+var -9..9: y:: output_var;
+constraint int_abs(x,y);

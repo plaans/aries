@@ -1,0 +1,20 @@
+{
+    "id": "fr.laas.aries",
+    "name": "Aries",
+    "description": "CP solver from the LAAS-CNRS",
+    "version": "0.1.0",
+    "mznlib": "./aries",
+    "executable": "../target/release/aries-fzn",
+    "tags": ["cp","int"],
+    "stdFlags": [
+      "-i"
+    ],
+    "extraFlags": [
+    ],
+    "supportsMzn": false,
+    "supportsFzn": true,
+    "needsSolns2Out": true,
+    "needsMznExecutable": false,
+    "needsStdlibDir": false,
+    "isGUIApplication": false
+  }

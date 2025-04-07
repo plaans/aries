@@ -1,0 +1,31 @@
+//! Flatzinc builtin constraints.
+
+mod array_bool_and;
+mod array_int_maximum;
+mod array_int_minimum;
+mod bool2int;
+mod bool_clause;
+mod bool_eq;
+mod int_abs;
+mod int_eq;
+mod int_eq_reif;
+mod int_le;
+mod int_lin_eq;
+mod int_lin_le;
+mod int_lin_ne;
+mod int_ne;
+
+pub use array_bool_and::ArrayBoolAnd;
+pub use array_int_maximum::ArrayIntMaximum;
+pub use array_int_minimum::ArrayIntMinimum;
+pub use bool2int::Bool2Int;
+pub use bool_clause::BoolClause;
+pub use bool_eq::BoolEq;
+pub use int_abs::IntAbs;
+pub use int_eq::IntEq;
+pub use int_eq_reif::IntEqReif;
+pub use int_le::IntLe;
+pub use int_lin_eq::IntLinEq;
+pub use int_lin_le::IntLinLe;
+pub use int_lin_ne::IntLinNe;
+pub use int_ne::IntNe;

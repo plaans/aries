@@ -1,0 +1,5 @@
+var 1..1: x:: output_var;
+var 4..8: y:: output_var;
+var 2..5: z:: output_var;
+var 0..9: m:: output_var;
+constraint array_int_minimum(m, [x,y,z]);

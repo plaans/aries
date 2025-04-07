@@ -1,0 +1,3 @@
+var bool: x:: output_var;
+var bool: y:: output_var;
+constraint bool_eq(x,y);

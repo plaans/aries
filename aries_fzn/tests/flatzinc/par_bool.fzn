@@ -1,0 +1,2 @@
+bool: p = true;
+var bool: x:: output_var = p;

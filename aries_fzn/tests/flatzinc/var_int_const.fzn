@@ -1,0 +1,3 @@
+% int_eq is called with literal 3
+var 1..5: x:: output_var;
+constraint int_eq(x,3);
