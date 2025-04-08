@@ -214,11 +214,11 @@ const HTN_DEFAULT_STRATEGIES: [Strat; 4] = [
     Strat::Forward,
 ];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 4] = [
+const GEN_DEFAULT_STRATEGIES: [Strat; 3] = [
     Strat::ActivityBool,
     Strat::ActivityBoolLight,
     Strat::Causal,
-    Strat::Forward,
+    // Strat::Forward,  // deactivate because it makes too many assumptions on the structure of the prolem, some of which may not hold of optional scheduling
 ];
 
 #[derive(Copy, Clone, Debug)]
