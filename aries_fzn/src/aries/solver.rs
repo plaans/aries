@@ -7,6 +7,8 @@ use aries::model::Model as AriesModel;
 use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
 
+use crate::aries::constraint::InSet;
+use crate::aries::Post;
 use crate::fzn::constraint::Constraint as FznConstraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::domain::BoolDomain;
@@ -74,11 +76,22 @@ impl Solver {
     }
 
     fn add_var_int(&mut self, var_int: &VarInt) {
-        let (lb, ub) = match var_int.domain() {
-            IntDomain::Range(range) => range.bounds(),
-            IntDomain::Singleton(x) => (x, x),
+        let ivar = match var_int.domain() {
+            IntDomain::Range(range) => {
+                let (lb, ub) = range.bounds();
+                self.aries_model.new_ivar(*lb, *ub, *var_int.id())
+            }
+            IntDomain::Singleton(x) => {
+                self.aries_model.new_ivar(*x, *x, *var_int.id())
+            }
+            IntDomain::Set(set) => {
+                let (lb, ub) = set.bounds();
+                let ivar = self.aries_model.new_ivar(*lb, *ub, *var_int.id());
+                let in_set = InSet::new(ivar, set.values().clone());
+                in_set.post(&mut self.aries_model);
+                ivar
+            }
         };
-        let ivar = self.aries_model.new_ivar(*lb, *ub, *var_int.id());
         self.translation.insert(*var_int.id(), ivar.into());
     }
 
@@ -137,7 +150,7 @@ impl Solver {
 
     /// Solve the flatzinc model with a call back for new solution.
     ///
-    /// Warning: for satisfaction models, the callback
+    /// Warning: for satisfaction models, the callback is called once
     pub fn solve_with<F>(&self, mut f: F) -> anyhow::Result<()>
     where
         F: FnMut(Vec<Assignment>),

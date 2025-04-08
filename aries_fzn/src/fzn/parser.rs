@@ -20,6 +20,7 @@ use crate::fzn::constraint::builtins::*;
 use crate::fzn::domain::BoolDomain;
 use crate::fzn::domain::IntDomain;
 use crate::fzn::domain::IntRange;
+use crate::fzn::domain::IntSet;
 use crate::fzn::model::Model;
 use crate::fzn::solve::Goal;
 use crate::fzn::types::Int;
@@ -282,17 +283,29 @@ pub fn parse_var_decl_item(
                 }
             };
         }
+        VarDeclItem::IntInSet {
+            id,
+            set,
+            expr,
+            annos,
+        } => {
+            let output = annos.iter().any(is_output_anno);
+            let set = IntSet::from_iter(set.iter().map(|x| *x as Int));
+            ensure!(!set.is_empty(), "empty set");
+            let domain = if let Some(e) = expr {
+                let value = int_from_expr(&e.into(), model)?;
+                ensure!(set.contains(&value), "{} is not in the set", value,);
+                IntDomain::Singleton(value)
+            } else {
+                IntDomain::Set(set)
+            };
+            model.new_var_int(domain, id, output)?;
+        }
         VarDeclItem::Int {
             id: _,
             expr: _,
             annos: _,
         } => todo!("unbounded int are not supported"),
-        VarDeclItem::IntInSet {
-            id: _,
-            set: _,
-            expr: _,
-            annos: _,
-        } => todo!("int in set are not supported"),
         VarDeclItem::Float {
             id: _,
             expr: _,

@@ -12,6 +12,56 @@ use aries::model::lang::IVar;
 use aries::model::Model;
 use aries::solver::Solver;
 
+/// Return all possible values for the given variable.
+///
+/// The solutions are generated in lexicographic order.
+fn get_solutions_1(x: VarRef, model: Model<String>) -> Vec<IntCst> {
+    let mut solver = Solver::new(model);
+    let mut solutions: Vec<IntCst> = solver
+        .enumerate(&[x.into()])
+        .unwrap()
+        .iter()
+        .map(|v| v[0])
+        .collect();
+    solutions.sort();
+    solutions
+}
+
+/// Generate the solutions respecting the given predicate verify.
+///
+/// The solutions are generated in lexicographic order.
+fn gen_solutions_1(
+    x: VarRef,
+    model: &Model<String>,
+    verify: impl Fn(IntCst) -> bool,
+) -> Vec<IntCst> {
+    let (lb_x, ub_x) = model.state.bounds(x);
+
+    let mut solutions = Vec::new();
+
+    for val_x in lb_x..=ub_x {
+        if verify(val_x) {
+            let solution = val_x;
+            solutions.push(solution);
+        }
+    }
+    solutions
+}
+
+/// Verify all the x solutions of the model.
+///
+/// x should be a solution iff `verify(x) == true`.
+pub(super) fn verify_all_1(
+    x: impl Into<VarRef>,
+    model: Model<String>,
+    verify: impl Fn(IntCst) -> bool,
+) {
+    let x = x.into();
+    let expected = gen_solutions_1(x, &model, verify);
+    let solutions = get_solutions_1(x, model);
+    assert_eq!(solutions, expected);
+}
+
 /// Return all possible values for the given variables.
 ///
 /// The solutions are generated in lexicographic order.
@@ -142,6 +192,22 @@ pub(super) fn verify_all_3(
 /// Prepare a basic model for the tests.
 /// Use it as follows.
 /// ```
+/// let (model, x) = basic_int_model_1();
+/// ```
+///
+/// It has one variables:
+///  - x in \[-1,7\]
+pub(super) fn basic_int_model_1() -> (Model<String>, IVar) {
+    let mut model = Model::new();
+
+    let x = model.new_ivar(-1, 7, "x".to_string());
+
+    (model, x)
+}
+
+/// Prepare a basic model for the tests.
+/// Use it as follows.
+/// ```
 /// let (model, x, y) = basic_int_model_2();
 /// ```
 ///
@@ -149,9 +215,8 @@ pub(super) fn verify_all_3(
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 pub(super) fn basic_int_model_2() -> (Model<String>, IVar, IVar) {
-    let mut model = Model::new();
+    let (mut model, x) = basic_int_model_1();
 
-    let x = model.new_ivar(-1, 7, "x".to_string());
     let y = model.new_ivar(-4, 6, "y".to_string());
 
     (model, x, y)

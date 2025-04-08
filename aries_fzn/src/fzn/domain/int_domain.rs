@@ -1,3 +1,4 @@
+use crate::fzn::domain::IntSet;
 use crate::fzn::types::Int;
 
 use super::range::IntRange;
@@ -11,6 +12,7 @@ use super::range::IntRange;
 pub enum IntDomain {
     Singleton(Int),
     Range(IntRange),
+    Set(IntSet),
 }
 
 impl From<IntRange> for IntDomain {

@@ -1,7 +1,6 @@
 //! Test solver against flatzinc files.
 //!
-//! Each (fzn,dzn) pair with the same name in flatzinc folder
-//! gives a test.
+//! Each (fzn,dzn) pair with the same name in flatzinc folder gives a test.
 
 use aries_fzn::aries::Solver;
 use aries_fzn::fzn::output::make_output;
