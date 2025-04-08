@@ -66,6 +66,7 @@ digraph constraints {
         api_EqReif [label="EqReif"]
         api_EqVal [label="EqVal"] [shape=ellipse]
         api_EqValReif [label="EqValReif"] [shape=ellipse]
+        api_InSet [label="InSet"]
         api_Le [label="Le"]
         api_LeReif [label="LeReif"] [shape=ellipse]
         api_LinEq [label="LinEq"]
@@ -93,7 +94,7 @@ digraph constraints {
         sol_EqVal [label="EqVal"]
         // sol_EqVarMulLit [label="EqVarMulLit"]
         sol_Linear [label="Linear"]
-        // sol_Lit [label="Lit"]
+        sol_Lit [label="Lit"]
         sol_MaxDiff [label="MaxDiff"] // b - a <= ub
         sol_Neq [label="Neq"]
         // sol_NeqVal [label="NeqVal"]
@@ -156,6 +157,7 @@ digraph constraints {
     api_EqReif -> sol_Eq
     api_EqVal -> sol_EqVal
     api_EqValReif -> sol_EqVal
+    api_InSet -> { sol_Or, sol_Lit } [label="*"]
     api_Le -> sol_MaxDiff
     api_LeReif -> sol_MaxDiff
     api_LinEq -> { api_LinLe, api_LinGe }
