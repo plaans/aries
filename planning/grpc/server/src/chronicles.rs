@@ -481,12 +481,18 @@ fn scheduling_problem_to_chronicles(
         factory.add_parameter(&var.name, &var.r#type)?;
     }
     for (act_id, activity) in scheduling.activities.iter().enumerate() {
+        let prez = if activity.optional {
+            factory.create_presence_literal()
+        } else {
+            Lit::TRUE
+        };
+        factory.env.presences.insert(activity.name.clone(), prez);
         let act_id = act_id as u32;
         for var in &activity.parameters {
-            factory.add_parameter(&var.name, &var.r#type)?;
+            factory.add_optional_parameter(&var.name, &var.r#type, prez)?;
         }
 
-        let start = factory.create_timepoint(VarType::TaskStart(act_id));
+        let start = factory.create_optional_timepoint(VarType::TaskStart(act_id), prez);
         let end = {
             let duration = activity
                 .duration
@@ -496,7 +502,7 @@ fn scheduling_problem_to_chronicles(
                 // a duration constraint is added later in the function for more complex durations
                 start + dur
             } else {
-                factory.create_timepoint(VarType::TaskEnd(act_id))
+                factory.create_optional_timepoint(VarType::TaskEnd(act_id), prez)
             }
         };
         factory.declare_time_interval(activity.name.clone(), start, end)?;
@@ -510,13 +516,21 @@ fn scheduling_problem_to_chronicles(
     factory.add_timed_effects(&problem.timed_effects)?;
     factory.add_goals(&problem.goals)?;
 
-    for constraint in &scheduling.constraints {
-        factory
-            .enforce(
-                constraint,
-                Some(Span::interval(factory.chronicle.start, factory.chronicle.end)),
-            )
-            .with_context(|| format!("In problem constraint: {constraint}"))?;
+    let mut scoped_constraints = vec![];
+    for scoped in &scheduling.scoped_constraints {
+        let constraint = scoped.constraint.as_ref().with_context(|| "missing constraint")?;
+        let mut scope_lits = vec![];
+        for scope_elem in &scoped.scope {
+            let atom = factory
+                .reify(scope_elem, None)
+                .with_context(|| format!("Unable to reify scope element of constraint: {scoped:?}"))?;
+            let Atom::Bool(lit) = atom else {
+                bail!("scoped element was not a boolean")
+            };
+            scope_lits.push(lit);
+        }
+        let scope = factory.context.model.get_conjunctive_scope(&scope_lits);
+        scoped_constraints.push((constraint.clone(), scope));
     }
 
     instances.push(factory.build_instance(ChronicleOrigin::Original)?);
@@ -526,12 +540,47 @@ fn scheduling_problem_to_chronicles(
         let chronicle = read_activity(cont, activity, &mut context, &global_env)?;
         instances.push(chronicle);
     }
+    for (constraint, scope) in scoped_constraints {
+        let ch = standalone_chronicle_for_constraint(scope, &constraint, &mut context, &global_env)?;
+
+        instances.push(ch);
+    }
 
     Ok(aries_planning::chronicles::Problem {
         context,
         templates: vec![],
         chronicles: instances,
     })
+}
+
+fn standalone_chronicle_for_constraint(
+    scope: Lit,
+    constraint: &Expression,
+    context: &mut Ctx,
+    global_env: &Env,
+) -> Result<ChronicleInstance, Error> {
+    let container = Container::Base;
+
+    let ch = Chronicle {
+        kind: ChronicleKind::Problem,
+        presence: scope,
+        start: context.origin(),
+        end: context.horizon(),
+        name: vec![],
+        task: None,
+        conditions: vec![],
+        effects: vec![],
+        constraints: vec![],
+        subtasks: vec![],
+        cost: None,
+    };
+
+    let mut factory = ChronicleFactory::new(context, ch, container, vec![]);
+    factory.env = global_env.clone();
+
+    factory.enforce(constraint, None)?;
+
+    factory.build_instance(ChronicleOrigin::Original)
 }
 
 struct ActionCosts {
@@ -635,6 +684,7 @@ impl Span {
 struct Env {
     parameters: HashMap<String, Variable>,
     intervals: HashMap<String, (Time, Time)>,
+    presences: HashMap<String, Lit>,
 }
 
 struct ChronicleFactory<'a> {
@@ -687,6 +737,15 @@ impl<'a> ChronicleFactory<'a> {
 
     /// Adds a parameter to the chronicle name. This creates a new variable to with teh corresponding type.
     fn add_parameter(&mut self, name: impl Into<Sym>, tpe: impl Into<Sym>) -> Result<Variable, Error> {
+        self.add_optional_parameter(name, tpe, self.chronicle.presence)
+    }
+    /// same but with a presence literal that may differ from the one of the chronicle
+    fn add_optional_parameter(
+        &mut self,
+        name: impl Into<Sym>,
+        tpe: impl Into<Sym>,
+        presence: Lit,
+    ) -> Result<Variable, Error> {
         let name = name.into();
 
         let tpe = tpe.into();
@@ -694,26 +753,14 @@ impl<'a> ChronicleFactory<'a> {
             .with_context(|| format!("Unknown argument type: {tpe}"))?;
         let label = self.container / VarType::Parameter(name.to_string());
         let arg: Variable = match tpe {
-            Type::Sym(tpe) => self
-                .context
-                .model
-                .new_optional_sym_var(tpe, self.chronicle.presence, label)
-                .into(),
-            Type::Int { lb, ub } => self
-                .context
-                .model
-                .new_optional_ivar(lb, ub, self.chronicle.presence, label)
-                .into(),
+            Type::Sym(tpe) => self.context.model.new_optional_sym_var(tpe, presence, label).into(),
+            Type::Int { lb, ub } => self.context.model.new_optional_ivar(lb, ub, presence, label).into(),
             Type::Fixed(denom) => self
                 .context
                 .model
-                .new_optional_fvar(INT_CST_MIN, INT_CST_MAX, denom, self.chronicle.presence, label)
+                .new_optional_fvar(INT_CST_MIN, INT_CST_MAX, denom, presence, label)
                 .into(),
-            Type::Bool => self
-                .context
-                .model
-                .new_optional_bvar(self.chronicle.presence, label)
-                .into(),
+            Type::Bool => self.context.model.new_optional_bvar(presence, label).into(),
         };
 
         // append parameters to the name of the chronicle
@@ -739,15 +786,26 @@ impl<'a> ChronicleFactory<'a> {
     }
 
     fn create_timepoint(&mut self, vartype: VarType) -> FAtom {
-        let tp = self.context.model.new_optional_fvar(
-            0,
-            INT_CST_MAX,
-            TIME_SCALE.get(),
-            self.chronicle.presence,
-            self.container / vartype,
-        );
+        self.create_optional_timepoint(vartype, self.chronicle.presence)
+    }
+    fn create_optional_timepoint(&mut self, vartype: VarType, presence: Lit) -> FAtom {
+        let tp =
+            self.context
+                .model
+                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), presence, self.container / vartype);
         self.variables.push(tp.into());
         FAtom::from(tp)
+    }
+
+    fn create_presence_literal(&mut self) -> Lit {
+        let bvar = self
+            .context
+            .model
+            .new_presence_variable(Lit::TRUE, self.container / VarType::Presence);
+        self.variables.push(bvar.into());
+        let prez = bvar.true_lit();
+        // self.env.presences.insert(name, prez);
+        prez
     }
 
     fn add_up_effect(&mut self, eff: &up::Effect) -> Result<(), Error> {
@@ -1143,7 +1201,6 @@ impl<'a> ChronicleFactory<'a> {
                 let params = &expr.list[1..];
 
                 match operator {
-                    // BUG FIXME: WHY NO "up:iff" ?????????? Also no "up:implies"
                     "up:equals" | "up:iff" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
@@ -1174,8 +1231,24 @@ impl<'a> ChronicleFactory<'a> {
                     }
                     "up:not" => {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
-                        let not_value = !Lit::try_from(value)?;
-                        self.bind_to(&params[0], not_value.into(), span)?;
+                        let not_param0 = !Lit::try_from(self.reify(&params[0], span)?)?;
+                        let value = Lit::try_from(value)?;
+                        self.chronicle.constraints.push(Constraint {
+                            variables: vec![not_param0.into()],
+                            tpe: ConstraintType::Or,
+                            value: Some(value),
+                        });
+                    }
+                    "up:implies" => {
+                        ensure!(params.len() == 2, "operator `implies` must have exactly 2 arguments");
+                        let not_param0 = !Lit::try_from(self.reify(&params[0], span)?)?;
+                        let params = vec![Atom::Bool(not_param0), self.reify(&params[1], span)?];
+                        let value = Lit::try_from(value)?;
+                        self.chronicle.constraints.push(Constraint {
+                            variables: params,
+                            tpe: ConstraintType::Or,
+                            value: Some(value),
+                        })
                     }
                     "up:lt" | "up:le" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
@@ -1191,6 +1264,19 @@ impl<'a> ChronicleFactory<'a> {
                             _ => unreachable!(),
                         };
                         self.chronicle.constraints.push(constraint);
+                    }
+                    "up:present" => {
+                        let param = params.first().context("Missing container parameter for up:present")?;
+                        ensure!(kind(param)? == ExpressionKind::ContainerId);
+                        let container = match param.atom.as_ref().unwrap().content.as_ref().unwrap() {
+                            Content::Symbol(name) => name,
+                            _ => bail!("Malformed protobuf"),
+                        };
+                        let lit =
+                            self.env.presences.get(container).with_context(|| {
+                                format!("Not presence variable recorded for container {container:?}")
+                            })?;
+                        self.chronicle.constraints.push(Constraint::atom(Atom::Bool(*lit)));
                     }
                     _ => bail!("Unsupported operator binding: {operator}"),
                 }
@@ -1238,7 +1324,20 @@ impl<'a> ChronicleFactory<'a> {
                 let operator = as_function_symbol(&expr.list[0])?;
                 let params = &expr.list[1..];
 
-                if operator == "up:start"
+                if operator == "up:present" {
+                    let param = params.first().context("Missing container parameter for up:present")?;
+                    ensure!(kind(param)? == ExpressionKind::ContainerId);
+                    let container = match param.atom.as_ref().unwrap().content.as_ref().unwrap() {
+                        Content::Symbol(name) => name,
+                        _ => bail!("Malformed protobuf"),
+                    };
+                    let lit = self
+                        .env
+                        .presences
+                        .get(container)
+                        .with_context(|| format!("Not presence variable recorded for container {container:?}"))?;
+                    Ok(Atom::Bool(*lit))
+                } else if operator == "up:start"
                     || operator == "up:end"
                     || operator == "up:global_start"
                     || operator == "up:global_end"
@@ -1293,6 +1392,17 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(constraint);
                             Ok(value.into())
                         }
+                        "up:implies" => {
+                            ensure!(params.len() == 2, "`implies` operator should have exactly 2 arguments");
+                            let value = self.create_bool_variable(VarType::Reification);
+                            let constraint = Constraint {
+                                variables: vec![Atom::Bool(!params[0].try_into()?), params[1]],
+                                tpe: ConstraintType::Or,
+                                value: Some(value),
+                            };
+                            self.chronicle.constraints.push(constraint);
+                            Ok(value.into())
+                        }
                         "up:and" => {
                             // convert (and a b c) into  !(or !a !b !c)
                             let mut disjuncts = Vec::with_capacity(params.len());
@@ -1311,7 +1421,7 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(constraint);
                             Ok((!value).into())
                         }
-                        "up:equals" => {
+                        "up:equals" | "up:iff" => {
                             ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                             let reif = self.reify_equality(params[0], params[1]);
                             Ok(reif)
@@ -1609,6 +1719,7 @@ fn read_activity(
 ) -> Result<ChronicleInstance, Error> {
     // similar to an action but all variables have been previously declared in the global_env
     let (start, end) = global_env.intervals[&activity.name];
+    let prez = global_env.presences[&activity.name];
 
     let mut name: Vec<Atom> = Vec::with_capacity(1 + activity.parameters.len());
     let base_name = &Sym::from(activity.name.clone());
@@ -1629,7 +1740,7 @@ fn read_activity(
 
     let ch = Chronicle {
         kind: ChronicleKind::DurativeAction,
-        presence: Lit::TRUE,
+        presence: prez,
         start,
         end,
         name,
