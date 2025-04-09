@@ -39,10 +39,7 @@ impl InSet {
         let iter_upper = self.constants().iter().copied().skip(1);
         iter_lower
             .zip(iter_upper)
-            .filter(|(l, u)| {
-                dbg!(&(l, u));
-                *u - *l > 1
-            })
+            .filter(|(l, u)| *u - *l > 1)
             .collect()
     }
 }
@@ -73,7 +70,7 @@ mod tests {
     use aries::core::VarRef;
 
     use crate::aries::constraint::test::basic_int_model_1;
-    use crate::aries::constraint::test::verify_all_1;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -94,8 +91,8 @@ mod tests {
         let in_set = InSet::new(x, set.clone());
         in_set.post(&mut model);
 
-        let verify = |x: IntCst| set.contains(&x);
+        let verify = |[x]: [IntCst; 1]| set.contains(&x);
 
-        verify_all_1(x, model, verify);
+        verify_all([x], model, verify);
     }
 }

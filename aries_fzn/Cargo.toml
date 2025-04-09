@@ -10,6 +10,7 @@ anyhow = { workspace = true }
 aries = { path = "../solver" }
 clap = { workspace = true }
 flatzinc = "0.3.21"
+itertools = { workspace = true }
 transitive = "1.1.0"
 
 [dev-dependencies]

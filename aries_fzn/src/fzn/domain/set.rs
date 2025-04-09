@@ -51,17 +51,19 @@ where
     ///
     /// Panic if empty.
     pub fn lb(&self) -> &T {
-        &self.values[0]
+        &self.values.first().expect("unexpected empty set")
     }
 
     /// Return the upper bound of the set.
     ///
     /// Panic if empty.
     pub fn ub(&self) -> &T {
-        &self.values[self.len() - 1]
+        &self.values.last().expect("unexpected empty set")
     }
 
     /// Return both bounds of the set.
+    ///
+    /// Panic if empty.
     pub fn bounds(&self) -> (&T, &T) {
         (self.lb(), self.ub())
     }

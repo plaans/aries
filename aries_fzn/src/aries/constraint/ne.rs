@@ -38,8 +38,10 @@ impl<Lbl: Label> Post<Lbl> for Ne {
 
 #[cfg(test)]
 mod tests {
+    use aries::core::IntCst;
+
     use crate::aries::constraint::test::basic_int_model_2;
-    use crate::aries::constraint::test::verify_all_2;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -50,8 +52,8 @@ mod tests {
         let ne = Ne::new(x, y);
         ne.post(&mut model);
 
-        let verify = |x, y| x != y;
+        let verify = |[x, y]: [IntCst; 2]| x != y;
 
-        verify_all_2(x, y, model, verify);
+        verify_all([x, y], model, verify);
     }
 }

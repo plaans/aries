@@ -41,7 +41,7 @@ mod tests {
     use aries::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_3;
-    use crate::aries::constraint::test::verify_all_3;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -52,8 +52,8 @@ mod tests {
         let max = Min::new(vec![x, y], z);
         max.post(&mut model);
 
-        let verify = |x: IntCst, y, z| x.min(y) == z;
+        let verify = |[x, y, z]: [IntCst; 3]| x.min(y) == z;
 
-        verify_all_3(x, y, z, model, verify);
+        verify_all([x, y, z], model, verify);
     }
 }

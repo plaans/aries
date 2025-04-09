@@ -46,7 +46,7 @@ mod tests {
     use aries::core::IntCst;
 
     use crate::aries::constraint::test::basic_bool_model_3;
-    use crate::aries::constraint::test::verify_all_3;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -58,8 +58,8 @@ mod tests {
         and_reif.post(&mut model);
 
         // z = x and y iff z = min(x,y)
-        let verify = |x: IntCst, y, z| x.min(y) == z;
+        let verify = |[x, y, z]: [IntCst; 3]| x.min(y) == z;
 
-        verify_all_3(x, y, z, model, verify);
+        verify_all([x, y, z], model, verify);
     }
 }

@@ -46,7 +46,7 @@ mod tests {
     use aries::core::IntCst;
 
     use crate::aries::constraint::test::basic_bool_model_3;
-    use crate::aries::constraint::test::verify_all_3;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -58,8 +58,8 @@ mod tests {
         or_reif.post(&mut model);
 
         // z = x or y iff z = max(x,y)
-        let verify = |x: IntCst, y, z| x.max(y) == z;
+        let verify = |[x, y, z]: [IntCst; 3]| x.max(y) == z;
 
-        verify_all_3(x, y, z, model, verify);
+        verify_all([x, y, z], model, verify);
     }
 }

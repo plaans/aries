@@ -65,7 +65,7 @@ mod tests {
     use aries::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_2;
-    use crate::aries::constraint::test::verify_all_2;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -76,8 +76,8 @@ mod tests {
         let abs = Abs::new(x, y);
         abs.post(&mut model);
 
-        let verify = |x: IntCst, y| y == x.abs();
+        let verify = |[x, y]: [IntCst; 2]| y == x.abs();
 
-        verify_all_2(x, y, model, verify);
+        verify_all([x, y], model, verify);
     }
 }

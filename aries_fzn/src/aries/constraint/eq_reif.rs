@@ -42,8 +42,10 @@ impl<Lbl: Label> Post<Lbl> for EqReif {
 
 #[cfg(test)]
 mod tests {
+    use aries::core::IntCst;
+
     use crate::aries::constraint::test::basic_reif_model;
-    use crate::aries::constraint::test::verify_all_3;
+    use crate::aries::constraint::test::verify_all;
 
     use super::*;
 
@@ -54,8 +56,9 @@ mod tests {
         let eq_reif = EqReif::new(x, y, r);
         eq_reif.post(&mut model);
 
-        let verify = |x, y, r| if x == y { r == 1 } else { r == 0 };
+        let verify =
+            |[x, y, r]: [IntCst; 3]| if x == y { r == 1 } else { r == 0 };
 
-        verify_all_3(x, y, r, model, verify);
+        verify_all([x, y, r.into()], model, verify);
     }
 }

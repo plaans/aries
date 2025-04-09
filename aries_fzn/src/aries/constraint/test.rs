@@ -11,71 +11,21 @@ use aries::model::lang::BVar;
 use aries::model::lang::IVar;
 use aries::model::Model;
 use aries::solver::Solver;
-
-/// Return all possible values for the given variable.
-///
-/// The solutions are generated in lexicographic order.
-fn get_solutions_1(x: VarRef, model: Model<String>) -> Vec<IntCst> {
-    let mut solver = Solver::new(model);
-    let mut solutions: Vec<IntCst> = solver
-        .enumerate(&[x.into()])
-        .unwrap()
-        .iter()
-        .map(|v| v[0])
-        .collect();
-    solutions.sort();
-    solutions
-}
-
-/// Generate the solutions respecting the given predicate verify.
-///
-/// The solutions are generated in lexicographic order.
-fn gen_solutions_1(
-    x: VarRef,
-    model: &Model<String>,
-    verify: impl Fn(IntCst) -> bool,
-) -> Vec<IntCst> {
-    let (lb_x, ub_x) = model.state.bounds(x);
-
-    let mut solutions = Vec::new();
-
-    for val_x in lb_x..=ub_x {
-        if verify(val_x) {
-            let solution = val_x;
-            solutions.push(solution);
-        }
-    }
-    solutions
-}
-
-/// Verify all the x solutions of the model.
-///
-/// x should be a solution iff `verify(x) == true`.
-pub(super) fn verify_all_1(
-    x: impl Into<VarRef>,
-    model: Model<String>,
-    verify: impl Fn(IntCst) -> bool,
-) {
-    let x = x.into();
-    let expected = gen_solutions_1(x, &model, verify);
-    let solutions = get_solutions_1(x, model);
-    assert_eq!(solutions, expected);
-}
+use itertools::Itertools;
 
 /// Return all possible values for the given variables.
 ///
 /// The solutions are generated in lexicographic order.
-fn get_solutions_2(
-    x: VarRef,
-    y: VarRef,
+fn get_solutions<const N: usize>(
+    vars: [VarRef; N],
     model: Model<String>,
-) -> Vec<(IntCst, IntCst)> {
+) -> Vec<[IntCst; N]> {
     let mut solver = Solver::new(model);
-    let mut solutions: Vec<(IntCst, IntCst)> = solver
-        .enumerate(&[x.into(), y.into()])
+    let mut solutions: Vec<[IntCst; N]> = solver
+        .enumerate(&vars)
         .unwrap()
-        .iter()
-        .map(|v| (v[0], v[1]))
+        .into_iter()
+        .map(|v| v.try_into().expect("wrong number of elements"))
         .collect();
     solutions.sort();
     solutions
@@ -84,108 +34,60 @@ fn get_solutions_2(
 /// Generate the solutions respecting the given predicate verify.
 ///
 /// The solutions are generated in lexicographic order.
-fn gen_solutions_2(
-    x: VarRef,
-    y: VarRef,
+fn gen_solutions<const N: usize>(
+    vars: [VarRef; N],
     model: &Model<String>,
-    verify: impl Fn(IntCst, IntCst) -> bool,
-) -> Vec<(IntCst, IntCst)> {
-    let (lb_x, ub_x) = model.state.bounds(x);
-    let (lb_y, ub_y) = model.state.bounds(y);
-
-    let mut solutions = Vec::new();
-
-    for val_x in lb_x..=ub_x {
-        for val_y in lb_y..=ub_y {
-            if verify(val_x, val_y) {
-                let solution = (val_x, val_y);
-                solutions.push(solution);
-            }
-        }
-    }
-    solutions
-}
-
-/// Verify all the (x,y) solutions of the model.
-///
-/// (x,y) should be a solution iff `verify(x,y) == true`.
-pub(super) fn verify_all_2(
-    x: impl Into<VarRef>,
-    y: impl Into<VarRef>,
-    model: Model<String>,
-    verify: impl Fn(IntCst, IntCst) -> bool,
-) {
-    let x = x.into();
-    let y = y.into();
-    let expected = gen_solutions_2(x, y, &model, verify);
-    let solutions = get_solutions_2(x, y, model);
-    assert_eq!(solutions, expected);
-}
-
-/// Return all possible values for the given variables.
-///
-/// The solutions are generated in lexicographic order.
-fn get_solutions_3(
-    x: VarRef,
-    y: VarRef,
-    z: VarRef,
-    model: Model<String>,
-) -> Vec<(IntCst, IntCst, IntCst)> {
-    let mut solver = Solver::new(model);
-    let mut solutions: Vec<(IntCst, IntCst, IntCst)> = solver
-        .enumerate(&[x.into(), y.into(), z.into()])
-        .unwrap()
+    verify: impl Fn([IntCst; N]) -> bool,
+) -> Vec<[IntCst; N]> {
+    let candidates = vars
         .iter()
-        .map(|v| (v[0], v[1], v[2]))
-        .collect();
-    solutions.sort();
-    solutions
-}
-
-/// Generate the solutions respecting the given predicate verify.
-///
-/// The solutions are generated in lexicographic order.
-fn gen_solutions_3(
-    x: VarRef,
-    y: VarRef,
-    z: VarRef,
-    model: &Model<String>,
-    verify: impl Fn(IntCst, IntCst, IntCst) -> bool,
-) -> Vec<(IntCst, IntCst, IntCst)> {
-    let (lb_x, ub_x) = model.state.bounds(x);
-    let (lb_y, ub_y) = model.state.bounds(y);
-    let (lb_z, ub_z) = model.state.bounds(z);
+        .map(|var| model.state.lb(*var)..=model.state.ub(*var))
+        .multi_cartesian_product()
+        .map(|vec| vec.try_into().expect("wrong number of elements"));
 
     let mut solutions = Vec::new();
 
-    for val_x in lb_x..=ub_x {
-        for val_y in lb_y..=ub_y {
-            for val_z in lb_z..=ub_z {
-                if verify(val_x, val_y, val_z) {
-                    let solution = (val_x, val_y, val_z);
-                    solutions.push(solution);
-                }
-            }
+    for candidate in candidates {
+        if verify(candidate) {
+            solutions.push(candidate);
         }
     }
     solutions
 }
 
-/// Verify all the (x,y,z) solutions of the model.
+/// Verify all the solutions of the model.
 ///
-/// (x,y,z) should be a solution iff `verify(x,y,z) == true`.
-pub(super) fn verify_all_3(
-    x: impl Into<VarRef>,
-    y: impl Into<VarRef>,
-    z: impl Into<VarRef>,
+/// `[var_1, var_2, ...]` should be a solution iff
+/// `verify([var_1, var_2, ...]) == true`.
+/// 
+/// ```
+/// # use aries::core::IntCst;
+/// # use aries::model::Model;
+/// # use aries::model::lang::IVar;
+/// # use crate::aries::constraint::test::verify_all;
+/// let model: Model<String>;
+/// let x: IVar;
+/// let y: IVar;
+/// # let mut model = Model::new();
+/// # x = model.new_ivar(1, 1, "x".to_string());
+/// # y = model.new_ivar(1, 1, "y".to_string());
+/// let verify = |[x, y]: [IntCst; 2]| x == y;
+/// verify_all([x, y], model, verify);
+/// ```
+/// 
+pub(super) fn verify_all<const N: usize>(
+    vars: [impl Into<VarRef>; N],
     model: Model<String>,
-    verify: impl Fn(IntCst, IntCst, IntCst) -> bool,
+    verify: impl Fn([IntCst; N]) -> bool,
 ) {
-    let x = x.into();
-    let y = y.into();
-    let z = z.into();
-    let expected = gen_solutions_3(x, y, z, &model, verify);
-    let solutions = get_solutions_3(x, y, z, model);
+    let vars: [VarRef; N] = vars
+        .into_iter()
+        .map(|var| var.into())
+        .collect::<Vec<VarRef>>()
+        .try_into()
+        .unwrap();
+    let expected = gen_solutions(vars, &model, verify);
+    let solutions = get_solutions(vars, model);
     assert_eq!(solutions, expected);
 }
 
