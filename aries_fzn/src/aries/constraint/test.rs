@@ -59,7 +59,7 @@ fn gen_solutions<const N: usize>(
 ///
 /// `[var_1, var_2, ...]` should be a solution iff
 /// `verify([var_1, var_2, ...]) == true`.
-/// 
+///
 /// ```
 /// # use aries::core::IntCst;
 /// # use aries::model::Model;
@@ -74,7 +74,6 @@ fn gen_solutions<const N: usize>(
 /// let verify = |[x, y]: [IntCst; 2]| x == y;
 /// verify_all([x, y], model, verify);
 /// ```
-/// 
 pub(super) fn verify_all<const N: usize>(
     vars: [impl Into<VarRef>; N],
     model: Model<String>,

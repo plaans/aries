@@ -70,10 +70,14 @@ digraph constraints {
         api_Le [label="Le"]
         api_LeReif [label="LeReif"] [shape=ellipse]
         api_LinEq [label="LinEq"]
+        api_LinEqHalf [label="LinEqHalf"]
         api_LinEqReif [label="LinEqReif"] [shape=ellipse]
         api_LinGe [label="LinGe"]
+        api_LinGeHalf [label="LinGeHalf"]
+        api_LinGeReif [label="LinGeReif"]
         api_LinLe [label="LinLe"]
-        api_LinLeReif [label="LinLeReif"] [shape=ellipse]
+        api_LinLeHalf [label="LinLeHalf"]
+        api_LinLeReif [label="LinLeReif"]
         api_LinNe [label="LinNe"]
         api_Lt [label="Lt"] [shape=ellipse]
         api_LtReif [label="LtReif"] [shape=ellipse]
@@ -161,10 +165,14 @@ digraph constraints {
     api_Le -> sol_MaxDiff
     api_LeReif -> sol_MaxDiff
     api_LinEq -> { api_LinLe, api_LinGe }
+    api_LinEqHalf -> { api_LinLeHalf, api_LinGeHalf }
     api_LinEqReif -> sol_Linear [label="2"]
     api_LinGe -> api_LinLe
+    api_LinGeHalf -> api_LinLeHalf
+    api_LinGeReif -> api_LinLeReif
     api_LinLe -> sol_Linear
-    api_LinLeReif -> sol_Linear
+    api_LinLeHalf -> api_LinLe
+    api_LinLeReif -> { api_LinLeHalf, api_LinGeHalf }
     api_LinNe -> { api_LinEq, api_Ne }
     api_Lt -> sol_MaxDiff
     api_LtReif -> sol_MaxDiff
