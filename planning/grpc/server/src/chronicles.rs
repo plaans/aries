@@ -366,8 +366,12 @@ fn scheduling_problem_to_chronicles(
         let chronicle = read_activity(cont, activity, &mut context, &global_env)?;
         instances.push(chronicle);
     }
-    for (constraint, scope) in scoped_constraints {
-        let ch = standalone_chronicle_for_constraint(scope, &constraint, &mut context, &global_env)?;
+    scoped_constraints.sort_by_key(|(_e, scope)| *scope);
+    use itertools::Itertools;
+    let grouped_by_scope = scoped_constraints.iter().chunk_by(|(_e, s)| *s);
+    for (scope, scoped_constraints) in &grouped_by_scope {
+        let constraints = scoped_constraints.map(|(e, _scope)| e).collect_vec();
+        let ch = standalone_chronicle_for_constraints(scope, &constraints, &mut context, &global_env)?;
 
         instances.push(ch);
     }
@@ -379,9 +383,9 @@ fn scheduling_problem_to_chronicles(
     })
 }
 
-fn standalone_chronicle_for_constraint(
+fn standalone_chronicle_for_constraints(
     scope: Lit,
-    constraint: &Expression,
+    constraints: &[&Expression],
     context: &mut Ctx,
     global_env: &Env,
 ) -> Result<ChronicleInstance, Error> {
@@ -404,7 +408,9 @@ fn standalone_chronicle_for_constraint(
     let mut factory = ChronicleFactory::new(context, ch, container, vec![]);
     factory.env = global_env.clone();
 
-    factory.enforce(constraint, None)?;
+    for constraint in constraints {
+        factory.enforce(*constraint, None)?;
+    }
 
     factory.build_instance(ChronicleOrigin::Original)
 }
