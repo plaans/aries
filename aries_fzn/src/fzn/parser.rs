@@ -174,16 +174,16 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
     match statement {
         Stmt::Comment(_) => {}
         Stmt::Parameter(par_decl_item) => {
-            parse_par_decl_item(par_decl_item, model)?
-        }
+                        parse_par_decl_item(par_decl_item, model)?
+            }
         Stmt::Variable(var_decl_item) => {
-            parse_var_decl_item(var_decl_item, model)?
-        }
+                parse_var_decl_item(var_decl_item, model)?
+            }
         Stmt::Constraint(constraint_item) => {
-            parse_constraint_item(constraint_item, model)?
-        }
+                parse_constraint_item(constraint_item, model)?
+            }
         Stmt::SolveItem(solve_item) => parse_solve_item(solve_item, model)?,
-        _ => todo!(),
+        Stmt::Predicate(_) => {/* ignore predicate declaration */},
     }
     Ok(())
 }
@@ -414,6 +414,7 @@ pub fn parse_constraint_item(
         IntLe::NAME => IntLe::try_from_item(c, m)?.into(),
         IntLinEq::NAME => IntLinEq::try_from_item(c, m)?.into(),
         IntLinLe::NAME => IntLinLe::try_from_item(c, m)?.into(),
+        IntLinLeImp::NAME => IntLinLeImp::try_from_item(c, m)?.into(),
         IntLinNe::NAME => IntLinNe::try_from_item(c, m)?.into(),
         IntNe::NAME => IntNe::try_from_item(c, m)?.into(),
         _ => anyhow::bail!(format!("unknown constraint '{}'", c.id)),

@@ -21,6 +21,7 @@ digraph constraints {
         mzn_int_lin_eq [label="int_lin_eq"]
         mzn_int_lin_eq_reif [label="int_lin_eq_reif"] [shape=ellipse]
         mzn_int_lin_le [label="int_lin_le"]
+        mzn_int_lin_le_imp [label="int_lin_le_imp"] [shape=ellipse]
         mzn_int_lin_le_reif [label="int_lin_le_reif"] [shape=ellipse]
         mzn_int_lin_ne [label="int_lin_ne"]
         mzn_int_lin_ne_reif [label="int_lin_ne_reif"] [shape=ellipse]
@@ -119,6 +120,7 @@ digraph constraints {
     mzn_int_lin_eq -> api_LinEq
     mzn_int_lin_eq_reif -> api_LinEqReif
     mzn_int_lin_le -> api_LinLe
+    mzn_int_lin_le_imp -> api_LinLeHalf
     mzn_int_lin_le_reif -> api_LinLeReif
     mzn_int_lin_ne -> api_LinNe
     mzn_int_lin_ne_reif -> mzn_int_lin_eq_reif
