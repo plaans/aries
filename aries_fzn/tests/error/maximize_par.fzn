@@ -1,0 +1,2 @@
+int: p = 3;
+solve maximize p;

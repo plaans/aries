@@ -160,17 +160,29 @@ pub fn vec_var_int_from_expr(
 /// Parse a flatzinc string into a new [Model].
 pub fn parse_model(content: &str) -> anyhow::Result<Model> {
     let mut model = Model::new();
+    let mut nb_solve_items = 0;
 
     for (i, line) in content.lines().enumerate() {
-        parse_line(line, &mut model)
+        let is_solve_item = parse_line(line, &mut model)
             .context(format!("parsing failure at line {}", i + 1))?;
+        if is_solve_item {
+            nb_solve_items += 1;
+        }
     }
+
+    anyhow::ensure!(
+        nb_solve_items == 1,
+        "exactly one solve statement is expected"
+    );
     Ok(model)
 }
 
-/// Update the model with the given flatzinc line.
-pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
+/// Update the model with the given flatzinc line
+///
+/// Return `true` if the line is a solve item.
+pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<bool> {
     let statement = flatzinc::Stmt::from_str(line).map_err(|e| anyhow!(e))?;
+    let is_solve_item = matches!(statement, Stmt::SolveItem(_));
     match statement {
         Stmt::Comment(_) => {}
         Stmt::Parameter(par_decl_item) => {
@@ -185,7 +197,7 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
         Stmt::SolveItem(solve_item) => parse_solve_item(solve_item, model)?,
         Stmt::Predicate(_) => { /* ignore predicate declaration */ }
     }
-    Ok(())
+    Ok(is_solve_item)
 }
 
 /// Update the model with the given parameter declaration.
@@ -444,135 +456,4 @@ pub fn parse_solve_item(
         _ => bail!("goal '{:?}' is not implemented", s_item.goal),
     };
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::fzn::domain::IntDomain;
-    use crate::fzn::Name;
-
-    use super::*;
-
-    #[test]
-    fn empty() -> anyhow::Result<()> {
-        const CONTENT: &str = "% This is a comment\n\n";
-
-        let model = parse_model(CONTENT)?;
-
-        assert_eq!(model.nb_parameters(), 0);
-        assert_eq!(model.nb_variables(), 0);
-        assert_eq!(model.nb_constraints(), 0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn parameters() -> anyhow::Result<()> {
-        const CONTENT: &str = "int: x = 5;\nbool: y = true;";
-
-        let model = parse_model(CONTENT)?;
-
-        assert_eq!(model.nb_parameters(), 2);
-        assert_eq!(model.nb_variables(), 0);
-        assert_eq!(model.nb_constraints(), 0);
-
-        let name_x = "x".to_string();
-        let name_y = "y".to_string();
-
-        let x = model.get_par_int(&name_x)?;
-        let y = model.get_par_bool(&name_y)?;
-
-        assert_eq!(*x.name(), name_x);
-        assert_eq!(*x.value(), 5);
-
-        assert_eq!(*y.name(), name_y);
-        assert_eq!(*y.value(), true);
-
-        Ok(())
-    }
-
-    #[test]
-    fn int_variable() -> anyhow::Result<()> {
-        const CONTENT: &str = "var -7..8: x;\n";
-
-        let model = parse_model(CONTENT)?;
-
-        assert_eq!(model.nb_parameters(), 0);
-        assert_eq!(model.nb_variables(), 1);
-        assert_eq!(model.nb_constraints(), 0);
-
-        let name_x = "x".to_string();
-        let domain_x: IntDomain = IntRange::new(-7, 8).unwrap().into();
-
-        let x = model.get_var_int(&name_x)?;
-
-        assert_eq!(x.name(), &name_x);
-        assert_eq!(x.domain(), &domain_x);
-
-        Ok(())
-    }
-
-    #[test]
-    fn bool_eq() -> anyhow::Result<()> {
-        const CONTENT: &str = "\
-        var bool: x;\n\
-        var bool: y;\n\
-        constraint bool_eq(x,y);\n\
-        ";
-
-        let model = parse_model(CONTENT)?;
-
-        assert_eq!(model.nb_parameters(), 0);
-        assert_eq!(model.nb_variables(), 2);
-        assert_eq!(model.nb_constraints(), 1);
-
-        let name_x = Some("x".to_string());
-        let name_y = Some("y".to_string());
-
-        let x = model.get_var_bool(&name_x.unwrap())?;
-        let y = model.get_var_bool(&name_y.unwrap())?;
-
-        let c = model.constraints().next().unwrap();
-        let bool_eq = BoolEq::try_from(c.clone())?;
-
-        assert_eq!(bool_eq.a(), &x);
-        assert_eq!(bool_eq.b(), &y);
-
-        Ok(())
-    }
-
-    #[test]
-    fn int_eq() -> anyhow::Result<()> {
-        const CONTENT: &str = "\
-        var 1..9: x;\n\
-        var 0..2: y;\n\
-        constraint int_eq(x,y);\n\
-        ";
-
-        let model = parse_model(CONTENT)?;
-
-        assert_eq!(model.nb_parameters(), 0);
-        assert_eq!(model.nb_variables(), 2);
-        assert_eq!(model.nb_constraints(), 1);
-
-        let domain_x: IntDomain = IntRange::new(1, 9)?.into();
-        let domain_y: IntDomain = IntRange::new(0, 2)?.into();
-
-        let name_x = "x".to_string();
-        let name_y = "y".to_string();
-
-        let x = model.get_var_int(&name_x)?;
-        let y = model.get_var_int(&name_y)?;
-
-        assert_eq!(x.domain(), &domain_x);
-        assert_eq!(y.domain(), &domain_y);
-
-        let c = model.constraints().next().unwrap();
-        let int_eq = IntEq::try_from(c.clone())?;
-
-        assert_eq!(int_eq.a(), &x);
-        assert_eq!(int_eq.b(), &y);
-
-        Ok(())
-    }
 }

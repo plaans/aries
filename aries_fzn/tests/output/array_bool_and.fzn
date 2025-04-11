@@ -2,4 +2,4 @@ var bool: x:: output_var;
 var bool: y:: output_var;
 var bool: r:: output_var;
 constraint array_bool_and([x,y], r);
-% solve satisfy;
+solve satisfy;
