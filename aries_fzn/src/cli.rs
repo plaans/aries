@@ -7,9 +7,9 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use crate::aries::Solver;
-use crate::fzn::output;
-use crate::fzn::output::make_output;
 use crate::fzn::parser::parse_model;
+use crate::fzn::solution::make_output_flow;
+use crate::fzn::Fzn;
 
 /// Command line arguments.
 #[derive(Parser, Debug)]
@@ -19,11 +19,9 @@ use crate::fzn::parser::parse_model;
     long_about = None
 )]
 pub struct Args {
-    /*
     /// Report all solutions
     #[arg(short, long)]
     pub all_solutions: bool,
-    */
 
     /*
     /// Stop after after N solutions. Not implemented.
@@ -95,24 +93,18 @@ pub fn parse_args() -> Args {
 pub fn run(args: &Args) -> anyhow::Result<()> {
     let content = fs::read_to_string(&args.model)?;
     let model = parse_model(content.as_str())?;
+
+    let print_all =
+        args.all_solutions || model.is_optimize() && args.intermediate;
+
     let solver = Solver::new(model);
-    if args.intermediate {
-        let mut unsat = true;
-        let f = |a| {
-            unsat = false;
-            println!("{}", make_output(Some(a)))
-        };
-        solver.solve_with(f)?;
-        if unsat {
-            println!("{}", make_output(None))
-        }
+
+    if print_all {
+        let print = |s| println!("{s}");
+        make_output_flow(&solver, print)?;
     } else {
         let result = solver.solve()?;
-        let output = make_output(result);
-        println!("{output}");
-    }
-    if solver.fzn_model().solve_item().is_optimize() {
-        println!("{}", output::END_OF_SEARCH);
+        println!("{}", result.fzn());
     }
     Ok(())
 }

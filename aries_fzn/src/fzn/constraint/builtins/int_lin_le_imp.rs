@@ -6,7 +6,7 @@ use aries::model::lang::linear::NFLinearSumItem;
 use aries::model::lang::BVar;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::LinEqHalf;
+use crate::aries::constraint::LinLeHalf;
 use crate::aries::Post;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
@@ -133,6 +133,6 @@ impl Encode for IntLinLeImp {
             })
             .collect();
         let r = BVar::new(*translate(self.r.id()));
-        Box::new(LinEqHalf::new(sum, self.c, r))
+        Box::new(LinLeHalf::new(sum, self.c, r))
     }
 }

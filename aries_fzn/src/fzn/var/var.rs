@@ -27,6 +27,17 @@ pub enum Var {
     IntArray(Rc<VarIntArray>),
 }
 
+impl Var {
+    pub fn output(&self) -> bool {
+        match self {
+            Var::Bool(v) => v.output(),
+            Var::Int(v) => v.output(),
+            Var::BoolArray(v) => v.output(),
+            Var::IntArray(v) => v.output(),
+        }
+    }
+}
+
 impl Name for Var {
     fn name(&self) -> &String {
         match self {

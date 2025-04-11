@@ -90,6 +90,16 @@ impl Model {
         self.constraints.len()
     }
 
+    /// Return `true` if it is a satisfaction model.
+    pub fn is_satisfy(&self) -> bool {
+        self.solve_item.is_satisfy()
+    }
+
+    /// Return `true` if it is an optimization model.
+    pub fn is_optimize(&self) -> bool {
+        self.solve_item.is_optimize()
+    }
+
     /// Get the variable with the given name.
     ///
     /// Fail if no variable has the given name.

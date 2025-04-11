@@ -1,3 +1,4 @@
-var bool: a:: output_var = true;
+var bool: a:: output_var;
 var bool: b:: output_var;
-constraint bool_clause([b], [a]);
+constraint bool_clause([a], [b]);
+solve satisfy;

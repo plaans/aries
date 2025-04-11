@@ -1,4 +1,0 @@
-var 2..2: x:: output_var;
-var 1..2: y:: output_var;
-var bool: r:: output_var = true;
-constraint int_eq_reif(x,y,r);

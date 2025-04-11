@@ -14,10 +14,11 @@ use crate::fzn::constraint::Encode;
 use crate::fzn::domain::BoolDomain;
 use crate::fzn::domain::IntDomain;
 use crate::fzn::model::Model as FznModel;
+use crate::fzn::solution::Assignment;
+use crate::fzn::solution::Solution;
 use crate::fzn::solve::Goal;
 use crate::fzn::solve::SolveItem;
 use crate::fzn::types::as_int;
-use crate::fzn::var::Assignment;
 use crate::fzn::var::Var as FznVar;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
@@ -105,7 +106,7 @@ impl Solver {
     /// Solve the flatzinc model.
     ///
     /// If the problem is satisfiable, the aries domains are mapped to assignments.
-    pub fn solve(&self) -> Result<Option<Vec<Assignment>>, Exit> {
+    pub fn solve(&self) -> Result<Option<Solution>, Exit> {
         let mut aries_solver = AriesSolver::new(self.aries_model.clone());
 
         match self.fzn_model.solve_item() {
@@ -117,7 +118,8 @@ impl Solver {
                             let assignment = self.make_assignment(var, &a);
                             assignments.push(assignment);
                         }
-                        Some(assignments)
+                        let solution = Solution::new(assignments);
+                        Some(solution)
                     }
                     None => None,
                 };
@@ -139,7 +141,8 @@ impl Solver {
                             let assignment = self.make_assignment(var, &a);
                             assignments.push(assignment);
                         }
-                        Some(assignments)
+                        let solution = Solution::new(assignments);
+                        Some(solution)
                     }
                     None => None,
                 };
@@ -150,18 +153,57 @@ impl Solver {
 
     /// Solve the flatzinc model with a call back for new solution.
     ///
-    /// Warning: for satisfaction models, the callback is called once
+    /// Warning: for satisfaction models, all solutions are generated first
+    /// then the callback is called once per solution.
     pub fn solve_with<F>(&self, mut f: F) -> anyhow::Result<()>
     where
-        F: FnMut(Vec<Assignment>),
+        F: FnMut(Solution),
     {
         let mut aries_solver = AriesSolver::new(self.aries_model.clone());
+        let translate = |vid| *self.translation.get(vid).unwrap();
 
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
-                if let Some(domains) = aries_solver.solve()? {
-                    let assignments = self.make_assignments(&domains);
-                    f(assignments);
+                let output_vars: Vec<&FznVar> =
+                    self.fzn_model.variables().filter(|v| v.output()).collect();
+                let output_var_ids = self.output_var_ids();
+                let var_refs: Vec<VarRef> =
+                    output_var_ids.iter().map(translate).collect();
+                let solutions =
+                    aries_solver.enumerate(var_refs.as_slice())?;
+                for solution in solutions {
+                    let mut assignments = Vec::new();
+                    let mut i = 0;
+                    for output_var in &output_vars {
+                        match output_var {
+                            FznVar::Bool(v) => {
+                                assignments.push(Assignment::Bool(
+                                    v.clone(),
+                                    solution[i] == 1,
+                                ));
+                                i += 1;
+                            }
+                            FznVar::Int(v) => {
+                                assignments.push(Assignment::Int(
+                                    v.clone(),
+                                    solution[i],
+                                ));
+                                i += 1;
+                            }
+                            FznVar::IntArray(v) => {
+                                assignments.push(Assignment::IntArray(
+                                    v.clone(),
+                                    solution[i..i + v.len()].into(),
+                                ));
+                                i += v.len();
+                            }
+                            FznVar::BoolArray(_) => {
+                                todo!("bool array assignment")
+                            }
+                        }
+                    }
+                    let solution = Solution::new(assignments);
+                    f(solution);
                 }
                 Ok(())
             }
@@ -169,19 +211,42 @@ impl Solver {
                 let obj_var = objective.variable();
                 let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
                 let is_minimize = objective.goal() == &Goal::Minimize;
-                let g = |_: IntCst, d: &Domains| f(self.make_assignments(d));
-                let aries_res = if is_minimize {
+                let g = |_: IntCst, d: &Domains| f(self.make_solution(d));
+                if is_minimize {
                     aries_solver.minimize_with(obj_var_ref, g)?
                 } else {
                     aries_solver.maximize_with(obj_var_ref, g)?
                 };
-                if let Some((_, domains)) = aries_res {
-                    let assignments = self.make_assignments(&domains);
-                    f(assignments);
-                };
+                // TODO: remove me
+                // The last solution seems to be already reported
+                // if let Some((_, domains)) = aries_res {
+                //     let assignments = self.make_solution(&domains);
+                //     f(assignments);
+                // };
                 Ok(())
             }
         }
+    }
+
+    /// Return all flatzinc var ids marked as output.
+    fn output_var_ids(&self) -> Vec<usize> {
+        let mut var_ids = Vec::new();
+        for var in self.fzn_model.variables() {
+            if !var.output() {
+                continue;
+            }
+            match var {
+                FznVar::Bool(v) => var_ids.push(*v.id()),
+                FznVar::Int(v) => var_ids.push(*v.id()),
+                FznVar::BoolArray(v) => {
+                    var_ids.extend(v.variables().map(|v| *v.id()))
+                }
+                FznVar::IntArray(v) => {
+                    var_ids.extend(v.variables().map(|v| *v.id()))
+                }
+            }
+        }
+        var_ids
     }
 
     fn make_assignment(&self, var: &FznVar, domains: &Domains) -> Assignment {
@@ -214,12 +279,14 @@ impl Solver {
         }
     }
 
-    /// Make assignements for all flatzinc variables.
-    fn make_assignments(&self, domains: &Domains) -> Vec<Assignment> {
-        self.fzn_model
+    /// Make solution from flatzinc variables.
+    fn make_solution(&self, domains: &Domains) -> Solution {
+        let assignments = self
+            .fzn_model
             .variables()
             .map(|v| self.make_assignment(v, domains))
-            .collect()
+            .collect();
+        Solution::new(assignments)
     }
 }
 
@@ -278,13 +345,13 @@ mod tests {
         fzn_model.add_constraint(int_eq.into());
 
         let solver = Solver::new(fzn_model);
-        let assignments = solver.solve()?.expect("should not be unsat");
+        let solution = solver.solve()?.expect("should not be unsat");
 
         let assignment_x = Assignment::Int(x, 3);
         let assignment_y = Assignment::Int(y, 3);
 
-        assert!(assignments.contains(&assignment_x));
-        assert!(assignments.contains(&assignment_y));
+        assert!(solution.assignments().contains(&assignment_x));
+        assert!(solution.assignments().contains(&assignment_y));
 
         Ok(())
     }
@@ -303,20 +370,20 @@ mod tests {
         fzn_model.add_constraint(bool_eq.into());
 
         let solver = Solver::new(fzn_model);
-        let assignments = solver.solve()?.expect("should not be unsat");
+        let solution = solver.solve()?.expect("should not be unsat");
 
-        assert_eq!(assignments.len(), 2);
+        assert_eq!(solution.assignments().len(), 2);
 
         let x_true = Assignment::Bool(x.clone(), true);
         let y_true = Assignment::Bool(y.clone(), true);
         let x_false = Assignment::Bool(x, false);
         let y_false = Assignment::Bool(y, false);
 
-        let both_true =
-            assignments.contains(&x_true) && assignments.contains(&y_true);
+        let both_true = solution.assignments().contains(&x_true)
+            && solution.assignments().contains(&y_true);
 
-        let both_false =
-            assignments.contains(&x_false) && assignments.contains(&y_false);
+        let both_false = solution.assignments().contains(&x_false)
+            && solution.assignments().contains(&y_false);
 
         assert!(both_true || both_false);
 
@@ -346,7 +413,7 @@ mod tests {
         for solution in solutions {
             // Assume x is in position 0
             let (x_sol, value): (Rc<VarInt>, Int) =
-                solution[0].clone().try_into().unwrap();
+                solution.assignments()[0].clone().try_into().unwrap();
             assert_eq!(x_sol, x);
             assert!(value >= objective);
             objective = value;

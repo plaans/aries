@@ -7,6 +7,7 @@
     "executable": "../../target/release/aries_fzn",
     "tags": ["cp","int"],
     "stdFlags": [
+      "-a",
       "-i"
     ],
     "extraFlags": [

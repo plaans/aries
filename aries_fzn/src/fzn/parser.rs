@@ -174,16 +174,16 @@ pub fn parse_line(line: &str, model: &mut Model) -> anyhow::Result<()> {
     match statement {
         Stmt::Comment(_) => {}
         Stmt::Parameter(par_decl_item) => {
-                        parse_par_decl_item(par_decl_item, model)?
-            }
+            parse_par_decl_item(par_decl_item, model)?
+        }
         Stmt::Variable(var_decl_item) => {
-                parse_var_decl_item(var_decl_item, model)?
-            }
+            parse_var_decl_item(var_decl_item, model)?
+        }
         Stmt::Constraint(constraint_item) => {
-                parse_constraint_item(constraint_item, model)?
-            }
+            parse_constraint_item(constraint_item, model)?
+        }
         Stmt::SolveItem(solve_item) => parse_solve_item(solve_item, model)?,
-        Stmt::Predicate(_) => {/* ignore predicate declaration */},
+        Stmt::Predicate(_) => { /* ignore predicate declaration */ }
     }
     Ok(())
 }
