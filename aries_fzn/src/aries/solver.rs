@@ -112,13 +112,8 @@ impl Solver {
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
                 let res = match aries_solver.solve()? {
-                    Some(a) => {
-                        let mut assignments = Vec::new();
-                        for var in self.fzn_model.variables() {
-                            let assignment = self.make_assignment(var, &a);
-                            assignments.push(assignment);
-                        }
-                        let solution = Solution::new(assignments);
+                    Some(domains) => {
+                        let solution = self.make_solution(&domains);
                         Some(solution)
                     }
                     None => None,
@@ -135,13 +130,8 @@ impl Solver {
                     aries_solver.maximize(obj_var_ref)?
                 };
                 let res = match aries_res {
-                    Some((_, a)) => {
-                        let mut assignments = Vec::new();
-                        for var in self.fzn_model.variables() {
-                            let assignment = self.make_assignment(var, &a);
-                            assignments.push(assignment);
-                        }
-                        let solution = Solution::new(assignments);
+                    Some((_, domains)) => {
+                        let solution = self.make_solution(&domains);
                         Some(solution)
                     }
                     None => None,
@@ -169,8 +159,7 @@ impl Solver {
                 let output_var_ids = self.output_var_ids();
                 let var_refs: Vec<VarRef> =
                     output_var_ids.iter().map(translate).collect();
-                let solutions =
-                    aries_solver.enumerate(var_refs.as_slice())?;
+                let solutions = aries_solver.enumerate(var_refs.as_slice())?;
                 for solution in solutions {
                     let mut assignments = Vec::new();
                     let mut i = 0;
@@ -217,12 +206,6 @@ impl Solver {
                 } else {
                     aries_solver.maximize_with(obj_var_ref, g)?
                 };
-                // TODO: remove me
-                // The last solution seems to be already reported
-                // if let Some((_, domains)) = aries_res {
-                //     let assignments = self.make_solution(&domains);
-                //     f(assignments);
-                // };
                 Ok(())
             }
         }
@@ -284,6 +267,7 @@ impl Solver {
         let assignments = self
             .fzn_model
             .variables()
+            .filter(|v| v.output())
             .map(|v| self.make_assignment(v, domains))
             .collect();
         Solution::new(assignments)
@@ -312,9 +296,9 @@ mod tests {
         let domain_y = IntRange::new(4, 5)?;
 
         let x =
-            fzn_model.new_var_int(domain_x.into(), "x".to_string(), false)?;
+            fzn_model.new_var_int(domain_x.into(), "x".to_string(), true)?;
         let y =
-            fzn_model.new_var_int(domain_y.into(), "y".to_string(), false)?;
+            fzn_model.new_var_int(domain_y.into(), "y".to_string(), true)?;
 
         let int_eq = IntEq::new(x, y);
 
@@ -332,13 +316,11 @@ mod tests {
     fn int_eq() -> anyhow::Result<()> {
         let mut fzn_model = Model::new();
 
-        let domain_x = IntRange::new(0, 3)?;
-        let domain_y = IntRange::new(3, 5)?;
+        let domain_x = IntRange::new(0, 3)?.into();
+        let domain_y = IntRange::new(3, 5)?.into();
 
-        let x =
-            fzn_model.new_var_int(domain_x.into(), "x".to_string(), false)?;
-        let y =
-            fzn_model.new_var_int(domain_y.into(), "y".to_string(), false)?;
+        let x = fzn_model.new_var_int(domain_x, "x".to_string(), true)?;
+        let y = fzn_model.new_var_int(domain_y, "y".to_string(), true)?;
 
         let int_eq = IntEq::new(x.clone(), y.clone());
 
@@ -361,9 +343,9 @@ mod tests {
         let mut fzn_model = Model::new();
 
         let x =
-            fzn_model.new_var_bool(BoolDomain::Both, "x".to_string(), false)?;
+            fzn_model.new_var_bool(BoolDomain::Both, "x".to_string(), true)?;
         let y =
-            fzn_model.new_var_bool(BoolDomain::Both, "y".to_string(), false)?;
+            fzn_model.new_var_bool(BoolDomain::Both, "y".to_string(), true)?;
 
         let bool_eq = BoolEq::new(x.clone(), y.clone());
 
@@ -396,8 +378,8 @@ mod tests {
 
         let domain_x = IntRange::new(1, 3)?.into();
         let domain_y = IntRange::new(2, 4)?.into();
-        let x = fzn_model.new_var_int(domain_x, "x".to_string(), false)?;
-        let y = fzn_model.new_var_int(domain_y, "y".to_string(), false)?;
+        let x = fzn_model.new_var_int(domain_x, "x".to_string(), true)?;
+        let y = fzn_model.new_var_int(domain_y, "y".to_string(), true)?;
         fzn_model.maximize(x.clone()).unwrap();
 
         fzn_model.add_constraint(IntNe::new(x.clone(), y.clone()).into());
@@ -421,7 +403,4 @@ mod tests {
 
         Ok(())
     }
-
-    #[test]
-    fn aries_int_ne() {}
 }
