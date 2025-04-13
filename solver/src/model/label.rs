@@ -45,6 +45,14 @@ impl<Lbl> VariableLabels<Lbl> {
     {
         self.labeled_variables.get(label).map(|v| v.as_ref()).unwrap_or(&[])
     }
+
+    pub fn all_labels(&self) -> Vec<Lbl>
+    where
+        Lbl: Label,
+    {
+        self.labeled_variables.iter().map(|(k, _)| (**k).clone()).collect::<Vec<_>>()
+    }
+
 }
 
 impl<Lbl> Default for VariableLabels<Lbl> {
