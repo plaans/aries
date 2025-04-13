@@ -147,11 +147,10 @@ impl<Lbl: Label> Marco<Lbl> {
         // Another optimization (*):
         // If the found correction set only has 1 element,
         // then that element is added to those that are known to be in all unsatisfiable sets.
-        if let Some(&lit) = self
+        if let Ok(&lit) = self
             .get_soft_constraints_reif_literals()
             .difference(&sat_subset)
-            .take(2)
-            .fold(None, |opt, item| opt.xor(Some(item)))
+            .exactly_one()
         {
             self.register_soft_constraint_as_necessarily_in_every_mus(lit);
         }
@@ -166,7 +165,7 @@ impl<Lbl: Label> Marco<Lbl> {
             sat_subset.extend(new_corr_subset.clone());
 
             // Same optimization as (*) above
-            if let Some(&lit) = new_corr_subset.take(2).fold(None, |opt, item| opt.xor(Some(item))) {
+            if let Ok(&lit) = new_corr_subset.exactly_one() {
                 self.register_soft_constraint_as_necessarily_in_every_mus(lit);
             }
         }
