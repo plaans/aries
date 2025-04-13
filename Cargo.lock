@@ -400,6 +400,7 @@ dependencies = [
  "aries_grpc_server",
  "aries_planners",
  "aries_planning",
+ "clap 4.5.7",
  "itertools 0.13.0",
  "prost",
  "serde_json",

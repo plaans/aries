@@ -13,6 +13,7 @@ aries_planning = { path = "../planning" }
 aries_grpc_server = { path = "../grpc/server" }
 unified_planning = { path = "../grpc/api" }
 aries_explainability = { path = "../../explainability" }
+clap = { workspace = true }
 anyhow = { workspace = true }
 prost = { workspace = true }
 itertools = { workspace = true }
