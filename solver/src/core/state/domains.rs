@@ -359,6 +359,10 @@ impl Domains {
 
     // ============= Variables =================
 
+    pub fn num_variables(&self) -> usize {
+        self.doms.num_variables()
+    }
+
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
         self.doms.variables()
     }
