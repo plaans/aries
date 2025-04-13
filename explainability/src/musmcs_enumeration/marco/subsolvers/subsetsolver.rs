@@ -4,6 +4,7 @@ use aries::core::Lit;
 use aries::model::{Label, Model};
 use aries::reif::Reifiable;
 use aries::solver::{Exit, UnsatCore};
+use itertools::Itertools;
 
 pub trait SubsetSolverImpl<Lbl: Label> {
     fn get_model(&mut self) -> &mut Model<Lbl>;
@@ -93,8 +94,8 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
 
         // If the found correction set only has 1 element,
         // then that element is added to those that are known to be in all unsatisfiable sets.
-        if mcs.len() == 1 {
-            self.register_soft_constraint_as_necessarily_in_every_mus(*mcs.first().unwrap());
+        if let Ok(&single_lit_mcs) = mcs.iter().exactly_one() {
+            self.register_soft_constraint_as_necessarily_in_every_mus(single_lit_mcs);
         }
         Ok((mss, mcs))
     }
