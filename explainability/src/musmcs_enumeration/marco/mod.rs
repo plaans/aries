@@ -108,9 +108,11 @@ impl<Lbl: Label> Marco<Lbl> {
                 if let Some(mcses) = mcses {
                     let (mss, mcs) = self.subset_solver.grow(&seed)?;
                     self.map_solver.block_down(&mss);
-                    println!("mcs: {mcs:?}");
+                    // println!("mcs: {mcs:?}");
                     assert!(mcses.iter().all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
-                    mcses.push(mcs);
+                    if !mcs.is_empty() {
+                        mcses.push(mcs);
+                    }
                 } else {
                     self.case_seed_sat_only_muses_optimization(&seed)?;
                 }
@@ -118,9 +120,11 @@ impl<Lbl: Label> Marco<Lbl> {
                 let mus = self.subset_solver.shrink(&seed)?;
                 self.map_solver.block_up(&mus);
                 if let Some(muses) = muses {
-                    println!("mus: {mus:?}");
+                    // println!("mus: {mus:?}");
                     assert!(muses.iter().all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
-                    muses.push(mus);
+                    if !mus.is_empty() {
+                        muses.push(mus);
+                    }
                 }
             }
         }
