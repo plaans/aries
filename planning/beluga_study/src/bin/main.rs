@@ -60,18 +60,14 @@ fn make_encoded_beluga_problem(
     }
 }
 
-pub fn get_property_ids_to_varlabels_map(base_problem: &chronicles::Problem) -> HashMap<String, VarLabel> {
-    base_problem
+pub fn get_property_ids_to_varlabels_map(base_problem: &chronicles::Problem) -> (HashMap<String, VarLabel>, HashMap<VarLabel, String>) {
+    let properties_varlabels = base_problem
         .context
         .model
         .shape
         .labels
         .all_labels()
         .into_iter()
-        // .filter(|lbl| match &lbl.1 {
-        //     chronicles::VarType::Parameter(s) if s.starts_with("prop_id_") => true,
-        //     _ => false,
-        // })
         .filter_map(|lbl| match &lbl.1 {
             chronicles::VarType::Parameter(s) if s.starts_with("prop_") => {
                 // NOTE: assumes the format "prop_<prop-id-without-underscores>_....."
@@ -79,7 +75,12 @@ pub fn get_property_ids_to_varlabels_map(base_problem: &chronicles::Problem) -> 
             },
             _ => None,
         })
-        .collect::<HashMap<_, _>>()
+        .collect::<HashMap<_,_>>();
+    let properties_varlabels_rev = properties_varlabels
+        .iter()
+        .map(|(prop_id, lbl)| (lbl.clone(), prop_id.clone()))
+        .collect::<HashMap<_,_>>();
+    (properties_varlabels, properties_varlabels_rev)
 }
 
 /// WARNING: this solving procedure solves only for a fixed amount of allowed swaps.
@@ -87,15 +88,10 @@ pub fn solve_finite_beluga_with_given_properties(
     encoded_problem: EncodedProblem,
     finite_problem: Arc<FiniteProblem>,
     deadline_to_solve: Option<f64>,
-    properties_varlabels: HashMap<String, VarLabel>,
+    properties_lits: Vec<Lit>,
 ) -> SolverResult<Arc<SavedAssignment>> {
 
     let encoding = Arc::new(encoded_problem.encoding);
-
-    let properties_lits = properties_varlabels
-        .iter()
-        .map(|(_, lbl)| encoded_problem.model.get_var(&lbl).unwrap().geq(1))
-        .collect::<Vec<_>>();
 
     let mut model_w_enforced_properties = encoded_problem.model;
     model_w_enforced_properties.enforce_all(properties_lits, []);
@@ -132,18 +128,10 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
     encoded_problem: EncodedProblem,
     finite_problem: Arc<FiniteProblem>,
     deadline_to_enumerate: Option<f64>,
-    properties_varlabels: HashMap<String, VarLabel>,
-) -> Result<MusMcsEnumerationResult, MusMcsEnumerationResult> {
+    properties_lits: &HashMap<Lit, VarLabel>,
+) -> MusMcsEnumerationResult {
 
     let model = encoded_problem.model;
-
-    let properties_lits = properties_varlabels
-        .iter()
-        .map(|(_, lbl)| {
-            let var = model.get_var(&lbl).unwrap();
-            (var.geq(1), lbl.clone())   
-        })
-        .collect::<HashMap<_,_>>();
 
     let start = std::time::Instant::now();
     let deadline = deadline_to_enumerate.map(|val| start + std::time::Duration::from_secs_f64(val));
@@ -153,8 +141,9 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
         Strat::Causal,
     ];
 
-//    let subset_solver_impl = Box::new(VerySimpleSubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
-    let mut subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
+    // let subset_solver_impl = Box::new(VerySimpleSubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
+    let subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
+    // let mut subset_solver_impl = Box::new(SimpleNonWorking2SubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
     
     let mut marco = Marco::with_reified_soft_constraints(
         subset_solver_impl,
@@ -168,7 +157,7 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
     println!("{marco_res:?}");
 
     println!("MUSes: \n");
-    for mus in marco_res.as_ref().unwrap().muses.as_ref().unwrap() {
+    for mus in marco_res.muses.as_ref().unwrap() {
         let mus_str = mus
             .iter()
             .map(|l| properties_lits.get(l).unwrap())
@@ -178,7 +167,7 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
     }
 
     println!("MCSes: \n");
-    for mcs in marco_res.as_ref().unwrap().mcses.as_ref().unwrap() {
+    for mcs in marco_res.mcses.as_ref().unwrap() {
         let mcs_str = mcs
             .iter()
             .map(|l| properties_lits.get(l).unwrap())
@@ -324,16 +313,21 @@ pub fn main() -> Result<(), Error> {
             // let mut base_problem = problem_to_chronicles(&problem)?;
             // base_problem.context.model.enforce_all::<Lit>(base_problem.chronicles.iter().map(|c| &c.chronicle.presence).copied(), []);
 
-            let properties_varlabels = get_property_ids_to_varlabels_map(&base_problem);
+            let (properties_varlabels, _) = get_property_ids_to_varlabels_map(&base_problem);
 
             let (encoded_problem, finite_problem) = make_encoded_beluga_problem(base_problem)?;
+
+            let properties_lits = properties_varlabels
+                .iter()
+                .map(|(_, lbl)| encoded_problem.model.get_var(&lbl).unwrap().geq(1))
+                .collect::<Vec<_>>();
 
             // Will solve for all properties being enforced
             let result = solve_finite_beluga_with_given_properties(
                 encoded_problem,
                 finite_problem.clone(),
                 None,
-                properties_varlabels,
+                properties_lits,
             );
 
             let (plan_str, plan) = match result {
@@ -355,34 +349,60 @@ pub fn main() -> Result<(), Error> {
             return Ok(())
         },
         io::Command::Explain(explain_args) => {
+
             let problem_file_path = explain_args.problem_file_path;
             let problem = std::fs::read(problem_file_path)?;
             let problem = up::Problem::decode(problem.as_slice())?;
             let problem = Arc::new(problem);
 
-            let question_str = explain_args.question_name.as_str();
-            match question_str {
-                "WHY_INFEASIBLE" => {
-                    assert!(explain_args.question_args.len() == 0);
-                    
-                    let base_problem = problem_to_chronicles(&problem)?;
+            let base_problem = problem_to_chronicles(&problem)?;
 
-                    let properties_varlabels = get_property_ids_to_varlabels_map(&base_problem);
+            let (properties_varlabels, properties_var_labels_rev) = get_property_ids_to_varlabels_map(&base_problem);
+
+            let (encoded_problem, finite_problem) = make_encoded_beluga_problem(base_problem)?;
+
+            let properties_lits = properties_varlabels
+                .iter()
+                .map(|(_, lbl)| {
+                    let var = encoded_problem.model.get_var(&lbl).unwrap();
+                    (var.geq(1), lbl.clone())   
+                })
+                .collect::<HashMap<_,_>>();
+
+            let result = enumerate_finite_beluga_property_muses_and_mcses(
+                encoded_problem,
+                finite_problem,
+                None,
+                &properties_lits,
+            );
+
+            let results_file_path = explain_args.results_file_path;
+
+            let prop_ids_muses = result
+                .muses
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter().map(|mus| {
+                    mus.iter().map(|l| format!("{}", properties_var_labels_rev.get(properties_lits.get(l).unwrap()).unwrap())).collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+
+            let prop_ids_mcses = result
+                .mcses
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter().map(|mcs| {
+                    mcs.iter().map(|l| format!("{}", properties_var_labels_rev.get(properties_lits.get(l).unwrap()).unwrap())).collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
         
-                    let (encoded_problem, finite_problem) = make_encoded_beluga_problem(base_problem)?;
-
-                    let result = enumerate_finite_beluga_property_muses_and_mcses(
-                        encoded_problem,
-                        finite_problem,
-                        None,
-                        properties_varlabels,
-                    );
-
-                },
-                _ => panic!("Unknown question {}", question_str),
-            }
-        }
-    }
-
+            let _ = io::write_mus_mcs_enumeration_result_to_file(
+                results_file_path,
+                result.complete,
+                prop_ids_muses,
+                prop_ids_mcses,
+            )?;
+        },
+    };
     Ok(())
 }
