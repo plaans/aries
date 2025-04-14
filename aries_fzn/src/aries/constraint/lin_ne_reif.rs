@@ -44,8 +44,8 @@ impl<Lbl: Label> Post<Lbl> for LinNeReif {
     fn post(&self, model: &mut Model<Lbl>) {
         let r1 = BVar::new(model.state.new_var(0, 1));
         let r2 = BVar::new(model.state.new_var(0, 1));
-        let lin_le_reif = LinLeReif::new(self.sum.clone(), self.b-1, r1);
-        let lin_ge_reif = LinGeReif::new(self.sum.clone(), self.b+1, r2);
+        let lin_le_reif = LinLeReif::new(self.sum.clone(), self.b - 1, r1);
+        let lin_ge_reif = LinGeReif::new(self.sum.clone(), self.b + 1, r2);
         let or_reif = OrReif::new(vec![r1, r2], self.r);
         lin_le_reif.post(model);
         lin_ge_reif.post(model);

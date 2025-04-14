@@ -24,7 +24,7 @@ digraph constraints {
         mzn_int_lin_le_imp [label="int_lin_le_imp"]
         mzn_int_lin_le_reif [label="int_lin_le_reif"]
         mzn_int_lin_ne [label="int_lin_ne"]
-        mzn_int_lin_ne_reif [label="int_lin_ne_reif"] [shape=ellipse]
+        mzn_int_lin_ne_reif [label="int_lin_ne_reif"]
         mzn_int_lt [label="int_lt"] [shape=ellipse]
         mzn_int_lt_reif [label="int_lt_reif"] [shape=ellipse]
         mzn_int_max [label="int_max"]
@@ -81,6 +81,7 @@ digraph constraints {
         api_LinLeHalf [label="LinLeHalf"]
         api_LinLeReif [label="LinLeReif"]
         api_LinNe [label="LinNe"]
+        api_LinNeReif [label="LinNeReif"]
         api_Lt [label="Lt"] [shape=ellipse]
         api_LtReif [label="LtReif"] [shape=ellipse]
         api_Max [label="Max"]
@@ -124,7 +125,7 @@ digraph constraints {
     mzn_int_lin_le_imp -> api_LinLeHalf
     mzn_int_lin_le_reif -> api_LinLeReif
     mzn_int_lin_ne -> api_LinNe
-    mzn_int_lin_ne_reif -> mzn_int_lin_eq_reif
+    mzn_int_lin_ne_reif -> api_LinNeReif
     mzn_int_lt -> api_Lt
     mzn_int_lt_reif -> api_LtReif
     mzn_int_max -> mzn_array_int_maximum
@@ -178,6 +179,7 @@ digraph constraints {
     api_LinLeHalf -> api_LinLe
     api_LinLeReif -> { api_LinLeHalf, api_LinGeHalf }
     api_LinNe -> { api_LinEq, api_Ne }
+    api_LinNeReif -> { api_LinLeReif, api_LinGeReif, api_OrReif }
     api_Lt -> sol_MaxDiff
     api_LtReif -> sol_MaxDiff
     api_Max -> sol_EqMax
