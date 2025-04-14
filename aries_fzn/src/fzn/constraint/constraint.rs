@@ -6,11 +6,6 @@ use crate::aries::Post;
 use crate::fzn::constraint::builtins::*;
 use crate::fzn::constraint::Encode;
 
-/// A flatzinc constraint.
-///
-/// ```flatzinc
-/// constraint int_le(x,y);
-/// ```
 #[derive(Clone, Debug)]
 pub enum Constraint {
     ArrayIntMaximum(ArrayIntMaximum),
@@ -20,6 +15,7 @@ pub enum Constraint {
     IntEqReif(IntEqReif),
     IntLe(IntLe),
     IntLinEq(IntLinEq),
+    IntLinEqImp(IntLinEqImp),
     IntLinLe(IntLinLe),
     IntLinLeImp(IntLinLeImp),
     IntLinNe(IntLinNe),
@@ -43,6 +39,7 @@ impl Encode for Constraint {
             Constraint::IntEqReif(c) => c.encode(translation),
             Constraint::IntLe(c) => c.encode(translation),
             Constraint::IntLinEq(c) => c.encode(translation),
+            Constraint::IntLinEqImp(c) => c.encode(translation),
             Constraint::IntLinLe(c) => c.encode(translation),
             Constraint::IntLinLeImp(c) => c.encode(translation),
             Constraint::IntLinNe(c) => c.encode(translation),
