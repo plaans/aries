@@ -278,10 +278,10 @@ class AriesEngine(engines.engine.Engine):
         # Search the root of the aries project.
         # resolve() makes the path absolute, resolving all symlinks on the way.
         aries_path = Path(__file__).resolve().parent.parent.parent.parent.parent
-        aries_exe = aries_path / "target/ci/up-server"
+        aries_exe = aries_path / "target/release/up-server"
 
         if not _ARIES_PREVIOUSLY_COMPILED:
-            aries_build_cmd = "cargo build --profile ci --bin up-server"
+            aries_build_cmd = "cargo build --profile release --bin up-server"
             print(f"Compiling Aries ({aries_path}) ...")
             with open(os.devnull, "w", encoding="utf-8") as stdout:
                 subprocess.run(
