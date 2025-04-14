@@ -70,30 +70,22 @@ impl<Lbl: Label> Marco<Lbl> {
         self.subset_solver.register_soft_constraint_as_necessarily_in_every_mus(soft_constraint_reif_lit)
     }
 
-    pub fn run(&mut self) -> Result<MusMcsEnumerationResult, MusMcsEnumerationResult> {
+    pub fn run(&mut self) -> MusMcsEnumerationResult {
         let mut muses = self.config.return_muses.then(Vec::<BTreeSet<Lit>>::new);
         let mut mcses = self.config.return_mcses.then(Vec::<BTreeSet<Lit>>::new);
 
         let start = Instant::now();
-        if self._run(&mut muses, &mut mcses).is_ok() {
-            debug_assert!(muses.as_ref().is_none_or(|v| v.iter().all_unique()));
-            debug_assert!(mcses.as_ref().is_none_or(|v| v.iter().all_unique()));
-            Ok(MusMcsEnumerationResult {
-                muses,
-                mcses,
-                complete: Some(true),
-                run_time: Some(start.elapsed()),
-            })
-        } else {
-            // Even if the algorithm exits / is interrupted, return the (incomplete) result.
-            debug_assert!(muses.as_ref().is_none_or(|v| v.iter().all_unique()));
-            debug_assert!(mcses.as_ref().is_none_or(|v| v.iter().all_unique()));
-            Ok(MusMcsEnumerationResult {
-                muses,
-                mcses,
-                complete: Some(false),
-                run_time: Some(start.elapsed()),
-            })
+
+        let complete = self._run(&mut muses, &mut mcses).is_ok();
+
+        debug_assert!(muses.as_ref().is_none_or(|v| v.iter().all_unique()));
+        debug_assert!(mcses.as_ref().is_none_or(|v| v.iter().all_unique()));
+
+        MusMcsEnumerationResult {
+            muses,
+            mcses,
+            complete: Some(complete),
+            run_time: Some(start.elapsed()),
         }
     }
 
@@ -210,7 +202,7 @@ mod tests {
             .map(|expr| simple_marco.get_expr_reification(expr))
             .collect_vec();
 
-        let res = simple_marco.run().unwrap();
+        let res = simple_marco.run();
         let res_muses = res.muses.unwrap().into_iter().collect::<BTreeSet<_>>();
         let res_mcses = res.mcses.unwrap().into_iter().collect::<BTreeSet<_>>();
 
