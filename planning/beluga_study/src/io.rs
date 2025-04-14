@@ -61,4 +61,4 @@ pub fn write_mus_mcs_enumeration_result_to_file(
     writer.flush()?;
     Ok(())
 }
-}
+
