@@ -36,8 +36,8 @@ predicate int_div(var int: a, var int: b, var int: c) =
 % int_lin_eq_imp is supported
 predicate int_lin_eq_imp(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
 
-predicate int_lin_eq_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r) =
-    abort("int_lin_eq_reif is not supported");
+% predicate int_lin_eq_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r) =
+%     abort("int_lin_eq_reif is not supported");
 
 % predicate int_lin_le(array [int] of int: as, array [int] of var int: bs, int: c) =
 %     abort("int_lin_le is not supported");

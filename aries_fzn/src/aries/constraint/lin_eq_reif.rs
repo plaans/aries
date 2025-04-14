@@ -46,7 +46,7 @@ impl<Lbl: Label> Post<Lbl> for LinEqReif {
         let r2 = BVar::new(model.state.new_var(0, 1));
         let lin_le_reif = LinLeReif::new(self.sum.clone(), self.b, r1);
         let lin_ge_reif = LinGeReif::new(self.sum.clone(), self.b, r2);
-        let and_reif = AndReif::new(vec![r1,r2], self.r);
+        let and_reif = AndReif::new(vec![r1, r2], self.r);
         lin_le_reif.post(model);
         lin_ge_reif.post(model);
         and_reif.post(model);
@@ -69,7 +69,8 @@ mod tests {
         let lin_eq_half = LinEqReif::new(sum, b, r);
         lin_eq_half.post(&mut model);
 
-        let verify = |[x, y, r]: [IntCst; 3]| (r == 1) == (x * c_x + y * c_y == b);
+        let verify =
+            |[x, y, r]: [IntCst; 3]| (r == 1) == (x * c_x + y * c_y == b);
 
         verify_all([x, y, r.into()], model, verify);
     }

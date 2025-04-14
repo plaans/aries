@@ -421,16 +421,17 @@ pub fn parse_constraint_item(
         ArrayVarIntElement::NAME => {
             ArrayVarIntElement::try_from_item(c, m)?.into()
         }
+        Bool2Int::NAME => Bool2Int::try_from_item(c, m)?.into(),
         BoolClause::NAME => BoolClause::try_from_item(c, m)?.into(),
         BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),
-        Bool2Int::NAME => Bool2Int::try_from_item(c, m)?.into(),
         IntAbs::NAME => IntAbs::try_from_item(c, m)?.into(),
         IntEq::NAME => IntEq::try_from_item(c, m)?.into(),
-        IntLinEqImp::NAME => IntLinEqImp::try_from_item(c, m)?.into(),
         IntEqReif::NAME => IntEqReif::try_from_item(c, m)?.into(),
         IntLe::NAME => IntLe::try_from_item(c, m)?.into(),
         IntLeReif::NAME => IntLeReif::try_from_item(c, m)?.into(),
         IntLinEq::NAME => IntLinEq::try_from_item(c, m)?.into(),
+        IntLinEqImp::NAME => IntLinEqImp::try_from_item(c, m)?.into(),
+        IntLinEqReif::NAME => IntLinEqReif::try_from_item(c, m)?.into(),
         IntLinLe::NAME => IntLinLe::try_from_item(c, m)?.into(),
         IntLinLeImp::NAME => IntLinLeImp::try_from_item(c, m)?.into(),
         IntLinLeReif::NAME => IntLinLeReif::try_from_item(c, m)?.into(),
