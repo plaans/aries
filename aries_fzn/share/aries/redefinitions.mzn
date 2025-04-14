@@ -27,8 +27,8 @@ predicate int_div(var int: a, var int: b, var int: c) =
 % predicate int_le(var int: a, var int: b) =
 %     abort("int_le is not supported");
 
-predicate int_le_reif(var int: a, var int: b, var bool: r) =
-    abort("int_le_reif is not supported");
+% predicate int_le_reif(var int: a, var int: b, var bool: r) =
+%     abort("int_le_reif is not supported");
 
 % predicate int_lin_eq(array [int] of int: as, array [int] of var int: bs, int: c) =
 %     abort("int_lin_eq is not supported");

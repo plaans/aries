@@ -429,6 +429,7 @@ pub fn parse_constraint_item(
         IntLinEqImp::NAME => IntLinEqImp::try_from_item(c, m)?.into(),
         IntEqReif::NAME => IntEqReif::try_from_item(c, m)?.into(),
         IntLe::NAME => IntLe::try_from_item(c, m)?.into(),
+        IntLeReif::NAME => IntLeReif::try_from_item(c, m)?.into(),
         IntLinEq::NAME => IntLinEq::try_from_item(c, m)?.into(),
         IntLinLe::NAME => IntLinLe::try_from_item(c, m)?.into(),
         IntLinLeImp::NAME => IntLinLeImp::try_from_item(c, m)?.into(),
