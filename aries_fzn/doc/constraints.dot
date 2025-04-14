@@ -63,6 +63,7 @@ digraph constraints {
         node [fillcolor=2]
         api_Abs [label="Abs"]
         api_AndReif [label="AndReif"]
+        api_ArrayElement [label="ArrayElement"]
         api_Eq [label="Eq"]
         api_EqReif [label="EqReif"]
         api_EqVal [label="EqVal"] [shape=ellipse]
@@ -159,6 +160,7 @@ digraph constraints {
     // ---------- Solver API ----------
     api_Abs -> api_Max
     api_AndReif -> sol_And
+    api_ArrayElement -> { sol_Eq, sol_Or } [label="*"]
     api_Eq -> sol_Eq
     api_EqReif -> sol_Eq
     api_EqVal -> sol_EqVal
