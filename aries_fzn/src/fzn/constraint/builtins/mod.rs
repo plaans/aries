@@ -14,6 +14,7 @@ mod int_lin_eq;
 mod int_lin_eq_imp;
 mod int_lin_le;
 mod int_lin_le_imp;
+mod int_lin_le_reif;
 mod int_lin_ne;
 mod int_ne;
 
@@ -33,5 +34,6 @@ pub use int_lin_eq::IntLinEq;
 pub use int_lin_eq_imp::IntLinEqImp;
 pub use int_lin_le::IntLinLe;
 pub use int_lin_le_imp::IntLinLeImp;
+pub use int_lin_le_reif::IntLinLeReif;
 pub use int_lin_ne::IntLinNe;
 pub use int_ne::IntNe;

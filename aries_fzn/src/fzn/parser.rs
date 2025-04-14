@@ -432,6 +432,7 @@ pub fn parse_constraint_item(
         IntLinEq::NAME => IntLinEq::try_from_item(c, m)?.into(),
         IntLinLe::NAME => IntLinLe::try_from_item(c, m)?.into(),
         IntLinLeImp::NAME => IntLinLeImp::try_from_item(c, m)?.into(),
+        IntLinLeReif::NAME => IntLinLeReif::try_from_item(c, m)?.into(),
         IntLinNe::NAME => IntLinNe::try_from_item(c, m)?.into(),
         IntNe::NAME => IntNe::try_from_item(c, m)?.into(),
         _ => anyhow::bail!(format!("unknown constraint '{}'", c.id)),
