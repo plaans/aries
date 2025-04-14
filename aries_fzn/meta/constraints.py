@@ -15,6 +15,9 @@ def info(msg: str) -> None:
 TAB = " " * 4
 
 def upper_camel(s: str) -> str:
+    # Weird case...
+    if s == "bool2int":
+        return "Bool2Int"
     words = s.split("_")
     return "".join(map(lambda w: w.capitalize(), words))
 

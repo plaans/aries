@@ -8,8 +8,10 @@ use crate::fzn::constraint::Encode;
 
 #[derive(Clone, Debug)]
 pub enum Constraint {
+    ArrayIntElement(ArrayIntElement),
     ArrayIntMaximum(ArrayIntMaximum),
     ArrayIntMinimum(ArrayIntMinimum),
+    ArrayVarIntElement(ArrayVarIntElement),
     IntAbs(IntAbs),
     IntEq(IntEq),
     IntEqReif(IntEqReif),
@@ -32,8 +34,10 @@ impl Encode for Constraint {
         translation: &HashMap<usize, VarRef>,
     ) -> Box<dyn Post<usize>> {
         match self {
+            Constraint::ArrayIntElement(c) => c.encode(translation),
             Constraint::ArrayIntMaximum(c) => c.encode(translation),
             Constraint::ArrayIntMinimum(c) => c.encode(translation),
+            Constraint::ArrayVarIntElement(c) => c.encode(translation),
             Constraint::IntAbs(c) => c.encode(translation),
             Constraint::IntEq(c) => c.encode(translation),
             Constraint::IntEqReif(c) => c.encode(translation),

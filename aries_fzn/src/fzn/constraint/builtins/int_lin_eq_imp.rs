@@ -20,6 +20,12 @@ use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 
+/// Half reified integer linear equality constraint.
+///
+/// ```flatzinc
+/// constraint int_lin_eq_imp([1,-1,3], [x,y,z], 5, r);
+/// % r -> x - y + 3*z = 5
+/// ```
 #[derive(Clone, Debug)]
 pub struct IntLinEqImp {
     a: Vec<Int>,

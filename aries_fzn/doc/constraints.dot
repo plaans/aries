@@ -8,10 +8,10 @@ digraph constraints {
     // ---------- Minizinc ----------
     {
         node [fillcolor=1]
-        // mzn_array_int_element [label="array_int_element"] [shape=ellipse]
+        mzn_array_int_element [label="array_int_element"]
         mzn_array_int_maximum [label="array_int_maximum"]
         mzn_array_int_minimum [label="array_int_minimum"]
-        // mzn_array_var_int_element [label="array_var_int_element"] [shape=ellipse]
+        mzn_array_var_int_element [label="array_var_int_element"]
         mzn_int_abs [label="int_abs"]
         // mzn_int_div [label="int_div"] [shape=ellipse]
         mzn_int_eq [label="int_eq"]
@@ -108,10 +108,10 @@ digraph constraints {
     }
 
     // ---------- Minizinc ----------
-    // mzn_array_int_element
+    mzn_array_int_element -> api_ArrayElement
     mzn_array_int_maximum -> api_Max
     mzn_array_int_minimum -> api_Min
-    // mzn_array_var_int_element
+    mzn_array_var_int_element -> api_ArrayElement
     mzn_int_abs -> api_Abs
     // mzn_int_div
     mzn_int_eq -> api_Eq

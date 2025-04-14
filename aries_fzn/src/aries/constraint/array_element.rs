@@ -5,7 +5,6 @@ use aries::model::lang::expr::implies;
 use aries::model::lang::expr::lt;
 use aries::model::lang::BVar;
 use aries::model::lang::IAtom;
-use aries::model::lang::IVar;
 use aries::model::Label;
 use aries::model::Model;
 
@@ -19,12 +18,18 @@ use crate::aries::Post;
 #[derive(Debug)]
 pub struct ArrayElement {
     a: Vec<IAtom>,
-    b: IVar,
-    i: IVar,
+    b: IAtom,
+    i: IAtom,
 }
 
 impl ArrayElement {
-    pub fn new(a: Vec<IAtom>, b: IVar, i: IVar) -> Self {
+    pub fn new(
+        a: Vec<IAtom>,
+        b: impl Into<IAtom>,
+        i: impl Into<IAtom>,
+    ) -> Self {
+        let b = b.into();
+        let i = i.into();
         Self { a, b, i }
     }
 
@@ -32,11 +37,11 @@ impl ArrayElement {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &IAtom {
         &self.b
     }
 
-    pub fn i(&self) -> &IVar {
+    pub fn i(&self) -> &IAtom {
         &self.i
     }
 }

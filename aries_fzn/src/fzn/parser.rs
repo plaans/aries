@@ -415,8 +415,12 @@ pub fn parse_constraint_item(
 ) -> anyhow::Result<()> {
     let constraint = match c.id.as_str() {
         ArrayBoolAnd::NAME => ArrayBoolAnd::try_from_item(c, m)?.into(),
+        ArrayIntElement::NAME => ArrayIntElement::try_from_item(c, m)?.into(),
         ArrayIntMaximum::NAME => ArrayIntMaximum::try_from_item(c, m)?.into(),
         ArrayIntMinimum::NAME => ArrayIntMinimum::try_from_item(c, m)?.into(),
+        ArrayVarIntElement::NAME => {
+            ArrayVarIntElement::try_from_item(c, m)?.into()
+        }
         BoolClause::NAME => BoolClause::try_from_item(c, m)?.into(),
         BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),
         Bool2Int::NAME => Bool2Int::try_from_item(c, m)?.into(),
