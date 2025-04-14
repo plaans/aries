@@ -31,7 +31,7 @@ digraph constraints {
         mzn_int_min [label="int_min"]
         // mzn_int_mod [label="int_mod"] [shape=ellipse]
         mzn_int_ne [label="int_ne"]
-        mzn_int_ne_reif [label="int_ne_reif"] [shape=ellipse]
+        mzn_int_ne_reif [label="int_ne_reif"]
         mzn_int_plus [label="int_plus"] [shape=ellipse]
         // mzn_int_pow [label="int_pow"] [shape=ellipse]
         // mzn_int_times [label="int_times"] [shape=ellipse]
@@ -86,7 +86,7 @@ digraph constraints {
         api_Max [label="Max"]
         api_Min [label="Min"]
         api_Ne [label="Ne"]
-        api_NeReif [label="NeReif"] [shape=ellipse]
+        api_NeReif [label="NeReif"]
         api_OrReif [label="OrReif"]
     }
 

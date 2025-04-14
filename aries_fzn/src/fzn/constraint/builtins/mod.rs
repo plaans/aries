@@ -17,6 +17,7 @@ mod int_lin_le_imp;
 mod int_lin_le_reif;
 mod int_lin_ne;
 mod int_ne;
+mod int_ne_reif;
 
 pub use array_bool_and::ArrayBoolAnd;
 pub use array_int_element::ArrayIntElement;
@@ -37,3 +38,4 @@ pub use int_lin_le_imp::IntLinLeImp;
 pub use int_lin_le_reif::IntLinLeReif;
 pub use int_lin_ne::IntLinNe;
 pub use int_ne::IntNe;
+pub use int_ne_reif::IntNeReif;

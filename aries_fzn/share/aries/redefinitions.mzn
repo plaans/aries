@@ -72,8 +72,8 @@ predicate int_mod(var int: a, var int: b, var int: c) =
 % predicate int_ne(var int: a, var int: b) =
 %     abort("int_ne is not supported");
 
-predicate int_ne_reif(var int: a, var int: b, var bool: r) =
-    abort("int_ne_reif is not supported");
+% predicate int_ne_reif(var int: a, var int: b, var bool: r) =
+%     abort("int_ne_reif is not supported");
 
 predicate int_plus(var int: a, var int: b, var int: c) =
     abort("int_plus is not supported");

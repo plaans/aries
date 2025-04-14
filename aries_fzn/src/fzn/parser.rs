@@ -435,6 +435,7 @@ pub fn parse_constraint_item(
         IntLinLeReif::NAME => IntLinLeReif::try_from_item(c, m)?.into(),
         IntLinNe::NAME => IntLinNe::try_from_item(c, m)?.into(),
         IntNe::NAME => IntNe::try_from_item(c, m)?.into(),
+        IntNeReif::NAME => IntNeReif::try_from_item(c, m)?.into(),
         _ => anyhow::bail!(format!("unknown constraint '{}'", c.id)),
     };
     m.add_constraint(constraint);
