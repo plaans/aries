@@ -1,5 +1,6 @@
-use std::fs::File;
+use std::fs::{create_dir_all, File};
 use std::io::{BufWriter, Write};
+use std::path::Path;
 use serde_json::{self, json};
 use clap::{Args, Parser, Subcommand};
 
@@ -45,7 +46,10 @@ pub fn write_mus_mcs_enumeration_result_to_file(
     mcses: Vec<Vec<String>>,
 ) -> std::io::Result<()> {
 
-    // let _ = create_dir_all(&results_file_path)?;
+    let path = Path::new(&results_file_path);
+    let path_dir = path.parent().unwrap();
+    let _ = create_dir_all(&path_dir);
+    
     let file = File::create_new(&results_file_path).or_else(|_| File::create(&results_file_path))?;
     let mut writer = BufWriter::new(file);
 
