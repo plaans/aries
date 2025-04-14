@@ -19,6 +19,7 @@ mod lin_ne;
 mod max;
 mod min;
 mod ne;
+mod ne_reif;
 mod or_reif;
 
 pub use abs::Abs;
@@ -40,6 +41,7 @@ pub use lin_ne::LinNe;
 pub use max::Max;
 pub use min::Min;
 pub use ne::Ne;
+pub use ne_reif::NeReif;
 pub use or_reif::OrReif;
 
 #[cfg(test)]
