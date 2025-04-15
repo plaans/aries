@@ -817,6 +817,10 @@ pub struct PlanRequest {
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
+    /// An optional valid Plan that can be used as a starting point.
+    /// If present, the engine is free to exploit it or not.
+    #[prost(message, optional, tag = "5")]
+    pub warm_start_plan: ::core::option::Option<Plan>,
 }
 /// Nested message and enum types in `PlanRequest`.
 pub mod plan_request {
