@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "aries-scheduler")]
 pub struct Opt {
-    /// Kind of the problem to be solved in {jobshop, openshop}
+    /// Kind of the problem to be solved in {jobshop, openshop, flexible}
     kind: ProblemKind,
     /// File containing the instance to solve.
     file: String,
