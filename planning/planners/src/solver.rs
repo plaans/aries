@@ -38,7 +38,7 @@ static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", 
 static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
 
 /// The type of warming up constraints to add to the problem.
-static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "strict");
+static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "causal");
 
 /// The type of warming up constraints to add to the problem.
 #[derive(Copy, Clone, PartialEq)]
