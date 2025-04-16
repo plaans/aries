@@ -120,7 +120,7 @@ def _scenarios() -> Generator[Any, None, None]:
                 problem.clear_quality_metrics()
                 problem.add_quality_metric(MinimizeSequentialPlanLength())
 
-            plan = plan_file.read_text()
+            plan: Plan = PDDLReader().parse_plan(problem, plan_file)
             quality = float(plan_file.stem.split("_")[-1])
             uid = f"{domain_dir.name}/{quality}"
             xfail = (
@@ -149,14 +149,14 @@ def oneshot_planning(
     scenario: WarmUpScenario, use_warm_up: bool = True
 ) -> PlanningResult:
     output_file = get_output_file(scenario, "oneshot")
-    params = {"warm_up_plan": scenario.plan} if use_warm_up else {}
     with (
         open(output_file, "w", encoding="utf-8") as output_stream,
-        OneshotPlanner(name="aries", params=params) as planner,
+        OneshotPlanner(name="aries") as planner,
     ):
         planner.skip_checks = True
-        solution = planner.solve(
+        solution = planner.solve_with_warm_start(
             scenario.problem,
+            warm_start_plan=scenario.plan if use_warm_up else None,
             timeout=scenario.timeout,
             output_stream=output_stream,
         )
@@ -167,15 +167,15 @@ def anytime_planning(
     scenario: WarmUpScenario, use_warm_up: bool = True
 ) -> Generator[PlanningResult, None, None]:
     output_file = get_output_file(scenario, "anytime")
-    params = {"warm_up_plan": scenario.plan} if use_warm_up else {}
     with (
         open(output_file, "w", encoding="utf-8") as output_stream,
-        AnytimePlanner(name="aries", params=params) as planner,
+        AnytimePlanner(name="aries") as planner,
     ):
         planner.skip_checks = True
         for idx, solution in enumerate(
-            planner.get_solutions(
+            planner.get_solutions_with_warm_start(
                 scenario.problem,
+                warm_start_plan=scenario.plan if use_warm_up else None,
                 timeout=scenario.timeout,
                 output_stream=output_stream,
             )
