@@ -113,6 +113,21 @@ jobs:
       - name: Resolution
         run: ./just ci-ipc
 
+  warm-up-tests:
+    name: Warm-up tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Submodules initialization
+        run: git submodule update --init # get our own copy of unified-planing repos
+      - name: Install python dependencies
+        run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
+      - name: Install just
+        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to .
+      - name: Resolution
+        run: ./just ci-warm-up
+
   tests: # Meta-job that only requires all test-jobs to pass
     needs:
       [
@@ -122,6 +137,7 @@ jobs:
         unified-planning-api,
         unified-planning-integration,
         ipc-tests,
+        warm-up-tests,
       ]
     runs-on: ubuntu-latest
     steps:

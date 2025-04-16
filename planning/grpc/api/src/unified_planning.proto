@@ -749,6 +749,10 @@ message PlanRequest {
 
     // Engine specific options to be passed to the engine
     map<string, string> engine_options = 4;
+
+    // An optional valid Plan that can be used as a starting point.
+    // If present, the engine is free to exploit it or not.
+    Plan warm_start_plan = 5;
 }
 
 message ValidationRequest {

@@ -8,7 +8,7 @@ use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::Model;
 
@@ -17,6 +17,8 @@ use crate::Model;
 /// Possible values are `none` and `simple` (default).
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "psp");
 pub static USELESS_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_USELESS_SUPPORTS", "true");
+pub static DETRIMENTAL_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_DETRIMENTAL_SUPPORTS", "true");
+pub static PENALIZE_NUMERIC_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_PENALIZE_NUMERIC_SUPPORTS", "true");
 pub static PSP_ABSTRACTION_HIERARCHY: EnvParam<bool> = EnvParam::new("ARIES_PSP_ABSTRACTION_HIERARCHY", "true");
 
 /// The type of symmetry breaking to apply to problems.
@@ -86,10 +88,16 @@ pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &E
 
 fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
     let discard_useless_supports = USELESS_SUPPORTS.get();
+    let discard_detrimental_supports = DETRIMENTAL_SUPPORTS.get();
     let sort_by_hierarchy_level = PSP_ABSTRACTION_HIERARCHY.get();
+    let penalize_numeric_supports = PENALIZE_NUMERIC_SUPPORTS.get();
 
     let template_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
         ChronicleOrigin::FreeAction { template_id, .. } => Some(template_id),
+        _ => None,
+    };
+    let generation_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
+        ChronicleOrigin::FreeAction { generation_id, .. } => Some(generation_id),
         _ => None,
     };
     let is_primary_support = |c: CondID, eff: EffID| {
@@ -109,7 +117,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         #[allow(unused)]
         gen: usize,
     }
-    let actions: HashMap<ChronicleId, _> = pb
+    let actions: BTreeMap<ChronicleId, _> = pb
         .chronicles
         .iter()
         .enumerate()
@@ -145,10 +153,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         active: Lit,
         exclusive: bool,
     }
-    let mut causal_link: HashMap<(ChronicleId, CondID), Link> = Default::default();
-    let mut conds_by_templates: HashMap<TemplateID, HashSet<CondID>> = Default::default();
+    let mut causal_link: BTreeMap<(ChronicleId, CondID), Link> = Default::default();
+    let mut conds_by_templates: BTreeMap<TemplateID, BTreeSet<CondID>> = Default::default();
     for template in &templates {
-        conds_by_templates.insert(*template, HashSet::new());
+        conds_by_templates.insert(*template, BTreeSet::new());
     }
     for &(k, v) in &encoding.tags {
         let Tag::Support(cond, eff) = k else {
@@ -162,7 +170,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         let ChronicleOrigin::FreeAction { template_id, .. } = ch.origin else {
             continue;
         };
-        if discard_useless_supports && !is_primary_support(cond, eff) {
+        if discard_detrimental_supports && !is_primary_support(cond, eff) {
             continue; // remove non-primary supports
         }
         // record that this template may contribute to this condition
@@ -179,23 +187,52 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         );
     }
 
-    let sort = |conds: HashSet<CondID>| {
-        if sort_by_hierarchy_level {
-            let sort_key = |c: &CondID| {
-                // get the level, reserving the lvl 0 for non-templates
-                if let Some(template) = template_id(c.instance_id) {
-                    let lvl = pb.meta.action_hierarchy[&template];
-                    (lvl + 1, c.instance_id)
-                } else {
-                    (0, c.instance_id)
-                }
-            };
-            conds.into_iter().sorted_by_key(sort_key).collect_vec()
+    let is_num = |cond_id: &CondID| {
+        let instance = &pb.chronicles[cond_id.instance_id];
+        let cond = instance.chronicle.conditions.get(match cond_id.cond_id {
+            analysis::CondOrigin::ExplicitCondition(v) => v,
+            analysis::CondOrigin::PostIncrease(_) => instance.chronicle.conditions.len() + 1, // Force out of bounds to return None
+        });
+        if let Some(cond) = cond {
+            cond.state_var.fluent.return_type().is_numeric()
         } else {
-            conds.into_iter().sorted().collect_vec()
+            true
         }
     };
-    let conds_by_templates: HashMap<TemplateID, Vec<CondID>> =
+
+    let sort = |conds: BTreeSet<CondID>| {
+        let sort_key = |c: &CondID| {
+            // penalize conditions on numeric fluents because the encoding
+            // makes it hard to distinguish actual supports, they should be considered last
+            let penalty = if penalize_numeric_supports && is_num(c) {
+                1024
+            } else {
+                0
+            };
+            // get the level, reserving the lvl 0 for non-templates
+            let (hier_level, template) = if let Some(template) = template_id(c.instance_id) {
+                let lvl = if sort_by_hierarchy_level {
+                    pb.meta.action_hierarchy[&template]
+                } else {
+                    0
+                };
+                (lvl + 1, template + 1)
+            } else {
+                (0, 0)
+            };
+            let generation = if let Some(generation) = generation_id(c.instance_id) {
+                generation + 1000
+            } else {
+                c.instance_id
+            };
+            // important: order must be made by template so that conditions of the same template are grouped
+            // The consequence of grouping is that swapping raws (instances of the same template) does not affect the order with respect to the columns of the other templates
+            // note that two instances of the same template will have the same hierarchy level, so it is safe to first group by hierarchy level
+            (hier_level, template, penalty, generation)
+        };
+        conds.into_iter().sorted_by_key(sort_key).collect_vec()
+    };
+    let conds_by_templates: BTreeMap<TemplateID, Vec<CondID>> =
         conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
     let supports = |ch: ChronicleId, cond: CondID| {
         causal_link.get(&(ch, cond)).copied().unwrap_or(Link {
