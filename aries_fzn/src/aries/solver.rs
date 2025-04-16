@@ -142,10 +142,8 @@ impl Solver {
     }
 
     /// Solve the flatzinc model with a call back for new solution.
-    ///
-    /// Warning: for satisfaction models, all solutions are generated first
-    /// then the callback is called once per solution.
-    pub fn solve_with<F>(&self, mut f: F) -> anyhow::Result<()>
+    /// Return `true` iff the solver found a solution.
+    pub fn solve_with<F>(&self, mut f: F) -> anyhow::Result<bool>
     where
         F: FnMut(Solution),
     {
@@ -154,59 +152,25 @@ impl Solver {
 
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
-                let output_vars: Vec<&FznVar> =
-                    self.fzn_model.variables().filter(|v| v.output()).collect();
                 let output_var_ids = self.output_var_ids();
                 let var_refs: Vec<VarRef> =
                     output_var_ids.iter().map(translate).collect();
-                let solutions = aries_solver.enumerate(var_refs.as_slice())?;
-                for solution in solutions {
-                    let mut assignments = Vec::new();
-                    let mut i = 0;
-                    for output_var in &output_vars {
-                        match output_var {
-                            FznVar::Bool(v) => {
-                                assignments.push(Assignment::Bool(
-                                    v.clone(),
-                                    solution[i] == 1,
-                                ));
-                                i += 1;
-                            }
-                            FznVar::Int(v) => {
-                                assignments.push(Assignment::Int(
-                                    v.clone(),
-                                    solution[i],
-                                ));
-                                i += 1;
-                            }
-                            FznVar::IntArray(v) => {
-                                assignments.push(Assignment::IntArray(
-                                    v.clone(),
-                                    solution[i..i + v.len()].into(),
-                                ));
-                                i += v.len();
-                            }
-                            FznVar::BoolArray(_) => {
-                                todo!("bool array assignment")
-                            }
-                        }
-                    }
-                    let solution = Solution::new(assignments);
-                    f(solution);
-                }
-                Ok(())
+
+                let g = |d: &Domains| f(self.make_solution(d));
+                let sat = aries_solver.enumerate_with(&var_refs, g)?;
+                Ok(sat)
             }
             SolveItem::Optimize(objective) => {
                 let obj_var = objective.variable();
                 let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
                 let is_minimize = objective.goal() == &Goal::Minimize;
                 let g = |_: IntCst, d: &Domains| f(self.make_solution(d));
-                if is_minimize {
-                    aries_solver.minimize_with(obj_var_ref, g)?
+                let sat = if is_minimize {
+                    aries_solver.minimize_with(obj_var_ref, g)?.is_some()
                 } else {
-                    aries_solver.maximize_with(obj_var_ref, g)?
+                    aries_solver.maximize_with(obj_var_ref, g)?.is_some()
                 };
-                Ok(())
+                Ok(sat)
             }
         }
     }

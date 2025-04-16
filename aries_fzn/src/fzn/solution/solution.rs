@@ -56,19 +56,17 @@ impl Fzn for Option<Solution> {
     }
 }
 
-/// The callback each times a solution is found.
+/// The callback is called once per textual info (solution or unsat message).
 pub fn make_output_flow<F>(solver: &Solver, mut f: F) -> anyhow::Result<()>
 where
     F: FnMut(String),
 {
-    let mut unsat = true;
     let g = |solution: Solution| {
-        unsat = false;
         f(solution.fzn());
     };
-    solver.solve_with(g)?;
+    let sat = solver.solve_with(g)?;
 
-    if unsat {
+    if !sat {
         f(UNSAT.to_string() + "\n");
     } else {
         f(END_OF_SEARCH.to_string() + "\n");
