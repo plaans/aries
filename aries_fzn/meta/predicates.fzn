@@ -41,7 +41,7 @@ predicate bool_lin_eq(array [int] of int: as, array [int] of var bool: bs, var i
 predicate bool_lin_le(array [int] of int: as, array [int] of var bool: bs, int: c)
 % predicate bool_lt(var bool: a, var bool: b)
 % predicate bool_lt_reif(var bool: a, var bool: b, var bool: r)
-% predicate bool_not(var bool: a, var bool: b)
+predicate bool_not(var bool: a, var bool: b)
 % predicate bool_or(var bool: a, var bool: b, var bool: r)
 % predicate bool_xor(var bool: a, var bool: b, var bool: r)
 % predicate bool_xor(var bool: a, var bool: b)

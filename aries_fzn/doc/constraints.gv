@@ -50,7 +50,7 @@ digraph constraints {
         mzn_bool_lin_le [label="bool_lin_le"]
         mzn_bool_lt [label="bool_lt"]
         mzn_bool_lt_reif [label="bool_lt_reif"]
-        mzn_bool_not [label="bool_not"] [shape=ellipse]
+        mzn_bool_not [label="bool_not"]
         mzn_bool_or [label="bool_or"] [shape=ellipse]
         mzn_bool_xor [label="bool_xor"] [shape=ellipse]
         // mzn_bool_xor_reif [label="bool_xor_reif"] [shape=ellipse]

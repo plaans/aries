@@ -135,8 +135,8 @@ predicate bool_lt(var bool: a, var bool: b) =
 predicate bool_lt_reif(var bool: a, var bool: b, var bool: r) =
     r <-> ((a = false) /\ (b = true));
 
-predicate bool_not(var bool: a, var bool: b) =
-    abort("bool_not is not supported");
+% predicate bool_not(var bool: a, var bool: b) =
+%     abort("bool_not is not supported");
 
 predicate bool_or(var bool: a, var bool: b, var bool: r) =
     abort("bool_or is not supported");

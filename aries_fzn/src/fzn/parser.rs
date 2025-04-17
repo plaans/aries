@@ -455,6 +455,7 @@ pub fn parse_constraint_item(
         BoolLeReif::NAME => BoolLeReif::try_from_item(c, m)?.into(),
         BoolLinEq::NAME => BoolLinEq::try_from_item(c, m)?.into(),
         BoolLinLe::NAME => BoolLinLe::try_from_item(c, m)?.into(),
+        BoolNot::NAME => BoolNot::try_from_item(c, m)?.into(),
         IntAbs::NAME => IntAbs::try_from_item(c, m)?.into(),
         IntEq::NAME => IntEq::try_from_item(c, m)?.into(),
         IntEqReif::NAME => IntEqReif::try_from_item(c, m)?.into(),
