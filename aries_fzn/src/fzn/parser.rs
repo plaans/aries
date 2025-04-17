@@ -8,6 +8,7 @@ use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Context;
 use flatzinc::Annotation;
+use flatzinc::ArrayOfBoolExpr;
 use flatzinc::ArrayOfIntExpr;
 use flatzinc::ConstraintItem;
 use flatzinc::Expr;
@@ -268,6 +269,33 @@ pub fn parse_var_decl_item(
             };
             model.new_var_int(domain, id, output)?;
         }
+        VarDeclItem::ArrayOfBool {
+            ix: _,
+            id,
+            annos,
+            array_expr,
+        } => {
+            let output = annos.iter().any(is_output_anno);
+            let e = array_expr.expect("expected array expression");
+            match e {
+                ArrayOfBoolExpr::Array(bool_exprs) => {
+                    let vars: anyhow::Result<Vec<Rc<VarBool>>> = bool_exprs
+                        .iter()
+                        .cloned()
+                        .map(|e| var_bool_from_expr(&e.into(), model))
+                        .collect();
+                    model.new_var_bool_array(vars?, id, output)?;
+                }
+                ArrayOfBoolExpr::VarParIdentifier(id) => {
+                    let var = model.get_var_bool_array(&id)?;
+                    model.new_var_bool_array(
+                        var.variables().cloned().collect(),
+                        id,
+                        output,
+                    )?;
+                }
+            };
+        }
         VarDeclItem::ArrayOfInt {
             ix: _,
             id,
@@ -348,12 +376,6 @@ pub fn parse_var_decl_item(
             expr: _,
             annos: _,
         } => bail!("subset of int range are not supported"),
-        VarDeclItem::ArrayOfBool {
-            ix: _,
-            id: _,
-            annos: _,
-            array_expr: _,
-        } => todo!("array of bool are not supported"),
         VarDeclItem::ArrayOfIntInRange {
             lb: _,
             ub: _,

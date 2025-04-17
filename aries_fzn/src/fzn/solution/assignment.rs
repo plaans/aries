@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use crate::fzn::types::Int;
 use crate::fzn::var::VarBool;
+use crate::fzn::var::VarBoolArray;
 use crate::fzn::var::VarInt;
 use crate::fzn::var::VarIntArray;
 use crate::fzn::Fzn;
@@ -17,6 +18,7 @@ use crate::fzn::Name;
 pub enum Assignment {
     Bool(Rc<VarBool>, bool),
     Int(Rc<VarInt>, Int),
+    BoolArray(Rc<VarBoolArray>, Vec<bool>),
     IntArray(Rc<VarIntArray>, Vec<Int>),
 }
 
@@ -25,6 +27,7 @@ impl Assignment {
         match self {
             Assignment::Bool(v, _) => v.output(),
             Assignment::Int(v, _) => v.output(),
+            Assignment::BoolArray(v, _) => v.output(),
             Assignment::IntArray(v, _) => v.output(),
         }
     }
@@ -37,6 +40,9 @@ impl TryFrom<Assignment> for (Rc<VarBool>, bool) {
         match value {
             Assignment::Bool(v, x) => Ok((v, x)),
             Assignment::Int(v, _) => {
+                anyhow::bail!(format!("{} is not a var bool", v.name()))
+            }
+            Assignment::BoolArray(v, _) => {
                 anyhow::bail!(format!("{} is not a var bool", v.name()))
             }
             Assignment::IntArray(v, _) => {
@@ -55,6 +61,9 @@ impl TryFrom<Assignment> for (Rc<VarInt>, Int) {
                 anyhow::bail!(format!("{} is not a var int", v.name()))
             }
             Assignment::Int(v, x) => Ok((v, x)),
+            Assignment::BoolArray(v, _) => {
+                anyhow::bail!(format!("{} is not a var int", v.name()))
+            }
             Assignment::IntArray(v, _) => {
                 anyhow::bail!(format!("{} is not a var int", v.name()))
             }
@@ -70,6 +79,9 @@ impl Fzn for Assignment {
             }
             Assignment::Int(var, value) => {
                 format!("{} = {};", var.name(), value)
+            }
+            Assignment::BoolArray(var, value) => {
+                format!("{} = {};", var.name(), value.fzn())
             }
             Assignment::IntArray(var, value) => {
                 format!("{} = {};", var.name(), value.fzn())

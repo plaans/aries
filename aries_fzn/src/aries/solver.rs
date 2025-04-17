@@ -58,8 +58,9 @@ impl Solver {
         match var {
             FznVar::Bool(v) => self.add_var_bool(v),
             FznVar::Int(v) => self.add_var_int(v),
-            FznVar::BoolArray(_) => todo!(),
-            FznVar::IntArray(_) => { /* Do nothing */ }
+            FznVar::BoolArray(_) => { /* Do nothing, variables already added */
+            }
+            FznVar::IntArray(_) => { /* Do nothing, variables already added */ }
         }
     }
 
@@ -212,6 +213,18 @@ impl Solver {
                 debug_assert_eq!(lb, ub);
                 Assignment::Int(v.clone(), lb)
             }
+            FznVar::BoolArray(var) => {
+                let mut values = Vec::new();
+                for v in var.variables() {
+                    let var_ref = self.translation.get(v.id()).unwrap();
+                    let (lb, ub) = domains.bounds(*var_ref);
+                    debug_assert_eq!(lb, ub);
+                    debug_assert!(lb == 0 || lb == 1);
+                    let value = lb == 1;
+                    values.push(value);
+                }
+                Assignment::BoolArray(var.clone(), values)
+            }
             FznVar::IntArray(var) => {
                 let mut values = Vec::new();
                 for v in var.variables() {
@@ -222,7 +235,6 @@ impl Solver {
                 }
                 Assignment::IntArray(var.clone(), values)
             }
-            FznVar::BoolArray(_) => todo!("bool array assignment"),
         }
     }
 
