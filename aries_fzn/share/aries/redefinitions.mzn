@@ -120,11 +120,11 @@ predicate bool_and(var bool: a, var bool: b, var bool: r) =
 % predicate bool_le_reif(var bool: a, var bool: b, var bool: r) =
 %     abort("bool_le_reif is not supported");
 
-predicate bool_lin_eq(array [int] of int: as, array [int] of var bool: bs, var int: c) =
-    abort("bool_lin_eq is not supported");
+% predicate bool_lin_eq(array [int] of int: as, array [int] of var bool: bs, var int: c) =
+%     abort("bool_lin_eq is not supported");
 
-predicate bool_lin_le(array [int] of int: as, array [int] of var bool: bs, int: c) =
-    abort("bool_lin_le is not supported");
+% predicate bool_lin_le(array [int] of int: as, array [int] of var bool: bs, int: c) =
+%     abort("bool_lin_le is not supported");
 
 predicate bool_lt(var bool: a, var bool: b) =
     abort("bool_lt is not supported");

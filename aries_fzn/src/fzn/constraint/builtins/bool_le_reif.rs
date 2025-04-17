@@ -8,12 +8,12 @@ use flatzinc::ConstraintItem;
 
 use crate::aries::constraint::LeReif;
 use crate::aries::Post;
-use crate::fzn::constraint::Encode;
-use crate::fzn::parser::var_bool_from_expr;
 use crate::fzn::constraint::Constraint;
+use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
-use crate::fzn::Fzn;
+use crate::fzn::parser::var_bool_from_expr;
 use crate::fzn::var::VarBool;
+use crate::fzn::Fzn;
 
 /// Reified boolean less or equal constraint.
 ///
@@ -49,7 +49,10 @@ impl BoolLeReif {
         &self.r
     }
 
-    pub fn try_from_item(item: ConstraintItem, model: &mut Model) -> anyhow::Result<Self> {
+    pub fn try_from_item(
+        item: ConstraintItem,
+        model: &mut Model,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             item.id.as_str() == Self::NAME,
             "'{}' expected but received '{}'",
@@ -71,7 +74,13 @@ impl BoolLeReif {
 
 impl Fzn for BoolLeReif {
     fn fzn(&self) -> String {
-        format!("{}({:?}, {:?}, {:?});\n", Self::NAME, self.a.fzn(), self.b.fzn(), self.r.fzn())
+        format!(
+            "{}({:?}, {:?}, {:?});\n",
+            Self::NAME,
+            self.a.fzn(),
+            self.b.fzn(),
+            self.r.fzn()
+        )
     }
 }
 

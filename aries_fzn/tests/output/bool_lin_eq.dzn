@@ -1,0 +1,17 @@
+x = false;
+y = false;
+z = 0;
+----------
+x = false;
+y = true;
+z = 2;
+----------
+x = true;
+y = false;
+z = 3;
+----------
+x = true;
+y = true;
+z = 5;
+----------
+==========
