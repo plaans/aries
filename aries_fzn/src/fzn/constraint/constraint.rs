@@ -32,13 +32,12 @@ pub enum Constraint {
     BoolClause(BoolClause),
     BoolEq(BoolEq),
     BoolEqReif(BoolEqReif),
+    BoolLe(BoolLe),
+    BoolLeReif(BoolLeReif),
 }
 
 impl Encode for Constraint {
-    fn encode(
-        &self,
-        translation: &HashMap<usize, VarRef>,
-    ) -> Box<dyn Post<usize>> {
+    fn encode(&self, translation: &HashMap<usize, VarRef>) -> Box<dyn Post<usize>> {
         match self {
             Constraint::ArrayIntElement(c) => c.encode(translation),
             Constraint::ArrayIntMaximum(c) => c.encode(translation),
@@ -64,6 +63,8 @@ impl Encode for Constraint {
             Constraint::BoolClause(c) => c.encode(translation),
             Constraint::BoolEq(c) => c.encode(translation),
             Constraint::BoolEqReif(c) => c.encode(translation),
+            Constraint::BoolLe(c) => c.encode(translation),
+            Constraint::BoolLeReif(c) => c.encode(translation),
         }
     }
 }
