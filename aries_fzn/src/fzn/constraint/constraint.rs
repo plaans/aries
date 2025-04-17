@@ -31,6 +31,7 @@ pub enum Constraint {
     Bool2Int(Bool2Int),
     BoolClause(BoolClause),
     BoolEq(BoolEq),
+    BoolEqReif(BoolEqReif),
 }
 
 impl Encode for Constraint {
@@ -62,6 +63,7 @@ impl Encode for Constraint {
             Constraint::Bool2Int(c) => c.encode(translation),
             Constraint::BoolClause(c) => c.encode(translation),
             Constraint::BoolEq(c) => c.encode(translation),
+            Constraint::BoolEqReif(c) => c.encode(translation),
         }
     }
 }

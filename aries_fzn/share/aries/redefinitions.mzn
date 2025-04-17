@@ -111,8 +111,8 @@ predicate bool_and(var bool: a, var bool: b, var bool: r) =
 % predicate bool_eq(var bool: a, var bool: b) =
 %     abort("bool_eq is not supported");
 
-predicate bool_eq_reif(var bool: a, var bool: b, var bool: r) =
-    abort("bool_eq_reif is not supported");
+% predicate bool_eq_reif(var bool: a, var bool: b, var bool: r) =
+%     abort("bool_eq_reif is not supported");
 
 predicate bool_le(var bool: a, var bool: b) =
     abort("bool_le is not supported");
