@@ -1,3 +1,6 @@
+% Eliminates set variables by converting them into arrays of var bool
+include "nosets.mzn";
+
 % predicate array_int_element(var int: b, array [int] of int: as, var int: c) =
 %     abort("array_int_element is not supported");
 
@@ -84,8 +87,8 @@ predicate int_pow(var int: x, var int: y, var int: z) =
 predicate int_times(var int: a, var int: b, var int: c) =
     abort("int_times is not supported");
 
-predicate set_in(var int: x, set of int: S) =
-    abort("set_in is not supported");
+% predicate set_in(var int: x, set of int: S) =
+%     abort("set_in is not supported");
 
 % predicate array_bool_and(array [int] of var bool: as, var bool: r) =
 %     abort("array_bool_and is not supported");
@@ -144,71 +147,71 @@ predicate bool_xor(var bool: a, var bool: b, var bool: r) =
 predicate bool_xor(var bool: a, var bool: b) =
     abort("bool_xor is not supported");
 
-predicate array_set_element(var int: b, array [int] of set of int: as, var set of int: c) =
-    abort("array_set_element is not supported");
+% predicate array_set_element(var int: b, array [int] of set of int: as, var set of int: c) =
+%     abort("array_set_element is not supported");
 
-predicate array_var_set_element(var int: b, array [int] of var set of int: as, var set of int: c) =
-    abort("array_var_set_element is not supported");
+% predicate array_var_set_element(var int: b, array [int] of var set of int: as, var set of int: c) =
+%     abort("array_var_set_element is not supported");
 
-predicate set_card(var set of int: S, var int: x) =
-    abort("set_card is not supported");
+% predicate set_card(var set of int: S, var int: x) =
+%     abort("set_card is not supported");
 
-predicate set_diff(var set of int: x, var set of int: y, var set of int: r) =
-    abort("set_diff is not supported");
+% predicate set_diff(var set of int: x, var set of int: y, var set of int: r) =
+%     abort("set_diff is not supported");
 
-predicate set_eq(var set of int: x, var set of int: y) =
-    abort("set_eq is not supported");
+% predicate set_eq(var set of int: x, var set of int: y) =
+%     abort("set_eq is not supported");
 
-predicate set_eq_reif(var set of int: x, var set of int: y, var bool: r) =
-    abort("set_eq_reif is not supported");
+% predicate set_eq_reif(var set of int: x, var set of int: y, var bool: r) =
+%     abort("set_eq_reif is not supported");
 
-predicate set_in(var int: x, var set of int: S) =
-    abort("set_in is not supported");
+% predicate set_in(var int: x, var set of int: S) =
+%     abort("set_in is not supported");
 
-predicate set_in_reif(var int: x, set of int: S, var bool: r) =
-    abort("set_in_reif is not supported");
+% predicate set_in_reif(var int: x, set of int: S, var bool: r) =
+%     abort("set_in_reif is not supported");
 
-predicate set_in_reif(var int: x, var set of int: S, var bool: r) =
-    abort("set_in_reif is not supported");
+% predicate set_in_reif(var int: x, var set of int: S, var bool: r) =
+%     abort("set_in_reif is not supported");
 
-predicate set_intersect(var set of int: x, var set of int: y, var set of int: r) =
-    abort("set_intersect is not supported");
+% predicate set_intersect(var set of int: x, var set of int: y, var set of int: r) =
+%     abort("set_intersect is not supported");
 
-predicate set_le(var set of int: x, var set of int: y) =
-    abort("set_le is not supported");
+% predicate set_le(var set of int: x, var set of int: y) =
+%     abort("set_le is not supported");
 
-predicate set_le_reif(var set of int: x, var set of int: y, var bool: r) =
-    abort("set_le_reif is not supported");
+% predicate set_le_reif(var set of int: x, var set of int: y, var bool: r) =
+%     abort("set_le_reif is not supported");
 
-predicate set_lt(var set of int: x, var set of int: y) =
-    abort("set_lt is not supported");
+% predicate set_lt(var set of int: x, var set of int: y) =
+%     abort("set_lt is not supported");
 
-predicate set_lt_reif(var set of int: x, var set of int: y, var bool: r) =
-    abort("set_lt_reif is not supported");
+% predicate set_lt_reif(var set of int: x, var set of int: y, var bool: r) =
+%     abort("set_lt_reif is not supported");
 
-predicate set_ne(var set of int: x, var set of int: y) =
-    abort("set_ne is not supported");
+% predicate set_ne(var set of int: x, var set of int: y) =
+%     abort("set_ne is not supported");
 
-predicate set_ne_reif(var set of int: x, var set of int: y, var bool: r) =
-    abort("set_ne_reif is not supported");
+% predicate set_ne_reif(var set of int: x, var set of int: y, var bool: r) =
+%     abort("set_ne_reif is not supported");
 
-predicate set_subset(var set of int: x, var set of int: y) =
-    abort("set_subset is not supported");
+% predicate set_subset(var set of int: x, var set of int: y) =
+%     abort("set_subset is not supported");
 
-predicate set_subset_reif(var set of int: x, var set of int: y, var bool: r) =
-    abort("set_subset_reif is not supported");
+% predicate set_subset_reif(var set of int: x, var set of int: y, var bool: r) =
+%     abort("set_subset_reif is not supported");
 
-predicate set_superset(var set of int: x, var set of int: y) =
-    abort("set_superset is not supported");
+% predicate set_superset(var set of int: x, var set of int: y) =
+%     abort("set_superset is not supported");
 
-predicate set_superset_reif(var set of int: x, var set of int: y, var bool: r) =
-    abort("set_superset_reif is not supported");
+% predicate set_superset_reif(var set of int: x, var set of int: y, var bool: r) =
+%     abort("set_superset_reif is not supported");
 
-predicate set_symdiff(var set of int: x, var set of int: y, var set of int: r) =
-    abort("set_symdiff is not supported");
+% predicate set_symdiff(var set of int: x, var set of int: y, var set of int: r) =
+%     abort("set_symdiff is not supported");
 
-predicate set_union(var set of int: x, var set of int: y, var set of int: r) =
-    abort("set_union is not supported");
+% predicate set_union(var set of int: x, var set of int: y, var set of int: r) =
+%     abort("set_union is not supported");
 
 predicate array_float_element(var int: b, array [int] of float: as, var float: c) =
     abort("array_float_element is not supported");

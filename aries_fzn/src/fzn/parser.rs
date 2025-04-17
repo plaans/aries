@@ -165,8 +165,11 @@ pub fn parse_model(content: &str) -> anyhow::Result<Model> {
     let mut nb_solve_items = 0;
 
     for (i, line) in content.lines().enumerate() {
-        let is_solve_item = parse_line(line, &mut model)
-            .context(format!("parsing failure at line {}", i + 1))?;
+        let is_solve_item = parse_line(line, &mut model).context(format!(
+            "parsing failure at line {}:\n{}\n",
+            i + 1,
+            line
+        ))?;
         if is_solve_item {
             nb_solve_items += 1;
         }
