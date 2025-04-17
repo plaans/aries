@@ -7,7 +7,6 @@ use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
 use anyhow::Result;
-use aries::core::IntCst;
 
 use crate::fzn::constraint::Constraint;
 use crate::fzn::domain::BoolDomain;
@@ -46,7 +45,8 @@ pub struct Model {
     solve_item: SolveItem,
     name_par: HashMap<String, Par>,
     name_var: HashMap<String, Var>,
-    const_var: HashMap<IntCst, Rc<VarInt>>,
+    const_varint: HashMap<Int, Rc<VarInt>>,
+    const_varbool: [Option<Rc<VarBool>>; 2],
 }
 
 impl Model {
@@ -265,18 +265,36 @@ impl Model {
         Ok(variable)
     }
 
+    /// Return a new boolean integer variable.
+    ///
+    /// Only one constant variable is created per constant value.
+    /// It allows to use boolean constant in place of varbool.
+    pub fn new_var_bool_const(&mut self, value: bool) -> Rc<VarBool> {
+        let index = if value { 1 } else { 0 };
+        if let Some(var) = &self.const_varbool[index] {
+            var.clone()
+        } else {
+            let domain = BoolDomain::Singleton(value);
+            let name = format!("_CONST_{}_", value);
+            let var: Rc<VarBool> = VarBool::new(domain, name, false).into();
+            self.const_varbool[index] = Some(var.clone());
+            self.add_var(var.clone()).unwrap();
+            var
+        }
+    }
+
     /// Return a new constant integer variable.
     ///
     /// Only one constant variable is created per constant value.
     /// It allows to use integer constant in place of varint.
     pub fn new_var_int_const(&mut self, value: Int) -> Rc<VarInt> {
-        if let Some(var) = self.const_var.get(&value) {
+        if let Some(var) = self.const_varint.get(&value) {
             var.clone()
         } else {
             let domain = IntDomain::Singleton(value);
             let name = format!("_CONST_{}_", value);
             let var: Rc<VarInt> = VarInt::new(domain, name, false).into();
-            self.const_var.insert(value, var.clone());
+            self.const_varint.insert(value, var.clone());
             self.add_var(var.clone()).unwrap();
             var
         }

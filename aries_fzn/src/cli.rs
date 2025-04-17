@@ -100,7 +100,7 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
     let solver = Solver::new(model);
 
     if print_all {
-        let print = |s| println!("{s}");
+        let print = |s| print!("{s}");
         make_output_flow(&solver, print)?;
     } else {
         let result = solver.solve()?;

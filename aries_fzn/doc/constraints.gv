@@ -48,8 +48,8 @@ digraph constraints {
         mzn_bool_le_reif [label="bool_le_reif"]
         mzn_bool_lin_eq [label="bool_lin_eq"]
         mzn_bool_lin_le [label="bool_lin_le"]
-        mzn_bool_lt [label="bool_lt"] [shape=ellipse]
-        mzn_bool_lt_reif [label="bool_lt_reif"] [shape=ellipse]
+        mzn_bool_lt [label="bool_lt"]
+        mzn_bool_lt_reif [label="bool_lt_reif"]
         mzn_bool_not [label="bool_not"] [shape=ellipse]
         mzn_bool_or [label="bool_or"] [shape=ellipse]
         mzn_bool_xor [label="bool_xor"] [shape=ellipse]
@@ -150,8 +150,8 @@ digraph constraints {
     mzn_bool_le_reif -> api_LeReif
     mzn_bool_lin_eq -> api_LinEq
     mzn_bool_lin_le -> api_LinLe
-    mzn_bool_lt -> api_EqVal
-    mzn_bool_lt_reif -> api_EqValReif
+    mzn_bool_lt -> mzn_bool_eq [label="2"]
+    mzn_bool_lt_reif -> { mzn_array_bool_and; mzn_bool_eq_reif }
     mzn_bool_not -> api_Ne
     mzn_bool_or -> mzn_bool_clause
     mzn_bool_xor -> api_Ne
@@ -161,25 +161,25 @@ digraph constraints {
     // ---------- Solver API ----------
     api_Abs -> api_Max
     api_AndReif -> sol_And
-    api_ArrayElement -> { sol_Eq, sol_Or } [label="*"]
+    api_ArrayElement -> { sol_Eq; sol_Or } [label="*"]
     api_Eq -> sol_Eq
     api_EqReif -> sol_Eq
     api_EqVal -> sol_EqVal
     api_EqValReif -> sol_EqVal
-    api_InSet -> { sol_Or, sol_Lit } [label="*"]
+    api_InSet -> { sol_Or; sol_Lit } [label="*"]
     api_Le -> sol_MaxDiff
     api_LeReif -> sol_MaxDiff
-    api_LinEq -> { api_LinLe, api_LinGe }
-    api_LinEqHalf -> { api_LinLeHalf, api_LinGeHalf }
-    api_LinEqReif -> { api_LinLeReif, api_LinGeReif, api_AndReif }
+    api_LinEq -> { api_LinLe; api_LinGe }
+    api_LinEqHalf -> { api_LinLeHalf; api_LinGeHalf }
+    api_LinEqReif -> { api_LinLeReif; api_LinGeReif; api_AndReif }
     api_LinGe -> api_LinLe
     api_LinGeHalf -> api_LinLeHalf
     api_LinGeReif -> api_LinLeReif
     api_LinLe -> sol_Linear
     api_LinLeHalf -> api_LinLe
-    api_LinLeReif -> { api_LinLeHalf, api_LinGeHalf }
-    api_LinNe -> { api_LinEq, api_Ne }
-    api_LinNeReif -> { api_LinLeReif, api_LinGeReif, api_OrReif }
+    api_LinLeReif -> { api_LinLeHalf; api_LinGeHalf }
+    api_LinNe -> { api_LinEq; api_Ne }
+    api_LinNeReif -> { api_LinLeReif; api_LinGeReif; api_OrReif }
     api_Lt -> sol_MaxDiff
     api_LtReif -> sol_MaxDiff
     api_Max -> sol_EqMax

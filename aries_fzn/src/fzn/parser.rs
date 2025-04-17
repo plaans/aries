@@ -47,10 +47,11 @@ pub fn is_output_anno(anno: &Annotation) -> bool {
 /// Convert a flatzinc [Expr] into a [VarBool].
 pub fn var_bool_from_expr(
     expr: &Expr,
-    model: &Model,
+    model: &mut Model,
 ) -> anyhow::Result<Rc<VarBool>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_bool(id),
+        Expr::Bool(x) => Ok(model.new_var_bool_const((*x).try_into()?)),
         _ => bail!("not a varbool"),
     }
 }
@@ -101,7 +102,7 @@ pub fn int_from_expr(expr: &Expr, model: &Model) -> anyhow::Result<Int> {
 /// Convert a flatzinc [Expr] into a vector of [VarBool].
 pub fn vec_var_bool_from_expr(
     expr: &Expr,
-    model: &Model,
+    model: &mut Model,
 ) -> anyhow::Result<Vec<Rc<VarBool>>> {
     match expr {
         Expr::VarParIdentifier(id) => {
