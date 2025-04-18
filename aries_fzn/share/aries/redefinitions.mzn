@@ -79,7 +79,7 @@ predicate int_mod(var int: a, var int: b, var int: c) =
 %     abort("int_ne_reif is not supported");
 
 predicate int_plus(var int: a, var int: b, var int: c) =
-    abort("int_plus is not supported");
+    int_lin_eq([1, 1, -1], [a, b, c], 0);
 
 predicate int_pow(var int: x, var int: y, var int: z) =
     abort("int_pow is not supported");

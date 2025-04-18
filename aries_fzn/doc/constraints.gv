@@ -1,8 +1,9 @@
 // This document describes constraint encoding from minizinc to aries.
+// Ellipse shape means the constraint is not yet implemented.
 // Use Graphviz to generate the graph.
 
 digraph constraints {
-    label="Constraint endoding from minizinc to aries.\nSquare constraints are implemented, round ones are to be done."
+    label="Constraint endoding from minizinc to aries."
     node [shape=rectangle colorscheme=pubugn3 style=filled] 
 
     // ---------- Minizinc ----------
@@ -32,7 +33,7 @@ digraph constraints {
         // mzn_int_mod [label="int_mod"] [shape=ellipse]
         mzn_int_ne [label="int_ne"]
         mzn_int_ne_reif [label="int_ne_reif"]
-        mzn_int_plus [label="int_plus"] [shape=ellipse]
+        mzn_int_plus [label="int_plus"]
         // mzn_int_pow [label="int_pow"] [shape=ellipse]
         // mzn_int_times [label="int_times"] [shape=ellipse]
         mzn_array_bool_and [label="array_bool_and"]
@@ -97,7 +98,7 @@ digraph constraints {
         sol_And [label="And"]
         sol_Eq [label="Eq"]
         sol_EqMax [label="EqMax"]
-        sol_EqVal [label="EqVal"]
+        // sol_EqVal [label="EqVal"]
         // sol_EqVarMulLit [label="EqVarMulLit"]
         sol_Linear [label="Linear"]
         sol_Lit [label="Lit"]
@@ -164,8 +165,6 @@ digraph constraints {
     api_ClauseReif -> sol_Or
     api_Eq -> sol_Eq
     api_EqReif -> sol_Eq
-    api_EqVal -> sol_EqVal
-    api_EqValReif -> sol_EqVal
     api_InSet -> { sol_Or; sol_Lit } [label="*"]
     api_Le -> sol_MaxDiff
     api_LeReif -> sol_MaxDiff
