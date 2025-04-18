@@ -3,7 +3,7 @@
 // Use Graphviz to generate the graph.
 
 digraph constraints {
-    label="Constraint endoding from minizinc to aries."
+    label="Constraint encoding from minizinc to aries."
     node [shape=rectangle colorscheme=pubugn3 style=filled] 
 
     // ---------- Minizinc ----------

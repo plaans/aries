@@ -13,8 +13,7 @@ use crate::aries::Post;
 /// Element in array constraint.
 ///
 /// `b = a[i]` where
-/// `a[i]` are integer atoms,
-/// `b` and `i` are integer variables.
+/// `a[i]`, `b` and `i` are integer atoms.
 #[derive(Debug)]
 pub struct ArrayElement {
     a: Vec<IAtom>,

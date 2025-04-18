@@ -317,6 +317,8 @@ class Predicate:
 
 
 class BuiltinsMod:
+    DOC = "/// Flatzinc builtins.\n"
+
     def __init__(self, predicates: list[Predicate]) -> None:
         self.predicates = predicates
 
@@ -333,7 +335,9 @@ class BuiltinsMod:
         return uses
 
     def rust_file(self) -> str:
-        file = self.rust_mods()
+        file = self.__class__.DOC
+        file += "\n"
+        file += self.rust_mods()
         file += "\n"
         file += self.rust_uses()
         return file

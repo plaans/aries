@@ -131,6 +131,12 @@ pub fn vec_int_from_expr(
         Expr::VarParIdentifier(id) => {
             model.get_par_int_array(id).map(|p| p.value().clone())
         }
+        // Array might be detected as array of bool
+        Expr::ArrayOfBool(bool_exprs) => bool_exprs
+            .iter()
+            .cloned()
+            .map(|e| int_from_expr(&e.into(), model))
+            .collect(),
         _ => bail!("not an int vec"),
     }
 }
