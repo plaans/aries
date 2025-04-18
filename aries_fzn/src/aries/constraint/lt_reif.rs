@@ -1,4 +1,4 @@
-use aries::model::lang::expr::eq;
+use aries::model::lang::expr::lt;
 use aries::model::lang::BVar;
 use aries::model::lang::IVar;
 use aries::model::Label;
@@ -8,15 +8,15 @@ use crate::aries::Post;
 
 /// Reified equality constraint.
 ///
-/// `r <-> a = b`
+/// `r <-> a <= b`
 #[derive(Debug)]
-pub struct EqReif {
+pub struct LtReif {
     a: IVar,
     b: IVar,
     r: BVar,
 }
 
-impl EqReif {
+impl LtReif {
     pub fn new(a: IVar, b: IVar, r: BVar) -> Self {
         Self { a, b, r }
     }
@@ -34,9 +34,9 @@ impl EqReif {
     }
 }
 
-impl<Lbl: Label> Post<Lbl> for EqReif {
+impl<Lbl: Label> Post<Lbl> for LtReif {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.bind(eq(self.a, self.b), self.r.true_lit());
+        model.bind(lt(self.a, self.b), self.r.true_lit());
     }
 }
 
@@ -53,11 +53,11 @@ mod tests {
     fn basic() {
         let (mut model, x, y, r) = basic_reif_model();
 
-        let eq_reif = EqReif::new(x, y, r);
-        eq_reif.post(&mut model);
+        let lt_reif = LtReif::new(x, y, r);
+        lt_reif.post(&mut model);
 
         let verify =
-            |[x, y, r]: [IntCst; 3]| (r == 1) == (x == y);
+            |[x, y, r]: [IntCst; 3]| (r == 1) == (x < y);
 
         verify_all([x, y, r.into()], model, verify);
     }
