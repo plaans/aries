@@ -56,8 +56,7 @@ mod tests {
         let lt_reif = LtReif::new(x, y, r);
         lt_reif.post(&mut model);
 
-        let verify =
-            |[x, y, r]: [IntCst; 3]| (r == 1) == (x < y);
+        let verify = |[x, y, r]: [IntCst; 3]| (r == 1) == (x < y);
 
         verify_all([x, y, r.into()], model, verify);
     }

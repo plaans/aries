@@ -27,6 +27,8 @@ mod int_lin_le_imp;
 mod int_lin_le_reif;
 mod int_lin_ne;
 mod int_lin_ne_reif;
+mod int_lt;
+mod int_lt_reif;
 mod int_ne;
 mod int_ne_reif;
 
@@ -59,5 +61,7 @@ pub use int_lin_le_imp::IntLinLeImp;
 pub use int_lin_le_reif::IntLinLeReif;
 pub use int_lin_ne::IntLinNe;
 pub use int_lin_ne_reif::IntLinNeReif;
+pub use int_lt::IntLt;
+pub use int_lt_reif::IntLtReif;
 pub use int_ne::IntNe;
 pub use int_ne_reif::IntNeReif;

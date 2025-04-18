@@ -56,8 +56,7 @@ mod tests {
         let eq_reif = EqReif::new(x, y, r);
         eq_reif.post(&mut model);
 
-        let verify =
-            |[x, y, r]: [IntCst; 3]| (r == 1) == (x == y);
+        let verify = |[x, y, r]: [IntCst; 3]| (r == 1) == (x == y);
 
         verify_all([x, y, r.into()], model, verify);
     }

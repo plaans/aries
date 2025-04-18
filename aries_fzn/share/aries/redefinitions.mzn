@@ -57,11 +57,11 @@ predicate int_lin_le_imp(array [int] of int: as, array [int] of var int: bs, int
 % predicate int_lin_ne_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r) =
 %     abort("int_lin_ne_reif is not supported");
 
-predicate int_lt(var int: a, var int: b) =
-    abort("int_lt is not supported");
+% predicate int_lt(var int: a, var int: b) =
+%     abort("int_lt is not supported");
 
-predicate int_lt_reif(var int: a, var int: b, var bool: r) =
-    abort("int_lt_reif is not supported");
+% predicate int_lt_reif(var int: a, var int: b, var bool: r) =
+%     abort("int_lt_reif is not supported");
 
 predicate int_max(var int: a, var int: b, var int: c) =
     array_int_maximum(c, [a,b]);
