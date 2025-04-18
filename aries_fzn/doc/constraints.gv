@@ -42,6 +42,7 @@ digraph constraints {
         // mzn_array_var_bool_element [label="array_var_bool_element"] [shape=ellipse]
         mzn_bool_and [label="bool_and"]
         mzn_bool_clause [label="bool_clause"]
+        mzn_bool_clause_reif [label="bool_clause_reif"]
         mzn_bool_eq [label="bool_eq"]
         mzn_bool_eq_reif [label="bool_eq_reif"]
         mzn_bool_le [label="bool_le"]
@@ -64,6 +65,8 @@ digraph constraints {
         api_Abs [label="Abs"]
         api_AndReif [label="AndReif"]
         api_ArrayElement [label="ArrayElement"]
+        api_Clause [label="Clause"]
+        api_ClauseReif [label="ClauseReif"]
         api_Eq [label="Eq"]
         api_EqReif [label="EqReif"]
         api_EqVal [label="EqVal"] [shape=ellipse]
@@ -143,7 +146,8 @@ digraph constraints {
     // mzn_array_bool_xor
     // mzn_array_var_bool_element
     mzn_bool_and -> mzn_array_bool_and
-    mzn_bool_clause -> sol_Or
+    mzn_bool_clause -> api_Clause
+    mzn_bool_clause_reif -> api_ClauseReif
     mzn_bool_eq -> api_Eq
     mzn_bool_eq_reif -> api_EqReif
     mzn_bool_le -> api_Le
@@ -162,6 +166,8 @@ digraph constraints {
     api_Abs -> api_Max
     api_AndReif -> sol_And
     api_ArrayElement -> { sol_Eq; sol_Or } [label="*"]
+    api_Clause -> sol_Or
+    api_ClauseReif -> sol_Or
     api_Eq -> sol_Eq
     api_EqReif -> sol_Eq
     api_EqVal -> sol_EqVal
@@ -186,5 +192,5 @@ digraph constraints {
     api_Min -> sol_EqMax
     api_Ne -> sol_Neq
     api_NeReif -> sol_Neq
-    api_OrReif -> sol_Or
+    api_OrReif -> api_Clause
 }
