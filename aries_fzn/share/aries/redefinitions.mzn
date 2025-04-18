@@ -139,7 +139,7 @@ predicate bool_lt_reif(var bool: a, var bool: b, var bool: r) =
 %     abort("bool_not is not supported");
 
 predicate bool_or(var bool: a, var bool: b, var bool: r) =
-    abort("bool_or is not supported");
+    bool_clause_reif([a,b], [], r);
 
 predicate bool_xor(var bool: a, var bool: b, var bool: r) =
     abort("bool_xor is not supported");
