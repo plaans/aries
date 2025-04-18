@@ -1,43 +1,39 @@
-use aries::model::lang::expr::or;
 use aries::model::lang::BVar;
 use aries::model::Label;
 use aries::model::Model;
 
+use crate::aries::constraint::ClauseReif;
 use crate::aries::Post;
 
 /// Reified or constraint.
 ///
-/// `b = or(v[i])`
+/// `r <-> or(v[i])`
 /// where `v[i]` are boolean variables.
 #[derive(Debug)]
 pub struct OrReif {
-    items: Vec<BVar>,
-    var: BVar,
+    variables: Vec<BVar>,
+    r: BVar,
 }
 
 impl OrReif {
-    pub fn new(items: Vec<BVar>, var: BVar) -> Self {
-        Self { items, var }
+    pub fn new(variables: Vec<BVar>, r: BVar) -> Self {
+        Self { variables, r }
     }
 
-    pub fn items(&self) -> &Vec<BVar> {
-        &self.items
+    pub fn variables(&self) -> &Vec<BVar> {
+        &self.variables
     }
 
-    pub fn var(&self) -> &BVar {
-        &self.var
+    pub fn r(&self) -> &BVar {
+        &self.r
     }
 }
 
 impl<Lbl: Label> Post<Lbl> for OrReif {
     fn post(&self, model: &mut Model<Lbl>) {
-        let o = or(self
-            .items
-            .iter()
-            .cloned()
-            .map(|v| v.true_lit())
-            .collect::<Vec<_>>());
-        model.bind(o, self.var.true_lit());
+        let clause_reif =
+            ClauseReif::new(self.variables.clone(), Vec::new(), self.r);
+        clause_reif.post(model);
     }
 }
 
@@ -57,8 +53,7 @@ mod tests {
         let or_reif = OrReif::new(vec![x, y], z);
         or_reif.post(&mut model);
 
-        // z = x or y iff z = max(x,y)
-        let verify = |[x, y, z]: [IntCst; 3]| x.max(y) == z;
+        let verify = |[x, y, z]: [IntCst; 3]| (z == 1) == (x == 1 || y == 1);
 
         verify_all([x, y, z], model, verify);
     }

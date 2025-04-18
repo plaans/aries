@@ -3,6 +3,8 @@
 mod abs;
 mod and_reif;
 mod array_element;
+mod clause;
+mod clause_reif;
 mod eq;
 mod eq_reif;
 mod in_set;
@@ -28,6 +30,8 @@ mod or_reif;
 pub use abs::Abs;
 pub use and_reif::AndReif;
 pub use array_element::ArrayElement;
+pub use clause::Clause;
+pub use clause_reif::ClauseReif;
 pub use eq::Eq;
 pub use eq_reif::EqReif;
 pub use in_set::InSet;
