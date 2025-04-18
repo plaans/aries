@@ -38,6 +38,7 @@ pub enum Constraint {
     BoolLinEq(BoolLinEq),
     BoolLinLe(BoolLinLe),
     BoolNot(BoolNot),
+    BoolXor(BoolXor),
 }
 
 impl Encode for Constraint {
@@ -76,6 +77,7 @@ impl Encode for Constraint {
             Constraint::BoolLinEq(c) => c.encode(translation),
             Constraint::BoolLinLe(c) => c.encode(translation),
             Constraint::BoolNot(c) => c.encode(translation),
+            Constraint::BoolXor(c) => c.encode(translation),
         }
     }
 }

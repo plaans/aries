@@ -141,11 +141,8 @@ predicate bool_lt_reif(var bool: a, var bool: b, var bool: r) =
 predicate bool_or(var bool: a, var bool: b, var bool: r) =
     bool_clause_reif([a,b], [], r);
 
-predicate bool_xor(var bool: a, var bool: b, var bool: r) =
-    abort("bool_xor is not supported");
-
-predicate bool_xor(var bool: a, var bool: b) =
-    abort("bool_xor is not supported");
+% predicate bool_xor(var bool: a, var bool: b, var bool: r) =
+%     abort("bool_xor is not supported");
 
 % predicate array_set_element(var int: b, array [int] of set of int: as, var set of int: c) =
 %     abort("array_set_element is not supported");

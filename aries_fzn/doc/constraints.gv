@@ -35,7 +35,6 @@ digraph constraints {
         mzn_int_plus [label="int_plus"] [shape=ellipse]
         // mzn_int_pow [label="int_pow"] [shape=ellipse]
         // mzn_int_times [label="int_times"] [shape=ellipse]
-        // mzn_set_in [label="set_in"] [shape=ellipse]
         mzn_array_bool_and [label="array_bool_and"]
         // mzn_array_bool_element [label="array_bool_element"] [shape=ellipse]
         // mzn_array_bool_xor [label="array_bool_xor"] [shape=ellipse]
@@ -53,8 +52,7 @@ digraph constraints {
         mzn_bool_lt_reif [label="bool_lt_reif"]
         mzn_bool_not [label="bool_not"]
         mzn_bool_or [label="bool_or"]
-        mzn_bool_xor [label="bool_xor"] [shape=ellipse]
-        // mzn_bool_xor_reif [label="bool_xor_reif"] [shape=ellipse]
+        mzn_bool_xor [label="bool_xor"]
         mzn_bool2int [label="bool2int"]
     }
         
@@ -139,7 +137,6 @@ digraph constraints {
     mzn_int_plus -> mzn_int_lin_eq
     // mzn_int_pow
     // mzn_int_times
-    // mzn_set_in
 
     mzn_array_bool_and -> api_AndReif
     // mzn_array_bool_element
@@ -158,8 +155,7 @@ digraph constraints {
     mzn_bool_lt_reif -> { mzn_array_bool_and; mzn_bool_eq_reif }
     mzn_bool_not -> api_Ne
     mzn_bool_or -> mzn_bool_clause
-    mzn_bool_xor -> api_Ne
-    // mzn_bool_xor_reif
+    mzn_bool_xor -> api_NeReif
     mzn_bool2int -> api_Eq
 
     // ---------- Solver API ----------

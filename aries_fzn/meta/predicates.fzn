@@ -44,5 +44,4 @@ predicate bool_lin_le(array [int] of int: as, array [int] of var bool: bs, int: 
 % predicate bool_lt_reif(var bool: a, var bool: b, var bool: r)
 predicate bool_not(var bool: a, var bool: b)
 % predicate bool_or(var bool: a, var bool: b, var bool: r)
-% predicate bool_xor(var bool: a, var bool: b, var bool: r)
-% predicate bool_xor(var bool: a, var bool: b)
+predicate bool_xor(var bool: a, var bool: b, var bool: r)
