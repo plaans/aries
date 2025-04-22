@@ -62,7 +62,15 @@ pub fn var_int_from_expr(
     model: &mut Model,
 ) -> anyhow::Result<Rc<VarInt>> {
     match expr {
-        Expr::VarParIdentifier(id) => model.get_var_int(id),
+        Expr::VarParIdentifier(id) => {
+            if let Ok(var) = model.get_var_int(id) {
+                return Ok(var);
+            }
+            if let Ok(par) = model.get_par_int(id) {
+                return Ok(model.new_var_int_const(*par.value()));
+            }
+            bail!(format!("no varint named '{}'", id))
+        }
         Expr::Int(x) => Ok(model.new_var_int_const((*x).try_into()?)),
         _ => bail!("not a varint"),
     }
@@ -71,14 +79,15 @@ pub fn var_int_from_expr(
 /// Convert a flatzinc [Expr] into a [BasicVar].
 pub fn basic_var_from_expr(
     expr: &Expr,
-    model: &Model,
+    model: &mut Model,
 ) -> anyhow::Result<BasicVar> {
-    match expr {
-        Expr::VarParIdentifier(id) => {
-            model.get_variable(id)?.clone().try_into()
-        }
-        _ => bail!("not a basic var"),
+    if let Ok(var) = var_int_from_expr(expr, model) {
+        return Ok(var.into());
     }
+    if let Ok(var) = var_bool_from_expr(expr, model) {
+        return Ok(var.into());
+    }
+    bail!("not a basic var")
 }
 
 /// Convert a flatzinc [Expr] into a boolean.
