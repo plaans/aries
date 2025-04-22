@@ -1,8 +1,8 @@
 predicate array_float_maximum(var float: m, array [int] of var float: x) = 
-    abort("floats are not supported (array_float_maximum)");
+    abort("array_float_maximum is not supported");
 
 predicate array_float_minimum(var float: m, array [int] of var float: x) = 
-    abort("floats are not supported (array_float_minimum)");
+    abort("array_float_minimum is not supported");
 
 % Supported predicates
 predicate array_int_maximum(var int: m, array [int] of var int: x);

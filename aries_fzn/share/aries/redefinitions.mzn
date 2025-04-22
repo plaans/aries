@@ -120,145 +120,145 @@ predicate set_union(var set of int: x, var set of int: y, var set of int: r);
 % Floats are not supported
 
 predicate array_float_element(var int: b, array [int] of float: as, var float: c) =
-    abort("floats are not supported (array_float_element)");
+    abort("array_float_element is not supported");
 
 predicate array_var_float_element(var int: b, array [int] of var float: as, var float: c) =
-    abort("floats are not supported (array_var_float_element)");
+    abort("array_var_float_element is not supported");
 
 predicate float_abs(var float: a, var float: b) =
-    abort("floats are not supported (float_abs)");
+    abort("float_abs is not supported");
 
 predicate float_acos(var float: a, var float: b) =
-    abort("floats are not supported (float_acos)");
+    abort("float_acos is not supported");
 
 predicate float_acosh(var float: a, var float: b) =
-    abort("floats are not supported (float_acosh)");
+    abort("float_acosh is not supported");
 
 predicate float_asin(var float: a, var float: b) =
-    abort("floats are not supported (float_asin)");
+    abort("float_asin is not supported");
 
 predicate float_asinh(var float: a, var float: b) =
-    abort("floats are not supported (float_asinh)");
+    abort("float_asinh is not supported");
 
 predicate float_atan(var float: a, var float: b) =
-    abort("floats are not supported (float_atan)");
+    abort("float_atan is not supported");
 
 predicate float_atanh(var float: a, var float: b) =
-    abort("floats are not supported (float_atanh)");
+    abort("float_atanh is not supported");
 
 % Added in 2.7.1
 % predicate float_ceil(var float: x, var int: y) =
-%     abort("floats are not supported (float_ceil)");
+%     abort("float_ceil is not supported");
 
 predicate float_cos(var float: a, var float: b) =
-    abort("floats are not supported (float_cos)");
+    abort("float_cos is not supported");
 
 predicate float_cosh(var float: a, var float: b) =
-    abort("floats are not supported (float_cosh)");
+    abort("float_cosh is not supported");
 
 predicate float_div(var float: a, var float: b, var float: c) =
-    abort("floats are not supported (float_div)");
+    abort("float_div is not supported");
 
 predicate float_eq(var float: a, var float: b) =
-    abort("floats are not supported (float_eq)");
+    abort("float_eq is not supported");
 
 predicate float_eq_reif(var float: a, var float: b, var bool: r) =
-    abort("floats are not supported (float_eq_reif)");
+    abort("float_eq_reif is not supported");
 
 predicate float_exp(var float: a, var float: b) =
-    abort("floats are not supported (float_exp)");
+    abort("float_exp is not supported");
 
 % Added in 2.7.1
 % predicate float_floor(var float: x, var int: y) =
-%     abort("floats are not supported (float_floor)");
+%     abort("float_floor is not supported");
 
 predicate float_in_reif(var float: a, float: b, float: c, var bool: r) =
-    abort("floats are not supported (float_in_reif)");
+    abort("float_in_reif is not supported");
 
 predicate float_le(var float: a, var float: b) =
-    abort("floats are not supported (float_le)");
+    abort("float_le is not supported");
 
 predicate float_le_reif(var float: a, var float: b, var bool: r) =
-    abort("floats are not supported (float_le_reif)");
+    abort("float_le_reif is not supported");
 
 predicate float_lin_eq(array [int] of float: as, array [int] of var float: bs, float: c) =
-    abort("floats are not supported (float_lin_eq)");
+    abort("float_lin_eq is not supported");
 
 predicate float_lin_eq_reif(array [int] of float: as, array [int] of var float: bs, float: c, var bool: r) =
-    abort("floats are not supported (float_lin_eq_reif)");
+    abort("float_lin_eq_reif is not supported");
 
 predicate float_lin_le(array [int] of float: as, array [int] of var float: bs, float: c) =
-    abort("floats are not supported (float_lin_le)");
+    abort("float_lin_le is not supported");
 
 predicate float_lin_le_reif(array [int] of float: as, array [int] of var float: bs, float: c, var bool: r) =
-    abort("floats are not supported (float_lin_le_reif)");
+    abort("float_lin_le_reif is not supported");
 
 predicate float_lin_lt(array [int] of float: as, array [int] of var float: bs, float: c) =
-    abort("floats are not supported (float_lin_lt)");
+    abort("float_lin_lt is not supported");
 
 predicate float_lin_lt_reif(array [int] of float: as, array [int] of var float: bs, float: c, var bool: r) =
-    abort("floats are not supported (float_lin_lt_reif)");
+    abort("float_lin_lt_reif is not supported");
 
 predicate float_lin_ne(array [int] of float: as, array [int] of var float: bs, float: c) =
-    abort("floats are not supported (float_lin_ne)");
+    abort("float_lin_ne is not supported");
 
 predicate float_lin_ne_reif(array [int] of float: as, array [int] of var float: bs, float: c, var bool: r) =
-    abort("floats are not supported (float_lin_ne_reif)");
+    abort("float_lin_ne_reif is not supported");
 
 predicate float_ln(var float: a, var float: b) =
-    abort("floats are not supported (float_ln)");
+    abort("float_ln is not supported");
 
 predicate float_log10(var float: a, var float: b) =
-    abort("floats are not supported (float_log10)");
+    abort("float_log10 is not supported");
 
 predicate float_log2(var float: a, var float: b) =
-    abort("floats are not supported (float_log2)");
+    abort("float_log2 is not supported");
 
 predicate float_lt(var float: a, var float: b) =
-    abort("floats are not supported (float_lt)");
+    abort("float_lt is not supported");
 
 predicate float_lt_reif(var float: a, var float: b, var bool: r) =
-    abort("floats are not supported (float_lt_reif)");
+    abort("float_lt_reif is not supported");
 
 predicate float_max(var float: a, var float: b, var float: c) =
-    abort("floats are not supported (float_max)");
+    abort("float_max is not supported");
 
 predicate float_min(var float: a, var float: b, var float: c) =
-    abort("floats are not supported (float_min)");
+    abort("float_min is not supported");
 
 predicate float_ne(var float: a, var float: b) =
-    abort("floats are not supported (float_ne)");
+    abort("float_ne is not supported");
 
 predicate float_ne_reif(var float: a, var float: b, var bool: r) =
-    abort("floats are not supported (float_ne_reif)");
+    abort("float_ne_reif is not supported");
 
 predicate float_plus(var float: a, var float: b, var float: c) =
-    abort("floats are not supported (float_plus)");
+    abort("float_plus is not supported");
 
 predicate float_pow(var float: x, var float: y, var float: z) =
-    abort("floats are not supported (float_pow)");
+    abort("float_pow is not supported");
 
 % Added in 2.7.1
 % predicate float_round(var float: x, var int: y) =
-%     abort("floats are not supported (float_round)");
+%     abort("float_round is not supported");
 
 predicate float_sin(var float: a, var float: b) =
-    abort("floats are not supported (float_sin)");
+    abort("float_sin is not supported");
 
 predicate float_sinh(var float: a, var float: b) =
-    abort("floats are not supported (float_sinh)");
+    abort("float_sinh is not supported");
 
 predicate float_sqrt(var float: a, var float: b) =
-    abort("floats are not supported (float_sqrt)");
+    abort("float_sqrt is not supported");
 
 predicate float_tan(var float: a, var float: b) =
-    abort("floats are not supported (float_tan)");
+    abort("float_tan is not supported");
 
 predicate float_tanh(var float: a, var float: b) =
-    abort("floats are not supported (float_tanh)");
+    abort("float_tanh is not supported");
 
 predicate float_times(var float: a, var float: b, var float: c) =
-    abort("floats are not supported (float_times)");
+    abort("float_times is not supported");
 
 predicate int2float(var int: x, var float: y) =
-    abort("floats are not supported (int2float)");
+    abort("int2float is not supported");
