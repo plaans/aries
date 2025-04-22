@@ -163,6 +163,16 @@ impl Model {
         self.get_par(name)?.clone().try_into()
     }
 
+    /// Get the array of boolean parameter with the given name.
+    ///
+    /// Fail if no array of boolean parameter has the given name.
+    pub fn get_par_bool_array(
+        &self,
+        name: &String,
+    ) -> Result<Rc<ParBoolArray>> {
+        self.get_par(name)?.clone().try_into()
+    }
+
     /// Get the bool parameter with the given name.
     ///
     /// Fail if no bool parameter has the given name.

@@ -117,6 +117,30 @@ pub fn vec_var_bool_from_expr(
     }
 }
 
+/// Convert a flatzinc [Expr] into a vector of bool.
+pub fn vec_bool_from_expr(
+    expr: &Expr,
+    model: &Model,
+) -> anyhow::Result<Vec<bool>> {
+    match expr {
+        Expr::ArrayOfBool(bool_exprs) => bool_exprs
+            .iter()
+            .cloned()
+            .map(|e| bool_from_expr(&e.into(), model))
+            .collect(),
+        Expr::VarParIdentifier(id) => {
+            model.get_par_bool_array(id).map(|p| p.value().clone())
+        }
+        // Array might be detected as array of int
+        Expr::ArrayOfInt(int_exprs) => int_exprs
+            .iter()
+            .cloned()
+            .map(|e| bool_from_expr(&e.into(), model))
+            .collect(),
+        _ => bail!("not a bool vec"),
+    }
+}
+
 /// Convert a flatzinc [Expr] into a vector of [Int].
 pub fn vec_int_from_expr(
     expr: &Expr,
@@ -447,9 +471,13 @@ pub fn parse_constraint_item(
 ) -> anyhow::Result<()> {
     let constraint = match c.id.as_str() {
         ArrayBoolAnd::NAME => ArrayBoolAnd::try_from_item(c, m)?.into(),
+        ArrayBoolElement::NAME => ArrayBoolElement::try_from_item(c, m)?.into(),
         ArrayIntElement::NAME => ArrayIntElement::try_from_item(c, m)?.into(),
         ArrayIntMaximum::NAME => ArrayIntMaximum::try_from_item(c, m)?.into(),
         ArrayIntMinimum::NAME => ArrayIntMinimum::try_from_item(c, m)?.into(),
+        ArrayVarBoolElement::NAME => {
+            ArrayVarBoolElement::try_from_item(c, m)?.into()
+        }
         ArrayVarIntElement::NAME => {
             ArrayVarIntElement::try_from_item(c, m)?.into()
         }

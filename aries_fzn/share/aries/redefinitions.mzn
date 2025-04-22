@@ -48,19 +48,15 @@ predicate int_pow(var int: x, var int: y, var int: z) =
 predicate int_times(var int: a, var int: b, var int: c) =
     abort("int_times is not supported");
 
-predicate array_bool_element(var int: b, array [int] of bool: as, var bool: c) =
-    abort("array_bool_element is not supported");
-
 predicate array_bool_xor(array [int] of var bool: as) =
     abort("array_bool_xor is not supported");
-
-predicate array_var_bool_element(var int: b, array [int] of var bool: as, var bool: c) =
-    abort("array_var_bool_element is not supported");
 
 
 % --------------------------------------------------
 % Supported predicates
+predicate array_bool_element(var int: b, array [int] of bool: as, var bool: c);
 predicate array_int_element(var int: b, array [int] of int: as, var int: c);
+predicate array_var_bool_element(var int: b, array [int] of var bool: as, var bool: c);
 predicate array_var_int_element(var int: b, array [int] of var int: as, var int: c);
 predicate int_abs(var int: a, var int: b);
 predicate int_eq(var int: a, var int: b);

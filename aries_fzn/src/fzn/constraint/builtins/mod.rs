@@ -1,8 +1,10 @@
-/// Flatzinc builtins.
 mod array_bool_and;
+mod array_bool_element;
+/// Flatzinc builtins.
 mod array_int_element;
 mod array_int_maximum;
 mod array_int_minimum;
+mod array_var_bool_element;
 mod array_var_int_element;
 mod bool2int;
 mod bool_clause;
@@ -34,9 +36,11 @@ mod int_ne;
 mod int_ne_reif;
 
 pub use array_bool_and::ArrayBoolAnd;
+pub use array_bool_element::ArrayBoolElement;
 pub use array_int_element::ArrayIntElement;
 pub use array_int_maximum::ArrayIntMaximum;
 pub use array_int_minimum::ArrayIntMinimum;
+pub use array_var_bool_element::ArrayVarBoolElement;
 pub use array_var_int_element::ArrayVarIntElement;
 pub use bool2int::Bool2Int;
 pub use bool_clause::BoolClause;

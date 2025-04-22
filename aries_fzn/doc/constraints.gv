@@ -37,9 +37,9 @@ digraph constraints {
         // mzn_int_pow [label="int_pow"] [shape=ellipse]
         // mzn_int_times [label="int_times"] [shape=ellipse]
         mzn_array_bool_and [label="array_bool_and"]
-        // mzn_array_bool_element [label="array_bool_element"] [shape=ellipse]
+        mzn_array_bool_element [label="array_bool_element"]
         // mzn_array_bool_xor [label="array_bool_xor"] [shape=ellipse]
-        // mzn_array_var_bool_element [label="array_var_bool_element"] [shape=ellipse]
+        mzn_array_var_bool_element [label="array_var_bool_element"]
         mzn_bool_and [label="bool_and"]
         mzn_bool_clause [label="bool_clause"]
         mzn_bool_clause_reif [label="bool_clause_reif"]
@@ -138,9 +138,9 @@ digraph constraints {
     // mzn_int_times
 
     mzn_array_bool_and -> api_AndReif
-    // mzn_array_bool_element
+    mzn_array_bool_element -> api_ArrayElement
     // mzn_array_bool_xor
-    // mzn_array_var_bool_element
+    mzn_array_var_bool_element -> api_ArrayElement
     mzn_bool_and -> mzn_array_bool_and
     mzn_bool_clause -> api_Clause
     mzn_bool_clause_reif -> api_ClauseReif
