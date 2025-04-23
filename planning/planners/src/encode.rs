@@ -17,8 +17,9 @@ use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use itertools::Itertools;
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ptr;
 
 /// Parameter that activates the temporal relaxation of temporal constraints of a task's
@@ -800,6 +801,62 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         let _span = span.enter();
         let mut num_numeric_support_constraints = 0;
 
+        // Compute the contribution of each increase to each assignment.
+        // This is a map of the form:
+        //   assignment_id -> (increase_id -> contribution of the increase to the assignment)
+        // The contribution is equal to the increase value if the increase and the assignment
+        // are present, if they share the same state variable and if the increase is in the mutex period of the assignment.
+        // The contribution is 0 otherwise.
+        let contributions = assigns
+            .iter()
+            .filter_map(|&(ass_id, ass_prez, ass)| {
+                if solver.model.entails(!ass_prez) {
+                    return None;
+                }
+
+                let inc_contributions = incs
+                    .iter()
+                    .filter_map(|&(inc_id, inc_prez, inc)| {
+                        if solver.model.entails(!inc_prez) {
+                            return None;
+                        }
+                        if solver.model.state.exclusive(ass_prez, inc_prez) {
+                            return None;
+                        }
+                        if !unifiable_sv(&solver.model, &ass.state_var, &inc.state_var) {
+                            return None;
+                        }
+                        let EffectOp::Increase(inc_val) = inc.operation.clone() else {
+                            unreachable!()
+                        };
+
+                        let mut contribute_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                        // Both effects are present
+                        contribute_conjunction.push(ass_prez);
+                        contribute_conjunction.push(inc_prez);
+                        // The increase is in the mutex period of the assign
+                        contribute_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
+                        contribute_conjunction.push(solver.reify(f_leq(inc.transition_end, eff_mutex_ends[&ass_id])));
+                        // The effects have the same state variable
+                        for idx in 0..ass.state_var.args.len() {
+                            let a = ass.state_var.args[idx];
+                            let b = inc.state_var.args[idx];
+                            contribute_conjunction.push(solver.reify(eq(a, b)));
+                        }
+                        // Each term of the increase value is present
+                        for term in inc_val.terms() {
+                            contribute_conjunction.push(solver.model.presence_literal(term.var()));
+                        }
+                        // Compute the contribution
+                        let contribute = solver.reify(and(contribute_conjunction));
+                        let contribution = linear_sum_mul_lit(&mut solver.model, inc_val.clone(), contribute);
+                        Some((inc_id, inc_prez, inc, contribute, contribution))
+                    })
+                    .collect_vec();
+                Some((ass_id, inc_contributions))
+            })
+            .collect::<BTreeMap<_, _>>();
+
         let numeric_conds: Vec<_> = conds
             .iter()
             .filter(|(_, _, cond)| is_numeric(&cond.state_var))
@@ -860,47 +917,19 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // the expected condition value
                 let mut cond_val_sum = LinearSum::from(ass_val) - cond_val;
 
-                for &(inc_id, inc_prez, inc) in &incs {
-                    if solver.model.entails(!inc_prez) {
+                let incs_of_ass = contributions.get(&ass_id).unwrap();
+                for (inc_id, inc_prez, inc, inc_contrib, inc_val) in incs_of_ass.iter() {
+                    // The following assertions are tested in the contributions computation and should have been filtered.
+                    debug_assert!(!solver.model.entails(!*inc_prez));
+                    debug_assert!(unifiable_sv(&solver.model, &cond.state_var, &inc.state_var));
+                    if solver.model.state.exclusive(*cond_prez, *inc_prez) {
                         continue;
                     }
-                    if solver.model.state.exclusive(*cond_prez, inc_prez) {
-                        continue;
-                    }
-                    if !unifiable_sv(&solver.model, &cond.state_var, &inc.state_var) {
-                        continue;
-                    }
-                    let EffectOp::Increase(inc_val) = inc.operation.clone() else {
-                        unreachable!()
-                    };
-                    let mut active_inc_conjunction: Vec<Lit> = Vec::with_capacity(32);
-                    // the condition is present
-                    active_inc_conjunction.push(*cond_prez);
-                    // the assignment is present
-                    active_inc_conjunction.push(ass_prez);
-                    // the increase is present
-                    active_inc_conjunction.push(inc_prez);
-                    // the increase is after the assignment's transition end
-                    active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
-                    // the increase is before the condition's start
-                    active_inc_conjunction.push(solver.reify(f_leq(inc.transition_end, cond.start)));
-                    // the increase and the condition have the same state variable
-                    for idx in 0..cond.state_var.args.len() {
-                        let a = cond.state_var.args[idx];
-                        let b = inc.state_var.args[idx];
-                        active_inc_conjunction.push(solver.reify(eq(a, b)));
-                    }
-                    // each term of the increase value is present
-                    for term in inc_val.terms() {
-                        let p = solver.model.presence_literal(term.var());
-                        active_inc_conjunction.push(p);
-                    }
-                    // compute wether the increase is active in the condition value
-                    let active_inc = solver.reify(and(active_inc_conjunction));
-                    if solver.model.entails(!active_inc) {
-                        continue;
-                    }
-                    inc_support.entry(inc_id).or_default().push(active_inc);
+
+                    let inc_before_cond = solver.reify(f_leq(inc.transition_end, cond.start));
+                    let active_inc = solver.reify(and([*inc_contrib, inc_before_cond]));
+                    inc_support.entry(*inc_id).or_default().push(active_inc);
+
                     for term in inc_val.terms() {
                         // compute some static implication for better propagation
                         let p = solver.model.presence_literal(term.var());
