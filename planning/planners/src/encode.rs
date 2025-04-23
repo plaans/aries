@@ -17,8 +17,9 @@ use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use itertools::Itertools;
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ptr;
 
 /// Parameter that activates the temporal relaxation of temporal constraints of a task's
@@ -29,6 +30,9 @@ use std::ptr;
 /// ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD, and is set to *false* as default.
 pub static RELAXED_TEMPORAL_CONSTRAINT: EnvParam<bool> =
     EnvParam::new("ARIES_LCP_RELAXED_TEMPORAL_CONSTRAINT_TASK_METHOD", "false");
+
+/// Parameter that activates additional constraints for borrow patterns.
+pub static BORROW_PATTERN_CONSTRAINT: EnvParam<bool> = EnvParam::new("ARIES_BORROW_PATTERN_CONSTRAINT", "true");
 
 /// For each chronicle template into the `spec`, appends `num_instances` instances into the `pb`.
 pub fn populate_with_template_instances<F: Fn(&ChronicleTemplate) -> Option<u32>>(
@@ -791,6 +795,144 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
         }
 
         tracing::debug!(%num_numeric_increase_coherence_constraints);
+        solver.propagate()?;
+    }
+
+    if BORROW_PATTERN_CONSTRAINT.get() {
+        // borrow pattern constraints
+        let span = tracing::span!(tracing::Level::TRACE, "borrow patterns");
+        let _span = span.enter();
+        let mut num_borrow_patterns = 0;
+
+        // Borrow patterns are patterns where a state variable is decreased by x at the start of a
+        // chronicle and then increased by x at the end of the chronicle.
+        // Morevoer, the state variable is assigned only at the initial state.
+
+        // Find the fluents that are candidates for borrow patterns.
+        // A fluent is a candidate for a borrow pattern if the only assignment is done at the initial state.
+        let fluents_with_assign_out_init = pb
+            .chronicles
+            .iter()
+            .filter(|ch| ch.origin != ChronicleOrigin::Original)
+            .flat_map(|ch| ch.chronicle.effects.iter())
+            .filter(|eff| matches!(eff.operation, EffectOp::Assign(_)))
+            .map(|eff| eff.state_var.fluent.clone())
+            .collect_vec();
+        let candidate_fluents = pb
+            .chronicles
+            .iter()
+            .flat_map(|ch| ch.chronicle.effects.iter())
+            .map(|eff| eff.state_var.fluent.clone())
+            .filter(|f| !fluents_with_assign_out_init.contains(f))
+            .collect_vec();
+        let initial_values_map = pb
+            .chronicles
+            .iter()
+            .filter(|ch| ch.origin == ChronicleOrigin::Original)
+            .flat_map(|ch| ch.chronicle.effects.iter())
+            .filter(|eff| matches!(eff.operation, EffectOp::Assign(_)))
+            .filter(|eff| eff.state_var.fluent.return_type().is_numeric())
+            .map(|eff| {
+                if let EffectOp::Assign(val) = eff.operation {
+                    (eff.state_var.clone(), val.int_view().unwrap())
+                } else {
+                    unreachable!()
+                }
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        // Collect all the borrow patterns from the chronicles.
+        let borrow_patterns = pb
+            .chronicles
+            .iter()
+            .filter(|ch| ch.origin != ChronicleOrigin::Original)
+            .flat_map(|ch| {
+                // Collect the increase effects of the chronicle that are candidates for borrow patterns.
+                // Group them by state variable, and only keep the groups with 2 effects such that the value of
+                // the second effect is the negative of the first effect.
+                // The resulting group represents a borrow pattern.
+                ch.chronicle
+                    .effects
+                    .iter()
+                    .filter(|eff| matches!(eff.operation, EffectOp::Increase(_)))
+                    .filter(|eff| candidate_fluents.contains(&eff.state_var.fluent))
+                    .fold(BTreeMap::<StateVar, Vec<_>>::new(), |mut acc, eff| {
+                        acc.entry(eff.state_var.clone()).or_default().push(eff);
+                        acc
+                    })
+                    .into_values()
+                    .filter(|effs| effs.len() == 2)
+                    .filter(|effs| {
+                        if let (EffectOp::Increase(fst_val), EffectOp::Increase(snd_val)) =
+                            (effs[0].operation.clone(), effs[1].operation.clone())
+                        {
+                            fst_val == -snd_val
+                        } else {
+                            false
+                        }
+                    })
+                    .map(|effs| {
+                        let (fst_eff, snd_eff) = (effs[0].clone(), effs[1].clone());
+                        BorrowPattern::new(fst_eff, snd_eff, ch.chronicle.presence)
+                    })
+                    .collect_vec()
+            })
+            .collect_vec();
+
+        // For each borrow pattern, create a post-decrease condition representing the contribution of the
+        // different borrow patterns over this state variable.
+        for p1 in &borrow_patterns {
+            if solver.model.entails(!p1.presence) {
+                continue;
+            }
+
+            let Type::Int { lb, ub } = p1.state_var().fluent.return_type() else {
+                unreachable!()
+            };
+            if lb == INT_CST_MIN && ub == INT_CST_MAX {
+                continue;
+            }
+
+            let mut sum = p1.value().clone();
+            sum += *initial_values_map.get(p1.state_var()).unwrap();
+            for p2 in &borrow_patterns {
+                if ptr::eq(p1, p2) {
+                    continue;
+                }
+                if solver.model.entails(!p2.presence) {
+                    continue;
+                }
+                if solver.model.state.exclusive(p1.presence, p2.presence) {
+                    continue;
+                }
+                if !unifiable_sv(&solver.model, p1.state_var(), p2.state_var()) {
+                    continue;
+                }
+
+                let mut contribution: Vec<Lit> = Vec::with_capacity(32);
+                // both patterns are present
+                contribution.push(p1.presence);
+                contribution.push(p2.presence);
+                // the second pattern contains the first pattern start
+                contribution.push(solver.reify(f_leq(p2.transition_start(), p1.transition_start())));
+                contribution.push(solver.reify(f_lt(p1.transition_start(), p2.transition_end())));
+                // both patterns have the same state variable
+                for idx in 0..p1.state_var().args.len() {
+                    let a = p1.state_var().args[idx];
+                    let b = p2.state_var().args[idx];
+                    contribution.push(solver.reify(eq(a, b)));
+                }
+
+                let contribution_lit = solver.reify(and(contribution));
+                sum += linear_sum_mul_lit(&mut solver.model, p2.value(), contribution_lit);
+            }
+
+            solver.model.enforce(sum.clone().leq(ub), [p1.presence]);
+            solver.model.enforce(sum.clone().geq(lb), [p1.presence]);
+            num_borrow_patterns += 1;
+        }
+
+        tracing::debug!(%num_borrow_patterns);
         solver.propagate()?;
     }
 
