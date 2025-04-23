@@ -1,8 +1,7 @@
+use aries::core::{IntCst, Lit};
+use aries::model::lang::linear::LinearSum;
 use aries::model::lang::FAtom;
-use aries::{
-    core::{IntCst, Lit},
-    model::lang::Kind,
-};
+use aries::model::lang::Kind;
 pub use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -58,6 +57,63 @@ impl EffID {
     }
 }
 pub type ChronicleId = usize;
+
+/// A borrow pattern is a pattern where a state variable is decreased by x at the start of a
+/// chronicle and then increased by x at the end of the chronicle.
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct BorrowPattern {
+    /// The first effect of the borrow pattern
+    pub fst_eff: Effect,
+    /// The second effect of the borrow pattern
+    pub snd_eff: Effect,
+    /// The presence of the borrow pattern
+    pub presence: Lit,
+}
+impl BorrowPattern {
+    pub fn new(fst_eff: Effect, snd_eff: Effect, presence: Lit) -> Self {
+        assert_eq!(fst_eff.state_var, snd_eff.state_var);
+        assert!(if let (EffectOp::Increase(fst_val), EffectOp::Increase(snd_val)) =
+            (fst_eff.operation.clone(), snd_eff.operation.clone())
+        {
+            fst_val == -snd_val
+        } else {
+            false
+        });
+        Self {
+            fst_eff,
+            snd_eff,
+            presence,
+        }
+    }
+
+    pub fn state_var(&self) -> &StateVar {
+        &self.fst_eff.state_var
+    }
+
+    pub fn value(&self) -> LinearSum {
+        if let EffectOp::Increase(fst_val) = self.fst_eff.operation.clone() {
+            fst_val
+        } else {
+            unreachable!()
+        }
+    }
+
+    pub fn transition_start(&self) -> FAtom {
+        if self.fst_eff.transition_start < self.snd_eff.transition_start {
+            self.fst_eff.transition_start
+        } else {
+            self.snd_eff.transition_start
+        }
+    }
+
+    pub fn transition_end(&self) -> FAtom {
+        if self.fst_eff.transition_end > self.snd_eff.transition_end {
+            self.fst_eff.transition_end
+        } else {
+            self.snd_eff.transition_end
+        }
+    }
+}
 
 /// Tag used to identify the purpose of some literals in the problem encoding.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Copy, Clone, Debug)]
