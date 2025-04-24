@@ -849,6 +849,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         }
                         // Compute the contribution
                         let contribute = solver.reify(and(contribute_conjunction));
+                        for term in inc_val.terms() {
+                            // compute some static implication for better propagation
+                            let p = solver.model.presence_literal(term.var());
+                            if !solver.model.entails(p) {
+                                solver.model.state.add_implication(contribute, p);
+                            }
+                        }
                         let contribution = linear_sum_mul_lit(&mut solver.model, inc_val.clone(), contribute);
                         Some((inc_id, inc_prez, inc, contribute, contribution))
                     })
@@ -927,7 +934,10 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     }
 
                     let inc_before_cond = solver.reify(f_leq(inc.transition_end, cond.start));
-                    let active_inc = solver.reify(and([*inc_contrib, inc_before_cond]));
+                    let active_inc = solver.reify(and([*inc_contrib, inc_before_cond, *cond_prez]));
+                    if solver.model.entails(!active_inc) {
+                        continue;
+                    }
                     inc_support.entry(*inc_id).or_default().push(active_inc);
 
                     for term in inc_val.terms() {
