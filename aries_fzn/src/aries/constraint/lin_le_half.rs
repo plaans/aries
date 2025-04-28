@@ -1,5 +1,6 @@
 use aries::core::state::Term;
 use aries::core::IntCst;
+use aries::core::INT_CST_MAX;
 use aries::model::lang::linear::NFLinearSumItem;
 use aries::model::lang::BVar;
 use aries::model::Label;
@@ -41,8 +42,8 @@ impl LinLeHalf {
 
 impl<Lbl: Label> Post<Lbl> for LinLeHalf {
     fn post(&self, model: &mut Model<Lbl>) {
-        // Big M: substract ub to avoid overflow
-        let m = IntCst::MAX - self.ub.max(0);
+        // Big M
+        let m = INT_CST_MAX;
 
         // sum(v[i] * c[i]) + r * M <= ub + M
         let mut sum = self.sum.clone();
