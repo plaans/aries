@@ -21,7 +21,7 @@ num-rational = { default-features = false, version = "0.4" }
 prost = { workspace = true }
 regex = { workspace = true }
 streaming-iterator = "0.1.5"
-tokio = { default-features = false, version = "1.38.0", features = ["rt-multi-thread", "macros"] }
+tokio = { default-features = false, version = "1.38.2", features = ["rt-multi-thread", "macros"] }
 tokio-stream = { default-features = false, version = "0.1" }
 tonic = { workspace = true }
 unified_planning = { path = "../api" }
