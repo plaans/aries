@@ -2,7 +2,7 @@ use anyhow::{bail, ensure, Context, Error};
 use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
-use aries_grpc_server::warm_up::plan_from_option;
+use aries_grpc_server::warm_up::plan_from_option_upf;
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
@@ -19,10 +19,10 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
-use unified_planning as up;
 use unified_planning::metric::MetricKind;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::validation_result::ValidationResultStatus;
+use unified_planning::{self as up, Plan};
 use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
 use unified_planning::{Problem, ValidationRequest, ValidationResult};
 
@@ -61,8 +61,7 @@ struct SolveArgs {
     #[clap(flatten)]
     conf: SolverConfiguration,
 
-    /// File containing the warm-up plan.
-    /// If both `warm_up_plan` and `warm_up_file` are provided, the plan will be used.
+    /// File from which to deserialize the unified planning warm-up plan
     #[clap(short, long)]
     pub warm_up_file: Option<String>,
 }
@@ -90,11 +89,6 @@ pub struct SolverConfiguration {
     /// Allowed values: forward | activity | activity-bool | activity-bool-light | causal
     #[clap(long = "strategy", short = 's')]
     strategies: Vec<Strat>,
-
-    /// If provided, the solver will run the warm-up plan before starting the search.
-    /// If both `warm_up_plan` and `warm_up_file` are provided, the plan will be used.
-    #[clap(long)]
-    pub warm_up_plan: Option<String>,
 }
 
 impl Default for SolverConfiguration {
@@ -105,7 +99,6 @@ impl Default for SolverConfiguration {
             min_depth: 0,
             max_depth: u32::MAX,
             strategies: Vec::new(),
-            warm_up_plan: None,
         }
     }
 }
@@ -125,7 +118,6 @@ impl SolverConfiguration {
                 "max_depth" | "max-depth" => {
                     self.max_depth = value.parse().context("Unreadable value for `max-depth`.)?")?
                 }
-                "warm_up_plan" | "warm-up-plan" => self.warm_up_plan = Some(value.clone()),
                 _ => bail!("Unknown config key: {key}"),
             }
         }
@@ -137,11 +129,13 @@ async fn solve(
     problem: Arc<up::Problem>,
     on_new_sol: impl Fn(up::Plan) + Clone + Send + 'static,
     conf: Arc<SolverConfiguration>,
+    warm_up_plan: Option<Arc<up::Plan>>,
 ) -> Result<up::PlanGenerationResult, Error> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     // run CPU-bound computation on a separate OS Thread
     std::thread::spawn(move || {
-        tx.send(solve_blocking(problem, on_new_sol, conf)).unwrap();
+        tx.send(solve_blocking(problem, on_new_sol, conf, warm_up_plan))
+            .unwrap();
     });
     rx.await.unwrap()
 }
@@ -152,6 +146,7 @@ fn solve_blocking(
     problem: Arc<up::Problem>,
     on_new_sol: impl Fn(up::Plan) + Clone,
     conf: Arc<SolverConfiguration>,
+    warm_up_plan: Option<Arc<up::Plan>>,
 ) -> Result<up::PlanGenerationResult, Error> {
     let reception_time = Instant::now();
     let deadline = conf
@@ -197,7 +192,8 @@ fn solve_blocking(
         conf.min_depth
     };
 
-    let warm_up_plan = plan_from_option(conf.warm_up_plan.clone(), &base_problem)?;
+    let warm_up_plan = warm_up_plan.as_deref().cloned();
+    let warm_up_plan = plan_from_option_upf(warm_up_plan, &base_problem)?;
 
     // callback that will be invoked each time an intermediate solution is found
     let on_new_solution = |pb: &FiniteProblem, ass: Arc<SavedAssignment>| {
@@ -293,6 +289,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
+        let warm_up_plan = plan_request.warm_start_plan;
+
         let mut conf = SolverConfiguration::default();
         conf.update_from_map(&plan_request.engine_options)
             .expect("Error in configuration");
@@ -323,9 +321,10 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         let conf = Arc::new(conf);
         let problem = Arc::new(problem);
+        let warm_up_plan = warm_up_plan.map(Arc::new);
 
         tokio::spawn(async move {
-            let result = solve(problem.clone(), on_new_sol, conf.clone()).await;
+            let result = solve(problem.clone(), on_new_sol, conf.clone(), warm_up_plan.clone()).await;
             match result {
                 Ok(mut answer) => {
                     add_engine_time(&mut answer.metrics, &reception_time);
@@ -360,6 +359,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
+        let warm_up_plan = plan_request.warm_start_plan;
+
         let mut conf = SolverConfiguration::default();
         conf.update_from_map(&plan_request.engine_options)
             .expect("Error in configuration");
@@ -369,8 +370,9 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         let conf = Arc::new(conf);
         let problem = Arc::new(problem);
+        let warm_up_plan = warm_up_plan.map(Arc::new);
 
-        let result = solve(problem, |_| {}, conf).await;
+        let result = solve(problem, |_| {}, conf, warm_up_plan).await;
         let mut answer = result.unwrap_or_else(|e| {
             let message = format!("{}", e.chain().rev().format("\n    Context: "));
             eprintln!("ERROR: {}", &message);
@@ -477,16 +479,18 @@ async fn main() -> Result<(), Error> {
             let problem = std::fs::read(&solve_args.problem_file)?;
             let problem = Problem::decode(problem.as_slice())?;
             let problem = Arc::new(problem);
+
             let warm_up_plan = solve_args
                 .warm_up_file
                 .as_ref()
-                .map(std::fs::read_to_string)
-                .transpose()?;
-            let mut conf = solve_args.conf.clone();
-            conf.warm_up_plan = conf.warm_up_plan.or(warm_up_plan);
-            let conf = Arc::new(conf);
+                .map(std::fs::read)
+                .transpose()?
+                .map(|data| Plan::decode(data.as_slice()))
+                .transpose()?
+                .map(Arc::new);
+            let conf = Arc::new(solve_args.conf.clone());
 
-            let answer = solve(problem, |_| {}, conf).await;
+            let answer = solve(problem, |_| {}, conf, warm_up_plan).await;
 
             match answer {
                 Ok(res) => {

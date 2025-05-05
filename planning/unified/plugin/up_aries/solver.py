@@ -133,7 +133,7 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         "UNDEFINED_INITIAL_NUMERIC",
         "UNDEFINED_INITIAL_SYMBOLIC",
     },
-    version=2
+    version=2,
 )
 
 _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
@@ -226,7 +226,7 @@ _ARIES_VAL_SUPPORTED_KIND = up.model.ProblemKind(
         # "UNDEFINED_INITIAL_NUMERIC",
         # "UNDEFINED_INITIAL_SYMBOLIC",
     },
-    version=2
+    version=2,
 )
 
 
@@ -300,13 +300,14 @@ class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
     """Base class for the planners (aries and aries-opt)."""
 
     def _prepare_solving(
-            self,
-            problem: "up.model.AbstractProblem",
-            heuristic: Optional[
-                Callable[["up.model.state.ROState"], Optional[float]]
-            ] = None,
-            timeout: Optional[float] = None,
-            output_stream: Optional[IO[str]] = None,
+        self,
+        problem: "up.model.AbstractProblem",
+        heuristic: Optional[
+            Callable[["up.model.state.ROState"], Optional[float]]
+        ] = None,
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+        warm_start_plan: Optional["up.plans.Plan"] = None,
     ) -> Tuple["_Server", proto.PlanRequest]:
         # Assert that the problem is a valid problem
         assert isinstance(problem, up.model.AbstractProblem)
@@ -319,6 +320,7 @@ class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
         # Note: when the `server` object is garbage collected, the process will be killed
         server = _Server(self._executable, output_stream=output_stream)
         proto_problem = self._writer.convert(problem)
+        proto_warm_start_plan = self._writer.convert(warm_start_plan)
         params = {k: v for k, v in self._params.items()}
         params["optimal"] = (
             "true"
@@ -329,21 +331,22 @@ class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
             problem=proto_problem,
             timeout=timeout,
             engine_options=params,
+            warm_start_plan=proto_warm_start_plan,
         )
 
         return server, req
 
     def _process_response(
-            self,
-            response: proto.PlanGenerationResult,
-            problem: "up.model.AbstractProblem",
+        self,
+        response: proto.PlanGenerationResult,
+        problem: "up.model.AbstractProblem",
     ) -> "up.engines.results.PlanGenerationResult":
         response = self._reader.convert(response, problem)
 
         # if we have a time triggered plan and a recent version of the UP that support setting epsilon-separation,
         # send the result through an additional (in)validation to ensure it meets the minimal separation
         if isinstance(
-                response.plan, up.plans.TimeTriggeredPlan
+            response.plan, up.plans.TimeTriggeredPlan
         ) and "correct_plan_generation_result" in dir(up.engines.results):
             response = up.engines.results.correct_plan_generation_result(
                 response,
@@ -353,18 +356,42 @@ class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
 
         return response
 
-    def _solve(
-            self,
-            problem: "up.model.AbstractProblem",
-            heuristic: Optional[
-                Callable[["up.model.state.ROState"], Optional[float]]
-            ] = None,
-            timeout: Optional[float] = None,
-            output_stream: Optional[IO[str]] = None,
+    def _solve_with_params(
+        self,
+        problem: "up.model.AbstractProblem",
+        heuristic: Optional[
+            Callable[["up.model.state.ROState"], Optional[float]]
+        ] = None,
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+        warm_start_plan: Optional["up.plans.Plan"] = None,
+        **kwargs,
     ) -> "up.engines.results.PlanGenerationResult":
-        server, req = self._prepare_solving(problem, heuristic, timeout, output_stream)
+        server, req = self._prepare_solving(
+            problem,
+            heuristic,
+            timeout,
+            output_stream,
+            warm_start_plan,
+        )
         response = server.planner.planOneShot(req)
         return self._process_response(response, problem)
+
+    def _solve(
+        self,
+        problem: "up.model.AbstractProblem",
+        heuristic: Optional[
+            Callable[["up.model.state.ROState"], Optional[float]]
+        ] = None,
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+    ) -> "up.engines.results.PlanGenerationResult":
+        return self._solve_with_params(
+            problem=problem,
+            heuristic=heuristic,
+            timeout=timeout,
+            output_stream=output_stream,
+        )
 
 
 class Aries(AriesAbstractPlanner, mixins.AnytimePlannerMixin):
@@ -391,13 +418,21 @@ class Aries(AriesAbstractPlanner, mixins.AnytimePlannerMixin):
     def supports(problem_kind: up.model.ProblemKind) -> bool:
         return problem_kind <= Aries.supported_kind()
 
-    def _get_solutions(
-            self,
-            problem: "up.model.AbstractProblem",
-            timeout: Optional[float] = None,
-            output_stream: Optional[IO[str]] = None,
+    def _get_solutions_with_params(
+        self,
+        problem: "up.model.AbstractProblem",
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+        warm_start_plan: Optional["up.plans.Plan"] = None,
+        **kwargs,
     ) -> Iterator["up.engines.results.PlanGenerationResult"]:
-        server, req = self._prepare_solving(problem, None, timeout, output_stream)
+        server, req = self._prepare_solving(
+            problem,
+            None,
+            timeout,
+            output_stream,
+            warm_start_plan,
+        )
         stream = server.planner.planAnytime(req)
         for response in stream:
             response = self._process_response(response, problem)
@@ -405,6 +440,18 @@ class Aries(AriesAbstractPlanner, mixins.AnytimePlannerMixin):
             # The parallel solver implementation in aries are such that intermediate answer might arrive late
             if response.status != PlanGenerationResultStatus.INTERMEDIATE:
                 break  # definitive answer, exit
+
+    def _get_solutions(
+        self,
+        problem: "up.model.AbstractProblem",
+        timeout: Optional[float] = None,
+        output_stream: Optional[IO[str]] = None,
+    ) -> Iterator["up.engines.results.PlanGenerationResult"]:
+        return self._get_solutions_with_params(
+            problem=problem,
+            timeout=timeout,
+            output_stream=output_stream,
+        )
 
 
 class AriesOpt(AriesAbstractPlanner):
@@ -420,7 +467,10 @@ class AriesOpt(AriesAbstractPlanner):
 
     @staticmethod
     def satisfies(optimality_guarantee: OptimalityGuarantee) -> bool:
-        return optimality_guarantee in [OptimalityGuarantee.SOLVED_OPTIMALLY, OptimalityGuarantee.SATISFICING]
+        return optimality_guarantee in [
+            OptimalityGuarantee.SOLVED_OPTIMALLY,
+            OptimalityGuarantee.SATISFICING,
+        ]
 
     @staticmethod
     def supported_kind() -> up.model.ProblemKind:
@@ -442,7 +492,7 @@ class AriesVal(AriesEngine, mixins.PlanValidatorMixin):
         return "aries-val"
 
     def _validate(
-            self, problem: "up.model.AbstractProblem", plan: "up.plans.Plan"
+        self, problem: "up.model.AbstractProblem", plan: "up.plans.Plan"
     ) -> "up.engines.results.ValidationResult":
         # start a gRPC server in its own process
         # Note: when the `server` object is garbage collected, the process will be killed
