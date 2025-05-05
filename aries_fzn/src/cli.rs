@@ -6,6 +6,7 @@ use std::path::PathBuf;
 // use clap::value_parser;
 use clap::Parser;
 
+use crate::aries::Config;
 use crate::aries::Solver;
 use crate::fzn::parser::parse_model;
 use crate::fzn::solution::make_output_flow;
@@ -19,10 +20,22 @@ use crate::fzn::Fzn;
     long_about = None
 )]
 pub struct Args {
-    /// Report all solutions
+    /// Report all solutions.
     #[arg(short, long)]
     pub all_solutions: bool,
 
+    /// Report intermediate solutions.
+    #[arg(short, long)]
+    pub intermediate: bool,
+
+    /// Solver configuration.
+    #[arg(short, long, value_enum)]
+    #[arg(default_value_t)]
+    pub config: Config,
+
+    /// Flatzinc model.
+    #[arg(value_name = "FILE")]
+    pub model: PathBuf,
     /*
     /// Stop after after N solutions. Not implemented.
     #[arg(
@@ -34,9 +47,6 @@ pub struct Args {
     )]
     pub nb_solutions: u32,
     */
-    /// Report intermediate solutions.
-    #[arg(short, long)]
-    pub intermediate: bool,
 
     /*
     /// Ignore search annotations. Not implemented.
@@ -79,9 +89,6 @@ pub struct Args {
     #[arg(short, long, value_name = "MS")]
     pub time: Option<u64>,
     */
-    /// Flatzinc model. Not implemented.
-    #[arg(value_name = "FILE")]
-    pub model: PathBuf,
 }
 
 /// Return command line args.
