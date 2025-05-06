@@ -54,19 +54,37 @@ impl BorrowPattern {
         }
     }
 
-    pub fn transition_start(&self) -> FAtom {
-        if self.fst_eff.transition_start < self.snd_eff.transition_start {
-            self.fst_eff.transition_start
+    pub fn transition_start(&self) -> Option<FAtom> {
+        let fst_start = self.fst_eff.transition_start;
+        let snd_start = self.snd_eff.transition_start;
+
+        if fst_start < snd_start {
+            debug_assert_eq!(fst_start.denom, snd_start.denom);
+            debug_assert_eq!(fst_start.num.var, snd_start.num.var);
+            Some(fst_start)
+        } else if snd_start < fst_start {
+            debug_assert_eq!(fst_start.denom, snd_start.denom);
+            debug_assert_eq!(fst_start.num.var, snd_start.num.var);
+            Some(snd_start)
         } else {
-            self.snd_eff.transition_start
+            None
         }
     }
 
-    pub fn transition_end(&self) -> FAtom {
-        if self.fst_eff.transition_end > self.snd_eff.transition_end {
-            self.fst_eff.transition_end
+    pub fn transition_end(&self) -> Option<FAtom> {
+        let fst_end = self.fst_eff.transition_end;
+        let snd_end = self.snd_eff.transition_end;
+
+        if fst_end > snd_end {
+            debug_assert_eq!(fst_end.denom, snd_end.denom);
+            debug_assert_eq!(fst_end.num.var, snd_end.num.var);
+            Some(fst_end)
+        } else if snd_end > fst_end {
+            debug_assert_eq!(fst_end.denom, snd_end.denom);
+            debug_assert_eq!(fst_end.num.var, snd_end.num.var);
+            Some(snd_end)
         } else {
-            self.snd_eff.transition_end
+            None
         }
     }
 }
@@ -426,6 +444,7 @@ fn add_borrow_pattern_constraints(
             continue;
         }
 
+        let mut set_constraint = true;
         let mut sum = p1.value().clone();
         sum += *initial_values_map.get(p1.state_var()).unwrap();
         for p2 in borrow_patterns {
@@ -447,8 +466,23 @@ fn add_borrow_pattern_constraints(
             contribution.push(p1.presence);
             contribution.push(p2.presence);
             // the second pattern contains the first pattern start
-            contribution.push(solver.reify(f_leq(p2.transition_start(), p1.transition_start())));
-            contribution.push(solver.reify(f_lt(p1.transition_start(), p2.transition_end())));
+            let p1_start = p1.transition_start();
+            let p2_start = p2.transition_start();
+            let p2_end = p2.transition_end();
+            let mut set = false;
+            if let Some(p1_start) = p1_start {
+                if let Some(p2_start) = p2_start {
+                    if let Some(p2_end) = p2_end {
+                        contribution.push(solver.reify(f_leq(p2_start, p1_start)));
+                        contribution.push(solver.reify(f_lt(p1_start, p2_end)));
+                        set = true;
+                    }
+                }
+            }
+            if !set {
+                set_constraint = false;
+                break;
+            }
             // both patterns have the same state variable
             for idx in 0..p1.state_var().args.len() {
                 let a = p1.state_var().args[idx];
@@ -460,9 +494,11 @@ fn add_borrow_pattern_constraints(
             sum += linear_sum_mul_lit(&mut solver.model, p2.value(), contribution_lit);
         }
 
-        solver.model.enforce(sum.clone().leq(ub), [p1.presence]);
-        solver.model.enforce(sum.clone().geq(lb), [p1.presence]);
-        num_borrow_patterns += 1;
+        if set_constraint {
+            solver.model.enforce(sum.clone().leq(ub), [p1.presence]);
+            solver.model.enforce(sum.clone().geq(lb), [p1.presence]);
+            num_borrow_patterns += 1;
+        }
     }
 
     tracing::debug!(%num_borrow_patterns);
