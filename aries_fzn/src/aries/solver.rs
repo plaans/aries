@@ -4,9 +4,11 @@ use aries::core::state::Domains;
 use aries::core::IntCst;
 use aries::core::VarRef;
 use aries::model::Model as AriesModel;
+use aries::solver::search::default_brancher;
 use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
 
+use crate::aries::config::Brancher;
 use crate::aries::constraint::InSet;
 use crate::aries::Post;
 use crate::fzn::constraint::Constraint as FznConstraint;
@@ -26,11 +28,22 @@ use crate::fzn::var::VarInt;
 /// Flatzinc solver using aries.
 ///
 /// It is responsible to translate flatzinc objects into aries objects.
-#[derive(Default)]
 pub struct Solver {
     fzn_model: FznModel,
     aries_model: AriesModel<usize>,
     translation: HashMap<usize, VarRef>,
+    brancher: Brancher,
+}
+
+impl Default for Solver {
+    fn default() -> Self {
+        Self {
+            fzn_model: Default::default(),
+            aries_model: Default::default(),
+            translation: Default::default(),
+            brancher: default_brancher(),
+        }
+    }
 }
 
 impl Solver {
@@ -52,6 +65,10 @@ impl Solver {
 
     pub fn aries_model(&self) -> &AriesModel<usize> {
         &self.aries_model
+    }
+
+    pub fn set_brancher(&mut self, brancher: Brancher) {
+        self.brancher = brancher;
     }
 
     fn add_var(&mut self, var: &FznVar) {
@@ -104,11 +121,18 @@ impl Solver {
             .post(&mut self.aries_model);
     }
 
+    /// Create and configure aries solver.
+    fn aries_solver(&self) -> AriesSolver<usize> {
+        let mut aries_solver = AriesSolver::new(self.aries_model.clone());
+        aries_solver.brancher = self.brancher.clone_to_box();
+        aries_solver
+    }
+
     /// Solve the flatzinc model.
     ///
     /// If the problem is satisfiable, the aries domains are mapped to assignments.
     pub fn solve(&self) -> Result<Option<Solution>, Exit> {
-        let mut aries_solver = AriesSolver::new(self.aries_model.clone());
+        let mut aries_solver = self.aries_solver();
 
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
@@ -148,7 +172,7 @@ impl Solver {
     where
         F: FnMut(Solution),
     {
-        let mut aries_solver = AriesSolver::new(self.aries_model.clone());
+        let mut aries_solver = self.aries_solver();
         let translate = |vid| *self.translation.get(vid).unwrap();
 
         match self.fzn_model.solve_item() {
@@ -352,8 +376,8 @@ mod tests {
     fn max_solve_with() -> anyhow::Result<()> {
         let mut fzn_model = FznModel::new();
 
-        let domain_x = IntRange::new(1, 3)?.into();
-        let domain_y = IntRange::new(2, 4)?.into();
+        let domain_x = IntRange::new(1, 9)?.into();
+        let domain_y = IntRange::new(2, 8)?.into();
         let x = fzn_model.new_var_int(domain_x, "x".to_string(), true)?;
         let y = fzn_model.new_var_int(domain_y, "y".to_string(), true)?;
         fzn_model.maximize(x.clone()).unwrap();

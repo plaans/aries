@@ -104,7 +104,8 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
     let print_all =
         args.all_solutions || model.is_optimize() && args.intermediate;
 
-    let solver = Solver::new(model);
+    let mut solver = Solver::new(model);
+    args.config.apply(&mut solver);
 
     if print_all {
         let print = |s| print!("{s}");

@@ -1,10 +1,12 @@
-use aries::model::Label;
 use aries::solver::search::activity::ActivityBrancher;
 use aries::solver::search::activity::BranchingParams;
 use aries::solver::search::combinators::RoundRobin;
 use aries::solver::search::SearchControl;
-use aries::solver::Solver;
 use clap::ValueEnum;
+
+use crate::aries::Solver;
+
+pub type Brancher = Box<dyn SearchControl<usize> + Send>;
 
 /// Aries solving configuration.
 #[derive(ValueEnum, Default, Clone, Copy, Debug)]
@@ -16,8 +18,8 @@ pub enum Config {
 }
 
 impl Config {
-    /// Return the brancher of the given configuration
-    pub fn brancher<Lbl: Label>(&self) -> Box<dyn SearchControl<Lbl> + Send> {
+    /// Return the brancher of the configuration.
+    pub fn brancher(&self) -> Brancher {
         match self {
             Config::ActivityMin => {
                 let params = BranchingParams {
@@ -46,8 +48,8 @@ impl Config {
         }
     }
 
-    /// Apply the configuration on the given aries solver.
-    pub fn apply<Lbl: Label>(&self, solver: &mut Solver<Lbl>) {
-        solver.brancher = self.brancher();
+    /// Apply the configuration on the given solver.
+    pub fn apply(&self, solver: &mut Solver) {
+        solver.set_brancher(self.brancher());
     }
 }

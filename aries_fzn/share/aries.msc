@@ -11,6 +11,7 @@
       "-i"
     ],
     "extraFlags": [
+      ["config", "solver configuration", "opt:activity-min:activity-max:activity-min-max", "activity-min"]
     ],
     "supportsMzn": false,
     "supportsFzn": true,
