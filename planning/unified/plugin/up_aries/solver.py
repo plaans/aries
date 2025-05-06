@@ -320,7 +320,11 @@ class AriesAbstractPlanner(AriesEngine, mixins.OneshotPlannerMixin):
         # Note: when the `server` object is garbage collected, the process will be killed
         server = _Server(self._executable, output_stream=output_stream)
         proto_problem = self._writer.convert(problem)
-        proto_warm_start_plan = self._writer.convert(warm_start_plan)
+        proto_warm_start_plan = (
+            self._writer.convert(warm_start_plan)
+            if warm_start_plan is not None
+            else None
+        )
         params = {k: v for k, v in self._params.items()}
         params["optimal"] = (
             "true"
