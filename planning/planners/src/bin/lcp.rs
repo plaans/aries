@@ -103,6 +103,7 @@ fn main() -> Result<()> {
 
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
+    let warm_up_plan = None;
 
     let spec = pddl_to_chronicles(&dom, &prob)?;
 
@@ -142,6 +143,7 @@ fn main() -> Result<()> {
         &opt.strategies,
         opt.optimize,
         htn_mode,
+        warm_up_plan,
         |pb, sol| print_plan(pb, &sol, anytime_out_file.as_ref()),
         None,
     )?;
