@@ -90,7 +90,10 @@ pub fn add_numeric_constraints(
         .collect_vec();
     add_condition_support_constraints(solver, encoding, eff_mutex_ends, &conds, &assigns, &incs)?;
 
-    add_borrow_pattern_constraints(solver, pb)?;
+    if BORROW_PATTERN_CONSTRAINT.get() {
+        let borrow_patterns = find_borrow_patterns(pb);
+        add_borrow_pattern_constraints(solver, pb, &borrow_patterns)?;
+    }
 
     Ok(())
 }
@@ -323,15 +326,7 @@ fn add_condition_support_constraints(
     Ok(())
 }
 
-fn add_borrow_pattern_constraints(solver: &mut Solver, pb: &FiniteProblem) -> Result<(), Conflict> {
-    if BORROW_PATTERN_CONSTRAINT.get() {
-        return Ok(());
-    }
-
-    let span = tracing::span!(tracing::Level::TRACE, "borrow patterns");
-    let _span = span.enter();
-    let mut num_borrow_patterns = 0;
-
+fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
     // Borrow patterns are patterns where a state variable is decreased by x at the start of a
     // chronicle and then increased by x at the end of the chronicle.
     // Morevoer, the state variable is assigned only at the initial state.
@@ -353,25 +348,9 @@ fn add_borrow_pattern_constraints(solver: &mut Solver, pb: &FiniteProblem) -> Re
         .map(|eff| eff.state_var.fluent.clone())
         .filter(|f| !fluents_with_assign_out_init.contains(f))
         .collect_vec();
-    let initial_values_map = pb
-        .chronicles
-        .iter()
-        .filter(|ch| ch.origin == ChronicleOrigin::Original)
-        .flat_map(|ch| ch.chronicle.effects.iter())
-        .filter(|eff| matches!(eff.operation, EffectOp::Assign(_)))
-        .filter(|eff| eff.state_var.fluent.return_type().is_numeric())
-        .map(|eff| {
-            if let EffectOp::Assign(val) = eff.operation {
-                (eff.state_var.clone(), val.int_view().unwrap())
-            } else {
-                unreachable!()
-            }
-        })
-        .collect::<BTreeMap<_, _>>();
 
     // Collect all the borrow patterns from the chronicles.
-    let borrow_patterns = pb
-        .chronicles
+    pb.chronicles
         .iter()
         .filter(|ch| ch.origin != ChronicleOrigin::Original)
         .flat_map(|ch| {
@@ -405,11 +384,37 @@ fn add_borrow_pattern_constraints(solver: &mut Solver, pb: &FiniteProblem) -> Re
                 })
                 .collect_vec()
         })
-        .collect_vec();
+        .collect_vec()
+}
+
+fn add_borrow_pattern_constraints(
+    solver: &mut Solver,
+    pb: &FiniteProblem,
+    borrow_patterns: &[BorrowPattern],
+) -> Result<(), Conflict> {
+    let span = tracing::span!(tracing::Level::TRACE, "borrow patterns");
+    let _span = span.enter();
+    let mut num_borrow_patterns = 0;
+
+    let initial_values_map = pb
+        .chronicles
+        .iter()
+        .filter(|ch| ch.origin == ChronicleOrigin::Original)
+        .flat_map(|ch| ch.chronicle.effects.iter())
+        .filter(|eff| matches!(eff.operation, EffectOp::Assign(_)))
+        .filter(|eff| eff.state_var.fluent.return_type().is_numeric())
+        .map(|eff| {
+            if let EffectOp::Assign(val) = eff.operation {
+                (eff.state_var.clone(), val.int_view().unwrap())
+            } else {
+                unreachable!()
+            }
+        })
+        .collect::<BTreeMap<_, _>>();
 
     // For each borrow pattern, create a post-decrease condition representing the contribution of the
     // different borrow patterns over this state variable.
-    for p1 in &borrow_patterns {
+    for p1 in borrow_patterns {
         if solver.model.entails(!p1.presence) {
             continue;
         }
@@ -423,7 +428,7 @@ fn add_borrow_pattern_constraints(solver: &mut Solver, pb: &FiniteProblem) -> Re
 
         let mut sum = p1.value().clone();
         sum += *initial_values_map.get(p1.state_var()).unwrap();
-        for p2 in &borrow_patterns {
+        for p2 in borrow_patterns {
             if ptr::eq(p1, p2) {
                 continue;
             }
