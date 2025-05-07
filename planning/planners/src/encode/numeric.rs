@@ -24,68 +24,52 @@ struct BorrowPattern {
     pub snd_eff: Effect,
     /// The presence of the borrow pattern
     pub presence: Lit,
+    /// Whether both effects are statically temporally ordered
+    /// (i.e. the first effect is before the second effect for sure)
+    pub statically_ordered: bool,
 }
 impl BorrowPattern {
     pub fn new(fst_eff: Effect, snd_eff: Effect, presence: Lit) -> Self {
-        assert_eq!(fst_eff.state_var, snd_eff.state_var);
-        assert!(if let (EffectOp::Increase(fst_val), EffectOp::Increase(snd_val)) =
+        // Same state variable
+        debug_assert_eq!(fst_eff.state_var, snd_eff.state_var);
+        // Oposite values
+        debug_assert!(if let (EffectOp::Increase(fst_val), EffectOp::Increase(snd_val)) =
             (fst_eff.operation.clone(), snd_eff.operation.clone())
         {
             fst_val == -snd_val
         } else {
             false
         });
-        Self {
-            fst_eff,
-            snd_eff,
-            presence,
+        // Instantaneous effects
+        debug_assert_eq!(fst_eff.transition_start + FAtom::EPSILON, fst_eff.transition_end);
+        debug_assert_eq!(snd_eff.transition_start + FAtom::EPSILON, snd_eff.transition_end);
+
+        if fst_eff.transition_start < snd_eff.transition_start {
+            Self {
+                fst_eff,
+                snd_eff,
+                presence,
+                statically_ordered: true,
+            }
+        } else if snd_eff.transition_start < fst_eff.transition_start {
+            Self {
+                fst_eff: snd_eff,
+                snd_eff: fst_eff,
+                presence,
+                statically_ordered: true,
+            }
+        } else {
+            Self {
+                fst_eff,
+                snd_eff,
+                presence,
+                statically_ordered: false,
+            }
         }
     }
 
     pub fn state_var(&self) -> &StateVar {
         &self.fst_eff.state_var
-    }
-
-    pub fn value(&self) -> LinearSum {
-        if let EffectOp::Increase(fst_val) = self.fst_eff.operation.clone() {
-            fst_val
-        } else {
-            unreachable!()
-        }
-    }
-
-    pub fn transition_start(&self) -> Option<FAtom> {
-        let fst_start = self.fst_eff.transition_start;
-        let snd_start = self.snd_eff.transition_start;
-
-        if fst_start < snd_start {
-            debug_assert_eq!(fst_start.denom, snd_start.denom);
-            debug_assert_eq!(fst_start.num.var, snd_start.num.var);
-            Some(fst_start)
-        } else if snd_start < fst_start {
-            debug_assert_eq!(fst_start.denom, snd_start.denom);
-            debug_assert_eq!(fst_start.num.var, snd_start.num.var);
-            Some(snd_start)
-        } else {
-            None
-        }
-    }
-
-    pub fn transition_end(&self) -> Option<FAtom> {
-        let fst_end = self.fst_eff.transition_end;
-        let snd_end = self.snd_eff.transition_end;
-
-        if fst_end > snd_end {
-            debug_assert_eq!(fst_end.denom, snd_end.denom);
-            debug_assert_eq!(fst_end.num.var, snd_end.num.var);
-            Some(fst_end)
-        } else if snd_end > fst_end {
-            debug_assert_eq!(fst_end.denom, snd_end.denom);
-            debug_assert_eq!(fst_end.num.var, snd_end.num.var);
-            Some(snd_end)
-        } else {
-            None
-        }
     }
 }
 
@@ -101,17 +85,18 @@ pub fn add_numeric_constraints(
     let incs = increases(pb).collect_vec();
     let inc_conds = get_increase_coherence_conditions(solver, &incs)?;
 
+    let mut borrows = Vec::new();
+    if BORROW_PATTERN_CONSTRAINT.get() {
+        borrows = find_borrow_patterns(pb);
+        add_borrow_pattern_constraints(solver, pb, &borrows)?;
+    }
+
     let conds = conditions(pb)
         .filter(|(_, _, cond)| is_numeric(&cond.state_var))
         .map(|(cond_id, prez, cond)| (cond_id, prez, cond.clone()))
         .chain(inc_conds)
         .collect_vec();
-    add_condition_support_constraints(solver, encoding, eff_mutex_ends, &conds, &assigns, &incs)?;
-
-    if BORROW_PATTERN_CONSTRAINT.get() {
-        let borrow_patterns = find_borrow_patterns(pb);
-        add_borrow_pattern_constraints(solver, pb, &borrow_patterns)?;
-    }
+    add_condition_support_constraints(solver, encoding, eff_mutex_ends, &conds, &assigns, &incs, &borrows)?;
 
     Ok(())
 }
@@ -204,14 +189,18 @@ fn add_condition_support_constraints(
     conds: &[(CondID, Lit, Condition)],
     assigns: &[(EffID, Lit, &Effect)],
     incs: &[(EffID, Lit, &Effect)],
+    borrows: &[BorrowPattern],
 ) -> Result<(), Conflict> {
     let span = tracing::span!(tracing::Level::TRACE, "numeric support");
     let _span = span.enter();
     let mut num_numeric_support_constraints = 0;
 
     for (cond_id, cond_prez, cond) in conds {
-        // skip conditions on non-numeric state variables, they have already been supported by support constraints
-        assert!(is_numeric(&cond.state_var));
+        debug_assert!(is_numeric(&cond.state_var));
+        assert!(
+            cond.start == cond.end,
+            "Only instantaneous numerical conditions are supported"
+        );
         if solver.model.entails(!*cond_prez) {
             continue;
         }
@@ -261,59 +250,17 @@ fn add_condition_support_constraints(
 
             // the expected condition value
             let mut cond_val_sum = LinearSum::from(ass_val) - cond_val;
-
-            for &(inc_id, inc_prez, inc) in incs {
-                if solver.model.entails(!inc_prez) {
-                    continue;
-                }
-                if solver.model.state.exclusive(*cond_prez, inc_prez) {
-                    continue;
-                }
-                if !unifiable_sv(&solver.model, &cond.state_var, &inc.state_var) {
-                    continue;
-                }
-                let EffectOp::Increase(inc_val) = inc.operation.clone() else {
-                    unreachable!()
-                };
-                let mut active_inc_conjunction: Vec<Lit> = Vec::with_capacity(32);
-                // the condition is present
-                active_inc_conjunction.push(*cond_prez);
-                // the assignment is present
-                active_inc_conjunction.push(ass_prez);
-                // the increase is present
-                active_inc_conjunction.push(inc_prez);
-                // the increase is after the assignment's transition end
-                active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
-                // the increase is before the condition's start
-                active_inc_conjunction.push(solver.reify(f_leq(inc.transition_end, cond.start)));
-                // TODO: If borrow pattern: cond.start <= borrow.end
-                // the increase and the condition have the same state variable
-                for idx in 0..cond.state_var.args.len() {
-                    let a = cond.state_var.args[idx];
-                    let b = inc.state_var.args[idx];
-                    active_inc_conjunction.push(solver.reify(eq(a, b)));
-                }
-                // each term of the increase value is present
-                for term in inc_val.terms() {
-                    let p = solver.model.presence_literal(term.var());
-                    active_inc_conjunction.push(p);
-                }
-                // compute wether the increase is active in the condition value
-                let active_inc = solver.reify(and(active_inc_conjunction));
-                if solver.model.entails(!active_inc) {
-                    continue;
-                }
-                inc_support.entry(inc_id).or_default().push(active_inc);
-                for term in inc_val.terms() {
-                    // compute some static implication for better propagation
-                    let p = solver.model.presence_literal(term.var());
-                    if !solver.model.entails(p) {
-                        solver.model.state.add_implication(active_inc, p);
-                    }
-                }
-                cond_val_sum += linear_sum_mul_lit(&mut solver.model, inc_val.clone(), active_inc);
-            }
-
+            add_condition_support_increase_contribution(
+                solver,
+                cond_prez,
+                cond,
+                &mut cond_val_sum,
+                &ass_prez,
+                ass,
+                &mut inc_support,
+                incs,
+                borrows,
+            );
             // enforce the condition value to be the sum of the assignment values and the increase values
             for term in cond_val_sum.terms() {
                 // compute some static implication for better propagation
@@ -342,6 +289,144 @@ fn add_condition_support_constraints(
     tracing::debug!(%num_numeric_support_constraints);
     solver.propagate()?;
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn add_condition_support_increase_contribution(
+    solver: &mut Solver,
+    cond_prez: &Lit,
+    cond: &Condition,
+    cond_val_sum: &mut LinearSum,
+    ass_prez: &Lit,
+    ass: &Effect,
+    inc_support: &mut HashMap<EffID, Vec<Lit>>,
+    incs: &[(EffID, Lit, &Effect)],
+    borrows: &[BorrowPattern],
+) {
+    // Assert !BORROW_PATTERN_CONSTRAINT => no borrows
+    debug_assert!(BORROW_PATTERN_CONSTRAINT.get() || borrows.is_empty());
+
+    // Only keep the increases that are not part of a borrow pattern or are the first increase of a borrow pattern
+    // If BORROW_PATTERN_CONSTRAINT is false, every increases are not part of a borrow
+    let increases = incs.iter().filter_map(|&(inc_id, inc_prez, inc)| {
+        let fst_bp = borrows.iter().find(|bp| bp.fst_eff == *inc);
+        let snd_bp = borrows.iter().find(|bp| bp.snd_eff == *inc);
+        if fst_bp.is_none() && snd_bp.is_none() {
+            // Not part of a borrow pattern
+            Some((inc_id, inc_prez, inc, None))
+        } else if fst_bp.is_some() && snd_bp.is_none() {
+            // Is the first increase of a borrow pattern
+            Some((inc_id, inc_prez, inc, fst_bp))
+        } else {
+            // Is the second increase of a borrow pattern
+            // Or both fst and snd are present which should not happen
+            None
+        }
+    });
+    debug_assert!(BORROW_PATTERN_CONSTRAINT.get() || increases.clone().count() == incs.len());
+
+    for (inc_id, inc_prez, inc, bp) in increases {
+        if solver.model.entails(!inc_prez) {
+            continue;
+        }
+        if solver.model.state.exclusive(*cond_prez, inc_prez) {
+            continue;
+        }
+        if !unifiable_sv(&solver.model, &cond.state_var, &inc.state_var) {
+            continue;
+        }
+        let mut active_inc_conjunction: Vec<Lit> = Vec::with_capacity(32);
+        // the condition is present
+        active_inc_conjunction.push(*cond_prez);
+        // the assignment is present
+        active_inc_conjunction.push(*ass_prez);
+        // the increase is present
+        active_inc_conjunction.push(inc_prez);
+
+        // the condition is temporally supported by the borrow/increase
+        // also retreive the value of the borrow/increase
+        let inc_val = if let Some(bp) = bp {
+            // The increase is part of a borrow pattern
+            // The whole borrow should be after the assignment's transition end
+            active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, bp.fst_eff.transition_start)));
+            active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, bp.snd_eff.transition_start)));
+            // The whole condition should be contained by the borrow
+            if bp.statically_ordered {
+                // CASE 1: We can statically order the timepoints of the borrow
+                active_inc_conjunction.push(solver.reify(f_leq(bp.fst_eff.transition_end, cond.start)));
+                active_inc_conjunction.push(solver.reify(f_leq(cond.end, bp.snd_eff.transition_start)));
+                if let EffectOp::Increase(val) = bp.fst_eff.operation.clone() {
+                    val
+                } else {
+                    unreachable!()
+                }
+            } else {
+                // CASE 2: The timepoints cannot be statically ordered
+                // CASE 2.1: The first effect of the borrow is effectively the first one
+                let fst_before_snd = solver.reify(f_lt(bp.fst_eff.transition_end, bp.snd_eff.transition_start));
+                let fst_before_cond = solver.reify(f_leq(bp.fst_eff.transition_end, cond.start));
+                let cond_before_snd = solver.reify(f_leq(cond.end, bp.snd_eff.transition_start));
+                let cond_is_contained = solver.reify(and([fst_before_cond, cond_before_snd]));
+                active_inc_conjunction.push(solver.reify(implies(fst_before_snd, cond_is_contained)));
+                let fst_val = if let EffectOp::Increase(val) = bp.fst_eff.operation.clone() {
+                    val
+                } else {
+                    unreachable!()
+                };
+                let fst_val = linear_sum_mul_lit(&mut solver.model, fst_val, fst_before_snd);
+                // CASE 2.2: The second effect of the borrow is in reality the first one
+                let snd_before_fst = solver.reify(f_lt(bp.snd_eff.transition_end, bp.fst_eff.transition_start));
+                let snd_before_cond = solver.reify(f_leq(bp.snd_eff.transition_end, cond.start));
+                let cond_before_fst = solver.reify(f_leq(cond.end, bp.fst_eff.transition_start));
+                let cond_is_contained = solver.reify(and([snd_before_cond, cond_before_fst]));
+                active_inc_conjunction.push(solver.reify(implies(snd_before_fst, cond_is_contained)));
+                let snd_val = if let EffectOp::Increase(val) = bp.snd_eff.operation.clone() {
+                    val
+                } else {
+                    unreachable!()
+                };
+                let snd_val = linear_sum_mul_lit(&mut solver.model, snd_val, snd_before_fst);
+                // The value of the increase is the sum of the two values
+                fst_val + snd_val
+            }
+        } else {
+            // The increase is outside a borrow pattern
+            // It should be between the assignment's transition end and the condition's start
+            active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
+            active_inc_conjunction.push(solver.reify(f_leq(inc.transition_end, cond.start)));
+            if let EffectOp::Increase(val) = inc.operation.clone() {
+                val
+            } else {
+                unreachable!()
+            }
+        };
+
+        // the increase and the condition have the same state variable
+        for idx in 0..cond.state_var.args.len() {
+            let a = cond.state_var.args[idx];
+            let b = inc.state_var.args[idx];
+            active_inc_conjunction.push(solver.reify(eq(a, b)));
+        }
+        // each term of the increase value is present
+        for term in inc_val.terms() {
+            let p = solver.model.presence_literal(term.var());
+            active_inc_conjunction.push(p);
+        }
+        // compute wether the increase is active in the condition value
+        let active_inc = solver.reify(and(active_inc_conjunction));
+        if solver.model.entails(!active_inc) {
+            continue;
+        }
+        inc_support.entry(inc_id).or_default().push(active_inc);
+        for term in inc_val.terms() {
+            // compute some static implication for better propagation
+            let p = solver.model.presence_literal(term.var());
+            if !solver.model.entails(p) {
+                solver.model.state.add_implication(active_inc, p);
+            }
+        }
+        *cond_val_sum += linear_sum_mul_lit(&mut solver.model, inc_val.clone(), active_inc);
+    }
 }
 
 fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
@@ -445,7 +530,11 @@ fn add_borrow_pattern_constraints(
         }
 
         let mut set_constraint = true;
-        let mut sum = p1.value().clone();
+        let mut sum = if let EffectOp::Increase(val) = p1.fst_eff.operation.clone() {
+            val
+        } else {
+            unreachable!()
+        };
         sum += *initial_values_map.get(p1.state_var()).unwrap();
         for p2 in borrow_patterns {
             if ptr::eq(p1, p2) {
@@ -466,20 +555,10 @@ fn add_borrow_pattern_constraints(
             contribution.push(p1.presence);
             contribution.push(p2.presence);
             // the second pattern contains the first pattern start
-            let p1_start = p1.transition_start();
-            let p2_start = p2.transition_start();
-            let p2_end = p2.transition_end();
-            let mut set = false;
-            if let Some(p1_start) = p1_start {
-                if let Some(p2_start) = p2_start {
-                    if let Some(p2_end) = p2_end {
-                        contribution.push(solver.reify(f_leq(p2_start, p1_start)));
-                        contribution.push(solver.reify(f_lt(p1_start, p2_end)));
-                        set = true;
-                    }
-                }
-            }
-            if !set {
+            if p1.statically_ordered && p2.statically_ordered {
+                contribution.push(solver.reify(f_leq(p2.fst_eff.transition_end, p1.fst_eff.transition_start)));
+                contribution.push(solver.reify(f_lt(p1.fst_eff.transition_end, p2.snd_eff.transition_start)));
+            } else {
                 set_constraint = false;
                 break;
             }
@@ -491,7 +570,12 @@ fn add_borrow_pattern_constraints(
             }
 
             let contribution_lit = solver.reify(and(contribution));
-            sum += linear_sum_mul_lit(&mut solver.model, p2.value(), contribution_lit);
+            let p2_val = if let EffectOp::Increase(val) = p2.fst_eff.operation.clone() {
+                val
+            } else {
+                unreachable!()
+            };
+            sum += linear_sum_mul_lit(&mut solver.model, p2_val, contribution_lit);
         }
 
         if set_constraint {
