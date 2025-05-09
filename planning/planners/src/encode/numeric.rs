@@ -455,10 +455,9 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
     // Collect all the borrow patterns from the chronicles.
     pb.chronicles
         .iter()
-        .filter(|ch| ch.origin != ChronicleOrigin::Original)
         .flat_map(|ch| {
             // Collect the increase effects of the chronicle that are candidates for borrow patterns.
-            // Group them by state variable, and only keep the groups with 2 effects such that the value of
+            // Group them by state variable, then by groups of 2 effects such that the value of
             // the second effect is the negative of the first effect.
             // The resulting group represents a borrow pattern.
             ch.chronicle
@@ -471,20 +470,36 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
                     acc
                 })
                 .into_values()
-                .filter(|effs| effs.len() == 2)
-                .filter(|effs| {
-                    if let (EffectOp::Increase(fst_val), EffectOp::Increase(snd_val)) =
-                        (effs[0].operation.clone(), effs[1].operation.clone())
+                .flat_map(|effs| {
+                    let mut effs = effs.clone();
+                    let mut groups = Vec::new();
+                    let mut new_group = true;
+                    while new_group {
+                        new_group = false;
+                        for i in 0..effs.len() {
+                            for j in (i + 1)..effs.len() {
+                                if let (EffectOp::Increase(val1), EffectOp::Increase(val2)) =
+                                    (effs[i].operation.clone(), effs[j].operation.clone())
                     {
-                        fst_val == -snd_val
+                                    if val1 == -val2 {
+                                        groups.push((effs[i].clone(), effs[j].clone()));
+                                        new_group = true;
+                                        effs.remove(j);
+                                        effs.remove(i);
+                                        break;
+                                    }
                     } else {
-                        false
+                                    unreachable!();
+                                }
+                            }
+                            if new_group {
+                                break;
+                            }
+                        }
                     }
+                    groups
                 })
-                .map(|effs| {
-                    let (fst_eff, snd_eff) = (effs[0].clone(), effs[1].clone());
-                    BorrowPattern::new(fst_eff, snd_eff, ch.chronicle.presence)
-                })
+                .map(|effs| BorrowPattern::new(effs.0, effs.1, ch.chronicle.presence))
                 .collect_vec()
         })
         .collect_vec()
