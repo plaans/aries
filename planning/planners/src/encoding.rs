@@ -1,8 +1,6 @@
+use aries::core::{IntCst, Lit};
 use aries::model::lang::FAtom;
-use aries::{
-    core::{IntCst, Lit},
-    model::lang::Kind,
-};
+use aries::model::lang::Kind;
 pub use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;

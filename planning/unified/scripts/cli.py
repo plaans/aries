@@ -51,9 +51,9 @@ if args.mode == "solve":
     try:
         with AnytimePlanner(name=args.solver) as planner:
             for r in planner.get_solutions(problem, timeout=float(args.timeout), output_stream=sys.stdout):
-                print(r)
+                # print(r)
                 plan = r.plan
-                print("\n===================\n")
+                # print("\n===================\n")
     except AssertionError:
         with OneshotPlanner(name=args.solver) as planner:
             result = planner.solve(problem, output_stream=sys.stdout)
