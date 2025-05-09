@@ -386,12 +386,16 @@ fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
     if atom.var == IVar::ZERO {
         // Constant variable
         if atom.shift == 0 {
+            println!("  => Constant zero");
             LinearSum::zero()
         } else {
+            println!("  => Constant {}", atom.shift);
             let prez = IVar::new(lit.variable());
+            println!("  => Lit {:?} / Prez {:?}", lit, prez);
             LinearSum::of(vec![prez * atom.shift])
         }
     } else {
+        println!("  => Real variable");
         // Real variable
         let lb = model.lower_bound(atom.var);
         let ub = model.upper_bound(atom.var);

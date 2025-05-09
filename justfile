@@ -19,7 +19,7 @@ ci-ipc:
 
 # Solve a UP test case
 up-solve problem:
-    python3 planning/unified/scripts/cli.py {{problem}}
+    python3 planning/unified/scripts/cli.py {{problem}} --timeout 10
 
 # Export a UP test case to a protobuf binary file (/tmp/problem.upp)
 up-export problem:
