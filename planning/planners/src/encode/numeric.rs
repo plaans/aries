@@ -480,7 +480,7 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
                             for j in (i + 1)..effs.len() {
                                 if let (EffectOp::Increase(val1), EffectOp::Increase(val2)) =
                                     (effs[i].operation.clone(), effs[j].operation.clone())
-                    {
+                                {
                                     if val1 == -val2 {
                                         groups.push((effs[i].clone(), effs[j].clone()));
                                         new_group = true;
@@ -488,7 +488,7 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
                                         effs.remove(i);
                                         break;
                                     }
-                    } else {
+                                } else {
                                     unreachable!();
                                 }
                             }
@@ -550,7 +550,24 @@ fn add_borrow_pattern_constraints(
         } else {
             unreachable!()
         };
-        sum += *initial_values_map.get(p1.state_var()).unwrap();
+
+        initial_values_map
+            .iter()
+            .filter(|(sv, _)| sv.fluent == p1.state_var().fluent)
+            .for_each(|(sv, val)| {
+                let mut same_sv_conjunction = Vec::with_capacity(32);
+                for idx in 0..sv.args.len() {
+                    let a = sv.args[idx];
+                    let b = p1.state_var().args[idx];
+                    same_sv_conjunction.push(solver.reify(eq(a, b)));
+                    println!("  {same_sv_conjunction:?} <=> {a:?} = {b:?}");
+                }
+                let same_sv_lit = solver.reify(and(same_sv_conjunction));
+                let new_val = iatom_mul_lit(&mut solver.model, *val, same_sv_lit);
+                println!("{new_val} = {val:?} * {same_sv_lit:?}");
+                sum += new_val;
+            });
+
         for p2 in borrow_patterns {
             if ptr::eq(p1, p2) {
                 continue;
