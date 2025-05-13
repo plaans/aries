@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use aries::solver::search::beta_brancher;
 use aries::solver::search::beta_brancher::BetaBrancher;
+use aries::solver::search::beta_brancher::Polarity;
 use aries::solver::search::SearchControl;
 use clap::Parser;
 use clap::ValueEnum;
@@ -21,12 +22,16 @@ pub struct VarOrder(beta_brancher::VarOrder);
 
 impl ValueEnum for VarOrder {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self(beta_brancher::VarOrder::Lexical)]
+        &[
+            Self(beta_brancher::VarOrder::Lexical),
+            Self(beta_brancher::VarOrder::FirstFail),
+        ]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self.0 {
             beta_brancher::VarOrder::Lexical => Some("lexical".into()),
+            beta_brancher::VarOrder::FirstFail => Some("first-fail".into()),
         }
     }
 }
@@ -46,15 +51,23 @@ pub struct ValueOrder(beta_brancher::ValueOrder);
 impl ValueEnum for ValueOrder {
     fn value_variants<'a>() -> &'a [Self] {
         &[
-            Self(beta_brancher::ValueOrder::Min),
-            Self(beta_brancher::ValueOrder::Max),
+            Self(beta_brancher::ValueOrder::Bound(Polarity::Negative)),
+            Self(beta_brancher::ValueOrder::Bound(Polarity::Positive)),
+            Self(beta_brancher::ValueOrder::Half(Polarity::Negative)),
+            Self(beta_brancher::ValueOrder::Half(Polarity::Positive)),
         ]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self.0 {
-            beta_brancher::ValueOrder::Min => Some("min".into()),
-            beta_brancher::ValueOrder::Max => Some("max".into()),
+            beta_brancher::ValueOrder::Bound(p) => match p {
+                Polarity::Negative => Some("min".into()),
+                Polarity::Positive => Some("max".into()),
+            },
+            beta_brancher::ValueOrder::Half(p) => match p {
+                Polarity::Negative => Some("upper-half".into()),
+                Polarity::Positive => Some("lower-half".into()),
+            },
         }
     }
 }
@@ -66,7 +79,6 @@ impl Deref for ValueOrder {
         &self.0
     }
 }
-
 
 /// Command line arguments.
 #[derive(Parser, Debug)]

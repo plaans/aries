@@ -11,8 +11,8 @@
       "-i"
     ],
     "extraFlags": [
-      ["var-order", "variable order", "opt:lexical", "lexical"],
-      ["value-order", "value order", "opt:min:max", "min"]
+      ["var-order", "variable order", "opt:lexical:first-fail", "lexical"],
+      ["value-order", "value order", "opt:min:max:lower-half:upper-half", "min"]
     ],
     "supportsMzn": false,
     "supportsFzn": true,
