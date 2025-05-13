@@ -42,7 +42,7 @@ impl Config {
             Config::ActivityMinMax => {
                 let min = Self::ActivityMin.brancher();
                 let max = Self::ActivityMax.brancher();
-                let brancher = RoundRobin::new(100, 1.2, vec![min, max]);
+                let brancher = RoundRobin::new(10, 1.0, vec![min, max]);
                 Box::new(brancher)
             }
         }
