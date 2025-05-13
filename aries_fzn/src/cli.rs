@@ -1,16 +1,72 @@
 //! Command line interface.
 
 use std::fs;
+use std::ops::Deref;
 use std::path::PathBuf;
 
-// use clap::value_parser;
+use aries::solver::search::beta_brancher;
+use aries::solver::search::beta_brancher::BetaBrancher;
+use aries::solver::search::SearchControl;
 use clap::Parser;
+use clap::ValueEnum;
 
-use crate::aries::Config;
 use crate::aries::Solver;
 use crate::fzn::parser::parse_model;
 use crate::fzn::solution::make_output_flow;
 use crate::fzn::Fzn;
+
+/// Thin wrapper around VarOrder for clap.
+#[derive(Clone, Default, Debug)]
+pub struct VarOrder(beta_brancher::VarOrder);
+
+impl ValueEnum for VarOrder {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self(beta_brancher::VarOrder::Lexical)]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self.0 {
+            beta_brancher::VarOrder::Lexical => Some("lexical".into()),
+        }
+    }
+}
+
+impl Deref for VarOrder {
+    type Target = beta_brancher::VarOrder;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Thin wrapper around ValueOrder for clap.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct ValueOrder(beta_brancher::ValueOrder);
+
+impl ValueEnum for ValueOrder {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[
+            Self(beta_brancher::ValueOrder::Min),
+            Self(beta_brancher::ValueOrder::Max),
+        ]
+    }
+
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self.0 {
+            beta_brancher::ValueOrder::Min => Some("min".into()),
+            beta_brancher::ValueOrder::Max => Some("max".into()),
+        }
+    }
+}
+
+impl Deref for ValueOrder {
+    type Target = beta_brancher::ValueOrder;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 
 /// Command line arguments.
 #[derive(Parser, Debug)]
@@ -28,10 +84,13 @@ pub struct Args {
     #[arg(short, long)]
     pub intermediate: bool,
 
-    /// Solver configuration.
-    #[arg(short, long, value_enum)]
-    #[arg(default_value_t)]
-    pub config: Config,
+    /// Variable order.
+    #[arg(long, default_value_t, value_enum, value_name = "ORDER")]
+    pub var_order: VarOrder,
+
+    /// Value order.
+    #[arg(long, default_value_t, value_enum, value_name = "ORDER")]
+    pub value_order: ValueOrder,
 
     /// Flatzinc model.
     #[arg(value_name = "FILE")]
@@ -105,7 +164,9 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
         args.all_solutions || model.is_optimize() && args.intermediate;
 
     let mut solver = Solver::new(model);
-    args.config.apply(&mut solver);
+
+    let brancher = BetaBrancher::new(*args.var_order, *args.value_order);
+    solver.set_brancher(brancher.clone_to_box());
 
     if print_all {
         let print = |s| print!("{s}");

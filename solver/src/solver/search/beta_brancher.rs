@@ -11,8 +11,9 @@ use crate::solver::stats::Stats;
 use super::Brancher;
 use super::Decision;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Default, Debug)]
 pub enum VarOrder {
+    #[default]
     Lexical,
 }
 
@@ -25,8 +26,9 @@ impl VarOrder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Default, Debug)]
 pub enum ValueOrder {
+    #[default]
     Min,
     Max,
 }

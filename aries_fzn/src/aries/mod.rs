@@ -1,11 +1,12 @@
 //! Flatzinc problem solving using aries.
 
-mod config;
 mod post;
 mod solver;
 
 pub mod constraint;
 
-pub use config::Config;
+use aries::solver::search::SearchControl;
 pub use post::Post;
 pub use solver::Solver;
+
+pub type Brancher = Box<dyn SearchControl<usize> + Send>;

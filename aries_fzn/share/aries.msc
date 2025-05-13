@@ -11,7 +11,8 @@
       "-i"
     ],
     "extraFlags": [
-      ["config", "solver configuration", "opt:activity-min:activity-max:activity-min-max", "activity-min"]
+      ["var-order", "variable order", "opt:lexical", "lexical"],
+      ["value-order", "value order", "opt:min:max", "min"]
     ],
     "supportsMzn": false,
     "supportsFzn": true,
