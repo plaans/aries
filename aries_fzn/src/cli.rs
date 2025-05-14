@@ -4,8 +4,15 @@ use std::fs;
 use std::ops::Deref;
 use std::path::PathBuf;
 
-use aries::solver::search::beta_brancher;
-use aries::solver::search::beta_brancher::BetaBrancher;
+use aries::solver::search::beta::value_order::LowerHalf;
+use aries::solver::search::beta::value_order::Max;
+use aries::solver::search::beta::value_order::Min;
+use aries::solver::search::beta::value_order::UpperHalf;
+use aries::solver::search::beta::value_order::ValueOrderKind;
+use aries::solver::search::beta::var_order::FirstFail;
+use aries::solver::search::beta::var_order::Lexical;
+use aries::solver::search::beta::var_order::VarOrderKind;
+use aries::solver::search::beta::BetaBrancher;
 use aries::solver::search::SearchControl;
 use clap::Parser;
 use clap::ValueEnum;
@@ -15,60 +22,60 @@ use crate::fzn::parser::parse_model;
 use crate::fzn::solution::make_output_flow;
 use crate::fzn::Fzn;
 
-/// Thin wrapper around VarOrder for clap.
+/// Thin wrapper around VarOrderKind for clap.
 #[derive(Clone, Default, Debug)]
-pub struct VarOrder(beta_brancher::VarOrder);
+pub struct VarOrder(VarOrderKind);
 
 impl ValueEnum for VarOrder {
     fn value_variants<'a>() -> &'a [Self] {
         &[
-            Self(beta_brancher::VarOrder::Lexical),
-            Self(beta_brancher::VarOrder::FirstFail),
+            Self(VarOrderKind::Lexical(Lexical)),
+            Self(VarOrderKind::FirstFail(FirstFail)),
         ]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self.0 {
-            beta_brancher::VarOrder::Lexical => Some("lexical".into()),
-            beta_brancher::VarOrder::FirstFail => Some("first-fail".into()),
+            VarOrderKind::Lexical(_) => Some("lexical".into()),
+            VarOrderKind::FirstFail(_) => Some("first-fail".into()),
         }
     }
 }
 
 impl Deref for VarOrder {
-    type Target = beta_brancher::VarOrder;
+    type Target = VarOrderKind;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-/// Thin wrapper around ValueOrder for clap.
-#[derive(Clone, Copy, Default, Debug)]
-pub struct ValueOrder(beta_brancher::ValueOrder);
+/// Thin wrapper around ValueOrderKind for clap.
+#[derive(Clone, Default, Debug)]
+pub struct ValueOrder(ValueOrderKind);
 
 impl ValueEnum for ValueOrder {
     fn value_variants<'a>() -> &'a [Self] {
         &[
-            Self(beta_brancher::ValueOrder::Min),
-            Self(beta_brancher::ValueOrder::Max),
-            Self(beta_brancher::ValueOrder::LowerHalf),
-            Self(beta_brancher::ValueOrder::UpperHalf),
+            Self(ValueOrderKind::Min(Min)),
+            Self(ValueOrderKind::Max(Max)),
+            Self(ValueOrderKind::LowerHalf(LowerHalf)),
+            Self(ValueOrderKind::UpperHalf(UpperHalf)),
         ]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self.0 {
-            beta_brancher::ValueOrder::Min => Some("min".into()),
-            beta_brancher::ValueOrder::Max => Some("max".into()),
-            beta_brancher::ValueOrder::LowerHalf => Some("lower-half".into()),
-            beta_brancher::ValueOrder::UpperHalf => Some("upper-half".into()),
+            ValueOrderKind::Min(_) => Some("min".into()),
+            ValueOrderKind::Max(_) => Some("max".into()),
+            ValueOrderKind::LowerHalf(_) => Some("lower-half".into()),
+            ValueOrderKind::UpperHalf(_) => Some("upper-half".into()),
         }
     }
 }
 
 impl Deref for ValueOrder {
-    type Target = beta_brancher::ValueOrder;
+    type Target = ValueOrderKind;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -172,7 +179,7 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
 
     let mut solver = Solver::new(model);
 
-    let brancher = BetaBrancher::new(*args.var_order, *args.value_order);
+    let brancher = BetaBrancher::new((*args.var_order).clone(), (*args.value_order).clone());
     solver.set_brancher(brancher.clone_to_box());
 
     if print_all {
