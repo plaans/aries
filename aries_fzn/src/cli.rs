@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use aries::solver::search::beta_brancher;
 use aries::solver::search::beta_brancher::BetaBrancher;
-use aries::solver::search::beta_brancher::Polarity;
 use aries::solver::search::SearchControl;
 use clap::Parser;
 use clap::ValueEnum;
@@ -51,23 +50,19 @@ pub struct ValueOrder(beta_brancher::ValueOrder);
 impl ValueEnum for ValueOrder {
     fn value_variants<'a>() -> &'a [Self] {
         &[
-            Self(beta_brancher::ValueOrder::Bound(Polarity::Negative)),
-            Self(beta_brancher::ValueOrder::Bound(Polarity::Positive)),
-            Self(beta_brancher::ValueOrder::Half(Polarity::Negative)),
-            Self(beta_brancher::ValueOrder::Half(Polarity::Positive)),
+            Self(beta_brancher::ValueOrder::Min),
+            Self(beta_brancher::ValueOrder::Max),
+            Self(beta_brancher::ValueOrder::LowerHalf),
+            Self(beta_brancher::ValueOrder::UpperHalf),
         ]
     }
 
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self.0 {
-            beta_brancher::ValueOrder::Bound(p) => match p {
-                Polarity::Negative => Some("min".into()),
-                Polarity::Positive => Some("max".into()),
-            },
-            beta_brancher::ValueOrder::Half(p) => match p {
-                Polarity::Negative => Some("upper-half".into()),
-                Polarity::Positive => Some("lower-half".into()),
-            },
+            beta_brancher::ValueOrder::Min => Some("min".into()),
+            beta_brancher::ValueOrder::Max => Some("max".into()),
+            beta_brancher::ValueOrder::LowerHalf => Some("lower-half".into()),
+            beta_brancher::ValueOrder::UpperHalf => Some("upper-half".into()),
         }
     }
 }

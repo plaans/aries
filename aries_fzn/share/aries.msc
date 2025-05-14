@@ -1,23 +1,23 @@
 {
-    "id": "fr.laas.aries",
-    "name": "Aries",
-    "description": "CP solver from the LAAS-CNRS",
-    "version": "0.1.0",
-    "mznlib": "./aries",
-    "executable": "../../target/release/aries_fzn",
-    "tags": ["cp","int"],
-    "stdFlags": [
-      "-a",
-      "-i"
-    ],
-    "extraFlags": [
-      ["var-order", "variable order", "opt:lexical:first-fail", "lexical"],
-      ["value-order", "value order", "opt:min:max:lower-half:upper-half", "min"]
-    ],
-    "supportsMzn": false,
-    "supportsFzn": true,
-    "needsSolns2Out": true,
-    "needsMznExecutable": false,
-    "needsStdlibDir": false,
-    "isGUIApplication": false
-  }
+  "id": "fr.laas.aries",
+  "name": "Aries",
+  "description": "CP solver from the LAAS-CNRS",
+  "version": "0.1.0",
+  "mznlib": "./aries",
+  "executable": "../../target/release/aries_fzn",
+  "tags": ["cp","int"],
+  "stdFlags": [
+    "-a",
+    "-i"
+  ],
+  "extraFlags": [
+    ["var-order", "variable order", "opt:lexical:first-fail", "lexical"],
+    ["value-order", "value order", "opt:min:max:lower-half:upper-half", "min"]
+  ],
+  "supportsMzn": false,
+  "supportsFzn": true,
+  "needsSolns2Out": true,
+  "needsMznExecutable": false,
+  "needsStdlibDir": false,
+  "isGUIApplication": false
+}

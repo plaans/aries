@@ -14,33 +14,6 @@ use super::Brancher;
 use super::Decision;
 
 #[derive(Clone, Copy, Default, Debug)]
-pub enum Polarity {
-    #[default]
-    Negative,
-    Positive,
-}
-
-impl Polarity {
-    pub fn new(positive: bool) -> Self {
-        if positive {
-            Self::Positive
-        } else {
-            Self::Negative
-        }
-    }
-
-    /// Return true iff the polarity is positive.
-    pub fn pos(&self) -> bool {
-        matches!(self, Polarity::Positive)
-    }
-
-    /// Return true iff the polarity is negative.
-    pub fn neg(&self) -> bool {
-        matches!(self, Polarity::Negative)
-    }
-}
-
-#[derive(Clone, Copy, Default, Debug)]
 pub enum VarOrder {
     #[default]
     Lexical,
@@ -64,18 +37,13 @@ impl VarOrder {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Default, Debug)]
 pub enum ValueOrder {
-    Bound(Polarity),
-    Half(Polarity),
-}
-
-impl ValueOrder {}
-
-impl Default for ValueOrder {
-    fn default() -> Self {
-        Self::Bound(Polarity::Negative)
-    }
+    #[default]
+    Min,
+    Max,
+    LowerHalf,
+    UpperHalf,
 }
 
 impl ValueOrder {
@@ -83,22 +51,12 @@ impl ValueOrder {
     pub fn select<Lbl: Label>(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
         let (lb, ub) = model.state.bounds(var);
         debug_assert!(lb < ub);
+        let (mid, rem) = (lb + ub).div_mod_floor(&2);
         match self {
-            ValueOrder::Bound(p) => {
-                if p.pos() {
-                    var.geq(ub)
-                } else {
-                    var.leq(lb)
-                }
-            }
-            ValueOrder::Half(p) => {
-                let (mid, rem) = (lb + ub).div_mod_floor(&2);
-                if p.pos() {
-                    var.geq(mid + rem)
-                } else {
-                    var.leq(mid)
-                }
-            }
+            ValueOrder::Min => var.leq(lb),
+            ValueOrder::Max => var.geq(ub),
+            ValueOrder::LowerHalf => var.leq(mid),
+            ValueOrder::UpperHalf => var.geq(mid + rem),
         }
     }
 }
@@ -172,7 +130,7 @@ mod tests {
     #[test]
     fn min() {
         let (model, _a, b, c) = basic_model();
-        let min = ValueOrder::Bound(Polarity::Negative);
+        let min = ValueOrder::Min;
         // No assert on var a since it is bound
         assert_eq!(min.select(b, &model), b.leq(3));
         assert_eq!(min.select(c, &model), c.leq(0));
@@ -181,7 +139,7 @@ mod tests {
     #[test]
     fn max() {
         let (model, _a, b, c) = basic_model();
-        let max = ValueOrder::Bound(Polarity::Positive);
+        let max = ValueOrder::Max;
         // No assert on var a since it is bound
         assert_eq!(max.select(b, &model), b.geq(9));
         assert_eq!(max.select(c, &model), c.geq(1));
@@ -190,7 +148,7 @@ mod tests {
     #[test]
     fn lower_half() {
         let (model, _a, b, c) = basic_model();
-        let lower_half = ValueOrder::Half(Polarity::Negative);
+        let lower_half = ValueOrder::LowerHalf;
         // No assert on var a since it is bound
         assert_eq!(lower_half.select(b, &model), b.leq(6));
         assert_eq!(lower_half.select(c, &model), c.leq(0));
@@ -199,7 +157,7 @@ mod tests {
     #[test]
     fn upper_half() {
         let (model, _a, b, c) = basic_model();
-        let upper_half = ValueOrder::Half(Polarity::Positive);
+        let upper_half = ValueOrder::UpperHalf;
         // No assert on var a since it is bound
         assert_eq!(upper_half.select(b, &model), b.geq(6));
         assert_eq!(upper_half.select(c, &model), c.geq(1));
