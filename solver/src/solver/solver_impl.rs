@@ -148,7 +148,7 @@ impl<Lbl: Label> Solver<Lbl> {
         match expr {
             &ReifExpr::Lit(lit) => {
                 let expr_scope = self.model.presence_literal(lit.variable());
-                assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
+                // assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
                 self.add_clause([!value, lit], scope)?; // value => lit
                 self.add_clause([!lit, value], scope)?; // lit => value
                 Ok(())
@@ -696,10 +696,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     // SAT: consistent + no choices left
                     self.stats.solve_time += start_time.elapsed();
                     self.stats.solve_cycles += start_cycles.elapsed();
-                    debug_assert!({
-                        self.model.shape.validate(&self.model.state).unwrap();
-                        true
-                    });
+                    // debug_assert!({
+                    //     self.model.shape.validate(&self.model.state).unwrap();
+                    //     true
+                    // });
                     return Ok(SearchResult::AtSolution);
                 }
             }

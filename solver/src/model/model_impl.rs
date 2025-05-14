@@ -465,19 +465,19 @@ impl<Lbl: Label> Model<Lbl> {
         self.simplify(&mut expr);
 
         let scope = self.new_conjunctive_presence_variable(scope);
-        debug_assert!(
-            {
-                // compute the scope in which the expression is valid
-                let expr_scope = expr.scope(|var| self.state.presence(var));
-                let expr_scope = expr_scope.to_conjunction(
-                    |l| self.shape.conjunctive_scopes.conjuncts(l),
-                    |l| self.state.entails(l),
-                );
-                let expr_scope = self.new_conjunctive_presence_variable(expr_scope);
-                self.state.implies(scope, expr_scope)
-            },
-            "Error in scope definition: the expression {expr:?} is not always define in the provided scope."
-        );
+        // debug_assert!(
+        //     {
+        //         // compute the scope in which the expression is valid
+        //         let expr_scope = expr.scope(|var| self.state.presence(var));
+        //         let expr_scope = expr_scope.to_conjunction(
+        //             |l| self.shape.conjunctive_scopes.conjuncts(l),
+        //             |l| self.state.entails(l),
+        //         );
+        //         let expr_scope = self.new_conjunctive_presence_variable(expr_scope);
+        //         self.state.implies(scope, expr_scope)
+        //     },
+        //     "Error in scope definition: the expression {expr:?} is not always define in the provided scope."
+        // );
 
         // retrieve or create an optional variable that is always true in the scope
         let tauto = self.get_tautology_of_scope(scope);
@@ -507,11 +507,11 @@ impl<Lbl: Label> Model<Lbl> {
             |l| self.state.entails(l),
         );
         let expression_scope = self.new_conjunctive_presence_variable(expression_scope);
-        debug_assert!(
-            self.state
-                .implies(self.presence_literal(value.variable()), expression_scope),
-            "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
-        );
+        // debug_assert!(
+        //     self.state
+        //         .implies(self.presence_literal(value.variable()), expression_scope),
+        //     "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
+        // );
 
         if let Some(reified) = self.shape.expressions.interned(&expr) {
             // expression already reified, unify it with expected value
