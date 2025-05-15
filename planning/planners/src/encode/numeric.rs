@@ -13,13 +13,19 @@ use itertools::Itertools;
 
 /// Parameter that activates additional constraints for borrow patterns.
 pub static BORROW_PATTERN_CONSTRAINT: EnvParam<bool> = EnvParam::new("ARIES_BORROW_PATTERN_CONSTRAINT", "true");
+/// Parameter that activates the factorization of the numeric constraints.
+pub static FACTORIZE_NUMERIC: EnvParam<bool> = EnvParam::new("ARIES_FACTORIZE_NUMERIC", "true");
 
 /// A borrow pattern is a pattern where a state variable is decreased by x at the start of a
 /// chronicle and then increased by x at the end of the chronicle.
 #[derive(Eq, PartialEq, Clone, Debug)]
 struct BorrowPattern {
+    /// The id of the first effect of the borrow pattern
+    pub fst_id: EffID,
     /// The first effect of the borrow pattern
     pub fst_eff: Effect,
+    /// The id of the second effect of the borrow pattern
+    pub snd_id: EffID,
     /// The second effect of the borrow pattern
     pub snd_eff: Effect,
     /// The presence of the borrow pattern
@@ -29,7 +35,7 @@ struct BorrowPattern {
     pub statically_ordered: bool,
 }
 impl BorrowPattern {
-    pub fn new(fst_eff: Effect, snd_eff: Effect, presence: Lit) -> Self {
+    pub fn new(fst_id: EffID, fst_eff: Effect, snd_id: EffID, snd_eff: Effect, presence: Lit) -> Self {
         // Same state variable
         debug_assert_eq!(fst_eff.state_var, snd_eff.state_var);
         // Oposite values
@@ -46,21 +52,27 @@ impl BorrowPattern {
 
         if fst_eff.transition_start < snd_eff.transition_start {
             Self {
+                fst_id,
                 fst_eff,
+                snd_id,
                 snd_eff,
                 presence,
                 statically_ordered: true,
             }
         } else if snd_eff.transition_start < fst_eff.transition_start {
             Self {
+                fst_id: snd_id,
                 fst_eff: snd_eff,
+                snd_id: fst_id,
                 snd_eff: fst_eff,
                 presence,
                 statically_ordered: true,
             }
         } else {
             Self {
+                fst_id,
                 fst_eff,
+                snd_id,
                 snd_eff,
                 presence,
                 statically_ordered: false,
@@ -96,7 +108,21 @@ pub fn add_numeric_constraints(
         .map(|(cond_id, prez, cond)| (cond_id, prez, cond.clone()))
         .chain(inc_conds)
         .collect_vec();
-    add_condition_support_constraints(solver, encoding, eff_mutex_ends, &conds, &assigns, &incs, &borrows)?;
+    let inc_contrib_to_ass = if FACTORIZE_NUMERIC.get() {
+        compute_inc_contrib_to_ass(solver, &assigns, &incs, eff_mutex_ends)
+    } else {
+        BTreeMap::new()
+    };
+    add_condition_support_constraints(
+        solver,
+        encoding,
+        eff_mutex_ends,
+        &conds,
+        &assigns,
+        &incs,
+        &borrows,
+        &inc_contrib_to_ass,
+    )?;
 
     Ok(())
 }
@@ -182,6 +208,7 @@ fn get_increase_coherence_conditions(
     Ok(increase_coherence_conditions)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_condition_support_constraints(
     solver: &mut Solver,
     encoding: &mut Encoding,
@@ -190,7 +217,11 @@ fn add_condition_support_constraints(
     assigns: &[(EffID, Lit, &Effect)],
     incs: &[(EffID, Lit, &Effect)],
     borrows: &[BorrowPattern],
+    inc_contrib_to_ass: &IncContribMap,
 ) -> Result<(), Conflict> {
+    // Assert !FACTORIZE_NUMERIC => no increase contributions
+    debug_assert!(FACTORIZE_NUMERIC.get() || inc_contrib_to_ass.is_empty());
+
     let span = tracing::span!(tracing::Level::TRACE, "numeric support");
     let _span = span.enter();
     let mut num_numeric_support_constraints = 0;
@@ -250,17 +281,30 @@ fn add_condition_support_constraints(
 
             // the expected condition value
             let mut cond_val_sum = LinearSum::from(ass_val) - cond_val;
-            add_condition_support_increase_contribution(
-                solver,
-                cond_prez,
-                cond,
-                &mut cond_val_sum,
-                &ass_prez,
-                ass,
-                &mut inc_support,
-                incs,
-                borrows,
-            );
+            if let Some(inc_contribs) = inc_contrib_to_ass.get(&ass_id) {
+                add_condition_support_increase_contribution_factorized(
+                    solver,
+                    cond_prez,
+                    cond,
+                    &mut cond_val_sum,
+                    &mut inc_support,
+                    inc_contribs,
+                    borrows,
+                );
+            } else {
+                add_condition_support_increase_contribution_non_factorized(
+                    solver,
+                    cond_prez,
+                    cond,
+                    &mut cond_val_sum,
+                    &ass_prez,
+                    ass,
+                    &mut inc_support,
+                    incs,
+                    borrows,
+                );
+            }
+
             // enforce the condition value to be the sum of the assignment values and the increase values
             for term in cond_val_sum.terms() {
                 // compute some static implication for better propagation
@@ -292,7 +336,7 @@ fn add_condition_support_constraints(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn add_condition_support_increase_contribution(
+fn add_condition_support_increase_contribution_non_factorized(
     solver: &mut Solver,
     cond_prez: &Lit,
     cond: &Condition,
@@ -429,6 +473,116 @@ fn add_condition_support_increase_contribution(
     }
 }
 
+fn add_condition_support_increase_contribution_factorized(
+    solver: &mut Solver,
+    cond_prez: &Lit,
+    cond: &Condition,
+    cond_val_sum: &mut LinearSum,
+    inc_support: &mut HashMap<EffID, Vec<Lit>>,
+    inc_contribs_ass: &[IncContribution],
+    borrows: &[BorrowPattern],
+) {
+    // Assert !BORROW_PATTERN_CONSTRAINT => no borrows
+    debug_assert!(BORROW_PATTERN_CONSTRAINT.get() || borrows.is_empty());
+
+    // Only keep the increases that are not part of a borrow pattern or are the first increase of a borrow pattern
+    // If BORROW_PATTERN_CONSTRAINT is false, every increases are not part of a borrow
+    let increases = inc_contribs_ass
+        .iter()
+        .filter_map(|(inc_id, inc_prez, inc, inc_contrib, inc_val)| {
+            let fst_bp = borrows.iter().find(|bp| bp.fst_eff == *inc);
+            let snd_bp = borrows.iter().find(|bp| bp.snd_eff == *inc);
+            if fst_bp.is_none() && snd_bp.is_none() {
+                // Not part of a borrow pattern
+                Some((inc_id, inc_prez, inc, inc_contrib, inc_val, None))
+            } else if fst_bp.is_some() && snd_bp.is_none() {
+                // Is the first increase of a borrow pattern
+                Some((inc_id, inc_prez, inc, inc_contrib, inc_val, fst_bp))
+            } else {
+                // Is the second increase of a borrow pattern
+                // Or both fst and snd are present which should not happen
+                None
+            }
+        });
+    debug_assert!(BORROW_PATTERN_CONSTRAINT.get() || increases.clone().count() == inc_contribs_ass.len());
+
+    for (inc_id, inc_prez, inc, inc_contrib_ass, inc_val, bp) in increases {
+        // The following assertions are tested in the contributions computation and should have been filtered.
+        debug_assert!(!solver.model.entails(!*inc_prez));
+        debug_assert!(unifiable_sv(&solver.model, &cond.state_var, &inc.state_var));
+        if solver.model.state.exclusive(*cond_prez, *inc_prez) {
+            continue;
+        }
+
+        let mut inc_support_cond_conjunction = Vec::with_capacity(32);
+        // the condition is temporally supported by the borrow/increase
+        // also retreive the value of the borrow/increase
+        let inc_val = if let Some(bp) = bp {
+            // The increase is part of a borrow pattern
+            // The whole condition should be contained by the borrow
+            if bp.statically_ordered {
+                // CASE 1: We can statically order the timepoints of the borrow
+                inc_support_cond_conjunction.push(solver.reify(f_leq(bp.fst_eff.transition_end, cond.start)));
+                inc_support_cond_conjunction.push(solver.reify(f_leq(cond.end, bp.snd_eff.transition_start)));
+                Some(inc_val.clone())
+            } else {
+                // CASE 2: The timepoints cannot be statically ordered
+                // CASE 2.1: The first effect of the borrow is effectively the first one
+                let fst_before_snd = solver.reify(f_lt(bp.fst_eff.transition_end, bp.snd_eff.transition_start));
+                let fst_before_cond = solver.reify(f_leq(bp.fst_eff.transition_end, cond.start));
+                let cond_before_snd = solver.reify(f_leq(cond.end, bp.snd_eff.transition_start));
+                let cond_is_contained = solver.reify(and([fst_before_cond, cond_before_snd]));
+                inc_support_cond_conjunction.push(solver.reify(implies(fst_before_snd, cond_is_contained)));
+                let fst_val = inc_contribs_ass
+                    .iter()
+                    .find(|(id, _, _, _, _)| *id == bp.fst_id)
+                    .map(|(_, _, _, _, val)| val.clone())
+                    .map(|val| linear_sum_mul_lit(&mut solver.model, val, fst_before_snd));
+                // CASE 2.2: The second effect of the borrow is in reality the first one
+                let snd_before_fst = solver.reify(f_lt(bp.snd_eff.transition_end, bp.fst_eff.transition_start));
+                let snd_before_cond = solver.reify(f_leq(bp.snd_eff.transition_end, cond.start));
+                let cond_before_fst = solver.reify(f_leq(cond.end, bp.fst_eff.transition_start));
+                let cond_is_contained = solver.reify(and([snd_before_cond, cond_before_fst]));
+                inc_support_cond_conjunction.push(solver.reify(implies(snd_before_fst, cond_is_contained)));
+                let snd_val = inc_contribs_ass
+                    .iter()
+                    .find(|(id, _, _, _, _)| *id == bp.snd_id)
+                    .map(|(_, _, _, _, val)| val.clone())
+                    .map(|val| linear_sum_mul_lit(&mut solver.model, val, snd_before_fst));
+                // The value of the increase is the sum of the two values
+                fst_val.zip(snd_val).map(|(fst_val, snd_val)| fst_val + snd_val)
+            }
+        } else {
+            // The increase is outside a borrow pattern
+            // It should be before the condition's start
+            inc_support_cond_conjunction.push(solver.reify(f_leq(inc.transition_end, cond.start)));
+            Some(inc_val.clone())
+        };
+        if inc_val.is_none() {
+            // One of the increase values of the borrow pattern does not support the condition
+            continue;
+        }
+        let inc_val = inc_val.unwrap();
+
+        inc_support_cond_conjunction.push(*cond_prez);
+        let inc_support_cond = solver.reify(and(inc_support_cond_conjunction));
+        let active_inc = solver.reify(and([*inc_contrib_ass, inc_support_cond]));
+        if solver.model.entails(!active_inc) {
+            continue;
+        }
+        inc_support.entry(*inc_id).or_default().push(active_inc);
+
+        for term in inc_val.terms() {
+            // compute some static implication for better propagation
+            let p = solver.model.presence_literal(term.var());
+            if !solver.model.entails(p) {
+                solver.model.state.add_implication(inc_support_cond, p);
+            }
+        }
+        *cond_val_sum += linear_sum_mul_lit(&mut solver.model, inc_val.clone(), inc_support_cond);
+    }
+}
+
 fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
     // Borrow patterns are patterns where a state variable is decreased by x at the start of a
     // chronicle and then increased by x at the end of the chronicle.
@@ -455,7 +609,8 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
     // Collect all the borrow patterns from the chronicles.
     pb.chronicles
         .iter()
-        .flat_map(|ch| {
+        .enumerate()
+        .flat_map(|(instance_id, ch)| {
             // Collect the increase effects of the chronicle that are candidates for borrow patterns.
             // Group them by state variable, then by groups of 2 effects such that the value of
             // the second effect is the negative of the first effect.
@@ -463,10 +618,11 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
             ch.chronicle
                 .effects
                 .iter()
-                .filter(|eff| matches!(eff.operation, EffectOp::Increase(_)))
-                .filter(|eff| candidate_fluents.contains(&eff.state_var.fluent))
-                .fold(BTreeMap::<StateVar, Vec<_>>::new(), |mut acc, eff| {
-                    acc.entry(eff.state_var.clone()).or_default().push(eff);
+                .enumerate()
+                .filter(|(_, eff)| matches!(eff.operation, EffectOp::Increase(_)))
+                .filter(|(_, eff)| candidate_fluents.contains(&eff.state_var.fluent))
+                .fold(BTreeMap::<StateVar, Vec<_>>::new(), |mut acc, (eff_id, eff)| {
+                    acc.entry(eff.state_var.clone()).or_default().push((eff_id, eff));
                     acc
                 })
                 .into_values()
@@ -479,10 +635,10 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
                         for i in 0..effs.len() {
                             for j in (i + 1)..effs.len() {
                                 if let (EffectOp::Increase(val1), EffectOp::Increase(val2)) =
-                                    (effs[i].operation.clone(), effs[j].operation.clone())
+                                    (effs[i].1.operation.clone(), effs[j].1.operation.clone())
                                 {
                                     if val1 == -val2 {
-                                        groups.push((effs[i].clone(), effs[j].clone()));
+                                        groups.push((effs[i], effs[j]));
                                         new_group = true;
                                         effs.remove(j);
                                         effs.remove(i);
@@ -499,7 +655,15 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
                     }
                     groups
                 })
-                .map(|effs| BorrowPattern::new(effs.0, effs.1, ch.chronicle.presence))
+                .map(|((fst_id, fst_eff), (snd_id, snd_eff))| {
+                    BorrowPattern::new(
+                        EffID::new(instance_id, fst_id, false),
+                        fst_eff.clone(),
+                        EffID::new(instance_id, snd_id, false),
+                        snd_eff.clone(),
+                        ch.chronicle.presence,
+                    )
+                })
                 .collect_vec()
         })
         .collect_vec()
@@ -620,4 +784,80 @@ fn add_borrow_pattern_constraints(
     tracing::debug!(%num_borrow_patterns);
     solver.propagate()?;
     Ok(())
+}
+
+/// The increase contribution to an assignment.
+/// It is composed of the increase id, the increase presence literal,
+/// the increase effect, the contribution literal and the contribution value.
+type IncContribution = (EffID, Lit, Effect, Lit, LinearSum);
+/// Map of increase contributions to an assignment.
+/// The key is the assignment id and the value is a vector of increase contributions.
+type IncContribMap = BTreeMap<EffID, Vec<IncContribution>>;
+
+fn compute_inc_contrib_to_ass(
+    solver: &mut Solver,
+    assigns: &[(EffID, Lit, &Effect)],
+    incs: &[(EffID, Lit, &Effect)],
+    eff_mutex_ends: &HashMap<EffID, FVar>,
+) -> IncContribMap {
+    // Compute the contribution of each increase to each assignment.
+    // The contribution is equal to the increase value if the increase and the assignment
+    // are present, if they share the same state variable and if the increase is in the mutex period of the assignment.
+    // The contribution is 0 otherwise.
+    assigns
+        .iter()
+        .filter_map(|&(ass_id, ass_prez, ass)| {
+            if solver.model.entails(!ass_prez) {
+                return None;
+            }
+
+            let inc_contributions = incs
+                .iter()
+                .filter_map(|&(inc_id, inc_prez, inc)| {
+                    if solver.model.entails(!inc_prez) {
+                        return None;
+                    }
+                    if solver.model.state.exclusive(ass_prez, inc_prez) {
+                        return None;
+                    }
+                    if !unifiable_sv(&solver.model, &ass.state_var, &inc.state_var) {
+                        return None;
+                    }
+                    let EffectOp::Increase(inc_val) = inc.operation.clone() else {
+                        unreachable!()
+                    };
+
+                    let mut contribute_conjunction: Vec<Lit> = Vec::with_capacity(32);
+                    // Both effects are present
+                    contribute_conjunction.push(ass_prez);
+                    contribute_conjunction.push(inc_prez);
+                    // The increase is in the mutex period of the assign
+                    contribute_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
+                    contribute_conjunction.push(solver.reify(f_leq(inc.transition_end, eff_mutex_ends[&ass_id])));
+                    // The effects have the same state variable
+                    for idx in 0..ass.state_var.args.len() {
+                        let a = ass.state_var.args[idx];
+                        let b = inc.state_var.args[idx];
+                        contribute_conjunction.push(solver.reify(eq(a, b)));
+                    }
+                    // Each term of the increase value is present
+                    for term in inc_val.terms() {
+                        contribute_conjunction.push(solver.model.presence_literal(term.var()));
+                    }
+                    // Compute the contribution
+                    let contribute = solver.reify(and(contribute_conjunction));
+                    for term in inc_val.terms() {
+                        // compute some static implication for better propagation
+                        let p = solver.model.presence_literal(term.var());
+                        if !solver.model.entails(p) {
+                            solver.model.state.add_implication(contribute, p);
+                        }
+                    }
+                    let contribution = linear_sum_mul_lit(&mut solver.model, inc_val.clone(), contribute);
+                    Some((inc_id, inc_prez, inc.clone(), contribute, contribution))
+                })
+                .collect_vec();
+            Some((ass_id, inc_contributions))
+        })
+        .collect::<BTreeMap<_, _>>()
 }
