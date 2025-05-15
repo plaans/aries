@@ -298,8 +298,11 @@ impl StnTheory {
         self.incoming_active_propagators.push(Vec::new());
     }
 
-    // TODO: document
-    pub fn add_reified_edge(
+    /// Adds a conditional edge `literal => (source ---(weight)--> target)` which is activate when `literal` is true.
+    /// The associated propagator will ensure that the domains of the variables are appropriately updated
+    /// and that `literal` is set to false if the edge contradicts other constraints.
+    // This equivalent to  `literal => (target <= source + weight)`
+    pub fn add_half_reified_edge(
         &mut self,
         literal: Lit,
         source: impl Into<Timepoint>,
@@ -353,24 +356,30 @@ impl StnTheory {
                 weight,
                 enabler: Enabler::new(literal, source_propagator_valid),
             },
-            // reverse edge:    !active <=> source <----(-weight-1)--- target
-            Propagator {
-                source: SignedVar::plus(target),
-                target: SignedVar::plus(source),
-                weight: -weight - 1,
-                enabler: Enabler::new(!literal, source_propagator_valid),
-            },
-            Propagator {
-                source: SignedVar::minus(source),
-                target: SignedVar::minus(target),
-                weight: -weight - 1,
-                enabler: Enabler::new(!literal, target_propagator_valid),
-            },
         ];
 
         for p in propagators {
             self.record_propagator(p, domains);
         }
+    }
+
+    // Adds a new fully reified edge `literal <=> source ---(weight)---> target`  (STN max delay)
+    // This equivalent to  `literal <=> (target <= source + weight)`
+    pub fn add_reified_edge(
+        &mut self,
+        literal: Lit,
+        source: impl Into<Timepoint>,
+        target: impl Into<Timepoint>,
+        weight: W,
+        domains: &Domains,
+    ) {
+        let source = source.into();
+        let target = target.into();
+
+        // normal edge:  active <=> source ---(weight)---> target
+        self.add_half_reified_edge(literal, source, target, weight, domains);
+        // reverse edge:    !active <=> source <----(-weight-1)--- target
+        self.add_half_reified_edge(!literal, target, source, -weight - 1, domains);
     }
 
     /// Add an edge with a dynamic upper bound, representing the fact that `tgt - src <= ub_factor * ub_var`
@@ -398,7 +407,7 @@ impl StnTheory {
         let cur_ub = cur_var_ub.saturating_mul(ub_factor).min(INT_CST_MAX);
         if cur_ub < INT_CST_MAX {
             // add immediately an edge for our current bound
-            self.add_reified_edge(ub_var.leq(cur_var_ub), src, tgt, cur_ub, domains);
+            self.add_half_reified_edge(ub_var.leq(cur_var_ub), src, tgt, cur_ub, domains);
         }
         // record the dynamic edge so that future updates on the variable would trigger a new edge insertion
         self.dyn_edges.entry(ub_var).or_default().push(dyn_edge);
@@ -574,7 +583,7 @@ impl StnTheory {
                     let cur_var_ub = ev.new_upper_bound;
                     let cur_ub = cur_var_ub.saturating_mul(dyn_edge.ub_factor).min(INT_CST_MAX);
                     if cur_ub < INT_CST_MAX {
-                        self.add_reified_edge(var_ub.leq(cur_var_ub), src, tgt, cur_ub, model);
+                        self.add_half_reified_edge(var_ub.leq(cur_var_ub), src, tgt, cur_ub, model);
                     }
                 }
                 if self.constraints.is_vertex(ev.affected_bound) {
