@@ -22,14 +22,14 @@ mod scopes;
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Constraint {
     /// Constraint enforcing that the left and right terms evaluate to the same value.
-    Reified(ReifExpr, Lit),
+    HReified(ReifExpr, Lit),
 }
 
 impl std::fmt::Display for Constraint {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Constraint::Reified(r, l) => {
-                write!(f, "{l:?} <=> {r}")
+            Constraint::HReified(r, l) => {
+                write!(f, "{l:?} => {r}")
             }
         }
     }
@@ -75,28 +75,36 @@ impl<Lbl: Label> ModelShape<Lbl> {
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
     }
-
-    fn add_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
-        let c = Constraint::Reified(expr, value);
+    fn add_half_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
+        let c = Constraint::HReified(expr, value);
         tracing::trace!("Adding constraint: {}", c);
         self.constraints.push(c)
+    }
+
+    fn add_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
+        let constraints = [
+            Constraint::HReified(expr.clone(), value),
+            Constraint::HReified(!expr, !value),
+        ];
+        for c in constraints {
+            tracing::trace!("Adding constraint: {}", c);
+            self.constraints.push(c)
+        }
     }
 
     /// Given a TOTAL assignment, check that the all constraints are satisfied.
     /// NOTE: Currently not really polished and intended for internal use.
     pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
         for c in &self.constraints {
-            let Constraint::Reified(expr, reified) = c;
-            if assignment.present(reified.variable()).unwrap() {
+            let Constraint::HReified(expr, enabler) = c;
+            if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
                 let actual_value = expr.eval(assignment);
-                let expected_value = Some(assignment.value(*reified).unwrap());
                 anyhow::ensure!(
-                    actual_value == expected_value,
-                    "{}: {:?}  !=  {:?} [{:?}]",
+                    actual_value == Some(true),
+                    "{} : {:?}  [but enabled by {:?}]",
                     expr,
                     actual_value,
-                    expected_value,
-                    reified
+                    enabler
                 );
             } else {
                 // Underspecified: we may be able to determine a value on the
@@ -482,7 +490,7 @@ impl<Lbl: Label> Model<Lbl> {
         // retrieve or create an optional variable that is always true in the scope
         let tauto = self.get_tautology_of_scope(scope);
 
-        self.bind(expr, tauto);
+        self.enforce_if(expr, tauto);
     }
 
     pub fn enforce_all<Expr: Reifiable<Lbl>>(
@@ -493,6 +501,10 @@ impl<Lbl: Label> Model<Lbl> {
         for b in bools {
             self.enforce(b, scope.clone());
         }
+    }
+
+    fn enforce_if(&mut self, expr: ReifExpr, enabler: Lit) {
+        self.shape.add_half_reification_constraint(enabler, expr);
     }
 
     /// Record that `b <=> literal`
