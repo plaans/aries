@@ -1,6 +1,8 @@
 use crate::backtrack::Backtrack;
 use crate::backtrack::DecLvl;
 use crate::backtrack::DecisionLevelTracker;
+use crate::core::state::Conflict;
+use crate::core::state::Explainer;
 use crate::model::Label;
 use crate::model::Model;
 use crate::solver::search::beta::value_order::ValueOrder;
@@ -12,6 +14,7 @@ use crate::solver::search::Decision;
 use crate::solver::search::SearchControl;
 use crate::solver::stats::Stats;
 
+/// Brancher for benchamrk, it is designed to be modular.
 #[derive(Clone, Debug)]
 pub struct BetaBrancher {
     lvl: DecisionLevelTracker,
@@ -39,6 +42,20 @@ impl<Lbl: Label> SearchControl<Lbl> for BetaBrancher {
 
     fn clone_to_box(&self) -> Brancher<Lbl> {
         Box::new(self.clone())
+    }
+
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<Lbl>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        match &mut self.var_order {
+            VarOrderKind::Activity(activity) => activity.conflict(clause, model, explainer, backtrack_level),
+            VarOrderKind::Lexical(lexical) => lexical.conflict(clause, model, explainer, backtrack_level),
+            VarOrderKind::FirstFail(first_fail) => first_fail.conflict(clause, model, explainer, backtrack_level),
+        }
     }
 }
 

@@ -42,4 +42,5 @@ impl Default for ValueOrderKind {
     fn default() -> Self {
         Self::Min(Min)
     }
+
 }

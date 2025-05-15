@@ -1,84 +1,43 @@
 //! Command line interface.
 
 use std::fs;
-use std::ops::Deref;
 use std::path::PathBuf;
 
+use anyhow::bail;
 use aries::solver::search::beta::value_order::LowerHalf;
 use aries::solver::search::beta::value_order::Max;
 use aries::solver::search::beta::value_order::Min;
 use aries::solver::search::beta::value_order::UpperHalf;
 use aries::solver::search::beta::value_order::ValueOrderKind;
+use aries::solver::search::beta::var_order::Activity;
 use aries::solver::search::beta::var_order::FirstFail;
 use aries::solver::search::beta::var_order::Lexical;
 use aries::solver::search::beta::var_order::VarOrderKind;
 use aries::solver::search::beta::BetaBrancher;
 use aries::solver::search::SearchControl;
 use clap::Parser;
-use clap::ValueEnum;
 
 use crate::aries::Solver;
 use crate::fzn::parser::parse_model;
 use crate::fzn::solution::make_output_flow;
 use crate::fzn::Fzn;
 
-/// Thin wrapper around VarOrderKind for clap.
-#[derive(Clone, Default, Debug)]
-pub struct VarOrder(VarOrderKind);
-
-impl ValueEnum for VarOrder {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[
-            Self(VarOrderKind::Lexical(Lexical)),
-            Self(VarOrderKind::FirstFail(FirstFail)),
-        ]
-    }
-
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self.0 {
-            VarOrderKind::Lexical(_) => Some("lexical".into()),
-            VarOrderKind::FirstFail(_) => Some("first-fail".into()),
-        }
+fn parse_var_order(s: &str) -> anyhow::Result<VarOrderKind> {
+    match s {
+        "activity" => Ok(VarOrderKind::Activity(Activity::new(0.95, 100))),
+        "lexical" => Ok(VarOrderKind::FirstFail(FirstFail)),
+        "first-fail" => Ok(VarOrderKind::Lexical(Lexical)),
+        _ => bail!("variable orders are activity, first-fail and lexical"),
     }
 }
 
-impl Deref for VarOrder {
-    type Target = VarOrderKind;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// Thin wrapper around ValueOrderKind for clap.
-#[derive(Clone, Default, Debug)]
-pub struct ValueOrder(ValueOrderKind);
-
-impl ValueEnum for ValueOrder {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[
-            Self(ValueOrderKind::Min(Min)),
-            Self(ValueOrderKind::Max(Max)),
-            Self(ValueOrderKind::LowerHalf(LowerHalf)),
-            Self(ValueOrderKind::UpperHalf(UpperHalf)),
-        ]
-    }
-
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
-        match self.0 {
-            ValueOrderKind::Min(_) => Some("min".into()),
-            ValueOrderKind::Max(_) => Some("max".into()),
-            ValueOrderKind::LowerHalf(_) => Some("lower-half".into()),
-            ValueOrderKind::UpperHalf(_) => Some("upper-half".into()),
-        }
-    }
-}
-
-impl Deref for ValueOrder {
-    type Target = ValueOrderKind;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+fn parse_value_order(s: &str) -> anyhow::Result<ValueOrderKind> {
+    match s {
+        "min" => Ok(ValueOrderKind::Min(Min)),
+        "max" => Ok(ValueOrderKind::Max(Max)),
+        "lower-half" => Ok(ValueOrderKind::LowerHalf(LowerHalf)),
+        "upper-half" => Ok(ValueOrderKind::UpperHalf(UpperHalf)),
+        _ => bail!("value orders are min, max, lower-half and upper-half"),
     }
 }
 
@@ -99,12 +58,12 @@ pub struct Args {
     pub intermediate: bool,
 
     /// Variable order.
-    #[arg(long, default_value_t, value_enum, value_name = "ORDER")]
-    pub var_order: VarOrder,
+    #[arg(long, default_value = "lexical", value_name = "ORDER", value_parser = parse_var_order)]
+    pub var_order: VarOrderKind,
 
     /// Value order.
-    #[arg(long, default_value_t, value_enum, value_name = "ORDER")]
-    pub value_order: ValueOrder,
+    #[arg(long, default_value = "min", value_name = "ORDER", value_parser = parse_value_order)]
+    pub value_order: ValueOrderKind,
 
     /// Flatzinc model.
     #[arg(value_name = "FILE")]
@@ -179,7 +138,8 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
 
     let mut solver = Solver::new(model);
 
-    let brancher = BetaBrancher::new((*args.var_order).clone(), (*args.value_order).clone());
+    let brancher =
+        BetaBrancher::new(args.var_order.clone(), args.value_order.clone());
     solver.set_brancher(brancher.clone_to_box());
 
     if print_all {

@@ -6,8 +6,8 @@ use crate::solver::search::beta::var_order::VarOrder;
 #[derive(Clone, Debug)]
 pub struct FirstFail;
 
-impl VarOrder for FirstFail {
-    fn select<Lbl: Label>(&self, model: &Model<Lbl>) -> Option<VarRef> {
+impl<Lbl: Label> VarOrder<Lbl> for FirstFail {
+    fn select(&self, model: &Model<Lbl>) -> Option<VarRef> {
         model
             .state
             .variables()
@@ -26,8 +26,8 @@ mod tests {
     #[test]
     fn select() {
         let mut model = Model::<String>::new();
-        model.new_ivar(1, 0, "x"); // Empty domain
-        model.new_ivar(3, 5, "y");
+        let _ = model.new_ivar(1, 0, "x"); // Empty domain
+        let _ = model.new_ivar(3, 5, "y");
         let z = model.new_ivar(0, 1, "z").into();
         assert_eq!(FirstFail.select(&model), Some(z));
     }
