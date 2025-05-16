@@ -1,0 +1,5 @@
+var bool: x:: output_var;
+var bool: y:: output_var;
+var bool: r:: output_var;
+constraint bool_le_reif(x,y,r);
+solve satisfy;

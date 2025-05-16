@@ -1,0 +1,4 @@
+var bool: x:: output_var;
+var bool: y:: output_var;
+constraint bool_lin_le([3,2], [x,y], 3);
+solve satisfy;

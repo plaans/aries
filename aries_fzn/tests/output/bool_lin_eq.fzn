@@ -1,0 +1,5 @@
+var bool: x:: output_var;
+var bool: y:: output_var;
+var -1..9: z:: output_var;
+constraint bool_lin_eq([3,2], [x,y], z);
+solve satisfy;
