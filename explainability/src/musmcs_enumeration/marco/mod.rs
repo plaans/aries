@@ -100,9 +100,9 @@ impl<Lbl: Label> Marco<Lbl> {
                 if let Some(mcses) = mcses {
                     let (mss, mcs) = self.subset_solver.grow(&seed)?;
                     self.map_solver.block_down(&mss);
-                    // println!("mcs: {mcs:?}");
                     assert!(mcses.iter().all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
                     if !mcs.is_empty() {
+                        self.config.on_mcs_found.as_ref().map(|f| f(&mcs));
                         mcses.push(mcs);
                     }
                 } else {
@@ -112,9 +112,9 @@ impl<Lbl: Label> Marco<Lbl> {
                 let mus = self.subset_solver.shrink(&seed)?;
                 self.map_solver.block_up(&mus);
                 if let Some(muses) = muses {
-                    // println!("mus: {mus:?}");
                     assert!(muses.iter().all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
                     if !mus.is_empty() {
+                        self.config.on_mus_found.as_ref().map(|f| f(&mus));
                         muses.push(mus);
                     }
                 }
@@ -195,6 +195,8 @@ mod tests {
             MusMcsEnumerationConfig {
                 return_muses: true,
                 return_mcses: true,
+                on_mus_found: None,
+                on_mcs_found: None,
             },
         );
         let soft_constrs_reif_lits = soft_constrs

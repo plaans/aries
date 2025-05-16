@@ -7,6 +7,8 @@ use aries::core::Lit;
 pub struct MusMcsEnumerationConfig {
     pub return_muses: bool,
     pub return_mcses: bool,
+    pub on_mus_found: Option<Box<dyn Fn(&BTreeSet<Lit>)>>,
+    pub on_mcs_found: Option<Box<dyn Fn(&BTreeSet<Lit>)>>,
 }
 
 #[derive(Debug, Clone)]
