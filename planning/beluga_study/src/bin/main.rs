@@ -71,7 +71,7 @@ pub fn get_property_ids_to_varlabels_map(base_problem: &chronicles::Problem) -> 
         .filter_map(|lbl| match &lbl.1 {
             chronicles::VarType::Parameter(s) if s.starts_with("prop_") => {
                 // NOTE: assumes the format "prop_<prop-id-without-underscores>_....."
-                Some((s.split("_").nth(1).unwrap().to_string(), lbl))
+                Some((s.split_once("_").unwrap().1.to_string(), lbl))
             },
             _ => None,
         })
