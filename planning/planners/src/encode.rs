@@ -387,6 +387,8 @@ fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
         // Constant variable
         if atom.shift == 0 {
             LinearSum::zero()
+        } else if model.entails(lit) {
+            LinearSum::of(vec![atom.shift])
         } else {
             let prez = IVar::new(lit.variable());
             LinearSum::of(vec![prez * atom.shift])
