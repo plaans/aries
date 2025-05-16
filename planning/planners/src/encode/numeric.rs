@@ -724,11 +724,9 @@ fn add_borrow_pattern_constraints(
                     let a = sv.args[idx];
                     let b = p1.state_var().args[idx];
                     same_sv_conjunction.push(solver.reify(eq(a, b)));
-                    println!("  {same_sv_conjunction:?} <=> {a:?} = {b:?}");
                 }
                 let same_sv_lit = solver.reify(and(same_sv_conjunction));
                 let new_val = iatom_mul_lit(&mut solver.model, *val, same_sv_lit);
-                println!("{new_val} = {val:?} * {same_sv_lit:?}");
                 sum += new_val;
             });
 
