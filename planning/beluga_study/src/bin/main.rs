@@ -125,30 +125,53 @@ pub fn solve_finite_beluga_with_given_properties(
 }
 
 pub fn enumerate_finite_beluga_property_muses_and_mcses(
-    encoded_problem: EncodedProblem,
+    encoded_problem_model: Model<VarLabel>,
+    encoded_problem_encoding: Encoding,
     finite_problem: Arc<FiniteProblem>,
     deadline_to_enumerate: Option<f64>,
     properties_lits: &HashMap<Lit, VarLabel>,
 ) -> MusMcsEnumerationResult {
 
-    let model = encoded_problem.model;
+    // let start = std::time::Instant::now();
+    // let deadline = deadline_to_enumerate.map(|val| start + std::time::Duration::from_secs_f64(val));
+    // let strategies = &[
+    //     Strat::ActivityBool,
+    //     Strat::ActivityBoolLight,
+    //     Strat::Causal,
+    // ];
 
-    let start = std::time::Instant::now();
-    let deadline = deadline_to_enumerate.map(|val| start + std::time::Duration::from_secs_f64(val));
-    let strategies = &[
-        Strat::ActivityBool,
-        Strat::ActivityBoolLight,
-        Strat::Causal,
-    ];
+    let properties_lits_cloned = properties_lits.clone();
+    let properties_lits_cloned2 = properties_lits.clone();
 
-    // let subset_solver_impl = Box::new(VerySimpleSubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
-    let subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
-    // let mut subset_solver_impl = Box::new(SimpleNonWorking2SubsetSolverImpl::new(model, finite_problem.clone(), encoded_problem.encoding.clone().into()));
-    
+    // let subset_solver_impl = Box::new(VerySimpleSubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
+    let subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
+    // let mut subset_solver_impl = Box::new(SimpleNonWorking2SubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
+
     let mut marco = Marco::with_reified_soft_constraints(
         subset_solver_impl,
         properties_lits.keys().copied().collect::<Vec<_>>(),
-        MusMcsEnumerationConfig { return_muses: true, return_mcses: true },
+        MusMcsEnumerationConfig {
+            return_muses: true,
+            return_mcses: true,
+            on_mus_found: Some(Box::new(
+                move |mus: &BTreeSet<Lit>| {
+                    let mus_str = mus
+                        .iter()
+                        .map(|l| properties_lits_cloned.get(l).unwrap())
+                        .join(", \n");
+                    let mus_str = format!(r#"{}"#, mus_str);
+                    println!("propMUS: {{\n{mus_str}\n}}\n");
+            })),
+            on_mcs_found: Some(Box::new(
+                move |mus: &BTreeSet<Lit>| {
+                    let mcs_str = mus
+                        .iter()
+                        .map(|l| properties_lits_cloned2.get(l).unwrap())
+                        .join(", \n");
+                    let mcs_str = format!(r#"{}"#, mcs_str);
+                    println!("propMCS: {{\n{mcs_str}\n}}\n");
+            })),
+        },
     );
 
     let marco_res = marco.run();
@@ -359,7 +382,8 @@ pub fn main() -> Result<(), Error> {
 
             let (properties_varlabels, properties_var_labels_rev) = get_property_ids_to_varlabels_map(&base_problem);
 
-            let (encoded_problem, finite_problem) = make_encoded_beluga_problem(base_problem)?;
+            // let (encoded_problem, finite_problem) = make_encoded_beluga_problem(base_problem)?;
+            let (encoded_problem, finite_problem) = make_encoded_beluga_problem(base_problem.clone())?;
 
             let properties_lits = properties_varlabels
                 .iter()
@@ -369,9 +393,14 @@ pub fn main() -> Result<(), Error> {
                 })
                 .collect::<HashMap<_,_>>();
 
+            let encoded_problem_encoding = encoded_problem.encoding.clone();
+            let mut encoded_problem_model = encoded_problem.model.clone();
+
             let result = enumerate_finite_beluga_property_muses_and_mcses(
-                encoded_problem,
-                finite_problem,
+                encoded_problem_model,
+                encoded_problem_encoding,
+                // finite_problem,
+                finite_problem.clone(),
                 None,
                 &properties_lits,
             );
