@@ -536,7 +536,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let parameters = consume_typed_symbols(&mut params.iter())?;
                 property.pop_known_atom(":task")?;
                 let task = parse_task(property.pop()?, false)?;
-                let precondition = if property.peek().map_or(false, |e| e.is_atom(":precondition")) {
+                let precondition = if property.peek().is_some_and(|e| e.is_atom(":precondition")) {
                     property.pop_known_atom(":precondition").unwrap();
                     vec![property.pop()?.clone()]
                 } else {
