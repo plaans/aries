@@ -1,0 +1,5 @@
+% 1*x - 1*y != 0 simplified to x != y
+var 1..2: x:: output_var;
+var 1..2: y:: output_var;
+constraint int_lin_ne([1,-1], [x,y], 0);
+solve satisfy;

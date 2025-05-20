@@ -4,6 +4,7 @@ on: push
 
 env:
   CARGO_TERM_COLOR: always
+  MZN_SOLVER_PATH: ${{github.workspace}}/aries/aries_fzn/share
 
 jobs:
   unit-tests:
@@ -53,6 +54,40 @@ jobs:
         run: ./ci/gg.py
       - name: LCP Solving (PDDL & HDDL)
         run: ./ci/lcp.sh
+
+  minizinc-tests:
+    name: Minizinc tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Initial checkout
+        uses: actions/checkout@v3
+        with:
+          path: aries
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install Minizinc
+        run: |
+          sudo snap install minizinc --classic
+          minizinc --version
+          minizinc --solvers
+          printenv MZN_SOLVER_PATH
+      - name: Checkout mzn-problems
+        uses: actions/checkout@v3
+        with:
+          repository: plaans/mzn-problems
+          path: mzn-problems
+      - name: Compile aries_fzn
+        run: |
+          cd aries/aries_fzn
+          cargo build --release
+      - name: Run mznb
+        run: |
+          cd mzn-problems
+          python mznb.py test --timeout 2 -r problems
 
   unified-planning-api:
     name: Unified Planning API
@@ -119,6 +154,7 @@ jobs:
         lints,
         unit-tests,
         integration-tests,
+        minizinc-tests,
         unified-planning-api,
         unified-planning-integration,
         ipc-tests,

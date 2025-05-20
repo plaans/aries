@@ -535,12 +535,40 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     /// Enumerates all possible values for the given variables.
-    /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input
+    /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input.
     ///
     /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
     ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
     ///  needed for something else.
     pub fn enumerate(&mut self, variables: &[VarRef]) -> Result<Vec<Vec<IntCst>>, Exit> {
+        let mut valid_assignments = Vec::with_capacity(64);
+
+        // If trivially UNSAT
+        if self.post_constraints().is_err() {
+            return Ok(valid_assignments);
+        }
+
+        let on_new_solution = |domains: &SavedAssignment| {
+            let assignment = variables.iter().map(|var| domains.lb(*var)).collect();
+            valid_assignments.push(assignment);
+        };
+
+        self.enumerate_with(variables, on_new_solution)?;
+        Ok(valid_assignments)
+    }
+
+    /// Enumerates all possible values for the given variables.
+    /// Each time a new solution is found the callback is called.
+    /// Return `true` if the solver found a solution, `false` otherwise.
+    ///
+    /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
+    ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
+    ///  needed for something else.
+    pub fn enumerate_with(
+        &mut self,
+        variables: &[VarRef],
+        mut on_new_solution: impl FnMut(&SavedAssignment),
+    ) -> Result<bool, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         debug_assert!(
             {
@@ -553,31 +581,37 @@ impl<Lbl: Label> Solver<Lbl> {
             "Some optional variables without there presence variable"
         );
 
-        let mut valid_assignments = Vec::with_capacity(64);
+        let mut sat = false;
+
+        // If trivially UNSAT
         if self.post_constraints().is_err() {
-            // Trivially UNSAT, return the empty vec of valid assignments
-            return Ok(valid_assignments);
+            return Ok(sat);
         }
         loop {
             match self.search()? {
-                SearchResult::Unsat(_) => return Ok(valid_assignments),
+                SearchResult::Unsat(_) => return Ok(sat),
                 SearchResult::AtSolution => {
-                    // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
-                    let mut assignment = Vec::with_capacity(variables.len());
+                    // Solution found
+                    sat = true;
+
+                    // Record the solution
+                    let solution = Arc::new(self.model.state.clone());
+
+                    // Add a clause forbidding it in future solutions
                     let mut clause = Vec::with_capacity(variables.len() * 2);
                     for v in variables {
-                        let (val, _) = self.model.state.bounds(*v);
-                        assignment.push(val);
+                        let (val, _) = solution.bounds(*v);
                         clause.push(Lit::lt(*v, val));
                         clause.push(Lit::gt(*v, val));
                     }
-                    valid_assignments.push(assignment);
+
+                    on_new_solution(&solution);
 
                     if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
                         self.reasoners.sat.add_clause(clause);
                     } else {
-                        return Ok(valid_assignments);
+                        return Ok(sat);
                     }
                 }
                 SearchResult::ExternalSolution(_) => panic!(),

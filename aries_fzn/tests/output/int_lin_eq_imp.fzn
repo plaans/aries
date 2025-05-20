@@ -1,0 +1,5 @@
+var 3..4: x:: output_var;
+var 4..5: y:: output_var;
+var bool: r:: output_var;
+constraint int_lin_eq_imp([3,2], [x,y], 20, r);
+solve satisfy;
