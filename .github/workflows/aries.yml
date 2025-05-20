@@ -4,7 +4,7 @@ on: push
 
 env:
   CARGO_TERM_COLOR: always
-  MZN_SOLVER_PATH: $GITHUB_WORKSPACE/aries/aries_fzn/share"
+  MZN_SOLVER_PATH: "$GITHUB_WORKSPACE/aries/aries_fzn/share"
 
 jobs:
   unit-tests:
@@ -75,6 +75,7 @@ jobs:
           sudo apt-get install minizinc
           minizinc --version
           minizinc --solvers
+          printenv MZN_SOLVER_PATH
       - name: Checkout mzn-problems
         uses: actions/checkout@v3
         with:
