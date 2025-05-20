@@ -73,6 +73,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install minizinc
+          minizinc --version
+          minizinc --solvers
       - name: Checkout mzn-problems
         uses: actions/checkout@v3
         with:
@@ -85,7 +87,7 @@ jobs:
       - name: Run mznb
         run: |
           cd mzn-problems
-          python mznb.py test -r problems
+          python mznb.py test --timeout 2 -r problems
 
   unified-planning-api:
     name: Unified Planning API
