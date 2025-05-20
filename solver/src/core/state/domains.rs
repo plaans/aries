@@ -213,9 +213,9 @@ impl Domains {
     /// The function returns:
     ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain.
     ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
-    ///     provided bound is less constraining than the existing one.
+    ///    provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
-    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_lb(&mut self, var: impl Into<SignedVar>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         // var >= lb   <=>    -var <= -lb
@@ -229,9 +229,9 @@ impl Domains {
     /// The function returns:
     ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain
     ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
-    ///     provided bound is less constraining than the existing one.
+    ///    provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
-    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_upper_bound(var.into(), new_ub, cause)
