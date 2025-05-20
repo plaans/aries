@@ -5,8 +5,9 @@ use aries::core::VarRef;
 use aries::model::lang::linear::NFLinearSumItem;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::LinNe;
 use crate::aries::Post;
+use crate::aries::constraint::LinNe;
+use crate::fzn::Fzn;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
@@ -15,7 +16,6 @@ use crate::fzn::parser::vec_int_from_expr;
 use crate::fzn::parser::vec_var_int_from_expr;
 use crate::fzn::types::Int;
 use crate::fzn::var::VarInt;
-use crate::fzn::Fzn;
 
 /// Integer linear not equal constraint.
 ///

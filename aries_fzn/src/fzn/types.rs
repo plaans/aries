@@ -11,9 +11,5 @@ pub type Int = IntCst;
 
 /// Convert the given boolean to [Int].
 pub fn as_int(b: bool) -> Int {
-    if b {
-        1
-    } else {
-        0
-    }
+    if b { 1 } else { 0 }
 }

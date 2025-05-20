@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
-use aries::core::state::Domains;
 use aries::core::IntCst;
 use aries::core::VarRef;
+use aries::core::state::Domains;
 use aries::model::Model as AriesModel;
-use aries::solver::search::default_brancher;
 use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
+use aries::solver::search::default_brancher;
 
+use crate::aries::Post;
 use crate::aries::config::Brancher;
 use crate::aries::constraint::InSet;
-use crate::aries::Post;
 use crate::fzn::constraint::Constraint as FznConstraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::domain::BoolDomain;

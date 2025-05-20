@@ -8,9 +8,9 @@ use clap::Parser;
 
 use crate::aries::Config;
 use crate::aries::Solver;
+use crate::fzn::Fzn;
 use crate::fzn::parser::parse_model;
 use crate::fzn::solution::make_output_flow;
-use crate::fzn::Fzn;
 
 /// Command line arguments.
 #[derive(Parser, Debug)]

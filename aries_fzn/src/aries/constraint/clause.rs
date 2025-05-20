@@ -1,8 +1,8 @@
 use aries::core::Lit;
-use aries::model::lang::expr::or;
-use aries::model::lang::BVar;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::BVar;
+use aries::model::lang::expr::or;
 
 use crate::aries::Post;
 

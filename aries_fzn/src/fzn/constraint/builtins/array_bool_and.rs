@@ -5,15 +5,15 @@ use aries::core::VarRef;
 use aries::model::lang::BVar;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::AndReif;
 use crate::aries::Post;
+use crate::aries::constraint::AndReif;
+use crate::fzn::Fzn;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
 use crate::fzn::parser::var_bool_from_expr;
 use crate::fzn::parser::vec_var_bool_from_expr;
 use crate::fzn::var::VarBool;
-use crate::fzn::Fzn;
 
 /// Boolean arrray and constraint.
 ///

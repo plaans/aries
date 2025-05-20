@@ -3,11 +3,13 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
-use anyhow::Result;
 
+use crate::fzn::Fzn;
+use crate::fzn::Name;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::domain::BoolDomain;
 use crate::fzn::domain::IntDomain;
@@ -26,8 +28,6 @@ use crate::fzn::var::VarBool;
 use crate::fzn::var::VarBoolArray;
 use crate::fzn::var::VarInt;
 use crate::fzn::var::VarIntArray;
-use crate::fzn::Fzn;
-use crate::fzn::Name;
 
 /// Flatzinc model in memory.
 ///
@@ -571,9 +571,11 @@ mod tests {
         let _x = model
             .new_var_bool(BoolDomain::Both, "x".to_string(), false)
             .unwrap();
-        assert!(model
-            .new_var_bool(BoolDomain::Both, "x".to_string(), false)
-            .is_err());
+        assert!(
+            model
+                .new_var_bool(BoolDomain::Both, "x".to_string(), false)
+                .is_err()
+        );
         assert!(model.new_par_int("x".to_string(), 5).is_err());
     }
 }

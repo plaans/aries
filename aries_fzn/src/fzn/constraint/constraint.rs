@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use aries::core::VarRef;
 
 use crate::aries::Post;
-use crate::fzn::constraint::builtins::*;
 use crate::fzn::constraint::Encode;
+use crate::fzn::constraint::builtins::*;
 
 #[derive(Clone, Debug)]
 pub enum Constraint {

@@ -1,10 +1,10 @@
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-use crate::fzn::domain::BoolDomain;
-use crate::fzn::domain::IntDomain;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
+use crate::fzn::domain::BoolDomain;
+use crate::fzn::domain::IntDomain;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 

@@ -6,14 +6,14 @@ use aries::model::lang::BVar;
 use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::EqReif;
 use crate::aries::Post;
+use crate::aries::constraint::EqReif;
+use crate::fzn::Fzn;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
 use crate::fzn::parser::var_bool_from_expr;
 use crate::fzn::var::VarBool;
-use crate::fzn::Fzn;
 
 /// Reified boolean equality constraint.
 ///

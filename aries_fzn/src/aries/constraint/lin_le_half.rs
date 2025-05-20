@@ -1,13 +1,13 @@
-use aries::core::state::Term;
-use aries::core::IntCst;
 use aries::core::INT_CST_MAX;
-use aries::model::lang::linear::NFLinearSumItem;
-use aries::model::lang::BVar;
+use aries::core::IntCst;
+use aries::core::state::Term;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::BVar;
+use aries::model::lang::linear::NFLinearSumItem;
 
-use crate::aries::constraint::LinLe;
 use crate::aries::Post;
+use crate::aries::constraint::LinLe;
 
 /// Half reified linear less or equal constraint.
 ///

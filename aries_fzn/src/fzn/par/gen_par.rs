@@ -1,9 +1,9 @@
 use std::hash::Hash;
 
-use crate::fzn::types::Int;
 use crate::fzn::Fzn;
+use crate::fzn::types::Int;
 
-#[derive(Eq, Hash, Debug)]
+#[derive(Eq, Debug)]
 pub struct GenPar<T> {
     name: String,
     value: T,
@@ -34,6 +34,13 @@ impl<T: PartialEq> PartialEq for GenPar<T> {
             "same name but different values",
         );
         self.name == other.name
+    }
+}
+
+// Remark: PartialEq is only needed for the debug assert
+impl<T> Hash for GenPar<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
     }
 }
 

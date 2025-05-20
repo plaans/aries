@@ -1,7 +1,7 @@
-use aries::model::lang::expr::eq;
-use aries::model::lang::IVar;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::IVar;
+use aries::model::lang::expr::eq;
 
 use crate::aries::Post;
 

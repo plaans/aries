@@ -1,7 +1,7 @@
+use aries::solver::search::SearchControl;
 use aries::solver::search::activity::ActivityBrancher;
 use aries::solver::search::activity::BranchingParams;
 use aries::solver::search::combinators::RoundRobin;
-use aries::solver::search::SearchControl;
 use clap::ValueEnum;
 
 use crate::aries::Solver;

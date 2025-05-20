@@ -6,10 +6,10 @@
 
 use aries::core::IntCst;
 use aries::core::VarRef;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::Model;
 use aries::model::lang::BVar;
 use aries::model::lang::IVar;
-use aries::model::Model;
+use aries::model::lang::linear::NFLinearSumItem;
 use aries::solver::Solver;
 use itertools::Itertools;
 
