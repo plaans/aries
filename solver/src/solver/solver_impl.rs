@@ -135,10 +135,18 @@ impl<Lbl: Label> Solver<Lbl> {
         self.model.reify(expr)
     }
 
+    /// Returns a new literal that, if set to true, will force the given expression to be true.
+    /// This is done by posting a half-reified constraint.
+    ///
+    /// Important: calling the function twice with the same expression will return the same literal.
+    pub fn half_reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        self.model.half_reify(expr)
+    }
+
     /// Immediately adds the given constraint to the appropriate reasoner.
     /// Returns an error if the model become invalid as a result.
     fn post_constraint(&mut self, constraint: &Constraint) -> Result<(), InvalidUpdate> {
-        let Constraint::HReified(expr, value) = constraint;
+        let Constraint::HalfReified(expr, value) = constraint;
         let value = *value;
         assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
         let scope = self.model.presence_literal(value.variable());
@@ -232,7 +240,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 let handled = match lin.sum.len() {
                     0 => {
                         // Check that the constant of the constraint is positive.
-                        self.post_constraint(&Constraint::HReified(
+                        self.post_constraint(&Constraint::HalfReified(
                             ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
                             value,
                         ))?;
@@ -256,7 +264,7 @@ impl<Lbl: Label> Solver<Lbl> {
                             let ub = lin.upper_bound / elem.factor.abs();
                             let lit = svar.leq(ub);
 
-                            self.post_constraint(&Constraint::HReified(ReifExpr::Lit(lit), value))?;
+                            self.post_constraint(&Constraint::HalfReified(ReifExpr::Lit(lit), value))?;
                             true
                         }
                     }
@@ -272,7 +280,7 @@ impl<Lbl: Label> Solver<Lbl> {
                             let b = if fst.factor > 0 { fst } else { snd };
                             let a = if fst.factor < 0 { fst } else { snd };
                             let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
-                            self.post_constraint(&Constraint::HReified(ReifExpr::MaxDiff(diff), value))?;
+                            self.post_constraint(&Constraint::HalfReified(ReifExpr::MaxDiff(diff), value))?;
                             true
                         }
                     }
@@ -352,11 +360,11 @@ impl<Lbl: Label> Solver<Lbl> {
                     // alt.cst <= a.main - alt.var <= alt.cst
                     // -alt.cst >= alt.var - a.main   &&   a.main - alt.var <= alt.cst
                     let alt_value = self.model.get_tautology_of_scope(alt_scope);
-                    self.post_constraint(&Constraint::HReified(
+                    self.post_constraint(&Constraint::HalfReified(
                         ReifExpr::MaxDiff(DifferenceExpression::new(alt.var, a.main, -alt.cst)),
                         alt_value,
                     ))?;
-                    self.post_constraint(&Constraint::HReified(
+                    self.post_constraint(&Constraint::HalfReified(
                         ReifExpr::MaxDiff(DifferenceExpression::new(a.main, alt.var, alt.cst)),
                         alt_value,
                     ))?;
@@ -410,7 +418,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     let alt_value = self.model.get_tautology_of_scope(item_scope);
                     if item.var.is_plus() {
                         assert!(a.lhs.is_plus());
-                        self.post_constraint(&Constraint::HReified(
+                        self.post_constraint(&Constraint::HalfReified(
                             ReifExpr::MaxDiff(DifferenceExpression::new(
                                 item.var.variable(),
                                 a.lhs.variable(),
@@ -425,7 +433,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         let y = a.lhs.variable();
                         // (-x) - (-y) <= -item.cst
                         // y - x <= -item.cst
-                        self.post_constraint(&Constraint::HReified(
+                        self.post_constraint(&Constraint::HalfReified(
                             ReifExpr::MaxDiff(DifferenceExpression::new(y, x, -item.cst)),
                             alt_value,
                         ))?;
