@@ -76,7 +76,7 @@ jobs:
       - name: Checkout mzn-problems
         uses: actions/checkout@v3
         with:
-          name: plaans/mzn-problems
+          repository: plaans/mzn-problems
           path: mzn-problems
       - name: Compile aries_fzn
         run: |
