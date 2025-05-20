@@ -628,13 +628,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     // enforce different : a < b || a > b
                     // if they are the same variable, there is nothing we can do to separate them
                     if a != b {
-                        clause.push(solver.reify(neq(a, b)));
+                        clause.push(solver.half_reify(neq(a, b)));
                     }
                 }
 
                 // Force assign effects to not overlaps.
-                clause.push(solver.reify(f_leq(eff_mutex_ends[&j], e1.transition_start)));
-                clause.push(solver.reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
+                clause.push(solver.half_reify(f_leq(eff_mutex_ends[&j], e1.transition_start)));
+                clause.push(solver.half_reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
 
                 // add coherence constraint
                 solver.enforce(or(clause.as_slice()), [p1, p2]);
@@ -688,17 +688,17 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     let a = cond.state_var.args[idx];
                     let b = eff.state_var.args[idx];
 
-                    supported_by_eff_conjunction.push(solver.reify(eq(a, b)));
+                    supported_by_eff_conjunction.push(solver.half_reify(eq(a, b)));
                 }
                 // same value
                 let condition_value = cond.value;
-                supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
+                supported_by_eff_conjunction.push(solver.half_reify(eq(condition_value, effect_value)));
 
                 // effect's persistence contains condition
-                supported_by_eff_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
-                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
+                supported_by_eff_conjunction.push(solver.half_reify(f_leq(eff.transition_end, cond.start)));
+                supported_by_eff_conjunction.push(solver.half_reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
 
-                let support_lit = solver.reify(and(supported_by_eff_conjunction));
+                let support_lit = solver.half_reify(and(supported_by_eff_conjunction));
                 encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
 
                 debug_assert!(solver
@@ -841,17 +841,17 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // the assignment is present
                 supported_by_conjunction.push(ass_prez);
                 // the assignment's persistence contains the condition
-                supported_by_conjunction.push(solver.reify(f_leq(ass.transition_end, cond.start)));
-                supported_by_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&ass_id])));
+                supported_by_conjunction.push(solver.half_reify(f_leq(ass.transition_end, cond.start)));
+                supported_by_conjunction.push(solver.half_reify(f_leq(cond.end, eff_mutex_ends[&ass_id])));
                 // the assignment and the condition have the same state variable
                 for idx in 0..cond.state_var.args.len() {
                     let a = cond.state_var.args[idx];
                     let b = ass.state_var.args[idx];
-                    supported_by_conjunction.push(solver.reify(eq(a, b)));
+                    supported_by_conjunction.push(solver.half_reify(eq(a, b)));
                 }
 
                 // compute the supported by literal
-                let supported_by = solver.reify(and(supported_by_conjunction));
+                let supported_by = solver.half_reify(and(supported_by_conjunction));
                 if solver.model.entails(!supported_by) {
                     continue;
                 }
@@ -881,14 +881,14 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     // the increase is present
                     active_inc_conjunction.push(inc_prez);
                     // the increase is after the assignment's transition end
-                    active_inc_conjunction.push(solver.reify(f_leq(ass.transition_end, inc.transition_start)));
+                    active_inc_conjunction.push(solver.half_reify(f_leq(ass.transition_end, inc.transition_start)));
                     // the increase is before the condition's start
-                    active_inc_conjunction.push(solver.reify(f_leq(inc.transition_end, cond.start)));
+                    active_inc_conjunction.push(solver.half_reify(f_leq(inc.transition_end, cond.start)));
                     // the increase and the condition have the same state variable
                     for idx in 0..cond.state_var.args.len() {
                         let a = cond.state_var.args[idx];
                         let b = inc.state_var.args[idx];
-                        active_inc_conjunction.push(solver.reify(eq(a, b)));
+                        active_inc_conjunction.push(solver.half_reify(eq(a, b)));
                     }
                     // each term of the increase value is present
                     for term in inc_val.terms() {
@@ -896,7 +896,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         active_inc_conjunction.push(p);
                     }
                     // compute wether the increase is active in the condition value
-                    let active_inc = solver.reify(and(active_inc_conjunction));
+                    let active_inc = solver.half_reify(and(active_inc_conjunction));
                     if solver.model.entails(!active_inc) {
                         continue;
                     }
@@ -929,7 +929,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             }
 
             for (inc_id, inc_support) in inc_support {
-                let supported_by_inc = solver.reify(or(inc_support));
+                let supported_by_inc = solver.half_reify(or(inc_support));
                 encoding.tag(supported_by_inc, Tag::Support(*cond_id, inc_id));
             }
 
@@ -984,13 +984,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         for idx in 0..cond.state_var.args.len() {
                             let a = cond.state_var.args[idx];
                             let b = eff.state_var.args[idx];
-                            non_overlapping.push(solver.reify(neq(a, b)));
+                            non_overlapping.push(solver.half_reify(neq(a, b)));
                         }
 
                         // or does not overlap the interval `[eff.transition_start, eff.transition_end[`
                         // note that the interval is left-inclusive to enforce the epsilon separation
-                        non_overlapping.push(solver.reify(f_lt(cond.end, eff.transition_start)));
-                        non_overlapping.push(solver.reify(f_leq(eff.transition_end, cond.start)));
+                        non_overlapping.push(solver.half_reify(f_lt(cond.end, eff.transition_start)));
+                        non_overlapping.push(solver.half_reify(f_leq(eff.transition_end, cond.start)));
 
                         solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
                         num_mutex_constraints += 1;

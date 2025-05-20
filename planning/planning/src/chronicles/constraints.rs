@@ -326,12 +326,12 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
             match var {
                 Atom::Sym(s) => {
                     let Cst::Sym(val) = val else { panic!() };
-                    supported_by_this_line.push(model.reify(eq(s, val)));
+                    supported_by_this_line.push(model.half_reify(eq(s, val)));
                 }
                 Atom::Int(var) => {
                     let Cst::Int(val) = val else { panic!() };
-                    supported_by_this_line.push(model.reify(leq(var, val)));
-                    supported_by_this_line.push(model.reify(geq(var, val)));
+                    supported_by_this_line.push(model.half_reify(leq(var, val)));
+                    supported_by_this_line.push(model.half_reify(geq(var, val)));
                 }
                 Atom::Bool(l) => {
                     let Cst::Bool(val) = val else { panic!() };
@@ -344,7 +344,7 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                 Atom::Fixed(_) => unimplemented!(),
             }
         }
-        let support = model.reify(and(supported_by_this_line.clone()));
+        let support = model.half_reify(and(supported_by_this_line.clone()));
         lines.push((support, values));
         if redundant_constraints {
             println!("  TABLE {support:?} {values:?}    {supported_by_this_line:?}");
@@ -362,13 +362,13 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
         let reif_eq = |var: Atom, val: Cst, model: &mut Model<L>| match var {
             Atom::Sym(s) => {
                 let Cst::Sym(val) = val else { panic!() };
-                model.reify(eq(s, val))
+                model.half_reify(eq(s, val))
             }
             Atom::Int(var) => {
                 let Cst::Int(val) = val else { panic!() };
-                let below = model.reify(leq(var, val));
-                let above = model.reify(geq(var, val));
-                model.reify(and([below, above]))
+                let below = model.half_reify(leq(var, val));
+                let above = model.half_reify(geq(var, val));
+                model.half_reify(and([below, above]))
             }
             Atom::Bool(l) => {
                 let Cst::Bool(val) = val else { panic!() };
