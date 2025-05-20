@@ -4,7 +4,7 @@ on: push
 
 env:
   CARGO_TERM_COLOR: always
-  MZN_SOLVER_PATH: "$GITHUB_WORKSPACE/aries/aries_fzn/share"
+  MZN_SOLVER_PATH: ${{github.workspace}}/aries/aries_fzn/share
 
 jobs:
   unit-tests:
