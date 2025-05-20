@@ -145,7 +145,7 @@ where
 ///  - incremental edge addition and consistency checking with @Cesta96
 ///  - undoing the latest changes
 ///  - providing explanation on inconsistency in the form of a culprit
-///         set of constraints
+///    set of constraints
 ///  - unifies new edges with previously inserted ones
 ///
 /// Once the network reaches an inconsistent state, the only valid operation

@@ -38,7 +38,7 @@ pub type ChronicleName = Vec<Atom>;
 ///  - `ivar` is an integer variable (possibly the `ZERO` variable)
 ///  - `icst` is an integer constant
 ///  - `denum` is an integer constant that fixes the resolution of time
-///     (and should be the same among all time expression)
+///    (and should be the same among all time expression)
 pub type Time = FAtom;
 
 pub trait Substitution {
