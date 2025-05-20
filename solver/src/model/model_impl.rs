@@ -380,6 +380,11 @@ impl<Lbl: Label> Model<Lbl> {
         self.reify_core(decomposed, false)
     }
 
+    pub fn half_reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        let decomposed = expr.decompose(self); // TODO: we do not need full decomposition
+        self.half_reify_core(decomposed)
+    }
+
     fn simplify(&self, expr: &mut ReifExpr) {
         let entailed = |lit| {
             if self.state.current_decision_level() == DecLvl::ROOT {
@@ -439,15 +444,10 @@ impl<Lbl: Label> Model<Lbl> {
     pub(crate) fn reify_core(&mut self, mut expr: ReifExpr, use_tautology: bool) -> Lit {
         self.simplify(&mut expr);
 
-        if let Some(l) = self.shape.expressions.interned(&expr) {
+        if let Some(l) = self.shape.expressions.interned_full(&expr) {
             l
         } else {
-            let scope = expr.scope(|var| self.state.presence(var));
-            let scope = scope.to_conjunction(
-                |l| self.shape.conjunctive_scopes.conjuncts(l),
-                |l| self.state.entails(l),
-            );
-            let scope = self.new_conjunctive_presence_variable(scope);
+            let scope = self.scope_lit_of(&expr);
             let lit = if use_tautology {
                 self.get_tautology_of_scope(scope)
             } else {
@@ -455,11 +455,37 @@ impl<Lbl: Label> Model<Lbl> {
                 self.shape.set_type(var, Type::Bool);
                 var.geq(1)
             };
-            self.shape.expressions.intern_as(expr.clone(), lit);
+            self.shape.expressions.intern_full_as(expr.clone(), lit);
             self.shape.add_reification_constraint(lit, expr);
 
             lit
         }
+    }
+    pub(crate) fn half_reify_core(&mut self, mut expr: ReifExpr) -> Lit {
+        self.simplify(&mut expr);
+
+        if let Some(l) = self.shape.expressions.interned_half(&expr) {
+            l
+        } else {
+            let scope = self.scope_lit_of(&expr);
+            let var = self.state.new_optional_var(0, 1, scope);
+            self.shape.set_type(var, Type::Bool);
+            let lit = var.geq(1);
+            self.shape.expressions.intern_half_as(expr.clone(), lit);
+            self.shape.add_half_reification_constraint(lit, expr);
+
+            lit
+        }
+    }
+
+    /// Returns a scope literal, that is true iff the expression is valid.
+    pub(crate) fn scope_lit_of(&mut self, expr: &ReifExpr) -> Lit {
+        let scope = expr.scope(|var| self.state.presence(var));
+        let scope = scope.to_conjunction(
+            |l| self.shape.conjunctive_scopes.conjuncts(l),
+            |l| self.state.entails(l),
+        );
+        self.new_conjunctive_presence_variable(scope)
     }
 
     /// Enforce the given expression to be true whenever all literals of the scope are true.
@@ -490,7 +516,7 @@ impl<Lbl: Label> Model<Lbl> {
         // retrieve or create an optional variable that is always true in the scope
         let tauto = self.get_tautology_of_scope(scope);
 
-        self.enforce_if(expr, tauto);
+        self.shape.add_half_reification_constraint(tauto, expr);
     }
 
     pub fn enforce_all<Expr: Reifiable<Lbl>>(
@@ -503,7 +529,11 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    fn enforce_if(&mut self, expr: ReifExpr, enabler: Lit) {
+    /// Adds a conditional constraint (aka, half-reified constraint)
+    /// `enabler => expr`
+    pub fn enforce_if<Expr: Reifiable<Lbl>>(&mut self, enabler: Lit, expr: Expr) {
+        let mut expr = expr.decompose(self);
+        self.simplify(&mut expr);
         self.shape.add_half_reification_constraint(enabler, expr);
     }
 
@@ -525,12 +555,12 @@ impl<Lbl: Label> Model<Lbl> {
             "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
         );
 
-        if let Some(reified) = self.shape.expressions.interned(&expr) {
+        if let Some(reified) = self.shape.expressions.interned_full(&expr) {
             // expression already reified, unify it with expected value
             self.bind_literals(value, reified)
         } else if expression_scope == self.presence_literal(value.variable()) {
             // not yet reified and compatible scopes, propose our literal as the reification
-            self.shape.expressions.intern_as(expr.clone(), value);
+            self.shape.expressions.intern_full_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
         } else {
             // not yet reified but our literal cannot be used directly because it has a different scope

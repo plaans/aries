@@ -134,6 +134,9 @@ impl<Lbl: Label> Solver<Lbl> {
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
         self.model.reify(expr)
     }
+    pub fn half_reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        self.model.half_reify(expr)
+    }
 
     /// Immediately adds the given constraint to the appropriate reasoner.
     /// Returns an error if the model become invalid as a result.
