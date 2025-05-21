@@ -13,11 +13,13 @@ use crate::solver::search::DecLvl;
 #[derive(Clone, Debug)]
 pub struct Dynamic {
     table: HashMap<VarRef, i32>,
+    period: u32,
+    countdown: u32,
 }
 
 impl Dynamic {
     pub fn new() -> Self {
-        Self { table: HashMap::new() }
+        Self { table: HashMap::new(), period: 5000, countdown: 5000 }
     }
 
     /// Return the score of the given variable
@@ -43,6 +45,22 @@ impl Dynamic {
         };
         self.bump(var, b);
     }
+
+    /// Decay the variable scores.
+    fn decay(&mut self) {
+        for score in self.table.values_mut() {
+            *score /= 2;
+        }
+    }
+
+    /// Decrement the countdown and decay if needed.
+    fn handle_decay(&mut self) {
+        self.countdown -= 1;
+        if self.countdown == 0 {
+            self.decay();
+            self.countdown = self.period;
+        }
+    }
 }
 
 impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
@@ -63,8 +81,12 @@ impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
         _explainer: &mut dyn Explainer,
         _backtrack_level: DecLvl,
     ) {
+        self.handle_decay();
         for lit in clause.literals() {
             self.handle(lit);
+        }
+        for lit in clause.resolved.literals() {
+            self.handle(&lit);
         }
     }
 }

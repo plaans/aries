@@ -46,7 +46,7 @@ impl Activity {
         }
     }
 
-    /// Increment the conflict counter and decay if needed.
+    /// Decrement the countdown and decay if needed.
     fn handle_decay(&mut self) {
         self.countdown -= 1;
         if self.countdown == 0 {
