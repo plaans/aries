@@ -103,8 +103,8 @@ pub fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
             .unwrap_or(&(Container::Base / VarType::Reification))
             .clone();
         let var = model.new_ivar(0, 1, lbl);
-        let eq0 = model.reify(eq(var, 0));
-        let eq1 = model.reify(eq(var, 1));
+        let eq0 = model.reify(eq(var, IntCst::from(0)));
+        let eq1 = model.reify(eq(var, IntCst::from(1)));
         model.enforce(implies(lit, eq1), []);
         model.enforce(implies(!lit, eq0), []);
         var
