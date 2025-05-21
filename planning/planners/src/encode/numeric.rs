@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use crate::encode::*;
 use crate::encoding::*;
 use crate::Solver;
+use aries::backtrack::Backtrack;
+use aries::backtrack::DecLvl;
 use aries::core::state::Conflict;
 use aries::core::*;
 use aries::model::extensions::AssignmentExt;
@@ -88,6 +90,7 @@ impl BorrowPattern {
 /// Multiply an integer atom with a literal.
 /// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
 pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+    debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
     if atom.var == IVar::ZERO {
         // Constant variable
@@ -117,6 +120,7 @@ pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
 /// Multiply a linear sum with a literal.
 /// The result is a linear sum evaluated to the sum if the literal is true, and to 0 otherwise.
 pub fn linear_sum_mul_lit(model: &mut Model, sum: LinearSum, lit: Lit) -> LinearSum {
+    debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     let cst = iatom_mul_lit(model, sum.constant().into(), lit);
     sum.terms()
         .iter()
