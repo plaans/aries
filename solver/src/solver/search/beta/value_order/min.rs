@@ -7,8 +7,8 @@ use crate::solver::search::beta::value_order::ValueOrder;
 #[derive(Clone, Default, Debug)]
 pub struct Min;
 
-impl ValueOrder for Min {
-    fn select<Lbl: Label>(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
+impl<Lbl: Label> ValueOrder<Lbl> for Min {
+    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
         let lb = model.state.lb(var);
         var.leq(lb)
     }

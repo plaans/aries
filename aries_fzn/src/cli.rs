@@ -4,6 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::bail;
+use aries::solver::search::beta::value_order::Dynamic;
 use aries::solver::search::beta::value_order::LowerHalf;
 use aries::solver::search::beta::value_order::Max;
 use aries::solver::search::beta::value_order::Min;
@@ -37,7 +38,10 @@ fn parse_value_order(s: &str) -> anyhow::Result<ValueOrderKind> {
         "max" => Ok(ValueOrderKind::Max(Max)),
         "lower-half" => Ok(ValueOrderKind::LowerHalf(LowerHalf)),
         "upper-half" => Ok(ValueOrderKind::UpperHalf(UpperHalf)),
-        _ => bail!("value orders are min, max, lower-half and upper-half"),
+        "dynamic" => Ok(ValueOrderKind::Dynamic(Dynamic::new())),
+        _ => bail!(
+            "value orders are min, max, lower-half, upper-half and dynamic"
+        ),
     }
 }
 

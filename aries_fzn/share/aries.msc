@@ -12,7 +12,7 @@
   ],
   "extraFlags": [
     ["var-order", "variable order", "opt:lexical:first-fail:acitivty", "lexical"],
-    ["value-order", "value order", "opt:min:max:lower-half:upper-half", "min"]
+    ["value-order", "value order", "opt:min:max:lower-half:upper-half:dynamic", "min"]
   ],
   "supportsMzn": false,
   "supportsFzn": true,

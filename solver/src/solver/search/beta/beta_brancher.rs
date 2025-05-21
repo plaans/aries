@@ -51,11 +51,7 @@ impl<Lbl: Label> SearchControl<Lbl> for BetaBrancher {
         explainer: &mut dyn Explainer,
         backtrack_level: DecLvl,
     ) {
-        match &mut self.var_order {
-            VarOrderKind::Activity(activity) => activity.conflict(clause, model, explainer, backtrack_level),
-            VarOrderKind::Lexical(lexical) => lexical.conflict(clause, model, explainer, backtrack_level),
-            VarOrderKind::FirstFail(first_fail) => first_fail.conflict(clause, model, explainer, backtrack_level),
-        }
+        self.var_order.conflict(clause, model, explainer, backtrack_level);
     }
 }
 

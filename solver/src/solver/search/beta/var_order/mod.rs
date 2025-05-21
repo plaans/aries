@@ -42,6 +42,20 @@ impl<Lbl: Label> VarOrder<Lbl> for VarOrderKind {
             VarOrderKind::FirstFail(first_fail) => first_fail.select(model),
         }
     }
+
+    fn conflict(
+        &mut self,
+        clause: &Conflict,
+        model: &Model<Lbl>,
+        explainer: &mut dyn Explainer,
+        backtrack_level: DecLvl,
+    ) {
+        match self {
+            VarOrderKind::Activity(activity) => activity.conflict(clause, model, explainer, backtrack_level),
+            VarOrderKind::Lexical(lexical) => lexical.conflict(clause, model, explainer, backtrack_level),
+            VarOrderKind::FirstFail(first_fail) => first_fail.conflict(clause, model, explainer, backtrack_level),
+        }
+    }
 }
 
 impl Default for VarOrderKind {
