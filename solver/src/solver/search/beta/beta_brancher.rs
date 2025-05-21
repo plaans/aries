@@ -52,6 +52,7 @@ impl<Lbl: Label> SearchControl<Lbl> for BetaBrancher {
         backtrack_level: DecLvl,
     ) {
         self.var_order.conflict(clause, model, explainer, backtrack_level);
+        self.value_order.conflict(clause, model, explainer, backtrack_level);
     }
 }
 
