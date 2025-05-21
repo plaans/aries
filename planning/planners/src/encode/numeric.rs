@@ -87,6 +87,30 @@ impl BorrowPattern {
     }
 }
 
+/// Convert a literal into a `IVar`.
+/// The result is a new `IVar` evaluated to 1 if the literal is true, and to 0 otherwise.
+pub fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
+    debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
+    if model.entails(lit) {
+        IVar::ONE
+    } else if model.entails(!lit) {
+        IVar::ZERO
+    } else if model.domain_of(lit.variable()) == (0, 1) {
+        IVar::new(lit.variable())
+    } else {
+        let lbl = model
+            .get_label(lit.variable())
+            .unwrap_or(&(Container::Base / VarType::Reification))
+            .clone();
+        let var = model.new_ivar(0, 1, lbl);
+        let eq0 = model.reify(eq(var, 0));
+        let eq1 = model.reify(eq(var, 1));
+        model.enforce(implies(lit, eq1), []);
+        model.enforce(implies(!lit, eq0), []);
+        var
+    }
+}
+
 /// Multiply an integer atom with a literal.
 /// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
 pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
@@ -94,13 +118,10 @@ pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
     debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
     if atom.var == IVar::ZERO {
         // Constant variable
-        if atom.shift == 0 {
+        if atom.shift == 0 || model.entails(!lit) {
             LinearSum::zero()
-        } else if model.entails(lit) {
-            LinearSum::of(vec![atom.shift])
         } else {
-            let prez = IVar::new(lit.variable());
-            LinearSum::of(vec![prez * atom.shift])
+            LinearSum::of(vec![lit_to_ivar(model, lit) * atom.shift])
         }
     } else {
         // Real variable
