@@ -20,7 +20,7 @@ pub use crate::solver::search::beta::value_order::upper_half::UpperHalf;
 
 pub trait ValueOrder<Lbl: Label> {
     /// Return the literal to decide for the given variable.
-    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit;
+    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit;
 
     /// Function called each time a conflict occurs.
     fn conflict(
@@ -43,7 +43,7 @@ pub enum ValueOrderKind {
 }
 
 impl<Lbl: Label> ValueOrder<Lbl> for ValueOrderKind {
-    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
         debug_assert!(!model.state.is_bound(var));
         match self {
             ValueOrderKind::Min(min) => min.select(var, model),

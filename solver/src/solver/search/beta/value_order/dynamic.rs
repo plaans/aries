@@ -15,16 +15,24 @@ pub struct Dynamic {
     table: HashMap<VarRef, i32>,
     period: u32,
     countdown: u32,
+    zero_pos: bool
 }
 
 impl Dynamic {
-    pub fn new() -> Self {
-        Self { table: HashMap::new(), period: 5000, countdown: 5000 }
+    pub fn new(period: u32) -> Self {
+        assert!(period >= 1);
+        Self { table: HashMap::new(), period, countdown: period, zero_pos: false }
     }
 
     /// Return the score of the given variable
     fn get(&self, var: &VarRef) -> i32 {
         *self.table.get(var).unwrap_or(&0)
+    }
+
+    /// Return true if zero should be considered positive.
+    fn zero_is_pos(&mut self) -> bool {
+        self.zero_pos = !self.zero_pos;
+        self.zero_pos
     }
 
     /// Add the given value to the variable score.
@@ -64,12 +72,13 @@ impl Dynamic {
 }
 
 impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
-    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
-        if self.get(&var) < 0 {
-            let lb = model.state.lb(var);
+    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
+        let score = self.get(&var);
+        let (lb, ub) = model.state.bounds(var);
+        let positive = score > 0 || (score == 0 && self.zero_is_pos());
+        if positive {
             var.leq(lb)
         } else {
-            let ub = model.state.ub(var);
             var.geq(ub)
         }
     }
@@ -88,6 +97,12 @@ impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
         for lit in clause.resolved.literals() {
             self.handle(&lit);
         }
+    }
+}
+
+impl Default for Dynamic {
+    fn default() -> Self {
+        Self::new(200)
     }
 }
 
@@ -116,7 +131,7 @@ mod tests {
     #[test]
     fn handle() {
         let (_model, x, y, z) = basic_model();
-        let mut dynamic = Dynamic::new();
+        let mut dynamic = Dynamic::default();
         dynamic.handle(&x.geq(0));
         dynamic.handle(&y.leq(6));
         assert_eq!(dynamic.get(&x), -1);
@@ -127,7 +142,7 @@ mod tests {
     #[test]
     fn select() {
         let (model, x, y, z) = basic_model();
-        let mut dynamic = Dynamic::new();
+        let mut dynamic = Dynamic::default();
         dynamic.bump(x, -1);
         dynamic.bump(y, 1);
         assert_eq!(dynamic.select(x, &model), x.leq(0));

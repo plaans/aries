@@ -8,7 +8,7 @@ use crate::solver::search::beta::value_order::ValueOrder;
 pub struct LowerHalf;
 
 impl<Lbl: Label> ValueOrder<Lbl> for LowerHalf {
-    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
         let (lb, ub) = model.state.bounds(var);
         debug_assert!(lb < ub);
         let mid = (lb + ub) / 2;

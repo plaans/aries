@@ -10,7 +10,7 @@ use crate::solver::search::beta::value_order::ValueOrder;
 pub struct UpperHalf;
 
 impl<Lbl: Label> ValueOrder<Lbl> for UpperHalf {
-    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
         let (lb, ub) = model.state.bounds(var);
         let (mid, rem) = (lb + ub).div_mod_floor(&2);
         var.geq(mid + rem)

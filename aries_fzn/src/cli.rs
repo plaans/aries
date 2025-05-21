@@ -4,6 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::bail;
+use aries::solver::search::beta::restart::Never;
+use aries::solver::search::beta::restart::RestartKind;
 use aries::solver::search::beta::value_order::Dynamic;
 use aries::solver::search::beta::value_order::LowerHalf;
 use aries::solver::search::beta::value_order::Max;
@@ -38,10 +40,18 @@ fn parse_value_order(s: &str) -> anyhow::Result<ValueOrderKind> {
         "max" => Ok(ValueOrderKind::Max(Max)),
         "lower-half" => Ok(ValueOrderKind::LowerHalf(LowerHalf)),
         "upper-half" => Ok(ValueOrderKind::UpperHalf(UpperHalf)),
-        "dynamic" => Ok(ValueOrderKind::Dynamic(Dynamic::new())),
+        "dynamic" => Ok(ValueOrderKind::Dynamic(Dynamic::default())),
         _ => bail!(
             "value orders are min, max, lower-half, upper-half and dynamic"
         ),
+    }
+}
+
+fn parse_restart(s: &str) -> anyhow::Result<RestartKind> {
+    match s {
+        "geometric" => Ok(RestartKind::Geometric(Default::default())),
+        "never" => Ok(RestartKind::Never(Never)),
+        _ => bail!("restart policies are geometric, never"),
     }
 }
 
@@ -68,6 +78,10 @@ pub struct Args {
     /// Value order.
     #[arg(long, default_value = "min", value_name = "ORDER", value_parser = parse_value_order)]
     pub value_order: ValueOrderKind,
+
+    /// Restart policy.
+    #[arg(long, default_value = "geometric", value_parser = parse_restart)]
+    pub restart: RestartKind,
 
     /// Flatzinc model.
     #[arg(value_name = "FILE")]
@@ -142,8 +156,11 @@ pub fn run(args: &Args) -> anyhow::Result<()> {
 
     let mut solver = Solver::new(model);
 
-    let brancher =
-        BetaBrancher::new(args.var_order.clone(), args.value_order.clone());
+    let brancher = BetaBrancher::new(
+        args.var_order.clone(),
+        args.value_order.clone(),
+        args.restart.clone(),
+    );
     solver.set_brancher(brancher.clone_to_box());
 
     if print_all {

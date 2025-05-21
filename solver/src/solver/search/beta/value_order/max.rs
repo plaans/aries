@@ -8,7 +8,7 @@ use crate::solver::search::beta::value_order::ValueOrder;
 pub struct Max;
 
 impl<Lbl: Label> ValueOrder<Lbl> for Max {
-    fn select(&self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
         let ub = model.state.ub(var);
         var.geq(ub)
     }
