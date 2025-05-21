@@ -85,6 +85,45 @@ impl BorrowPattern {
     }
 }
 
+/// Multiply an integer atom with a literal.
+/// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
+pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+    debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
+    if atom.var == IVar::ZERO {
+        // Constant variable
+        if atom.shift == 0 {
+            LinearSum::zero()
+        } else if model.entails(lit) {
+            LinearSum::of(vec![atom.shift])
+        } else {
+            let prez = IVar::new(lit.variable());
+            LinearSum::of(vec![prez * atom.shift])
+        }
+    } else {
+        // Real variable
+        let lb = model.lower_bound(atom.var);
+        let ub = model.upper_bound(atom.var);
+        let lbl = model
+            .get_label(atom.var)
+            .unwrap_or(&(Container::Base / VarType::Reification))
+            .clone();
+        let var = model.new_ivar(min(lb, 0), max(ub, 0), lbl);
+        model.enforce(EqVarMulLit::new(var, atom.var, lit), []);
+        // Recursive call to handle the constant part of the atom
+        iatom_mul_lit(model, atom.shift.into(), lit) + var
+    }
+}
+
+/// Multiply a linear sum with a literal.
+/// The result is a linear sum evaluated to the sum if the literal is true, and to 0 otherwise.
+pub fn linear_sum_mul_lit(model: &mut Model, sum: LinearSum, lit: Lit) -> LinearSum {
+    let cst = iatom_mul_lit(model, sum.constant().into(), lit);
+    sum.terms()
+        .iter()
+        .map(|term| iatom_mul_lit(model, term.var().into(), lit) * term.factor())
+        .fold(cst, |acc, x| acc + x)
+}
+
 pub fn add_numeric_constraints(
     solver: &mut Solver,
     pb: &FiniteProblem,
