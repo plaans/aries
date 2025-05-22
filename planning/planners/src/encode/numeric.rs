@@ -654,6 +654,8 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
 
     // Find the fluents that are candidates for borrow patterns.
     // A fluent is a candidate for a borrow pattern if the only assignment is done at the initial state.
+    tracing::span!(tracing::Level::TRACE, "find borrow patterns");
+
     let fluents_with_assign_out_init = pb
         .chronicles
         .iter()
@@ -671,7 +673,8 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
         .collect_vec();
 
     // Collect all the borrow patterns from the chronicles.
-    pb.chronicles
+    let borrows = pb
+        .chronicles
         .iter()
         .enumerate()
         .flat_map(|(instance_id, ch)| {
@@ -730,7 +733,11 @@ fn find_borrow_patterns(pb: &FiniteProblem) -> Vec<BorrowPattern> {
                 })
                 .collect_vec()
         })
-        .collect_vec()
+        .collect_vec();
+
+    let num_borrow_patterns = borrows.len();
+    tracing::debug!(%num_borrow_patterns);
+    borrows
 }
 
 fn add_borrow_pattern_constraints(
@@ -738,9 +745,9 @@ fn add_borrow_pattern_constraints(
     pb: &FiniteProblem,
     borrow_patterns: &[BorrowPattern],
 ) -> Result<(), Conflict> {
-    let span = tracing::span!(tracing::Level::TRACE, "borrow patterns");
+    let span = tracing::span!(tracing::Level::TRACE, "borrow patterns constraints");
     let _span = span.enter();
-    let mut num_borrow_patterns = 0;
+    let mut num_borrow_patterns_contraints = 0;
 
     let initial_values_map = pb
         .chronicles
@@ -839,11 +846,11 @@ fn add_borrow_pattern_constraints(
         if set_constraint {
             solver.model.enforce(sum.clone().leq(ub), [p1.presence]);
             solver.model.enforce(sum.clone().geq(lb), [p1.presence]);
-            num_borrow_patterns += 1;
+            num_borrow_patterns_contraints += 1;
         }
     }
 
-    tracing::debug!(%num_borrow_patterns);
+    tracing::debug!(%num_borrow_patterns_contraints);
     solver.propagate()?;
     Ok(())
 }
