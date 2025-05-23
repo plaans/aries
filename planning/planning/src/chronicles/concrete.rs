@@ -13,7 +13,7 @@ use aries::model::lang::*;
 /// A state variable e.g. `(location-of robot1)` where:
 ///  - the fluent is the name of the state variable (e.g. `location-of`) and defines its type.
 ///  - the remaining elements are its parameters (e.g. `robot1`).
-#[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct StateVar {
     pub fluent: Arc<Fluent>,
     pub args: Vec<SAtom>,
@@ -290,7 +290,7 @@ impl Substitute for StateVar {
 /// Exactly at time `transition_end`, the state variable `state_var` is update with `value`
 /// (assignment or increase based on `operation`).
 /// For assignment effects, this value will persist until another assignment effect starts its own transition.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Effect {
     /// Time at which the transition to the new value will start
     pub transition_start: Time,

@@ -264,7 +264,7 @@ try:
                     # Solved problem
                     if result.status in VALID_STATUS:
                         write_line("\nValidating plan by Val", cyan=True)
-                        out_path = Path(output.name)
+                        out_path = Path(out_file).with_stem((Path(out_file).stem + "_val"))
                         extract_plan_for_val(result.plan, domain, problem, out_path)
                         if validate_plan_with_val(problem, domain, out_path):
                             write_line("Plan is valid", bold=True, green=True)
