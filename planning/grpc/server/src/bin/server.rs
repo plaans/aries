@@ -223,7 +223,7 @@ fn solve_blocking(
                 engine: Some(aries_grpc_server::serialize::engine()),
             })
         }
-        SolverResult::Unsat => {
+        SolverResult::Unsat(_) => {
             println!("************* NO PLAN **************");
             Ok(up::PlanGenerationResult {
                 status: up::plan_generation_result::Status::UnsolvableIncompletely as i32,
