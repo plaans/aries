@@ -89,8 +89,13 @@ impl BorrowPattern {
 
 /// Convert a literal into a `IVar`.
 /// The result is a new `IVar` evaluated to 1 if the literal is true, and to 0 otherwise.
-pub fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
+fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
+    debug_assert_eq!(
+        model.presence_literal(lit.variable()),
+        Lit::TRUE,
+        "Optional variables not supported by this function"
+    );
     if model.entails(lit) {
         IVar::ONE
     } else if model.entails(!lit) {
@@ -103,8 +108,8 @@ pub fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
             .unwrap_or(&(Container::Base / VarType::Reification))
             .clone();
         let var = model.new_ivar(0, 1, lbl);
-        let eq0 = model.reify(eq(var, IntCst::from(0)));
-        let eq1 = model.reify(eq(var, IntCst::from(1)));
+        let eq0 = var.leq(0);
+        let eq1 = var.geq(1);
         model.enforce(implies(lit, eq1), []);
         model.enforce(implies(!lit, eq0), []);
         var
