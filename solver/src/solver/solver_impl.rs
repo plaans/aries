@@ -578,15 +578,14 @@ impl<Lbl: Label> Solver<Lbl> {
                     .filter(|p| *p != Lit::TRUE)
                     .all(|p| variables.contains(&p.variable()))
             },
-            "Some optional variables without there presence variable"
+            "At least one optional variable without its presence variable"
         );
 
-        let mut sat = false;
-
-        // If trivially UNSAT
+        // Post constraints and exit if trivially UNSAT
         if self.post_constraints().is_err() {
-            return Ok(sat);
+            return Ok(false);
         }
+        let mut sat = false;
         loop {
             match self.search()? {
                 SearchResult::Unsat(_) => return Ok(sat),
@@ -673,7 +672,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///     (typically to set up new upper bonds before calling search again).
     ///
     /// Invariant: when exiting, the `search` method will always let the solver in a state where all reasoners are fully propagated.
-    /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any ddecision level).
+    /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any decision level).
     fn search(&mut self) -> Result<SearchResult, Exit> {
         assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
