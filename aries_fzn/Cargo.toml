@@ -1,0 +1,17 @@
+[package]
+name = "aries_fzn"
+authors = ["Titouan Seraud <titouan.seraud@laas.fr>"]
+version = "0.1.0"
+edition = "2024"
+readme = "README.md"
+
+[dependencies]
+anyhow = { workspace = true }
+aries = { path = "../solver" }
+clap = { workspace = true }
+flatzinc = "0.3.21"
+itertools = { workspace = true }
+transitive = "1.1.0"
+
+[dev-dependencies]
+test_each_file = "0.3.4"

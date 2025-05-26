@@ -1,0 +1,22 @@
+{
+    "id": "fr.laas.aries",
+    "name": "Aries",
+    "description": "Aries, Lazy-Clause-Generation CP solver",
+    "version": "<dev-version>",
+    "mznlib": "./aries",
+    "executable": "../../target/release/aries_fzn",
+    "tags": ["cp","int", "lcg"],
+    "stdFlags": [
+      "-a",
+      "-i"
+    ],
+    "extraFlags": [
+      ["config", "solver configuration", "opt:activity-min:activity-max:activity-min-max", "activity-min"]
+    ],
+    "supportsMzn": false,
+    "supportsFzn": true,
+    "needsSolns2Out": true,
+    "needsMznExecutable": false,
+    "needsStdlibDir": false,
+    "isGUIApplication": false
+  }
