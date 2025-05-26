@@ -1,11 +1,11 @@
 {
     "id": "fr.laas.aries",
     "name": "Aries",
-    "description": "CP solver from the LAAS-CNRS",
-    "version": "0.1.0",
+    "description": "Aries, Lazy-Clause-Generation CP solver",
+    "version": "<dev-version>",
     "mznlib": "./aries",
     "executable": "../../target/release/aries_fzn",
-    "tags": ["cp","int"],
+    "tags": ["cp","int", "lcg"],
     "stdFlags": [
       "-a",
       "-i"
