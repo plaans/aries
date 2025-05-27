@@ -702,17 +702,13 @@ impl Domains {
     /// For a literal `l` that is true in the current state, returns a list of entailing literals `l_1 ... l_n`
     /// that forms an explanation `(l_1 & ... l_n) => l`.
     /// Returns None if the literal is a decision.
-    ///
-    /// Limitation: differently from the explanations provided in the main clause construction loop,
-    /// the explanation will not be built in the exact state where the inference was made (which might be problematic
-    /// for some reasoners).
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));
         let event = if let Some(event) = self.implying_event(literal) {
             event
         } else {
-            // event is always true (entailed at root), and does have any implying literals
+            // event is always true (entailed at root), and thus does not have any implying literals
             return Some(Vec::new());
         };
         let event = self.get_event(event);
@@ -732,8 +728,10 @@ impl Domains {
                 &mut explanation,
                 explainer,
             );
-
-            Some(explanation.lits)
+            // filter out tautologica literals
+            let mut lits = explanation.lits;
+            lits.retain(|l| *l != Lit::TRUE && self.implying_event(*l).is_some());
+            Some(lits)
         }
     }
 
