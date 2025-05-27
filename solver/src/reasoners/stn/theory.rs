@@ -1377,4 +1377,55 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_dynamic_edges() -> Result<(), Contradiction> {
+        let max = 100;
+        let stn = &mut Stn::new();
+        let a = stn.add_timepoint(0, 0);
+        let b = stn.add_timepoint(0, 1000000);
+
+        let ub = stn.add_timepoint(0, max);
+        stn.add_dynamic_edge(a, b, SignedVar::plus(ub), 2);
+
+        stn.propagate_all()?;
+        stn.stn.print_stats();
+        let print = |stn: &Stn| {
+            println!("a:  {:?} {a:?}", stn.model.domain_of(a));
+            println!("b:  {:?} {b:?}", stn.model.domain_of(b));
+            println!("ub: {:?} {ub:?}", stn.model.domain_of(ub));
+            println!("dl: {:?}", stn.model.current_decision_level());
+        };
+
+        print(stn);
+
+        // given the single literal (expected to be an upperbound of `ub`) that caused a the update of the upper bound of `b`
+        let cause_b_ub = |stn: &mut Stn, b_ub: IntCst| {
+            let implying = stn.implying_literals(Lit::leq(b, b_ub)).unwrap();
+            assert_eq!(implying.len(), 1);
+            implying[0]
+        };
+
+        for i in 5..=max {
+            stn.set_backtrack_point();
+            stn.model.state.set_ub(ub, max - i, Cause::Decision)?;
+            stn.propagate_all()?;
+            let b_ub = (max - i) * 2;
+            // check that propagation is correct
+            debug_assert_eq!(stn.model.domain_of(b), (0, b_ub));
+            //print(stn);
+
+            assert_eq!(cause_b_ub(stn, b_ub), Lit::leq(ub, max - i));
+            assert_eq!(cause_b_ub(stn, b_ub + 1), Lit::leq(ub, max - i));
+            if (max - i) < 50 {
+                assert_eq!(cause_b_ub(stn, 101), Lit::leq(ub, 50));
+                assert_eq!(cause_b_ub(stn, 100), Lit::leq(ub, 50));
+                assert_eq!(cause_b_ub(stn, 99), Lit::leq(ub, 49));
+            }
+        }
+        stn.stn.print_stats();
+        print(stn);
+
+        Ok(())
+    }
 }
