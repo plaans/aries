@@ -31,6 +31,9 @@ pub enum SymmetryBreakingType {
     ///  - is always present if the second instance is present
     ///  - starts before the second instance
     Simple,
+    /// Symmetry breaking based on the causal graph, essentially ensuring that swapping two instances of the same template
+    /// does not result in an isomorphic causal graph.
+    /// Ref: Towards Canonical and Minimal Solutions in a Constraint-based Plan-Space Planner
     PlanSpace,
 }
 
@@ -86,6 +89,9 @@ pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &E
     };
 }
 
+/// Symmetry breaking based on the causal graph, essentially ensuring that swapping two instances of the same template
+/// does not result in an isomorphic causal graph.
+/// Ref: Towards Canonical and Minimal Solutions in a Constraint-based Plan-Space Planner
 fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &Encoding) {
     let discard_useless_supports = USELESS_SUPPORTS.get();
     let discard_detrimental_supports = DETRIMENTAL_SUPPORTS.get();
@@ -111,33 +117,28 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         // return true if the potential causal link is not flagged as useless
         !pb.meta.detrimental_supports.contains(&causal)
     };
-
-    struct ActionOrigin {
-        template: usize,
-        #[allow(unused)]
-        gen: usize,
+    #[derive(Hash, PartialEq, PartialOrd, Eq, Ord, Clone, Copy)]
+    struct CausalLinkId {
+        eff: EffID,
+        cond: CondID,
     }
+
+    type TemplateID = usize;
+    struct ActionOrigin {
+        template: TemplateID,
+    }
+    // returns all actions instanciated from templates
     let actions: BTreeMap<ChronicleId, _> = pb
         .chronicles
         .iter()
         .enumerate()
         .filter_map(|(id, c)| match c.origin {
-            ChronicleOrigin::FreeAction {
-                template_id,
-                generation_id,
-            } => Some((
-                id,
-                ActionOrigin {
-                    template: template_id,
-                    gen: generation_id,
-                },
-            )),
+            ChronicleOrigin::FreeAction { template_id, .. } => Some((id, ActionOrigin { template: template_id })),
             _ => None,
         })
         .collect();
 
-    type TemplateID = usize;
-    let templates = pb
+    let templates: Vec<TemplateID> = pb
         .chronicles
         .iter()
         .filter_map(|c| match c.origin {
@@ -151,13 +152,10 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     #[derive(Clone, Copy)]
     struct Link {
         active: Lit,
-        exclusive: bool,
     }
-    let mut causal_link: BTreeMap<(ChronicleId, CondID), Link> = Default::default();
-    let mut conds_by_templates: BTreeMap<TemplateID, BTreeSet<CondID>> = Default::default();
-    for template in &templates {
-        conds_by_templates.insert(*template, BTreeSet::new());
-    }
+
+    // gather all causal links, together with a literal stating whether they are are active (including the requirement for both actions to be present)
+    let mut cls: BTreeMap<CausalLinkId, Link> = Default::default();
     for &(k, v) in &encoding.tags {
         let Tag::Support(cond, eff) = k else {
             panic!("Unsupported tag: {k:?}");
@@ -167,86 +165,99 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         }
         let instance = eff.instance_id;
         let ch = &pb.chronicles[instance];
-        let ChronicleOrigin::FreeAction { template_id, .. } = ch.origin else {
+        let ChronicleOrigin::FreeAction { .. } = ch.origin else {
             continue;
         };
         if discard_detrimental_supports && !is_primary_support(cond, eff) {
             continue; // remove non-primary supports
         }
-        // record that this template may contribute to this condition
-        conds_by_templates.get_mut(&template_id).unwrap().insert(cond);
         // non-optional literal that is true iff the causal link is active
         let link_active = model.reify(and([v, model.presence_literal(v.variable())]));
         // list of outgoing causal links of the supporting action
-        causal_link.insert(
-            (eff.instance_id, cond),
-            Link {
-                active: link_active,
-                exclusive: eff.is_assign,
-            },
-        );
+        let link = Link { active: link_active };
+        cls.insert(CausalLinkId { eff, cond }, link);
     }
-
-    let is_num = |cond_id: &CondID| {
-        let instance = &pb.chronicles[cond_id.instance_id];
-        let cond = instance.chronicle.conditions.get(match cond_id.cond_id {
-            analysis::CondOrigin::ExplicitCondition(v) => v,
-            analysis::CondOrigin::PostIncrease(_) => instance.chronicle.conditions.len() + 1, // Force out of bounds to return None
-        });
-        if let Some(cond) = cond {
-            cond.state_var.fluent.return_type().is_numeric()
+    let sort_key = |c: &CausalLinkId| {
+        // Penalty for increase effects tend to be very uninformative because:
+        //  - they may not actually contribute to the condition (the condition could be satisfied even without it due to overshooting)
+        //  - they typically persist for a very long time even if canceled out
+        // This penalty is such that they are placed last in the queue
+        let penalty = if c.eff.is_assign { 1 } else { 0 };
+        // Goals (conditions in the original chronicle) should come first,
+        // Other conditions are grouped by abstraction level
+        let lvl = if let Some(template) = template_id(c.cond.instance_id) {
+            1 + if sort_by_hierarchy_level {
+                pb.meta.action_hierarchy[&template]
+            } else {
+                0
+            }
         } else {
-            true
+            0
+        };
+        // to finalize the ordering, group by condition
+        (penalty, lvl, c.cond, c.eff)
+    };
+
+    // gather all causal links in a single vector that we will use to force lexicographic order upon permitation
+    let links = cls
+        .keys()
+        .sorted_by_cached_key(|cl| sort_key(cl))
+        .copied()
+        .collect_vec();
+
+    // Return the causal link that we would have if were were to swap the `original` instance with the `replacement` instance (and vice-versa).
+    // Returns None if the swap is a no-op (the two actions appear neither in the condition nor the effect)
+    let swap = |cl: &CausalLinkId, original: usize, replacement: usize| {
+        // effect after the swap
+        let new_eff = if cl.eff.instance_id == original {
+            EffID {
+                instance_id: replacement,
+                eff_id: cl.eff.eff_id,
+                is_assign: cl.eff.is_assign,
+            }
+        } else if cl.eff.instance_id == replacement {
+            EffID {
+                instance_id: original,
+                eff_id: cl.eff.eff_id,
+                is_assign: cl.eff.is_assign,
+            }
+        } else {
+            cl.eff
+        };
+        // condition after the swap
+        let new_cond = if cl.cond.instance_id == original {
+            CondID {
+                instance_id: replacement,
+                cond_id: cl.cond.cond_id,
+            }
+        } else if cl.cond.instance_id == replacement {
+            CondID {
+                instance_id: original,
+                cond_id: cl.cond.cond_id,
+            }
+        } else {
+            cl.cond
+        };
+        // swapped causal link
+        let new_cl = CausalLinkId {
+            eff: new_eff,
+            cond: new_cond,
+        };
+        if &new_cl != cl {
+            Some(new_cl)
+        } else {
+            None
         }
     };
 
-    let sort = |conds: BTreeSet<CondID>| {
-        let sort_key = |c: &CondID| {
-            // penalize conditions on numeric fluents because the encoding
-            // makes it hard to distinguish actual supports, they should be considered last
-            let penalty = if penalize_numeric_supports && is_num(c) {
-                1024
-            } else {
-                0
-            };
-            // get the level, reserving the lvl 0 for non-templates
-            let (hier_level, template) = if let Some(template) = template_id(c.instance_id) {
-                let lvl = if sort_by_hierarchy_level {
-                    pb.meta.action_hierarchy[&template]
-                } else {
-                    0
-                };
-                (lvl + 1, template + 1)
-            } else {
-                (0, 0)
-            };
-            let generation = if let Some(generation) = generation_id(c.instance_id) {
-                generation + 1000
-            } else {
-                c.instance_id
-            };
-            // important: order must be made by template so that conditions of the same template are grouped
-            // The consequence of grouping is that swapping raws (instances of the same template) does not affect the order with respect to the columns of the other templates
-            // note that two instances of the same template will have the same hierarchy level, so it is safe to first group by hierarchy level
-            (hier_level, template, penalty, generation)
-        };
-        conds.into_iter().sorted_by_key(sort_key).collect_vec()
-    };
-    let conds_by_templates: BTreeMap<TemplateID, Vec<CondID>> =
-        conds_by_templates.into_iter().map(|(k, v)| (k, sort(v))).collect();
-    let supports = |ch: ChronicleId, cond: CondID| {
-        causal_link.get(&(ch, cond)).copied().unwrap_or(Link {
-            active: Lit::FALSE,
-            exclusive: true,
-        })
-    };
-
     for template_id in &templates {
-        let conditions = &conds_by_templates[template_id];
+        // collect all instances of this action template
+        // note: sorted to ensure reproducibility
         let instances: Vec<_> = actions
             .iter()
             .filter_map(|(id, orig)| if orig.template == *template_id { Some(id) } else { None })
             .sorted()
+            .dedup()
             .collect();
 
         // // detailed printing for debugging
@@ -254,52 +265,84 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         //     let ch = &pb.chronicles[**ch];
         //     let s = format_partial_name(&ch.chronicle.name, model).unwrap();
         //     println!("{template_id} {s}   ({})", instances.len());
-        //     for cond_id in conditions {
-        //         print_cond(*cond_id, pb, model);
-        //         println!();
-        //     }
+        //     // for cond_id in conditions {
+        //     //     print_cond(*cond_id, pb, model);
+        //     //     println!();
+        //     // }
         // }
 
         // An instance of the template is allowed to support a condition only if the previous instance
         // supports a condition at an earlier level or at the same level.
         //
-        // Noting X = [x_1, x_2, ..., x_n] where x_i <=> previous instance supports condition i
-        // and    Y = [y_1, y_2, ..., y_n] where y_i <=> current instance supports condition i
-        // We ensure that X >= Y in the lexicographic order.
-        //
-        // This is done recursively for 1 <= j <= n:
-        //     X[1:j] >= Y[1:j] <=> (x_j >= y_j OR there exists i < j such that x_i > y_i)
-        //                       AND X[1:j-1] >= Y[1:j-1]
-        //
-        // Because we are dealing with literals, we can simplify the comparison to:
-        //     x > y <=> x AND !y    if x and y are not exclusive
-        //     x > y <=> x           if x and y are exclusive
-        //     x >= y <=> x OR !y    if x and y are not exclusive
-        //     x >= y <=> !y         if x and y are exclusive
         for (i, crt_instance) in instances.iter().copied().enumerate() {
-            let mut clause = Vec::with_capacity(conditions.len());
+            let mut clause: Vec<Lit> = Vec::with_capacity(128);
             if i > 0 {
                 let prv_instance = instances[i - 1];
 
-                for (j, crt_cond) in conditions.iter().enumerate() {
+                // we need break symmetries between this instance and the previous.
+                // We build the support signature of the current instance
+                // Noting X = [x_1, x_2, ..., x_n] where x_i <=> an effect of the previous instance supports the i-th condition
+                //
+                // The vector Y = [y_1, y_2, ..., y_n] is obtained by swapping previous/current over the vector X
+                // We also maintain a vector Excu = [exclu_1, exclu_2, ..., exclu_n] of boolean values where exclu_i is true iff x_i and y_i are mutually exclusive
+
+                // set of causal links pairs (x_i, y_i) that have already been added to the vector.
+                // This enables an optimization where adding (y_i, x_i) is redundant and can be avoided
+                let mut previously_handled = HashSet::new();
+                // The three vectors [X,Y,Exclu] are built into a single one where each element is of the form (x_i, y_i, exclu_i)
+                let mut vec = Vec::with_capacity(128);
+
+                for &cl in &links {
+                    // build the vectors, ignoring cases where (x_i = y_i) (for which swap would return None)
+                    if let Some(swapped) = swap(&cl, *crt_instance, *prv_instance) {
+                        debug_assert_eq!(cl.eff.is_assign, swapped.eff.is_assign);
+                        let exclusive = cl.eff.is_assign && cl.cond == swapped.cond;
+                        if previously_handled.contains(&(swapped, cl)) {
+                            // Lemma 1 of Rintannen et al, ECAI 2024
+                            // there is no need to consider if we have already considered the reverse
+                            continue;
+                        }
+                        if cl.eff.instance_id != *crt_instance && swapped.eff.instance_id != *crt_instance {
+                            // only keep effects of the action
+                            continue;
+                        }
+                        previously_handled.insert((cl, swapped));
+                        let cl_lit = cls[&cl].active; // x_i
+                        let swapped_lit = cls[&swapped].active; // y_i
+                        let entry = (cl_lit, swapped_lit, exclusive);
+                        vec.push(entry);
+                    }
+                }
+
+                // Enforce X >= Y
+                //
+                // This is done recursively for 1 <= j <= n:
+                //     X[1:j] >= Y[1:j] <=> (x_j >= y_j OR there exists i < j such that x_i > y_i)
+                //                          AND X[1:j-1] >= Y[1:j-1]   (enforced by previous iteration of the recursion)
+                //
+                // Because we are dealing with literals, we can simplify the comparison to:
+                //     x > y <=> x AND !y    if x and y are not exclusive
+                //     x > y <=> x           if x and y are exclusive
+                //     x >= y <=> x OR !y    if x and y are not exclusive
+                //     x >= y <=> !y         if x and y are exclusive
+                for (j, (x_j, y_j, exclu_j)) in vec.iter().copied().enumerate() {
                     clause.clear(); // Stores the disjunction for the first part of X[1:j] >= Y[1:j]
-                    let prv_link = supports(*prv_instance, *crt_cond); // x_j
-                    let crt_link = supports(*crt_instance, *crt_cond); // y_j
-                    clause.push(!crt_link.active); // x_j >= y_j
-                    if !(crt_link.exclusive && prv_link.exclusive) {
-                        // x_j >= y_j (not exclusive)
-                        clause.push(prv_link.active);
+
+                    // x_j >= y_j  <=>  x_j OR !y_j    (but only !y_j if x_j and y_j are exclusive)
+                    clause.push(!y_j);
+                    if !exclu_j {
+                        // only necessary if  not exclusive
+                        clause.push(x_j);
                     }
 
-                    for prv_cond in &conditions[0..j] {
-                        let prv_link = supports(*prv_instance, *prv_cond); // x_k
-                        let crt_link = supports(*crt_instance, *prv_cond); // y_k
-                        if crt_link.exclusive && prv_link.exclusive {
-                            // x_k > y_k (exclusive)
-                            clause.push(prv_link.active);
+                    for &(x_i, y_i, exclu_i) in &vec[0..j] {
+                        // x_i > y_i
+                        if exclu_i {
+                            // x_i > y_i <=> x_k (exclusive)
+                            clause.push(x_i);
                         } else {
-                            // x_k > y_k (not exclusive)
-                            clause.push(model.reify(and([prv_link.active, !crt_link.active])));
+                            // x_i > y_i <=> x_i AND !y_i
+                            clause.push(model.reify(and([x_i, !y_i])));
                         }
                     }
 
@@ -310,20 +353,22 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             }
             clause.clear();
             if discard_useless_supports {
-                // enforce that a chronicle be present only if it supports at least one condition
+                // enforce that a chronicle be present only if it supports at least one external condition
                 clause.push(!pb.chronicles[*crt_instance].chronicle.presence);
-                for cond in conditions {
-                    clause.push(supports(*crt_instance, *cond).active);
-                }
+                // when discard_useless_supports is enabled, links only contain useful links
+                // State that (if present) the chronicle must support at least one condition from another chronicle
+                links
+                    .iter()
+                    .filter(|l| l.eff.instance_id == *crt_instance) // restrict to own effect
+                    .filter(|l| l.cond.instance_id != *crt_instance) // only consider conditions from other actions
+                    .for_each(|l| {
+                        let lit = cls[l].active;
+                        clause.push(lit);
+                    });
                 model.enforce(or(clause.as_slice()), []);
             }
         }
     }
-
-    // println!("\n================\n");
-    // hierarchy(pb);
-    // println!("\n================\n");
-    // std::process::exit(1)
 }
 
 #[allow(unused)]

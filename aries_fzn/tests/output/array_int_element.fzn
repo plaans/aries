@@ -1,0 +1,4 @@
+var 0..9: x:: output_var;
+var -1..8: i:: output_var;
+constraint array_int_element(i, [2,3,7,8], x);
+solve satisfy;
