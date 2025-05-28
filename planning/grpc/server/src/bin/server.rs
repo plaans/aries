@@ -2,6 +2,7 @@ use anyhow::{bail, ensure, Context, Error};
 use aries::model::extensions::SavedAssignment;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
+use aries_grpc_server::warm_up::plan_from_option_upf;
 use aries_plan_validator::validate_upf;
 use aries_planners::solver;
 use aries_planners::solver::{Metric, SolverResult, Strat};
@@ -18,10 +19,10 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
-use unified_planning as up;
 use unified_planning::metric::MetricKind;
 use unified_planning::unified_planning_server::{UnifiedPlanning, UnifiedPlanningServer};
 use unified_planning::validation_result::ValidationResultStatus;
+use unified_planning::{self as up, Plan};
 use unified_planning::{log_message, plan_generation_result, LogMessage, PlanGenerationResult, PlanRequest};
 use unified_planning::{Problem, ValidationRequest, ValidationResult};
 
@@ -59,6 +60,10 @@ struct SolveArgs {
 
     #[clap(flatten)]
     conf: SolverConfiguration,
+
+    /// File from which to deserialize the unified planning warm-up plan
+    #[clap(short, long)]
+    pub warm_up_file: Option<String>,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -124,11 +129,13 @@ async fn solve(
     problem: Arc<up::Problem>,
     on_new_sol: impl Fn(up::Plan) + Clone + Send + 'static,
     conf: Arc<SolverConfiguration>,
+    warm_up_plan: Option<Arc<up::Plan>>,
 ) -> Result<up::PlanGenerationResult, Error> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     // run CPU-bound computation on a separate OS Thread
     std::thread::spawn(move || {
-        tx.send(solve_blocking(problem, on_new_sol, conf)).unwrap();
+        tx.send(solve_blocking(problem, on_new_sol, conf, warm_up_plan))
+            .unwrap();
     });
     rx.await.unwrap()
 }
@@ -139,6 +146,7 @@ fn solve_blocking(
     problem: Arc<up::Problem>,
     on_new_sol: impl Fn(up::Plan) + Clone,
     conf: Arc<SolverConfiguration>,
+    warm_up_plan: Option<Arc<up::Plan>>,
 ) -> Result<up::PlanGenerationResult, Error> {
     let reception_time = Instant::now();
     let deadline = conf
@@ -184,6 +192,9 @@ fn solve_blocking(
         conf.min_depth
     };
 
+    let warm_up_plan = warm_up_plan.as_deref().cloned();
+    let warm_up_plan = plan_from_option_upf(warm_up_plan, &base_problem)?;
+
     // callback that will be invoked each time an intermediate solution is found
     let on_new_solution = |pb: &FiniteProblem, ass: Arc<SavedAssignment>| {
         let plan = serialize_plan(&problem, pb, &ass);
@@ -200,6 +211,7 @@ fn solve_blocking(
         &conf.strategies,
         metric,
         htn_mode,
+        warm_up_plan.clone(),
         on_new_solution,
         deadline,
     )?;
@@ -277,6 +289,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
+        let warm_up_plan = plan_request.warm_start_plan;
+
         let mut conf = SolverConfiguration::default();
         conf.update_from_map(&plan_request.engine_options)
             .expect("Error in configuration");
@@ -307,9 +321,10 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         let conf = Arc::new(conf);
         let problem = Arc::new(problem);
+        let warm_up_plan = warm_up_plan.map(Arc::new);
 
         tokio::spawn(async move {
-            let result = solve(problem.clone(), on_new_sol, conf.clone()).await;
+            let result = solve(problem.clone(), on_new_sol, conf.clone(), warm_up_plan.clone()).await;
             match result {
                 Ok(mut answer) => {
                     add_engine_time(&mut answer.metrics, &reception_time);
@@ -344,6 +359,8 @@ impl UnifiedPlanning for UnifiedPlanningService {
             .problem
             .ok_or_else(|| Status::aborted("The `problem` field is empty"))?;
 
+        let warm_up_plan = plan_request.warm_start_plan;
+
         let mut conf = SolverConfiguration::default();
         conf.update_from_map(&plan_request.engine_options)
             .expect("Error in configuration");
@@ -353,8 +370,9 @@ impl UnifiedPlanning for UnifiedPlanningService {
 
         let conf = Arc::new(conf);
         let problem = Arc::new(problem);
+        let warm_up_plan = warm_up_plan.map(Arc::new);
 
-        let result = solve(problem, |_| {}, conf).await;
+        let result = solve(problem, |_| {}, conf, warm_up_plan).await;
         let mut answer = result.unwrap_or_else(|e| {
             let message = format!("{}", e.chain().rev().format("\n    Context: "));
             eprintln!("ERROR: {}", &message);
@@ -461,9 +479,18 @@ async fn main() -> Result<(), Error> {
             let problem = std::fs::read(&solve_args.problem_file)?;
             let problem = Problem::decode(problem.as_slice())?;
             let problem = Arc::new(problem);
+
+            let warm_up_plan = solve_args
+                .warm_up_file
+                .as_ref()
+                .map(std::fs::read)
+                .transpose()?
+                .map(|data| Plan::decode(data.as_slice()))
+                .transpose()?
+                .map(Arc::new);
             let conf = Arc::new(solve_args.conf.clone());
 
-            let answer = solve(problem, |_| {}, conf).await;
+            let answer = solve(problem, |_| {}, conf, warm_up_plan).await;
 
             match answer {
                 Ok(res) => {

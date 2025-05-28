@@ -752,27 +752,59 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.minimize_with(objective, |_, _| ())
+        self.minimize_with_callback(objective, |_, _| ())
     }
 
-    pub fn minimize_with(
+    pub fn minimize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
         on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.optimize_with(objective.into(), true, on_new_solution)
+        self.optimize_with(objective.into(), true, on_new_solution, None)
+    }
+
+    pub fn minimize_with_optional_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.optimize_with(objective.into(), true, |_, _| (), initial_solution)
+    }
+
+    pub fn minimize_with_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: (IntCst, Arc<SavedAssignment>),
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.minimize_with_optional_initial_solution(objective.into(), Some(initial_solution))
     }
 
     pub fn maximize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.maximize_with(objective, |_, _| ())
+        self.maximize_with_callback(objective, |_, _| ())
     }
 
-    pub fn maximize_with(
+    pub fn maximize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
         on_new_solution: impl FnMut(IntCst, &SavedAssignment),
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
-        self.optimize_with(objective.into(), false, on_new_solution)
+        self.optimize_with(objective.into(), false, on_new_solution, None)
+    }
+
+    pub fn maximize_with_optional_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.optimize_with(objective.into(), false, |_, _| (), initial_solution)
+    }
+
+    pub fn maximize_with_initial_solution(
+        &mut self,
+        objective: impl Into<IAtom>,
+        initial_solution: (IntCst, Arc<SavedAssignment>),
+    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        self.maximize_with_optional_initial_solution(objective.into(), Some(initial_solution))
     }
 
     fn optimize_with(
@@ -780,13 +812,18 @@ impl<Lbl: Label> Solver<Lbl> {
         objective: IAtom,
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
+        initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
     ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
         let mut best = None;
 
-        if self.post_constraints().is_err() {
+        if let Some((objective_value, sol)) = initial_solution {
+            self.brancher.new_assignment_found(objective_value, sol.clone());
+        }
+
+        if self.post_constraints().is_err() || self.propagate().is_err() {
             // trivially UNSAT
             return Ok(None);
         }
