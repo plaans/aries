@@ -8,7 +8,7 @@ use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use env_param::EnvParam;
 use itertools::Itertools;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::Model;
 
@@ -18,7 +18,6 @@ use crate::Model;
 pub static SYMMETRY_BREAKING: EnvParam<SymmetryBreakingType> = EnvParam::new("ARIES_LCP_SYMMETRY_BREAKING", "psp");
 pub static USELESS_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_USELESS_SUPPORTS", "true");
 pub static DETRIMENTAL_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_DETRIMENTAL_SUPPORTS", "true");
-pub static PENALIZE_NUMERIC_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_PENALIZE_NUMERIC_SUPPORTS", "true");
 pub static PSP_ABSTRACTION_HIERARCHY: EnvParam<bool> = EnvParam::new("ARIES_PSP_ABSTRACTION_HIERARCHY", "true");
 
 /// The type of symmetry breaking to apply to problems.
@@ -96,14 +95,9 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
     let discard_useless_supports = USELESS_SUPPORTS.get();
     let discard_detrimental_supports = DETRIMENTAL_SUPPORTS.get();
     let sort_by_hierarchy_level = PSP_ABSTRACTION_HIERARCHY.get();
-    let penalize_numeric_supports = PENALIZE_NUMERIC_SUPPORTS.get();
 
     let template_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
         ChronicleOrigin::FreeAction { template_id, .. } => Some(template_id),
-        _ => None,
-    };
-    let generation_id = |instance_id: usize| match pb.chronicles[instance_id].origin {
-        ChronicleOrigin::FreeAction { generation_id, .. } => Some(generation_id),
         _ => None,
     };
     let is_primary_support = |c: CondID, eff: EffID| {
