@@ -50,9 +50,12 @@ impl Edge {
 pub(crate) struct Propagator {
     pub source: SignedVar,
     pub target: SignedVar,
+    // Weight of the propagator.
+    // If the the `dyn_weight` field is non-empty, then this will be updated each time a new upper bound is derived on the corresponding `var_ub`
     pub weight: IntCst,
     /// Literals describing when the propagator should be enabled.
     pub enabler: Enabler,
+    pub dyn_weight: Option<DynamicWeight>,
 }
 
 /// A `PropagatorGroup` represents the fact that an update on the `source` bound
@@ -62,6 +65,8 @@ pub(crate) struct Propagator {
 pub(crate) struct PropagatorGroup {
     pub source: SignedVar,
     pub target: SignedVar,
+    // Weight of the propagator.
+    // If the the `dyn_weight` field is non-empty, then this will be updated each time a new upper bound is derived on the corresponding `var_ub`
     pub weight: IntCst,
     /// Non-empty if the constraint active (participates in propagation)
     /// If the enabler is Lit::TRUE, then the constraint can be assumed to be always active
@@ -70,6 +75,17 @@ pub(crate) struct PropagatorGroup {
     /// A set of potential enablers for this constraint.
     /// The edge becomes active once one of its enablers becomes true
     pub enablers: Vec<Enabler>,
+    /// If non-empty, it means that the weight of the edge is dynamically updated to `factor * ub(var_ub)`
+    pub dyn_weight: Option<DynamicWeight>,
+}
+
+/// A dynamic weight, equal to `factor * ub(var_ub)`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct DynamicWeight {
+    pub var_ub: SignedVar,
+    pub factor: IntCst,
+    /// This is the literal that captures whether the edge is valid (second term of the enabler)
+    pub valid: Lit,
 }
 
 /// Represents an edge together with a particular propagation direction:

@@ -553,7 +553,7 @@ impl<'a> Graph<SignedVar, PropagatorId> for StnSnapshotGraph<'a> {
                 // we are considering the view of an older STN, thus we must ignore any
                 // edge that was not active according to the domains at the time (if the edge has been added to the STN since)
                 let c = &self.stn.constraints[prop.id];
-                let enabler = c.enabler.unwrap().1;
+                let enabler = c.enabler.unwrap().1; // TODO: this might be problematic with dynamic edges
                 enabler < self.ignore_after
             })
             .map(move |prop| StnEdge {
@@ -571,7 +571,7 @@ impl<'a> Graph<SignedVar, PropagatorId> for StnSnapshotGraph<'a> {
             .filter(|prop| {
                 // we are considering the view of an older STN, thus we ignore any edge inserted after our timestamp
                 let c = &self.stn.constraints[prop.id];
-                let enabler = c.enabler.unwrap().1;
+                let enabler = c.enabler.unwrap().1; // TODO: this might be problematic with dynamic edges
                 enabler < self.ignore_after
             })
             .map(move |prop| StnEdge {

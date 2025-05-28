@@ -116,6 +116,11 @@ impl ConstraintDb {
         let constraint = &self.propagators[propagator];
         self.intermittent_propagators.fill_with(constraint.source, Vec::new);
 
+        debug_assert!(
+            constraint.dyn_weight.is_none(),
+            "Cannot add an enabler for a dynamic edge"
+        );
+
         self.intermittent_propagators[constraint.source].push(PropagatorTarget {
             target: constraint.target,
             weight: constraint.weight,
@@ -137,10 +142,11 @@ impl ConstraintDb {
     /// Returns the ID of the propagator set it was added to and a description for how the integration was made.
     #[allow(clippy::comparison_chain)]
     pub fn add_propagator(&mut self, prop: Propagator) -> (PropagatorId, PropagatorIntegration) {
-        if self.trail.current_decision_level() == DecLvl::ROOT {
-            // At the root level, try to optimize the organization of the propagators
-            // It can not (easily) be done beyond the root level because it makes undoing it harder.
-
+        // At the root level, try to optimize the organization of the propagators
+        // It can not (easily) be done beyond the root level because it makes undoing it harder.
+        // Additionally we only optimize the layout for non-dynamic edges (i.e. with a non-constant weight)
+        let optimize_layout = self.trail.current_decision_level() == DecLvl::ROOT && prop.dyn_weight.is_none();
+        if optimize_layout {
             // first try to find a propagator set that is compatible
             self.propagator_indices.entry((prop.source, prop.target)).or_default();
             for &id in &self.propagator_indices[&(prop.source, prop.target)] {
@@ -148,7 +154,7 @@ impl ConstraintDb {
                 if existing.source == prop.source && existing.target == prop.target {
                     // on same
                     if existing.weight == prop.weight {
-                        // propagator with same weight exists, just add our propagators to if
+                        // propagator with same weight exists, just add our propagators to it
                         if !existing.enablers.contains(&prop.enabler) {
                             existing.enablers.push(prop.enabler);
                             return (id, PropagatorIntegration::Merged(prop.enabler));
@@ -196,6 +202,7 @@ impl ConstraintDb {
             weight: prop.weight,
             enabler: None,
             enablers: vec![prop.enabler],
+            dyn_weight: prop.dyn_weight,
         };
         self.vertices.insert(prop.source);
         self.vertices.insert(prop.target);

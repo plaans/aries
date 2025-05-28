@@ -14,6 +14,7 @@ use contraint_db::*;
 use distances::{Graph, StnGraph};
 use edges::*;
 use env_param::EnvParam;
+use itertools::Itertools;
 use std::collections::VecDeque;
 use std::convert::*;
 use std::marker::PhantomData;
@@ -103,6 +104,11 @@ type BacktrackLevel = DecLvl;
 #[derive(Copy, Clone)]
 enum Event {
     EdgeActivated(PropagatorId),
+    EdgeUpdated {
+        prop: PropagatorId,
+        previous_weight: IntCst,
+        previous_enabler: Option<(Enabler, EventIndex)>,
+    },
 }
 
 #[derive(Default, Clone)]
@@ -183,7 +189,7 @@ pub struct StnTheory {
     pending_bound_changes: Vec<BoundChangeEvent>,
     /// A set of edges whose upper bound is dynamic (i.e. depends on the variable)
     /// The map is indexed on the variable from which the variable is computed.
-    dyn_edges: hashbrown::HashMap<SignedVar, Vec<DynamicEdge>>,
+    dyn_edges: hashbrown::HashMap<SignedVar, Vec<PropagatorId>>,
 }
 
 #[derive(Copy, Clone)]
@@ -245,6 +251,8 @@ enum ActivationEvent {
         /// False if theory propagation can be skipped for this edge
         require_theory_propagation: bool,
     },
+    /// A dynamic edge requires its weight to be updated
+    ToUpdate { edge: PropagatorId },
 }
 
 #[derive(Clone, Debug)]
@@ -253,16 +261,6 @@ struct BoundChangeEvent {
     previous_ub: IntCst,
     new_ub: IntCst,
     is_from_bound_propagation: bool,
-}
-
-/// An edge `src -> tgt` whose label (defining the upper bound on `tgt - src`)
-/// is given by `ub_var * ub_factor`.
-#[derive(Clone)]
-struct DynamicEdge {
-    src: Timepoint,
-    tgt: Timepoint,
-    ub_var: SignedVar,
-    ub_factor: IntCst,
 }
 
 impl StnTheory {
@@ -349,12 +347,14 @@ impl StnTheory {
                 target: SignedVar::plus(target),
                 weight,
                 enabler: Enabler::new(literal, target_propagator_valid),
+                dyn_weight: None,
             },
             Propagator {
                 source: SignedVar::minus(target),
                 target: SignedVar::minus(source),
                 weight,
                 enabler: Enabler::new(literal, source_propagator_valid),
+                dyn_weight: None,
             },
         ];
 
@@ -391,31 +391,62 @@ impl StnTheory {
         ub_factor: IntCst,
         domains: &Domains,
     ) {
-        let src = src.into();
-        let tgt = tgt.into();
+        let source = src.into();
+        let target = tgt.into();
+        while u32::from(source) >= self.num_nodes() || u32::from(target) >= self.num_nodes() {
+            self.reserve_timepoint();
+        }
         let edge_valid = domains.presence(ub_var);
-        debug_assert!(domains.implies(edge_valid, domains.presence(src)));
-        debug_assert!(domains.implies(edge_valid, domains.presence(tgt)));
+        debug_assert!(domains.implies(edge_valid, domains.presence(source)));
+        debug_assert!(domains.implies(edge_valid, domains.presence(target)));
 
-        let dyn_edge = DynamicEdge {
-            src,
-            tgt,
-            ub_var,
-            ub_factor,
-        };
         let cur_var_ub = domains.ub(ub_var);
         let cur_ub = cur_var_ub.saturating_mul(ub_factor).min(INT_CST_MAX);
-        if cur_ub < INT_CST_MAX {
-            // add immediately an edge for our current bound
-            self.add_half_reified_edge(ub_var.leq(cur_var_ub), src, tgt, cur_ub, domains);
-        }
+        let literal = ub_var.leq(cur_var_ub);
+
+        // TODO: suboptimal and may miss some propagation opportunities
+        let target_propagator_valid = edge_valid;
+        let source_propagator_valid = edge_valid;
+
+        let dyn_weight = DynamicWeight {
+            var_ub: ub_var,
+            factor: ub_factor,
+            valid: edge_valid, // TODO: specialize by propagator
+        };
+
+        let propagators = [
+            // normal edge:  active <=> source ---(weight)---> target
+            Propagator {
+                source: SignedVar::plus(source),
+                target: SignedVar::plus(target),
+                weight: cur_ub,
+                enabler: Enabler::new(literal, target_propagator_valid),
+                dyn_weight: Some(dyn_weight),
+            },
+            Propagator {
+                source: SignedVar::minus(target),
+                target: SignedVar::minus(source),
+                weight: cur_ub,
+                enabler: Enabler::new(literal, source_propagator_valid),
+                dyn_weight: Some(dyn_weight),
+            },
+        ];
+
+        let propagator_ids = propagators
+            .into_iter()
+            .map(|p| self.record_propagator(p, domains))
+            .collect_vec();
+
         // record the dynamic edge so that future updates on the variable would trigger a new edge insertion
-        self.dyn_edges.entry(ub_var).or_default().push(dyn_edge);
+        let watch_entries = self.dyn_edges.entry(ub_var).or_default();
+        for prop_id in propagator_ids {
+            watch_entries.push(prop_id);
+        }
     }
 
     /// Creates and record a new propagator associated with the given [DirEdge], making sure
     /// to set up the watches to enable it when it becomes active and valid.
-    fn record_propagator(&mut self, prop: Propagator, domains: &Domains) {
+    fn record_propagator(&mut self, prop: Propagator, domains: &Domains) -> PropagatorId {
         let &Enabler { active, valid } = &prop.enabler;
         let edge_valid = domains.presence(active.variable());
 
@@ -455,6 +486,7 @@ impl StnTheory {
             }
             PropagatorIntegration::Noop => {}
         }
+        prop
     }
 
     fn build_contradiction(&self, culprits: &[PropagatorId], model: &Domains) -> Contradiction {
@@ -482,14 +514,25 @@ impl StnTheory {
         let val = event.ub_value();
         debug_assert_eq!(event.svar(), c.target);
 
-        let enabler = self.constraints[propagator].enabler.expect("inactive constraint").0;
-        out_explanation.push(enabler.active);
-        out_explanation.push(enabler.valid);
+        if let Some(dyn_weight) = c.dyn_weight {
+            // The edge is dynamic, hence the weight on the propagator is not necessarily the one it had
+            // when the propagation was triggered.
+            // We need to recompute the weight it had (or a stronger it could have had).
+            let var_ub = model.ub(dyn_weight.var_ub);
+            let weight = var_ub * dyn_weight.factor;
+            out_explanation.push(dyn_weight.valid);
+            out_explanation.push(dyn_weight.var_ub.leq(var_ub));
+            out_explanation.push(c.source.leq(val - weight));
+        } else {
+            let enabler = c.enabler.expect("inactive constraint").0;
+            out_explanation.push(enabler.active);
+            out_explanation.push(enabler.valid);
 
-        let cause = c.source.leq(val - c.weight);
-        debug_assert!(model.entails(cause));
+            let cause = c.source.leq(val - c.weight);
+            debug_assert!(model.entails(cause));
 
-        out_explanation.push(cause);
+            out_explanation.push(cause);
+        }
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
@@ -570,20 +613,10 @@ impl StnTheory {
                 }
 
                 // go through all dynamic edges whose upper bound is given by this variable.
-                let num_dyn_edges = self.dyn_edges.get(&ev.affected_bound).map_or(0, |dyns| dyns.len());
-                for i in 0..num_dyn_edges {
-                    // for each such edge, add new edge to the STN. Note that the edge will be automatically removed
-                    // when backtracking
-                    // Note: we iterate on the index of the edges to please the borrow checker.
-                    let var_ub = ev.affected_bound;
-                    let dyn_edge = &mut self.dyn_edges.get_mut(&ev.affected_bound).unwrap()[i];
-                    debug_assert_eq!(var_ub, dyn_edge.ub_var);
-                    let src = dyn_edge.src;
-                    let tgt = dyn_edge.tgt;
-                    let cur_var_ub = ev.new_upper_bound;
-                    let cur_ub = cur_var_ub.saturating_mul(dyn_edge.ub_factor).min(INT_CST_MAX);
-                    if cur_ub < INT_CST_MAX {
-                        self.add_half_reified_edge(var_ub.leq(cur_var_ub), src, tgt, cur_ub, model);
+                if let Some(dyn_edges_on_bound) = self.dyn_edges.get(&ev.affected_bound) {
+                    for &prop_id in dyn_edges_on_bound {
+                        self.pending_activations
+                            .push_back(ActivationEvent::ToUpdate { edge: prop_id });
                     }
                 }
                 if self.constraints.is_vertex(ev.affected_bound) {
@@ -608,57 +641,122 @@ impl StnTheory {
                 // The check is deactivated here because it is a very expensive check (even when debugging)
                 // debug_assert!(StnGraph::new(self, model).is_potential_valid());
 
-                let ActivationEvent::ToEnable {
-                    edge,
-                    enabler,
-                    require_theory_propagation,
-                } = event;
-                let c = &mut self.constraints[edge];
-                if c.enabler.is_none() {
-                    // edge is currently inactive
-                    if c.source == c.target {
-                        // we are in a self loop, that must handled separately since they are trivial
-                        // to handle and not supported by the propagation loop
-                        if c.weight < 0 {
-                            // negative self loop: inconsistency
-                            self.explanation.clear();
-                            self.explanation.push(edge); // TODO: may not be an error, instead we shoud make the node absent?
-                            return Err(self.build_contradiction(&self.explanation, model));
-                        } else {
-                            // positive self loop : useless edge that we can ignore
-                        }
-                    } else {
-                        debug_assert_ne!(c.source, c.target);
-                        let activation_event = self.trail.push(EdgeActivated(edge));
-                        c.enabler = Some((enabler, activation_event));
-                        let c = &self.constraints[edge];
-                        self.active_propagators[c.source].push(InlinedPropagator {
-                            target: c.target,
-                            weight: c.weight,
-                            id: edge,
-                        });
-                        self.incoming_active_propagators[c.target].push(InlinedPropagator {
-                            target: c.source,
-                            weight: c.weight,
-                            id: edge,
-                        });
+                let new_edge_to_propagate = match event {
+                    ActivationEvent::ToEnable {
+                        edge,
+                        enabler,
+                        require_theory_propagation,
+                    } => {
+                        let c = &mut self.constraints[edge];
+                        if c.enabler.is_none() {
+                            // edge is currently inactive
+                            if c.source == c.target {
+                                // we are in a self loop, that must handled separately since they are trivial
+                                // to handle and not supported by the propagation loop
+                                if c.weight < 0 {
+                                    // negative self loop: inconsistency
+                                    self.explanation.clear();
+                                    self.explanation.push(edge); // TODO: may not be an error, instead we shoud make the node absent?
+                                    return Err(self.build_contradiction(&self.explanation, model));
+                                } else {
+                                    // positive self loop : useless edge that we can ignore
+                                    None
+                                }
+                            } else {
+                                debug_assert_ne!(c.source, c.target);
+                                let activation_event = self.trail.push(EdgeActivated(edge));
+                                c.enabler = Some((enabler, activation_event));
+                                let c = &self.constraints[edge];
+                                self.active_propagators[c.source].push(InlinedPropagator {
+                                    target: c.target,
+                                    weight: c.weight,
+                                    id: edge,
+                                });
+                                self.incoming_active_propagators[c.target].push(InlinedPropagator {
+                                    target: c.source,
+                                    weight: c.weight,
+                                    id: edge,
+                                });
 
-                        // check if the edge is obviously redundant, i.e., the bounds are sufficient to entail it
-                        // If that is the case, there is no need to propagate it at all since all inference could have been made based on the bounds only
-                        let redundant = -model.lb(c.source) + model.ub(c.target) <= c.weight;
-                        if !redundant {
-                            // propagate bounds from this edge
-                            // As a consequence, it re-establishes the validity of our potential function
-                            self.propagate_new_edge(edge, model)?;
-
-                            // after propagating the new edge, the potential function should be valid
-                            // The check is deactivated here because it is very expensive (even when debugging)
-                            // debug_assert!(StnGraph::new(self, model).is_potential_valid());
-
-                            if self.config.theory_propagation.edges() && require_theory_propagation {
-                                self.theory_propagate_edge(edge, model)?;
+                                // check if the edge is obviously redundant, i.e., the bounds are sufficient to entail it
+                                // If that is the case, there is no need to propagate it at all since all inference could have been made based on the bounds only
+                                let redundant = -model.lb(c.source) + model.ub(c.target) <= c.weight;
+                                if redundant {
+                                    None
+                                } else {
+                                    // notify that this edge must now be propagated
+                                    Some((edge, require_theory_propagation))
+                                }
                             }
+                        } else {
+                            None
                         }
+                    }
+                    ActivationEvent::ToUpdate { edge } => {
+                        let prop = &mut self.constraints[edge];
+                        let dyn_weight = prop.dyn_weight.unwrap();
+                        let previous_weight = prop.weight;
+                        let previous_enabler = prop.enabler;
+                        let new_weight =
+                            (model.ub(dyn_weight.var_ub) * dyn_weight.factor).clamp(INT_CST_MIN, INT_CST_MAX);
+
+                        // check if an update is needed
+                        // it might be the case that no update are required if the variable's upper bound was updated multiple times since the last propagation
+                        if new_weight < previous_weight {
+                            let activation_event = self.trail.push(Event::EdgeUpdated {
+                                prop: edge,
+                                previous_weight,
+                                previous_enabler,
+                            });
+                            let activation = dyn_weight.var_ub.leq(model.ub(dyn_weight.var_ub));
+                            prop.weight = new_weight;
+                            assert!(previous_enabler.is_some());
+                            prop.enabler = Some((
+                                Enabler {
+                                    active: activation,
+                                    valid: dyn_weight.valid,
+                                },
+                                activation_event,
+                            ));
+
+                            if previous_enabler.is_some() {
+                                let mut count = 0;
+                                // the edge was active, we must update the weights in the inlined propagators
+                                for inlined in &mut self.active_propagators[prop.source] {
+                                    if inlined.id == edge {
+                                        debug_assert_eq!(inlined.weight, previous_weight);
+                                        inlined.weight = new_weight;
+                                        count += 1;
+                                        break;
+                                    }
+                                }
+                                for inlined in &mut self.incoming_active_propagators[prop.target] {
+                                    if inlined.id == edge {
+                                        debug_assert_eq!(inlined.weight, previous_weight);
+                                        inlined.weight = new_weight;
+                                        count += 1;
+                                        break;
+                                    }
+                                }
+                                debug_assert_eq!(count, 2);
+                            }
+                            Some((edge, true))
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some((edge, require_theory_propagation)) = new_edge_to_propagate {
+                    // propagate bounds from this edge
+                    // As a consequence, it re-establishes the validity of our potential function
+                    self.propagate_new_edge(edge, model)?;
+
+                    // after propagating the new edge, the potential function should be valid
+                    // The check is deactivated here because it is very expensive (even when debugging)
+                    // debug_assert!(StnGraph::new(self, model).is_potential_valid());
+
+                    if self.config.theory_propagation.edges() && require_theory_propagation {
+                        self.theory_propagate_edge(edge, model)?;
                     }
                 }
             }
@@ -723,6 +821,25 @@ impl StnTheory {
                 self.active_propagators[c.source].pop();
                 self.incoming_active_propagators[c.target].pop();
                 c.enabler = None;
+            }
+            Event::EdgeUpdated {
+                prop,
+                previous_weight,
+                previous_enabler,
+            } => {
+                let c = &mut self.constraints[prop];
+                c.weight = previous_weight;
+                c.enabler = previous_enabler;
+                for inlined in &mut self.active_propagators[c.source] {
+                    if inlined.id == prop {
+                        inlined.weight = previous_weight;
+                    }
+                }
+                for inlined in &mut self.incoming_active_propagators[c.target] {
+                    if inlined.id == prop {
+                        inlined.weight = previous_weight;
+                    }
+                }
             }
         });
         self.constraints.restore_last();
@@ -1410,6 +1527,8 @@ mod tests {
             stn.set_backtrack_point();
             stn.model.state.set_ub(ub, max - i, Cause::Decision)?;
             stn.propagate_all()?;
+            print(stn);
+            stn.stn.print_stats();
             let b_ub = (max - i) * 2;
             // check that propagation is correct
             debug_assert_eq!(stn.model.domain_of(b), (0, b_ub));
