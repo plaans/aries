@@ -203,6 +203,9 @@ impl ConstraintDb {
             enabler: None,
             enablers: vec![prop.enabler],
             dyn_weight: prop.dyn_weight,
+            // the propagator is not in the active list yet. Initialize to large value to get a manic if it is ever used.
+            index_in_active: u32::MAX,
+            index_in_incoming_active: u32::MAX,
         };
         self.vertices.insert(prop.source);
         self.vertices.insert(prop.target);

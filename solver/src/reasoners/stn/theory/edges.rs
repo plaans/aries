@@ -77,6 +77,11 @@ pub(crate) struct PropagatorGroup {
     pub enablers: Vec<Enabler>,
     /// If non-empty, it means that the weight of the edge is dynamically updated to `factor * ub(var_ub)`
     pub dyn_weight: Option<DynamicWeight>,
+    /// When the propagator is enabled, indicates the position of the inlined propagator in the
+    /// `active_propagator` and `incoming_active_propagator` lists.
+    /// Note that this field is not erased when disabling the edge on backtracking.
+    pub index_in_active: u32,
+    pub index_in_incoming_active: u32,
 }
 
 /// A dynamic weight, equal to `factor * ub(var_ub)`
