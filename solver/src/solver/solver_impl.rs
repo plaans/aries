@@ -1091,6 +1091,7 @@ impl<Lbl: Label> Solver<Lbl> {
             );
             // propagate all theories
             for &i in self.reasoners.writers() {
+                let trail_size = self.model.state.trail().len() as u64;
                 let theory_propagation_start = StartCycleCount::now();
                 self.stats[i].propagation_loops += 1;
                 let th = self.reasoners.reasoner_mut(i);
@@ -1098,6 +1099,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 match th.propagate(&mut self.model.state) {
                     Ok(()) => (),
                     Err(contradiction) => {
+                        // counting domain updates must be done immediately, as :w
+                        let num_dom_updates = self.model.state.trail().len() as u64 - trail_size;
+                        self.stats[i].dom_updates += num_dom_updates;
+                        self.stats.num_dom_updates += num_dom_updates;
                         self.brancher.pre_conflict_analysis(&self.model);
                         // contradiction, learn clause and exit
                         let clause = match contradiction {
@@ -1119,6 +1124,9 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                 }
                 self.stats[i].propagation_time += theory_propagation_start.elapsed();
+                let num_dom_updates = self.model.state.trail().len() as u64 - trail_size;
+                self.stats[i].dom_updates += num_dom_updates;
+                self.stats.num_dom_updates += num_dom_updates;
             }
 
             if num_events_at_start == self.model.state.num_events() {
