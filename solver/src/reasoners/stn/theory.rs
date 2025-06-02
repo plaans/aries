@@ -183,6 +183,7 @@ pub struct StnTheory {
     explanation: Vec<PropagatorId>,
     /// When the edge is deactivated due to theory propagation, this field is set to the next event index of the
     /// edge activation trail.
+    /// Cyclic propagation also use this field as they should not overlap in their usage.
     /// Note that this field is NOT trailed and the value will remain until overriden with a new one.
     /// Hence, the presence of an event index does NOT indicate that the edge is currently deactivated.
     last_disabling_timestamp: RefMap<PropagatorId, EventIndex>,
@@ -902,16 +903,25 @@ impl StnTheory {
     ///
     /// The explanation would be the activation literals of all edges in the cycle.
     fn extract_cycle(&self, propagator_id: PropagatorId, model: &DomainsSnapshot, expl: &mut Explanation) {
+        let mut add_to_explanation = |lit: Lit| {
+            debug_assert!(model.entails(lit));
+            expl.push(lit);
+        };
+
+        // To extract the cycle, we first construct a view of the graph as it was at the time of propagation.
+        // This is necessary because of dynamic edges whose weight (and enablers) may change during search
+        let event_after = self.last_disabling_timestamp[propagator_id];
+        // construct a view of the graph at the time of the deactivation
+        let graph = distances::StnSnapshotGraph::new(self, model, event_after);
+
         let last_edge_of_cycle = &self.constraints[propagator_id];
-        let last_edge_trigger = last_edge_of_cycle.enabler.expect("inactive edge").0;
-        debug_assert!(model.entails(last_edge_trigger.active));
-        debug_assert!(model.entails(last_edge_trigger.valid));
+        let (last_edge_weight, last_edge_trigger) = graph.weight_enabler(propagator_id).unwrap();
         // add this edge to the explanation
-        expl.push(last_edge_trigger.active);
-        expl.push(last_edge_trigger.valid);
+        add_to_explanation(last_edge_trigger.active);
+        add_to_explanation(last_edge_trigger.valid);
 
         let mut curr = last_edge_of_cycle.source;
-        let mut cycle_length = last_edge_of_cycle.weight;
+        let mut cycle_length = last_edge_weight;
 
         // now go back from src until we find the target node, adding all edges on the path
         loop {
@@ -919,7 +929,6 @@ impl StnTheory {
             let lit = Lit::leq(curr, ub);
             debug_assert!(model.entails(lit));
             let ev = model.implying_event(lit).unwrap();
-            debug_assert_eq!(model.entailing_level(lit), self.trail.current_decision_level());
             let ev = model.get_event(ev);
             let edge = match ev.cause.as_external_inference() {
                 Some(cause) => match ModelUpdateCause::from(cause.payload) {
@@ -928,15 +937,14 @@ impl StnTheory {
                 },
                 _ => unreachable!(),
             };
-            let c = &self.constraints[edge];
-            curr = c.source;
-            cycle_length += c.weight;
-            let trigger = self.constraints[edge].enabler.expect("inactive constraint").0;
-            debug_assert!(model.entails(trigger.active));
-            debug_assert!(model.entails(trigger.valid));
+            let source = self.constraints[edge].source;
+            curr = source;
+            // recompute the weight and enabler as they were at the time of the propagation
+            let (weight, trigger) = graph.weight_enabler(edge).unwrap();
+            cycle_length += weight;
             // add edge to the explanation
-            expl.push(trigger.active);
-            expl.push(trigger.valid);
+            add_to_explanation(trigger.active);
+            add_to_explanation(trigger.valid);
 
             if curr == last_edge_of_cycle.target {
                 // we have completed the cycle

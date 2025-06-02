@@ -537,7 +537,7 @@ impl<'a> StnSnapshotGraph<'a> {
 
     /// Returns the weight of the edge at the time of the snapshot,
     /// or None if the edge was not active at the time
-    fn weight(&self, prop_id: PropagatorId) -> Option<IntCst> {
+    pub(super) fn weight(&self, prop_id: PropagatorId) -> Option<IntCst> {
         self.weight_enabler(prop_id).map(|(weight, _enabler)| weight)
     }
     /// Returns the weight and enabler of the edge at the time of the snapshot,
