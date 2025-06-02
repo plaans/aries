@@ -404,14 +404,21 @@ impl StnTheory {
         let cur_ub = cur_var_ub.saturating_mul(ub_factor).min(INT_CST_MAX);
         let literal = ub_var.leq(cur_var_ub);
 
-        // TODO: suboptimal and may miss some propagation opportunities
-        let target_propagator_valid = edge_valid;
-        let source_propagator_valid = edge_valid;
-
-        let dyn_weight = DynamicWeight {
-            var_ub: ub_var,
-            factor: ub_factor,
-            valid: edge_valid, // TODO: specialize by propagator
+        // determine a literal that is true iff a source to target propagator is valid
+        let target_propagator_valid = if domains.implies(domains.presence(target), edge_valid) {
+            // it is statically known that `presence(target) => edge_valid`,
+            // the propagator is always valid
+            Lit::TRUE
+        } else {
+            // given that `presence(source) & presence(target) <=> edge_valid`, we can infer that the propagator becomes valid
+            // (i.e. `presence(target) => edge_valid` holds) when `presence(source)` becomes true
+            domains.presence(source)
+        };
+        // determine a literal that is true iff a target to source propagator is valid
+        let source_propagator_valid = if domains.implies(domains.presence(source), edge_valid) {
+            Lit::TRUE
+        } else {
+            domains.presence(target)
         };
 
         let propagators = [
@@ -421,14 +428,22 @@ impl StnTheory {
                 target: SignedVar::plus(target),
                 weight: cur_ub,
                 enabler: Enabler::new(literal, target_propagator_valid),
-                dyn_weight: Some(dyn_weight),
+                dyn_weight: Some(DynamicWeight {
+                    var_ub: ub_var,
+                    factor: ub_factor,
+                    valid: target_propagator_valid,
+                }),
             },
             Propagator {
                 source: SignedVar::minus(target),
                 target: SignedVar::minus(source),
                 weight: cur_ub,
                 enabler: Enabler::new(literal, source_propagator_valid),
-                dyn_weight: Some(dyn_weight),
+                dyn_weight: Some(DynamicWeight {
+                    var_ub: ub_var,
+                    factor: ub_factor,
+                    valid: source_propagator_valid,
+                }),
             },
         ];
 
@@ -514,24 +529,28 @@ impl StnTheory {
         let val = event.ub_value();
         debug_assert_eq!(event.svar(), c.target);
 
+        // add literal to explanation (in debug, checks that the literal is indeed entailed)
+        let mut add_to_expl = |l: Lit| {
+            debug_assert!(model.entails(l));
+            out_explanation.push(l);
+        };
+
         if let Some(dyn_weight) = c.dyn_weight {
             // The edge is dynamic, hence the weight on the propagator is not necessarily the one it had
             // when the propagation was triggered.
             // We need to recompute the weight it had (or a stronger it could have had).
             let var_ub = model.ub(dyn_weight.var_ub);
             let weight = var_ub * dyn_weight.factor;
-            out_explanation.push(dyn_weight.valid);
-            out_explanation.push(dyn_weight.var_ub.leq(var_ub));
-            out_explanation.push(c.source.leq(val - weight));
+            add_to_expl(dyn_weight.valid);
+            add_to_expl(dyn_weight.var_ub.leq(var_ub));
+            add_to_expl(c.source.leq(val - weight));
         } else {
             let enabler = c.enabler.expect("inactive constraint").0;
-            out_explanation.push(enabler.active);
-            out_explanation.push(enabler.valid);
+            add_to_expl(enabler.active);
+            add_to_expl(enabler.valid);
 
             let cause = c.source.leq(val - c.weight);
-            debug_assert!(model.entails(cause));
-
-            out_explanation.push(cause);
+            add_to_expl(cause);
         }
     }
 
