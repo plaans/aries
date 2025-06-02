@@ -111,15 +111,22 @@ impl ConstraintDb {
     pub fn add_propagator_enabler(&mut self, propagator: PropagatorId, enabler: Enabler) {
         // watch both the `active` and the `valid` literal.
         // when notified that one becomes true, we will need to check that the other is true before taking any action
-        self.watches.add_watch((enabler, propagator), enabler.active);
-        self.watches.add_watch((enabler, propagator), enabler.valid);
         let constraint = &self.propagators[propagator];
+        if constraint.is_dynamic() {
+            // for a dynamic constraint, the active literal is always true (computed directly from the current upper bound of the corresponding varaible)
+            // hence we do not need to place a watch on it (and doing so could be potentially costly because it is an integer variable with potentially many bound updates).
+            debug_assert!({
+                let x = constraint.dyn_weight.unwrap();
+                assert_eq!(x.valid, enabler.valid);
+                assert_eq!(x.var_ub, enabler.active.svar());
+                true
+            });
+            self.watches.add_watch((enabler, propagator), enabler.active);
+        } else {
+            self.watches.add_watch((enabler, propagator), enabler.active);
+            self.watches.add_watch((enabler, propagator), enabler.valid);
+        }
         self.intermittent_propagators.fill_with(constraint.source, Vec::new);
-
-        debug_assert!(
-            constraint.dyn_weight.is_none(),
-            "Cannot add an enabler for a dynamic edge"
-        );
 
         self.intermittent_propagators[constraint.source].push(PropagatorTarget {
             target: constraint.target,

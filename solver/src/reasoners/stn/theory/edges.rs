@@ -84,6 +84,17 @@ pub(crate) struct PropagatorGroup {
     pub index_in_incoming_active: u32,
 }
 
+impl PropagatorGroup {
+    pub fn is_dynamic(&self) -> bool {
+        self.dyn_weight.is_some()
+    }
+
+    #[allow(unused)]
+    pub fn is_currently_active(&self) -> bool {
+        self.enabler.is_some()
+    }
+}
+
 /// A dynamic weight, equal to `factor * ub(var_ub)`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct DynamicWeight {

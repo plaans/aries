@@ -666,7 +666,7 @@ impl StnTheory {
                                 debug_assert_ne!(c.source, c.target);
                                 let activation_event = self.trail.push(EdgeActivated(edge));
                                 c.enabler = Some((enabler, activation_event));
-                                // add the edge to the active propagator lists, recording there index (which is used for updating dynamic edges)
+                                // add the edge to the active propagator lists, recording their index (which is used for updating dynamic edges)
                                 let c = &mut self.constraints[edge];
                                 c.index_in_active = self.active_propagators[c.source].len() as u32;
                                 self.active_propagators[c.source].push(InlinedPropagator {
@@ -711,18 +711,18 @@ impl StnTheory {
                                 previous_weight,
                                 previous_enabler,
                             });
-                            let activation = dyn_weight.var_ub.leq(model.ub(dyn_weight.var_ub));
                             prop.weight = new_weight;
-                            assert!(previous_enabler.is_some());
-                            prop.enabler = Some((
-                                Enabler {
-                                    active: activation,
-                                    valid: dyn_weight.valid,
-                                },
-                                activation_event,
-                            ));
 
+                            // if the edge was previously enabled, update it
                             if previous_enabler.is_some() {
+                                let activation = dyn_weight.var_ub.leq(model.ub(dyn_weight.var_ub));
+                                prop.enabler = Some((
+                                    Enabler {
+                                        active: activation,
+                                        valid: dyn_weight.valid,
+                                    },
+                                    activation_event,
+                                ));
                                 // the edge was active, we must update the weights in the inlined propagators
                                 // the edge is enabled, update the weight of the inlined propagators (both forward and backward)
                                 let inlined = &mut self.active_propagators[prop.source][prop.index_in_active as usize];
@@ -735,6 +735,9 @@ impl StnTheory {
                                 debug_assert_eq!(inlined.id, edge);
                                 debug_assert_eq!(inlined.weight, previous_weight);
                                 inlined.weight = new_weight;
+                            } else {
+                                // TODO: we could here update the weight of the intermittent propagator but it is a use case that is very unlikely to occur in practice
+                                // for the problems we consider
                             }
                             Some((edge, true))
                         } else {
@@ -826,13 +829,15 @@ impl StnTheory {
                 let c = &mut self.constraints[prop];
                 c.weight = previous_weight;
                 c.enabler = previous_enabler;
-                // restore the weight of the inlined propagators
-                let inlined = &mut self.active_propagators[c.source][c.index_in_active as usize];
-                debug_assert_eq!(inlined.id, prop);
-                inlined.weight = previous_weight;
-                let inlined = &mut self.incoming_active_propagators[c.target][c.index_in_incoming_active as usize];
-                debug_assert_eq!(inlined.id, prop);
-                inlined.weight = previous_weight;
+                if previous_enabler.is_some() {
+                    // the edge had inlined propagators, restore their weight
+                    let inlined = &mut self.active_propagators[c.source][c.index_in_active as usize];
+                    debug_assert_eq!(inlined.id, prop);
+                    inlined.weight = previous_weight;
+                    let inlined = &mut self.incoming_active_propagators[c.target][c.index_in_incoming_active as usize];
+                    debug_assert_eq!(inlined.id, prop);
+                    inlined.weight = previous_weight;
+                }
             }
         });
         self.constraints.restore_last();
