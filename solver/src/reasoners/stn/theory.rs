@@ -986,8 +986,8 @@ impl StnTheory {
                 for potential in self.constraints.potential_out_edges(dest) {
                     let orig = potential.target;
                     if let Some(dist_from_orig) = pot_updates.get_prefix(orig) {
-                        let new_path_length = dist_from_orig + weight + dist_to_dest;
-                        if new_path_length + potential.weight < 0 {
+                        let new_path_length = dist_from_orig + (weight as LongCst) + dist_to_dest;
+                        if new_path_length + (potential.weight as LongCst) < 0 {
                             // edge should be deactivated
                             // update the model to force this edge to be inactive
 

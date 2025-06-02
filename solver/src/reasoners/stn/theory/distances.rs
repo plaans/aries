@@ -72,7 +72,7 @@ pub(super) trait Graph<V: Copy, E: Copy> {
     /// Returns the set of vertices for which adding the edge `e` would result in a new shortest `src(e) -> v`.
     /// Each vertex is tagged with the distance `tgt(e) -> v`.
     #[allow(unused)] // high level API used in tests
-    fn relevants(&self, new_edge: &Edge<V, E>) -> Vec<(V, IntCst)>
+    fn relevants(&self, new_edge: &Edge<V, E>) -> Vec<(V, LongCst)>
     where
         V: Ref + Ord,
     {
@@ -85,7 +85,7 @@ pub(super) trait Graph<V: Copy, E: Copy> {
     fn relevants_no_alloc(
         &self,
         new_edge: &Edge<V, E>,
-        relevants: &mut Vec<(V, IntCst)>,
+        relevants: &mut Vec<(V, LongCst)>,
         heap: &mut RelevantHeap<V, Label>,
     ) where
         V: Ref + Ord,
@@ -95,7 +95,7 @@ pub(super) trait Graph<V: Copy, E: Copy> {
 
         // order allows to override the label of the target edge if the edge is a self loop
         let reduced_weight = new_edge.weight + self.potential(new_edge.src) - self.potential(new_edge.tgt);
-        let tgt_lbl = Label::new(reduced_weight, true);
+        let tgt_lbl = Label::new(reduced_weight as LongCst, true);
         heap.insert(new_edge.tgt, tgt_lbl);
 
         let src_lbl = Label::new(0, false);
@@ -109,14 +109,14 @@ pub(super) trait Graph<V: Copy, E: Copy> {
             if relevant {
                 // there is a new shortest path through new edge to v
                 // dist is the length of the path with reduced cost, convert it to normal distances
-                let dist = dist - self.potential(new_edge.src) + self.potential(curr);
-                relevants.push((curr, dist - new_edge.weight));
+                let dist = dist - (self.potential(new_edge.src) as LongCst) + (self.potential(curr)) as LongCst;
+                relevants.push((curr, dist - (new_edge.weight as LongCst)));
                 remaining_relevants -= 1;
             }
             for out in self.outgoing(curr) {
                 let reduced_cost = out.weight + self.potential(out.src) - self.potential(out.tgt);
                 debug_assert!(reduced_cost >= 0);
-                let lbl = Label::new(dist + reduced_cost, relevant);
+                let lbl = Label::new(dist + (reduced_cost as LongCst), relevant);
 
                 if let Some(previous_label) = heap.best(out.tgt) {
                     if previous_label <= &lbl {
@@ -318,12 +318,12 @@ impl<V: Ord + Ref, Lbl: Ord + Copy> RelevantHeap<V, Lbl> {
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub(super) struct Label {
-    dist: IntCst,
+    dist: LongCst,
     relevant: bool,
 }
 
 impl Label {
-    pub fn new(dist: IntCst, relevant: bool) -> Self {
+    pub fn new(dist: LongCst, relevant: bool) -> Self {
         Self { dist, relevant }
     }
 }
@@ -384,12 +384,12 @@ impl<V: Copy, E: Copy> Edge<V, E> {
 pub struct PotentialUpdate<V: Ref> {
     /// All nodes `v` for which the addition of `e` results in a new shortest path `v -> tgt(e)`
     /// It is annotated with the distance `v -> src(e)`
-    pub prefixes: Vec<(V, IntCst)>,
+    pub prefixes: Vec<(V, LongCst)>,
     /// All nodes `v` for which the addition of `e` results in a new shortest path `src(e) -> v`
     /// It is annotated with the distance `tgt(e) -> v`
-    pub postfixes: Vec<(V, IntCst)>,
+    pub postfixes: Vec<(V, LongCst)>,
 
-    prefix_lookup: RefMap<V, IntCst>,
+    prefix_lookup: RefMap<V, LongCst>,
 }
 impl<V: Ref> PotentialUpdate<V> {
     pub fn new() -> Self {
@@ -406,7 +406,7 @@ impl<V: Ref> PotentialUpdate<V> {
         }
     }
 
-    pub fn get_prefix(&self, v: V) -> Option<IntCst> {
+    pub fn get_prefix(&self, v: V) -> Option<LongCst> {
         #[allow(deprecated)]
         {
             debug_assert_eq!(self.prefixes.len(), self.prefix_lookup.len(), "dirty state");
@@ -838,7 +838,7 @@ mod test {
 
             dbg!(&original_graph.edges);
             let updated = original_graph.relevants(&added_edge);
-            let updated: HashMap<V, IntCst> = updated.into_iter().collect();
+            let updated: HashMap<V, LongCst> = updated.into_iter().collect();
 
             for other in final_graph.vertices() {
                 let previous = original_graph.shortest_distance(added_edge.src, other);
