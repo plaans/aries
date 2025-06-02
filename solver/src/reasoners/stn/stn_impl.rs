@@ -1,7 +1,7 @@
 use crate::backtrack::Backtrack;
 use crate::core::literals::Disjunction;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, InferenceCause};
-use crate::core::{Lit, SignedVar};
+use crate::core::{IntCst, Lit, SignedVar};
 use crate::model::Model;
 use crate::reasoners::stn::theory::{StnConfig, StnTheory, Timepoint, W};
 use crate::reasoners::{Contradiction, Theory};
@@ -43,7 +43,7 @@ impl Stn {
             .add_reified_edge(active_edge, source, target, weight, &self.model.state)
     }
 
-    pub fn add_dynamic_edge(&mut self, source: Timepoint, target: Timepoint, ub_var: SignedVar, ub_factor: i32) {
+    pub fn add_dynamic_edge(&mut self, source: Timepoint, target: Timepoint, ub_var: SignedVar, ub_factor: IntCst) {
         self.stn
             .add_dynamic_edge(source, target, ub_var, ub_factor, &self.model.state);
     }
