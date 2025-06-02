@@ -190,7 +190,7 @@ pub struct StnTheory {
     pending_bound_changes: Vec<BoundChangeEvent>,
     /// A set of edges whose upper bound is dynamic (i.e. depends on the variable)
     /// The map is indexed on the variable from which the variable is computed.
-    dyn_edges: hashbrown::HashMap<SignedVar, Vec<PropagatorId>>,
+    dyn_edges: RefMap<SignedVar, Vec<PropagatorId>>, // TODO: should not be a hashmap
 }
 
 #[derive(Copy, Clone)]
@@ -454,7 +454,7 @@ impl StnTheory {
             .collect_vec();
 
         // record the dynamic edge so that future updates on the variable would trigger a new edge insertion
-        let watch_entries = self.dyn_edges.entry(ub_var).or_default();
+        let watch_entries = self.dyn_edges.get_mut_or_insert(ub_var, || Vec::with_capacity(2));
         for prop_id in propagator_ids {
             watch_entries.push(prop_id);
         }
@@ -633,7 +633,7 @@ impl StnTheory {
                 }
 
                 // go through all dynamic edges whose upper bound is given by this variable.
-                if let Some(dyn_edges_on_bound) = self.dyn_edges.get(&ev.affected_bound) {
+                if let Some(dyn_edges_on_bound) = self.dyn_edges.get(ev.affected_bound) {
                     for &prop_id in dyn_edges_on_bound {
                         self.pending_activations
                             .push_back(ActivationEvent::ToUpdate { edge: prop_id });
