@@ -1039,6 +1039,10 @@ impl Theory for StnTheory {
         model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
+        let mut add_to_explanation = |l: Lit| {
+            debug_assert!(model.entails(l));
+            out_explanation.push(l);
+        };
         debug_assert_eq!(context.writer, self.identity());
         let context = context.payload;
         match ModelUpdateCause::from(context) {
@@ -1054,8 +1058,8 @@ impl Theory for StnTheory {
                 let src_ub = model.ub(edge.source);
                 let tgt_lb = model.lb(edge.target);
                 debug_assert!(src_ub + edge.weight < tgt_lb);
-                out_explanation.push(edge.source.leq(src_ub));
-                out_explanation.push(edge.target.geq(tgt_lb));
+                add_to_explanation(edge.source.leq(src_ub));
+                add_to_explanation(edge.target.geq(tgt_lb));
             }
             ModelUpdateCause::TheoryPropagationPathDeactivation(edge_id) => {
                 // edge that was deactivated
@@ -1069,14 +1073,13 @@ impl Theory for StnTheory {
                     .expect("No explaining path in graph");
                 let mut path_length = 0;
                 for edge_path_id in path {
-                    let edge_path = &self.constraints[edge_path_id];
-                    path_length += edge_path.weight;
-                    let (enabler, activation) = edge_path.enabler.expect("Inactive edge on path");
-                    out_explanation.push(enabler.active);
-                    out_explanation.push(enabler.valid); // TODO: since we are only talking about edges, are we allowed to omit this in the explanations?
-                    debug_assert!(activation < event_after);
-                    debug_assert!(model.entails(enabler.active));
-                    debug_assert!(model.entails(enabler.valid));
+                    // extract the weight and enabler of the propagator at the time of the inference
+                    let (weight, enabler) = graph
+                        .weight_enabler(edge_path_id)
+                        .expect("Edge not active in the graph");
+                    path_length += weight;
+                    add_to_explanation(enabler.active);
+                    add_to_explanation(enabler.valid); // TODO: since we are only talking about edges, are we allowed to omit this in the explanations?
                 }
                 debug_assert!(path_length + edge.weight < 0);
             }

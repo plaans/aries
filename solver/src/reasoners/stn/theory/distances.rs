@@ -17,6 +17,7 @@ thread_local! {
     ))
 }
 
+use super::contraint_db::Enabler;
 use super::StnTheory;
 
 struct Reversed<'a, V: Copy, E: Copy, G: Graph<V, E>>(&'a G, PhantomData<V>, PhantomData<E>);
@@ -521,7 +522,7 @@ pub struct StnSnapshotGraph<'a> {
     stn: &'a StnTheory,
     /// Representation of the domains at some point in past
     doms: &'a DomainsSnapshot<'a>,
-    /// All edges that were inserted after this event (in the grpah edge insertion trail) should be ignored
+    /// All edges that were inserted at or after this event (in the graph edge insertion trail) should be ignored
     ignore_after: EventIndex,
 }
 
@@ -531,6 +532,37 @@ impl<'a> StnSnapshotGraph<'a> {
             stn,
             doms,
             ignore_after,
+        }
+    }
+
+    /// Returns the weight of the edge at the time of the snapshot,
+    /// or None if the edge was not active at the time
+    fn weight(&self, prop_id: PropagatorId) -> Option<IntCst> {
+        self.weight_enabler(prop_id).map(|(weight, _enabler)| weight)
+    }
+    /// Returns the weight and enabler of the edge at the time of the snapshot,
+    /// or None if the edge was not active at the time
+    pub(super) fn weight_enabler(&self, prop_id: PropagatorId) -> Option<(IntCst, Enabler)> {
+        let c = &self.stn.constraints[prop_id];
+        let mut last_enabler = c.enabler?;
+        let mut last_weight = c.weight;
+
+        loop {
+            if last_enabler.1 < self.ignore_after {
+                return Some((last_weight, last_enabler.0));
+            }
+            match self.stn.trail.get_event(last_enabler.1) {
+                super::Event::EdgeActivated(_) => return None, // no event preceding this one
+                super::Event::EdgeUpdated {
+                    prop,
+                    previous_weight,
+                    previous_enabler,
+                } => {
+                    debug_assert_eq!(*prop, prop_id);
+                    last_enabler = (*previous_enabler)?;
+                    last_weight = *previous_weight;
+                }
+            }
         }
     }
 }
@@ -549,18 +581,13 @@ impl<'a> Graph<SignedVar, PropagatorId> for StnSnapshotGraph<'a> {
         self.stn.active_propagators[v]
             .iter()
             .filter(|prop| self.doms.present(prop.target) != Some(false))
-            .filter(|prop| {
-                // we are considering the view of an older STN, thus we must ignore any
-                // edge that was not active according to the domains at the time (if the edge has been added to the STN since)
-                let c = &self.stn.constraints[prop.id];
-                let enabler = c.enabler.unwrap().1; // TODO: this might be problematic with dynamic edges
-                enabler < self.ignore_after
-            })
-            .map(move |prop| StnEdge {
-                src: v,
-                tgt: prop.target,
-                weight: prop.weight,
-                id: prop.id,
+            .filter_map(move |prop| {
+                self.weight(prop.id).map(|weight| StnEdge {
+                    src: v,
+                    tgt: prop.target,
+                    weight,
+                    id: prop.id,
+                })
             })
     }
 
@@ -568,17 +595,13 @@ impl<'a> Graph<SignedVar, PropagatorId> for StnSnapshotGraph<'a> {
         self.stn.incoming_active_propagators[v]
             .iter()
             .filter(|prop| self.doms.present(prop.target) != Some(false))
-            .filter(|prop| {
-                // we are considering the view of an older STN, thus we ignore any edge inserted after our timestamp
-                let c = &self.stn.constraints[prop.id];
-                let enabler = c.enabler.unwrap().1; // TODO: this might be problematic with dynamic edges
-                enabler < self.ignore_after
-            })
-            .map(move |prop| StnEdge {
-                src: prop.target,
-                tgt: v,
-                weight: prop.weight,
-                id: prop.id,
+            .filter_map(move |prop| {
+                self.weight(prop.id).map(|weight| StnEdge {
+                    src: prop.target,
+                    tgt: v,
+                    weight,
+                    id: prop.id,
+                })
             })
     }
 
