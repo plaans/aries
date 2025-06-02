@@ -402,7 +402,7 @@ impl StnTheory {
         debug_assert!(domains.implies(edge_valid, domains.presence(target)));
 
         let cur_var_ub = domains.ub(ub_var);
-        let cur_ub = cur_var_ub.saturating_mul(ub_factor).min(INT_CST_MAX);
+        let cur_ub = cur_var_ub.saturating_mul(ub_factor).clamp(INT_CST_MIN, INT_CST_MAX);
         let literal = ub_var.leq(cur_var_ub);
 
         // determine a literal that is true iff a source to target propagator is valid
@@ -541,7 +541,7 @@ impl StnTheory {
             // when the propagation was triggered.
             // We need to recompute the weight it had (or a stronger it could have had).
             let var_ub = model.ub(dyn_weight.var_ub);
-            let weight = var_ub * dyn_weight.factor;
+            let weight = var_ub.saturating_mul(dyn_weight.factor).clamp(INT_CST_MIN, INT_CST_MAX);
             add_to_expl(dyn_weight.valid);
             add_to_expl(dyn_weight.var_ub.leq(var_ub));
             add_to_expl(c.source.leq(val - weight));
@@ -720,8 +720,8 @@ impl StnTheory {
                         let dyn_weight = prop.dyn_weight.unwrap();
                         let previous_weight = prop.weight;
                         let previous_enabler = prop.enabler;
-                        let new_weight =
-                            (model.ub(dyn_weight.var_ub) * dyn_weight.factor).clamp(INT_CST_MIN, INT_CST_MAX);
+                        let new_weight = (model.ub(dyn_weight.var_ub).saturating_mul(dyn_weight.factor))
+                            .clamp(INT_CST_MIN, INT_CST_MAX);
 
                         // check if an update is needed
                         // it might be the case that no update are required if the variable's upper bound was updated multiple times since the last propagation
