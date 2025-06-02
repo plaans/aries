@@ -853,8 +853,8 @@ mod test {
                 assert_eq!(new_sp, present_in_updated, "{:?} -> {:?}", added_edge.src, other);
                 if present_in_updated {
                     assert_eq!(
-                        updated[&other] + added_edge.weight,
-                        new.unwrap(),
+                        updated[&other] + (added_edge.weight as LongCst),
+                        new.unwrap() as LongCst,
                         "The length of the shortest paths should be the same  ({} -> {})",
                         added_edge.src,
                         other
@@ -875,15 +875,14 @@ mod test {
             let pot_updates =
                 original_graph.updated_on_addition(added_edge.src, added_edge.tgt, added_edge.weight, added_edge.id);
 
-            let updated_paths: HashMap<(V, V), IntCst> = pot_updates
+            let updated_paths: HashMap<(V, V), LongCst> = pot_updates
                 .prefixes
                 .iter()
                 .copied()
                 .flat_map(|(orig, orig_src)| {
-                    pot_updates
-                        .postfixes
-                        .iter()
-                        .map(move |(dest, tgt_dest)| ((orig, *dest), orig_src + added_edge.weight + tgt_dest))
+                    pot_updates.postfixes.iter().map(move |(dest, tgt_dest)| {
+                        ((orig, *dest), orig_src + (added_edge.weight as LongCst) + tgt_dest)
+                    })
                 })
                 .collect();
 

@@ -1546,7 +1546,8 @@ mod tests {
 
         // given the single literal (expected to be an upperbound of `ub`) that caused a the update of the upper bound of `b`
         let cause_b_ub = |stn: &mut Stn, b_ub: IntCst| {
-            let implying = stn.implying_literals(Lit::leq(b, b_ub)).unwrap();
+            let mut implying = stn.implying_literals(Lit::leq(b, b_ub)).unwrap();
+            implying.retain(|&l| l != Lit::TRUE && stn.model.state.implying_event(l).is_some()); // only keep non-tautological literals
             assert_eq!(implying.len(), 1);
             implying[0]
         };

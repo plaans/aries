@@ -728,10 +728,7 @@ impl Domains {
                 &mut explanation,
                 explainer,
             );
-            // filter out tautologica literals
-            let mut lits = explanation.lits;
-            lits.retain(|l| *l != Lit::TRUE && self.implying_event(*l).is_some());
-            Some(lits)
+            Some(explanation.lits)
         }
     }
 
