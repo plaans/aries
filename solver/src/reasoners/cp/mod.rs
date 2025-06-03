@@ -140,17 +140,20 @@ impl Cp {
         }
     }
 
-    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq) {
-        self.add_opt_linear_constraint(leq, Lit::TRUE)
+    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq, doms: &Domains) {
+        self.add_half_reif_linear_constraint(leq, Lit::TRUE, doms)
     }
 
     /// Adds a linear constraint that is only active when `active` is true.
-    pub fn add_opt_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit) {
+    pub fn add_half_reif_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit, doms: &Domains) {
+        let valid = doms.presence_literal(active);
+        debug_assert!(leq.sum.iter().all(|e| doms.implies(valid, doms.presence(e.var))));
         let elements = leq.sum.iter().map(|e| SumElem::new(e.factor, e.var)).collect();
         let propagator = LinearSumLeq {
             elements,
             ub: leq.upper_bound,
             active,
+            valid,
         };
         self.add_propagator(propagator);
     }

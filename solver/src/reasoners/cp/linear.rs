@@ -164,6 +164,9 @@ pub(super) struct LinearSumLeq {
     pub elements: Vec<SumElem>,
     pub ub: IntCst,
     pub active: Lit,
+    /// True if the constraint is within its validity scope
+    /// It MUST be the case that `valid => prez(active)`
+    pub valid: Lit,
 }
 
 impl std::fmt::Display for LinearSumLeq {
@@ -199,6 +202,7 @@ impl LinearSumLeq {
 impl Propagator for LinearSumLeq {
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
         context.add_watch(self.active.variable(), id);
+        context.add_watch(self.valid.variable(), id);
         for e in &self.elements {
             if !e.is_constant() {
                 context.add_lb_watch(e.var, id);
@@ -207,18 +211,28 @@ impl Propagator for LinearSumLeq {
     }
 
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        if domains.entails(self.active) {
-            // constraint is active, propagate
-            let sum_lb: LongCst = self.elements.iter().map(|e| e.get_lower_bound(domains)).sum();
-            let f = cst_int_to_long(self.ub) - sum_lb;
+        if domains.entails(!self.valid) || domains.entails(!self.active) {
+            return Ok(()); // constraint is necessarily inactive
+        }
+        // constraint is not inactive, check validity
+        let sum_lb: LongCst = self.elements.iter().map(|e| e.get_lower_bound(domains)).sum();
+        let f = cst_int_to_long(self.ub) - sum_lb;
 
-            if f < 0 {
-                // INCONSISTENT
-                let mut expl = Explanation::new();
-                self.explain(Lit::FALSE, &DomainsSnapshot::current(domains), &mut expl);
-                return Err(Contradiction::Explanation(expl));
-            }
+        if f < 0 {
+            // INCONSISTENT, it means that the constraint cannot be active.
+            // We set `active` to false. If it was already true, it would result in either
+            // - a conflict if it is necessarily present (propagated upward with the `?` operator)
+            // - making the variable absent, which should set `valid` to false (structural assumption of the constraint)
+            let changed_something = domains.set(!self.active, cause)?;
+            debug_assert!(
+                changed_something,
+                "inconsistent constraint resulted neither in conflict nor in deactivation"
+            );
+            return Ok(());
+        }
 
+        if domains.entails(self.active) && domains.entails(self.valid) {
+            // constraint is active, we are allowed to propagate this constraint
             for e in &self.elements {
                 let lb = e.get_lower_bound(domains);
                 let ub = e.get_upper_bound(domains);
@@ -241,22 +255,22 @@ impl Propagator for LinearSumLeq {
         //      uba <= ub - lb(b) - lb(c)
         //      lb(b) + lb(c) <= ub - uba
 
-        if self.active != Lit::TRUE {
-            // explanation is always conditioned by the activity of the propagator
-            out_explanation.push(self.active);
-        }
-
         // gather the potential explainers (LHS) in a set of culprits
         //  SUM_{c in culprits) <= UB
         let mut culprits = BinaryHeap::new();
 
         let mut ub = cst_int_to_long(self.ub);
-        if literal == Lit::FALSE {
-            // we are explaining a contradiction hence we must show that our lower bounds are strictly greater than the uupper bound
+        if literal == !self.active {
+            // we are explaining a contradiction hence we must show that our lower bounds are strictly greater than the upper bound
             ub += 1;
         } else {
             // we are NOT explaining a contradiction, at least one element be the subject of the explanation
             debug_assert!(self.elements.iter().any(|e| e.var == literal.svar()));
+            if self.active != Lit::TRUE {
+                // explanation is always conditioned by the activity of the propagator
+                out_explanation.push(self.active);
+                out_explanation.push(self.valid);
+            }
         }
         for e in &self.elements {
             if e.var == literal.svar() {
@@ -374,7 +388,12 @@ mod tests {
     }
 
     fn sum(elements: Vec<SumElem>, ub: IntCst, active: Lit) -> LinearSumLeq {
-        LinearSumLeq { elements, ub, active }
+        LinearSumLeq {
+            elements,
+            ub,
+            active,
+            valid: Lit::TRUE,
+        }
     }
 
     /* =============================== Helpers ============================== */
@@ -500,24 +519,20 @@ mod tests {
     fn test_explanation_present_impossible_sum() {
         let mut d = Domains::new();
         let v = d.new_var(-1, 1);
-        let c = var(25, 25, 1, &mut d);
+        let c = var(0, 25, 1, &mut d);
         let s = sum(vec![c], 10, v.lt(0));
 
-        // The sum is not necessary active so everything is ok
+        // take a decision that will make the constraint unsatifiable and thus deactivate it
+        d.save_state();
+        d.decide(c.var.geq(25));
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds_var(v, &d, -1, 1);
+        // constraint should have been deactivated
+        check_bounds_var(v, &d, 0, 1);
 
-        // Change the value of `v` to activate the impossible sum
-        d.set_lb(v, -1, Cause::Decision);
-        d.set_ub(v, -1, Cause::Decision);
-        check_bounds_var(v, &d, -1, -1);
-        let p = s.propagate(&mut d, Cause::Decision);
-        assert!(p.is_err());
-        let Contradiction::Explanation(e) = p.unwrap_err() else {
-            unreachable!()
-        };
-        assert_eq!(e.lits, vec![v.lt(0)]);
-        check_bounds_var(v, &d, -1, -1);
+        let mut expl = Explanation::new();
+        let d = DomainsSnapshot::current(&d);
+        s.explain(v.geq(0), &d, &mut expl);
+        assert_eq!(expl.lits, vec![c.var.geq(25)]);
     }
 
     static INFERENCE_CAUSE: Cause = Cause::Inference(InferenceCause {

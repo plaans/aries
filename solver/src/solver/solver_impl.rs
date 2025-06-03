@@ -288,12 +288,9 @@ impl<Lbl: Label> Solver<Lbl> {
                 };
 
                 if !handled {
-                    assert!(
-                        self.model.entails(value),
-                        "Unsupported half reified linear constraints {lin:?}"
-                    ); // FIXME: Support reified linear constraints
-                    let scope = self.model.state.presence(value);
-                    self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
+                    self.reasoners
+                        .cp
+                        .add_half_reif_linear_constraint(&lin, value, &self.model.state);
 
                     // if the linear sum is on three variables, try adding a redundant dynamic variable to the STN
                     if lin.upper_bound == 0 && lin.sum.len() == 3 {
