@@ -2,6 +2,8 @@ use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::IVar;
+use aries::model::lang::linear::LinearSum;
+use aries::model::lang::linear::LinearTerm;
 use aries::model::lang::linear::NFLinearSumItem;
 
 use crate::aries::Post;
@@ -48,37 +50,47 @@ impl LinNe {
 
 impl<Lbl: Label> Post<Lbl> for LinNe {
     fn post(&self, model: &mut Model<Lbl>) {
-        if self.is_ne() {
-            let ne = Ne::new(self.sum[0].var, self.sum[1].var);
+        let old_version = false;
+        if old_version {
+            if self.is_ne() {
+                let ne = Ne::new(self.sum[0].var, self.sum[1].var);
+                ne.post(model);
+                return;
+            }
+
+            // Compute the sum bounds
+            let vlb = |v| model.state.lb(v);
+            let vub = |v| model.state.ub(v);
+            let ilb = |i: &NFLinearSumItem| {
+                i.factor * if i.factor > 0 { vlb(i.var) } else { vub(i.var) }
+            };
+            let iub = |i: &NFLinearSumItem| {
+                i.factor * if i.factor > 0 { vub(i.var) } else { vlb(i.var) }
+            };
+
+            let sum_lb = self.sum.iter().map(ilb).sum();
+            let sum_ub = self.sum.iter().map(iub).sum();
+
+            let var_sum = model.state.new_var(sum_lb, sum_ub);
+
+            let mut sum = self.sum.clone();
+            sum.push(NFLinearSumItem {
+                var: var_sum,
+                factor: -1,
+            });
+
+            let lin_eq = LinEq::new(sum, 0);
+            let ne = Ne::new(IVar::new(var_sum), self.b);
+            lin_eq.post(model);
             ne.post(model);
-            return;
+        } else {
+            let above = model.state.new_var(0, 1).geq(1);
+            let sum = self.sum.iter().fold(LinearSum::zero(), |accu, elem| {
+                accu + LinearTerm::int(elem.factor, IVar::new(elem.var))
+            });
+            model.enforce_if(above, sum.clone().geq(self.b + 1));
+            model.enforce_if(!above, sum.leq(self.b - 1));
         }
-
-        // Compute the sum bounds
-        let vlb = |v| model.state.lb(v);
-        let vub = |v| model.state.ub(v);
-        let ilb = |i: &NFLinearSumItem| {
-            i.factor * if i.factor > 0 { vlb(i.var) } else { vub(i.var) }
-        };
-        let iub = |i: &NFLinearSumItem| {
-            i.factor * if i.factor > 0 { vub(i.var) } else { vlb(i.var) }
-        };
-
-        let sum_lb = self.sum.iter().map(ilb).sum();
-        let sum_ub = self.sum.iter().map(iub).sum();
-
-        let var_sum = model.state.new_var(sum_lb, sum_ub);
-
-        let mut sum = self.sum.clone();
-        sum.push(NFLinearSumItem {
-            var: var_sum,
-            factor: -1,
-        });
-
-        let lin_eq = LinEq::new(sum, 0);
-        let ne = Ne::new(IVar::new(var_sum), self.b);
-        lin_eq.post(model);
-        ne.post(model);
     }
 }
 
