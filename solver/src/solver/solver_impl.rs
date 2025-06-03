@@ -27,6 +27,11 @@ static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "fal
 /// If true: each time a solution is found, the solver's stats will be printed (in optimization)
 static STATS_AT_SOLUTION: EnvParam<bool> = EnvParam::new("ARIES_STATS_AT_SOLUTION", "false");
 
+/// If true, the solver will post redundant constraints of linear inequalities with 3 variables, as dynamic edges in the STN.
+/// These are primarily useful for detecting cyclic propagations that would not be caught by independent propagation of linear constraints.
+/// Currently deactivated by default as there seems to be a bug in the implementation, witnessed on some minizinc instances.
+static DYNAMIC_EDGES: EnvParam<bool> = EnvParam::new("ARIES_DYNAMIC_EDGES", "false");
+
 /// Macro that uses the the same syntax as `println!()` but:
 ///  - only evaluate arguments and print if `LOG_DECISIONS` is true.
 ///  - prepends the thread id to the line.
@@ -291,9 +296,8 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.reasoners
                         .cp
                         .add_half_reif_linear_constraint(&lin, value, &self.model.state);
-
                     // if the linear sum is on three variables, try adding a redundant dynamic variable to the STN
-                    if lin.upper_bound == 0 && lin.sum.len() == 3 {
+                    if lin.upper_bound == 0 && lin.sum.len() == 3 && DYNAMIC_EDGES.get() {
                         let doms = &mut self.model.state;
                         // we may be eligible for encoding as a dynamic STN edge
                         // for all possible ordering of items in the sum, check if it representable as a dynamic STN edge
