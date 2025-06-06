@@ -211,13 +211,21 @@ impl ReifExpr {
                 }
             }
             ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
-                let lit_value: IntCst = lvalue(*lit).into();
                 if !prez(*lhs) {
                     None
-                } else if !prez(*rhs) {
-                    Some(value(*lhs) == 0 && lit_value == 0)
+                } else if !prez(lit.variable()) {
+                    if !prez(*rhs) {
+                        None
+                    } else {
+                        Some(value(*lhs) == 0 && value(*rhs) == 0)
+                    }
                 } else {
-                    Some(value(*lhs) == lit_value * value(*rhs))
+                    let lit_value: IntCst = lvalue(*lit).into();
+                    if !prez(*rhs) {
+                        Some(value(*lhs) == 0 && lit_value == 0)
+                    } else {
+                        Some(value(*lhs) == lit_value * value(*rhs))
+                    }
                 }
             }
         }

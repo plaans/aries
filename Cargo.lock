@@ -125,6 +125,7 @@ dependencies = [
  "bit-set",
  "crossbeam-channel",
  "env_param",
+ "format_num",
  "hashbrown 0.15.2",
  "itertools 0.13.0",
  "lazy_static",
@@ -651,6 +652,15 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "format_num"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14ac05eb8d2eb4ed1eeff847911deae077b0b53332465de9d6a26b0ea9961bc8"
+dependencies = [
+ "regex",
+]
 
 [[package]]
 name = "futures-channel"
