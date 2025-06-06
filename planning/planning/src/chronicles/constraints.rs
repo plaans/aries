@@ -330,12 +330,12 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
             match var {
                 Atom::Sym(s) => {
                     let Cst::Sym(val) = val else { panic!() };
-                    supported_by_this_line.push(model.reify(eq(s, val)));
+                    supported_by_this_line.push(model.half_reify(eq(s, val)));
                 }
                 Atom::Int(var) => {
                     let Cst::Int(val) = val else { panic!() };
-                    supported_by_this_line.push(model.reify(leq(var, val)));
-                    supported_by_this_line.push(model.reify(geq(var, val)));
+                    supported_by_this_line.push(model.half_reify(leq(var, val)));
+                    supported_by_this_line.push(model.half_reify(geq(var, val)));
                 }
                 Atom::Bool(l) => {
                     let Cst::Bool(val) = val else { panic!() };
@@ -352,7 +352,7 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                 }
             }
         }
-        let support = model.reify(and(supported_by_this_line.clone()));
+        let support = model.half_reify(and(supported_by_this_line.clone()));
         lines.push((support, values));
         if redundant_constraints {
             println!("  TABLE {support:?} {values:?}    {supported_by_this_line:?}");
@@ -367,16 +367,16 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
         //       This is can be witnessed with that should find a solution but does not when having redundant constraints:
         //         lcp planning/ext/pddl/ipc-2002/domains/rovers-time-simple-automatic/instances/instance-6.pddl --max-depth 6 -s causal
 
-        let reif_eq = |var: Atom, val: Cst, model: &mut Model<L>| match var {
+        let half_reif_eq = |var: Atom, val: Cst, model: &mut Model<L>| match var {
             Atom::Sym(s) => {
                 let Cst::Sym(val) = val else { panic!() };
-                model.reify(eq(s, val))
+                model.half_reify(eq(s, val))
             }
             Atom::Int(var) => {
                 let Cst::Int(val) = val else { panic!() };
-                let below = model.reify(leq(var, val));
-                let above = model.reify(geq(var, val));
-                model.reify(and([below, above]))
+                let below = model.half_reify(leq(var, val));
+                let above = model.half_reify(geq(var, val));
+                model.half_reify(and([below, above]))
             }
             Atom::Bool(l) => {
                 let Cst::Bool(val) = val else { panic!() };
@@ -401,13 +401,16 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                 .sorted()
                 .collect_vec();
             println!("allowed: {var:?} = {allowed_values:?}");
-            let has_allowed_value = or(allowed_values.iter().map(|val| reif_eq(var, *val, model)).collect_vec());
+            let has_allowed_value = or(allowed_values
+                .iter()
+                .map(|val| half_reif_eq(var, *val, model))
+                .collect_vec());
             model.enforce(has_allowed_value, [presence]);
             match var {
                 Atom::Sym(_) => {
                     for allowed in allowed_values {
                         println!("  - allowed {allowed:?}");
-                        let mut clause = vec![!reif_eq(var, allowed, model)];
+                        let mut clause = vec![!half_reif_eq(var, allowed, model)];
                         for (support, values) in &lines {
                             let val = values[i];
                             if allowed == values[i] {
