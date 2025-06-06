@@ -3,6 +3,7 @@
 
 mod numeric;
 mod symmetry;
+pub mod warm_up;
 
 use crate::encoding::*;
 use crate::solver::{init_solver, Metric};
