@@ -1,7 +1,7 @@
-use crate::encode::{
-    add_causal_same_plan_constraints, add_strict_same_plan_constraints, encode, populate_with_task_network,
-    populate_with_template_instances, populate_with_warm_up_plan, EncodedProblem,
+use crate::encode::warm_up::{
+    add_causal_same_plan_constraints, add_strict_same_plan_constraints, populate_with_warm_up_plan,
 };
+use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::search::{ForwardSearcher, ManualCausalSearch};
