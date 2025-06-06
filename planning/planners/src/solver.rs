@@ -43,11 +43,16 @@ static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "causal");
 /// The type of warming up constraints to add to the problem.
 #[derive(Copy, Clone, PartialEq)]
 enum WarmUpType {
-    /// No warming up constraints
+    /// No warming up constraints.
     None,
-    /// The first plan must be exactly the same as the warm-up plan
+    /// The first plan must be exactly the same as the warm-up plan, presence included.
+    /// This option can cause some problems with the plan space (PSP) symmetry breaking.
     Strict,
-    /// The first plan must be causal equivalent to the warm-up plan
+    /// The first plan must be causally equivalent to the warm-up plan.
+    /// The plan is constrained to be the same as the warm-up plan, while letting the solver to choose
+    /// which chronicle instances is attributed to which action.
+    /// If used with the plan space (PSP) symmetry breaking, some instances could not be present in the
+    /// solution plan if they are found useless, leading to non-strict equivalence with the warm-up plan.
     Causal,
 }
 
