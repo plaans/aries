@@ -1,13 +1,13 @@
-use aries::core::INT_CST_MAX;
 use aries::core::IntCst;
-use aries::core::state::Term;
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::BVar;
+use aries::model::lang::IVar;
+use aries::model::lang::linear::LinearSum;
+use aries::model::lang::linear::LinearTerm;
 use aries::model::lang::linear::NFLinearSumItem;
 
 use crate::aries::Post;
-use crate::aries::constraint::LinLe;
 
 /// Half reified linear less or equal constraint.
 ///
@@ -42,18 +42,12 @@ impl LinLeHalf {
 
 impl<Lbl: Label> Post<Lbl> for LinLeHalf {
     fn post(&self, model: &mut Model<Lbl>) {
-        // Big M
-        let m = INT_CST_MAX;
-
-        // sum(v[i] * c[i]) + r * M <= ub + M
-        let mut sum = self.sum.clone();
-        sum.push(NFLinearSumItem {
-            var: self.r.variable(),
-            factor: m,
+        // r => sum(v[i] * c[i]) <= ub
+        let sum = self.sum.iter().fold(LinearSum::zero(), |accu, elem| {
+            accu + LinearTerm::int(elem.factor, IVar::new(elem.var))
         });
-
-        let lin_le = LinLe::new(sum, self.ub + m);
-        lin_le.post(model);
+        let constraint = sum.leq(self.ub);
+        model.enforce_if(self.r.true_lit(), constraint);
     }
 }
 

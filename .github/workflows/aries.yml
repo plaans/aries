@@ -80,14 +80,15 @@ jobs:
         with:
           repository: plaans/mzn-problems
           path: mzn-problems
-      - name: Compile aries_fzn
+      - name: Compile aries_fzn (optimized + debug)
         run: |
-          cd aries/aries_fzn
-          cargo build --release
+          cd aries
+          cargo build --profile ci --bin aries_fzn
+          cp target/ci/aries_fzn aries_fzn/share/
       - name: Run mznb
         run: |
           cd mzn-problems
-          python mznb.py test --timeout 2 -r problems
+          python mznb.py test --timeout 5 -r problems
 
   unified-planning-api:
     name: Unified Planning API

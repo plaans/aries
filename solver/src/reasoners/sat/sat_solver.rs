@@ -428,7 +428,7 @@ impl SatSolver {
         debug_assert_eq!(model.value(p), Some(true));
         // counter intuitive: this method is only called after removing the watch
         // and we are responsible for resetting a valid watch.
-        debug_assert!(!self.watches.is_watched_by(p, clause_id));
+        // debug_assert!(!self.watches.is_watched_by(p, clause_id)); // Check deactivated because to costly on some problems (suposedly due to lack of LTO).
         // self.stats.propagations += 1;
         let clause = &mut self.clauses[clause_id];
         if clause.has_single_literal() {
