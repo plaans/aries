@@ -348,8 +348,8 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_const
                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
                 let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
 
-                m.bind(leq(alt1.end(), alt2.start), prec.true_lit());
-                m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
+                m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
+                m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
             }
         }
 
@@ -413,8 +413,8 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_const
                                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
                                 let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
 
-                                m.bind(leq(alt1.end(), alt2.start), prec.true_lit());
-                                m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
+                                m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
+                                m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
                             }
                         }
                     }
