@@ -1,13 +1,17 @@
 mod mapsolver;
 mod subsetsolver;
 
+use itertools::Itertools;
 pub(crate) use mapsolver::MapSolver;
 pub(crate) use subsetsolver::SubsetSolver;
 pub use subsetsolver::SubsetSolverImpl;
 
 use std::collections::BTreeSet;
 
-use aries::{backtrack::{Backtrack, DecLvl}, core::Lit, model::{lang::expr::or, Label, Model}, solver::{Exit, Solver, UnsatCore}};
+use aries::backtrack::{Backtrack, DecLvl};
+use aries::core::Lit;
+use aries::model::{lang::expr::or, Label, Model};
+use aries::solver::{Exit, Solver, UnsatCore};
 
 #[allow(dead_code)]
 pub(crate) struct SimpleSubsetSolverImpl<Lbl: Label> {
@@ -16,7 +20,9 @@ pub(crate) struct SimpleSubsetSolverImpl<Lbl: Label> {
 #[allow(dead_code)]
 impl<Lbl: Label> SimpleSubsetSolverImpl<Lbl> {
     pub fn new(model: Model<Lbl>) -> Self {
-        Self { solver: Solver::new(model) }
+        Self {
+            solver: Solver::new(model),
+        }
     }
 }
 impl<Lbl: Label> SubsetSolverImpl<Lbl> for SimpleSubsetSolverImpl<Lbl> {
@@ -32,14 +38,19 @@ impl<Lbl: Label> SubsetSolverImpl<Lbl> for SimpleSubsetSolverImpl<Lbl> {
         }
         let res = self
             .solver
-            .incremental_push_all(subset.into_iter().copied().collect::<Vec<_>>())
-            .map_or_else(
-                |(_, uc)| Ok(Err(uc)),
-                |_| self.solver.incremental_solve(),
-            )?;
+            .incremental_push_all(subset.iter().copied().collect_vec())
+            .map_or_else(|(_, uc)| Ok(Err(uc)), |_| self.solver.incremental_solve())?;
         if let Err(unsat_core) = res {
             self.solver.reset();
-            self.solver.enforce(or(unsat_core.literals().iter().map(|&l| !l).collect::<Vec<_>>().into_boxed_slice()), []);
+            self.solver.enforce(
+                or(unsat_core
+                    .literals()
+                    .iter()
+                    .map(|&l| !l)
+                    .collect_vec()
+                    .into_boxed_slice()),
+                [],
+            );
             Ok(Err(unsat_core))
         } else {
             self.solver.reset_search();

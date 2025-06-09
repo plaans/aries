@@ -649,10 +649,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Incremental solving: pushes (assumes and propagates) the given assumption literals one by one,
     /// until completion or failure (unsatisfiability encountered). In that case, returns an unsat core,
     /// as well as the provided assumptions that were pushed successfully.
-    pub fn incremental_push_all(
-        &mut self,
-        assumptions: Vec<Lit>,
-    ) -> Result<(), (Vec<Lit>, UnsatCore)> {
+    pub fn incremental_push_all(&mut self, assumptions: Vec<Lit>) -> Result<(), (Vec<Lit>, UnsatCore)> {
         let mut successfully_pushed = vec![];
         for lit in assumptions {
             match self.incremental_push(lit) {

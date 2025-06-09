@@ -24,17 +24,12 @@ impl<Lbl: Label> Marco<Lbl> {
         soft_constraints: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-
         let soft_constraints_reif_literals = soft_constraints
             .into_iter()
             .map(|expr| subset_solver_impl.get_model().reify(expr))
             .collect_vec();
 
-        Self::with_reified_soft_constraints(
-            subset_solver_impl,
-            soft_constraints_reif_literals,
-            config,
-        )
+        Self::with_reified_soft_constraints(subset_solver_impl, soft_constraints_reif_literals, config)
     }
 
     pub fn with_reified_soft_constraints(
@@ -42,7 +37,6 @@ impl<Lbl: Label> Marco<Lbl> {
         soft_constraints_reif_literals: impl IntoIterator<Item = Lit> + Clone,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-
         let map_solver = MapSolver::new(soft_constraints_reif_literals.clone());
         let subset_solver = SubsetSolver::<Lbl>::new(soft_constraints_reif_literals, subset_solver_impl);
 
@@ -63,11 +57,13 @@ impl<Lbl: Label> Marco<Lbl> {
 
     #[allow(dead_code)]
     fn get_soft_constraints_known_to_be_necessarily_in_every_mus(&self) -> &BTreeSet<Lit> {
-        self.subset_solver.get_soft_constraints_known_to_be_necessarily_in_every_mus()
+        self.subset_solver
+            .get_soft_constraints_known_to_be_necessarily_in_every_mus()
     }
 
     fn register_soft_constraint_as_necessarily_in_every_mus(&mut self, soft_constraint_reif_lit: Lit) {
-        self.subset_solver.register_soft_constraint_as_necessarily_in_every_mus(soft_constraint_reif_lit)
+        self.subset_solver
+            .register_soft_constraint_as_necessarily_in_every_mus(soft_constraint_reif_lit)
     }
 
     pub fn run(&mut self) -> MusMcsEnumerationResult {
@@ -89,20 +85,24 @@ impl<Lbl: Label> Marco<Lbl> {
         }
     }
 
-    fn _run(&mut self, muses: &mut Option<Vec<BTreeSet<Lit>>>, mcses: &mut Option<Vec<BTreeSet<Lit>>>) -> Result<(), Exit> {
+    fn _run(
+        &mut self,
+        muses: &mut Option<Vec<BTreeSet<Lit>>>,
+        mcses: &mut Option<Vec<BTreeSet<Lit>>>,
+    ) -> Result<(), Exit> {
         while let Some(next_seed) = self.map_solver.find_unexplored_seed()? {
             let seed = next_seed;
-            if self
-                .subset_solver
-                .check_subset(&seed)?
-                .is_ok()
-            {
+            if self.subset_solver.check_subset(&seed)?.is_ok() {
                 if let Some(mcses) = mcses {
                     let (mss, mcs) = self.subset_solver.grow(&seed)?;
                     self.map_solver.block_down(&mss);
-                    assert!(mcses.iter().all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
+                    assert!(mcses
+                        .iter()
+                        .all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
                     // if !mcs.is_empty() {
-                    self.config.on_mcs_found.as_ref().map(|f| f(&mcs));
+                    if let Some(callback) = self.config.on_mcs_found.as_ref() {
+                        callback(&mcs)
+                    }
                     mcses.push(mcs);
                     // }
                 } else {
@@ -112,9 +112,13 @@ impl<Lbl: Label> Marco<Lbl> {
                 let mus = self.subset_solver.shrink(&seed)?;
                 self.map_solver.block_up(&mus);
                 if let Some(muses) = muses {
-                    assert!(muses.iter().all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
+                    assert!(muses
+                        .iter()
+                        .all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
                     // if !mus.is_empty() {
-                    self.config.on_mus_found.as_ref().map(|f| f(&mus));
+                    if let Some(callback) = self.config.on_mus_found.as_ref() {
+                        callback(&mus)
+                    }
                     muses.push(mus);
                     // }
                 }
@@ -148,9 +152,8 @@ impl<Lbl: Label> Marco<Lbl> {
         }
 
         // Grow the sat subset as much as possible (i.e. until unsatisfiability
-        // by extending it with each correction set discovered.       
+        // by extending it with each correction set discovered.
         while let Some(new_sat_subset) = self.subset_solver.find_all_sat_with_subset(&sat_subset)? {
-
             self.map_solver.block_down(&new_sat_subset);
 
             let new_corr_subset = self.get_soft_constraints_reif_literals().difference(&new_sat_subset);

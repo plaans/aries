@@ -20,15 +20,13 @@ pub struct SubsetSolver<Lbl: Label> {
 }
 
 impl<Lbl: Label> SubsetSolver<Lbl> {
-
     pub fn new(
         soft_constraints_reif_literals: impl IntoIterator<Item = Lit>,
         mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
     ) -> Self {
- 
         let literals = soft_constraints_reif_literals
             .into_iter()
-            .inspect(|&l| { assert!(subset_solver_impl.get_model().check_reified(l).is_some()) })
+            .inspect(|&l| assert!(subset_solver_impl.get_model().check_reified(l).is_some()))
             .collect();
 
         Self {
@@ -51,7 +49,8 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
     }
 
     pub fn register_soft_constraint_as_necessarily_in_every_mus(&mut self, soft_constraint_reif_lit: Lit) {
-        self.literals_known_to_be_necessarily_in_every_mus.insert(soft_constraint_reif_lit);
+        self.literals_known_to_be_necessarily_in_every_mus
+            .insert(soft_constraint_reif_lit);
     }
 
     fn find_unsat_core(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit> {
@@ -59,7 +58,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
     }
 
     pub fn find_all_sat_with_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Option<BTreeSet<Lit>>, Exit> {
-        if self.check_subset(&subset)?.is_ok() {
+        if self.check_subset(subset)?.is_ok() {
             let mut res = self.get_soft_constraints_reif_literals().clone();
             res.retain(|&l| self.subset_solver_impl.get_model().state.entails(l));
             Ok(Some(res))
@@ -83,14 +82,22 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
 
     pub fn grow(&mut self, subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, BTreeSet<Lit>), Exit> {
         let mut mss = subset.clone();
-        let complement = self.get_soft_constraints_reif_literals().difference(subset).copied().collect::<Vec<Lit>>();
+        let complement = self
+            .get_soft_constraints_reif_literals()
+            .difference(subset)
+            .copied()
+            .collect_vec();
         for lit in complement {
             mss.insert(lit);
             if self.check_subset(&mss)?.is_err() {
                 mss.remove(&lit);
             }
         }
-        let mcs: BTreeSet<Lit> = self.get_soft_constraints_reif_literals().difference(&mss).copied().collect();
+        let mcs: BTreeSet<Lit> = self
+            .get_soft_constraints_reif_literals()
+            .difference(&mss)
+            .copied()
+            .collect();
 
         // If the found correction set only has 1 element,
         // then that element is added to those that are known to be in all unsatisfiable sets.
@@ -108,7 +115,10 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
             }
             // Optimization: if the literal has been determined to belong to all muses,
             // no need to check if, without it, the set would be satisfiable (because it obviously would be).
-            if self.get_soft_constraints_known_to_be_necessarily_in_every_mus().contains(&lit) {
+            if self
+                .get_soft_constraints_known_to_be_necessarily_in_every_mus()
+                .contains(&lit)
+            {
                 continue;
             }
             mus.remove(&lit);
