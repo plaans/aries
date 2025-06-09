@@ -135,22 +135,32 @@ impl<Lbl: Label> Solver<Lbl> {
         self.model.reify(expr)
     }
 
+    /// Returns a new literal that, if set to true, will force the given expression to be true.
+    /// This is done by posting a half-reified constraint.
+    ///
+    /// Important: calling the function twice with the same expression will return the same literal.
+    pub fn half_reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        self.model.half_reify(expr)
+    }
+
     /// Immediately adds the given constraint to the appropriate reasoner.
     /// Returns an error if the model become invalid as a result.
     fn post_constraint(&mut self, constraint: &Constraint) -> Result<(), InvalidUpdate> {
-        let Constraint::Reified(expr, value) = constraint;
+        let Constraint::HalfReified(expr, value) = constraint;
         let value = *value;
         assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
         let scope = self.model.presence_literal(value.variable());
         if self.model.entails(!scope) {
             return Ok(()); // constraint is absent, ignore
         }
+        if self.model.entails(!value) {
+            return Ok(()); // constraint is inactive, ignore
+        }
         match expr {
             &ReifExpr::Lit(lit) => {
                 let expr_scope = self.model.presence_literal(lit.variable());
                 assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
                 self.add_clause([!value, lit], scope)?; // value => lit
-                self.add_clause([!lit, value], scope)?; // lit => value
                 Ok(())
             }
             ReifExpr::MaxDiff(diff) => {
@@ -159,14 +169,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 let lhs = diff.b;
                 self.reasoners
                     .diff
-                    .add_reified_edge(value, rhs, lhs, rhs_add, &self.model.state);
+                    .add_half_reified_edge(value, rhs, lhs, rhs_add, &self.model.state);
                 Ok(())
             }
             ReifExpr::Eq(a, b) => {
                 let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
                 if lit != value {
                     self.add_clause([!value, lit], scope)?; // value => lit
-                    self.add_clause([!lit, value], scope)?; // lit => value
                 }
                 Ok(())
             }
@@ -174,7 +183,6 @@ impl<Lbl: Label> Solver<Lbl> {
                 let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
                 if lit != value {
                     self.add_clause([!value, lit], scope)?; // value => lit
-                    self.add_clause([!lit, value], scope)?; // lit => value
                 }
                 Ok(())
             }
@@ -187,7 +195,6 @@ impl<Lbl: Label> Solver<Lbl> {
                 };
                 if lit != value {
                     self.add_clause([!value, lit], scope)?; // value => lit
-                    self.add_clause([!lit, value], scope)?; // lit => value
                 }
                 Ok(())
             }
@@ -195,47 +202,45 @@ impl<Lbl: Label> Solver<Lbl> {
                 let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
                 if lit != value {
                     self.add_clause([!value, lit], scope)?; // value => lit
-                    self.add_clause([!lit, value], scope)?; // lit => value
                 }
                 Ok(())
             }
             ReifExpr::Or(disjuncts) => {
                 if self.model.entails(value) {
                     self.add_clause(disjuncts, scope)
-                } else if self.model.entails(!value) {
-                    // (not (or a b ...))
-                    // enforce the equivalent (and (not a) (not b) ....)
-                    for &lit in disjuncts {
-                        self.add_clause([!lit], scope)?;
-                    }
-                    Ok(())
                 } else {
                     // l  <=>  (or a b ...)
                     let mut clause = Vec::with_capacity(disjuncts.len() + 1);
-                    // make l => (or a b ...)    <=>   (or (not l) a b ...)
+                    //  l => (or a b ...)    <=>   (or (not l) a b ...)
                     clause.push(!value);
                     disjuncts.iter().for_each(|l| clause.push(*l));
                     if let Some(clause) = Disjunction::new_non_tautological(clause) {
                         self.add_clause(clause, scope)?;
                     }
-                    // make (or a b ...) => l    <=> (and (a => l) (b => l) ...)
-                    for &disjunct in disjuncts {
-                        // enforce a => l
-                        self.add_clause([!disjunct, value], scope)?;
-                    }
                     Ok(())
                 }
             }
-            ReifExpr::And(_) => {
-                let equiv = Constraint::Reified(!expr.clone(), !value);
-                self.post_constraint(&equiv)
+            ReifExpr::And(conjuncts) => {
+                if self.model.entails(!value) {
+                    // (and a b ...)
+                    for &lit in conjuncts {
+                        self.add_clause([lit], scope)?;
+                    }
+                } else {
+                    // (l => (and a b ...))
+                    // (l => a) and (l => b) ...
+                    for &lit in conjuncts {
+                        self.add_clause([!value, lit], scope)?;
+                    }
+                }
+                Ok(())
             }
             ReifExpr::Linear(lin) => {
                 let lin = lin.simplify();
                 let handled = match lin.sum.len() {
                     0 => {
                         // Check that the constant of the constraint is positive.
-                        self.post_constraint(&Constraint::Reified(
+                        self.post_constraint(&Constraint::HalfReified(
                             ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
                             value,
                         ))?;
@@ -259,7 +264,7 @@ impl<Lbl: Label> Solver<Lbl> {
                             let ub = lin.upper_bound / elem.factor.abs();
                             let lit = svar.leq(ub);
 
-                            self.post_constraint(&Constraint::Reified(ReifExpr::Lit(lit), value))?;
+                            self.post_constraint(&Constraint::HalfReified(ReifExpr::Lit(lit), value))?;
                             true
                         }
                     }
@@ -275,7 +280,7 @@ impl<Lbl: Label> Solver<Lbl> {
                             let b = if fst.factor > 0 { fst } else { snd };
                             let a = if fst.factor < 0 { fst } else { snd };
                             let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
-                            self.post_constraint(&Constraint::Reified(ReifExpr::MaxDiff(diff), value))?;
+                            self.post_constraint(&Constraint::HalfReified(ReifExpr::MaxDiff(diff), value))?;
                             true
                         }
                     }
@@ -283,7 +288,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 };
 
                 if !handled {
-                    assert!(self.model.entails(value), "Unsupported reified linear constraints."); // FIXME: Support reified linear constraints
+                    assert!(
+                        self.model.entails(value),
+                        "Unsupported half reified linear constraints {lin:?}"
+                    ); // FIXME: Support reified linear constraints
                     let scope = self.model.state.presence(value);
                     self.reasoners.cp.add_opt_linear_constraint(&lin, scope);
 
@@ -328,7 +336,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 let prez = |v: VarRef| self.model.state.presence_literal(v);
                 assert!(
                     self.model.entails(value),
-                    "Unsupported reified alternative constraints."
+                    "Unsupported half reified alternative constraints."
                 );
                 assert_eq!(prez(a.main), prez(value.variable()));
 
@@ -352,11 +360,11 @@ impl<Lbl: Label> Solver<Lbl> {
                     // alt.cst <= a.main - alt.var <= alt.cst
                     // -alt.cst >= alt.var - a.main   &&   a.main - alt.var <= alt.cst
                     let alt_value = self.model.get_tautology_of_scope(alt_scope);
-                    self.post_constraint(&Constraint::Reified(
+                    self.post_constraint(&Constraint::HalfReified(
                         ReifExpr::MaxDiff(DifferenceExpression::new(alt.var, a.main, -alt.cst)),
                         alt_value,
                     ))?;
-                    self.post_constraint(&Constraint::Reified(
+                    self.post_constraint(&Constraint::HalfReified(
                         ReifExpr::MaxDiff(DifferenceExpression::new(a.main, alt.var, alt.cst)),
                         alt_value,
                     ))?;
@@ -392,7 +400,7 @@ impl<Lbl: Label> Solver<Lbl> {
             }
             ReifExpr::EqMax(a) => {
                 let prez = |v: SignedVar| self.model.state.presence(v);
-                assert!(self.model.entails(value), "Unsupported reified eqmax constraints.");
+                assert!(self.model.entails(value), "Unsupported half reified eqmax constraints.");
                 assert_eq!(prez(a.lhs), prez(value.variable().into()));
 
                 let scope = prez(a.lhs);
@@ -410,7 +418,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     let alt_value = self.model.get_tautology_of_scope(item_scope);
                     if item.var.is_plus() {
                         assert!(a.lhs.is_plus());
-                        self.post_constraint(&Constraint::Reified(
+                        self.post_constraint(&Constraint::HalfReified(
                             ReifExpr::MaxDiff(DifferenceExpression::new(
                                 item.var.variable(),
                                 a.lhs.variable(),
@@ -425,7 +433,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         let y = a.lhs.variable();
                         // (-x) - (-y) <= -item.cst
                         // y - x <= -item.cst
-                        self.post_constraint(&Constraint::Reified(
+                        self.post_constraint(&Constraint::HalfReified(
                             ReifExpr::MaxDiff(DifferenceExpression::new(y, x, -item.cst)),
                             alt_value,
                         ))?;
@@ -448,6 +456,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::EqVarMulLit(mul) => {
+                assert!(
+                    self.model.entails(value),
+                    "Unsupported half reified eqvarmullit constraints."
+                );
                 self.reasoners.cp.add_eq_var_mul_lit_constraint(mul);
                 Ok(())
             }
@@ -535,12 +547,40 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     /// Enumerates all possible values for the given variables.
-    /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input
+    /// Returns a list of assignments, where each assigment is a vector of values for the variables given as input.
     ///
     /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
     ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
     ///  needed for something else.
     pub fn enumerate(&mut self, variables: &[VarRef]) -> Result<Vec<Vec<IntCst>>, Exit> {
+        let mut valid_assignments = Vec::with_capacity(64);
+
+        // If trivially UNSAT
+        if self.post_constraints().is_err() {
+            return Ok(valid_assignments);
+        }
+
+        let on_new_solution = |domains: &SavedAssignment| {
+            let assignment = variables.iter().map(|var| domains.lb(*var)).collect();
+            valid_assignments.push(assignment);
+        };
+
+        self.enumerate_with(variables, on_new_solution)?;
+        Ok(valid_assignments)
+    }
+
+    /// Enumerates all possible values for the given variables.
+    /// Each time a new solution is found the callback is called.
+    /// Return `true` if the solver found a solution, `false` otherwise.
+    ///
+    /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
+    ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
+    ///  needed for something else.
+    pub fn enumerate_with(
+        &mut self,
+        variables: &[VarRef],
+        mut on_new_solution: impl FnMut(&SavedAssignment),
+    ) -> Result<bool, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         debug_assert!(
             {
@@ -550,34 +590,39 @@ impl<Lbl: Label> Solver<Lbl> {
                     .filter(|p| *p != Lit::TRUE)
                     .all(|p| variables.contains(&p.variable()))
             },
-            "Some optional variables without there presence variable"
+            "At least one optional variable without its presence variable"
         );
 
-        let mut valid_assignments = Vec::with_capacity(64);
+        // Post constraints and exit if trivially UNSAT
         if self.post_constraints().is_err() {
-            // Trivially UNSAT, return the empty vec of valid assignments
-            return Ok(valid_assignments);
+            return Ok(false);
         }
+        let mut sat = false;
         loop {
             match self.search()? {
-                SearchResult::Unsat(_) => return Ok(valid_assignments),
+                SearchResult::Unsat(_) => return Ok(sat),
                 SearchResult::AtSolution => {
-                    // found a solution. record the corresponding assignment and add a clause forbidding it in future solutions
-                    let mut assignment = Vec::with_capacity(variables.len());
+                    // Solution found
+                    sat = true;
+
+                    // Record the solution
+                    let solution = Arc::new(self.model.state.clone());
+
+                    // Add a clause forbidding it in future solutions
                     let mut clause = Vec::with_capacity(variables.len() * 2);
                     for v in variables {
-                        let (val, _) = self.model.state.bounds(*v);
-                        assignment.push(val);
+                        let (val, _) = solution.bounds(*v);
                         clause.push(Lit::lt(*v, val));
                         clause.push(Lit::gt(*v, val));
                     }
-                    valid_assignments.push(assignment);
+
+                    on_new_solution(&solution);
 
                     if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
                         self.reasoners.sat.add_clause(clause);
                     } else {
-                        return Ok(valid_assignments);
+                        return Ok(sat);
                     }
                 }
                 SearchResult::ExternalSolution(_) => panic!(),
@@ -699,7 +744,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///     (typically to set up new upper bonds before calling search again).
     ///
     /// Invariant: when exiting, the `search` method will always let the solver in a state where all reasoners are fully propagated.
-    /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any ddecision level).
+    /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any decision level).
     fn search(&mut self) -> Result<SearchResult, Exit> {
         assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
@@ -1106,6 +1151,7 @@ impl<Lbl: Label> Solver<Lbl> {
             );
             // propagate all theories
             for &i in self.reasoners.writers() {
+                let trail_size = self.model.state.trail().len() as u64;
                 let theory_propagation_start = StartCycleCount::now();
                 self.stats[i].propagation_loops += 1;
                 let th = self.reasoners.reasoner_mut(i);
@@ -1113,6 +1159,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 match th.propagate(&mut self.model.state) {
                     Ok(()) => (),
                     Err(contradiction) => {
+                        // counting domain updates must be done immediately, as :w
+                        let num_dom_updates = self.model.state.trail().len() as u64 - trail_size;
+                        self.stats[i].dom_updates += num_dom_updates;
+                        self.stats.num_dom_updates += num_dom_updates;
                         self.brancher.pre_conflict_analysis(&self.model);
                         // contradiction, learn clause and exit
                         let clause = match contradiction {
@@ -1134,6 +1184,9 @@ impl<Lbl: Label> Solver<Lbl> {
                     }
                 }
                 self.stats[i].propagation_time += theory_propagation_start.elapsed();
+                let num_dom_updates = self.model.state.trail().len() as u64 - trail_size;
+                self.stats[i].dom_updates += num_dom_updates;
+                self.stats.num_dom_updates += num_dom_updates;
             }
 
             if num_events_at_start == self.model.state.num_events() {

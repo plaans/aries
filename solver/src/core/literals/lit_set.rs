@@ -56,9 +56,7 @@ impl LitSet {
     }
 
     pub fn contains(&self, elem: Lit) -> bool {
-        self.elements
-            .get(&elem.svar())
-            .map_or(false, |ub| *ub <= elem.ub_value())
+        self.elements.get(&elem.svar()).is_some_and(|ub| *ub <= elem.ub_value())
     }
 
     /// Insert a literal `lit` into the set.

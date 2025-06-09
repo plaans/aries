@@ -144,6 +144,8 @@ impl Dij {
                 // as expected.
                 let pred = self.heap.pred.get(v).copied().unwrap();
                 let prez = doms.presence(v);
+                // insert a timestamp that will be used to viewing the graph as it was at the time of the propagation when explaining the inference
+                stn.last_disabling_timestamp.insert(pred, stn.trail.next_event());
                 let cause = stn.identity.inference(ModelUpdateCause::CyclicEdgePropagation(pred));
                 doms.set(!prez, cause)?;
                 debug_assert!(doms.present(v) == Some(false),);

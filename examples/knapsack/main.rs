@@ -235,11 +235,7 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
             .iter()
             .zip(items.iter())
             // .filter(|(&prez, _)| model.var_domain(prez).lb >= 1)
-            .flat_map(|(prez, item)| {
-                std::iter::repeat(*item)
-                    .take(model.var_domain(*prez).lb as usize)
-                    .cloned()
-            })
+            .flat_map(|(prez, item)| std::iter::repeat_n(*item, model.var_domain(*prez).lb as usize).cloned())
             .collect();
         let solution = Sol { items };
         assert!(pb.is_valid(&solution));

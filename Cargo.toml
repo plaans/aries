@@ -7,6 +7,7 @@ members = [
     "planning/planners",
     "planning/grpc/api",
     "planning/grpc/server",
+    "aries_fzn",
     "examples/sat",
     "examples/scheduling",
     "examples/smt",
@@ -33,10 +34,11 @@ tonic-build = "0.11.0"
 
 [profile.dev]
 opt-level = 0
+debug = "line-tables-only" # Keep only the information for backtraces, not debugging (speeds up compilation)
 
 [profile.release]
 codegen-units = 8
-debug = false # No debug symbols to keep executables small
+debug = false     # No debug symbols to keep executables small
 lto = "thin"
 opt-level = 3
 panic = "abort"

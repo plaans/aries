@@ -43,7 +43,7 @@ where
     }
 
     fn get_reified_expr(&self, lit: Lit) -> Option<&ReifExpr> {
-        self.get_shape().expressions.original(lit)
+        self.get_shape().expressions.original_full(lit)
     }
 }
 
