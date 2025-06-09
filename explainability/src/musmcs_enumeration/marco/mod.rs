@@ -99,12 +99,12 @@ impl<Lbl: Label> Marco<Lbl> {
                     assert!(mcses
                         .iter()
                         .all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
-                    // if !mcs.is_empty() {
-                    if let Some(callback) = self.config.on_mcs_found.as_ref() {
-                        callback(&mcs)
+                    if !mcs.is_empty() {
+                        if let Some(callback) = self.config.on_mcs_found.as_ref() {
+                            callback(&mcs)
+                        }
+                        mcses.push(mcs);
                     }
-                    mcses.push(mcs);
-                    // }
                 } else {
                     self.case_seed_sat_only_muses_optimization(&seed)?;
                 }
@@ -115,12 +115,12 @@ impl<Lbl: Label> Marco<Lbl> {
                     assert!(muses
                         .iter()
                         .all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
-                    // if !mus.is_empty() {
-                    if let Some(callback) = self.config.on_mus_found.as_ref() {
-                        callback(&mus)
+                    if !mus.is_empty() {
+                        if let Some(callback) = self.config.on_mus_found.as_ref() {
+                            callback(&mus)
+                        }
+                        muses.push(mus);
                     }
-                    muses.push(mus);
-                    // }
                 }
             }
         }
