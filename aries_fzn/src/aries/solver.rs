@@ -193,9 +193,13 @@ impl Solver {
                 let is_minimize = objective.goal() == &Goal::Minimize;
                 let g = |_: IntCst, d: &Domains| f(self.make_solution(d));
                 let sat = if is_minimize {
-                    aries_solver.minimize_with(obj_var_ref, g)?.is_some()
+                    aries_solver
+                        .minimize_with_callback(obj_var_ref, g)?
+                        .is_some()
                 } else {
-                    aries_solver.maximize_with(obj_var_ref, g)?.is_some()
+                    aries_solver
+                        .maximize_with_callback(obj_var_ref, g)?
+                        .is_some()
                 };
                 Ok(sat)
             }
