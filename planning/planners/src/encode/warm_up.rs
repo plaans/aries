@@ -94,11 +94,11 @@ pub fn add_strict_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionIn
     Ok(())
 }
 
-/// Enforce some constraints to force the solution of `pb` to be causal equivalent to `plan`.
+/// Enforce some constraints to force the solution of `pb` to be a subplan of `plan`.
 ///
 /// We make the assumption that the `pb` has been populated with `populate_with_warm_up_plan` and the same `plan`
 /// so the order of the chronicles in `pb` is the same as the order of the actions in `plan`.
-pub fn add_causal_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
+pub fn add_flexible_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionInstance]) -> Result<()> {
     debug_assert_eq!(pb.chronicles.len(), plan.len() + 1); // +1 for the initial chronicle
 
     // Retrieve the types used in the future table constraints

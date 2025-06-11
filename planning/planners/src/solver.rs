@@ -1,5 +1,5 @@
 use crate::encode::warm_up::{
-    add_causal_same_plan_constraints, add_strict_same_plan_constraints, populate_with_warm_up_plan,
+    add_flexible_same_plan_constraints, add_strict_same_plan_constraints, populate_with_warm_up_plan,
 };
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::encoding::Encoding;
@@ -38,7 +38,7 @@ static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", 
 static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
 
 /// The type of warming up constraints to add to the problem.
-static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "causal");
+static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "flexible");
 
 /// The type of warming up constraints to add to the problem.
 #[derive(Copy, Clone, PartialEq)]
@@ -48,12 +48,12 @@ enum WarmUpType {
     /// The first plan must be exactly the same as the warm-up plan, presence included.
     /// This option can cause some problems with the plan space (PSP) symmetry breaking.
     Strict,
-    /// The first plan must be causally equivalent to the warm-up plan.
+    /// The first plan must a subplan (included or equal) of the warm-up plan.
     /// The plan is constrained to be the same as the warm-up plan, while letting the solver to choose
     /// which chronicle instances is attributed to which action.
     /// If used with the plan space (PSP) symmetry breaking, some instances could not be present in the
     /// solution plan if they are found useless, leading to non-strict equivalence with the warm-up plan.
-    Causal,
+    Flexible,
 }
 
 impl std::str::FromStr for WarmUpType {
@@ -63,7 +63,7 @@ impl std::str::FromStr for WarmUpType {
         match s.to_lowercase().as_str() {
             "none" => Ok(WarmUpType::None),
             "strict" => Ok(WarmUpType::Strict),
-            "causal" => Ok(WarmUpType::Causal),
+            "flexible" | "flex" => Ok(WarmUpType::Flexible),
             x => Err(format!("Unknown warming up type: {x}")),
         }
     }
@@ -142,7 +142,7 @@ pub fn reproduce(
     match WARM_UP.get() {
         WarmUpType::None => {}
         WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, plan)?,
-        WarmUpType::Causal => add_causal_same_plan_constraints(&mut constrained_pb, plan)?,
+        WarmUpType::Flexible => add_flexible_same_plan_constraints(&mut constrained_pb, plan)?,
     };
 
     let pb = Arc::new(pb.clone());
