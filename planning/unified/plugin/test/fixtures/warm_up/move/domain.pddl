@@ -1,0 +1,10 @@
+(define (domain simple-domain)
+ (:requirements :strips :typing)
+ (:types robot location)
+ (:predicates (at ?r - robot ?l - location))
+ (:action move
+    :parameters (?r - robot ?f ?t - location)
+    :precondition (and (at ?r ?f))
+    :effect (and (at ?r ?t) (not (at ?r ?f)))
+ )
+)
