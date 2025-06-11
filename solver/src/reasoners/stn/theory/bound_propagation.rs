@@ -109,6 +109,8 @@ impl Dij {
         doms: &mut Domains,
         cyclic: impl Fn(SignedVar) -> bool,
     ) -> Result<(), InvalidUpdate> {
+        #[cfg(debug_assertions)]
+        let mut deactivations = hashbrown::HashSet::new();
         let origin_potential = INT_CST_MAX;
         for &v in &self.modified_vars {
             // println!("p {v:?}");
@@ -154,9 +156,12 @@ impl Dij {
             }
 
             if let Some(pred) = self.heap.pred.get(v).copied() {
+                #[cfg(debug_assertions)]
                 debug_assert!(
-                    doms.ub(v) == self.potential[v] || self.init.contains(v),
-                    "value was already updated by ourselves"
+                    doms.ub(v) == self.potential[v]
+                        || self.init.contains(v)
+                        || deactivations.contains(&v.leq(doms.ub(v))),
+                    "value was already updated by ourselves (and not by an edge deactivation)"
                 );
                 debug_assert!(stn.constraints[pred].target == v);
                 debug_assert!(
@@ -167,7 +172,8 @@ impl Dij {
                 let cause = Identity::new(crate::reasoners::ReasonerId::Diff)
                     .inference(ModelUpdateCause::EdgePropagation(pred));
                 let changed_something = doms.set_ub(v, new_source_ub, cause)?;
-                debug_assert!(changed_something);
+                debug_assert!(changed_something || doms.ub(v) != self.potential[v],
+                    "We should always change the bound except in the corner case where the literal was set as part of an edge deactivation");
                 stn.stats.bound_updates += 1;
                 // there are two possibilities:
                 //  - we successfully performed the update on the ub (in which case it must comply we the update of the predecessor)
@@ -217,6 +223,9 @@ impl Dij {
                             let change = doms.set(!out.presence, cause)?;
                             if change {
                                 stn.stats.num_bound_edge_deactivation += 1;
+                                #[cfg(debug_assertions)]
+                                deactivations.insert(!out.presence);
+                                // println!("disabled: {:?}", !out.presence);
                             }
                         }
                     }

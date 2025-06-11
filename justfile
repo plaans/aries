@@ -33,3 +33,19 @@ up-export problem:
 # Solve specific IPC problems
 ipc-solve +problem:
     ARIES_UP_ASSUME_REALS_ARE_INTS=true python3 ci/ipc.py {{problem}}
+
+fzn-build:
+    cargo build --release --bin aries_fzn
+    cp target/release/aries_fzn aries_fzn/share
+
+# Invoke minizinc, within the development environments (with aries compiled in release mode)
+minizinc +args: fzn-build
+    minizinc {{args}}
+
+fzn-build-dbg:
+    cargo build --profile ci --bin aries_fzn
+    cp target/ci/aries_fzn aries_fzn/share
+
+# Invoke minizinc, within the development environments (with aries compiled in ci mode)
+minizinc-dbg +args: fzn-build-dbg
+    minizinc {{args}}

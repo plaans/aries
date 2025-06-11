@@ -4,7 +4,7 @@
     "description": "Aries, Lazy-Clause-Generation CP solver",
     "version": "<dev-version>",
     "mznlib": "./aries",
-    "executable": "../../target/release/aries_fzn",
+    "executable": "aries_fzn",
     "tags": ["cp","int", "lcg"],
     "stdFlags": [
       "-a",
