@@ -593,13 +593,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     // enforce different : a < b || a > b
                     // if they are the same variable, there is nothing we can do to separate them
                     if a != b {
-                        clause.push(solver.reify(neq(a, b)));
+                        clause.push(solver.half_reify(neq(a, b)));
                     }
                 }
 
                 // Force assign effects to not overlaps.
-                clause.push(solver.reify(f_leq(eff_mutex_ends[&j], e1.transition_start)));
-                clause.push(solver.reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
+                clause.push(solver.half_reify(f_leq(eff_mutex_ends[&j], e1.transition_start)));
+                clause.push(solver.half_reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
 
                 // add coherence constraint
                 solver.enforce(or(clause.as_slice()), [p1, p2]);
@@ -653,15 +653,15 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                     let a = cond.state_var.args[idx];
                     let b = eff.state_var.args[idx];
 
-                    supported_by_eff_conjunction.push(solver.reify(eq(a, b)));
+                    supported_by_eff_conjunction.push(solver.half_reify(eq(a, b)));
                 }
                 // same value
                 let condition_value = cond.value;
-                supported_by_eff_conjunction.push(solver.reify(eq(condition_value, effect_value)));
+                supported_by_eff_conjunction.push(solver.half_reify(eq(condition_value, effect_value)));
 
                 // effect's persistence contains condition
-                supported_by_eff_conjunction.push(solver.reify(f_leq(eff.transition_end, cond.start)));
-                supported_by_eff_conjunction.push(solver.reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
+                supported_by_eff_conjunction.push(solver.half_reify(f_leq(eff.transition_end, cond.start)));
+                supported_by_eff_conjunction.push(solver.half_reify(f_leq(cond.end, eff_mutex_ends[&eff_id])));
 
                 let support_lit = solver.reify(and(supported_by_eff_conjunction));
                 encoding.tag(support_lit, Tag::Support(cond_id, eff_id));
@@ -728,13 +728,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         for idx in 0..cond.state_var.args.len() {
                             let a = cond.state_var.args[idx];
                             let b = eff.state_var.args[idx];
-                            non_overlapping.push(solver.reify(neq(a, b)));
+                            non_overlapping.push(solver.half_reify(neq(a, b)));
                         }
 
                         // or does not overlap the interval `[eff.transition_start, eff.transition_end[`
                         // note that the interval is left-inclusive to enforce the epsilon separation
-                        non_overlapping.push(solver.reify(f_lt(cond.end, eff.transition_start)));
-                        non_overlapping.push(solver.reify(f_leq(eff.transition_end, cond.start)));
+                        non_overlapping.push(solver.half_reify(f_lt(cond.end, eff.transition_start)));
+                        non_overlapping.push(solver.half_reify(f_leq(eff.transition_end, cond.start)));
 
                         solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
                         num_mutex_constraints += 1;

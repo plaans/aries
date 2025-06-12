@@ -10,10 +10,11 @@ use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
 use crate::collections::set::IterableRefSet;
+use hashbrown::HashSet;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 #[derive(Default, Clone)]
@@ -218,7 +219,7 @@ impl ConflictBasedBrancher {
     }
 
     pub fn with(choices: Vec<Lit>, params: Params) -> Self {
-        let vars: HashSet<VarRef> = choices.iter().map(|l| l.variable()).collect();
+        let vars: BTreeSet<VarRef> = choices.iter().map(|l| l.variable()).collect();
         ConflictBasedBrancher {
             params,
             heap: VarSelect::new(Default::default()),
