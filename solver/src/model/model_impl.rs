@@ -492,10 +492,26 @@ impl<Lbl: Label> Model<Lbl> {
         self.new_conjunctive_presence_variable(scope)
     }
 
-    pub fn check_reified<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+    /// Checks if the expression is fully reified, and if so, returns that reification literal.
+    pub fn check_reified_full<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
         let decomposed = &mut expr.decompose(self);
         self.simplify(decomposed);
         self.shape.expressions.interned_full(decomposed)
+    }
+
+    /// Checks if the expression is half-reified, and if so, returns that reification literal.
+    pub fn check_reified_half<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+        let decomposed = &mut expr.decompose(self); // TODO: we do not need full decomposition
+        self.simplify(decomposed);
+        self.shape.expressions.interned_half(decomposed)
+    }
+
+    /// Checks if the expression is half-reified, and if so, returns that reification literal.
+    /// If not, checks if it is fully reified and if so returns that reification literal.
+    pub fn check_reified_any<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+        let decomposed = &mut expr.decompose(self);
+        self.simplify(decomposed);
+        self.shape.expressions.interned_half(decomposed).or_else(|| self.shape.expressions.interned_full(decomposed))
     }
 
     /// Enforce the given expression to be true whenever all literals of the scope are true.

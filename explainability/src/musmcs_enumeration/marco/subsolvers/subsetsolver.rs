@@ -26,10 +26,8 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         soft_constraints_reif_literals: impl IntoIterator<Item = Lit>,
         mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
     ) -> Self {
-        let literals = soft_constraints_reif_literals
-            .into_iter()
-            .inspect(|&l| assert!(subset_solver_impl.get_model().check_reified(l).is_some()))
-            .collect();
+        let literals = soft_constraints_reif_literals.into_iter().collect::<BTreeSet<Lit>>();
+        assert!(literals.iter().all(|&l| subset_solver_impl.get_model().check_reified_any(l).is_some()));
 
         Self {
             literals,
@@ -39,7 +37,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
     }
 
     pub fn get_expr_reification<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
-        self.subset_solver_impl.get_model().check_reified(expr)
+        self.subset_solver_impl.get_model().check_reified_any(expr)
     }
 
     pub fn get_soft_constraints_reif_literals(&self) -> &BTreeSet<Lit> {
@@ -61,7 +59,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
 
     pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
         let res = self.find_unsat_core(subset)?;
-        // NOTE: any resetting (or not!) of the solver is assumed to be done in `solve_fn`
+        // NOTE: any resetting (or not!) of assumptions of the solver is to be done in `find_unsat_core`
         Ok(res.map_err(|unsat_core| {
             unsat_core
                 .literals()

@@ -19,7 +19,7 @@ pub struct Marco<Lbl: Label> {
 }
 
 impl<Lbl: Label> Marco<Lbl> {
-    pub fn with_soft_constraints<Expr: Reifiable<Lbl>>(
+    pub fn with_soft_constraints_full_reif<Expr: Reifiable<Lbl>>(
         mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
         soft_constraints: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
@@ -32,6 +32,20 @@ impl<Lbl: Label> Marco<Lbl> {
         Self::with_reified_soft_constraints(subset_solver_impl, soft_constraints_reif_literals, config)
     }
 
+    pub fn with_soft_constraints_half_reif<Expr: Reifiable<Lbl>>(
+        mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        soft_constraints: impl IntoIterator<Item = Expr>,
+        config: MusMcsEnumerationConfig,
+    ) -> Self {
+        let soft_constraints_reif_literals = soft_constraints
+            .into_iter()
+            .map(|expr| subset_solver_impl.get_model().half_reify(expr))
+            .collect_vec();
+
+        Self::with_reified_soft_constraints(subset_solver_impl, soft_constraints_reif_literals, config)
+    }
+
+    /// NOTE: Both half-reification and full reification literals are supported, including in the same model.
     pub fn with_reified_soft_constraints(
         subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
         soft_constraints_reif_literals: impl IntoIterator<Item = Lit> + Clone,
@@ -142,7 +156,7 @@ mod tests {
         let x2 = model.new_ivar(0, 10, "x2");
 
         let soft_constrs = vec![lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2)];
-        let mut simple_marco = Marco::with_soft_constraints(
+        let mut simple_marco = Marco::with_soft_constraints_full_reif(
             Box::new(SimpleSubsetSolverImpl::new(model)),
             soft_constrs.clone(),
             MusMcsEnumerationConfig {
