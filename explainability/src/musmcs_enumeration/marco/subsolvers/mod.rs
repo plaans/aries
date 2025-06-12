@@ -3,6 +3,7 @@ mod subsetsolver;
 
 use itertools::Itertools;
 pub(crate) use mapsolver::MapSolver;
+pub use mapsolver::MapSolverMode;
 pub(crate) use subsetsolver::SubsetSolver;
 pub use subsetsolver::SubsetSolverImpl;
 

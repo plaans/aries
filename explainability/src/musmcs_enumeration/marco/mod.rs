@@ -7,7 +7,7 @@ use aries::solver::Exit;
 
 use std::{collections::BTreeSet, time::Instant};
 
-use crate::musmcs_enumeration::{Mcs, Mus, MusMcsEnumerationConfig, MusMcsEnumerationResult};
+use crate::musmcs_enumeration::{marco::subsolvers::MapSolverMode, Mcs, Mus, MusMcsEnumerationConfig, MusMcsEnumerationResult};
 use subsolvers::{MapSolver, SubsetSolver, SubsetSolverImpl};
 
 use itertools::Itertools;
@@ -21,6 +21,7 @@ pub struct Marco<Lbl: Label> {
 impl<Lbl: Label> Marco<Lbl> {
     pub fn with_soft_constraints_full_reif<Expr: Reifiable<Lbl>>(
         mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        map_solver_mode: MapSolverMode,
         soft_constraints: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
@@ -29,11 +30,12 @@ impl<Lbl: Label> Marco<Lbl> {
             .map(|expr| subset_solver_impl.get_model().reify(expr))
             .collect_vec();
 
-        Self::with_reified_soft_constraints(subset_solver_impl, soft_constraints_reif_literals, config)
+        Self::with_reified_soft_constraints(subset_solver_impl, map_solver_mode, soft_constraints_reif_literals, config)
     }
 
     pub fn with_soft_constraints_half_reif<Expr: Reifiable<Lbl>>(
         mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        map_solver_mode: MapSolverMode,
         soft_constraints: impl IntoIterator<Item = Expr>,
         config: MusMcsEnumerationConfig,
     ) -> Self {
@@ -42,16 +44,17 @@ impl<Lbl: Label> Marco<Lbl> {
             .map(|expr| subset_solver_impl.get_model().half_reify(expr))
             .collect_vec();
 
-        Self::with_reified_soft_constraints(subset_solver_impl, soft_constraints_reif_literals, config)
+        Self::with_reified_soft_constraints(subset_solver_impl, map_solver_mode, soft_constraints_reif_literals, config)
     }
 
     /// NOTE: Both half-reification and full reification literals are supported, including in the same model.
     pub fn with_reified_soft_constraints(
         subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        map_solver_mode: MapSolverMode,
         soft_constraints_reif_literals: impl IntoIterator<Item = Lit> + Clone,
         config: MusMcsEnumerationConfig,
     ) -> Self {
-        let map_solver = MapSolver::new(soft_constraints_reif_literals.clone());
+        let map_solver = MapSolver::new(soft_constraints_reif_literals.clone(), map_solver_mode);
         let subset_solver = SubsetSolver::<Lbl>::new(soft_constraints_reif_literals, subset_solver_impl);
 
         Self {
@@ -146,7 +149,7 @@ mod tests {
     type Marco = super::Marco<Lbl>;
     type SimpleSubsetSolverImpl = super::subsolvers::SimpleSubsetSolverImpl<Lbl>;
 
-    use crate::musmcs_enumeration::MusMcsEnumerationConfig;
+    use crate::musmcs_enumeration::{marco::subsolvers::MapSolverMode, MusMcsEnumerationConfig};
 
     #[test]
     fn test_simple_marco_simple() {
@@ -156,8 +159,9 @@ mod tests {
         let x2 = model.new_ivar(0, 10, "x2");
 
         let soft_constrs = vec![lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2)];
-        let mut simple_marco = Marco::with_soft_constraints_full_reif(
+        let mut simple_marco = Marco::with_soft_constraints_half_reif(
             Box::new(SimpleSubsetSolverImpl::new(model)),
+            MapSolverMode::PreferredValuesHigh,
             soft_constrs.clone(),
             MusMcsEnumerationConfig {
                 return_muses: true,

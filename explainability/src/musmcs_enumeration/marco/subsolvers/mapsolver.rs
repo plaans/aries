@@ -7,7 +7,7 @@ use aries::model::extensions::SavedAssignment;
 use aries::model::lang::{expr::or, linear::LinearSum, IAtom};
 use aries::model::Model;
 use aries::solver::search::{combinators::CombinatorExt, lexical::Lexical, SearchControl};
-use aries::solver::{Exit, Solver};
+use aries::solver::Exit;
 
 use itertools::Itertools;
 
@@ -21,11 +21,19 @@ fn signed_var_of_same_sign(var: VarRef, svar: SignedVar) -> SignedVar {
     }
 }
 
-type DummyLabel = u8;
-type SolveFn = dyn Fn(&mut Solver<DummyLabel>) -> Result<Option<Arc<SavedAssignment>>, Exit>;
+type Solver = aries::solver::Solver<u8>;
+type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>;
+
+pub enum MapSolverMode {
+    None,
+    OptimizeHigh,
+    OptimizeLow,
+    PreferredValuesHigh,
+    PreferredValuesLow,
+}
 
 pub struct MapSolver {
-    solver: Solver<DummyLabel>,
+    solver: Solver,
     /// Maps signed(!) variables of the literals representing the soft constraints in
     /// the subset solver to unsigned(!) variables in the map solver (this struct).
     ///
@@ -56,7 +64,7 @@ pub struct MapSolver {
 }
 
 impl MapSolver {
-    pub fn new(literals: impl IntoIterator<Item = Lit>) -> Self {
+    pub fn new(literals: impl IntoIterator<Item = Lit>, solving_mode: MapSolverMode) -> Self {
         let mut model = Model::new();
 
         let mut vars_translate_in = BTreeMap::<SignedVar, VarRef>::new();
@@ -79,8 +87,7 @@ impl MapSolver {
 
         // TODO cardinality-like constraints ? (another of possible liffiton optimizations)
 
-        let mut solver = Solver::<_>::new(model);
-        let solving_mode = "PREFERRED_VALUES_HIGH"; // FIXME usage of strings is dirty / temporary
+        let mut solver = Solver::new(model);
 
         // Approaches for finding / solving for unexplored seeds.
         //
@@ -92,7 +99,7 @@ impl MapSolver {
         // of our default / preferred values for the literals' indicator variables (0 - low, 1 - high).
         let solve_fn: Box<SolveFn> = match solving_mode {
             // Optimize the sum of the literals' indicator variables. (Maximize for high bias)
-            "OPTIMIZE_HIGH" => {
+            MapSolverMode::OptimizeHigh => {
                 let sum = LinearSum::of(
                     literals
                         .iter()
@@ -107,14 +114,14 @@ impl MapSolver {
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.geq(obj), []);
 
-                Box::new(move |s: &mut Solver<_>| {
+                Box::new(move |s: &mut Solver| {
                     let res = s.maximize(obj)?.map(|(_, doms)| doms);
                     s.reset();
                     Ok(res)
                 })
             }
             // Optimize the sum of the literals' indicator variables. (Minimize for low bias)
-            "OPTIMIZE_LOW" => {
+            MapSolverMode::OptimizeLow => {
                 let sum = LinearSum::of(
                     literals
                         .iter()
@@ -129,14 +136,14 @@ impl MapSolver {
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.leq(obj), []);
 
-                Box::new(move |s: &mut Solver<_>| {
+                Box::new(move |s: &mut Solver| {
                     let res = s.minimize(obj)?.map(|(_, doms)| doms);
                     s.reset();
                     Ok(res)
                 })
             }
             // Ask the solver to, if possible, set the literals to true (high bias).
-            "PREFERRED_VALUES_HIGH" => {
+            MapSolverMode::PreferredValuesHigh => {
                 let brancher = Lexical::with_vars(
                     literals.iter().map(|&l| {
                         let v = solver.model.state.new_var(0, 1);
@@ -150,14 +157,14 @@ impl MapSolver {
 
                 solver.set_brancher_boxed(brancher);
 
-                Box::new(move |s: &mut Solver<_>| {
+                Box::new(move |s: &mut Solver| {
                     let res = s.solve()?;
                     s.reset();
                     Ok(res)
                 })
             }
             // Ask the solver to, if possible, set the literals to false (low bias).
-            "PREFERRED_VALUES_LOW" => {
+            MapSolverMode::PreferredValuesLow => {
                 let brancher = Lexical::with_vars(
                     literals.iter().map(|&l| {
                         let v = solver.model.state.new_var(0, 1);
@@ -171,14 +178,14 @@ impl MapSolver {
 
                 solver.set_brancher_boxed(brancher);
 
-                Box::new(move |s: &mut Solver<_>| {
+                Box::new(move |s: &mut Solver| {
                     let res = s.solve()?;
                     s.reset();
                     Ok(res)
                 })
             }
             // Unoptimised approach, any solutions.
-            "NOTHING" => Box::new(move |s: &mut Solver<_>| {
+            MapSolverMode::None => Box::new(move |s: &mut Solver| {
                 let res = s.solve()?;
                 s.reset();
                 Ok(res)
