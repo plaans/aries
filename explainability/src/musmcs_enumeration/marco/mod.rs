@@ -51,19 +51,10 @@ impl<Lbl: Label> Marco<Lbl> {
         self.subset_solver.get_expr_reification(expr)
     }
 
-    fn get_soft_constraints_reif_literals(&self) -> &BTreeSet<Lit> {
-        self.subset_solver.get_soft_constraints_reif_literals()
-    }
-
     #[allow(dead_code)]
     fn get_soft_constraints_known_to_be_necessarily_in_every_mus(&self) -> &BTreeSet<Lit> {
         self.subset_solver
             .get_soft_constraints_known_to_be_necessarily_in_every_mus()
-    }
-
-    fn register_soft_constraint_as_necessarily_in_every_mus(&mut self, soft_constraint_reif_lit: Lit) {
-        self.subset_solver
-            .register_soft_constraint_as_necessarily_in_every_mus(soft_constraint_reif_lit)
     }
 
     pub fn run(&mut self) -> MusMcsEnumerationResult {
@@ -93,9 +84,9 @@ impl<Lbl: Label> Marco<Lbl> {
         while let Some(next_seed) = self.map_solver.find_unexplored_seed()? {
             let seed = next_seed;
             if self.subset_solver.check_subset(&seed)?.is_ok() {
+                let (mss, mcs) = self.subset_solver.grow(&seed)?;
+                self.map_solver.block_down(&mss);
                 if let Some(mcses) = mcses {
-                    let (mss, mcs) = self.subset_solver.grow(&seed)?;
-                    self.map_solver.block_down(&mss);
                     assert!(mcses
                         .iter()
                         .all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
@@ -105,8 +96,6 @@ impl<Lbl: Label> Marco<Lbl> {
                         }
                         mcses.push(mcs);
                     }
-                } else {
-                    self.case_seed_sat_only_muses_optimization(&seed)?;
                 }
             } else {
                 let mus = self.subset_solver.shrink(&seed)?;
@@ -127,45 +116,6 @@ impl<Lbl: Label> Marco<Lbl> {
         Ok(())
     }
 
-    fn case_seed_sat_only_muses_optimization(&mut self, seed: &BTreeSet<Lit>) -> Result<(), Exit> {
-        // Optimization inspired by the implementation of Ignace Bleukx (in python).
-        //
-        // If we are not going to return MCSes, we can try to greedily search for
-        // more correction subsets, disjoint from this one (the seed).
-        //
-        // This can only be done when we only intend to return MUSes, not MCSes,
-        // because the correction sets we greedily discover with this optimization
-        // have no guarantee of being unique / not having been already discovered.
-
-        let mut sat_subset = seed.clone();
-        self.map_solver.block_down(&sat_subset);
-
-        // Another optimization (*):
-        // If the found correction set only has 1 element,
-        // then that element is added to those that are known to be in all unsatisfiable sets.
-        if let Ok(&lit) = self
-            .get_soft_constraints_reif_literals()
-            .difference(&sat_subset)
-            .exactly_one()
-        {
-            self.register_soft_constraint_as_necessarily_in_every_mus(lit);
-        }
-
-        // Grow the sat subset as much as possible (i.e. until unsatisfiability
-        // by extending it with each correction set discovered.
-        while let Some(new_sat_subset) = self.subset_solver.find_all_sat_with_subset(&sat_subset)? {
-            self.map_solver.block_down(&new_sat_subset);
-
-            let new_corr_subset = self.get_soft_constraints_reif_literals().difference(&new_sat_subset);
-            sat_subset.extend(new_corr_subset.clone());
-
-            // Same optimization as (*) above
-            if let Ok(&lit) = new_corr_subset.exactly_one() {
-                self.register_soft_constraint_as_necessarily_in_every_mus(lit);
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]

@@ -57,16 +57,6 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         self.subset_solver_impl.find_unsat_core(subset)
     }
 
-    pub fn find_all_sat_with_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Option<BTreeSet<Lit>>, Exit> {
-        if self.check_subset(subset)?.is_ok() {
-            let mut res = self.get_soft_constraints_reif_literals().clone();
-            res.retain(|&l| self.subset_solver_impl.get_model().state.entails(l));
-            Ok(Some(res))
-        } else {
-            Ok(None)
-        }
-    }
-
     pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
         let res = self.find_unsat_core(subset)?;
         // NOTE: any resetting (or not!) of the solver is assumed to be done in `solve_fn`
