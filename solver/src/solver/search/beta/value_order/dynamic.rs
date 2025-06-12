@@ -15,13 +15,18 @@ pub struct Dynamic {
     table: HashMap<VarRef, i32>,
     period: u32,
     countdown: u32,
-    zero_pos: bool
+    zero_pos: bool,
 }
 
 impl Dynamic {
     pub fn new(period: u32) -> Self {
         assert!(period >= 1);
-        Self { table: HashMap::new(), period, countdown: period, zero_pos: false }
+        Self {
+            table: HashMap::new(),
+            period,
+            countdown: period,
+            zero_pos: false,
+        }
     }
 
     /// Return the score of the given variable
@@ -48,8 +53,8 @@ impl Dynamic {
     fn handle(&mut self, lit: &Lit) {
         let var = lit.variable();
         let b = match lit.relation() {
-            Relation::Gt => -1,
-            Relation::Leq => 1,
+            Relation::Gt => 1,
+            Relation::Leq => -1,
         };
         self.bump(var, b);
     }
@@ -77,9 +82,9 @@ impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
         let (lb, ub) = model.state.bounds(var);
         let positive = score > 0 || (score == 0 && self.zero_is_pos());
         if positive {
-            var.leq(lb)
-        } else {
             var.geq(ub)
+        } else {
+            var.leq(lb)
         }
     }
 
@@ -134,8 +139,8 @@ mod tests {
         let mut dynamic = Dynamic::default();
         dynamic.handle(&x.geq(0));
         dynamic.handle(&y.leq(6));
-        assert_eq!(dynamic.get(&x), -1);
-        assert_eq!(dynamic.get(&y), 1);
+        assert_eq!(dynamic.get(&x), 1);
+        assert_eq!(dynamic.get(&y), -1);
         assert_eq!(dynamic.get(&z), 0);
     }
 

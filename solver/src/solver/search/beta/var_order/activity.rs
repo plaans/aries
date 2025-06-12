@@ -22,8 +22,8 @@ impl Activity {
         debug_assert!(period >= 1);
         Activity {
             table: HashMap::new(),
-            decay_factor: decay_factor,
-            period: period,
+            decay_factor,
+            period,
             countdown: period,
         }
     }
@@ -76,5 +76,11 @@ impl<Lbl: Label> VarOrder<Lbl> for Activity {
             .variables()
             .filter(|v| !model.state.is_bound(*v))
             .min_by(|v1, v2| self.get(*v1).partial_cmp(&self.get(*v2)).unwrap())
+    }
+}
+
+impl Default for Activity {
+    fn default() -> Self {
+        Self::new(0.95, 100)
     }
 }

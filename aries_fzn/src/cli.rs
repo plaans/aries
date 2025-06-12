@@ -12,7 +12,6 @@ use aries::solver::search::beta::value_order::Max;
 use aries::solver::search::beta::value_order::Min;
 use aries::solver::search::beta::value_order::UpperHalf;
 use aries::solver::search::beta::value_order::ValueOrderKind;
-use aries::solver::search::beta::var_order::Activity;
 use aries::solver::search::beta::var_order::FirstFail;
 use aries::solver::search::beta::var_order::Lexical;
 use aries::solver::search::beta::var_order::VarOrderKind;
@@ -27,7 +26,7 @@ use crate::fzn::Fzn;
 
 fn parse_var_order(s: &str) -> anyhow::Result<VarOrderKind> {
     match s {
-        "activity" => Ok(VarOrderKind::Activity(Activity::new(0.95, 100))),
+        "activity" => Ok(VarOrderKind::Activity(Default::default())),
         "lexical" => Ok(VarOrderKind::FirstFail(FirstFail)),
         "first-fail" => Ok(VarOrderKind::Lexical(Lexical)),
         _ => bail!("variable orders are activity, first-fail and lexical"),

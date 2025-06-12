@@ -16,7 +16,11 @@ impl Geometric {
     pub fn new(scaling_factor: f32, period: u32) -> Self {
         debug_assert!(scaling_factor >= 1.0);
         debug_assert!(period >= 1);
-        Geometric { scaling_factor, period, countdown: period }
+        Geometric {
+            scaling_factor,
+            period,
+            countdown: period,
+        }
     }
 
     /// Decay the variable activity.
@@ -33,7 +37,7 @@ impl<Lbl: Label> Restart<Lbl> for Geometric {
         _explainer: &mut dyn Explainer,
         _backtrack_level: DecLvl,
     ) {
-        self.countdown -= 1;
+        self.countdown = self.countdown.saturating_sub(1);
         debug_assert!(self.countdown <= self.period);
     }
 
@@ -49,6 +53,6 @@ impl<Lbl: Label> Restart<Lbl> for Geometric {
 
 impl Default for Geometric {
     fn default() -> Self {
-        Self::new(1.5, 100)
+        Self::new(1.1, 100)
     }
 }
