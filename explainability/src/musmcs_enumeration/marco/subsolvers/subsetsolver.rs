@@ -60,14 +60,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
     pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
         let res = self.find_unsat_core(subset)?;
         // NOTE: any resetting (or not!) of assumptions of the solver is to be done in `find_unsat_core`
-        Ok(res.map_err(|unsat_core| {
-            unsat_core
-                .literals()
-                .iter()
-                .chain(self.get_soft_constraints_known_to_be_necessarily_in_every_mus())
-                .copied()
-                .collect()
-        }))
+        Ok(res.map_err(|unsat_core| unsat_core.literals().into_iter().copied().collect()))
     }
 
     pub fn grow(&mut self, subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, Mcs), Exit> {
