@@ -21,15 +21,26 @@ resolver = "2"
 anyhow = { version = "1.0" }
 clap = { version = "4.4", features = ["derive"] }
 num-rational = { version = "0.4.1" }
+num-integer = { default-features = false, version = "0.1.44" }
 regex = { version = "1" }
 tracing = { version = "0.1", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3"
-itertools = { version = "0.13" }
-rand = { version = "0.8.5", features = ["small_rng"] }
+itertools = { version = "0.14" }
+rand = { version = "0.8", features = ["small_rng"] }
 fixedbitset = { version = "0.5.7", default-features = false }
-prost = { version = "0.12.6" }
+prost = { version = "0.12" }
+prost-build = { version = "0.12" }
 tonic = "0.11.0"
 tonic-build = "0.11.0"
+streaming-iterator = "0.1.5"
+hashbrown = "0.15"
+lazy_static = "1.4"
+vec_map = "0.8"
+crossbeam-channel = "0.5"
+smallvec = "1.4.2"
+lru = "0.14"
+format_num = "0.1.0"
+bit-set = { default-features = false, version = "0.8" }
 
 [profile.dev]
 opt-level = 0
