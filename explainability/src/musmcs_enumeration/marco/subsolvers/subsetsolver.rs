@@ -6,6 +6,8 @@ use aries::reif::Reifiable;
 use aries::solver::{Exit, UnsatCore};
 use itertools::Itertools;
 
+use crate::musmcs_enumeration::{Mcs, Mus};
+
 pub trait SubsetSolverImpl<Lbl: Label> {
     fn get_model(&mut self) -> &mut Model<Lbl>;
     fn find_unsat_core(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>;
@@ -70,7 +72,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         }))
     }
 
-    pub fn grow(&mut self, subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, BTreeSet<Lit>), Exit> {
+    pub fn grow(&mut self, subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, Mcs), Exit> {
         let mut mss = subset.clone();
         let complement = self
             .get_soft_constraints_reif_literals()
@@ -97,7 +99,7 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         Ok((mss, mcs))
     }
 
-    pub fn shrink(&mut self, subset: &BTreeSet<Lit>) -> Result<BTreeSet<Lit>, Exit> {
+    pub fn shrink(&mut self, subset: &BTreeSet<Lit>) -> Result<Mus, Exit> {
         let mut mus: BTreeSet<Lit> = subset.clone();
         for &lit in subset {
             if !mus.contains(&lit) {

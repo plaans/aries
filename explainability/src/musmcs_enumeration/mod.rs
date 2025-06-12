@@ -13,10 +13,13 @@ pub struct MusMcsEnumerationConfig {
     pub on_mcs_found: Option<Callback>,
 }
 
+type Mus = BTreeSet<Lit>;
+type Mcs = BTreeSet<Lit>;
+
 #[derive(Debug, Clone)]
 pub struct MusMcsEnumerationResult {
-    pub muses: Option<Vec<BTreeSet<Lit>>>,
-    pub mcses: Option<Vec<BTreeSet<Lit>>>,
+    pub muses: Option<Vec<Mus>>,
+    pub mcses: Option<Vec<Mcs>>,
     pub run_time: Option<Duration>,
     pub complete: Option<bool>,
 }

@@ -7,7 +7,7 @@ use aries::solver::Exit;
 
 use std::{collections::BTreeSet, time::Instant};
 
-use crate::musmcs_enumeration::{MusMcsEnumerationConfig, MusMcsEnumerationResult};
+use crate::musmcs_enumeration::{Mcs, Mus, MusMcsEnumerationConfig, MusMcsEnumerationResult};
 use subsolvers::{MapSolver, SubsetSolver, SubsetSolverImpl};
 
 use itertools::Itertools;
@@ -58,8 +58,8 @@ impl<Lbl: Label> Marco<Lbl> {
     }
 
     pub fn run(&mut self) -> MusMcsEnumerationResult {
-        let mut muses = self.config.return_muses.then(Vec::<BTreeSet<Lit>>::new);
-        let mut mcses = self.config.return_mcses.then(Vec::<BTreeSet<Lit>>::new);
+        let mut muses = self.config.return_muses.then(Vec::<Mus>::new);
+        let mut mcses = self.config.return_mcses.then(Vec::<Mcs>::new);
 
         let start = Instant::now();
 
@@ -78,8 +78,8 @@ impl<Lbl: Label> Marco<Lbl> {
 
     fn _run(
         &mut self,
-        muses: &mut Option<Vec<BTreeSet<Lit>>>,
-        mcses: &mut Option<Vec<BTreeSet<Lit>>>,
+        muses: &mut Option<Vec<Mus>>,
+        mcses: &mut Option<Vec<Mcs>>,
     ) -> Result<(), Exit> {
         while let Some(next_seed) = self.map_solver.find_unexplored_seed()? {
             let seed = next_seed;
