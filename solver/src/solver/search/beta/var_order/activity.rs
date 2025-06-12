@@ -12,19 +12,14 @@ use crate::solver::search::beta::var_order::VarOrder;
 pub struct Activity {
     table: HashMap<VarRef, f32>,
     decay_factor: f32,
-    period: u32,
-    countdown: u32,
 }
 
 impl Activity {
-    pub fn new(decay_factor: f32, period: u32) -> Self {
+    pub fn new(decay_factor: f32) -> Self {
         debug_assert!(0.0 <= decay_factor && decay_factor <= 1.0);
-        debug_assert!(period >= 1);
         Activity {
             table: HashMap::new(),
             decay_factor,
-            period,
-            countdown: period,
         }
     }
 
@@ -45,15 +40,6 @@ impl Activity {
             *activity *= self.decay_factor;
         }
     }
-
-    /// Decrement the countdown and decay if needed.
-    fn handle_decay(&mut self) {
-        self.countdown -= 1;
-        if self.countdown == 0 {
-            self.decay();
-            self.countdown = self.period;
-        }
-    }
 }
 
 impl<Lbl: Label> VarOrder<Lbl> for Activity {
@@ -64,7 +50,7 @@ impl<Lbl: Label> VarOrder<Lbl> for Activity {
         _explainer: &mut dyn Explainer,
         _backtrack_level: DecLvl,
     ) {
-        self.handle_decay();
+        self.decay();
         for literal in clause.literals() {
             self.bump(literal.variable());
         }
@@ -81,6 +67,6 @@ impl<Lbl: Label> VarOrder<Lbl> for Activity {
 
 impl Default for Activity {
     fn default() -> Self {
-        Self::new(0.95, 100)
+        Self::new(0.95)
     }
 }
