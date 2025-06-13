@@ -10,19 +10,19 @@ anyhow = { workspace = true }
 aries = { path = "../../../solver" }
 aries_planners = { path = "../../planners" }
 aries_planning = { path = "../../planning" }
-async-trait = "0.1"
+async-trait = { workspace = true }
 clap = { workspace = true }
 env_param = { path = "../../../env_param" }
 fixedbitset = { workspace = true }
-futures-core = { default-features = false, version = "0.3" }
-futures-util = { default-features = false, version = "0.3" }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
 itertools = { workspace = true }
-num-rational = { default-features = false, version = "0.4" }
+num-rational = { workspace = true }
 prost = { workspace = true }
 regex = { workspace = true }
-streaming-iterator = "0.1.5"
-tokio = { default-features = false, version = "1.38.0", features = ["rt-multi-thread", "macros"] }
-tokio-stream = { default-features = false, version = "0.1" }
+streaming-iterator = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
 tonic = { workspace = true }
 unified_planning = { path = "../api" }
 aries_plan_validator = { path = "../../../validator" }
@@ -30,10 +30,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
 [build-dependencies]
-async-stream = "0.3"
-rand = "0.8"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+async-stream = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tonic-build = { workspace = true }
 
 # server binary

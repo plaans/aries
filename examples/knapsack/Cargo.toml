@@ -6,8 +6,8 @@ edition = "2021"
 
 [dependencies]
 aries = { path = "../../solver", features = ["cpu_cycles"] }
-num-rational = "0.4.2"
-itertools = "0.13.0"
+num-rational = { workspace = true }
+itertools = { workspace = true }
 env_param = { path = "../../env_param" }
 
 [[bin]]

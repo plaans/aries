@@ -6,10 +6,10 @@ edition = "2021"
 
 [dependencies]
 itertools = { workspace = true }
-structopt = "0.3"
+structopt = { workspace = true }
 anyhow = { workspace = true }
 aries = { path = "../../solver", features = ["cpu_cycles"] }
-walkdir = "2.3"
+walkdir = { workspace = true }
 
 
 [[bin]]
