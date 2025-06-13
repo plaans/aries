@@ -11,7 +11,7 @@ aries = { path = "../solver" }
 clap = { workspace = true }
 flatzinc = "0.3.21"
 itertools = { workspace = true }
-transitive = "1.1.0"
+transitive = { workspace = true }
 
 [dev-dependencies]
-test_each_file = "0.3.4"
+test_each_file = { workspace = true }
