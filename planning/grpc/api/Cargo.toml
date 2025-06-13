@@ -6,9 +6,7 @@ version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-async-trait = { workspace = true }
 prost = { workspace = true }
-regex = { workspace = true }
 tonic = { workspace = true }
 itertools = { workspace = true }
 

@@ -31,14 +31,12 @@ i128 = []
 [dependencies]
 anyhow = { workspace = true }
 streaming-iterator = { workspace = true }
-lazy_static = { workspace = true }
 vec_map = { workspace = true }
 crossbeam-channel = { workspace = true }
 smallvec = { workspace = true }
 lru = { workspace = true }
 format_num = { workspace = true }
 itertools = { workspace = true }
-bit-set = { workspace = true }
 env_param = { path = "../env_param" }
 num-integer = { workspace = true }
 tracing = { workspace = true }

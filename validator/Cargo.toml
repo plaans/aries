@@ -11,5 +11,4 @@ unified_planning = { path = "../planning/grpc/api" }
 anyhow = { workspace = true }
 im = { workspace = true }
 malachite = { workspace = true }
-prost = { workspace = true }
 regex = { workspace = true }

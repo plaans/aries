@@ -123,13 +123,11 @@ name = "aries"
 version = "0.0.6"
 dependencies = [
  "anyhow",
- "bit-set",
  "crossbeam-channel",
  "env_param",
  "format_num",
  "hashbrown 0.15.4",
  "itertools 0.14.0",
- "lazy_static",
  "lru",
  "num-integer",
  "num-rational",
@@ -172,25 +170,16 @@ dependencies = [
  "aries_plan_validator",
  "aries_planners",
  "aries_planning",
- "async-stream",
  "async-trait",
  "clap 4.5.40",
  "env_param",
- "fixedbitset 0.5.7",
- "futures-core",
- "futures-util",
  "itertools 0.14.0",
  "num-rational",
  "prost",
- "rand",
  "regex",
- "serde",
- "serde_json",
- "streaming-iterator",
  "tokio",
  "tokio-stream",
  "tonic",
- "tonic-build",
  "tracing",
  "tracing-subscriber",
  "unified_planning",
@@ -203,7 +192,6 @@ dependencies = [
  "aries",
  "env_param",
  "itertools 0.14.0",
- "num-rational",
 ]
 
 [[package]]
@@ -214,7 +202,6 @@ dependencies = [
  "aries",
  "im",
  "malachite",
- "prost",
  "regex",
  "unified_planning",
 ]
@@ -243,7 +230,6 @@ dependencies = [
  "env_param",
  "fixedbitset 0.5.7",
  "itertools 0.14.0",
- "num-rational",
  "pathfinding",
  "regex",
  "streaming-iterator",
@@ -396,21 +382,6 @@ name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
-
-[[package]]
-name = "bit-set"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
-dependencies = [
- "bit-vec",
-]
-
-[[package]]
-name = "bit-vec"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitflags"
@@ -1479,18 +1450,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_json"
-version = "1.0.140"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
-dependencies = [
- "itoa 1.0.15",
- "memchr",
- "ryu",
- "serde",
-]
-
-[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1928,10 +1887,8 @@ checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 name = "unified_planning"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "itertools 0.14.0",
  "prost",
- "regex",
  "tonic",
  "tonic-build",
 ]
