@@ -111,7 +111,9 @@ impl<Lbl: Label> Marco<Lbl> {
                     mcses.push(mcs);
                 }
             } else {
-                let mus = self.csolver.shrink(&seed, (subset_solver_optim_mode, &mut self.msolver))?;
+                // debug_assert!(self.msolver.seed_is_unexplored(&seed));
+
+                let mus = self.csolver.shrink(&seed, (optional_optim, &mut self.msolver))?;
                 self.msolver.block_up(&mus);
 
                 debug_assert!(muses.iter().all(|set| !mus.is_subset(set) && !set.is_subset(&mus)));

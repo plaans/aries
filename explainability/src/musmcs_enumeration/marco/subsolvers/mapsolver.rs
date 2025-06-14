@@ -191,10 +191,14 @@ impl MapSolver {
         res
     }
 
-    /// Translates a soft constraint reification literal from its map solver representation to its subset solver representation.
-    fn translate_lit_out(&self, literal: Lit) -> Lit {
-        Lit::new(self.vars_translate_out[&literal.variable()], literal.ub_value())
-    }
+    /*/// Returns whether the given assignment is valid.
+    // Needed for parallel MARCO.
+    pub fn seed_is_unexplored(&mut self, seed: &BTreeSet<Lit>) -> bool {
+        self.solver.reset();
+        let res = self.solver.solve_with_assumptions(seed.iter().copied().collect_vec()).unwrap().is_ok();
+        self.solver.reset();
+        res
+    }*/
 
     /// Solve for a valid assignment.
     /// In the MARCO algorithm, it will always result in a new assignment, thanks to `block_down` and `block_up`.
