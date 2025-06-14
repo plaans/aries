@@ -7,7 +7,7 @@ use std::{collections::BTreeSet, time::Instant};
 
 use itertools::Itertools;
 
-use crate::musmcs_enumeration::{Mcs, Mus, MusMcsEnumResult};
+use crate::musmcs::{Mcs, Mus, MusMcsResult};
 use subsolvers::{MapSolver, MapSolverMode, SubsetSolver, SubsetSolverImpl, SubsetSolverOptiMode};
 
 pub mod subsolvers;
@@ -65,7 +65,7 @@ impl<Lbl: Label> Marco<Lbl> {
         self.csolver.get_soft_constraints_reif_lits()
     }
 
-    pub fn run(&mut self, on_mus_found: Option<fn(&Mus)>, on_mcs_found: Option<fn(&Mcs)>) -> MusMcsEnumResult {
+    pub fn run(&mut self, on_mus_found: Option<fn(&Mus)>, on_mcs_found: Option<fn(&Mcs)>) -> MusMcsResult {
         let mut muses = Vec::<Mus>::new();
         let mut mcses = Vec::<Mcs>::new();
 
@@ -84,7 +84,7 @@ impl<Lbl: Label> Marco<Lbl> {
         debug_assert!(muses.iter().all_unique());
         debug_assert!(mcses.iter().all_unique());
 
-        MusMcsEnumResult {
+        MusMcsResult {
             muses,
             mcses,
             complete: Some(complete),

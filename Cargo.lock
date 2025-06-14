@@ -139,7 +139,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries_explainability"
+name = "aries_explain"
 version = "0.1.0"
 dependencies = [
  "aries",

@@ -1,10 +1,12 @@
 use crate::core::IntCst;
+use crate::core::Lit;
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Label, ModelShape};
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver, UnsatCore};
 use crossbeam_channel::{select, Receiver, Sender};
+use itertools::Itertools;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -116,16 +118,61 @@ impl<Lbl: Label> ParSolver<Lbl> {
         rcv
     }
 
+    pub fn incremental_push_all(&mut self, assumptions: Vec<Lit>) -> Result<(), UnsatCore> {
+        let mut res: Result<(), UnsatCore> = Ok(());
+        for s in self.solvers.iter_mut() {
+            match s {
+                Worker::Running(_) => panic!(),
+                Worker::Halting => panic!(),
+                Worker::Idle(s) => {
+                    if let Err((_, unsat_core)) = s.incremental_push_all(assumptions.clone()) {
+                        if let Err(ref uc) = res {
+                            if unsat_core.literals().len() < uc.literals().len() {
+                                res = Err(unsat_core);
+                            }
+                        } else {
+                            res = Err(unsat_core);
+                        }
+                    }
+                }
+            }
+        }
+        res
+    }
+
     /// Solve the problem that was given on initialization, using all available solvers.
     ///
     /// In case of unsatisfiability, will return an unsat core of
     /// the assumptions that were initially pushed to `base_solver`.
     pub fn incremental_solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
+        debug_assert!(
+            self.solvers
+                .iter()
+                .map(|s| match s {
+                    Worker::Running(_) => panic!(),
+                    Worker::Halting => panic!(),
+                    Worker::Idle(s) => s.model.state.assumptions(),
+                })
+                .all_equal(),
+            "Workers need to have the same assumptions pushed into them",
+        );
         self.race_solvers(
             |s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))),
             |_| {},
             deadline,
         )
+    }
+
+    pub fn solve_with_assumptions(
+        &mut self,
+        assumptions: Vec<Lit>,
+        deadline: Option<Instant>,
+    ) -> SolverResult<Solution> {
+        let run = move |s: &mut Solver<Lbl>| {
+            s.solve_with_assumptions(assumptions.iter().copied().collect_vec())
+                .map(|res| res.map_err(|uc: UnsatCore| Some(uc)))
+        };
+        self.race_solvers(run, |_| {}, deadline)
     }
 
     /// Solve the problem that was given on initialization using all available solvers.

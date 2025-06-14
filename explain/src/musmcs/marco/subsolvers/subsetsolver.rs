@@ -8,8 +8,8 @@ use aries::reif::Reifiable;
 use aries::solver::{Exit, UnsatCore};
 use itertools::Itertools;
 
-use crate::musmcs_enumeration::marco::subsolvers::MapSolver;
-use crate::musmcs_enumeration::{Mcs, Mus};
+use crate::musmcs::marco::subsolvers::MapSolver;
+use crate::musmcs::{Mcs, Mus};
 
 /// A trait that allows defining the exact procedure
 /// for solving / extracting unsat cores

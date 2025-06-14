@@ -8,7 +8,7 @@ type Mus = BTreeSet<Lit>;
 type Mcs = BTreeSet<Lit>;
 
 #[derive(Debug, Clone)]
-pub struct MusMcsEnumResult {
+pub struct MusMcsResult {
     pub muses: Vec<Mus>,
     pub mcses: Vec<Mcs>,
     pub run_time: Option<Duration>,

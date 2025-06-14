@@ -13,7 +13,7 @@ use aries::solver::Exit;
 
 use itertools::Itertools;
 
-use crate::musmcs_enumeration::{Mcs, Mus};
+use crate::musmcs::{Mcs, Mus};
 
 type Solver = aries::solver::Solver<u8>;
 type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>;
