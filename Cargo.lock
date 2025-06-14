@@ -139,6 +139,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_explain"
+version = "0.1.0"
+dependencies = [
+ "aries",
+ "itertools 0.14.0",
+]
+
+[[package]]
 name = "aries_fzn"
 version = "0.1.0"
 dependencies = [
@@ -192,6 +200,21 @@ dependencies = [
  "aries",
  "env_param",
  "itertools 0.14.0",
+]
+
+[[package]]
+name = "aries_marco"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries",
+ "aries_explain",
+ "clap 4.5.40",
+ "env_param",
+ "itertools 0.14.0",
+ "varisat-dimacs",
+ "varisat-formula",
+ "zip",
 ]
 
 [[package]]

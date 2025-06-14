@@ -637,9 +637,66 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    /// Incremental solving: pushes (assumes and propagates) an assumption literal.
+    /// In case of failure (unsatisfiability encountered), returns an unsat core.
+    pub fn incremental_push(&mut self, assumption: Lit) -> Result<bool, UnsatCore> {
+        if self.last_assumption_level == DecLvl::ROOT {
+            match self.propagate_and_backtrack_to_consistent() {
+                Ok(()) => (),
+                Err(conflict) => {
+                    // conflict at root, return empty unsat core
+                    debug_assert!(conflict.is_empty());
+                    return Err(Explanation::new());
+                }
+            };
+        }
+        self.assume_and_propagate(assumption)
+    }
+
+    /// Incremental solving: pushes (assumes and propagates) the given assumption literals one by one,
+    /// until completion or failure (unsatisfiability encountered). In that case, returns an unsat core,
+    /// as well as the provided assumptions that were pushed successfully.
+    pub fn incremental_push_all(&mut self, assumptions: Vec<Lit>) -> Result<(), (Vec<Lit>, UnsatCore)> {
+        let mut successfully_pushed = vec![];
+        for lit in assumptions {
+            match self.incremental_push(lit) {
+                Ok(_) => successfully_pushed.push(lit),
+                Err(unsat_core) => return Err((successfully_pushed, unsat_core)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Incremental solving: Removes the last assumption that was pushed and
+    /// reverts the solver to the state right before it was pushed.
+    pub fn incremental_pop(&mut self) {
+        self.reset_search();
+        self.restore_last();
+    }
+
+    /// Incremental solving: Solves the problem with the assumptions that were pushed.
+    /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
+    pub fn incremental_solve(&mut self) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
+        match self.search()? {
+            SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SearchResult::ExternalSolution(s) => Ok(Ok(s)),
+            SearchResult::Unsat(conflict) => {
+                let unsat_core = self
+                    .model
+                    .state
+                    .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
+                Ok(Err(unsat_core))
+            }
+        }
+    }
+
+    /// Solves with the given assumptions.
+    /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
+    ///
+    /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions on the stack)
     pub fn solve_with_assumptions(
         &mut self,
-        assumption_lits: impl IntoIterator<Item = Lit>,
+        assumptions: Vec<Lit>,
     ) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
@@ -655,7 +712,7 @@ impl<Lbl: Label> Solver<Lbl> {
             }
         };
 
-        for lit in assumption_lits {
+        for lit in assumptions {
             if let Err(unsat_core) = self.assume_and_propagate(lit) {
                 return Ok(Err(unsat_core));
             }
