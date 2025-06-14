@@ -1,5 +1,3 @@
-pub mod subsolvers;
-
 use aries::core::Lit;
 use aries::model::Label;
 use aries::reif::Reifiable;
@@ -7,85 +5,78 @@ use aries::solver::Exit;
 
 use std::{collections::BTreeSet, time::Instant};
 
-use crate::musmcs_enumeration::{marco::subsolvers::MapSolverMode, Mcs, Mus, MusMcsEnumerationConfig, MusMcsEnumerationResult};
-use subsolvers::{MapSolver, SubsetSolver, SubsetSolverImpl};
-
 use itertools::Itertools;
 
+use crate::musmcs_enumeration::{Mcs, Mus, MusMcsEnumResult};
+use subsolvers::{MapSolver, MapSolverMode, SubsetSolver, SubsetSolverOptiMode, SubsetSolverImpl};
+
+pub mod subsolvers;
+
 pub struct Marco<Lbl: Label> {
-    map_solver: MapSolver,
-    subset_solver: SubsetSolver<Lbl>,
-    config: MusMcsEnumerationConfig,
+    msolver: MapSolver,
+    /// The subset solver, sometimes also simply called "constraint solver". Hence the name `csolver`.
+    csolver: SubsetSolver<Lbl>,
 }
 
 impl<Lbl: Label> Marco<Lbl> {
     pub fn with_soft_constraints_full_reif<Expr: Reifiable<Lbl>>(
-        mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
-        map_solver_mode: MapSolverMode,
         soft_constraints: impl IntoIterator<Item = Expr>,
-        config: MusMcsEnumerationConfig,
+        mut csolver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        msolver_mode: MapSolverMode,
     ) -> Self {
-        let soft_constraints_reif_literals = soft_constraints
+        let soft_constraints_reiflits = soft_constraints
             .into_iter()
-            .map(|expr| subset_solver_impl.get_model().reify(expr))
+            .map(|expr| csolver_impl.get_model().reify(expr))
             .collect_vec();
 
-        Self::with_reified_soft_constraints(subset_solver_impl, map_solver_mode, soft_constraints_reif_literals, config)
+        Self::with_reified_soft_constraints(soft_constraints_reiflits, csolver_impl, msolver_mode)
     }
 
     pub fn with_soft_constraints_half_reif<Expr: Reifiable<Lbl>>(
-        mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
-        map_solver_mode: MapSolverMode,
         soft_constraints: impl IntoIterator<Item = Expr>,
-        config: MusMcsEnumerationConfig,
+        mut csolver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        msolver_mode: MapSolverMode,
     ) -> Self {
-        let soft_constraints_reif_literals = soft_constraints
+        let soft_constraints_reiflits = soft_constraints
             .into_iter()
-            .map(|expr| subset_solver_impl.get_model().half_reify(expr))
+            .map(|expr| csolver_impl.get_model().half_reify(expr))
             .collect_vec();
 
-        Self::with_reified_soft_constraints(subset_solver_impl, map_solver_mode, soft_constraints_reif_literals, config)
+        Self::with_reified_soft_constraints(soft_constraints_reiflits, csolver_impl, msolver_mode)
     }
 
     /// NOTE: Both half-reification and full reification literals are supported, including in the same model.
     pub fn with_reified_soft_constraints(
-        subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
-        map_solver_mode: MapSolverMode,
-        soft_constraints_reif_literals: impl IntoIterator<Item = Lit> + Clone,
-        config: MusMcsEnumerationConfig,
+        soft_constraints_reiflits: impl IntoIterator<Item = Lit> + Clone,
+        csolver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        msolver_mode: MapSolverMode,
     ) -> Self {
-        let map_solver = MapSolver::new(soft_constraints_reif_literals.clone(), map_solver_mode);
-        let subset_solver = SubsetSolver::<Lbl>::new(soft_constraints_reif_literals, subset_solver_impl);
+        let msolver = MapSolver::new(soft_constraints_reiflits.clone(), msolver_mode);
+        let csolver = SubsetSolver::<Lbl>::new(soft_constraints_reiflits, csolver_impl);
 
-        Self {
-            map_solver,
-            subset_solver,
-            config,
-        }
+        Self { msolver, csolver }
     }
 
-    pub fn get_expr_reification<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
-        self.subset_solver.get_expr_reification(expr)
+    pub fn get_expr_reif<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+        self.csolver.get_expr_reif(expr)
     }
 
-    #[allow(dead_code)]
-    fn get_soft_constraints_known_to_be_necessarily_in_every_mus(&self) -> &BTreeSet<Lit> {
-        self.subset_solver
-            .get_soft_constraints_known_to_be_necessarily_in_every_mus()
+    pub fn get_soft_constraints_reif_lits(&self) -> &BTreeSet<Lit> {
+        &self.csolver.get_soft_constraints_reif_lits()
     }
 
-    pub fn run(&mut self) -> MusMcsEnumerationResult {
-        let mut muses = self.config.return_muses.then(Vec::<Mus>::new);
-        let mut mcses = self.config.return_mcses.then(Vec::<Mcs>::new);
+    pub fn run(&mut self, on_mus_found: Option<fn(&Mus)>, on_mcs_found: Option<fn(&Mcs)>) -> MusMcsEnumResult {
+        let mut muses = Vec::<Mus>::new();
+        let mut mcses = Vec::<Mcs>::new();
 
         let start = Instant::now();
 
-        let complete = self._run(&mut muses, &mut mcses).is_ok();
+        let complete = self._run(&mut muses, &mut mcses, on_mus_found, on_mcs_found, SubsetSolverOptiMode::default()).is_ok();
 
-        debug_assert!(muses.as_ref().is_none_or(|v| v.iter().all_unique()));
-        debug_assert!(mcses.as_ref().is_none_or(|v| v.iter().all_unique()));
+        debug_assert!(muses.iter().all_unique());
+        debug_assert!(mcses.iter().all_unique());
 
-        MusMcsEnumerationResult {
+        MusMcsEnumResult {
             muses,
             mcses,
             complete: Some(complete),
@@ -95,61 +86,82 @@ impl<Lbl: Label> Marco<Lbl> {
 
     fn _run(
         &mut self,
-        muses: &mut Option<Vec<Mus>>,
-        mcses: &mut Option<Vec<Mcs>>,
+        muses: &mut Vec<Mus>,
+        mcses: &mut Vec<Mcs>,
+        on_mus_found: Option<fn(&Mus)>,
+        on_mcs_found: Option<fn(&Mcs)>,
+        subset_solver_optim_mode: SubsetSolverOptiMode,
     ) -> Result<(), Exit> {
-        while let Some(next_seed) = self.map_solver.find_unexplored_seed()? {
-            let seed = next_seed;
-            if self.subset_solver.check_subset(&seed)?.is_ok() {
-                let (mss, mcs) = self.subset_solver.grow(&seed)?;
-                self.map_solver.block_down(&mss);
-                if let Some(mcses) = mcses {
-                    assert!(mcses
-                        .iter()
-                        .all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
-                    if !mcs.is_empty() {
-                        if let Some(callback) = self.config.on_mcs_found.as_ref() {
-                            callback(&mcs)
-                        }
-                        mcses.push(mcs);
-                    }
+
+        while let Some(seed) = self.msolver.find_unexplored_seed()? {
+
+            if self.csolver.check_subset(&seed)?.is_ok() {
+                let (_, mcs) = self.csolver.grow(&seed, (subset_solver_optim_mode, &mut self.msolver))?;
+                self.msolver.block_down(&mcs);
+
+                debug_assert!(mcses.iter().all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
+                if !mcs.is_empty() {
+                    on_mcs_found.unwrap_or(|_| ())(&mcs);
+                    mcses.push(mcs);
                 }
             } else {
-                let mus = self.subset_solver.shrink(&seed)?;
-                self.map_solver.block_up(&mus);
-                if let Some(muses) = muses {
-                    assert!(muses
-                        .iter()
-                        .all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
-                    if !mus.is_empty() {
-                        if let Some(callback) = self.config.on_mus_found.as_ref() {
-                            callback(&mus)
-                        }
-                        muses.push(mus);
-                    }
+                let mus = self.csolver.shrink(&seed, (subset_solver_optim_mode, &mut self.msolver))?;
+                self.msolver.block_up(&mus);
+
+                debug_assert!(muses.iter().all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
+                if !mus.is_empty() {
+                    on_mus_found.unwrap_or(|_| ())(&mus);
+                    muses.push(mus);
                 }
             }
         }
         Ok(())
     }
-
 }
 
 #[cfg(test)]
 mod tests {
 
     use std::collections::BTreeSet;
+    use std::sync::Arc;
 
-    use aries::model::lang::expr::lt;
+    use aries::backtrack::Backtrack;
+    use aries::core::Lit;
+    use aries::model::extensions::SavedAssignment;
+    use aries::model::lang::expr::{geq, lt};
+    use aries::solver::{Exit, UnsatCore};
     use itertools::Itertools;
 
     type Lbl = &'static str;
 
     type Model = aries::model::Model<Lbl>;
+    type Solver = aries::solver::Solver<Lbl>;
     type Marco = super::Marco<Lbl>;
-    type SimpleSubsetSolverImpl = super::subsolvers::SimpleSubsetSolverImpl<Lbl>;
 
-    use crate::musmcs_enumeration::{marco::subsolvers::MapSolverMode, MusMcsEnumerationConfig};
+    use super::subsolvers::MapSolverMode;
+    use super::subsolvers::SubsetSolverImpl;
+
+    struct SimpleSubsetSolverImpl {
+        solver: Solver,
+    }
+    impl SimpleSubsetSolverImpl {
+        pub fn new(model: Model) -> Self {
+            Self { solver: Solver::new(model) }
+        }
+    }
+    impl SubsetSolverImpl<Lbl> for SimpleSubsetSolverImpl {
+        fn get_model(&mut self) -> &mut Model {
+            &mut self.solver.model
+        }
+        fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
+            let res = self
+                .solver
+                .solve_with_assumptions(subset.iter().copied().collect_vec())?;
+            self.solver.reset();
+            Ok(res)
+        }
+    }
+    
 
     #[test]
     fn test_simple_marco_simple() {
@@ -157,48 +169,66 @@ mod tests {
         let x0 = model.new_ivar(0, 10, "x0");
         let x1 = model.new_ivar(0, 10, "x1");
         let x2 = model.new_ivar(0, 10, "x2");
+        let x3 = model.new_ivar(0, 10, "x3");
 
-        let soft_constrs = vec![lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2)];
+        let soft_constraints = vec![lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2), lt(x3, 5), geq(x3, 5)];
         let mut simple_marco = Marco::with_soft_constraints_half_reif(
+            soft_constraints.clone(),
             Box::new(SimpleSubsetSolverImpl::new(model)),
-            MapSolverMode::PreferredValuesHigh,
-            soft_constrs.clone(),
-            MusMcsEnumerationConfig {
-                return_muses: true,
-                return_mcses: true,
-                on_mus_found: None,
-                on_mcs_found: None,
-            },
+            MapSolverMode::HighPreferredValues,
         );
-        let soft_constrs_reif_lits = soft_constrs
+        let soft_constraints_reiflits = soft_constraints
             .into_iter()
-            .map(|expr| simple_marco.get_expr_reification(expr))
+            .map(|expr| simple_marco.get_expr_reif(expr))
             .collect_vec();
 
-        let res = simple_marco.run();
-        let res_muses = res.muses.unwrap().into_iter().collect::<BTreeSet<_>>();
-        let res_mcses = res.mcses.unwrap().into_iter().collect::<BTreeSet<_>>();
+        let res = simple_marco.run(None, None);
+        let res_muses = res.muses.into_iter().collect::<BTreeSet<_>>();
+        let res_mcses = res.mcses.into_iter().collect::<BTreeSet<_>>();
 
         let expected_muses = BTreeSet::from_iter(vec![
             BTreeSet::from_iter(vec![
-                soft_constrs_reif_lits[0].unwrap(),
-                soft_constrs_reif_lits[1].unwrap(),
-                soft_constrs_reif_lits[2].unwrap(),
+                soft_constraints_reiflits[0].unwrap(),
+                soft_constraints_reiflits[1].unwrap(),
+                soft_constraints_reiflits[2].unwrap(),
             ]),
             BTreeSet::from_iter(vec![
-                soft_constrs_reif_lits[2].unwrap(),
-                soft_constrs_reif_lits[3].unwrap(),
+                soft_constraints_reiflits[2].unwrap(),
+                soft_constraints_reiflits[3].unwrap(),
+            ]),
+            BTreeSet::from_iter(vec![
+                soft_constraints_reiflits[4].unwrap(),
+                soft_constraints_reiflits[5].unwrap(),
             ]),
         ]);
         let expected_mcses = BTreeSet::from_iter(vec![
-            BTreeSet::from_iter(vec![soft_constrs_reif_lits[2].unwrap()]),
             BTreeSet::from_iter(vec![
-                soft_constrs_reif_lits[0].unwrap(),
-                soft_constrs_reif_lits[3].unwrap(),
+                soft_constraints_reiflits[2].unwrap(),
+                soft_constraints_reiflits[5].unwrap(),
             ]),
             BTreeSet::from_iter(vec![
-                soft_constrs_reif_lits[1].unwrap(),
-                soft_constrs_reif_lits[3].unwrap(),
+                soft_constraints_reiflits[0].unwrap(),
+                soft_constraints_reiflits[3].unwrap(),
+                soft_constraints_reiflits[5].unwrap(),
+            ]),
+            BTreeSet::from_iter(vec![
+                soft_constraints_reiflits[1].unwrap(),
+                soft_constraints_reiflits[3].unwrap(),
+                soft_constraints_reiflits[5].unwrap(),
+            ]),
+            BTreeSet::from_iter(vec![
+                soft_constraints_reiflits[2].unwrap(),
+                soft_constraints_reiflits[4].unwrap(),
+            ]),
+            BTreeSet::from_iter(vec![
+                soft_constraints_reiflits[0].unwrap(),
+                soft_constraints_reiflits[3].unwrap(),
+                soft_constraints_reiflits[4].unwrap(),
+            ]),
+            BTreeSet::from_iter(vec![
+                soft_constraints_reiflits[1].unwrap(),
+                soft_constraints_reiflits[3].unwrap(),
+                soft_constraints_reiflits[4].unwrap(),
             ]),
         ]);
 

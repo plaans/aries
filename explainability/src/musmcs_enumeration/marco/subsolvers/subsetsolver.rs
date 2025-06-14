@@ -1,117 +1,185 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use aries::core::Lit;
+use aries::model::extensions::SavedAssignment;
 use aries::model::{Label, Model};
 use aries::reif::Reifiable;
 use aries::solver::{Exit, UnsatCore};
 use itertools::Itertools;
 
+use crate::musmcs_enumeration::marco::subsolvers::MapSolver;
 use crate::musmcs_enumeration::{Mcs, Mus};
 
+/// A trait that allows defining the exact procedure
+/// for solving / extracting unsat cores
+/// to use by the subset solver in the MARCO algorithm.
 pub trait SubsetSolverImpl<Lbl: Label> {
     fn get_model(&mut self) -> &mut Model<Lbl>;
-    fn find_unsat_core(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit>;
+    fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit>;
 }
 
-pub struct SubsetSolver<Lbl: Label> {
-    /// These literals reify / represent soft constraints in the subset solver (this struct).
-    literals: BTreeSet<Lit>,
-    literals_known_to_be_necessarily_in_every_mus: BTreeSet<Lit>,
+/// In theory, `KnownImplications` should be strictly better than `KnownSingletonMCSes`,
+/// but the additional work needed to find these implications (involves propagations back and forth) could certainly be not worth it.
+#[derive(Clone, Copy)]
+pub enum SubsetSolverOptiMode {
+    None,
+    KnownSingletonMCSes,
+    KnownImplications,
+}
+impl Default for SubsetSolverOptiMode {
+    fn default() -> Self {
+        SubsetSolverOptiMode::KnownSingletonMCSes
+    }
+}
 
-    subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+pub(crate) struct SubsetSolver<Lbl: Label> {
+    reiflits: BTreeSet<Lit>,
+    solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
 }
 
 impl<Lbl: Label> SubsetSolver<Lbl> {
     pub fn new(
-        soft_constraints_reif_literals: impl IntoIterator<Item = Lit>,
-        mut subset_solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
+        reiflits: impl IntoIterator<Item = Lit>,
+        mut solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
     ) -> Self {
-        let literals = soft_constraints_reif_literals.into_iter().collect::<BTreeSet<Lit>>();
-        assert!(literals.iter().all(|&l| subset_solver_impl.get_model().check_reified_any(l).is_some()));
+        let reiflits = reiflits.into_iter().collect::<BTreeSet<Lit>>();
+        assert!(reiflits.iter().all(|&l| solver_impl.get_model().check_reified_any(l).is_some()));
 
-        Self {
-            literals,
-            literals_known_to_be_necessarily_in_every_mus: BTreeSet::new(),
-            subset_solver_impl,
-        }
+        Self { reiflits, solver_impl }
     }
 
-    pub fn get_expr_reification<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
-        self.subset_solver_impl.get_model().check_reified_any(expr)
+    pub fn get_expr_reif<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
+        self.solver_impl.get_model().check_reified_any(expr)
     }
 
-    pub fn get_soft_constraints_reif_literals(&self) -> &BTreeSet<Lit> {
-        &self.literals
+    pub fn get_soft_constraints_reif_lits(&self) -> &BTreeSet<Lit> {
+        &self.reiflits
     }
 
-    pub fn get_soft_constraints_known_to_be_necessarily_in_every_mus(&self) -> &BTreeSet<Lit> {
-        &self.literals_known_to_be_necessarily_in_every_mus
+    /// Checks whether the given subset of soft constraints (via their reification literals) is satisfiable.
+    /// - If SAT: returns *all* soft constraint reification literals entailed in the found assignment (so a superset of `subset`).
+    /// - If UNSAT: returns an unsat core of `subset`.
+    pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<BTreeSet<Lit>, BTreeSet<Lit>>, Exit> {
+        // TODO Should return an annotation about the unsat core. To be customizable in the subset_solver_impl
+        let res = match self.solver_impl.check_subset(subset)? {
+            Ok(saved_assignment) => Ok(self.reiflits.iter().filter(|&&l| saved_assignment.entails(l)).copied().collect()),
+            Err(unsat_core) => Err(unsat_core.literals().into_iter().copied().collect()),
+        };
+        Ok(res)
     }
 
-    pub fn register_soft_constraint_as_necessarily_in_every_mus(&mut self, soft_constraint_reif_lit: Lit) {
-        self.literals_known_to_be_necessarily_in_every_mus
-            .insert(soft_constraint_reif_lit);
-    }
+    /// Find a MSS by adding soft constraints (reification literals) to `sat_subset`,
+    /// until no more can be added without leading to UNSAT.
+    /// 
+    /// Optional optimization may allow skipping satisfiability checks for some additions.
+    pub fn grow(
+        &mut self,
+        sat_subset: &BTreeSet<Lit>,
+        optimisation: (SubsetSolverOptiMode, &mut MapSolver),
+    ) -> Result<(BTreeSet<Lit>, Mcs), Exit> {
 
-    fn find_unsat_core(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), UnsatCore>, Exit> {
-        self.subset_solver_impl.find_unsat_core(subset)
-    }
+        let sat_subset_complement = self.reiflits.difference(sat_subset).copied().collect_vec();
+        let mut current = sat_subset.clone();
 
-    pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<(), BTreeSet<Lit>>, Exit> {
-        let res = self.find_unsat_core(subset)?;
-        // NOTE: any resetting (or not!) of assumptions of the solver is to be done in `find_unsat_core`
-        Ok(res.map_err(|unsat_core| unsat_core.literals().into_iter().copied().collect()))
-    }
-
-    pub fn grow(&mut self, subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, Mcs), Exit> {
-        let mut mss = subset.clone();
-        let complement = self
-            .get_soft_constraints_reif_literals()
-            .difference(subset)
-            .copied()
-            .collect_vec();
-        for lit in complement {
-            mss.insert(lit);
-            if self.check_subset(&mss)?.is_err() {
-                mss.remove(&lit);
+        // >>>>>>>> Optional Optimisation >>>>>>>> //
+        let mut skip = BTreeSet::<Lit>::new();
+        let (mode, msolver) = optimisation;
+        match mode {
+            SubsetSolverOptiMode::None => (),
+            SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
+            SubsetSolverOptiMode::KnownImplications => {
+                let implications = msolver.known_implications(&current);
+                skip.clear();
+                skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Leq));
             }
         }
-        let mcs: BTreeSet<Lit> = self
-            .get_soft_constraints_reif_literals()
-            .difference(&mss)
-            .copied()
-            .collect();
+        // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< //
+        
+        for lit in sat_subset_complement {
+            if current.contains(&lit) || skip.contains(&lit) {
+                continue;
+            }
+            current.insert(lit);
 
-        // If the found correction set only has 1 element,
-        // then that element is added to those that are known to be in all unsatisfiable sets.
-        if let Ok(&single_lit_mcs) = mcs.iter().exactly_one() {
-            self.register_soft_constraint_as_necessarily_in_every_mus(single_lit_mcs);
+            if let Ok(superset) = self.check_subset(&current)? {
+                current = superset;
+
+                // >>>>>>>> Optional Optimisation >>>>>>>> //
+                match mode {
+                    SubsetSolverOptiMode::None => (),
+                    SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
+                    SubsetSolverOptiMode::KnownImplications => {
+                        let implications = msolver.known_implications(&current);
+                        skip.clear();
+                        skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Leq));
+                    }
+                }
+                // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< //
+            } else {
+                current.remove(&lit);
+            }
         }
+        let mss = current;
+        let mcs = self.reiflits.difference(&mss).copied().collect();
         Ok((mss, mcs))
     }
 
-    pub fn shrink(&mut self, subset: &BTreeSet<Lit>) -> Result<Mus, Exit> {
-        let mut mus: BTreeSet<Lit> = subset.clone();
-        for &lit in subset {
-            if !mus.contains(&lit) {
-                continue;
-            }
-            // Optimization: if the literal has been determined to belong to all muses,
-            // no need to check if, without it, the set would be satisfiable (because it obviously would be).
-            if self
-                .get_soft_constraints_known_to_be_necessarily_in_every_mus()
-                .contains(&lit)
-            {
-                continue;
-            }
-            mus.remove(&lit);
-            if let Err(unsat_core) = self.check_subset(&mus)? {
-                mus = unsat_core;
-            } else {
-                debug_assert!(!mus.contains(&lit));
-                mus.insert(lit);
+    /// Find a MUS by deleting soft constraints (reification literals) from `unsat_subset`,
+    /// until deleting any more leads to SAT.
+    /// 
+    /// Optional optimization may allow skipping satisfiability checks for some deletions.
+    pub fn shrink(
+        &mut self,
+        unsat_subset: &BTreeSet<Lit>,
+        optimisation: (SubsetSolverOptiMode, &mut MapSolver),
+    ) -> Result<Mus, Exit> {
+
+        let mut current = unsat_subset.clone();
+
+        // >>>>>>>> Optional Optimisation >>>>>>>> //
+        let mut skip = BTreeSet::<Lit>::new();
+        let (mode, msolver) = optimisation;
+        match mode {
+            SubsetSolverOptiMode::None => (),
+            SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
+            SubsetSolverOptiMode::KnownImplications => {
+                let implications = msolver.known_implications(
+                    &self.reiflits.difference(&current).map(|&l|!l).collect()
+                );
+                skip.clear();
+                skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Gt));        
             }
         }
+        // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< //
+
+        for &lit in unsat_subset {
+            if !current.contains(&lit) || skip.contains(&lit) {
+                continue;
+            }
+            current.remove(&lit);
+
+            if let Err(unsat_core) = self.check_subset(&current)? {
+                current = unsat_core;
+
+                // >>>>>>>> Optional Optimisation >>>>>>>> //
+                match mode {
+                    SubsetSolverOptiMode::None => (),
+                    SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
+                    SubsetSolverOptiMode::KnownImplications => {
+                        let implications = msolver.known_implications(
+                            &self.reiflits.difference(&current).map(|&l|!l).collect()
+                        );
+                        skip.clear();
+                        skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Gt));        
+                    }
+                }
+                // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ///
+            } else {
+                current.insert(lit);
+            }
+        }
+        let mus = current;
         Ok(mus)
     }
 }
