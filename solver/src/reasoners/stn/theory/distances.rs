@@ -407,10 +407,7 @@ impl<V: Ref> PotentialUpdate<V> {
     }
 
     pub fn get_prefix(&self, v: V) -> Option<LongCst> {
-        #[allow(deprecated)]
-        {
-            debug_assert_eq!(self.prefixes.len(), self.prefix_lookup.len(), "dirty state");
-        }
+        //debug_assert_eq!(self.prefixes.len(), self.prefix_lookup.len(), "dirty state"); // Too expensive even for debug builds
         self.prefix_lookup.get(v).copied()
     }
 

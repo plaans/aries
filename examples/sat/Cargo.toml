@@ -5,12 +5,12 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2021"
 
 [dependencies]
-structopt = "0.3"
+structopt = { workspace = true }
 anyhow = { workspace = true }
 aries = { path = "../../solver" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"
-zip = { default-features = false, features = ["deflate"], version = "2.1.3" }
+zip = { workspace = true }
 
 
 [[bin]]

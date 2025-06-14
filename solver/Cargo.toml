@@ -30,21 +30,16 @@ i128 = []
 
 [dependencies]
 anyhow = { workspace = true }
-streaming-iterator = "0.1.5"
-lazy_static = "1.4.0"
-vec_map = "0.8.1"
+streaming-iterator = { workspace = true }
+vec_map = { workspace = true }
+crossbeam-channel = { workspace = true }
+smallvec = { workspace = true }
+lru = { workspace = true }
+format_num = { workspace = true }
 itertools = { workspace = true }
-bit-set = { default-features = false, version = "0.5.2" }
-crossbeam-channel = "0.5"
 env_param = { path = "../env_param" }
-smallvec = "1.4.2"
-num-integer = { default-features = false, version = "0.1.44" }
+num-integer = { workspace = true }
 tracing = { workspace = true }
-lru = "0.12.3"
 rand = { workspace = true }
 num-rational = { workspace = true }
-hashbrown = "0.15"
-format_num = "0.1.0"
-
-[dev-dependencies]
-rand = "0.8"
+hashbrown = { workspace = true }

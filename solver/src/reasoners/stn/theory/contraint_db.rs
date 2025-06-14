@@ -158,7 +158,7 @@ impl ConstraintDb {
             self.propagator_indices.entry((prop.source, prop.target)).or_default();
             for &id in &self.propagator_indices[&(prop.source, prop.target)] {
                 let existing = &mut self.propagators[id];
-                if existing.source == prop.source && existing.target == prop.target {
+                if existing.source == prop.source && existing.target == prop.target && !existing.is_dynamic() {
                     // on same
                     if existing.weight == prop.weight {
                         // propagator with same weight exists, just add our propagators to it
