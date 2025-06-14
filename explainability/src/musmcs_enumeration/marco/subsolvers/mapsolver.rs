@@ -6,8 +6,8 @@ use aries::core::{Lit, INT_CST_MAX};
 use aries::model::extensions::SavedAssignment;
 use aries::model::lang::{expr::or, linear::LinearSum, IAtom};
 use aries::model::Model;
-use aries::solver::search::lexical::{Lexical, PreferredValue};
 use aries::solver::search::combinators::CombinatorExt;
+use aries::solver::search::lexical::{Lexical, PreferredValue};
 use aries::solver::search::SearchControl;
 use aries::solver::Exit;
 
@@ -29,44 +29,41 @@ type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>
 /// while the latter corresponds to maximizing (minimizing)
 /// the soft constraints' cardinality / sum of their reification variables
 /// Both are functionally equivalent, however the preferred values method is expected to be more performant.
+#[derive(Default)]
 pub enum MapSolverMode {
     None,
+    #[default]
     HighPreferredValues,
     LowPreferredValues,
     HighOptimize,
     LowOptimize,
 }
-impl Default for MapSolverMode {
-    fn default() -> Self {
-        MapSolverMode::HighPreferredValues
-    }
-}
 
 pub(crate) struct MapSolver {
     /// Boolean literals representing the considered soft constraints. Local to the map solver.
-    /// 
+    ///
     /// NOTE: NOT the same as the subset solver's soft constraint reification literals.
     ///
     /// Identical to the values of `literals_translate_in` and keys of `literals_translate_out`.
     literals: BTreeSet<Lit>,
     /// A map from the subset solver's soft constraint reification literals
     /// to their local representation (i.e. `literals`).
-    /// 
+    ///
     /// Is the reverse of `literals_translate_out`.
     literals_translate_in: BTreeMap<Lit, Lit>,
     /// A map from the local representation of soft constraints (i.e. `literals`)
     /// to the subset solver's soft constraint reification literals.
-    /// 
+    ///
     /// Is the reverse of `literals_translate_in`.
     literals_translate_out: BTreeMap<Lit, Lit>,
 
     solver: Solver,
     /// The exact solving procedure used to discover new seeds.
-    solve_fn: Box::<SolveFn>,
+    solve_fn: Box<SolveFn>,
 
     /// Singleton MCSes (registered in `block_down`).
     /// Intended for an optional optimisation for the subset solver.
-    /// 
+    ///
     /// NOTE: NOT in the local representation of soft constraints (i.e. `literals`).
     /// Stored directly as subset solver's soft constraint reification literals.
     known_singleton_mcses_out: BTreeSet<Lit>,
@@ -84,58 +81,41 @@ impl MapSolver {
             .unique() // Discard all duplicates beforehand
             .map(|lit_out| {
                 let lit_in = solver.model.state.new_var(0, 1).geq(1);
-                literals_translate_in.insert(lit_out, lit_in).inspect(|_| unreachable!());
-                literals_translate_out.insert(lit_in, lit_out).inspect(|_| unreachable!());
+                debug_assert!(!literals_translate_in.contains_key(&lit_out));
+                debug_assert!(!literals_translate_out.contains_key(&lit_in));
+                literals_translate_in.insert(lit_out, lit_in);
+                literals_translate_out.insert(lit_in, lit_out);
                 lit_in
             })
             .collect::<BTreeSet<Lit>>();
 
         let solve_fn: Box<SolveFn> = match solving_mode {
-
-            MapSolverMode::None => {
-                Box::new(|s: &mut Solver| Ok(s.solve()?))
-            }
+            MapSolverMode::None => Box::new(|s: &mut Solver| s.solve()),
             MapSolverMode::HighPreferredValues => {
-                let brancher = Lexical::with_vars(
-                        literals.iter().map(|&l| l.variable()),
-                        PreferredValue::Max,
-                    )
+                let brancher = Lexical::with_vars(literals.iter().map(|&l| l.variable()), PreferredValue::Max)
                     .clone_to_box()
                     .and_then(solver.brancher.clone_to_box());
                 solver.set_brancher_boxed(brancher);
 
-                Box::new(move |s: &mut Solver| Ok(s.solve()?))
+                Box::new(move |s: &mut Solver| s.solve())
             }
             MapSolverMode::LowPreferredValues => {
-                let brancher = Lexical::with_vars(
-                        literals.iter().map(|&l| l.variable()),
-                        PreferredValue::Min,
-                    )
+                let brancher = Lexical::with_vars(literals.iter().map(|&l| l.variable()), PreferredValue::Min)
                     .clone_to_box()
                     .and_then(solver.brancher.clone_to_box());
                 solver.set_brancher_boxed(brancher);
 
-                Box::new(move |s: &mut Solver| Ok(s.solve()?))
+                Box::new(move |s: &mut Solver| s.solve())
             }
             MapSolverMode::HighOptimize => {
-                let sum = LinearSum::of(
-                    literals
-                        .iter()
-                        .map(|&l| IAtom::from(l.variable()))
-                        .collect_vec(),
-                );
+                let sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.geq(obj), []);
 
                 Box::new(move |s: &mut Solver| Ok(s.maximize(obj)?.map(|(_, doms)| doms)))
             }
             MapSolverMode::LowOptimize => {
-                let sum = LinearSum::of(
-                    literals
-                        .iter()
-                        .map(|&l| IAtom::from(l.variable()))
-                        .collect_vec(),
-                );
+                let sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.leq(obj), []);
 
@@ -158,8 +138,7 @@ impl MapSolver {
     fn trin(&self, lit: Lit) -> Lit {
         self.literals_translate_in.get(&lit).copied().unwrap_or_else(||
             // If `lit` is not known, then `!lit` must be. So take the negation of its translation.
-            self.literals_translate_in.get(&lit.not()).unwrap().not()
-        )
+            self.literals_translate_in.get(&lit.not()).unwrap().not())
     }
 
     /// Translates a (negated) literal locally representing a soft constraint
@@ -167,8 +146,7 @@ impl MapSolver {
     fn trout(&self, lit: Lit) -> Lit {
         self.literals_translate_out.get(&lit).copied().unwrap_or_else(||
             // If `lit` is not known, then `!lit` must be. So take the negation of its translation.
-            self.literals_translate_out.get(&lit.not()).unwrap().not()
-        )
+            self.literals_translate_out.get(&lit.not()).unwrap().not())
     }
 
     /// Singleton MCSes.
@@ -179,7 +157,7 @@ impl MapSolver {
 
     /// Literals currently discovered as implied by the given set of assumptions.
     /// Intended for an optional optimisation for the subset solver.
-    /// 
+    ///
     /// Necessarily includes the output of `known_singleton_mcses`.
     pub fn known_implications(&mut self, assumpts: &BTreeSet<Lit>) -> BTreeSet<Lit> {
         // Works by:
@@ -187,21 +165,21 @@ impl MapSolver {
         // 2. propagating them,
         // 3. scanning for literals (or their negation) that are already entailed
         let mut res = BTreeSet::new();
-        
+
         self.solver.reset();
         for &lit in assumpts {
-            if let Err(_) = self.solver.assume(self.trin(lit)) {
+            if self.solver.assume(self.trin(lit)).is_err() {
                 self.solver.reset();
                 return res;
             }
         }
-        if let Err(_) = self.solver.propagate() {
+        if self.solver.propagate().is_err() {
             self.solver.reset();
             return res;
         }
         for &lit in &self.literals {
             if assumpts.contains(&self.trout(lit)) || assumpts.contains(&self.trout(lit).not()) {
-                continue
+                continue;
             }
             if self.solver.model.state.entails(lit) {
                 res.insert(self.trout(lit));
@@ -236,13 +214,13 @@ impl MapSolver {
             None => {
                 self.solver.reset();
                 Ok(None)
-            },
+            }
         }
     }
 
     /// Mark assignments contained in an MSS (i.e. complement of the given MCS) as forbidden.
     /// In other words, mark them as explored. Seeds further discovered won't contain them.
-    pub fn block_down(&mut self, mcs: &Mcs) {   
+    pub fn block_down(&mut self, mcs: &Mcs) {
         let translated_mcs = mcs.iter().map(|&l| self.trin(l)).collect_vec();
         if let Ok(&singleton_mcs) = translated_mcs.iter().exactly_one() {
             // May only be needed for optional optimisation

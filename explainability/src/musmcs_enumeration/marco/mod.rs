@@ -8,7 +8,7 @@ use std::{collections::BTreeSet, time::Instant};
 use itertools::Itertools;
 
 use crate::musmcs_enumeration::{Mcs, Mus, MusMcsEnumResult};
-use subsolvers::{MapSolver, MapSolverMode, SubsetSolver, SubsetSolverOptiMode, SubsetSolverImpl};
+use subsolvers::{MapSolver, MapSolverMode, SubsetSolver, SubsetSolverImpl, SubsetSolverOptiMode};
 
 pub mod subsolvers;
 
@@ -62,7 +62,7 @@ impl<Lbl: Label> Marco<Lbl> {
     }
 
     pub fn get_soft_constraints_reif_lits(&self) -> &BTreeSet<Lit> {
-        &self.csolver.get_soft_constraints_reif_lits()
+        self.csolver.get_soft_constraints_reif_lits()
     }
 
     pub fn run(&mut self, on_mus_found: Option<fn(&Mus)>, on_mcs_found: Option<fn(&Mcs)>) -> MusMcsEnumResult {
@@ -71,7 +71,15 @@ impl<Lbl: Label> Marco<Lbl> {
 
         let start = Instant::now();
 
-        let complete = self._run(&mut muses, &mut mcses, on_mus_found, on_mcs_found, SubsetSolverOptiMode::default()).is_ok();
+        let complete = self
+            ._run(
+                &mut muses,
+                &mut mcses,
+                on_mus_found,
+                on_mcs_found,
+                SubsetSolverOptiMode::default(),
+            )
+            .is_ok();
 
         debug_assert!(muses.iter().all_unique());
         debug_assert!(mcses.iter().all_unique());
@@ -90,16 +98,14 @@ impl<Lbl: Label> Marco<Lbl> {
         mcses: &mut Vec<Mcs>,
         on_mus_found: Option<fn(&Mus)>,
         on_mcs_found: Option<fn(&Mcs)>,
-        subset_solver_optim_mode: SubsetSolverOptiMode,
+        optional_optim: SubsetSolverOptiMode,
     ) -> Result<(), Exit> {
-
         while let Some(seed) = self.msolver.find_unexplored_seed()? {
-
             if self.csolver.check_subset(&seed)?.is_ok() {
-                let (_, mcs) = self.csolver.grow(&seed, (subset_solver_optim_mode, &mut self.msolver))?;
+                let (_, mcs) = self.csolver.grow(&seed, (optional_optim, &mut self.msolver))?;
                 self.msolver.block_down(&mcs);
 
-                debug_assert!(mcses.iter().all(|known_mcs| !mcs.is_subset(known_mcs) && !known_mcs.is_subset(&mcs)));
+                debug_assert!(mcses.iter().all(|set| !mcs.is_subset(set) && !set.is_subset(&mcs)));
                 if !mcs.is_empty() {
                     on_mcs_found.unwrap_or(|_| ())(&mcs);
                     mcses.push(mcs);
@@ -108,7 +114,7 @@ impl<Lbl: Label> Marco<Lbl> {
                 let mus = self.csolver.shrink(&seed, (subset_solver_optim_mode, &mut self.msolver))?;
                 self.msolver.block_up(&mus);
 
-                debug_assert!(muses.iter().all(|known_mus| !mus.is_subset(known_mus) && !known_mus.is_subset(&mus)));
+                debug_assert!(muses.iter().all(|set| !mus.is_subset(set) && !set.is_subset(&mus)));
                 if !mus.is_empty() {
                     on_mus_found.unwrap_or(|_| ())(&mus);
                     muses.push(mus);
@@ -146,7 +152,9 @@ mod tests {
     }
     impl SimpleSubsetSolverImpl {
         pub fn new(model: Model) -> Self {
-            Self { solver: Solver::new(model) }
+            Self {
+                solver: Solver::new(model),
+            }
         }
     }
     impl SubsetSolverImpl<Lbl> for SimpleSubsetSolverImpl {
@@ -161,7 +169,6 @@ mod tests {
             Ok(res)
         }
     }
-    
 
     #[test]
     fn test_simple_marco_simple() {

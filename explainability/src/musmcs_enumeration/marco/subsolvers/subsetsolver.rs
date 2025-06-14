@@ -21,16 +21,12 @@ pub trait SubsetSolverImpl<Lbl: Label> {
 
 /// In theory, `KnownImplications` should be strictly better than `KnownSingletonMCSes`,
 /// but the additional work needed to find these implications (involves propagations back and forth) could certainly be not worth it.
-#[derive(Clone, Copy)]
+#[derive(Copy, Clone, Default)]
 pub enum SubsetSolverOptiMode {
     None,
+    #[default]
     KnownSingletonMCSes,
     KnownImplications,
-}
-impl Default for SubsetSolverOptiMode {
-    fn default() -> Self {
-        SubsetSolverOptiMode::KnownSingletonMCSes
-    }
 }
 
 pub(crate) struct SubsetSolver<Lbl: Label> {
@@ -39,12 +35,11 @@ pub(crate) struct SubsetSolver<Lbl: Label> {
 }
 
 impl<Lbl: Label> SubsetSolver<Lbl> {
-    pub fn new(
-        reiflits: impl IntoIterator<Item = Lit>,
-        mut solver_impl: Box<dyn SubsetSolverImpl<Lbl>>,
-    ) -> Self {
+    pub fn new(reiflits: impl IntoIterator<Item = Lit>, mut solver_impl: Box<dyn SubsetSolverImpl<Lbl>>) -> Self {
         let reiflits = reiflits.into_iter().collect::<BTreeSet<Lit>>();
-        assert!(reiflits.iter().all(|&l| solver_impl.get_model().check_reified_any(l).is_some()));
+        assert!(reiflits
+            .iter()
+            .all(|&l| solver_impl.get_model().check_reified_any(l).is_some()));
 
         Self { reiflits, solver_impl }
     }
@@ -63,22 +58,26 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
     pub fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<BTreeSet<Lit>, BTreeSet<Lit>>, Exit> {
         // TODO Should return an annotation about the unsat core. To be customizable in the subset_solver_impl
         let res = match self.solver_impl.check_subset(subset)? {
-            Ok(saved_assignment) => Ok(self.reiflits.iter().filter(|&&l| saved_assignment.entails(l)).copied().collect()),
-            Err(unsat_core) => Err(unsat_core.literals().into_iter().copied().collect()),
+            Ok(assignment) => Ok(self
+                .reiflits
+                .iter()
+                .filter(|&&l| assignment.entails(l))
+                .copied()
+                .collect()),
+            Err(unsat_core) => Err(unsat_core.literals().iter().copied().collect()),
         };
         Ok(res)
     }
 
     /// Find a MSS by adding soft constraints (reification literals) to `sat_subset`,
     /// until no more can be added without leading to UNSAT.
-    /// 
+    ///
     /// Optional optimization may allow skipping satisfiability checks for some additions.
     pub fn grow(
         &mut self,
         sat_subset: &BTreeSet<Lit>,
         optimisation: (SubsetSolverOptiMode, &mut MapSolver),
     ) -> Result<(BTreeSet<Lit>, Mcs), Exit> {
-
         let sat_subset_complement = self.reiflits.difference(sat_subset).copied().collect_vec();
         let mut current = sat_subset.clone();
 
@@ -91,11 +90,15 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
             SubsetSolverOptiMode::KnownImplications => {
                 let implications = msolver.known_implications(&current);
                 skip.clear();
-                skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Leq));
+                skip.extend(
+                    implications
+                        .iter()
+                        .filter(|&&l| l.relation() == aries::core::Relation::Leq),
+                );
             }
         }
         // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< //
-        
+
         for lit in sat_subset_complement {
             if current.contains(&lit) || skip.contains(&lit) {
                 continue;
@@ -112,7 +115,11 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
                     SubsetSolverOptiMode::KnownImplications => {
                         let implications = msolver.known_implications(&current);
                         skip.clear();
-                        skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Leq));
+                        skip.extend(
+                            implications
+                                .iter()
+                                .filter(|&&l| l.relation() == aries::core::Relation::Leq),
+                        );
                     }
                 }
                 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< //
@@ -127,14 +134,13 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
 
     /// Find a MUS by deleting soft constraints (reification literals) from `unsat_subset`,
     /// until deleting any more leads to SAT.
-    /// 
+    ///
     /// Optional optimization may allow skipping satisfiability checks for some deletions.
     pub fn shrink(
         &mut self,
         unsat_subset: &BTreeSet<Lit>,
         optimisation: (SubsetSolverOptiMode, &mut MapSolver),
     ) -> Result<Mus, Exit> {
-
         let mut current = unsat_subset.clone();
 
         // >>>>>>>> Optional Optimisation >>>>>>>> //
@@ -144,11 +150,14 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
             SubsetSolverOptiMode::None => (),
             SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
             SubsetSolverOptiMode::KnownImplications => {
-                let implications = msolver.known_implications(
-                    &self.reiflits.difference(&current).map(|&l|!l).collect()
-                );
+                let implications =
+                    msolver.known_implications(&self.reiflits.difference(&current).map(|&l| !l).collect());
                 skip.clear();
-                skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Gt));        
+                skip.extend(
+                    implications
+                        .iter()
+                        .filter(|&&l| l.relation() == aries::core::Relation::Gt),
+                );
             }
         }
         // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< //
@@ -167,11 +176,14 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
                     SubsetSolverOptiMode::None => (),
                     SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
                     SubsetSolverOptiMode::KnownImplications => {
-                        let implications = msolver.known_implications(
-                            &self.reiflits.difference(&current).map(|&l|!l).collect()
-                        );
+                        let implications =
+                            msolver.known_implications(&self.reiflits.difference(&current).map(|&l| !l).collect());
                         skip.clear();
-                        skip.extend(implications.iter().filter(|&&l| l.relation() == aries::core::Relation::Gt));        
+                        skip.extend(
+                            implications
+                                .iter()
+                                .filter(|&&l| l.relation() == aries::core::Relation::Gt),
+                        );
                     }
                 }
                 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< ///
