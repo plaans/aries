@@ -88,8 +88,12 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
         let (mode, msolver) = optimisation;
         match mode {
             SubsetSolverOptiMode::None => (),
-            SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
+            SubsetSolverOptiMode::KnownSingletonMCSes => (),
             SubsetSolverOptiMode::KnownImplications => {
+                // If some soft constraint reification literals are found to be implied false by `current`,
+                // then we know in advance that they can't possibly be in a MSS that includes `current`.
+                // As such, we can skip inserting them in `current`, then calling `check_subset`,
+                // and then removing them back from `current`.
                 let implications = msolver.known_implications(&current);
                 skip.clear();
                 skip.extend(
@@ -113,8 +117,12 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
                 // >>>>>>>> Optional Optimisation >>>>>>>> //
                 match mode {
                     SubsetSolverOptiMode::None => (),
-                    SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
+                    SubsetSolverOptiMode::KnownSingletonMCSes => (),
                     SubsetSolverOptiMode::KnownImplications => {
+                        // If some soft constraint reification literals are found to be implied false by `current`,
+                        // then we know in advance that they can't possibly be in a MSS that includes `current`.
+                        // As such, we can skip inserting them in `current`, then calling `check_subset`,
+                        // and then removing them back from `current`.
                         let implications = msolver.known_implications(&current);
                         skip.clear();
                         skip.extend(
@@ -152,6 +160,13 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
             SubsetSolverOptiMode::None => (),
             SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
             SubsetSolverOptiMode::KnownImplications => {
+                // No literal from the complement of `current` can be in a MUS included in the unsat core `current`.
+                // So if some soft constraint reification literals are found to be implied true by
+                // the whole complement of `current` being false,
+                // then we know in advance that they are necessarily included in all unsat subsets of `current`,
+                // i.e. in all MUSes included in `current`.
+                // As such, we can skip removing them from `current`, then calling `check_subset`,
+                // and then inserting them back into `current`.
                 let implications =
                     msolver.known_implications(&self.reiflits.difference(&current).map(|&l| !l).collect());
                 skip.clear();
@@ -178,6 +193,13 @@ impl<Lbl: Label> SubsetSolver<Lbl> {
                     SubsetSolverOptiMode::None => (),
                     SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(msolver.known_singleton_mcses()),
                     SubsetSolverOptiMode::KnownImplications => {
+                        // No literal from the complement of `current` can be in a MUS included in the unsat core `current`.
+                        // So if some soft constraint reification literals are found to be implied true by
+                        // the whole complement of `current` being false,
+                        // then we know in advance that they are necessarily included in all unsat subsets of `current`,
+                        // i.e. in all MUSes included in `current`.
+                        // As such, we can skip removing them from `current`, then calling `check_subset`,
+                        // and then inserting them back into `current`.
                         let implications =
                             msolver.known_implications(&self.reiflits.difference(&current).map(|&l| !l).collect());
                         skip.clear();
