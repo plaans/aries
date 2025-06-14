@@ -37,9 +37,11 @@ pub(crate) struct SubsetSolver<Lbl: Label> {
 impl<Lbl: Label> SubsetSolver<Lbl> {
     pub fn new(reiflits: impl IntoIterator<Item = Lit>, mut solver_impl: Box<dyn SubsetSolverImpl<Lbl>>) -> Self {
         let reiflits = reiflits.into_iter().collect::<BTreeSet<Lit>>();
-        assert!(reiflits
-            .iter()
-            .all(|&l| solver_impl.get_model().check_reified_any(l).is_some()));
+        assert!(
+            reiflits
+                .iter()
+                .all(|&l| solver_impl.get_model().check_reified_any(l).is_some())
+        );
 
         Self { reiflits, solver_impl }
     }

@@ -2,14 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use aries::backtrack::Backtrack;
-use aries::core::{Lit, INT_CST_MAX};
-use aries::model::extensions::SavedAssignment;
-use aries::model::lang::{expr::or, linear::LinearSum, IAtom};
+use aries::core::{INT_CST_MAX, Lit};
 use aries::model::Model;
+use aries::model::extensions::SavedAssignment;
+use aries::model::lang::{IAtom, expr::or, linear::LinearSum};
+use aries::solver::Exit;
+use aries::solver::search::SearchControl;
 use aries::solver::search::combinators::CombinatorExt;
 use aries::solver::search::lexical::{Lexical, PreferredValue};
-use aries::solver::search::SearchControl;
-use aries::solver::Exit;
 
 use itertools::Itertools;
 
