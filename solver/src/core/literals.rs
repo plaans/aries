@@ -1,3 +1,5 @@
+//! Various datastructures specialized for the handling of literals (watchlists, sets, clauses, implication graph, ...)
+
 pub use disjunction::*;
 pub use implication_graph::*;
 pub use lit_set::*;

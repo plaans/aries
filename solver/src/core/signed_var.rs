@@ -3,9 +3,9 @@ use crate::core::*;
 /// A positive or negative view of an integer variable.
 /// The type has dense integer values and can be used as an index in an array.
 ///
-/// It is coded on 32 bits where:
+/// It is represented on 32 bits where:
 ///  - the 31 most significant bits represent the variable
-///  - the least significant bit represents either a lower bound (0) or upper bound (1).
+///  - the least significant bit represents the sign either positive (1) or negative (0).
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct SignedVar(u32);
 

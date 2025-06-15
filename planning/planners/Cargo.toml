@@ -28,3 +28,11 @@ cpu_cycles = ["aries/cpu_cycles"]
 [[bin]]
 name = "planning-domain"
 path = "src/bin/planning_domain.rs"
+
+[[bin]]
+name = "aries-plan"
+path = "src/bin/planner.rs"
+
+[[bin]]
+name = "aries-pddl-parser"
+path = "src/bin/parser.rs"
