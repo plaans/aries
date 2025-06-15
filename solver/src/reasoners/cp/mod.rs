@@ -2,7 +2,7 @@
 
 pub mod linear;
 pub mod max;
-pub mod mul;
+pub mod mul_lit;
 
 mod propagator;
 pub use propagator::*;
@@ -23,7 +23,7 @@ use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
-use mul::VarEqVarMulLit;
+use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};

@@ -10,7 +10,7 @@ use super::Watches;
 /// Unique ID of a propagator (assigned by the CP reasoner)
 create_ref_type!(PropagatorId);
 
-pub(super) trait Propagator: Send {
+pub trait Propagator: Send {
     fn setup(&self, id: PropagatorId, context: &mut Watches);
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction>;
     fn propagate_event(&self, _event: &Event, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
@@ -29,8 +29,8 @@ impl<T: Propagator> Explainer for T {
 }
 
 /// A simple wrapper around a propagator for dynamic-dipsatch
-pub(super) struct DynPropagator {
-    pub constraint: Box<dyn Propagator>,
+pub struct DynPropagator {
+    pub(super) constraint: Box<dyn Propagator>,
 }
 
 impl Clone for DynPropagator {
