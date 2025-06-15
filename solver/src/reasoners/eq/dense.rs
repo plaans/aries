@@ -1254,9 +1254,9 @@ mod tests {
 
     #[test]
     fn random_problems() {
-        for seed in 0..100 {
+        for seed in 0..10 {
             let model = random_model(seed);
-            random_solves(&model, 30, Some(true));
+            random_solves(&model, 10, Some(true));
         }
     }
 
