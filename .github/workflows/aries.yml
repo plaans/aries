@@ -52,8 +52,8 @@ jobs:
         run: ./ci/scheduling.py
       - name: GG solving
         run: ./ci/gg.py
-      - name: LCP Solving (PDDL & HDDL)
-        run: ./ci/lcp.sh
+      - name: PDDL Solving (PDDL & HDDL)
+        run: ./ci/pddl.sh
 
   minizinc-tests:
     name: Minizinc tests

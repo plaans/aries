@@ -14,7 +14,7 @@ use structopt::StructOpt;
 
 /// An automated planner for PDDL and HDDL problems.
 #[derive(Debug, Clone, StructOpt)]
-#[structopt(name = "aries", rename_all = "kebab-case")]
+#[structopt(name = "aries-plan", rename_all = "kebab-case")]
 pub struct Opt {
     /// Path to the domain file. If absent, aries will try to infer it from conventions.
     #[structopt(long, short)]
