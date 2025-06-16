@@ -71,11 +71,13 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use super::*;
     use crate::core::*;
 
     mod implies {
+        //! Example propagator for an implication
+
         use crate::core::state::*;
         use crate::core::*;
         use crate::reasoners::cp::propagator::*;
@@ -85,7 +87,7 @@ mod test {
         /// We should propagate (infer) :
         /// - `b` when `a` is true    (case 1)
         /// - `!a` when `b` is false  (case 2)
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct ImpliesProp {
             pub a: Lit,
             pub b: Lit,
@@ -122,12 +124,10 @@ mod test {
             fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
                 // we are asked to explain a propagation that we previously made
 
-                if self.b.entails(literal) {
+                if self.b.entails(literal) && state.entails(self.a) {
                     // b is stronger that `literal`, meaning setting `b` would also have set `literal`
-                    debug_assert!(state.entails(self.a), "a was not true at the time we inferred b");
                     out_explanation.push(self.a);
-                } else if (!self.a).entails(literal) {
-                    debug_assert!(state.entails(!self.b));
+                } else if (!self.a).entails(literal) && state.entails(!self.b) {
                     out_explanation.push(!self.b);
                 } else {
                     panic!("Error: we were asked to explain something we could not have inferred")
@@ -136,6 +136,264 @@ mod test {
 
             fn clone_box(&self) -> Box<dyn Propagator> {
                 Box::new(self.clone())
+            }
+        }
+
+        //  ===== Tests ======
+
+        use itertools::Itertools;
+        use rand::rngs::SmallRng;
+        use rand::seq::SliceRandom;
+        use rand::{Rng, SeedableRng};
+
+        /// Generates `n` random problems, each with a domain with a few variables and a propagator
+        fn implies_problems(n: usize) -> Vec<(Domains, ImpliesProp)> {
+            let mut rng = SmallRng::seed_from_u64(0);
+            let mut problems = Vec::new();
+
+            for _ in 0..n {
+                let mut d = Domains::new();
+                let num_vars = rng.gen_range(2..=10);
+                let vars = (0..num_vars).map(|_| d.new_var(0, 10)).collect_vec();
+                let a = vars.choose(&mut rng).unwrap().leq(rng.gen_range(0..=10));
+                let b = vars.choose(&mut rng).unwrap().leq(rng.gen_range(0..=10));
+                let a = if rng.gen_bool(0.5) { a } else { !a };
+                let b = if rng.gen_bool(0.5) { b } else { !b };
+                problems.push((d, ImpliesProp { a, b }));
+            }
+
+            problems
+        }
+
+        #[test]
+        fn test_explanations() {
+            use crate::reasoners::cp::propagator::test::utils::*;
+            for (d, s) in implies_problems(1000) {
+                println!("\nConstraint: {s:?}");
+                test_explanations(&d, &s);
+            }
+        }
+    }
+
+    pub mod utils {
+        //! Utility funcitons for testing propagators
+
+        use itertools::Itertools;
+        use rand::{rngs::SmallRng, seq::SliceRandom, Rng, SeedableRng};
+
+        use crate::{
+            backtrack::Backtrack,
+            core::{
+                literals::Disjunction,
+                state::{
+                    Cause, Domains, DomainsSnapshot, Event, Explainer, Explanation, InferenceCause, InvalidUpdate,
+                    Origin,
+                },
+                Lit,
+            },
+            reasoners::{cp::Propagator, Contradiction, ReasonerId},
+        };
+
+        struct PropExplainer<'a> {
+            prop: &'a dyn Propagator,
+        }
+        impl<'a> Explainer for PropExplainer<'a> {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
+                self.prop.explain(literal, model, explanation);
+            }
+        }
+        /// Adapts an propagator into an explainer
+        /// (the main reason this is need is due to difference in mutability of the explain method of both)
+        fn explainer<'a>(prop: &'a dyn Propagator) -> PropExplainer<'a> {
+            PropExplainer { prop }
+        }
+        static INFERENCE_CAUSE: Cause = Cause::Inference(InferenceCause {
+            writer: ReasonerId::Cp,
+            payload: 0,
+        });
+
+        /// Test that triggers propagation of random decisions and checks the explanations are correct
+        ///
+        /// The test will verify that the explanations:
+        ///  - can be generated for all inferences made
+        ///  - are correct (calling the propagator with only the implying literals will result in the same inference)
+        ///  - are minimal (the inference is not made if any implying literal is missing)
+        ///
+        /// IMPORTANT: These tests rely on the `propagate` implementation and are not meaningful if this one is buggy
+        /// (but they may show that it is in fact incoherent when called in different contexts)
+        pub fn test_explanations(d: &Domains, propagator: &dyn Propagator) {
+            use crate::reasoners::cp::propagator::test::utils::pick_decisions;
+
+            let mut decisions_rng = SmallRng::seed_from_u64(0);
+            // function that returns a given number of decisions to be applied later
+            // it use the RNG above to drive its random choices
+            // new rng for local use
+            let mut rng = SmallRng::seed_from_u64(0);
+
+            // repeat a large number of random tests
+            for _ in 0..100 {
+                // pick a random set of decisions
+                let decisions = pick_decisions(d, 1, 10, &mut decisions_rng);
+                println!("decisions: {decisions:?}");
+
+                // get a copy of the domain on which to apply all decisions
+                let mut d = d.clone();
+                d.save_state();
+
+                // apply all decisions (note: some may be ignored because they are no-op or contradictions)
+                for dec in decisions {
+                    d.set(dec, Cause::Decision).is_err();
+                }
+
+                // propagate
+                match propagator.propagate(&mut d, INFERENCE_CAUSE) {
+                    Ok(()) => {
+                        // propagation successful, check that all inferences have correct explanations
+                        check_events(&d, propagator);
+                    }
+                    Err(contradiction) => {
+                        // propagation failure, check that the contradiction is a valid one
+                        let explanation = match contradiction {
+                            Contradiction::InvalidUpdate(InvalidUpdate(lit, cause)) => {
+                                let mut expl = Explanation::with_capacity(16);
+                                expl.push(!lit);
+                                let mut explainer = explainer(propagator);
+                                d.add_implying_literals_to_explanation(lit, cause, &mut expl, &mut explainer);
+                                expl
+                            }
+                            Contradiction::Explanation(expl) => expl,
+                        };
+                        let mut d = d.clone();
+                        d.reset();
+                        // get the conjunction and shuffle it
+                        //note that we do not check minimality here
+                        let mut conjuncts = explanation.lits;
+                        conjuncts.shuffle(&mut rng);
+                        for &conjunct in &conjuncts {
+                            d.set(conjunct, Cause::Decision);
+                        }
+
+                        assert!(
+                            propagator.propagate(&mut d, INFERENCE_CAUSE).is_err(),
+                            "explanation: {conjuncts:?} did not trigger an inconsistency\n "
+                        );
+                    }
+                }
+            }
+        }
+
+        /// Utility function to select a number of decisions to be made on a given domain
+        ///
+        /// Note: some decisions may be redundant or contradictory
+        fn pick_decisions(d: &Domains, min: usize, max: usize, rng: &mut SmallRng) -> Vec<Lit> {
+            let num_decisions = rng.gen_range(min..=max);
+            let vars = d.variables().filter(|v| !d.is_bound(*v)).collect_vec();
+            let mut lits = Vec::with_capacity(num_decisions);
+            for _ in 0..num_decisions {
+                let var_id = rng.gen_range(0..vars.len());
+                let var = vars[var_id];
+                let (lb, ub) = d.bounds(var);
+                let below: bool = rng.gen();
+                let lit = if below {
+                    let ub = rng.gen_range(lb..ub);
+                    Lit::leq(var, ub)
+                } else {
+                    let lb = rng.gen_range((lb + 1)..=ub);
+                    Lit::geq(var, lb)
+                };
+                lits.push(lit);
+            }
+            lits
+        }
+
+        /// Check that all events since the last decision have a minimal explanation
+        //pub fn check_events(s: &Domains, explainer: &mut (impl Propagator + Explainer)) {
+        pub fn check_events(s: &Domains, explainer: &dyn Propagator) {
+            let events = s
+                .trail()
+                .events()
+                .iter()
+                .rev()
+                .take_while(|ev| ev.cause != Origin::DECISION)
+                .cloned()
+                .collect_vec();
+            // check that all events have minimal explanations
+            for ev in &events {
+                check_event_explanation(s, ev, explainer);
+            }
+        }
+
+        /// Checks that the event has a minimal explanion
+        pub fn check_event_explanation(s: &Domains, ev: &Event, prop: &dyn Propagator) {
+            let mut explainer = explainer(prop);
+            let implied = ev.new_literal();
+            // generate explanation
+            let implicants = s.implying_literals(implied, &mut explainer).unwrap();
+            let clause = Disjunction::new(implicants.iter().map(|l| !*l).collect_vec());
+            // check minimality
+            check_explanation_minimality(s, implied, clause, prop);
+        }
+
+        pub fn check_explanation_minimality(
+            domains: &Domains,
+            implied: Lit,
+            clause: Disjunction,
+            propagator: &dyn Propagator,
+        ) {
+            let mut domains = domains.clone();
+            // println!("=== original trail ===");
+            // solver.model.domains().trail().print();
+            domains.reset();
+            assert!(!domains.entails(implied));
+
+            // gather all decisions not already entailed at root level
+            let mut decisions = clause
+                .literals()
+                .iter()
+                .copied()
+                .filter(|&l| !domains.entails(l))
+                .map(|l| !l)
+                .collect_vec();
+
+            // make sure we have at least one propagation
+            propagator
+                .propagate(&mut domains, INFERENCE_CAUSE)
+                .expect("failed prop");
+
+            for _rotation_id in 0..decisions.len() {
+                // println!("\nClause: {implied:?} <- {decisions:?}\n");
+                for i in 0..decisions.len() {
+                    let l = decisions[i];
+                    if domains.entails(l) {
+                        continue;
+                    }
+                    // println!("Decide {l:?}");
+                    domains.decide(l);
+                    propagator
+                        .propagate(&mut domains, INFERENCE_CAUSE)
+                        .expect("failed prop");
+
+                    let decisions_left = decisions[i + 1..]
+                        .iter()
+                        .filter(|&l| !domains.entails(*l))
+                        .collect_vec();
+
+                    if !decisions_left.is_empty() {
+                        assert!(!domains.entails(implied), "Not minimal, useless: {:?}", &decisions_left)
+                    }
+                }
+
+                assert!(
+                    domains.entails(implied),
+                    "Literal `{implied:?}` not implied after all implicants enforced ({decisions:?})"
+                );
+                decisions.rotate_left(1);
             }
         }
     }
