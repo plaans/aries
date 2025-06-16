@@ -37,29 +37,37 @@ pub struct Watches {
 }
 
 impl Watches {
-    fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `
+    pub fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
         self.add_ub_watch(watched, propagator_id);
         self.add_lb_watch(watched, propagator_id);
     }
 
-    fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every upper bound change of the `watched` signed variable.
+    /// If `watched` is given as a VarRef, notification will occur on the change of its upper bound.
+    pub fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.propagations
             .get_mut_or_insert(watched, || Vec::with_capacity(4))
             .push(propagator_id)
     }
 
-    fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every lower bound change of the `watched` signed variable.
+    /// If `watched` is given as a VarRef, notification will occur on the change of its lower bound.
+    pub fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.add_ub_watch(-watched, propagator_id)
     }
 
-    /// request to be notified when the given literal becomes true
-    fn add_lit_watch(&mut self, watched: impl Into<Lit>, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` when the `watched` literal becomes true.
+    /// Note: due to the implementation of watches not being very fine-grained, the current implementation may trigger propagation on every
+    /// upper bound change of the underlying literal (subject to change in the future).
+    pub fn add_lit_watch(&mut self, watched: impl Into<Lit>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.add_ub_watch(watched.svar(), propagator_id);
     }
 
+    /// Returns all propagators
     fn get_ub_watches(&self, var: impl Into<SignedVar>) -> &[PropagatorId] {
         let var = var.into();
         self.propagations.get(var).map(|v| v.as_slice()).unwrap_or(&self.empty)
