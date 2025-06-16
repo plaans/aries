@@ -37,6 +37,9 @@ static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", 
 /// If set to true, will print the preprocessed model
 static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
 
+/// The list of strategies to use for the search, separated by commas.
+static STRATEGIES: EnvParam<StratList> = EnvParam::new("ARIES_STRATEGIES", "");
+
 /// The type of warming up constraints to add to the problem.
 static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "flexible");
 
@@ -500,6 +503,24 @@ impl FromStr for Strat {
     }
 }
 
+/// Newtype wrapper to allow parsing comma-separated strategies.
+#[derive(Debug, Clone)]
+pub struct StratList(pub Vec<Strat>);
+
+impl FromStr for StratList {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.trim().is_empty() {
+            return Ok(StratList(vec![]));
+        }
+        s.split(',')
+            .map(|item| item.trim().parse())
+            .collect::<Result<Vec<Strat>, _>>()
+            .map(StratList)
+    }
+}
+
 /// Instantiates a solver for the given subproblem and attempts to solve it.
 ///
 /// If more than one strategy is given, each strategy will have its own solver run on a dedicated thread.
@@ -543,8 +564,11 @@ fn solve_finite_problem(
     let encoding = Arc::new(encoding);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
+    let env_strats = STRATEGIES.get_ref().0.clone();
     let strats: &[Strat] = if !strategies.is_empty() {
         strategies
+    } else if !env_strats.is_empty() {
+        &env_strats
     } else if htn_mode {
         &HTN_DEFAULT_STRATEGIES
     } else {
