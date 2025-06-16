@@ -2,7 +2,10 @@
 
 pub mod linear;
 pub mod max;
-pub mod mul;
+pub mod mul_lit;
+
+mod propagator;
+pub use propagator::*;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
@@ -20,53 +23,11 @@ use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
-use mul::VarEqVarMulLit;
+use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-
-// ========== Constraint ===========
-
-create_ref_type!(PropagatorId);
-
-trait Propagator: Send {
-    fn setup(&self, id: PropagatorId, context: &mut Watches);
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction>;
-    fn propagate_event(&self, _event: &Event, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        self.propagate(domains, cause)
-    }
-
-    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation);
-
-    fn clone_box(&self) -> Box<dyn Propagator>;
-}
-
-impl<T: Propagator> Explainer for T {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
-        Propagator::explain(self, literal, model, explanation)
-    }
-}
-
-pub struct DynPropagator {
-    constraint: Box<dyn Propagator>,
-}
-
-impl Clone for DynPropagator {
-    fn clone(&self) -> Self {
-        DynPropagator {
-            constraint: self.constraint.clone_box(),
-        }
-    }
-}
-
-impl<T: Propagator + 'static> From<T> for DynPropagator {
-    fn from(propagator: T) -> Self {
-        DynPropagator {
-            constraint: Box::new(propagator),
-        }
-    }
-}
-
+//
 // ========= CP =============
 
 #[derive(Clone, Default)]
@@ -91,6 +52,12 @@ impl Watches {
     fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.add_ub_watch(-watched, propagator_id)
+    }
+
+    /// request to be notified when the given literal becomes true
+    fn add_lit_watch(&mut self, watched: impl Into<Lit>, propagator_id: PropagatorId) {
+        let watched = watched.into();
+        self.add_ub_watch(watched.svar(), propagator_id);
     }
 
     fn get_ub_watches(&self, var: impl Into<SignedVar>) -> &[PropagatorId] {
