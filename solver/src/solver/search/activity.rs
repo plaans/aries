@@ -62,7 +62,7 @@ pub struct ActivityBrancher<Lbl> {
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
     /// Associates presence literals to the optional variables
-    /// Essentially a Map<Lit, Set<VarRef>>
+    /// Essentially a `Map<Lit, Set<VarRef>>`
     presences: Watches<VarRef>,
     cursor: ObsTrailCursor<Event>,
 }
