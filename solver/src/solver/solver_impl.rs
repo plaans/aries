@@ -731,7 +731,7 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    pub fn enumerate_muses_and_mcses(&mut self, assumptions: &[Lit]) -> MusMcsEnumerator<Lbl> {
+    pub fn mus_and_mcs_enumerator(&mut self, assumptions: &[Lit]) -> MusMcsEnumerator<Lbl> {
         Marco::with(
             assumptions.iter().copied(),
             self,

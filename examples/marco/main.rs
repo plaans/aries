@@ -90,7 +90,7 @@ fn main() -> anyhow::Result<()> {
 
 fn find_muses_mcses(model: Model, clause_reifs: Vec<Lit>) -> anyhow::Result<()> {
     let mut solver = Solver::new(model);
-    let mus_mcs_enumerator = solver.enumerate_muses_and_mcses(&clause_reifs);
+    let mus_mcs_enumerator = solver.mus_and_mcs_enumerator(&clause_reifs);
 
     for musmcs in mus_mcs_enumerator {
         match musmcs {
