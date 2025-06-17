@@ -1,18 +1,11 @@
 use anyhow::{Context, bail};
-use aries::backtrack::Backtrack;
 use aries::core::Lit;
-use aries::model::extensions::SavedAssignment;
-use aries::model::lang::expr::{Or, or};
-use aries::solver::{Exit, UnsatCore};
-use aries_explain::musmcs::marco::Marco;
-use aries_explain::musmcs::marco::subsolvers::{MapSolverMode, SubsetSolverImpl};
+use aries::model::lang::expr::or;
 use clap::Parser;
-use itertools::Itertools;
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 type Model = aries::model::Model<String>;
 type Solver = aries::solver::Solver<String>;
@@ -89,40 +82,16 @@ fn main() -> anyhow::Result<()> {
     let input = source.read(&opt.file)?;
 
     let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
-    let (model, clauses) = load(cnf)?;
+    let (model, clause_reifs) = load(cnf)?;
 
-    find_muses_mcses(model, clauses)
+    find_muses_mcses(model, clause_reifs)
 }
 
-struct SimpleSubsetSolverImpl {
-    solver: Solver,
-}
-impl SimpleSubsetSolverImpl {
-    pub fn new(model: Model) -> Self {
-        Self {
-            solver: Solver::new(model),
-        }
-    }
-}
-impl SubsetSolverImpl<String> for SimpleSubsetSolverImpl {
-    fn get_model(&mut self) -> &mut Model {
-        &mut self.solver.model
-    }
-    fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
-        let res = self
-            .solver
-            .solve_with_assumptions(subset.iter().copied().collect_vec())?;
-        self.solver.reset();
-        Ok(res)
-    }
-}
+fn find_muses_mcses(model: Model, clause_reifs: Vec<Lit>) -> anyhow::Result<()> {
+    let mut solver = Solver::new(model);
 
-fn find_muses_mcses(model: Model, clauses: Vec<Or>) -> anyhow::Result<()> {
-    let subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(model));
-
-    let mut marco = Marco::with_soft_constraints_half_reif(clauses, subset_solver_impl, MapSolverMode::default());
-
-    let _ = marco.run(
+    let _ = solver.find_muses_and_mcses(
+        &clause_reifs,
         Some(|mus: &BTreeSet<Lit>| println!("MUS found: {mus:?}")),
         Some(|mcs: &BTreeSet<Lit>| println!("MCS found: {mcs:?}")),
     );
@@ -131,11 +100,11 @@ fn find_muses_mcses(model: Model, clauses: Vec<Or>) -> anyhow::Result<()> {
 }
 
 /// Load a CNF formula into a model and a set of constraints
-pub fn load(cnf: varisat_formula::CnfFormula) -> anyhow::Result<(Model, Vec<Or>)> {
+pub fn load(cnf: varisat_formula::CnfFormula) -> anyhow::Result<(Model, Vec<Lit>)> {
     let mut var_bindings = HashMap::new();
     let mut model = Model::new();
 
-    let mut clauses: Vec<Or> = Vec::new();
+    let mut clause_reifs: Vec<Lit> = Vec::new();
     let mut clause_lits: Vec<Lit> = Vec::new();
     for clause in cnf.iter() {
         clause_lits.clear();
@@ -151,10 +120,9 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> anyhow::Result<(Model, Vec<Or>)
             let lit: Lit = if lit.is_positive() { var.into() } else { !var };
             clause_lits.push(lit);
         }
-        // let c = model.half_reify(or(clause_lits.as_slice()));
-        // clause_reifs.push(c);
-        clauses.push(or(clause_lits.as_slice()));
+        let c = model.half_reify(or(clause_lits.as_slice()));
+        clause_reifs.push(c);
     }
 
-    Ok((model, clauses))
+    Ok((model, clause_reifs))
 }

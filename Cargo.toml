@@ -15,7 +15,6 @@ members = [
     "examples/knapsack",
     "examples/marco",
     "validator",
-    "explain",
 ]
 resolver = "2"
 

@@ -1,9 +1,0 @@
-[package]
-name = "aries_explain"
-version = "0.1.0"
-authors = ["Nika Beriachvili <nika.beriachvili@laas.fr>"]
-edition = "2024"
-
-[dependencies]
-aries = { path = "../solver" }
-itertools = { workspace = true }

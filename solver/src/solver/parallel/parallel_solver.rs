@@ -169,7 +169,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let run = move |s: &mut Solver<Lbl>| {
-            s.solve_with_assumptions(assumptions.iter().copied().collect_vec())
+            s.solve_with_assumptions(assumptions.iter().as_slice())
                 .map(|res| res.map_err(|uc: UnsatCore| Some(uc)))
         };
         self.race_solvers(run, |_| {}, deadline)

@@ -9,6 +9,8 @@ use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
+use crate::solver::musmcs::marco::{MapSolverMode, Marco};
+use crate::solver::musmcs::{Mcs, Mus, MusMcsResult};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
@@ -696,7 +698,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions on the stack)
     pub fn solve_with_assumptions(
         &mut self,
-        assumptions: Vec<Lit>,
+        assumptions: &[Lit],
     ) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
@@ -711,8 +713,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 return Ok(Err(Explanation::new()));
             }
         };
-
-        for lit in assumptions {
+        for &lit in assumptions {
             if let Err(unsat_core) = self.assume_and_propagate(lit) {
                 return Ok(Err(unsat_core));
             }
@@ -728,6 +729,17 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(Err(unsat_core))
             }
         }
+    }
+
+    pub fn find_muses_and_mcses(
+        &mut self,
+        assumptions: &[Lit],
+        on_mus_found: Option<fn(&Mus)>,
+        on_mcs_found: Option<fn(&Mcs)>,
+    ) -> MusMcsResult {
+        // ?? TODO ?? assert_eq!(... `assumptions` are indeed reified ...);
+        Marco::with(assumptions.iter().copied(), self, MapSolverMode::HighPreferredValues)
+            .run(on_mus_found, on_mcs_found)
     }
 
     /// Searches for a satisfying solution that fulfills the posted assumptions.

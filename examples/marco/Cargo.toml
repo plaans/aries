@@ -7,7 +7,6 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 aries = { path = "../../solver" }
-aries_explain = { path = "../../explain" }
 clap = { workspace = true }
 env_param = { path = "../../env_param" }
 itertools = { workspace = true }

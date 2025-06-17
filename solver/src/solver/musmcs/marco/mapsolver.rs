@@ -1,21 +1,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use aries::backtrack::Backtrack;
-use aries::core::{INT_CST_MAX, Lit};
-use aries::model::Model;
-use aries::model::extensions::SavedAssignment;
-use aries::model::lang::{IAtom, expr::or, linear::LinearSum};
-use aries::solver::Exit;
-use aries::solver::search::SearchControl;
-use aries::solver::search::combinators::CombinatorExt;
-use aries::solver::search::lexical::{Lexical, PreferredValue};
+use crate::backtrack::Backtrack;
+use crate::core::{Lit, INT_CST_MAX};
+use crate::model::extensions::SavedAssignment;
+use crate::model::lang::{expr::or, linear::LinearSum, IAtom};
+use crate::model::Model;
+use crate::solver::search::combinators::CombinatorExt;
+use crate::solver::search::lexical::{Lexical, PreferredValue};
+use crate::solver::search::SearchControl;
+use crate::solver::Exit;
 
 use itertools::Itertools;
 
-use crate::musmcs::{Mcs, Mus};
+use crate::solver::musmcs::{Mcs, Mus};
 
-type Solver = aries::solver::Solver<u8>;
+type Solver = crate::solver::Solver<u8>;
 type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>;
 
 /// - "High" bias approaches are more likely to discover
@@ -25,9 +25,9 @@ type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>
 ///
 /// For each, we make two methods available: 1. using default / preferred values, and 2. optimizing.
 /// For high (low) bias, the former corresponds to
-/// the solver first choosing value 1 (0) for the soft constraints' reification variables,
+/// the solver first choosing value 1 (0) for the literals' variables,
 /// while the latter corresponds to maximizing (minimizing)
-/// the soft constraints' cardinality / sum of their reification variables
+/// the literals' cardinality / sum of their variables.
 /// Both are functionally equivalent, however the preferred values method is expected to be more performant.
 #[derive(Default)]
 pub enum MapSolverMode {
@@ -40,19 +40,19 @@ pub enum MapSolverMode {
 }
 
 pub(crate) struct MapSolver {
-    /// Boolean literals representing the considered soft constraints. Local to the map solver.
+    /// The literals whose powerset makes up the search space of the MARCO,
+    /// BUT NOT matching those the main solver (aka "subset solver").
     ///
-    /// NOTE: NOT the same as the subset solver's soft constraint reification literals.
+    /// This is because they are "locally" represented in the map solver, differently from the main solver.
+    /// As such, they need to be translated between the main solver and map solver.
     ///
     /// Identical to the values of `literals_translate_in` and keys of `literals_translate_out`.
     literals: BTreeSet<Lit>,
-    /// A map from the subset solver's soft constraint reification literals
-    /// to their local representation (i.e. `literals`).
+    /// A map from the main solver's representation of literals of interest to the map solver's one.
     ///
     /// Is the reverse of `literals_translate_out`.
     literals_translate_in: BTreeMap<Lit, Lit>,
-    /// A map from the local representation of soft constraints (i.e. `literals`)
-    /// to the subset solver's soft constraint reification literals.
+    /// A map from the map solver's representation of literals of interest to the main solver's one.
     ///
     /// Is the reverse of `literals_translate_in`.
     literals_translate_out: BTreeMap<Lit, Lit>,
@@ -64,21 +64,22 @@ pub(crate) struct MapSolver {
     /// Singleton MCSes (registered in `block_down`).
     /// Intended for an optional optimisation for the subset solver.
     ///
-    /// NOTE: NOT in the local representation of soft constraints (i.e. `literals`).
-    /// Stored directly as subset solver's soft constraint reification literals.
+    /// NOTE: NOT in the local (map solver) representation !!
+    /// Stored directly in the main solver's representation !!
     known_singleton_mcses_out: BTreeSet<Lit>,
 }
 
 impl MapSolver {
-    pub fn new(soft_constraints_reiflits: impl IntoIterator<Item = Lit>, solving_mode: MapSolverMode) -> Self {
+    pub fn new(literals_out: impl IntoIterator<Item = Lit>, map_solver_mode: MapSolverMode) -> Self {
         let mut solver = Solver::new(Model::new());
 
         let mut literals_translate_in = BTreeMap::<Lit, Lit>::new();
         let mut literals_translate_out = BTreeMap::<Lit, Lit>::new();
 
-        let literals = soft_constraints_reiflits
+        let literals = literals_out
             .into_iter()
-            .unique() // Discard all duplicates beforehand
+            // Discard all duplicates beforehand (so `new_var` isn't called twice for the same thing...)
+            .unique()
             .map(|lit_out| {
                 let lit_in = solver.model.state.new_var(0, 1).geq(1);
                 debug_assert!(!literals_translate_in.contains_key(&lit_out));
@@ -89,7 +90,7 @@ impl MapSolver {
             })
             .collect::<BTreeSet<Lit>>();
 
-        let solve_fn: Box<SolveFn> = match solving_mode {
+        let solve_fn: Box<SolveFn> = match map_solver_mode {
             MapSolverMode::None => Box::new(|s: &mut Solver| s.solve()),
             MapSolverMode::HighPreferredValues => {
                 let brancher = Lexical::with_vars(literals.iter().map(|&l| l.variable()), PreferredValue::Max)
@@ -133,33 +134,34 @@ impl MapSolver {
         }
     }
 
-    /// Translates a (negated) soft constraint reification literal from the subset solver
-    /// into a (negated) literal locally representing that soft constraint.
+    /// Translates a (negated) literal of interest from the main solver representation
+    /// into (a negated) one in the map solver representation
     fn trin(&self, lit: Lit) -> Lit {
         self.literals_translate_in.get(&lit).copied().unwrap_or_else(||
             // If `lit` is not known, then `!lit` must be. So take the negation of its translation.
             self.literals_translate_in.get(&lit.not()).unwrap().not())
     }
 
-    /// Translates a (negated) literal locally representing a soft constraint
-    /// into a (negated) reification literal for that soft constraint in the subset solver.
+    /// Translates a (negated) literal of interest from the map solver representation
+    /// into (a negated) one in the main solver representation.
     fn trout(&self, lit: Lit) -> Lit {
         self.literals_translate_out.get(&lit).copied().unwrap_or_else(||
             // If `lit` is not known, then `!lit` must be. So take the negation of its translation.
             self.literals_translate_out.get(&lit.not()).unwrap().not())
     }
 
-    /// Singleton MCSes.
+    /// Singleton MCSes (in main solver representation!).
     /// Could optionally be used by the subset solver for optimization.
     pub fn known_singleton_mcses(&self) -> &BTreeSet<Lit> {
         &self.known_singleton_mcses_out
     }
 
-    /// Literals currently discovered as implied by the given set of assumptions.
+    /// Literals of interest (in main solver representation!)
+    /// currently discovered as implied by the given set of assumptions.
     /// Intended for an optional optimisation for the subset solver.
     ///
     /// Necessarily includes the output of `known_singleton_mcses`.
-    pub fn known_implications(&mut self, assumpts: &BTreeSet<Lit>) -> BTreeSet<Lit> {
+    pub fn known_implications(&mut self, assumptions: &BTreeSet<Lit>) -> BTreeSet<Lit> {
         // Works by:
         // 1. assuming the given literals,
         // 2. propagating them,
@@ -167,7 +169,7 @@ impl MapSolver {
         let mut res = BTreeSet::new();
 
         self.solver.reset();
-        for &lit in assumpts {
+        for &lit in assumptions {
             if self.solver.assume(self.trin(lit)).is_err() {
                 self.solver.reset();
                 return res;
@@ -178,7 +180,7 @@ impl MapSolver {
             return res;
         }
         for &lit in &self.literals {
-            if assumpts.contains(&self.trout(lit)) || assumpts.contains(&self.trout(lit).not()) {
+            if assumptions.contains(&self.trout(lit)) || assumptions.contains(&self.trout(lit).not()) {
                 continue;
             }
             if self.solver.model.state.entails(lit) {
