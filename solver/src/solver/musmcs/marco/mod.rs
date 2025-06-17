@@ -1,6 +1,6 @@
 mod mapsolver;
 
-use crate::backtrack::Backtrack;
+use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::Lit;
 use crate::model::Label;
 use crate::solver::{Exit, Solver};
@@ -49,6 +49,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         map_solver_mode: MapSolverMode,
         main_solver_opti_mode: SubsetSolverOptiMode,
     ) -> Self {
+        assert_eq!(main_solver.current_decision_level(), DecLvl::ROOT);
         let map_solver = MapSolver::new(literals.clone(), map_solver_mode);
         Self {
             literals: literals.into_iter().collect(),
