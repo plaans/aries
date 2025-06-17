@@ -33,7 +33,7 @@ pub struct ConflictBasedBrancher {
     /// vars that should be considered for branching but htat have not been processed yet.
     unprocessed_vars: Vec<VarRef>,
     /// Associates presence literals to the optional variables
-    /// Essentially a Map<Lit, Set<VarRef>>
+    /// Essentially a `Map<Lit, Set<VarRef>>`
     presences: Watches<VarRef>,
     cursor: ObsTrailCursor<Event>,
     pub params: Params,
