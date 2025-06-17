@@ -5,11 +5,11 @@ use crate::core::Lit;
 use crate::model::Label;
 use crate::solver::{Exit, Solver};
 
-use std::{collections::BTreeSet, time::Instant};
+use std::collections::BTreeSet;
 
 use itertools::Itertools;
 
-use crate::solver::musmcs::{Mcs, Mus, MusMcsResult};
+use crate::solver::musmcs::MusMcs;
 use mapsolver::MapSolver;
 pub use mapsolver::MapSolverMode;
 
@@ -30,81 +30,80 @@ pub struct Marco<'a, Lbl: Label> {
     /// To avoid confusion, we will refer to it as the "main solver".
     main_solver: &'a mut Solver<Lbl>,
     map_solver: MapSolver,
+    grow_shrink_optional_optimisation: SubsetSolverOptiMode,
+}
+
+impl<'a, Lbl: Label> Iterator for Marco<'a, Lbl> {
+    type Item = MusMcs;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // TODO: return (non-minimal) Us/Cs-es when, for example, a timeout is reached or an Exit signal is received.
+        self._next().map_or(None, |musmcs| musmcs)
+    }
 }
 
 impl<'a, Lbl: Label> Marco<'a, Lbl> {
     pub fn with(
         literals: impl Iterator<Item = Lit> + Clone,
-        mainsolver: &'a mut Solver<Lbl>,
+        main_solver: &'a mut Solver<Lbl>,
         map_solver_mode: MapSolverMode,
+        main_solver_opti_mode: SubsetSolverOptiMode,
     ) -> Self {
-        let mapsolver = MapSolver::new(literals.clone(), map_solver_mode);
+        let map_solver = MapSolver::new(literals.clone(), map_solver_mode);
         Self {
             literals: literals.into_iter().collect(),
-            main_solver: mainsolver,
-            map_solver: mapsolver,
+            main_solver,
+            map_solver,
+            grow_shrink_optional_optimisation: main_solver_opti_mode,
         }
     }
 
-    pub fn run(&mut self, on_mus_found: Option<fn(&Mus)>, on_mcs_found: Option<fn(&Mcs)>) -> MusMcsResult {
-        let mut muses = Vec::<Mus>::new();
-        let mut mcses = Vec::<Mcs>::new();
-
-        let start = Instant::now();
-
-        let complete = self
-            ._run(
-                &mut muses,
-                &mut mcses,
-                on_mus_found,
-                on_mcs_found,
-                SubsetSolverOptiMode::default(),
-            )
-            .is_ok();
-
-        debug_assert!(muses.iter().all_unique());
-        debug_assert!(mcses.iter().all_unique());
-
-        MusMcsResult {
-            muses,
-            mcses,
-            complete: Some(complete),
-            run_time: Some(start.elapsed()),
-        }
-    }
-
-    fn _run(
+    pub fn run(
         &mut self,
-        muses: &mut Vec<Mus>,
-        mcses: &mut Vec<Mcs>,
-        on_mus_found: Option<fn(&Mus)>,
-        on_mcs_found: Option<fn(&Mcs)>,
-        opti_mode: SubsetSolverOptiMode,
-    ) -> Result<(), Exit> {
-        while let Some(seed) = self.map_solver.find_unexplored_seed()? {
-            if self.check_subset(&seed)?.is_ok() {
-                let (_, mcs) = self.grow(&seed, opti_mode)?;
-                self.map_solver.block_down(&mcs);
+        on_mus_found: Option<fn(&BTreeSet<Lit>)>,
+        on_mcs_found: Option<fn(&BTreeSet<Lit>)>,
+    ) -> Vec<MusMcs> {
+        let mut res = Vec::<MusMcs>::new();
 
-                debug_assert!(mcses.iter().all(|set| !mcs.is_subset(set) && !set.is_subset(&mcs)));
-                if !mcs.is_empty() {
-                    on_mcs_found.unwrap_or(|_| ())(&mcs);
-                    mcses.push(mcs);
+        loop {
+            // TODO: return (non-minimal) Us/Cs-es when, for example, a timeout is reached or an Exit signal is received.
+            if let Ok(Some(musmcs)) = self._next() {
+                match musmcs {
+                    MusMcs::Mus(set) => {
+                        on_mus_found.unwrap_or(|_| ())(&set);
+                        res.push(MusMcs::Mus(set));
+                    }
+                    MusMcs::Mcs(set) => {
+                        on_mcs_found.unwrap_or(|_| ())(&set);
+                        res.push(MusMcs::Mcs(set));
+                    }
+                    _ => todo!(),
                 }
             } else {
-                // debug_assert!(self.mapsolver.seed_is_unexplored(&seed));
+                return res;
+            }
+        }
+    }
 
-                let mus = self.shrink(&seed, opti_mode)?;
+    fn _next(&mut self) -> Result<Option<MusMcs>, Exit> {
+        if let Some(seed) = self.map_solver.find_unexplored_seed()? {
+            if self.check_subset(&seed)?.is_ok() {
+                let (_, mcs) = self.grow(&seed)?;
+                self.map_solver.block_down(&mcs);
+
+                if !mcs.is_empty() {
+                    return Ok(Some(MusMcs::Mcs(mcs)));
+                }
+            } else {
+                let mus = self.shrink(&seed)?;
                 self.map_solver.block_up(&mus);
 
-                debug_assert!(muses.iter().all(|set| !mus.is_subset(set) && !set.is_subset(&mus)));
                 if !mus.is_empty() {
-                    on_mus_found.unwrap_or(|_| ())(&mus);
-                    muses.push(mus);
+                    return Ok(Some(MusMcs::Mus(mus)));
                 }
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Checks whether the given subset literals is satisfiable.
@@ -132,16 +131,12 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     /// Find a MSS by adding literals to `sat_subset`, until no more can be added without leading to UNSAT.
     ///
     /// Optional optimization may allow skipping satisfiability checks for some additions.
-    fn grow(
-        &mut self,
-        sat_subset: &BTreeSet<Lit>,
-        opti_mode: SubsetSolverOptiMode,
-    ) -> Result<(BTreeSet<Lit>, Mcs), Exit> {
+    fn grow(&mut self, sat_subset: &BTreeSet<Lit>) -> Result<(BTreeSet<Lit>, BTreeSet<Lit>), Exit> {
         let sat_subset_complement = self.literals.difference(sat_subset).copied().collect_vec();
         let mut current = sat_subset.clone();
 
         let mut skip = BTreeSet::<Lit>::new();
-        self.grow_optional_optimisation_lits_to_skip(opti_mode, &current, &mut skip);
+        self.grow_optional_optimisation_lits_to_skip(&current, &mut skip);
 
         for lit in sat_subset_complement {
             if current.contains(&lit) || skip.contains(&lit) {
@@ -151,7 +146,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
 
             if let Ok(superset) = self.check_subset(&current)? {
                 current = superset;
-                self.grow_optional_optimisation_lits_to_skip(opti_mode, &current, &mut skip);
+                self.grow_optional_optimisation_lits_to_skip(&current, &mut skip);
             } else {
                 current.remove(&lit);
             }
@@ -164,11 +159,11 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     /// Find a MUS by deleting literals from `unsat_subset`, until deleting any more leads to SAT.
     ///
     /// Optional optimization may allow skipping satisfiability checks for some deletions.
-    fn shrink(&mut self, unsat_subset: &BTreeSet<Lit>, opti_mode: SubsetSolverOptiMode) -> Result<Mus, Exit> {
+    fn shrink(&mut self, unsat_subset: &BTreeSet<Lit>) -> Result<BTreeSet<Lit>, Exit> {
         let mut current = unsat_subset.clone();
 
         let mut skip = BTreeSet::<Lit>::new();
-        self.shrink_optional_optimisation_lits_to_skip(opti_mode, &current, &mut skip);
+        self.shrink_optional_optimisation_lits_to_skip(&current, &mut skip);
 
         for &lit in unsat_subset {
             if !current.contains(&lit) || skip.contains(&lit) {
@@ -178,7 +173,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
 
             if let Err(unsat_core) = self.check_subset(&current)? {
                 current = unsat_core;
-                self.shrink_optional_optimisation_lits_to_skip(opti_mode, &current, &mut skip);
+                self.shrink_optional_optimisation_lits_to_skip(&current, &mut skip);
             } else {
                 current.insert(lit);
             }
@@ -187,13 +182,8 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         Ok(mus)
     }
 
-    fn grow_optional_optimisation_lits_to_skip(
-        &mut self,
-        opti_mode: SubsetSolverOptiMode,
-        current: &BTreeSet<Lit>,
-        skip: &mut BTreeSet<Lit>,
-    ) {
-        match opti_mode {
+    fn grow_optional_optimisation_lits_to_skip(&mut self, current: &BTreeSet<Lit>, skip: &mut BTreeSet<Lit>) {
+        match self.grow_shrink_optional_optimisation {
             SubsetSolverOptiMode::None => (),
             SubsetSolverOptiMode::KnownSingletonMCSes => (),
             SubsetSolverOptiMode::KnownImplications => {
@@ -212,13 +202,8 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         }
     }
 
-    fn shrink_optional_optimisation_lits_to_skip(
-        &mut self,
-        opti_mode: SubsetSolverOptiMode,
-        current: &BTreeSet<Lit>,
-        skip: &mut BTreeSet<Lit>,
-    ) {
-        match opti_mode {
+    fn shrink_optional_optimisation_lits_to_skip(&mut self, current: &BTreeSet<Lit>, skip: &mut BTreeSet<Lit>) {
+        match self.grow_shrink_optional_optimisation {
             SubsetSolverOptiMode::None => (),
             SubsetSolverOptiMode::KnownSingletonMCSes => skip.extend(self.map_solver.known_singleton_mcses()),
             SubsetSolverOptiMode::KnownImplications => {
@@ -250,8 +235,10 @@ mod tests {
 
     use itertools::Itertools;
 
+    use crate::core::Lit;
     use crate::model::lang::expr::{geq, lt};
     use crate::solver::musmcs::marco::mapsolver::MapSolverMode;
+    use crate::solver::musmcs::MusMcs;
     type Lbl = &'static str;
 
     type Model = crate::model::Model<Lbl>;
@@ -273,11 +260,24 @@ mod tests {
             soft_constraints_reiflits.iter().copied(),
             &mut solver,
             MapSolverMode::HighPreferredValues,
+            crate::solver::musmcs::marco::SubsetSolverOptiMode::None,
         );
         let res = marco.run(None, None);
 
-        let res_muses = res.muses.into_iter().collect::<BTreeSet<_>>();
-        let res_mcses = res.mcses.into_iter().collect::<BTreeSet<_>>();
+        let mut res_muses = BTreeSet::<BTreeSet<Lit>>::new();
+        let mut res_mcses = BTreeSet::<BTreeSet<Lit>>::new();
+
+        for musmcs in res {
+            match musmcs {
+                MusMcs::Mus(set) => {
+                    res_muses.insert(set);
+                }
+                MusMcs::Mcs(set) => {
+                    res_mcses.insert(set);
+                }
+                _ => panic!(),
+            }
+        }
 
         let expected_muses = BTreeSet::from_iter(vec![
             BTreeSet::from_iter(vec![

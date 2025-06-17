@@ -13,8 +13,6 @@ use crate::solver::Exit;
 
 use itertools::Itertools;
 
-use crate::solver::musmcs::{Mcs, Mus};
-
 type Solver = crate::solver::Solver<u8>;
 type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>;
 
@@ -194,12 +192,8 @@ impl MapSolver {
     }
 
     /*/// Returns whether the given assignment is valid.
-    // Needed for parallel MARCO.
     pub fn seed_is_unexplored(&mut self, seed: &BTreeSet<Lit>) -> bool {
-        self.solver.reset();
-        let res = self.solver.solve_with_assumptions(seed.iter().copied().collect_vec()).unwrap().is_ok();
-        self.solver.reset();
-        res
+        ...
     }*/
 
     /// Solve for a valid assignment.
@@ -226,7 +220,7 @@ impl MapSolver {
 
     /// Mark assignments contained in an MSS (i.e. complement of the given MCS) as forbidden.
     /// In other words, mark them as explored. Seeds further discovered won't contain them.
-    pub fn block_down(&mut self, mcs: &Mcs) {
+    pub fn block_down(&mut self, mcs: &BTreeSet<Lit>) {
         let translated_mcs = mcs.iter().map(|&l| self.trin(l)).collect_vec();
         if let Ok(&singleton_mcs) = translated_mcs.iter().exactly_one() {
             // May only be needed for optional optimisation
@@ -237,7 +231,7 @@ impl MapSolver {
 
     /// Mark assignments containing the given MUS as forbidden.
     /// In other words, mark them as explored. Seeds further discovered won't contain them.
-    pub fn block_up(&mut self, mus: &Mus) {
+    pub fn block_up(&mut self, mus: &BTreeSet<Lit>) {
         let translated_mus_negs = mus.iter().map(|&l| self.trin(l).not()).collect_vec();
         self.solver.enforce(or(translated_mus_negs), []);
     }

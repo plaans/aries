@@ -1,8 +1,9 @@
 use anyhow::{Context, bail};
 use aries::core::Lit;
 use aries::model::lang::expr::or;
+use aries::solver::musmcs::MusMcs;
 use clap::Parser;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -89,12 +90,19 @@ fn main() -> anyhow::Result<()> {
 
 fn find_muses_mcses(model: Model, clause_reifs: Vec<Lit>) -> anyhow::Result<()> {
     let mut solver = Solver::new(model);
+    let mus_mcs_enumerator = solver.enumerate_muses_and_mcses(&clause_reifs);
 
-    let _ = solver.find_muses_and_mcses(
-        &clause_reifs,
-        Some(|mus: &BTreeSet<Lit>| println!("MUS found: {mus:?}")),
-        Some(|mcs: &BTreeSet<Lit>| println!("MCS found: {mcs:?}")),
-    );
+    for musmcs in mus_mcs_enumerator {
+        match musmcs {
+            MusMcs::Mus(set) => {
+                println!("MUS found: {set:?}");
+            }
+            MusMcs::Mcs(set) => {
+                println!("MCS found: {set:?}");
+            }
+            _ => panic!(),
+        }
+    }
 
     Ok(())
 }

@@ -9,8 +9,8 @@ use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
-use crate::solver::musmcs::marco::{MapSolverMode, Marco};
-use crate::solver::musmcs::{Mcs, Mus, MusMcsResult};
+use crate::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
+use crate::solver::musmcs::MusMcsEnumerator;
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
 use crate::solver::search::{default_brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
@@ -731,15 +731,13 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    pub fn find_muses_and_mcses(
-        &mut self,
-        assumptions: &[Lit],
-        on_mus_found: Option<fn(&Mus)>,
-        on_mcs_found: Option<fn(&Mcs)>,
-    ) -> MusMcsResult {
-        // ?? TODO ?? assert_eq!(... `assumptions` are indeed reified ...);
-        Marco::with(assumptions.iter().copied(), self, MapSolverMode::HighPreferredValues)
-            .run(on_mus_found, on_mcs_found)
+    pub fn enumerate_muses_and_mcses(&mut self, assumptions: &[Lit]) -> MusMcsEnumerator<Lbl> {
+        Marco::with(
+            assumptions.iter().copied(),
+            self,
+            MapSolverMode::default(),
+            SubsetSolverOptiMode::default(),
+        )
     }
 
     /// Searches for a satisfying solution that fulfills the posted assumptions.
