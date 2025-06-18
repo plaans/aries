@@ -366,8 +366,12 @@ pub mod test {
                 .propagate(&mut domains, INFERENCE_CAUSE)
                 .expect("failed prop");
 
+            // save the current domains state
+            let mut domains_save = domains.clone();
+
             for _rotation_id in 0..decisions.len() {
                 // println!("\nClause: {implied:?} <- {decisions:?}\n");
+                let mut domains = domains_save.clone();
                 for i in 0..decisions.len() {
                     let l = decisions[i];
                     if domains.entails(l) {
