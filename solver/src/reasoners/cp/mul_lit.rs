@@ -111,11 +111,11 @@ impl Propagator for VarEqVarMulLit {
             // Explain why lit is false
             // intersection(dom(reif), dom(orig)) is empty, so lit = false
             if reif_lb > orig_ub {
-                out_explanation.push(self.original.leq(orig_ub));
+                out_explanation.push(self.original.lt(reif_lb));
                 out_explanation.push(self.reified.geq(reif_lb));
             }
             if reif_ub < orig_lb {
-                out_explanation.push(self.original.geq(orig_lb));
+                out_explanation.push(self.original.gt(reif_ub));
                 out_explanation.push(self.reified.leq(reif_ub));
             }
         } else {
