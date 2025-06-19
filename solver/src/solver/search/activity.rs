@@ -20,7 +20,10 @@ pub static USE_LNS: EnvParam<bool> = EnvParam::new("ARIES_ACTIVITY_USES_LNS", "t
 
 #[derive(Clone)]
 pub struct BranchingParams {
+    /// Set the default polarity of the variables
     pub prefer_min_value: bool,
+    /// If true, once a solution is found, the brancher will prefer the value from the last solution
+    pub solution_guidance: bool,
     pub allowed_conflicts: u64,
     pub increase_ratio_for_allowed_conflicts: f32,
 }
@@ -29,6 +32,7 @@ impl Default for BranchingParams {
     fn default() -> Self {
         BranchingParams {
             prefer_min_value: PREFER_MIN_VALUE.get(),
+            solution_guidance: USE_LNS.get(),
             allowed_conflicts: INITIALLY_ALLOWED_CONFLICTS.get(),
             increase_ratio_for_allowed_conflicts: INCREASE_RATIO_FOR_ALLOWED_CONFLICTS.get(),
         }
@@ -474,7 +478,7 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
             .objective_found
             .map(|prev| objective < prev)
             .unwrap_or(true);
-        if USE_LNS.get() && is_improvement {
+        if self.params.solution_guidance && is_improvement {
             self.default_assignment.objective_found = Some(objective);
             for (var, val) in assignment.bound_variables() {
                 self.set_default_value(var, val);
