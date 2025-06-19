@@ -6,6 +6,8 @@ use crate::{core::Lit, solver::musmcs::marco::Marco};
 
 pub type MusMcsEnumerator<'a, Lbl> = Marco<'a, Lbl>;
 
+pub type Mus = BTreeSet<Lit>;
+
 pub enum MusMcs {
     Mus(BTreeSet<Lit>),
     Us(BTreeSet<Lit>),

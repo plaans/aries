@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use itertools::Itertools;
 
-use crate::solver::musmcs::MusMcs;
+use crate::solver::musmcs::*;
 use mapsolver::MapSolver;
 pub use mapsolver::MapSolverMode;
 
@@ -57,6 +57,19 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
             map_solver,
             grow_shrink_optional_optimisation: main_solver_opti_mode,
         }
+    }
+
+    /// Provides an iterator over all MUS of the problem.
+    pub fn mus_only(self) -> impl Iterator<Item = Mus> + use<'a, Lbl> {
+        self.into_iter().filter_map(|mus_mcs| match mus_mcs {
+            MusMcs::Mus(mus) => Some(mus),
+            _ => None,
+        })
+    }
+
+    /// Returns an arbitrary MUS (the first one encountered by the algorithm).
+    pub fn first_mus(self) -> Option<Mus> {
+        self.mus_only().next()
     }
 
     pub fn run(
