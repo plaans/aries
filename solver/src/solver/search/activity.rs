@@ -113,10 +113,8 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
     pub fn import_vars(&mut self, model: &Model<Lbl>) {
         let mut count = 0;
         // go through the model's variables and declare any newly declared variable
-        // TODO: use `advance_by` when it is stabilized. The current usage of `dropping` is very expensive
-        //       when compiled without opt-level=3. advance_by should be easier to optimize but dropping will
-        //       have to wait to adopt it. [Tracking issue](https://github.com/rust-lang/rust/issues/77404)
-        for var in model.state.variables().dropping(self.num_processed_var) {
+        let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(VarRef::from);
+        for var in unprocessed_vars {
             debug_assert!(!self.heap.is_declared(var));
             let prez = model.presence_literal(var);
             self.heap.declare_variable(var, self.priority(var, model), None);

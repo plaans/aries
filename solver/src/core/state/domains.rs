@@ -363,6 +363,11 @@ impl Domains {
         self.doms.variables()
     }
 
+    /// Returns the number of variables in the model.
+    pub fn num_variables(&self) -> usize {
+        self.doms.num_variables()
+    }
+
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
         self.doms.bound_variables()
     }
