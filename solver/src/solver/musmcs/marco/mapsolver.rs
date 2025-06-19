@@ -6,9 +6,7 @@ use crate::core::{Lit, INT_CST_MAX};
 use crate::model::extensions::SavedAssignment;
 use crate::model::lang::{expr::or, linear::LinearSum, IAtom};
 use crate::model::Model;
-use crate::solver::search::combinators::CombinatorExt;
-use crate::solver::search::lexical::{Lexical, PreferredValue};
-use crate::solver::search::SearchControl;
+use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
 use crate::solver::Exit;
 
 use itertools::Itertools;
@@ -91,18 +89,22 @@ impl MapSolver {
         let solve_fn: Box<SolveFn> = match map_solver_mode {
             MapSolverMode::None => Box::new(|s: &mut Solver| s.solve()),
             MapSolverMode::HighPreferredValues => {
-                let brancher = Lexical::with_vars(literals.iter().map(|&l| l.variable()), PreferredValue::Max)
-                    .clone_to_box()
-                    .and_then(solver.brancher.clone_to_box());
-                solver.set_brancher_boxed(brancher);
+                let brancher = ActivityBrancher::new_with_params(BranchingParams {
+                    prefer_min_value: false,
+                    solution_guidance: false,
+                    ..Default::default()
+                });
+                solver.set_brancher(brancher);
 
                 Box::new(move |s: &mut Solver| s.solve())
             }
             MapSolverMode::LowPreferredValues => {
-                let brancher = Lexical::with_vars(literals.iter().map(|&l| l.variable()), PreferredValue::Min)
-                    .clone_to_box()
-                    .and_then(solver.brancher.clone_to_box());
-                solver.set_brancher_boxed(brancher);
+                let brancher = ActivityBrancher::new_with_params(BranchingParams {
+                    prefer_min_value: true,
+                    solution_guidance: false,
+                    ..Default::default()
+                });
+                solver.set_brancher(brancher);
 
                 Box::new(move |s: &mut Solver| s.solve())
             }
