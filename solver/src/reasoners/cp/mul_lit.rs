@@ -315,7 +315,7 @@ mod tests {
         use crate::reasoners::cp::propagator::test::utils::*;
         for (d, c) in gen_problems(100) {
             println!("\nConstraint: {c:?}");
-            test_explanations(&d, &c);
+            test_explanations(&d, &c, true);
         }
     }
 }
