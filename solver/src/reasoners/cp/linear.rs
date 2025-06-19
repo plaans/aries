@@ -569,7 +569,7 @@ mod tests {
         use crate::reasoners::cp::propagator::test::utils::*;
         for (d, s) in gen_problems() {
             println!("\nConstraint: {s:?}");
-            test_explanations(&d, &s);
+            test_explanations(&d, &s, true);
         }
     }
 }
