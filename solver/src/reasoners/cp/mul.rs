@@ -406,12 +406,12 @@ mod test {
 
     /// Generates factors, calculates result, returns propagator and true mult
     fn gen_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst, IntCst))> {
-        let max = max as i32;
+        let max = max as IntCst;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
         for i in 0..n {
-            let fact1_val: i32 = rng.gen_range(-max..max);
-            let fact2_val: i32 = rng.gen_range(-max..max);
+            let fact1_val = rng.gen_range(-max..max);
+            let fact2_val = rng.gen_range(-max..max);
             let prod_val = fact1_val * fact2_val;
             let mut d = Domains::new();
             let prop = {
@@ -443,11 +443,11 @@ mod test {
     }
 
     fn gen_square_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst))> {
-        let max = max as i32;
+        let max = max as IntCst;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
         for i in 0..n {
-            let fact_val: i32 = rng.gen_range(-max..max);
+            let fact_val = rng.gen_range(-max..max);
             let prod_val = fact_val.pow(2);
             let mut d = Domains::new();
             let prod = d.new_var(
