@@ -33,8 +33,8 @@ impl Propagator for Mul {
         context.add_watch(self.prod, id);
         context.add_watch(self.fact1, id);
         context.add_watch(self.fact2, id);
-        context.add_watch(self.active.variable(), id);
-        context.add_watch(self.valid.variable(), id);
+        context.add_lit_watch(self.active, id);
+        context.add_lit_watch(self.valid, id);
     }
 
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
