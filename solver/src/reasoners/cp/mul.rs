@@ -244,9 +244,9 @@ impl Mul {
         // Case 1: y spans 1 => x can be anything
         // Case 2: y doesn't span 1 => prod is 0
         let fact = self.xyx_fact().unwrap();
-        let (prod_lb, prod_ub) = domains.bounds(self.prod);
-        let (fact_lb, fact_ub) = domains.bounds(fact);
-        if !(fact_lb <= 1 && fact_ub >= 1) {
+        let prod_dom = domains.int_domain(self.prod);
+        let fact_dom = domains.int_domain(fact);
+        if !fact_dom.contains(1) {
             domains.set_lb(self.prod, 0, cause)?;
             domains.set_ub(self.prod, 0, cause)?;
         }
@@ -254,7 +254,7 @@ impl Mul {
         // Backward propagation
         // Case 1: x spans 0 => y can be anything
         // Case 2: x doesn't span 0 => y can only be 1
-        if !(prod_lb <= 0 && prod_ub >= 0) {
+        if !prod_dom.contains(0) {
             domains.set_lb(fact, 1, cause)?;
             domains.set_ub(fact, 1, cause)?;
         }
@@ -343,23 +343,7 @@ mod test {
 
     /// Asserts that bounds of var are as expected
     fn check_bounds(v: VarRef, d: &Domains, expected_bounds: (IntCst, IntCst)) {
-        assert_eq!(d.bounds(v), expected_bounds);
-        assert_eq!(
-            d.lb(v),
-            expected_bounds.0,
-            "expected lower bound {} for {:?}, got {} instead",
-            expected_bounds.0,
-            v,
-            d.lb(v)
-        );
-        assert_eq!(
-            d.ub(v),
-            expected_bounds.1,
-            "expected upper bound {} for {:?}, got {} instead",
-            expected_bounds.1,
-            v,
-            d.ub(v)
-        );
+        assert_eq!(d.bounds(v), expected_bounds, "Unexpected bounds for {v:?}");
     }
 
     /// Asserts that val is in var's bounds
