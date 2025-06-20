@@ -175,7 +175,7 @@ pub fn reproduce(
         SolverResult::Sol((sol, cost)) => SolverResult::Sol((pb, sol, cost)),
         SolverResult::Timeout(Some((sol, cost))) => SolverResult::Timeout(Some((pb, sol, cost))),
         SolverResult::Timeout(None) => SolverResult::Timeout(None),
-        SolverResult::Unsat => SolverResult::Unsat,
+        SolverResult::Unsat(unsat_core) => SolverResult::Unsat(unsat_core),
     };
 
     Ok(Some(warming_result))
@@ -245,7 +245,7 @@ pub fn solve(
             // A solution has been found but the initial solution is empty, stop here.
             else if initial_solution.is_none() {
                 println!("No solution found for the warm-up plan");
-                return Ok(SolverResult::Unsat);
+                return Ok(SolverResult::Unsat(None));
             }
             // A solution has been found and the optimization process can start.
             // Notify the user of the initial solution.
@@ -259,7 +259,7 @@ pub fn solve(
         // No solution found for the warm-up plan, stop here.
         else {
             println!("No solution found for the warm-up plan");
-            return Ok(SolverResult::Unsat);
+            return Ok(SolverResult::Unsat(None));
         }
     }
 
@@ -315,7 +315,7 @@ pub fn solve(
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
-            SolverResult::Unsat => {} // continue (increase depth)
+            SolverResult::Unsat(_) => {} // continue (increase depth)
             SolverResult::Sol((pb, (sol, cost))) if metric.is_some() && depth < max_depth => {
                 let cost = cost.expect("Not cost provided in optimization problem");
                 assert!(
@@ -329,7 +329,7 @@ pub fn solve(
             other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
         }
     }
-    Ok(SolverResult::Unsat)
+    Ok(SolverResult::Unsat(None))
 }
 
 /// This function mimics the instantiation of the subproblem, run the propagation and prints the result.
@@ -553,7 +553,7 @@ fn solve_finite_problem(
         encoding,
     }) = encode(&pb, metric)
     else {
-        return SolverResult::Unsat;
+        return SolverResult::Unsat(None);
     };
     if let Some(metric) = metric {
         if minimize_metric {

@@ -26,6 +26,7 @@ impl Config {
                     prefer_min_value: true,
                     allowed_conflicts: 100,
                     increase_ratio_for_allowed_conflicts: 1.5,
+                    ..Default::default()
                 };
                 let brancher = ActivityBrancher::new_with_params(params);
                 Box::new(brancher)
@@ -35,6 +36,7 @@ impl Config {
                     prefer_min_value: false,
                     allowed_conflicts: 100,
                     increase_ratio_for_allowed_conflicts: 1.5,
+                    ..Default::default()
                 };
                 let brancher = ActivityBrancher::new_with_params(params);
                 Box::new(brancher)

@@ -1,10 +1,12 @@
 use crate::core::IntCst;
+use crate::core::Lit;
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Label, ModelShape};
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
-use crate::solver::{Exit, Solver};
+use crate::solver::{Exit, Solver, UnsatCore};
 use crossbeam_channel::{select, Receiver, Sender};
+use itertools::Itertools;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,7 +23,7 @@ pub enum SolverResult<Solution> {
     /// The solver terminated with a solution.
     Sol(Solution),
     /// The solver terminated, without a finding a solution
-    Unsat,
+    Unsat(Option<UnsatCore>),
     /// Teh solver was interrupted due to a timeout.
     /// It may have found a suboptimal solution.
     Timeout(Option<Solution>),
@@ -31,7 +33,7 @@ impl<Sol> SolverResult<Sol> {
     pub fn map<Out>(self, f: impl FnOnce(Sol) -> Out) -> SolverResult<Out> {
         match self {
             SolverResult::Sol(s) => SolverResult::Sol(f(s)),
-            SolverResult::Unsat => SolverResult::Unsat,
+            SolverResult::Unsat(uc) => SolverResult::Unsat(uc),
             SolverResult::Timeout(opt_sol) => SolverResult::Timeout(opt_sol.map(f)),
         }
     }
@@ -116,9 +118,66 @@ impl<Lbl: Label> ParSolver<Lbl> {
         rcv
     }
 
+    pub fn incremental_push_all(&mut self, assumptions: Vec<Lit>) -> Result<(), UnsatCore> {
+        let mut res: Result<(), UnsatCore> = Ok(());
+        for s in self.solvers.iter_mut() {
+            match s {
+                Worker::Running(_) => panic!(),
+                Worker::Halting => panic!(),
+                Worker::Idle(s) => {
+                    if let Err((_, unsat_core)) = s.incremental_push_all(assumptions.clone()) {
+                        if let Err(ref uc) = res {
+                            if unsat_core.literals().len() < uc.literals().len() {
+                                res = Err(unsat_core);
+                            }
+                        } else {
+                            res = Err(unsat_core);
+                        }
+                    }
+                }
+            }
+        }
+        res
+    }
+
+    /// Solve the problem that was given on initialization, using all available solvers.
+    ///
+    /// In case of unsatisfiability, will return an unsat core of
+    /// the assumptions that were initially pushed to `base_solver`.
+    pub fn incremental_solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
+        debug_assert!(
+            self.solvers
+                .iter()
+                .map(|s| match s {
+                    Worker::Running(_) => panic!(),
+                    Worker::Halting => panic!(),
+                    Worker::Idle(s) => s.model.state.assumptions(),
+                })
+                .all_equal(),
+            "Workers need to have the same assumptions pushed into them",
+        );
+        self.race_solvers(
+            |s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))),
+            |_| {},
+            deadline,
+        )
+    }
+
+    pub fn solve_with_assumptions(
+        &mut self,
+        assumptions: Vec<Lit>,
+        deadline: Option<Instant>,
+    ) -> SolverResult<Solution> {
+        let run = move |s: &mut Solver<Lbl>| {
+            s.solve_with_assumptions(assumptions.iter().as_slice())
+                .map(|res| res.map_err(|uc: UnsatCore| Some(uc)))
+        };
+        self.race_solvers(run, |_| {}, deadline)
+    }
+
     /// Solve the problem that was given on initialization using all available solvers.
     pub fn solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
-        self.race_solvers(|s| s.solve(), |_| {}, deadline)
+        self.race_solvers(|s| s.solve().map(|res| res.ok_or(None)), |_| {}, deadline)
     }
 
     /// Minimize the value of the given expression.
@@ -126,8 +185,8 @@ impl<Lbl: Label> ParSolver<Lbl> {
         let objective = objective.into();
         self.race_solvers(
             move |s| match s.minimize(objective) {
-                Ok(Some((_cost, sol))) => Ok(Some(sol)),
-                Ok(None) => Ok(None),
+                Ok(Some((_cost, sol))) => Ok(Ok(sol)),
+                Ok(None) => Ok(Err(None)),
                 Err(x) => Err(x),
             },
             |_| {},
@@ -164,8 +223,8 @@ impl<Lbl: Label> ParSolver<Lbl> {
         };
         self.race_solvers(
             move |s| match s.minimize_with_optional_initial_solution(objective, initial_solution.clone()) {
-                Ok(Some((_cost, sol))) => Ok(Some(sol)),
-                Ok(None) => Ok(None),
+                Ok(Some((_cost, sol))) => Ok(Ok(sol)),
+                Ok(None) => Ok(Err(None)),
                 Err(x) => Err(x),
             },
             on_new_sol,
@@ -180,7 +239,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// Once a first result is found, it sends an interruption message to all other workers and wait for them to yield.
     fn race_solvers<F, G>(&mut self, run: F, mut on_new_sol: G, deadline: Option<Instant>) -> SolverResult<Solution>
     where
-        F: Fn(&mut Solver<Lbl>) -> Result<Option<Solution>, Exit> + Send + 'static + Clone,
+        F: Fn(&mut Solver<Lbl>) -> Result<Result<Solution, Option<UnsatCore>>, Exit> + Send + 'static + Clone,
         G: FnMut(Solution),
     {
         // a receiver that will collect all intermediates results (incumbent solution and learned clauses)
@@ -191,15 +250,16 @@ impl<Lbl: Label> ParSolver<Lbl> {
         let (result_snd, result_rcv) = crossbeam_channel::unbounded();
 
         // lambda used to start a thread and run a solver on it.
-        let spawn =
-            |id: usize, mut solver: Box<Solver<Lbl>>, result_snd: Sender<WorkerResult<Option<Solution>, Lbl>>| {
-                thread::spawn(move || {
-                    let output = run(&mut solver);
-                    let answer = WorkerResult { id, output, solver };
-                    // ignore message delivery failures (on another solver might have found the solution earlier)
-                    let _ = result_snd.send(answer);
-                });
-            };
+        let spawn = |id: usize,
+                     mut solver: Box<Solver<Lbl>>,
+                     result_snd: Sender<WorkerResult<Result<Solution, Option<UnsatCore>>, Lbl>>| {
+            thread::spawn(move || {
+                let output = run(&mut solver);
+                let answer = WorkerResult { id, output, solver };
+                // ignore message delivery failures (on another solver might have found the solution earlier)
+                let _ = result_snd.send(answer);
+            });
+        };
 
         let mut solvers_inputs = Vec::with_capacity(self.solvers.len());
 
@@ -230,8 +290,8 @@ impl<Lbl: Label> ParSolver<Lbl> {
                     if !matches!(status, SolverStatus::Final(_)) {
                         // this is the first result we got, store it and stop other solvers
                         let result = match result {
-                            Ok(Some(sol)) => SolverResult::Sol(sol),
-                            Ok(None) => SolverResult::Unsat,
+                            Ok(Ok(sol)) => SolverResult::Sol(sol),
+                            Ok(Err(uc)) => SolverResult::Unsat(uc),
                             Err(_) => {
                                 eprintln!("Unexpected interruption of solver.");
                                 continue
