@@ -13,11 +13,12 @@ use crate::{
     },
 };
 
-/// A propagator for multiplication (prod = fact1 * fact2)
-/// Explanations are far from minimal due to complexity
-/// If fact1 = fact2, propagations will be correct but not maximal
-/// If prod = factn, propagations will be correct and maximal
-/// TODO: reification
+/// A propagator for multiplication (prod = fact1 * fact2) with reification.
+///
+/// Can handle prod == factn (x = y * x) and fact1 = fact2 (x = y * y)
+///
+/// Propagations are maximal for active && fact1 != fact2.
+/// Explanations are far from minimal.
 #[derive(Clone)]
 pub(super) struct Mul {
     pub prod: VarRef,
@@ -27,44 +28,83 @@ pub(super) struct Mul {
     pub valid: Lit,
 }
 
-// Utils for fetching bounds and creating literals from them
-impl DomainsSnapshot<'_> {
-    fn ub_literal(&self, v: VarRef) -> Lit {
-        v.leq(self.ub(v))
+impl Propagator for Mul {
+    fn setup(&self, id: PropagatorId, context: &mut Watches) {
+        context.add_watch(self.prod, id);
+        context.add_watch(self.fact1, id);
+        context.add_watch(self.fact2, id);
+        context.add_watch(self.active.variable(), id);
+        context.add_watch(self.valid.variable(), id);
     }
 
-    fn lb_literal(&self, v: VarRef) -> Lit {
-        v.geq(self.lb(v))
-    }
-}
+    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+        if domains.entails(!self.valid) || domains.entails(!self.active) {
+            // constraint is necessarily inactive, no propagations can be made
+            return Ok(());
+        }
 
-impl Domains {
-    fn ub_literal(&self, v: VarRef) -> Lit {
-        v.leq(self.ub(v))
+        // If multiplication is trivially inconsistent, we can inactivate constraint
+        if self.trivially_inconsistent(domains, cause) {
+            let changed_something = domains.set(!self.active, cause)?;
+            debug_assert!(
+                changed_something,
+                "inconsistent constraint resulted neither in conflict nor in deactivation"
+            );
+            return Ok(());
+        }
+
+        if domains.entails(self.active) && domains.entails(self.valid) {
+            // Handle xyx case separately
+            if self.xyx_fact().is_some() {
+                self.propagate_xyx(domains, cause)?;
+            } else {
+                // While changes have been made, continue propagating
+                while self.propagate_iteration(domains, cause)? {}
+            };
+        }
+        Ok(())
     }
 
-    fn lb_literal(&self, v: VarRef) -> Lit {
-        v.geq(self.lb(v))
+    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
+        // Unfortunately it is very difficult to give minimal explanations due to the iterative nature of the propagation
+        // For instance if explanation on product bound is demanded,
+        // we would expect it to be the two factor bounds that were multiplied to give that result
+        // However, it could be that the factors were updated based on the previous bounds of the product
+        // and one of the product bounds would be needed for the explanation
+
+        if literal == !self.active {
+            // We must explain a contradiction in the multiplication
+            // Just push all variables
+            state.explain_var(self.prod, out_explanation);
+            state.explain_var(self.fact1, out_explanation);
+            state.explain_var(self.fact2, out_explanation);
+            return;
+        }
+
+        // explanation is always conditioned by the activity of the propagator
+        if self.active != Lit::TRUE {
+            out_explanation.push(self.active);
+            out_explanation.push(self.valid);
+        }
+        if literal.variable() == self.prod {
+            state.explain_var(self.fact1, out_explanation);
+            if !self.is_square() {
+                state.explain_var(self.fact2, out_explanation);
+            }
+        } else {
+            let other_fact = if literal.variable() == self.fact1 {
+                self.fact2
+            } else {
+                self.fact1
+            };
+            state.explain_var(self.prod, out_explanation);
+            state.explain_var(other_fact, out_explanation);
+        }
     }
 
-    fn is_bound_to(&self, v: VarRef, x: IntCst) -> bool {
-        self.is_bound(v) && self.ub(v) == x
+    fn clone_box(&self) -> Box<dyn Propagator> {
+        Box::new(self.clone())
     }
-
-    fn spans(&self, v: VarRef, x: IntCst) -> bool {
-        self.lb(v) <= x && self.ub(v) >= x
-    }
-}
-
-/// Computes div_floor and div_ceil for positive and negative values (using integer division)
-fn div_floor_ceil(x: IntCst, y: IntCst) -> (IntCst, IntCst) {
-    let quotient_positive = (x >= 0) == (y >= 0);
-    let q = x / y;
-    let m = x % y;
-    (
-        q - (m != 0 && !quotient_positive) as IntCst,
-        q + (m != 0 && quotient_positive) as IntCst,
-    )
 }
 
 // Define some macros for concise pattern matching in the backward propagation
@@ -80,43 +120,46 @@ macro_rules! GreatEq {
 }
 
 impl Mul {
-    /// Propagates bounds on product, returns (lower_bound_updated, upper_bound_updated)
-    fn propagate_forward(&self, domains: &mut Domains, cause: Cause) -> Result<(bool, bool), Contradiction> {
+    /// Does one iteration of forward and backward propagation, return true if bounds updated
+    fn propagate_iteration(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
+        let mut updated = self.propagate_forward(domains, cause)?;
+        updated |= self.propagate_backward(domains, cause, self.fact1, self.fact2, domains.bounds(self.fact2))?;
+        updated |= self.propagate_backward(domains, cause, self.fact2, self.fact1, domains.bounds(self.fact1))?;
+        Ok(updated)
+    }
+
+    /// Propagates bounds on product, returns true if bounds updated
+    fn propagate_forward(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
         // Product bounds are max/min of all combinations of factor bounds
         let (f1_lb, f1_ub) = domains.bounds(self.fact1);
         let (f2_lb, f2_ub) = domains.bounds(self.fact2);
-        Ok((
-            domains.set_lb(
-                self.prod,
-                (f1_lb.saturating_mul(f2_lb))
-                    .min(f1_lb.saturating_mul(f2_ub))
-                    .min(f1_ub.saturating_mul(f2_lb))
-                    .min(f1_ub.saturating_mul(f2_ub))
-                    .clamp(INT_CST_MIN, INT_CST_MAX),
-                cause,
-            )?,
-            domains.set_ub(
-                self.prod,
-                (f1_lb.saturating_mul(f2_lb))
-                    .max(f1_lb.saturating_mul(f2_ub))
-                    .max(f1_ub.saturating_mul(f2_lb))
-                    .max(f1_ub.saturating_mul(f2_ub))
-                    .clamp(INT_CST_MIN, INT_CST_MAX),
-                cause,
-            )?,
-        ))
+        Ok(domains.set_lb(
+            self.prod,
+            (f1_lb.saturating_mul(f2_lb))
+                .min(f1_lb.saturating_mul(f2_ub))
+                .min(f1_ub.saturating_mul(f2_lb))
+                .min(f1_ub.saturating_mul(f2_ub))
+                .clamp(INT_CST_MIN, INT_CST_MAX),
+            cause,
+        )? || domains.set_ub(
+            self.prod,
+            (f1_lb.saturating_mul(f2_lb))
+                .max(f1_lb.saturating_mul(f2_ub))
+                .max(f1_ub.saturating_mul(f2_lb))
+                .max(f1_ub.saturating_mul(f2_ub))
+                .clamp(INT_CST_MIN, INT_CST_MAX),
+            cause,
+        )?)
     }
 
-    /// Propagates bounds on fact, return true if updated
-    /// TODO: prod_updated allows us to skip certain operations
+    /// Propagates bounds on fact, return true if bounds updated
     fn propagate_backward(
         &self,
         domains: &mut Domains,
         cause: Cause,
         fact: VarRef,
         other_fact: VarRef,
-        other_fact_considered_bounds: (IntCst, IntCst), // Used for handy recursion trick
-        prod_updated: (bool, bool),
+        other_fact_considered_bounds: (IntCst, IntCst), // Used for handy recursive call in certain cases
     ) -> Result<bool, Contradiction> {
         let (p_lb, p_ub) = domains.bounds(self.prod);
         let (of_lb, of_ub) = other_fact_considered_bounds;
@@ -131,26 +174,14 @@ impl Mul {
             (Greater, Greater, Equal, Equal) => {
                 // Contradiction explaned by prod_lb > 0 and other_fact == 0
                 Err(Contradiction::Explanation(
-                    vec![
-                        other_fact.leq(0),
-                        other_fact.geq(0),
-                        self.prod.geq(1),
-                        self.active,
-                    ]
-                    .into(),
+                    vec![other_fact.leq(0), other_fact.geq(0), self.prod.geq(1), self.active].into(),
                 ))
             }
             // Case 2b: Product strictly negative, other_fact == 0.
             (Less, Less, Equal, Equal) => {
                 // Contradiction explaned by prod_ub < 0 and other_fact == 0
                 Err(Contradiction::Explanation(
-                    vec![
-                        other_fact.leq(0),
-                        other_fact.geq(0),
-                        self.prod.leq(-1),
-                        self.active,
-                    ]
-                    .into(),
+                    vec![other_fact.leq(0), other_fact.geq(0), self.prod.leq(-1), self.active].into(),
                 ))
             }
             // Case 3: Product does not span 0, other_fact stricly spans 0
@@ -163,33 +194,26 @@ impl Mul {
             // Case 4a: prod stricly positive or negative, other_fact >= 0
             (Greater, Greater, Equal, Greater) | (Less, Less, Equal, Greater) => {
                 // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
-                self.propagate_backward(domains, cause, fact, other_fact, (1, of_ub), prod_updated)
+                self.propagate_backward(domains, cause, fact, other_fact, (1, of_ub))
             }
             // Case 4b: prod stricly positive or negative, other_fact <= 0
             (Greater, Greater, Less, Equal) | (Less, Less, Less, Equal) => {
                 // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
-                self.propagate_backward(domains, cause, fact, other_fact, (of_lb, -1), prod_updated)
+                self.propagate_backward(domains, cause, fact, other_fact, (of_lb, -1))
             }
 
-            // Shut up pattern matcher by accounting for lb > ub
-            // lb > 0, le
+            // Accounting for lb > ub
             (Greater, LessEq!(), _, _)
             | (_, _, Greater, LessEq!())
             | (GreatEq!(), Less, _, _)
             | (_, _, GreatEq!(), Less) => unreachable!(),
 
-            // Case 5: TODO write a pattern so that compiler can check cases
+            // Case 5: TODO: write a pattern so that compiler can check cases
             _ => {
                 // Logic from choco solver adapted to integer division
-                let (prod_lb_updated, prod_ub_updated) = prod_updated;
                 let (a, b, c, d) = (p_lb, p_ub, of_lb, of_ub);
-                let (tmp_ac_floor, tmp_ac_ceil) = if !prod_lb_updated {
-                    div_floor_ceil(a, c)
-                } else {
-                    (INT_CST_MIN, INT_CST_MIN)
-                };
-                // TODO
-                let (ac_floor, ac_ceil) = div_floor_ceil(a, c); // if !prod_lb_updated {div...} else {(i32::min, i32::min)} maybe
+
+                let (ac_floor, ac_ceil) = div_floor_ceil(a, c);
                 let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
                 let (bc_floor, bc_ceil) = div_floor_ceil(b, c);
                 let (bd_floor, bd_ceil) = div_floor_ceil(b, d);
@@ -212,28 +236,6 @@ impl Mul {
                 }
             }
         }
-    }
-
-    fn propagate_iteration(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
-        let prod_updated = self.propagate_forward(domains, cause)?;
-        let mut updated = prod_updated.0 | prod_updated.1;
-        updated |= self.propagate_backward(
-            domains,
-            cause,
-            self.fact1,
-            self.fact2,
-            domains.bounds(self.fact2),
-            prod_updated,
-        )?;
-        updated |= self.propagate_backward(
-            domains,
-            cause,
-            self.fact2,
-            self.fact1,
-            domains.bounds(self.fact1),
-            prod_updated,
-        )?;
-        Ok(updated)
     }
 
     /// Simple propagation for x = y * x
@@ -260,6 +262,22 @@ impl Mul {
         Ok(())
     }
 
+    /// Check for simple inconsistencies that can quickly be verified without modifying bounds
+    fn trivially_inconsistent(&self, domains: &mut Domains, cause: Cause) -> bool {
+        let (lb_prod, ub_prod) = domains.bounds(self.prod);
+        let (lb_fact1, ub_fact1) = domains.bounds(self.fact1);
+        let (lb_fact2, ub_fact2) = domains.bounds(self.fact2);
+        // Negative factors and stricly negative product
+        (ub_fact1 <= 0 && ub_fact2 <= 0 && ub_prod < 0)
+            // Positive factors and strictly negative product
+            || (lb_fact1 >= 0 && lb_fact2 >= 0 && ub_prod < 0)
+            // Product bound to 0 and neither domain spans 0
+            || (domains.is_bound_to(self.prod, 0) && !domains.spans(self.fact1, 0) && !domains.spans(self.fact2, 0))
+            // Factor bound to 0 and product doesn't span 0
+            || (domains.is_bound_to(self.fact1, 0) || domains.is_bound_to(self.fact2, 0)) && !domains.spans(self.prod, 0)
+    }
+
+    /// Returns true if fact1 == fact2
     fn is_square(&self) -> bool {
         self.fact1 == self.fact2
     }
@@ -274,89 +292,58 @@ impl Mul {
             None
         }
     }
+}
 
-    fn explain_var(&self, var: VarRef, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
-        out_explanation.push(state.lb_literal(var));
-        out_explanation.push(state.ub_literal(var));
+// Utils for common operations on domains
+impl DomainsSnapshot<'_> {
+    /// Creates literal v <= ub(v)
+    fn ub_literal(&self, v: VarRef) -> Lit {
+        v.leq(self.ub(v))
+    }
+
+    /// Creates literal v >= lb(v)
+    fn lb_literal(&self, v: VarRef) -> Lit {
+        v.geq(self.lb(v))
+    }
+
+    // Pushes v <= ub(v) and v >= lb(v) into explanation
+    fn explain_var(&self, v: VarRef, out_explanation: &mut Explanation) {
+        out_explanation.push(self.lb_literal(v));
+        out_explanation.push(self.ub_literal(v));
     }
 }
 
-impl Propagator for Mul {
-    fn setup(&self, id: PropagatorId, context: &mut Watches) {
-        context.add_watch(self.prod, id);
-        context.add_watch(self.fact1, id);
-        context.add_watch(self.fact2, id);
-        context.add_watch(self.active.variable(), id);
-        context.add_watch(self.valid.variable(), id);
+impl Domains {
+    /// Creates literal v <= ub(v)
+    fn ub_literal(&self, v: VarRef) -> Lit {
+        v.leq(self.ub(v))
     }
 
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        if domains.entails(!self.valid) || domains.entails(!self.active) {
-            return Ok(()); // constraint is necessarily inactive
-        }
-
-        // Check for simple inconsistencies that can be verified without modifying bounds
-        if (domains.is_bound_to(self.fact1, 0) || domains.is_bound_to(self.fact2, 0)) && !domains.spans(self.prod, 0) {
-            let changed_something = domains.set(!self.active, cause)?;
-            debug_assert!(
-                changed_something,
-                "inconsistent constraint resulted neither in conflict nor in deactivation"
-            );
-            return Ok(());
-        }
-
-        if domains.entails(self.active) && domains.entails(self.valid) {
-            if self.xyx_fact().is_some() {
-                self.propagate_xyx(domains, cause)?;
-            } else {
-                // While changes have been made, continue propagating
-                while self.propagate_iteration(domains, cause)? {}
-            };
-        }
-        Ok(())
+    /// Creates literal v >= lb(v)
+    fn lb_literal(&self, v: VarRef) -> Lit {
+        v.geq(self.lb(v))
     }
 
-    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
-        // Unfortunately it is very difficult to give minimal explanations due to the iterative nature of the propagation
-        // For instance if explanation on product bound is demanded,
-        // we would expect it to be the two factor bounds that were multiplied to give that result
-        // However, it could be that the factors were updated based on the previous bounds of the product
-        // and one of the product bounds would be needed for the explanation
-
-
-        if literal == !self.active {
-            // We must explain a contradiction in the multiplication
-            // Just push all variables
-            self.explain_var(self.prod, state, out_explanation);
-            self.explain_var(self.fact1, state, out_explanation);
-            self.explain_var(self.fact2, state, out_explanation);
-            return;
-        }
-
-        // explanation is always conditioned by the activity of the propagator
-        if self.active != Lit::TRUE {
-            out_explanation.push(self.active);
-            out_explanation.push(self.valid);
-        }
-        if literal.variable() == self.prod {
-            self.explain_var(self.fact1, state, out_explanation);
-            if !self.is_square() {
-                self.explain_var(self.fact2, state, out_explanation);
-            }
-        } else {
-            let other_fact = if literal.variable() == self.fact1 {
-                self.fact2
-            } else {
-                self.fact1
-            };
-            self.explain_var(self.prod, state, out_explanation);
-            self.explain_var(other_fact, state, out_explanation);
-        }
+    /// Returns true if v is bound to x
+    fn is_bound_to(&self, v: VarRef, x: IntCst) -> bool {
+        self.is_bound(v) && self.ub(v) == x
     }
 
-    fn clone_box(&self) -> Box<dyn Propagator> {
-        Box::new(self.clone())
+    /// Returns true if v's domain spans x
+    fn spans(&self, v: VarRef, x: IntCst) -> bool {
+        self.lb(v) <= x && self.ub(v) >= x
     }
+}
+
+/// Computes div_floor and div_ceil for positive and negative values (using integer division)
+fn div_floor_ceil(x: IntCst, y: IntCst) -> (IntCst, IntCst) {
+    let quotient_positive = (x >= 0) == (y >= 0);
+    let q = x / y;
+    let m = x % y;
+    (
+        q - (m != 0 && !quotient_positive) as IntCst,
+        q + (m != 0 && quotient_positive) as IntCst,
+    )
 }
 
 #[cfg(test)]
@@ -370,7 +357,7 @@ mod test {
 
     // === Assertions ===
 
-    // Asserts that bounds of var are as expected
+    /// Asserts that bounds of var are as expected
     fn check_bounds(v: VarRef, d: &Domains, expected_bounds: (IntCst, IntCst)) {
         assert_eq!(
             d.lb(v),
@@ -390,13 +377,13 @@ mod test {
         );
     }
 
-    // Asserts that val is in var's bounds
+    /// Asserts that val is in var's bounds
     fn check_in_bounds(d: &Domains, var: VarRef, val: IntCst) {
         let (lb, ub) = d.bounds(var);
         assert!(lb <= val && val <= ub, "{} <= {} <= {} failed", lb, val, ub);
     }
 
-    // Asserts that two explanations contain the same literals
+    /// Asserts that two explanations contain the same literals
     fn check_explanations(prop: &Mul, lit: Lit, d: &Domains, expected: Explanation) {
         let out_explanation = &mut Explanation::new();
         prop.explain(lit, &DomainsSnapshot::current(d), out_explanation);
@@ -417,7 +404,7 @@ mod test {
         println!("  {fact2_lb} <= fact2 <= {fact2_ub}\n");
     }
 
-    // Generates factors, calculates result, returns propagator and true mult
+    /// Generates factors, calculates result, returns propagator and true mult
     fn gen_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst, IntCst))> {
         let max = max as i32;
         let mut res = vec![];
@@ -438,22 +425,16 @@ mod test {
                 let prod = d.new_var(prod_bounds.0, prod_bounds.1);
                 let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
                 let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
-                if always_active {
-                    Mul {
-                        prod,
-                        fact1,
-                        fact2,
-                        active: Lit::TRUE,
-                        valid: Lit::TRUE,
-                    }
-                } else {
-                    Mul {
-                        prod,
-                        fact1,
-                        fact2,
-                        active: d.new_var(-1, 1).geq(0),
-                        valid: Lit::TRUE,
-                    }
+                Mul {
+                    prod,
+                    fact1,
+                    fact2,
+                    active: if always_active {
+                        Lit::TRUE
+                    } else {
+                        d.new_var(-1, 1).geq(0)
+                    },
+                    valid: Lit::TRUE,
                 }
             };
             res.push((d, prop, (prod_val, fact1_val, fact2_val)));
@@ -461,7 +442,7 @@ mod test {
         res
     }
 
-    fn gen_square_problems(n: u32, max: u32) -> Vec<(Domains, Mul, (IntCst, IntCst))> {
+    fn gen_square_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst))> {
         let max = max as i32;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
@@ -577,7 +558,7 @@ mod test {
             prod,
             fact1: fact,
             fact2: prod,
-            active: Lit::TRUE,
+            active: d.new_var(-1, 1).geq(0),
             valid: Lit::TRUE,
         };
         test_explanations(&d, &prop, false);
@@ -714,7 +695,7 @@ mod test {
             check_in_bounds(&d, prop.fact2, fact2_val);
         }
         // Square
-        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10) {
+        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, true) {
             // Propagate and check that bounds are consistent with true values
             assert!(
                 prop.propagate(&mut d, Cause::Decision).is_ok(),
@@ -731,7 +712,7 @@ mod test {
             // print_domains(&d, &prop);
             test_explanations(&d, &prop, false);
         }
-        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10) {
+        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, false) {
             test_explanations(&d, &prop, false);
         }
     }
