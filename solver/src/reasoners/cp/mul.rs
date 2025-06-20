@@ -16,13 +16,15 @@ use crate::{
 /// A propagator for multiplication (prod = fact1 * fact2)
 /// Explanations are far from minimal due to complexity
 /// If fact1 = fact2, propagations will be correct but not maximal
-/// If prod = factn, ??
+/// If prod = factn, propagations will be correct and maximal
 /// TODO: reification
 #[derive(Clone)]
-struct Mul {
-    prod: VarRef,
-    fact1: VarRef,
-    fact2: VarRef,
+pub(super) struct Mul {
+    pub prod: VarRef,
+    pub fact1: VarRef,
+    pub fact2: VarRef,
+    pub active: Lit,
+    pub valid: Lit,
 }
 
 // Utils for fetching bounds and creating literals from them
@@ -43,6 +45,14 @@ impl Domains {
 
     fn lb_literal(&self, v: VarRef) -> Lit {
         v.geq(self.lb(v))
+    }
+
+    fn is_bound_to(&self, v: VarRef, x: IntCst) -> bool {
+        self.is_bound(v) && self.ub(v) == x
+    }
+
+    fn spans(&self, v: VarRef, x: IntCst) -> bool {
+        self.lb(v) <= x && self.ub(v) >= x
     }
 }
 
@@ -121,14 +131,26 @@ impl Mul {
             (Greater, Greater, Equal, Equal) => {
                 // Contradiction explaned by prod_lb > 0 and other_fact == 0
                 Err(Contradiction::Explanation(
-                    vec![other_fact.leq(0), other_fact.geq(0), self.prod.geq(1)].into(),
+                    vec![
+                        other_fact.leq(0),
+                        other_fact.geq(0),
+                        self.prod.geq(1),
+                        self.active,
+                    ]
+                    .into(),
                 ))
             }
             // Case 2b: Product strictly negative, other_fact == 0.
             (Less, Less, Equal, Equal) => {
                 // Contradiction explaned by prod_ub < 0 and other_fact == 0
                 Err(Contradiction::Explanation(
-                    vec![other_fact.leq(0), other_fact.geq(0), self.prod.leq(-1)].into(),
+                    vec![
+                        other_fact.leq(0),
+                        other_fact.geq(0),
+                        self.prod.leq(-1),
+                        self.active,
+                    ]
+                    .into(),
                 ))
             }
             // Case 3: Product does not span 0, other_fact stricly spans 0
@@ -161,7 +183,12 @@ impl Mul {
                 // Logic from choco solver adapted to integer division
                 let (prod_lb_updated, prod_ub_updated) = prod_updated;
                 let (a, b, c, d) = (p_lb, p_ub, of_lb, of_ub);
-                let (tmp_ac_floor, tmp_ac_ceil) = if !prod_lb_updated {div_floor_ceil(a, c)} else {(INT_CST_MIN, INT_CST_MIN)};
+                let (tmp_ac_floor, tmp_ac_ceil) = if !prod_lb_updated {
+                    div_floor_ceil(a, c)
+                } else {
+                    (INT_CST_MIN, INT_CST_MIN)
+                };
+                // TODO
                 let (ac_floor, ac_ceil) = div_floor_ceil(a, c); // if !prod_lb_updated {div...} else {(i32::min, i32::min)} maybe
                 let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
                 let (bc_floor, bc_ceil) = div_floor_ceil(b, c);
@@ -175,6 +202,8 @@ impl Mul {
                             domains.ub_literal(other_fact),
                             domains.lb_literal(self.prod),
                             domains.ub_literal(self.prod),
+                            self.active,
+                            self.valid,
                         ]
                         .into(),
                     ))
@@ -246,8 +275,9 @@ impl Mul {
         }
     }
 
-    fn explain_var(&self, var: VarRef, out_explanation: &mut Explanation) {
-
+    fn explain_var(&self, var: VarRef, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
+        out_explanation.push(state.lb_literal(var));
+        out_explanation.push(state.ub_literal(var));
     }
 }
 
@@ -256,16 +286,34 @@ impl Propagator for Mul {
         context.add_watch(self.prod, id);
         context.add_watch(self.fact1, id);
         context.add_watch(self.fact2, id);
+        context.add_watch(self.active.variable(), id);
+        context.add_watch(self.valid.variable(), id);
     }
 
     fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        if self.xyx_fact().is_some() {
-            self.propagate_xyx(domains, cause)
-        } else {
-            // While changes have been made, continue propagating
-            while self.propagate_iteration(domains, cause)? {}
-            Ok(())
+        if domains.entails(!self.valid) || domains.entails(!self.active) {
+            return Ok(()); // constraint is necessarily inactive
         }
+
+        // Check for simple inconsistencies that can be verified without modifying bounds
+        if (domains.is_bound_to(self.fact1, 0) || domains.is_bound_to(self.fact2, 0)) && !domains.spans(self.prod, 0) {
+            let changed_something = domains.set(!self.active, cause)?;
+            debug_assert!(
+                changed_something,
+                "inconsistent constraint resulted neither in conflict nor in deactivation"
+            );
+            return Ok(());
+        }
+
+        if domains.entails(self.active) && domains.entails(self.valid) {
+            if self.xyx_fact().is_some() {
+                self.propagate_xyx(domains, cause)?;
+            } else {
+                // While changes have been made, continue propagating
+                while self.propagate_iteration(domains, cause)? {}
+            };
+        }
+        Ok(())
     }
 
     fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
@@ -274,12 +322,26 @@ impl Propagator for Mul {
         // we would expect it to be the two factor bounds that were multiplied to give that result
         // However, it could be that the factors were updated based on the previous bounds of the product
         // and one of the product bounds would be needed for the explanation
+
+
+        if literal == !self.active {
+            // We must explain a contradiction in the multiplication
+            // Just push all variables
+            self.explain_var(self.prod, state, out_explanation);
+            self.explain_var(self.fact1, state, out_explanation);
+            self.explain_var(self.fact2, state, out_explanation);
+            return;
+        }
+
+        // explanation is always conditioned by the activity of the propagator
+        if self.active != Lit::TRUE {
+            out_explanation.push(self.active);
+            out_explanation.push(self.valid);
+        }
         if literal.variable() == self.prod {
-            out_explanation.push(state.lb_literal(self.fact1));
-            out_explanation.push(state.ub_literal(self.fact1));
+            self.explain_var(self.fact1, state, out_explanation);
             if !self.is_square() {
-                out_explanation.push(state.lb_literal(self.fact2));
-                out_explanation.push(state.ub_literal(self.fact2));
+                self.explain_var(self.fact2, state, out_explanation);
             }
         } else {
             let other_fact = if literal.variable() == self.fact1 {
@@ -287,10 +349,8 @@ impl Propagator for Mul {
             } else {
                 self.fact1
             };
-            out_explanation.push(state.lb_literal(self.prod));
-            out_explanation.push(state.ub_literal(self.prod));
-            out_explanation.push(state.lb_literal(other_fact));
-            out_explanation.push(state.ub_literal(other_fact));
+            self.explain_var(self.prod, state, out_explanation);
+            self.explain_var(other_fact, state, out_explanation);
         }
     }
 
@@ -358,7 +418,7 @@ mod test {
     }
 
     // Generates factors, calculates result, returns propagator and true mult
-    fn gen_problems(n: u32, max: u32) -> Vec<(Domains, Mul, (IntCst, IntCst, IntCst))> {
+    fn gen_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst, IntCst))> {
         let max = max as i32;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
@@ -370,15 +430,31 @@ mod test {
             let prop = {
                 let d: &mut Domains = &mut d;
                 let prod_bounds = (
-                            rng.gen_range(-max * max..=prod_val),
-                            rng.gen_range(prod_val..=max * max),
-                        );
+                    rng.gen_range(-max * max..=prod_val),
+                    rng.gen_range(prod_val..=max * max),
+                );
                 let fact1_bounds = (rng.gen_range(-max..=fact1_val), rng.gen_range(fact1_val..=max));
                 let fact2_bounds = (rng.gen_range(-max..=fact2_val), rng.gen_range(fact2_val..=max));
                 let prod = d.new_var(prod_bounds.0, prod_bounds.1);
                 let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
                 let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
-                Mul { prod, fact1, fact2 }
+                if always_active {
+                    Mul {
+                        prod,
+                        fact1,
+                        fact2,
+                        active: Lit::TRUE,
+                        valid: Lit::TRUE,
+                    }
+                } else {
+                    Mul {
+                        prod,
+                        fact1,
+                        fact2,
+                        active: d.new_var(-1, 1).geq(0),
+                        valid: Lit::TRUE,
+                    }
+                }
             };
             res.push((d, prop, (prod_val, fact1_val, fact2_val)));
         }
@@ -393,12 +469,17 @@ mod test {
             let fact_val: i32 = rng.gen_range(-max..max);
             let prod_val = fact_val.pow(2);
             let mut d = Domains::new();
-            let prod = d.new_var(rng.gen_range(-max * max..=prod_val), rng.gen_range(prod_val..=max * max));
+            let prod = d.new_var(
+                rng.gen_range(-max * max..=prod_val),
+                rng.gen_range(prod_val..=max * max),
+            );
             let fact = d.new_var(rng.gen_range(-max..=fact_val), rng.gen_range(fact_val..=max));
             let prop = Mul {
                 prod,
                 fact1: fact,
-                fact2: fact
+                fact2: fact,
+                active: Lit::TRUE,
+                valid: Lit::TRUE,
             };
             res.push((d, prop, (prod_val, fact_val)));
         }
@@ -421,7 +502,13 @@ mod test {
             let prod = d.new_var(prod_bounds.0, prod_bounds.1);
             let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
             let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
-            Mul { prod, fact1, fact2 }
+            Mul {
+                prod,
+                fact1,
+                fact2,
+                active: Lit::TRUE,
+                valid: Lit::TRUE,
+            }
         };
 
         assert!(prop.propagate(&mut d, Cause::Decision).is_err() == should_fail);
@@ -446,6 +533,8 @@ mod test {
             prod,
             fact1: fact,
             fact2: fact,
+            active: Lit::TRUE,
+            valid: Lit::TRUE,
         };
 
         assert!(prop.propagate(&mut d, Cause::Decision).is_err() == should_fail);
@@ -469,6 +558,8 @@ mod test {
             prod,
             fact1: fact,
             fact2: prod,
+            active: Lit::TRUE,
+            valid: Lit::TRUE,
         };
 
         assert!(prop.propagate(&mut d, Cause::Decision).is_err() == should_fail);
@@ -478,10 +569,7 @@ mod test {
         }
     }
 
-    fn test_xyx_explanation(
-        prod_bounds: (IntCst, IntCst),
-        fact_bounds: (IntCst, IntCst)
-    ) {
+    fn test_xyx_explanation(prod_bounds: (IntCst, IntCst), fact_bounds: (IntCst, IntCst)) {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
@@ -489,6 +577,8 @@ mod test {
             prod,
             fact1: fact,
             fact2: prod,
+            active: Lit::TRUE,
+            valid: Lit::TRUE,
         };
         test_explanations(&d, &prop, false);
     }
@@ -613,7 +703,7 @@ mod test {
     #[test]
     fn test_propagation_random() {
         // Standard
-        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10) {
+        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, true) {
             // Propagate and check that bounds are consistent with true values
             assert!(
                 prop.propagate(&mut d, Cause::Decision).is_ok(),
@@ -637,7 +727,7 @@ mod test {
 
     #[test]
     fn test_explanations_random() {
-        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10) {
+        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, false) {
             // print_domains(&d, &prop);
             test_explanations(&d, &prop, false);
         }
