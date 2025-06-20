@@ -2,8 +2,8 @@
 
 pub mod linear;
 pub mod max;
-pub mod mul_lit;
 pub mod mul;
+pub mod mul_lit;
 
 mod propagator;
 pub use propagator::*;

@@ -354,7 +354,7 @@ pub mod test {
             implied: Lit,
             clause: Disjunction,
             propagator: &dyn Propagator,
-            check_minimality: bool
+            check_minimality: bool,
         ) {
             let mut domains = domains.clone();
             // println!("=== original trail ===");
@@ -400,7 +400,11 @@ pub mod test {
                         .collect_vec();
 
                     if !decisions_left.is_empty() && check_minimality {
-                        assert!(!domains.entails(implied), "Not minimal, useless: {:?} in implication of {implied:?}", &decisions_left)
+                        assert!(
+                            !domains.entails(implied),
+                            "Not minimal, useless: {:?} in implication of {implied:?}",
+                            &decisions_left
+                        )
                     }
                 }
 
