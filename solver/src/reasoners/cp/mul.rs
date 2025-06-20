@@ -237,6 +237,60 @@ impl Mul {
             }
         }
     }
+    /// Propagates bounds on fact, return true if bounds updated
+    fn propagate_backward_alt(
+        &self,
+        domains: &mut Domains,
+        cause: Cause,
+        fact: VarRef,
+        other_fact: VarRef,
+        (of_lb, of_ub): (IntCst, IntCst), // Used for handy recursive call in certain cases
+    ) -> Result<bool, Contradiction> {
+        let p = domains.int_domain(self.prod);
+        let of = IntDomain::new(of_lb, of_ub);
+        if p.contains(0) && of.contains(0) {
+            // Both upper and lower bounds of fact can be anything since other_fact can be 0
+            Ok(false)
+        } else if of.is_bound_to(0) {
+            let change1 = domains.set_lb(self.prod, 0, cause)?;
+            let change2 = domains.set_ub(self.prod, 0, cause)?;
+            Ok(change1 || change2)
+        } else if of.lb <= -1 && of.ub >= 1 {
+            // Other fact can be 1 or -1, so fact can be as high or low as abs(prod)
+            let abs_max = p.lb.abs().max(p.ub.abs());
+            let change1 = domains.set_lb(fact, -abs_max, cause)?;
+            let change2 = domains.set_ub(fact, abs_max, cause)?;
+            Ok(change1 || change2)
+        } else if !p.contains(0) && of.lb == 0 {
+            debug_assert!(!of.is_bound_to(0));
+            // Case 4a: prod stricly positive or negative, other_fact >= 0
+            // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
+            // TODO: I am unsure that it is reasonable to not propagate immediately
+            // - can we guarantee that it will be indeed be propagated (what if nothing else changes?)
+            // - if it was, couldn't this only occur in the next iteration and require one additional iteration that would be
+            //   unneeded if we had made the change immediatly
+            self.propagate_backward(domains, cause, fact, other_fact, (1, of.ub))
+        } else if !p.contains(0) && of.ub == 0 {
+            debug_assert!(!of.is_bound_to(0));
+            // Case 4b: prod stricly positive or negative, other_fact <= 0
+            // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
+            // TODO: same as above
+            self.propagate_backward(domains, cause, fact, other_fact, (of.lb, -1))
+        } else {
+            // Logic from choco solver adapted to integer division
+            let (a, b, c, d) = (p.lb, p.ub, of.lb, of.ub);
+
+            let (ac_floor, ac_ceil) = div_floor_ceil(a, c);
+            let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
+            let (bc_floor, bc_ceil) = div_floor_ceil(b, c);
+            let (bd_floor, bd_ceil) = div_floor_ceil(b, d);
+            let low = ac_ceil.min(ad_ceil).min(bc_ceil).min(bd_ceil);
+            let high = ac_floor.max(ad_floor).max(bc_floor).max(bd_floor);
+            let change1 = domains.set_lb(fact, low, cause)?;
+            let change2 = domains.set_ub(fact, high, cause)?;
+            Ok(change1 || change2)
+        }
+    }
 
     /// Simple propagation for x = y * x
     fn propagate_xyx(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
