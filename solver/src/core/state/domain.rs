@@ -24,6 +24,16 @@ impl IntDomain {
         self.lb == self.ub
     }
 
+    /// Returns true if the domain *only* contains `value`
+    pub fn is_bound_to(&self, value: IntCst) -> bool {
+        self.lb == value && self.ub == value
+    }
+
+    /// Returns true if the domain contains `value`
+    pub fn contains(&self, value: IntCst) -> bool {
+        self.lb <= value && value <= self.ub
+    }
+
     /// If the domain contains a single value, return it.
     /// Returns `None` otherwise.
     pub fn as_singleton(&self) -> Option<IntCst> {

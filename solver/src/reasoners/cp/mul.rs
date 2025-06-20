@@ -44,7 +44,7 @@ impl Propagator for Mul {
         }
 
         // If multiplication is trivially inconsistent, we can inactivate constraint
-        if self.trivially_inconsistent(domains, cause) {
+        if self.trivially_inconsistent(domains) {
             let changed_something = domains.set(!self.active, cause)?;
             debug_assert!(
                 changed_something,
@@ -263,18 +263,18 @@ impl Mul {
     }
 
     /// Check for simple inconsistencies that can quickly be verified without modifying bounds
-    fn trivially_inconsistent(&self, domains: &mut Domains, cause: Cause) -> bool {
-        let (lb_prod, ub_prod) = domains.bounds(self.prod);
-        let (lb_fact1, ub_fact1) = domains.bounds(self.fact1);
-        let (lb_fact2, ub_fact2) = domains.bounds(self.fact2);
+    fn trivially_inconsistent(&self, domains: &Domains) -> bool {
+        let prod = domains.int_domain(self.prod);
+        let fact1 = domains.int_domain(self.fact1);
+        let fact2 = domains.int_domain(self.fact2);
         // Negative factors and stricly negative product
-        (ub_fact1 <= 0 && ub_fact2 <= 0 && ub_prod < 0)
+        (fact1.ub <= 0 && fact2.ub <= 0 && prod.ub < 0)
             // Positive factors and strictly negative product
-            || (lb_fact1 >= 0 && lb_fact2 >= 0 && ub_prod < 0)
+            || (fact1.lb >= 0 && fact2.lb >= 0 && prod.ub < 0)
             // Product bound to 0 and neither domain spans 0
-            || (domains.is_bound_to(self.prod, 0) && !domains.spans(self.fact1, 0) && !domains.spans(self.fact2, 0))
+            || (prod.is_bound_to(0) && !fact1.contains(0) && !fact2.contains(0))
             // Factor bound to 0 and product doesn't span 0
-            || (domains.is_bound_to(self.fact1, 0) || domains.is_bound_to(self.fact2, 0)) && !domains.spans(self.prod, 0)
+            || (fact1.is_bound_to(0) || fact2.is_bound_to(0)) && !prod.contains( 0)
     }
 
     /// Returns true if fact1 == fact2
@@ -323,16 +323,6 @@ impl Domains {
     fn lb_literal(&self, v: VarRef) -> Lit {
         v.geq(self.lb(v))
     }
-
-    /// Returns true if v is bound to x
-    fn is_bound_to(&self, v: VarRef, x: IntCst) -> bool {
-        self.is_bound(v) && self.ub(v) == x
-    }
-
-    /// Returns true if v's domain spans x
-    fn spans(&self, v: VarRef, x: IntCst) -> bool {
-        self.lb(v) <= x && self.ub(v) >= x
-    }
 }
 
 /// Computes div_floor and div_ceil for positive and negative values (using integer division)
@@ -359,6 +349,7 @@ mod test {
 
     /// Asserts that bounds of var are as expected
     fn check_bounds(v: VarRef, d: &Domains, expected_bounds: (IntCst, IntCst)) {
+        assert_eq!(d.bounds(v), expected_bounds);
         assert_eq!(
             d.lb(v),
             expected_bounds.0,

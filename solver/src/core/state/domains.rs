@@ -11,6 +11,8 @@ use crate::core::*;
 use crate::solver::UnsatCore;
 use std::fmt::{Debug, Formatter};
 
+use super::IntDomain;
+
 #[cfg(debug_assertions)]
 pub mod witness;
 
@@ -156,6 +158,12 @@ impl Domains {
             Some(false) => OptDomain::Absent,
             None => OptDomain::Unknown(lb, ub),
         }
+    }
+
+    /// Returns the domain of an integer variable (ignoring its presence status)
+    pub fn int_domain(&self, var: impl Into<VarRef>) -> IntDomain {
+        let (lb, ub) = self.bounds(var.into());
+        IntDomain::new(lb, ub)
     }
 
     // ============== Integer domain accessors =====================
