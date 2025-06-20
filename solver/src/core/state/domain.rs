@@ -1,5 +1,5 @@
 use crate::{
-    core::{cst_int_to_long, IntCst, LongCst},
+    core::{cst_int_to_long, IntCst, LongCst, INT_CST_MAX, INT_CST_MIN},
     model::lang::Rational,
 };
 use std::fmt::{Display, Formatter};
@@ -47,6 +47,35 @@ impl IntDomain {
     /// Returns true if the domain is empty.
     pub fn is_empty(&self) -> bool {
         self.lb > self.ub
+    }
+
+    /// Returns true if the two domains have no common value
+    pub fn disjoint(&self, other: &IntDomain) -> bool {
+        self.ub < other.lb || other.ub < self.lb
+    }
+}
+
+impl std::ops::Mul for IntDomain {
+    type Output = IntDomain;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        fn max(xs: &[i32; 4]) -> i32 {
+            xs[0].max(xs[1]).max(xs[2]).max(xs[3])
+        }
+        fn min(xs: &[i32; 4]) -> i32 {
+            xs[0].min(xs[1]).min(xs[2]).min(xs[3])
+        }
+
+        // compute bounds of f1 * f2
+        let potential_extrema = [
+            self.lb.saturating_mul(rhs.lb),
+            self.lb.saturating_mul(rhs.ub),
+            self.ub.saturating_mul(rhs.lb),
+            self.ub.saturating_mul(rhs.ub),
+        ];
+        let ub = max(&potential_extrema).clamp(INT_CST_MIN, INT_CST_MAX);
+        let lb = min(&potential_extrema).clamp(INT_CST_MIN, INT_CST_MAX);
+        IntDomain::new(lb, ub)
     }
 }
 

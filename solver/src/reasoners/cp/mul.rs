@@ -4,7 +4,7 @@ use num_integer::{self, Roots};
 
 use crate::{
     core::{
-        state::{Cause, DirectOrigin, Domains, DomainsSnapshot, Explanation, InvalidUpdate, Origin},
+        state::{Cause, DirectOrigin, Domains, DomainsSnapshot, Explanation, IntDomain, InvalidUpdate, Origin},
         IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN,
     },
     reasoners::{
@@ -265,16 +265,10 @@ impl Mul {
     /// Check for simple inconsistencies that can quickly be verified without modifying bounds
     fn trivially_inconsistent(&self, domains: &Domains) -> bool {
         let prod = domains.int_domain(self.prod);
-        let fact1 = domains.int_domain(self.fact1);
-        let fact2 = domains.int_domain(self.fact2);
-        // Negative factors and stricly negative product
-        (fact1.ub <= 0 && fact2.ub <= 0 && prod.ub < 0)
-            // Positive factors and strictly negative product
-            || (fact1.lb >= 0 && fact2.lb >= 0 && prod.ub < 0)
-            // Product bound to 0 and neither domain spans 0
-            || (prod.is_bound_to(0) && !fact1.contains(0) && !fact2.contains(0))
-            // Factor bound to 0 and product doesn't span 0
-            || (fact1.is_bound_to(0) || fact2.is_bound_to(0)) && !prod.contains( 0)
+        let f1 = domains.int_domain(self.fact1);
+        let f2 = domains.int_domain(self.fact2);
+        let rhs = f1 * f2;
+        prod.disjoint(&rhs)
     }
 
     /// Returns true if fact1 == fact2
