@@ -59,10 +59,10 @@ impl std::ops::Mul for IntDomain {
     type Output = IntDomain;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        fn max(xs: &[i32; 4]) -> i32 {
+        fn max(xs: &[IntCst; 4]) -> IntCst {
             xs[0].max(xs[1]).max(xs[2]).max(xs[3])
         }
-        fn min(xs: &[i32; 4]) -> i32 {
+        fn min(xs: &[IntCst; 4]) -> IntCst {
             xs[0].min(xs[1]).min(xs[2]).min(xs[3])
         }
 
