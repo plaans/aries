@@ -131,25 +131,11 @@ impl Mul {
     /// Propagates bounds on product, returns true if bounds updated
     fn propagate_forward(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
         // Product bounds are max/min of all combinations of factor bounds
-        let (f1_lb, f1_ub) = domains.bounds(self.fact1);
-        let (f2_lb, f2_ub) = domains.bounds(self.fact2);
-        Ok(domains.set_lb(
-            self.prod,
-            (f1_lb.saturating_mul(f2_lb))
-                .min(f1_lb.saturating_mul(f2_ub))
-                .min(f1_ub.saturating_mul(f2_lb))
-                .min(f1_ub.saturating_mul(f2_ub))
-                .clamp(INT_CST_MIN, INT_CST_MAX),
-            cause,
-        )? || domains.set_ub(
-            self.prod,
-            (f1_lb.saturating_mul(f2_lb))
-                .max(f1_lb.saturating_mul(f2_ub))
-                .max(f1_ub.saturating_mul(f2_lb))
-                .max(f1_ub.saturating_mul(f2_ub))
-                .clamp(INT_CST_MIN, INT_CST_MAX),
-            cause,
-        )?)
+        let f1_dom = domains.int_domain(self.fact1);
+        let f2_dom = domains.int_domain(self.fact2);
+        let prod = f1_dom * f2_dom;
+
+        domains.set_bounds(self.prod, (prod.lb, prod.ub), cause)
     }
 
     /// Propagates bounds on fact, return true if bounds updated
@@ -189,7 +175,7 @@ impl Mul {
             (_, _, Less, Greater) => {
                 // Other fact can be 1 or -1, so fact can be as high or low as abs(prod)
                 let abs_max = p_lb.abs().max(p_ub.abs());
-                Ok(domains.set_lb(fact, -abs_max, cause)? || domains.set_ub(fact, abs_max, cause)?)
+                Ok(domains.set_bounds(fact, (-abs_max, abs_max), cause)?)
             }
             // Case 4a: prod stricly positive or negative, other_fact >= 0
             (Greater, Greater, Equal, Greater) | (Less, Less, Equal, Greater) => {
@@ -232,11 +218,12 @@ impl Mul {
                         .into(),
                     ))
                 } else {
-                    Ok(domains.set_lb(fact, low, cause)? || domains.set_ub(fact, high, cause)?)
+                    Ok(domains.set_bounds(fact, (low, high), cause)?)
                 }
             }
         }
     }
+
     /// Propagates bounds on fact, return true if bounds updated
     fn propagate_backward_alt(
         &self,
@@ -252,15 +239,11 @@ impl Mul {
             // Both upper and lower bounds of fact can be anything since other_fact can be 0
             Ok(false)
         } else if of.is_bound_to(0) {
-            let change1 = domains.set_lb(self.prod, 0, cause)?;
-            let change2 = domains.set_ub(self.prod, 0, cause)?;
-            Ok(change1 || change2)
+            Ok(domains.set_bounds(self.prod, (0, 0), cause)?)
         } else if of.lb <= -1 && of.ub >= 1 {
             // Other fact can be 1 or -1, so fact can be as high or low as abs(prod)
             let abs_max = p.lb.abs().max(p.ub.abs());
-            let change1 = domains.set_lb(fact, -abs_max, cause)?;
-            let change2 = domains.set_ub(fact, abs_max, cause)?;
-            Ok(change1 || change2)
+            Ok(domains.set_bounds(fact, (-abs_max, abs_max), cause)?)
         } else if !p.contains(0) && of.lb == 0 {
             debug_assert!(!of.is_bound_to(0));
             // Case 4a: prod stricly positive or negative, other_fact >= 0
@@ -286,9 +269,7 @@ impl Mul {
             let (bd_floor, bd_ceil) = div_floor_ceil(b, d);
             let low = ac_ceil.min(ad_ceil).min(bc_ceil).min(bd_ceil);
             let high = ac_floor.max(ad_floor).max(bc_floor).max(bd_floor);
-            let change1 = domains.set_lb(fact, low, cause)?;
-            let change2 = domains.set_ub(fact, high, cause)?;
-            Ok(change1 || change2)
+            Ok(domains.set_bounds(fact, (low, high), cause)?)
         }
     }
 
@@ -301,16 +282,14 @@ impl Mul {
         let prod_dom = domains.int_domain(self.prod);
         let fact_dom = domains.int_domain(fact);
         if !fact_dom.contains(1) {
-            domains.set_lb(self.prod, 0, cause)?;
-            domains.set_ub(self.prod, 0, cause)?;
+            domains.set_bounds(self.prod, (0, 0), cause)?;
         }
 
         // Backward propagation
         // Case 1: x spans 0 => y can be anything
         // Case 2: x doesn't span 0 => y can only be 1
         if !prod_dom.contains(0) {
-            domains.set_lb(fact, 1, cause)?;
-            domains.set_ub(fact, 1, cause)?;
+            domains.set_bounds(fact, (1, 1), cause)?;
         }
 
         Ok(())
@@ -370,6 +349,13 @@ impl Domains {
     /// Creates literal v >= lb(v)
     fn lb_literal(&self, v: VarRef) -> Lit {
         v.geq(self.lb(v))
+    }
+
+    // Set upper and lower bounds, return true if either changed
+    fn set_bounds(&mut self, v: VarRef, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
+        let changed1 = self.set_lb(v, lb, cause)?;
+        let changed2 = self.set_ub(v, ub, cause)?;
+        Ok(changed1 || changed2)
     }
 }
 
