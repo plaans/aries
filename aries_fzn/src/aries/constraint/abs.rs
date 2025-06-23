@@ -1,11 +1,11 @@
-use aries::model::lang::linear::NFLinearSumItem;
-use aries::model::lang::IVar;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::IVar;
+use aries::model::lang::linear::NFLinearSumItem;
 
+use crate::aries::Post;
 use crate::aries::constraint::LinEq;
 use crate::aries::constraint::Max;
-use crate::aries::Post;
 
 /// Absolute value constraint.
 ///

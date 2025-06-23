@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
-use aries::core::state::Domains;
 use aries::core::IntCst;
 use aries::core::VarRef;
+use aries::core::state::Domains;
 use aries::model::Model as AriesModel;
-use aries::solver::search::default_brancher;
 use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
+use aries::solver::search::default_brancher;
 
-use crate::aries::constraint::InSet;
 use crate::aries::Brancher;
 use crate::aries::Post;
+use crate::aries::constraint::InSet;
 use crate::fzn::constraint::Constraint as FznConstraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::domain::BoolDomain;
@@ -143,6 +143,7 @@ impl Solver {
                     }
                     None => None,
                 };
+                eprintln!("{}", aries_solver.stats);
                 Ok(res)
             }
             SolveItem::Optimize(objective) => {
@@ -161,6 +162,7 @@ impl Solver {
                     }
                     None => None,
                 };
+                eprintln!("{}", aries_solver.stats);
                 Ok(res)
             }
         }
@@ -191,9 +193,13 @@ impl Solver {
                 let is_minimize = objective.goal() == &Goal::Minimize;
                 let g = |_: IntCst, d: &Domains| f(self.make_solution(d));
                 let sat = if is_minimize {
-                    aries_solver.minimize_with(obj_var_ref, g)?.is_some()
+                    aries_solver
+                        .minimize_with_callback(obj_var_ref, g)?
+                        .is_some()
                 } else {
-                    aries_solver.maximize_with(obj_var_ref, g)?.is_some()
+                    aries_solver
+                        .maximize_with_callback(obj_var_ref, g)?
+                        .is_some()
                 };
                 Ok(sat)
             }

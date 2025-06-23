@@ -1,5 +1,5 @@
-use anyhow::ensure;
 use anyhow::Result;
+use anyhow::ensure;
 
 use crate::fzn::types::Int;
 

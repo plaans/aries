@@ -1,12 +1,12 @@
 use aries::core::IntCst;
+use aries::model::Label;
+use aries::model::Model;
+use aries::model::lang::BVar;
+use aries::model::lang::IAtom;
 use aries::model::lang::expr::eq;
 use aries::model::lang::expr::geq;
 use aries::model::lang::expr::implies;
 use aries::model::lang::expr::lt;
-use aries::model::lang::BVar;
-use aries::model::lang::IAtom;
-use aries::model::Label;
-use aries::model::Model;
 
 use crate::aries::Post;
 
@@ -90,11 +90,7 @@ mod tests {
                 return false;
             }
             let z: usize = z.try_into().unwrap();
-            if z == index_x {
-                y == x
-            } else {
-                y == values[z]
-            }
+            if z == index_x { y == x } else { y == values[z] }
         };
 
         verify_all([x, y, z], model, verify);

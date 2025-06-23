@@ -4,6 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::bail;
+use aries::solver::search::SearchControl;
+use aries::solver::search::beta::BetaBrancher;
 use aries::solver::search::beta::restart::Never;
 use aries::solver::search::beta::restart::RestartKind;
 use aries::solver::search::beta::value_order::Dynamic;
@@ -15,14 +17,12 @@ use aries::solver::search::beta::value_order::ValueOrderKind;
 use aries::solver::search::beta::var_order::FirstFail;
 use aries::solver::search::beta::var_order::Lexical;
 use aries::solver::search::beta::var_order::VarOrderKind;
-use aries::solver::search::beta::BetaBrancher;
-use aries::solver::search::SearchControl;
 use clap::Parser;
 
 use crate::aries::Solver;
+use crate::fzn::Fzn;
 use crate::fzn::parser::parse_model;
 use crate::fzn::solution::make_output_flow;
-use crate::fzn::Fzn;
 
 fn parse_var_order(s: &str) -> anyhow::Result<VarOrderKind> {
     match s {

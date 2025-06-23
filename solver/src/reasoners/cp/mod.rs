@@ -2,7 +2,10 @@
 
 pub mod linear;
 pub mod max;
-pub mod mul;
+pub mod mul_lit;
+
+mod propagator;
+pub use propagator::*;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
@@ -20,53 +23,11 @@ use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use anyhow::Context;
-use mul::VarEqVarMulLit;
+use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-
-// ========== Constraint ===========
-
-create_ref_type!(PropagatorId);
-
-trait Propagator: Send {
-    fn setup(&self, id: PropagatorId, context: &mut Watches);
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction>;
-    fn propagate_event(&self, _event: &Event, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        self.propagate(domains, cause)
-    }
-
-    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation);
-
-    fn clone_box(&self) -> Box<dyn Propagator>;
-}
-
-impl<T: Propagator> Explainer for T {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
-        Propagator::explain(self, literal, model, explanation)
-    }
-}
-
-pub struct DynPropagator {
-    constraint: Box<dyn Propagator>,
-}
-
-impl Clone for DynPropagator {
-    fn clone(&self) -> Self {
-        DynPropagator {
-            constraint: self.constraint.clone_box(),
-        }
-    }
-}
-
-impl<T: Propagator + 'static> From<T> for DynPropagator {
-    fn from(propagator: T) -> Self {
-        DynPropagator {
-            constraint: Box::new(propagator),
-        }
-    }
-}
-
+//
 // ========= CP =============
 
 #[derive(Clone, Default)]
@@ -76,23 +37,37 @@ pub struct Watches {
 }
 
 impl Watches {
-    fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `
+    pub fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
         self.add_ub_watch(watched, propagator_id);
         self.add_lb_watch(watched, propagator_id);
     }
 
-    fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every upper bound change of the `watched` signed variable.
+    /// If `watched` is given as a VarRef, notification will occur on the change of its upper bound.
+    pub fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.propagations
             .get_mut_or_insert(watched, || Vec::with_capacity(4))
             .push(propagator_id)
     }
 
-    fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every lower bound change of the `watched` signed variable.
+    /// If `watched` is given as a VarRef, notification will occur on the change of its lower bound.
+    pub fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.add_ub_watch(-watched, propagator_id)
     }
 
+    /// Request a trigger of `propagator_id` when the `watched` literal becomes true.
+    /// Note: due to the implementation of watches not being very fine-grained, the current implementation may trigger propagation on every
+    /// upper bound change of the underlying literal (subject to change in the future).
+    pub fn add_lit_watch(&mut self, watched: impl Into<Lit>, propagator_id: PropagatorId) {
+        let watched = watched.into();
+        self.add_ub_watch(watched.svar(), propagator_id);
+    }
+
+    /// Returns all propagators
     fn get_ub_watches(&self, var: impl Into<SignedVar>) -> &[PropagatorId] {
         let var = var.into();
         self.propagations.get(var).map(|v| v.as_slice()).unwrap_or(&self.empty)
@@ -140,17 +115,20 @@ impl Cp {
         }
     }
 
-    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq) {
-        self.add_opt_linear_constraint(leq, Lit::TRUE)
+    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq, doms: &Domains) {
+        self.add_half_reif_linear_constraint(leq, Lit::TRUE, doms)
     }
 
     /// Adds a linear constraint that is only active when `active` is true.
-    pub fn add_opt_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit) {
+    pub fn add_half_reif_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit, doms: &Domains) {
+        let valid = doms.presence_literal(active);
+        debug_assert!(leq.sum.iter().all(|e| doms.implies(valid, doms.presence(e.var))));
         let elements = leq.sum.iter().map(|e| SumElem::new(e.factor, e.var)).collect();
         let propagator = LinearSumLeq {
             elements,
             ub: leq.upper_bound,
             active,
+            valid,
         };
         self.add_propagator(propagator);
     }

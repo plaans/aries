@@ -3,10 +3,10 @@ use std::rc::Rc;
 use anyhow::bail;
 use transitive::Transitive;
 
+use crate::fzn::Name;
 use crate::fzn::var::Var;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
-use crate::fzn::Name;
 
 /// Basic flatzinc variable.
 ///

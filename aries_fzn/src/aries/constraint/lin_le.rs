@@ -1,8 +1,8 @@
 use aries::core::IntCst;
-use aries::model::lang::linear::NFLinearLeq;
-use aries::model::lang::linear::NFLinearSumItem;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::linear::NFLinearLeq;
+use aries::model::lang::linear::NFLinearSumItem;
 use aries::reif::ReifExpr;
 
 use crate::aries::Post;

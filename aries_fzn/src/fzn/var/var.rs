@@ -2,14 +2,14 @@ use std::rc::Rc;
 
 use transitive::Transitive;
 
+use crate::fzn::Fzn;
+use crate::fzn::Name;
 use crate::fzn::parvar::ParVar;
 use crate::fzn::var::BasicVar;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarBoolArray;
 use crate::fzn::var::VarInt;
 use crate::fzn::var::VarIntArray;
-use crate::fzn::Fzn;
-use crate::fzn::Name;
 
 /// Flatzinc variable.
 ///

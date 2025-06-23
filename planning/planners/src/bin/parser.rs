@@ -9,7 +9,7 @@ use aries_planning::parsing::pddl_to_chronicles;
 /// A simple parser for PDDL and its extension HDDL.
 /// Its main intended usage is to facilitate automated testing of the parser in a CI environment.
 #[derive(Debug, StructOpt)]
-#[structopt(name = "pddl", rename_all = "kebab-case")]
+#[structopt(name = "aries-pddl-parser", rename_all = "kebab-case")]
 struct Opt {
     /// If not set, will look for a `domain.pddl` file in the directory of the
     /// problem file or in the parent directory.

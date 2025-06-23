@@ -5,15 +5,15 @@ use aries::core::VarRef;
 use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::Min;
 use crate::aries::Post;
+use crate::aries::constraint::Min;
+use crate::fzn::Fzn;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
 use crate::fzn::parser::var_int_from_expr;
 use crate::fzn::parser::vec_var_int_from_expr;
 use crate::fzn::var::VarInt;
-use crate::fzn::Fzn;
 
 /// Integer array minimum constraint.
 ///

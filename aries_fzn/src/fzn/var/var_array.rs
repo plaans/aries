@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use crate::fzn::var::VarBool;
-use crate::fzn::var::VarInt;
 use crate::fzn::Fzn;
 use crate::fzn::Name;
+use crate::fzn::var::VarBool;
+use crate::fzn::var::VarInt;
 
 /// Generic array of variables.
 #[derive(Clone, Eq, Debug)]

@@ -2,7 +2,7 @@
 set -e # Exit on first error
 
 # Path to planner and validators (defaults to release build)
-PLANNER="${PLANNER:-target/ci/lcp} --sat"
+PLANNER="${PLANNER:-target/ci/aries-plan} --sat"
 FIND_DOMAIN="target/ci/planning-domain"
 HDDL_VAL="${HDDL_VAL:-planning/ext/val-hddl}"
 PDDL_VAL="${PDDL_VAL:-planning/ext/val-pddl}"
@@ -11,7 +11,7 @@ PDDL_VAL="${PDDL_VAL:-planning/ext/val-pddl}"
 TIMEOUT="${TIMEOUT:-90s}"
 
 echo "Building..."
-cargo build --profile ci --bin lcp
+cargo build --profile ci --bin aries-plan
 cargo build --profile ci --bin planning-domain
 
 # Write all test commands to temporary file
@@ -55,5 +55,3 @@ cat "$COMMANDS" | parallel --max-procs 33% --use-cores-instead-of-threads -v --h
 # if we reach this point, it means that no error occurred while running planners
 echo "======== Successful runs ======="
 cat "$COMMANDS"
-
-

@@ -1,7 +1,7 @@
-use aries::model::lang::expr::neq;
-use aries::model::lang::IAtom;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::IAtom;
+use aries::model::lang::expr::neq;
 
 use crate::aries::Post;
 

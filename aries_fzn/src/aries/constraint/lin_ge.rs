@@ -1,10 +1,10 @@
 use aries::core::IntCst;
-use aries::model::lang::linear::NFLinearSumItem;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::linear::NFLinearSumItem;
 
-use crate::aries::constraint::LinLe;
 use crate::aries::Post;
+use crate::aries::constraint::LinLe;
 
 /// Linear greater or equal constraint.
 ///

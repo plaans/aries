@@ -1,6 +1,6 @@
 use crate::aries::Solver;
-use crate::fzn::solution::Assignment;
 use crate::fzn::Fzn;
+use crate::fzn::solution::Assignment;
 
 /// Message to indicate the problem is unsatisfiable.
 pub const UNSAT: &str = "=====UNSATISFIABLE=====";

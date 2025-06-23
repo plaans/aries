@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 use std::process::exit;
 
 use aries_fzn::cli::parse_args;

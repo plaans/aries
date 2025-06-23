@@ -3,10 +3,10 @@
 use std::rc::Rc;
 use std::str::FromStr;
 
+use anyhow::Context;
 use anyhow::anyhow;
 use anyhow::bail;
 use anyhow::ensure;
-use anyhow::Context;
 use flatzinc::Annotation;
 use flatzinc::ArrayOfBoolExpr;
 use flatzinc::ArrayOfIntExpr;
@@ -51,7 +51,7 @@ pub fn var_bool_from_expr(
 ) -> anyhow::Result<Rc<VarBool>> {
     match expr {
         Expr::VarParIdentifier(id) => model.get_var_bool(id),
-        Expr::Bool(x) => Ok(model.new_var_bool_const((*x).try_into()?)),
+        Expr::Bool(x) => Ok(model.new_var_bool_const(*x)),
         _ => bail!("not a varbool"),
     }
 }

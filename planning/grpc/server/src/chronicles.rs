@@ -959,7 +959,7 @@ impl<'a> ChronicleFactory<'a> {
                 let params = &expr.list[1..];
 
                 match operator {
-                    "up:equals" => {
+                    "up:equals" | "up:iff" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                         let params: Vec<Atom> = params
                             .iter()
@@ -991,6 +991,17 @@ impl<'a> ChronicleFactory<'a> {
                         ensure!(params.len() == 1, "`not` operator should have exactly 1 argument");
                         let not_value = !Lit::try_from(value)?;
                         self.bind_to(&params[0], not_value.into(), span)?;
+                    }
+                    "up:implies" => {
+                        ensure!(params.len() == 2, "operator `implies` must have exactly 2 arguments");
+                        let not_param0 = !Lit::try_from(self.reify(&params[0], span)?)?;
+                        let params = vec![Atom::Bool(not_param0), self.reify(&params[1], span)?];
+                        let value = Lit::try_from(value)?;
+                        self.chronicle.constraints.push(Constraint {
+                            variables: params,
+                            tpe: ConstraintType::Or,
+                            value: Some(value),
+                        })
                     }
                     "up:lt" | "up:le" => {
                         ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
@@ -1108,6 +1119,17 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(constraint);
                             Ok(value.into())
                         }
+                        "up:implies" => {
+                            ensure!(params.len() == 2, "`implies` operator should have exactly 2 arguments");
+                            let value = self.create_bool_variable(VarType::Reification);
+                            let constraint = Constraint {
+                                variables: vec![Atom::Bool(!params[0].try_into()?), params[1]],
+                                tpe: ConstraintType::Or,
+                                value: Some(value),
+                            };
+                            self.chronicle.constraints.push(constraint);
+                            Ok(value.into())
+                        }
                         "up:and" => {
                             // convert (and a b c) into  !(or !a !b !c)
                             let mut disjuncts = Vec::with_capacity(params.len());
@@ -1126,7 +1148,7 @@ impl<'a> ChronicleFactory<'a> {
                             self.chronicle.constraints.push(constraint);
                             Ok((!value).into())
                         }
-                        "up:equals" => {
+                        "up:equals" | "up:iff" => {
                             ensure!(params.len() == 2, "`=` operator should have exactly 2 arguments");
                             let reif = self.reify_equality(params[0], params[1]);
                             Ok(reif)

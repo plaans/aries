@@ -1,11 +1,11 @@
 use aries::core::IntCst;
-use aries::model::lang::linear::NFLinearSumItem;
-use aries::model::lang::BVar;
 use aries::model::Label;
 use aries::model::Model;
+use aries::model::lang::BVar;
+use aries::model::lang::linear::NFLinearSumItem;
 
-use crate::aries::constraint::LinLeHalf;
 use crate::aries::Post;
+use crate::aries::constraint::LinLeHalf;
 
 /// Half reified linear greater or equal constraint.
 ///

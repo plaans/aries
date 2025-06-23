@@ -5,8 +5,9 @@ use aries::core::VarRef;
 use aries::model::lang::linear::NFLinearSumItem;
 use flatzinc::ConstraintItem;
 
-use crate::aries::constraint::LinEq;
 use crate::aries::Post;
+use crate::aries::constraint::LinEq;
+use crate::fzn::Fzn;
 use crate::fzn::constraint::Constraint;
 use crate::fzn::constraint::Encode;
 use crate::fzn::model::Model;
@@ -16,7 +17,6 @@ use crate::fzn::parser::vec_var_bool_from_expr;
 use crate::fzn::types::Int;
 use crate::fzn::var::VarBool;
 use crate::fzn::var::VarInt;
-use crate::fzn::Fzn;
 
 /// Boolean linear equality constraint.
 ///
