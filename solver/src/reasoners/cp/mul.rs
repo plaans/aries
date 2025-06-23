@@ -1,11 +1,7 @@
-use std::cmp::Ordering::*;
-
-use num_integer::{self, Roots};
-
 use crate::{
     core::{
-        state::{Cause, DirectOrigin, Domains, DomainsSnapshot, Explanation, IntDomain, InvalidUpdate, Origin},
-        IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN,
+        state::{Cause, Domains, DomainsSnapshot, Explanation, IntDomain},
+        IntCst, Lit, VarRef,
     },
     reasoners::{
         cp::{Propagator, PropagatorId, Watches},
@@ -104,25 +100,13 @@ impl Propagator for Mul {
     }
 }
 
-// Define some macros for concise pattern matching in the backward propagation
-macro_rules! LessEq {
-    () => {
-        Less | Equal
-    };
-}
-macro_rules! GreatEq {
-    () => {
-        Greater | Equal
-    };
-}
-
 impl Mul {
     /// Does one iteration of forward and backward propagation, return true if bounds updated
     fn propagate_iteration(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
         let mut updated = self.propagate_forward(domains, cause)?;
         updated |= self.propagate_signs(domains, cause)?;
-        updated |= self.propagate_backward(domains, cause, self.fact1, self.fact2, domains.bounds(self.fact2))?;
-        updated |= self.propagate_backward(domains, cause, self.fact2, self.fact1, domains.bounds(self.fact1))?;
+        updated |= self.propagate_backward(domains, cause, self.fact1, self.fact2)?;
+        updated |= self.propagate_backward(domains, cause, self.fact2, self.fact1)?;
         Ok(updated)
     }
 
@@ -143,10 +127,9 @@ impl Mul {
         cause: Cause,
         fact: VarRef,
         other_fact: VarRef,
-        (of_lb, of_ub): (IntCst, IntCst), // Used for handy recursive call in certain cases
     ) -> Result<bool, Contradiction> {
         let p = domains.int_domain(self.prod);
-        let of = IntDomain::new(of_lb, of_ub);
+        let of = domains.int_domain(other_fact);
         if p.contains(0) && of.contains(0) {
             // Both upper and lower bounds of fact can be anything since other_fact can be 0
             Ok(false)
@@ -168,7 +151,6 @@ impl Mul {
 
             // Logic from choco solver adapted to integer division
             let (a, b, (c, d)) = (p.lb, p.ub, domains.bounds(other_fact));
-            // let (a, b, c, d) = (p.lb, p.ub, of_lb, of.ub);
 
             let (ac_floor, ac_ceil) = div_floor_ceil(a, c);
             let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
@@ -288,16 +270,6 @@ impl DomainsSnapshot<'_> {
 }
 
 impl Domains {
-    /// Creates literal v <= ub(v)
-    fn ub_literal(&self, v: VarRef) -> Lit {
-        v.leq(self.ub(v))
-    }
-
-    /// Creates literal v >= lb(v)
-    fn lb_literal(&self, v: VarRef) -> Lit {
-        v.geq(self.lb(v))
-    }
-
     // Set upper and lower bounds, return true if either changed
     fn set_bounds(&mut self, v: VarRef, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
         let changed1 = self.set_lb(v, lb, cause)?;
@@ -324,7 +296,7 @@ mod test {
     use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     use super::*;
-    use crate::{backtrack::Backtrack, core::*, reasoners::cp::test::utils::test_explanations, utils::input::Pos};
+    use crate::{core::*, reasoners::cp::test::utils::test_explanations};
 
     // === Assertions ===
 
@@ -340,6 +312,7 @@ mod test {
     }
 
     /// Asserts that two explanations contain the same literals
+    #[allow(unused)]
     fn check_explanations(prop: &Mul, lit: Lit, d: &Domains, expected: Explanation) {
         let out_explanation = &mut Explanation::new();
         prop.explain(lit, &DomainsSnapshot::current(d), out_explanation);
@@ -349,7 +322,7 @@ mod test {
     }
 
     // === Utils ===
-
+    #[allow(unused)]
     fn print_domains(d: &Domains, prop: &Mul) {
         println!("Problem: ");
         let (prod_lb, prod_ub) = d.bounds(prop.prod);
@@ -365,33 +338,30 @@ mod test {
         let max = max as IntCst;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
-        for i in 0..n {
+        for _ in 0..n {
             let fact1_val = rng.gen_range(-max..max);
             let fact2_val = rng.gen_range(-max..max);
             let prod_val = fact1_val * fact2_val;
             let mut d = Domains::new();
-            let prop = {
-                let d: &mut Domains = &mut d;
-                let prod_bounds = (
-                    rng.gen_range(-max * max..=prod_val),
-                    rng.gen_range(prod_val..=max * max),
-                );
-                let fact1_bounds = (rng.gen_range(-max..=fact1_val), rng.gen_range(fact1_val..=max));
-                let fact2_bounds = (rng.gen_range(-max..=fact2_val), rng.gen_range(fact2_val..=max));
-                let prod = d.new_var(prod_bounds.0, prod_bounds.1);
-                let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
-                let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
-                Mul {
-                    prod,
-                    fact1,
-                    fact2,
-                    active: if always_active {
-                        Lit::TRUE
-                    } else {
-                        d.new_var(-1, 1).geq(0)
-                    },
-                    valid: Lit::TRUE,
-                }
+            let prod_bounds = (
+                rng.gen_range(-max * max..=prod_val),
+                rng.gen_range(prod_val..=max * max),
+            );
+            let fact1_bounds = (rng.gen_range(-max..=fact1_val), rng.gen_range(fact1_val..=max));
+            let fact2_bounds = (rng.gen_range(-max..=fact2_val), rng.gen_range(fact2_val..=max));
+            let prod = d.new_var(prod_bounds.0, prod_bounds.1);
+            let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
+            let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
+            let prop = Mul {
+                prod,
+                fact1,
+                fact2,
+                active: if always_active {
+                    Lit::TRUE
+                } else {
+                    d.new_var(-1, 1).geq(0)
+                },
+                valid: Lit::TRUE,
             };
             res.push((d, prop, (prod_val, fact1_val, fact2_val)));
         }
@@ -402,7 +372,7 @@ mod test {
         let max = max as IntCst;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
-        for i in 0..n {
+        for _ in 0..n {
             let fact_val = rng.gen_range(-max..max);
             let prod_val = fact_val.pow(2);
             let mut d = Domains::new();
@@ -415,7 +385,11 @@ mod test {
                 prod,
                 fact1: fact,
                 fact2: fact,
-                active: Lit::TRUE,
+                active: if always_active {
+                    Lit::TRUE
+                } else {
+                    d.new_var(-1, 1).geq(0)
+                },
                 valid: Lit::TRUE,
             };
             res.push((d, prop, (prod_val, fact_val)));
@@ -695,10 +669,10 @@ mod test {
 
     #[test]
     fn test_explanations_random() {
-        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, false) {
+        for (d, prop, _) in gen_problems(1000, 10, false) {
             test_explanations(&d, &prop, false);
         }
-        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, false) {
+        for (d, prop, _) in gen_square_problems(1000, 10, false) {
             test_explanations(&d, &prop, false);
         }
     }
