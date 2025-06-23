@@ -16,7 +16,7 @@ pub struct Activity {
 
 impl Activity {
     pub fn new(decay_factor: f32) -> Self {
-        debug_assert!(0.0 <= decay_factor && decay_factor <= 1.0);
+        debug_assert!((0.0..=1.0).contains(&decay_factor));
         Activity {
             table: HashMap::new(),
             decay_factor,

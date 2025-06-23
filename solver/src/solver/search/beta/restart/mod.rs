@@ -57,3 +57,15 @@ impl Default for RestartKind {
         Self::Geometric(Default::default())
     }
 }
+
+impl From<Never> for RestartKind {
+    fn from(value: Never) -> Self {
+        Self::Never(value)
+    }
+}
+
+impl From<Geometric> for RestartKind {
+    fn from(value: Geometric) -> Self {
+        Self::Geometric(value)
+    }
+}

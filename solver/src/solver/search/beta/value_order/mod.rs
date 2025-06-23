@@ -76,3 +76,33 @@ impl Default for ValueOrderKind {
         Self::Min(Min)
     }
 }
+
+impl From<Min> for ValueOrderKind {
+    fn from(value: Min) -> Self {
+        Self::Min(value)
+    }
+}
+
+impl From<Max> for ValueOrderKind {
+    fn from(value: Max) -> Self {
+        Self::Max(value)
+    }
+}
+
+impl From<LowerHalf> for ValueOrderKind {
+    fn from(value: LowerHalf) -> Self {
+        Self::LowerHalf(value)
+    }
+}
+
+impl From<UpperHalf> for ValueOrderKind {
+    fn from(value: UpperHalf) -> Self {
+        Self::UpperHalf(value)
+    }
+}
+
+impl From<Dynamic> for ValueOrderKind {
+    fn from(value: Dynamic) -> Self {
+        Self::Dynamic(value)
+    }
+}

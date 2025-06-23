@@ -63,3 +63,21 @@ impl Default for VarOrderKind {
         Self::Lexical(Lexical)
     }
 }
+
+impl From<Activity> for VarOrderKind {
+    fn from(value: Activity) -> Self {
+        Self::Activity(value)
+    }
+}
+
+impl From<Lexical> for VarOrderKind {
+    fn from(value: Lexical) -> Self {
+        Self::Lexical(value)
+    }
+}
+
+impl From<FirstFail> for VarOrderKind {
+    fn from(value: FirstFail) -> Self {
+        Self::FirstFail(value)
+    }
+}

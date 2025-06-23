@@ -3,6 +3,10 @@
 //! Each (fzn,dzn) pair with the same name in output directory gives a test.
 //! The parser is also tested on the malformed flatzic files in error directory.
 
+use aries::solver::search::beta::BetaBrancher;
+use aries::solver::search::beta::restart::Never;
+use aries::solver::search::beta::value_order::Min;
+use aries::solver::search::beta::var_order::Lexical;
 use aries_fzn::aries::Solver;
 use aries_fzn::fzn::parser::parse_model;
 use aries_fzn::fzn::solution::make_output_flow;
@@ -16,7 +20,15 @@ fn test_output([input, output]: [&str; 2]) {
     let model = parse_model(input).expect("parsing error");
     dbg!(&model);
 
-    let solver = Solver::new(model);
+    let mut solver = Solver::new(model);
+
+    // Hard set the configuration so the solution order is fixed
+    // It should not be changed since all fzn-dzn pairs rely on this
+    solver.set_brancher(Box::new(BetaBrancher::new(
+        Lexical.into(),
+        Min.into(),
+        Never.into(),
+    )));
 
     let mut actual_output = String::new();
     let store = |s: String| actual_output += s.as_str();

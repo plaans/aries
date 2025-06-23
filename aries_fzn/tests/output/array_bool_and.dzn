@@ -2,12 +2,12 @@ x = false;
 y = false;
 r = false;
 ----------
-x = true;
-y = false;
-r = false;
-----------
 x = false;
 y = true;
+r = false;
+----------
+x = true;
+y = false;
 r = false;
 ----------
 x = true;

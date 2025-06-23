@@ -524,11 +524,11 @@ mod tests {
         let (x, y, t, s, model) = simple_model();
 
         assert_eq!(
-            *model.get_variable(&x.name()).unwrap(),
+            *model.get_variable(x.name()).unwrap(),
             Var::from(x.clone())
         );
         assert_eq!(
-            *model.get_variable(&y.name()).unwrap(),
+            *model.get_variable(y.name()).unwrap(),
             Var::from(y.clone())
         );
         assert!(model.get_variable(t.name()).is_err());
@@ -545,20 +545,20 @@ mod tests {
         let (x, y, t, s, model) = simple_model();
         let unknown = "unknown".to_string();
 
-        assert!(!model.contains_par_name(&x.name()));
-        assert!(!model.contains_par_name(&y.name()));
+        assert!(!model.contains_par_name(x.name()));
+        assert!(!model.contains_par_name(y.name()));
         assert!(model.contains_par_name(t.name()));
         assert!(model.contains_par_name(s.name()));
         assert!(!model.contains_par_name(&unknown));
 
-        assert!(model.contains_var_name(&x.name()));
-        assert!(model.contains_var_name(&y.name()));
+        assert!(model.contains_var_name(x.name()));
+        assert!(model.contains_var_name(y.name()));
         assert!(!model.contains_var_name(t.name()));
         assert!(!model.contains_var_name(s.name()));
         assert!(!model.contains_var_name(&unknown));
 
-        assert!(model.contains_name(&x.name()));
-        assert!(model.contains_name(&y.name()));
+        assert!(model.contains_name(x.name()));
+        assert!(model.contains_name(y.name()));
         assert!(model.contains_name(t.name()));
         assert!(model.contains_name(s.name()));
         assert!(!model.contains_name(&unknown));
