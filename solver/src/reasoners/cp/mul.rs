@@ -92,13 +92,10 @@ impl Propagator for Mul {
                 state.explain_var(self.fact2, out_explanation);
             }
         } else {
-            let other_fact = if literal.variable() == self.fact1 {
-                self.fact2
-            } else {
-                self.fact1
-            };
+            // Both factors are responsible due to explain_signs function (see PR)
             state.explain_var(self.prod, out_explanation);
-            state.explain_var(other_fact, out_explanation);
+            state.explain_var(self.fact1, out_explanation);
+            state.explain_var(self.fact2, out_explanation);
         }
     }
 
@@ -123,6 +120,7 @@ impl Mul {
     /// Does one iteration of forward and backward propagation, return true if bounds updated
     fn propagate_iteration(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
         let mut updated = self.propagate_forward(domains, cause)?;
+        updated |= self.propagate_signs(domains, cause)?;
         updated |= self.propagate_backward(domains, cause, self.fact1, self.fact2, domains.bounds(self.fact2))?;
         updated |= self.propagate_backward(domains, cause, self.fact2, self.fact1, domains.bounds(self.fact1))?;
         Ok(updated)
@@ -145,92 +143,6 @@ impl Mul {
         cause: Cause,
         fact: VarRef,
         other_fact: VarRef,
-        other_fact_considered_bounds: (IntCst, IntCst), // Used for handy recursive call in certain cases
-    ) -> Result<bool, Contradiction> {
-        let (p_lb, p_ub) = domains.bounds(self.prod);
-        let (of_lb, of_ub) = other_fact_considered_bounds;
-
-        match (p_lb.cmp(&0), p_ub.cmp(&0), of_lb.cmp(&0), of_ub.cmp(&0)) {
-            // Case 1: Both intervals span 0
-            (LessEq!(), GreatEq!(), LessEq!(), GreatEq!()) => {
-                // Both upper and lower bounds of fact can be anything since other_fact can be 0
-                Ok(false)
-            }
-            // Case 2a: Product strict positive, other_fact == 0
-            (Greater, Greater, Equal, Equal) => {
-                // Contradiction explaned by prod_lb > 0 and other_fact == 0
-                Err(Contradiction::Explanation(
-                    vec![other_fact.leq(0), other_fact.geq(0), self.prod.geq(1), self.active].into(),
-                ))
-            }
-            // Case 2b: Product strictly negative, other_fact == 0.
-            (Less, Less, Equal, Equal) => {
-                // Contradiction explaned by prod_ub < 0 and other_fact == 0
-                Err(Contradiction::Explanation(
-                    vec![other_fact.leq(0), other_fact.geq(0), self.prod.leq(-1), self.active].into(),
-                ))
-            }
-            // Case 3: Product does not span 0, other_fact stricly spans 0
-            // (other_fact stricly spans 0 => other_fact spans 0 => if product spans 0, case 1 matches => we can use _, _)
-            (_, _, Less, Greater) => {
-                // Other fact can be 1 or -1, so fact can be as high or low as abs(prod)
-                let abs_max = p_lb.abs().max(p_ub.abs());
-                Ok(domains.set_bounds(fact, (-abs_max, abs_max), cause)?)
-            }
-            // Case 4a: prod stricly positive or negative, other_fact >= 0
-            (Greater, Greater, Equal, Greater) | (Less, Less, Equal, Greater) => {
-                // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
-                self.propagate_backward(domains, cause, fact, other_fact, (1, of_ub))
-            }
-            // Case 4b: prod stricly positive or negative, other_fact <= 0
-            (Greater, Greater, Less, Equal) | (Less, Less, Less, Equal) => {
-                // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
-                self.propagate_backward(domains, cause, fact, other_fact, (of_lb, -1))
-            }
-
-            // Accounting for lb > ub
-            (Greater, LessEq!(), _, _)
-            | (_, _, Greater, LessEq!())
-            | (GreatEq!(), Less, _, _)
-            | (_, _, GreatEq!(), Less) => unreachable!(),
-
-            // Case 5: TODO: write a pattern so that compiler can check cases
-            _ => {
-                // Logic from choco solver adapted to integer division
-                let (a, b, c, d) = (p_lb, p_ub, of_lb, of_ub);
-
-                let (ac_floor, ac_ceil) = div_floor_ceil(a, c);
-                let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
-                let (bc_floor, bc_ceil) = div_floor_ceil(b, c);
-                let (bd_floor, bd_ceil) = div_floor_ceil(b, d);
-                let low = ac_ceil.min(ad_ceil).min(bc_ceil).min(bd_ceil);
-                let high = ac_floor.max(ad_floor).max(bc_floor).max(bd_floor);
-                if low > high {
-                    Err(Contradiction::Explanation(
-                        vec![
-                            domains.lb_literal(other_fact),
-                            domains.ub_literal(other_fact),
-                            domains.lb_literal(self.prod),
-                            domains.ub_literal(self.prod),
-                            self.active,
-                            self.valid,
-                        ]
-                        .into(),
-                    ))
-                } else {
-                    Ok(domains.set_bounds(fact, (low, high), cause)?)
-                }
-            }
-        }
-    }
-
-    /// Propagates bounds on fact, return true if bounds updated
-    fn propagate_backward_alt(
-        &self,
-        domains: &mut Domains,
-        cause: Cause,
-        fact: VarRef,
-        other_fact: VarRef,
         (of_lb, of_ub): (IntCst, IntCst), // Used for handy recursive call in certain cases
     ) -> Result<bool, Contradiction> {
         let p = domains.int_domain(self.prod);
@@ -244,24 +156,19 @@ impl Mul {
             // Other fact can be 1 or -1, so fact can be as high or low as abs(prod)
             let abs_max = p.lb.abs().max(p.ub.abs());
             Ok(domains.set_bounds(fact, (-abs_max, abs_max), cause)?)
-        } else if !p.contains(0) && of.lb == 0 {
-            debug_assert!(!of.is_bound_to(0));
-            // Case 4a: prod stricly positive or negative, other_fact >= 0
-            // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
-            // TODO: I am unsure that it is reasonable to not propagate immediately
-            // - can we guarantee that it will be indeed be propagated (what if nothing else changes?)
-            // - if it was, couldn't this only occur in the next iteration and require one additional iteration that would be
-            //   unneeded if we had made the change immediatly
-            self.propagate_backward(domains, cause, fact, other_fact, (1, of.ub))
-        } else if !p.contains(0) && of.ub == 0 {
-            debug_assert!(!of.is_bound_to(0));
-            // Case 4b: prod stricly positive or negative, other_fact <= 0
-            // other fact can be considered >= 1, it will be updated when propagate_backwards is called on it
-            // TODO: same as above
-            self.propagate_backward(domains, cause, fact, other_fact, (of.lb, -1))
         } else {
+            // Case 4a: prod stricly positive or negative, other_fact >= 0
+            let mut updated_of = false;
+            if !p.contains(0) && of.lb == 0 {
+                updated_of |= domains.set_lb(other_fact, 1, cause)?;
+            }
+            if !p.contains(0) && of.ub == 0 {
+                updated_of |= domains.set_ub(other_fact, -1, cause)?;
+            }
+
             // Logic from choco solver adapted to integer division
-            let (a, b, c, d) = (p.lb, p.ub, of.lb, of.ub);
+            let (a, b, (c, d)) = (p.lb, p.ub, domains.bounds(other_fact));
+            // let (a, b, c, d) = (p.lb, p.ub, of_lb, of.ub);
 
             let (ac_floor, ac_ceil) = div_floor_ceil(a, c);
             let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
@@ -269,8 +176,48 @@ impl Mul {
             let (bd_floor, bd_ceil) = div_floor_ceil(b, d);
             let low = ac_ceil.min(ad_ceil).min(bc_ceil).min(bd_ceil);
             let high = ac_floor.max(ad_floor).max(bc_floor).max(bd_floor);
-            Ok(domains.set_bounds(fact, (low, high), cause)?)
+            Ok(domains.set_bounds(fact, (low, high), cause)? || updated_of)
         }
+    }
+
+    fn propagate_signs(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
+        // Handle cases like
+        // test_propagation(
+        //     (36, 67),
+        //     (-8, 8),
+        //     (-3, 10),
+        //     false,
+        //     (36, 67),
+        //     (4, 8),
+        //     (5, 10),
+        // );
+        // Where -8 * -3 < 36 => f1 >= 0 && f2 >= 0
+        let p = domains.int_domain(self.prod);
+        let f1 = domains.int_domain(self.fact1);
+        let f2 = domains.int_domain(self.fact2);
+
+        if p.contains(0) || !f1.contains(0) || !f2.contains(0) {
+            return Ok(false);
+        }
+
+        // TODO: more elegant solution
+        if f1.lb * f2.lb < p.lb {
+            // Change guaranteed
+            domains.set_lb(self.fact1, 1, cause)?;
+            domains.set_lb(self.fact2, 1, cause)?;
+        } else if f1.lb * f2.ub > p.ub {
+            domains.set_lb(self.fact1, 1, cause)?;
+            domains.set_ub(self.fact2, -1, cause)?;
+        } else if f1.ub * f2.lb > p.ub {
+            domains.set_lb(self.fact2, 1, cause)?;
+            domains.set_ub(self.fact1, -1, cause)?;
+        } else if f1.ub * f2.ub < p.lb {
+            domains.set_ub(self.fact1, -1, cause)?;
+            domains.set_ub(self.fact2, -1, cause)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
     }
 
     /// Simple propagation for x = y * x
@@ -501,7 +448,8 @@ mod test {
             }
         };
 
-        assert!(prop.propagate(&mut d, Cause::Decision).is_err() == should_fail);
+        let res = prop.propagate(&mut d, Cause::Decision);
+        assert!(res.is_err() == should_fail, "{:?}", res.err());
         if !should_fail {
             check_bounds(prop.prod, &d, prop_res);
             check_bounds(prop.fact1, &d, fact1_res);
@@ -597,6 +545,36 @@ mod test {
             (0, 0),
             (0, 0),
             (0, 0),
+        );
+        // -3 * -8 < 36 => f1 >= 0 && f2 >= 0
+        test_propagation(
+            (36, 67),
+            (-8, 8),
+            (-3, 10),
+            false,
+            (36, 67),
+            (4, 8),
+            (5, 10),
+        );
+        // Negative form of above
+        test_propagation(
+            (36, 67),
+            (-8, 8),
+            (-10, 3),
+            false,
+            (36, 67),
+            (-8, -4),
+            (-10, -5),
+        );
+        // Other negative form of above
+        test_propagation(
+            (-67, -36),
+            (-8, 8),
+            (-10, 3),
+            false,
+            (-67, -36),
+            (4, 8),
+            (-10, -5),
         );
         // Failure
         test_propagation(
@@ -718,7 +696,6 @@ mod test {
     #[test]
     fn test_explanations_random() {
         for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, false) {
-            // print_domains(&d, &prop);
             test_explanations(&d, &prop, false);
         }
         for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, false) {
