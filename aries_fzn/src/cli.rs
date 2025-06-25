@@ -8,7 +8,6 @@ use aries::solver::search::SearchControl;
 use aries::solver::search::beta::BetaBrancher;
 use aries::solver::search::beta::restart::Never;
 use aries::solver::search::beta::restart::RestartKind;
-use aries::solver::search::beta::value_order::Dynamic;
 use aries::solver::search::beta::value_order::LowerHalf;
 use aries::solver::search::beta::value_order::Max;
 use aries::solver::search::beta::value_order::Min;
@@ -27,8 +26,8 @@ use crate::fzn::solution::make_output_flow;
 fn parse_var_order(s: &str) -> anyhow::Result<VarOrderKind> {
     match s {
         "activity" => Ok(VarOrderKind::Activity(Default::default())),
-        "lexical" => Ok(VarOrderKind::FirstFail(FirstFail)),
-        "first-fail" => Ok(VarOrderKind::Lexical(Lexical)),
+        "first-fail" => Ok(VarOrderKind::FirstFail(FirstFail)),
+        "lexical" => Ok(VarOrderKind::Lexical(Lexical)),
         _ => bail!("variable orders are activity, first-fail and lexical"),
     }
 }
@@ -39,7 +38,7 @@ fn parse_value_order(s: &str) -> anyhow::Result<ValueOrderKind> {
         "max" => Ok(ValueOrderKind::Max(Max)),
         "lower-half" => Ok(ValueOrderKind::LowerHalf(LowerHalf)),
         "upper-half" => Ok(ValueOrderKind::UpperHalf(UpperHalf)),
-        "dynamic" => Ok(ValueOrderKind::Dynamic(Dynamic::default())),
+        "dynamic" => Ok(ValueOrderKind::Dynamic(Default::default())),
         _ => bail!(
             "value orders are min, max, lower-half, upper-half and dynamic"
         ),

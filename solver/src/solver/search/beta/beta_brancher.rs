@@ -17,6 +17,9 @@ use crate::solver::search::SearchControl;
 use crate::solver::stats::Stats;
 
 /// Brancher for benchamrk, it is designed to be modular.
+///
+/// Depending on the selected heuristics, it can be very slow
+/// due to non incremental variable selection.
 #[derive(Clone, Debug)]
 pub struct BetaBrancher {
     var_order: VarOrderKind,
