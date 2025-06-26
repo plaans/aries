@@ -494,6 +494,7 @@ pub fn parse_constraint_item(
         BoolClause::NAME => BoolClause::try_from_item(c, m)?.into(),
         BoolClauseReif::NAME => BoolClauseReif::try_from_item(c, m)?.into(),
         BoolEq::NAME => BoolEq::try_from_item(c, m)?.into(),
+        BoolEqImp::NAME => BoolEqImp::try_from_item(c, m)?.into(),
         BoolEqReif::NAME => BoolEqReif::try_from_item(c, m)?.into(),
         BoolLe::NAME => BoolLe::try_from_item(c, m)?.into(),
         BoolLeReif::NAME => BoolLeReif::try_from_item(c, m)?.into(),

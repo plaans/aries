@@ -72,6 +72,7 @@ predicate array_bool_and(array [int] of var bool: as, var bool: r);
 predicate bool2int(var bool: a, var int: b);
 predicate bool_clause(array [int] of var bool: as, array [int] of var bool: bs);
 predicate bool_eq(var bool: a, var bool: b);
+predicate bool_eq_imp(var bool: a, var bool: b, var bool: r);
 predicate bool_eq_reif(var bool: a, var bool: b, var bool: r);
 predicate bool_le(var bool: a, var bool: b);
 predicate bool_le_reif(var bool: a, var bool: b, var bool: r);
