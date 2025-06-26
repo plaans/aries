@@ -2,13 +2,6 @@
 include "nosets.mzn";
 
 % --------------------------------------------------
-% Supported half reified constraints
-
-predicate int_lin_eq_imp(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
-predicate int_lin_le_imp(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
-
-
-% --------------------------------------------------
 % Redefined predicates
 
 predicate int_max(var int: a, var int: b, var int: c) =
@@ -58,12 +51,15 @@ predicate array_var_int_element(var int: b, array [int] of var int: as, var int:
 predicate int_abs(var int: a, var int: b);
 predicate int_eq(var int: a, var int: b);
 predicate int_eq_reif(var int: a, var int: b, var bool: r);
+predicate int_eq_imp(var int: a, var int: b, var bool: r);
 predicate int_le(var int: a, var int: b);
 predicate int_le_reif(var int: a, var int: b, var bool: r);
 predicate int_lin_eq(array [int] of int: as, array [int] of var int: bs, int: c);
 predicate int_lin_eq_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
+predicate int_lin_eq_imp(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
 predicate int_lin_le(array [int] of int: as, array [int] of var int: bs, int: c);
 predicate int_lin_le_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
+predicate int_lin_le_imp(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
 predicate int_lin_ne(array [int] of int: as, array [int] of var int: bs, int: c);
 predicate int_lin_ne_reif(array [int] of int: as, array [int] of var int: bs, int: c, var bool: r);
 predicate int_lt(var int: a, var int: b);

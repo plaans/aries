@@ -503,6 +503,7 @@ pub fn parse_constraint_item(
         BoolXor::NAME => BoolXor::try_from_item(c, m)?.into(),
         IntAbs::NAME => IntAbs::try_from_item(c, m)?.into(),
         IntEq::NAME => IntEq::try_from_item(c, m)?.into(),
+        IntEqImp::NAME => IntEqImp::try_from_item(c, m)?.into(),
         IntEqReif::NAME => IntEqReif::try_from_item(c, m)?.into(),
         IntLe::NAME => IntLe::try_from_item(c, m)?.into(),
         IntLeReif::NAME => IntLeReif::try_from_item(c, m)?.into(),
