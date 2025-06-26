@@ -944,7 +944,7 @@ mod tests {
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
     use crate::solver::search::random::RandomChoice;
-    use crate::solver::Solver;
+    use crate::solver::{SearchLimit, Solver};
     use crate::utils::input::Sym;
     use itertools::Itertools;
     use rand::prelude::SmallRng;
@@ -1197,7 +1197,7 @@ mod tests {
             let model = model.clone();
             let solver = &mut Solver::new(model);
             solver.set_brancher(RandomChoice::new(seed));
-            let solution = solver.solve().unwrap().is_some();
+            let solution = solver.solve(SearchLimit::None).unwrap().is_some();
             if let Some(expected_sat) = expected_result {
                 assert_eq!(solution, expected_sat)
             }

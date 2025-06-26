@@ -6,6 +6,7 @@ use aries::model::lang::alternative::Alternative;
 use aries::model::lang::expr::*;
 use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::IVar;
+use aries::solver::SearchLimit;
 use itertools::Itertools;
 
 type Model = aries::model::Model<String>;
@@ -19,17 +20,17 @@ fn sat() {
 
     let mut solver = Solver::new(model);
     solver.enforce(a, []);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     solver.reset();
     solver.enforce(implies(a, b), []);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
     solver.enforce(!b, []);
 
-    assert!(solver.solve().unwrap().is_none());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
 
 #[test]
@@ -43,7 +44,7 @@ fn diff_logic() {
 
     let mut solver = Solver::new(model);
     solver.enforce_all(constraints, []);
-    assert!(solver.solve().unwrap().is_none());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
 
 #[test]
@@ -61,9 +62,9 @@ fn minimize() {
     model.enforce(or([x, y]), []);
 
     let mut solver = Solver::new(model);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     solver.reset();
-    match solver.minimize(c).unwrap() {
+    match solver.minimize(c, SearchLimit::None).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 7),
     }
@@ -80,9 +81,9 @@ fn minimize_small() {
     model.enforce(or([x, y]), []);
 
     let mut solver = Solver::new(model);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     solver.reset();
-    match solver.minimize(a).unwrap() {
+    match solver.minimize(a, SearchLimit::None).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 6),
     }
