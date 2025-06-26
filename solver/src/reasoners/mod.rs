@@ -11,6 +11,7 @@ use std::fmt::{Display, Formatter};
 
 pub mod cp;
 pub mod eq;
+pub mod eq_alt;
 pub mod sat;
 pub mod stn;
 pub mod tautologies;
