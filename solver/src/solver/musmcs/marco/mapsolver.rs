@@ -6,8 +6,8 @@ use crate::core::state::Domains;
 use crate::core::{INT_CST_MAX, Lit};
 use crate::model::Model;
 use crate::model::lang::{IAtom, expr::or, linear::LinearSum};
-use crate::solver::Exit;
 use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
+use crate::solver::{Exit, SearchLimit};
 
 use itertools::Itertools;
 
@@ -87,7 +87,7 @@ impl MapSolver {
             .collect::<BTreeSet<Lit>>();
 
         let solve_fn: Box<SolveFn> = match map_solver_mode {
-            MapSolverMode::None => Box::new(|s: &mut Solver| s.solve()),
+            MapSolverMode::None => Box::new(|s: &mut Solver| s.solve(SearchLimit::None)),
             MapSolverMode::HighPreferredValues => {
                 let brancher = ActivityBrancher::new_with_params(BranchingParams {
                     prefer_min_value: false,
@@ -96,7 +96,7 @@ impl MapSolver {
                 });
                 solver.set_brancher(brancher);
 
-                Box::new(move |s: &mut Solver| s.solve())
+                Box::new(move |s: &mut Solver| s.solve(SearchLimit::None))
             }
             MapSolverMode::LowPreferredValues => {
                 let brancher = ActivityBrancher::new_with_params(BranchingParams {
@@ -106,21 +106,21 @@ impl MapSolver {
                 });
                 solver.set_brancher(brancher);
 
-                Box::new(move |s: &mut Solver| s.solve())
+                Box::new(move |s: &mut Solver| s.solve(SearchLimit::None))
             }
             MapSolverMode::HighOptimize => {
                 let sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.geq(obj), []);
 
-                Box::new(move |s: &mut Solver| Ok(s.maximize(obj)?.map(|(_, doms)| doms)))
+                Box::new(move |s: &mut Solver| Ok(s.maximize(obj, SearchLimit::None)?.map(|(_, doms)| doms)))
             }
             MapSolverMode::LowOptimize => {
                 let sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.leq(obj), []);
 
-                Box::new(move |s: &mut Solver| Ok(s.minimize(obj)?.map(|(_, doms)| doms)))
+                Box::new(move |s: &mut Solver| Ok(s.minimize(obj, SearchLimit::None)?.map(|(_, doms)| doms)))
             }
         };
 

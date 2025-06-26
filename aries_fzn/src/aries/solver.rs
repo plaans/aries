@@ -5,6 +5,7 @@ use aries::core::VarRef;
 use aries::core::state::Domains;
 use aries::model::Model as AriesModel;
 use aries::solver::Exit;
+use aries::solver::SearchLimit;
 use aries::solver::Solver as AriesSolver;
 use aries::solver::search::default_brancher;
 
@@ -136,7 +137,7 @@ impl Solver {
 
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
-                let res = match aries_solver.solve()? {
+                let res = match aries_solver.solve(SearchLimit::None)? {
                     Some(domains) => {
                         let solution = self.make_solution(&domains);
                         Some(solution)
@@ -150,10 +151,11 @@ impl Solver {
                 let obj_var = objective.variable();
                 let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
                 let is_minimize = objective.goal() == &Goal::Minimize;
+                let limit = SearchLimit::None;
                 let aries_res = if is_minimize {
-                    aries_solver.minimize(obj_var_ref)?
+                    aries_solver.minimize(obj_var_ref, limit)?
                 } else {
-                    aries_solver.maximize(obj_var_ref)?
+                    aries_solver.maximize(obj_var_ref, limit)?
                 };
                 let res = match aries_res {
                     Some((_, domains)) => {
@@ -184,7 +186,11 @@ impl Solver {
                     output_var_ids.iter().map(translate).collect();
 
                 let g = |d: &Domains| f(self.make_solution(d));
-                let sat = aries_solver.enumerate_with(&var_refs, g)?;
+                let sat = aries_solver.enumerate_with(
+                    &var_refs,
+                    g,
+                    SearchLimit::None,
+                )?;
                 Ok(sat)
             }
             SolveItem::Optimize(objective) => {
@@ -192,13 +198,14 @@ impl Solver {
                 let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
                 let is_minimize = objective.goal() == &Goal::Minimize;
                 let g = |_: IntCst, d: &Domains| f(self.make_solution(d));
+                let limit = SearchLimit::None;
                 let sat = if is_minimize {
                     aries_solver
-                        .minimize_with_callback(obj_var_ref, g)?
+                        .minimize_with_callback(obj_var_ref, g, limit)?
                         .is_some()
                 } else {
                     aries_solver
-                        .maximize_with_callback(obj_var_ref, g)?
+                        .maximize_with_callback(obj_var_ref, g, limit)?
                         .is_some()
                 };
                 Ok(sat)

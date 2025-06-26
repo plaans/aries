@@ -52,7 +52,11 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
     /// Returns true if the model is satisfiable with all assumptions
     pub fn check_satisfiability(&mut self) -> bool {
         let assumptions = self.enablers.keys().copied().collect_vec();
-        let res = self.solver.solve_with_assumptions(&assumptions).unwrap().is_ok();
+        let res = self
+            .solver
+            .solve_with_assumptions(&assumptions, aries::solver::SearchLimit::None)
+            .unwrap()
+            .is_ok();
         self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res
@@ -87,7 +91,10 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             println!("Current lower bound: {}", allowed_relaxations);
             let result = self
                 .solver
-                .solve_with_assumptions(&[max_relaxed_assumptions.leq(allowed_relaxations)])
+                .solve_with_assumptions(
+                    &[max_relaxed_assumptions.leq(allowed_relaxations)],
+                    aries::solver::SearchLimit::None,
+                )
                 .unwrap();
             match result {
                 Ok(sol) => {

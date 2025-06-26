@@ -248,7 +248,7 @@ mod test {
                 expr::{lt, neq},
             },
         },
-        solver::Solver,
+        solver::{SearchLimit, Solver},
     };
 
     use super::*;
@@ -318,18 +318,22 @@ mod test {
         vars.sort();
         vars.dedup();
         let mut counter = 0;
-        s.enumerate_with(&vars, |sol| {
-            counter += 1;
-            println!("Sol {}", &counter);
-            for i in ints {
-                print!("  {i:?}: ");
-                if sol.present(*i) == Some(true) {
-                    println!("{:?}", sol.evaluate(Atom::from(*i)).unwrap());
-                } else {
-                    println!("-");
+        s.enumerate_with(
+            &vars,
+            |sol| {
+                counter += 1;
+                println!("Sol {}", &counter);
+                for i in ints {
+                    print!("  {i:?}: ");
+                    if sol.present(*i) == Some(true) {
+                        println!("{:?}", sol.evaluate(Atom::from(*i)).unwrap());
+                    } else {
+                        println!("-");
+                    }
                 }
-            }
-        })
+            },
+            SearchLimit::None,
+        )
         .expect("error returned by enumerate");
         counter
     }
