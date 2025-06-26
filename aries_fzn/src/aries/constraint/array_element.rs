@@ -77,7 +77,7 @@ mod tests {
 
         let index_x = 2;
 
-        let values = vec![1, 5, 0, 2, -1];
+        let values = [1, 5, 0, 2, -1];
         let mut a: Vec<IAtom> =
             values.iter().cloned().map(|e| e.into()).collect();
         a[index_x] = x.into();

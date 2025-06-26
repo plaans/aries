@@ -843,11 +843,11 @@ impl<Lbl: Label> Solver<Lbl> {
                     let sol = Arc::new(self.model.state.clone());
                     self.sync.notify_solution_found(sol.clone());
                     let objective_value = sol.var_domain(objective).lb;
-                    on_new_solution(objective_value, &sol);
                     if STATS_AT_SOLUTION.get() {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
                     }
+                    on_new_solution(objective_value, &sol);
                     sol
                 }
                 SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver

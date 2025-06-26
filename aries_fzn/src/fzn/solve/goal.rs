@@ -1,7 +1,7 @@
 /// Optimization goal: maximize or mininimize.
 ///
 /// ```flatzinc
-/// solve maximize happyness;
+/// solve maximize happiness;
 /// ```
 #[derive(PartialEq, Debug)]
 pub enum Goal {

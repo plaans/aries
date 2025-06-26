@@ -50,6 +50,20 @@ You should now have access to the entry point [target/doc/aries_fzn/index.html](
 
 Other useful documentation can be found under the [doc](doc) directory.
 
+## Adding a flatzinc constraint
+Here are the steps to follow to add a new flatzinc constraint:
+1. Update the redefinitions in [share/aries](share/aries) directory
+2. Uncomment or write a new predicate in [predicates.fzn](meta/predicates.fzn)
+3. Delete the files [constraint.rs](src/fzn/constraint/constraint.rs) and [mod.rs](src/fzn/constraint/builtins/mod.rs) in builtins
+4. Run the script [constraints.py](meta/constraints.py) to generate code for the new constraint
+5. Format the generated files with `cargo fmt`
+6. Add a documentation comment on the generated struct
+7. Implement the trait Encode for the new struct
+8. If needed, add a new aries constraint in [aries/constraint](src/aries/constraint)
+9. Add a new flatzinc test by creating a fzn-dzn pair in [tests/output](tests/output)
+10. Add the new match case in parse_constraint_item in [parser.rs](src/fzn/parser.rs)
+11. Verify the constraint is correctly implemented and tested with `cargo test`
+
 
 ## Useful links
  - [Rust book](https://doc.rust-lang.org/stable/book/)

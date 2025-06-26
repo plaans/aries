@@ -1,7 +1,3 @@
-x = true;
-y = false;
-r = false;
-----------
 x = false;
 y = false;
 r = true;
@@ -9,6 +5,10 @@ r = true;
 x = false;
 y = true;
 r = true;
+----------
+x = true;
+y = false;
+r = false;
 ----------
 x = true;
 y = true;

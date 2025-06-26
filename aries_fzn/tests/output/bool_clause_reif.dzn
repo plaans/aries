@@ -1,10 +1,10 @@
 a = false;
-b = true;
-r = false;
-----------
-a = false;
 b = false;
 r = true;
+----------
+a = false;
+b = true;
+r = false;
 ----------
 a = true;
 b = false;

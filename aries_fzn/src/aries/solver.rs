@@ -8,8 +8,8 @@ use aries::solver::Exit;
 use aries::solver::Solver as AriesSolver;
 use aries::solver::search::default_brancher;
 
+use crate::aries::Brancher;
 use crate::aries::Post;
-use crate::aries::config::Brancher;
 use crate::aries::constraint::InSet;
 use crate::fzn::constraint::Constraint as FznConstraint;
 use crate::fzn::constraint::Encode;
