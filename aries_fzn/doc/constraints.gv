@@ -16,6 +16,7 @@ digraph constraints {
         mzn_int_abs [label="int_abs"]
         // mzn_int_div [label="int_div"] [shape=ellipse]
         mzn_int_eq [label="int_eq"]
+        mzn_int_eq_imp [label="int_eq_imp"]
         mzn_int_eq_reif [label="int_eq_reif"]
         mzn_int_le [label="int_le"]
         mzn_int_le_reif [label="int_le_reif"]
@@ -67,6 +68,7 @@ digraph constraints {
         api_Clause [label="Clause"]
         api_ClauseReif [label="ClauseReif"]
         api_Eq [label="Eq"]
+        api_EqHalf [label="EqHalf"]
         api_EqReif [label="EqReif"]
         api_InSet [label="InSet"]
         api_Le [label="Le"]
@@ -118,6 +120,7 @@ digraph constraints {
     mzn_int_abs -> api_Abs
     // mzn_int_div
     mzn_int_eq -> api_Eq
+    mzn_int_eq_imp -> api_EqHalf
     mzn_int_eq_reif -> api_EqReif
     mzn_int_le -> api_Le
     mzn_int_le_reif -> api_LeReif
@@ -166,6 +169,7 @@ digraph constraints {
     api_Clause -> sol_Or
     api_ClauseReif -> sol_Or
     api_Eq -> sol_Eq
+    api_EqHalf -> sol_Eq
     api_EqReif -> sol_Eq
     api_InSet -> { sol_Or; sol_Lit } [label="*"]
     api_Le -> sol_MaxDiff
