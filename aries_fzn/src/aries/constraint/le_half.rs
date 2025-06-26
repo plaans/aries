@@ -6,17 +6,17 @@ use aries::model::lang::expr::leq;
 
 use crate::aries::Post;
 
-/// Reified less or equal constraint.
+/// Half reified less or equal constraint.
 ///
-/// `r <-> a <= b`
+/// `r -> a <= b`
 #[derive(Debug)]
-pub struct LeReif {
+pub struct LeHalf {
     a: IVar,
     b: IVar,
     r: BVar,
 }
 
-impl LeReif {
+impl LeHalf {
     pub fn new(a: IVar, b: IVar, r: BVar) -> Self {
         Self { a, b, r }
     }
@@ -34,9 +34,9 @@ impl LeReif {
     }
 }
 
-impl<Lbl: Label> Post<Lbl> for LeReif {
+impl<Lbl: Label> Post<Lbl> for LeHalf {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.bind(leq(self.a, self.b), self.r.true_lit());
+        model.enforce_if(self.r.true_lit(), leq(self.a, self.b));
     }
 }
 
@@ -53,10 +53,10 @@ mod tests {
     fn basic() {
         let (mut model, x, y, r) = basic_reif_model();
 
-        let eq_reif = LeReif::new(x, y, r);
+        let eq_reif = LeHalf::new(x, y, r);
         eq_reif.post(&mut model);
 
-        let verify = |[x, y, r]: [IntCst; 3]| (r == 1) == (x <= y);
+        let verify = |[x, y, r]: [IntCst; 3]| (r == 0) || (x <= y);
 
         verify_all([x, y, r.into()], model, verify);
     }
