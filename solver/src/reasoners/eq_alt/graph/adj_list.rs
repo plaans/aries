@@ -3,9 +3,9 @@ use std::{
     hash::Hash,
 };
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
-pub trait AdjEdge<N>: Eq + Copy + Debug {
+pub trait AdjEdge<N>: Eq + Copy + Debug + Hash {
     fn target(&self) -> N;
 }
 
@@ -14,7 +14,7 @@ pub trait AdjNode: Eq + Hash + Copy + Debug {}
 impl<T: Eq + Hash + Copy + Debug> AdjNode for T {}
 
 #[derive(Default, Clone)]
-pub(super) struct AdjacencyList<N: AdjNode, E: AdjEdge<N>>(HashMap<N, Vec<E>>);
+pub(super) struct AdjacencyList<N: AdjNode, E: AdjEdge<N>>(HashMap<N, HashSet<E>>);
 
 impl<N: AdjNode, E: AdjEdge<N>> Debug for AdjacencyList<N, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -41,7 +41,7 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
     /// Insert a node if not present, returns None if node was inserted, else Some(edges)
     pub(super) fn insert_node(&mut self, node: N) -> Option<Vec<E>> {
         if !self.0.contains_key(&node) {
-            self.0.insert(node, vec![]);
+            self.0.insert(node, HashSet::new());
         }
         None
     }
@@ -58,17 +58,17 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
             if edges.contains(&edge) {
                 false
             } else {
-                edges.push(edge);
+                edges.insert(edge);
                 true
             },
         )
     }
 
-    pub(super) fn get_edges(&self, node: N) -> Option<&Vec<E>> {
+    pub(super) fn get_edges(&self, node: N) -> Option<&HashSet<E>> {
         self.0.get(&node)
     }
 
-    pub(super) fn get_edges_mut(&mut self, node: N) -> Option<&mut Vec<E>> {
+    pub(super) fn get_edges_mut(&mut self, node: N) -> Option<&mut HashSet<E>> {
         self.0.get_mut(&node)
     }
 
@@ -84,5 +84,9 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
         self.0
             .get(&node)
             .map(move |v| v.iter().filter(move |e: &&E| filter(*e)).map(|e| e.target()))
+    }
+
+    pub(super) fn remove_edge(&mut self, node: N, edge: E) {
+        self.0.get_mut(&node).unwrap().remove(&edge);
     }
 }

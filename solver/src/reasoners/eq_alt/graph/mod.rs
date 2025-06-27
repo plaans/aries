@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use std::fmt::Debug;
+use std::hash::Hash;
 
 use itertools::Itertools;
 
@@ -15,11 +16,11 @@ use crate::reasoners::eq_alt::{
 mod adj_list;
 mod dft;
 
-pub(super) trait Label: Eq + Copy + Debug {}
+pub(super) trait Label: Eq + Copy + Debug + Hash {}
 
-impl<T: Eq + Copy + Debug> Label for T {}
+impl<T: Eq + Copy + Debug + Hash> Label for T {}
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub struct Edge<N: AdjNode, L: Label> {
     source: N,
     target: N,
@@ -28,7 +29,7 @@ pub struct Edge<N: AdjNode, L: Label> {
 }
 
 impl<N: AdjNode, L: Label> Edge<N, L> {
-    fn new(source: N, target: N, label: L, relation: EqRelation) -> Self {
+    pub fn new(source: N, target: N, label: L, relation: EqRelation) -> Self {
         Self {
             source,
             target,
@@ -37,7 +38,7 @@ impl<N: AdjNode, L: Label> Edge<N, L> {
         }
     }
 
-    fn reverse(&self) -> Self {
+    pub fn reverse(&self) -> Self {
         Edge {
             source: self.target,
             target: self.source,
@@ -98,6 +99,11 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
     pub fn add_edge(&mut self, edge: Edge<N, L>) {
         self.fwd_adj_list.insert_edge(edge.source, edge);
         self.rev_adj_list.insert_edge(edge.target, edge.reverse());
+    }
+
+    pub fn remove_edge(&mut self, edge: Edge<N, L>) {
+        self.fwd_adj_list.remove_edge(edge.source, edge);
+        self.rev_adj_list.remove_edge(edge.target, edge.reverse());
     }
 
     // Returns true if source -=-> target
@@ -231,18 +237,35 @@ mod test {
         // 0 -=-> 4
         g.add_edge(Edge::new(Node(0), Node(4), (), EqRelation::Eq));
 
+        let res = [
+            (Node(0), Node(3), EqRelation::Eq).into(),
+            (Node(0), Node(5), EqRelation::Neq).into(),
+            (Node(1), Node(3), EqRelation::Neq).into(),
+            (Node(1), Node(4), EqRelation::Neq).into(),
+            (Node(2), Node(3), EqRelation::Eq).into(),
+            (Node(2), Node(4), EqRelation::Eq).into(),
+            (Node(2), Node(5), EqRelation::Neq).into(),
+        ]
+        .into();
         assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), (), EqRelation::Eq)).collect::<HashSet<_>>(),
-            [
-                (Node(0), Node(3), EqRelation::Eq).into(),
-                (Node(0), Node(5), EqRelation::Neq).into(),
-                (Node(1), Node(3), EqRelation::Neq).into(),
-                (Node(1), Node(4), EqRelation::Neq).into(),
-                (Node(2), Node(3), EqRelation::Eq).into(),
-                (Node(2), Node(4), EqRelation::Eq).into(),
-                (Node(2), Node(5), EqRelation::Neq).into(),
-            ].into()
-        )
+            g.paths_requiring(Edge::new(Node(2), Node(3), (), EqRelation::Eq))
+                .collect::<HashSet<_>>(),
+            res
+        );
+
+        g.add_edge(Edge::new(Node(2), Node(3), (), EqRelation::Eq));
+        assert_eq!(
+            g.paths_requiring(Edge::new(Node(2), Node(3), (), EqRelation::Eq))
+                .collect::<HashSet<_>>(),
+            [].into()
+        );
+
+        g.remove_edge(Edge::new(Node(2), Node(3), (), EqRelation::Eq));
+        assert_eq!(
+            g.paths_requiring(Edge::new(Node(2), Node(3), (), EqRelation::Eq))
+                .collect::<HashSet<_>>(),
+            res
+        );
     }
 
     // #[test]
