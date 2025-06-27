@@ -143,7 +143,6 @@ impl Solver {
                     }
                     None => None,
                 };
-                eprintln!("{}", aries_solver.stats);
                 Ok(res)
             }
             SolveItem::Optimize(objective) => {
@@ -162,7 +161,6 @@ impl Solver {
                     }
                     None => None,
                 };
-                eprintln!("{}", aries_solver.stats);
                 Ok(res)
             }
         }

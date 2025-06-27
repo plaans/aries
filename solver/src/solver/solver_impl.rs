@@ -21,6 +21,9 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::instrument;
 
+/// If true: each time a solution is found, the solver's stats will be printed on stderr in CSV format (in optimization)
+static LOG_CSV: EnvParam<bool> = EnvParam::new("ARIES_LOG_CSV", "false");
+
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
 
@@ -853,6 +856,9 @@ impl<Lbl: Label> Solver<Lbl> {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
                     }
+                    if LOG_CSV.get() {
+                        self.log_stats(objective_value);
+                    }
                     on_new_solution(objective_value, &sol);
                     sol
                 }
@@ -1194,6 +1200,23 @@ impl<Lbl: Label> Solver<Lbl> {
             println!("====== {i} =====");
             th.print_stats();
         }
+    }
+
+    /// Log the stats and the given objective on stderr in CSV format.
+    pub fn log_stats(&self, objective: IntCst) {
+        if self.stats.num_solutions == 0 {
+            eprintln!("num_solution,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
+        }
+        eprintln!(
+            "{},{},{},{},{},{},{}",
+            self.stats.num_solutions,
+            objective,
+            self.stats.solve_time.as_millis(),
+            self.stats.num_decisions,
+            self.stats.num_conflicts,
+            self.stats.num_dom_updates,
+            self.stats.num_restarts,
+        );
     }
 
     /// Undo any decision that was made.
