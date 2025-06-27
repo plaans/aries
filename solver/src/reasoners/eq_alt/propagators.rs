@@ -1,0 +1,120 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+
+use hashbrown::{HashMap, HashSet};
+
+use crate::{core::{literals::Watches, Lit}, reasoners::eq_alt::core::{EqRelation, Node}};
+
+/// Enabling information for a propagator.
+/// A propagator should be enabled iff both literals `active` and `valid` are true.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) struct Enabler {
+    /// A literal that is true (but not necessarily present) when the propagator must be active if present
+    pub active: Lit,
+    /// A literal that is true when the propagator is within its validity scope, i.e.,
+    /// when is known to be sound to propagate a change from the source to the target.
+    ///
+    /// In the simplest case, we have `valid = presence(active)` since by construction
+    /// `presence(active)` is true iff both variables of the constraint are present.
+    ///
+    /// `valid` might a more specific literal but always with the constraints that
+    /// `presence(active) => valid`
+    pub valid: Lit,
+}
+
+impl Enabler {
+    pub fn new(active: Lit, valid: Lit) -> Enabler {
+        Enabler { active, valid }
+    }
+}
+
+/// Represents an edge together with a particular propagation direction:
+///  - forward (source to target)
+///  - backward (target to source)
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub(crate) struct PropagatorId(u64);
+
+impl From<PropagatorId> for usize {
+    fn from(e: PropagatorId) -> Self {
+        e.0 as usize
+    }
+}
+impl From<usize> for PropagatorId {
+    fn from(u: usize) -> Self {
+        PropagatorId(u as u64)
+    }
+}
+impl From<PropagatorId> for u64 {
+    fn from(e: PropagatorId) -> Self {
+        e.0
+    }
+}
+impl From<u64> for PropagatorId {
+    fn from(u: u64) -> Self {
+        PropagatorId(u)
+    }
+}
+
+/// One direction of a semi-reified eq or neq constraint
+#[derive(Clone, Hash)]
+pub struct Propagator {
+    pub a: Node,
+    pub b: Node,
+    pub relation: EqRelation,
+    pub enabler: Enabler,
+}
+
+
+impl Propagator {
+    pub fn new(a: Node, b: Node, relation: EqRelation, active: Lit, valid: Lit) -> Self {
+        Self { a, b, relation, enabler: Enabler::new(active, valid) }
+    }
+    
+    pub fn new_pair(a: Node, b: Node, relation: EqRelation, active: Lit, ab_valid: Lit, ba_valid: Lit) -> (Self, Self) {
+        (
+            Self::new(a, b, relation, active, ab_valid),
+            Self::new(b, a, relation, active, ba_valid)
+        )
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct PropagatorStore {
+    propagators: HashMap<PropagatorId, Propagator>,
+    active_props: HashSet<PropagatorId>,
+    watches: Watches<(Enabler, PropagatorId)>,
+}
+
+impl PropagatorStore {
+    pub fn add_propagator(&mut self, prop: Propagator) -> PropagatorId {
+        let mut hasher = DefaultHasher::new();
+        prop.hash(&mut hasher);
+        let id = hasher.finish().into();
+        let enabler = prop.enabler;
+        self.propagators.insert(id, prop);
+        self.watches.add_watch((enabler, id), enabler.active);
+        self.watches.add_watch((enabler, id), enabler.valid);
+        id
+    }
+
+    pub fn get_propagator(&self, prop_id: PropagatorId) -> &Propagator {
+        self.propagators.get(&prop_id).unwrap()
+    }
+
+    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
+        self.watches.watches_on(literal)
+    }
+
+    pub fn is_active(&self, prop_id: PropagatorId) -> bool {
+        self.active_props.contains(&prop_id)
+    }
+
+    pub fn mark_active(&mut self, prop_id: PropagatorId) {
+        debug_assert!(self.propagators.contains_key(&prop_id));
+        self.active_props.insert(prop_id);
+    }
+
+    pub fn mark_inactive(&mut self, prop_id: PropagatorId) {
+        debug_assert!(self.propagators.contains_key(&prop_id));
+        assert!(self.active_props.remove(&prop_id));
+    }
+}

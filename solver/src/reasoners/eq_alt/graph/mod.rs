@@ -63,9 +63,9 @@ pub(super) struct DirEqGraph<N: AdjNode, L: Label> {
 /// Directed pair of nodes with a == or != relation
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct NodePair<N> {
-    source: N,
-    target: N,
-    relation: EqRelation,
+    pub source: N,
+    pub target: N,
+    pub relation: EqRelation,
 }
 
 impl<N> NodePair<N> {
@@ -99,6 +99,11 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
     pub fn add_edge(&mut self, edge: Edge<N, L>) {
         self.fwd_adj_list.insert_edge(edge.source, edge);
         self.rev_adj_list.insert_edge(edge.target, edge.reverse());
+    }
+
+    pub fn add_node(&mut self, node: N) {
+        self.fwd_adj_list.insert_node(node);
+        self.rev_adj_list.insert_node(node);
     }
 
     pub fn remove_edge(&mut self, edge: Edge<N, L>) {
