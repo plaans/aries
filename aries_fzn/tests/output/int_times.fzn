@@ -1,0 +1,5 @@
+var -3..2: x:: output_var;
+var -2..4: y:: output_var;
+var -5..9: z:: output_var;
+constraint int_times(x,y,z);
+solve satisfy;

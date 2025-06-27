@@ -317,7 +317,7 @@ class Predicate:
 
 
 class BuiltinsMod:
-    DOC = "/// Flatzinc builtins.\n"
+    DOC = "//! Flatzinc builtins.\n"
 
     def __init__(self, predicates: list[Predicate]) -> None:
         self.predicates = predicates

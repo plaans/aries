@@ -1,5 +1,5 @@
 use aries::backtrack::Backtrack;
-use aries::core::state::OptDomain;
+use aries::core::state::{OptDomain, Term};
 use aries::core::Lit;
 use aries::model::extensions::AssignmentExt;
 use aries::model::lang::alternative::Alternative;
@@ -207,6 +207,27 @@ fn ints_and_bools() {
     assert_eq!(solver.model.domain_of(i), (0, 0));
     assert_eq!(solver.model.domain_of(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
+}
+
+#[test]
+fn test_multiplication() {
+    let mut model = Model::new();
+
+    let a = model.new_ivar(0, 9, "a");
+    let b = model.new_ivar(0, 9, "b");
+    let c = model.new_ivar(0, 9, "c");
+
+    let constraint = eq_mul(a, b, c);
+
+    model.enforce(constraint, []);
+    let mut solver = Solver::new(model);
+
+    println!("a = b * c");
+    for sol in solver.enumerate(&[a.variable(), b.variable(), c.variable()]).unwrap() {
+        let [a, b, c] = [sol[0], sol[1], sol[2]];
+        println!("{a} = {b} * {c}");
+        assert_eq!(a, b * c);
+    }
 }
 
 #[test]

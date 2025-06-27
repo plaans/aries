@@ -2,6 +2,7 @@
 
 pub mod linear;
 pub mod max;
+pub mod mul;
 pub mod mul_lit;
 
 mod propagator;
@@ -16,9 +17,9 @@ use crate::core::state::{
 };
 use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
 use crate::create_ref_type;
-use crate::model::extensions::AssignmentExt;
+use crate::model::extensions::{AssignmentExt, DisjunctionExt};
 use crate::model::lang::linear::NFLinearLeq;
-use crate::model::lang::mul::NFEqVarMulLit;
+use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -121,12 +122,28 @@ impl Cp {
 
     /// Adds a linear constraint that is only active when `active` is true.
     pub fn add_half_reif_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit, doms: &Domains) {
-        let valid = doms.presence_literal(active);
+        let valid = doms.presence(active);
         debug_assert!(leq.sum.iter().all(|e| doms.implies(valid, doms.presence(e.var))));
         let elements = leq.sum.iter().map(|e| SumElem::new(e.factor, e.var)).collect();
         let propagator = LinearSumLeq {
             elements,
             ub: leq.upper_bound,
+            active,
+            valid,
+        };
+        self.add_propagator(propagator);
+    }
+
+    pub fn add_half_reified_mul_constraint(&mut self, mul: &EqMul, active: Lit, doms: &Domains) {
+        // TODO: this is correct but may miss opportunities for eager propagation of optional variables
+        let valid = doms.presence(active);
+        debug_assert!([mul.lhs, mul.rhs1, mul.rhs2]
+            .iter()
+            .all(|e| doms.implies(valid, doms.presence(*e))));
+        let propagator = mul::Mul {
+            prod: mul.lhs,
+            fact1: mul.rhs1,
+            fact2: mul.rhs2,
             active,
             valid,
         };

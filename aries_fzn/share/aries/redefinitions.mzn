@@ -45,9 +45,6 @@ predicate int_mod(var int: a, var int: b, var int: c) =
 predicate int_pow(var int: x, var int: y, var int: z) =
     abort("int_pow is not supported");
 
-predicate int_times(var int: a, var int: b, var int: c) =
-    abort("int_times is not supported");
-
 predicate array_bool_xor(array [int] of var bool: as) =
     abort("array_bool_xor is not supported");
 
@@ -73,6 +70,7 @@ predicate int_lt(var int: a, var int: b);
 predicate int_lt_reif(var int: a, var int: b, var bool: r);
 predicate int_ne(var int: a, var int: b);
 predicate int_ne_reif(var int: a, var int: b, var bool: r);
+predicate int_times(var int: a, var int: b, var int: c);
 predicate set_in(var int: x, set of int: S);
 predicate array_bool_and(array [int] of var bool: as, var bool: r);
 predicate bool2int(var bool: a, var int: b);

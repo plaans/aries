@@ -4,7 +4,7 @@ use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
-use crate::model::lang::mul::NFEqVarMulLit;
+use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::model::lang::ValidityScope;
 use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
@@ -33,6 +33,7 @@ pub enum ReifExpr {
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
     EqMax(NFEqMax),
+    EqMul(EqMul),
     EqVarMulLit(NFEqVarMulLit),
 }
 
@@ -49,6 +50,7 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::And(and) => write!(f, "and{and:?}"),
             ReifExpr::Linear(l) => write!(f, "{l}"),
             ReifExpr::EqMax(em) => write!(f, "{em:?}"),
+            ReifExpr::EqMul(em) => write!(f, "{em:?}"),
             ReifExpr::Alternative(alt) => write!(f, "{alt:?}"),
             ReifExpr::EqVarMulLit(em) => write!(f, "{em:?}"),
         }
@@ -78,6 +80,9 @@ impl ReifExpr {
             ReifExpr::Linear(lin) => lin.validity_scope(presence),
             ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
             ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
+            ReifExpr::EqMul(eq_mul) => {
+                ValidityScope::new([presence(eq_mul.lhs), presence(eq_mul.rhs1), presence(eq_mul.rhs2)], [])
+            }
             ReifExpr::EqVarMulLit(em) => ValidityScope::new([presence(em.lhs)], []),
         }
     }
@@ -210,6 +215,13 @@ impl ReifExpr {
                     Some(true)
                 }
             }
+            ReifExpr::EqMul(EqMul { lhs, rhs1, rhs2 }) => {
+                if !prez(*lhs) || !prez(*rhs2) || !prez(*rhs2) {
+                    None
+                } else {
+                    Some(value(*lhs) == value(*rhs1).saturating_mul(value(*rhs2)))
+                }
+            }
             ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
                 if !prez(*lhs) {
                     None
@@ -280,6 +292,7 @@ impl Not for ReifExpr {
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
             ReifExpr::EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
+            ReifExpr::EqMul(_) => panic!("EqMul is a constraint and cannot be negated"),
             ReifExpr::EqVarMulLit(_) => panic!("EqVarMulLit is a constraint and cannot be negated"),
         }
     }
