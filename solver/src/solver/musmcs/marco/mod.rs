@@ -31,6 +31,11 @@ pub struct Marco<'a, Lbl: Label> {
     main_solver: &'a mut Solver<Lbl>,
     map_solver: MapSolver,
     grow_shrink_optional_optimisation: SubsetSolverOptiMode,
+
+    #[cfg(debug_assertions)]
+    debug_found_muses: BTreeSet<BTreeSet<Lit>>,
+    #[cfg(debug_assertions)]
+    debug_found_mcses: BTreeSet<BTreeSet<Lit>>,
 }
 
 impl<'a, Lbl: Label> Iterator for Marco<'a, Lbl> {
@@ -43,6 +48,7 @@ impl<'a, Lbl: Label> Iterator for Marco<'a, Lbl> {
 }
 
 impl<'a, Lbl: Label> Marco<'a, Lbl> {
+    #[cfg(not(debug_assertions))]
     pub fn with(
         literals: impl Iterator<Item = Lit> + Clone,
         main_solver: &'a mut Solver<Lbl>,
@@ -51,11 +57,32 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     ) -> Self {
         assert_eq!(main_solver.current_decision_level(), DecLvl::ROOT);
         let map_solver = MapSolver::new(literals.clone(), map_solver_mode);
+
         Self {
             literals: literals.into_iter().collect(),
             main_solver,
             map_solver,
             grow_shrink_optional_optimisation: main_solver_opti_mode,
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn with(
+        literals: impl Iterator<Item = Lit> + Clone,
+        main_solver: &'a mut Solver<Lbl>,
+        map_solver_mode: MapSolverMode,
+        main_solver_opti_mode: SubsetSolverOptiMode,
+    ) -> Self {
+        assert_eq!(main_solver.current_decision_level(), DecLvl::ROOT);
+        let map_solver = MapSolver::new(literals.clone(), map_solver_mode);
+
+        Self {
+            literals: literals.into_iter().collect(),
+            main_solver,
+            map_solver,
+            grow_shrink_optional_optimisation: main_solver_opti_mode,
+            debug_found_muses: BTreeSet::<_>::new(),
+            debug_found_mcses: BTreeSet::<_>::new(),
         }
     }
 
@@ -106,6 +133,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
                 self.map_solver.block_down(&mcs);
 
                 if !mcs.is_empty() {
+                    self.debug_check_mcs_is_new(&mcs);
                     return Ok(Some(MusMcs::Mcs(mcs)));
                 }
             } else {
@@ -113,11 +141,30 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
                 self.map_solver.block_up(&mus);
 
                 if !mus.is_empty() {
+                    self.debug_check_mus_is_new(&mus);
                     return Ok(Some(MusMcs::Mus(mus)));
                 }
             }
         }
         Ok(None)
+    }
+    #[cfg(not(debug_assertions))]
+    #[expect(unreachable_code)]
+    fn debug_check_mcs_is_new(&mut self, _mcs: &BTreeSet<Lit>) {
+        debug_assert!(unreachable!())
+    }
+    #[cfg(not(debug_assertions))]
+    #[expect(unreachable_code)]
+    fn debug_check_mus_is_new(&mut self, _mus: &BTreeSet<Lit>) {
+        debug_assert!(unreachable!())
+    }
+    #[cfg(debug_assertions)]
+    fn debug_check_mcs_is_new(&mut self, mcs: &BTreeSet<Lit>) {
+        debug_assert!(self.debug_found_mcses.insert(mcs.clone()))
+    }
+    #[cfg(debug_assertions)]
+    fn debug_check_mus_is_new(&mut self, mus: &BTreeSet<Lit>) {
+        debug_assert!(self.debug_found_muses.insert(mus.clone()))
     }
 
     /// Checks whether the given subset literals is satisfiable.
