@@ -1,15 +1,5 @@
 x = false;
 a = false;
-b = true;
-i = 1;
-----------
-x = true;
-a = true;
-b = false;
-i = 1;
-----------
-x = false;
-a = false;
 b = false;
 i = 1;
 ----------
@@ -17,6 +7,11 @@ x = false;
 a = false;
 b = false;
 i = 2;
+----------
+x = false;
+a = false;
+b = true;
+i = 1;
 ----------
 x = false;
 a = true;
@@ -27,6 +22,11 @@ x = true;
 a = false;
 b = true;
 i = 2;
+----------
+x = true;
+a = true;
+b = false;
+i = 1;
 ----------
 x = true;
 a = true;

@@ -11,8 +11,10 @@
       "-i"
     ],
     "extraFlags": [
-      ["config", "solver configuration", "opt:activity-min:activity-max:activity-min-max", "activity-min"]
-    ],
+    ["--var-order", "variable order", "opt:lexical:first-fail:activity", "lexical"],
+    ["--value-order", "value order", "opt:min:max:lower-half:upper-half:dynamic", "min"]
+    ["--restart", "restart policy", "opt:geometric:never", "geometric"]
+  ],
     "supportsMzn": false,
     "supportsFzn": true,
     "needsSolns2Out": true,

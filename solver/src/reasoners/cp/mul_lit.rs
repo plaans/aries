@@ -111,11 +111,11 @@ impl Propagator for VarEqVarMulLit {
             // Explain why lit is false
             // intersection(dom(reif), dom(orig)) is empty, so lit = false
             if reif_lb > orig_ub {
-                out_explanation.push(self.original.leq(orig_ub));
+                out_explanation.push(self.original.lt(reif_lb));
                 out_explanation.push(self.reified.geq(reif_lb));
             }
             if reif_ub < orig_lb {
-                out_explanation.push(self.original.geq(orig_lb));
+                out_explanation.push(self.original.gt(reif_ub));
                 out_explanation.push(self.reified.leq(reif_ub));
             }
         } else {
@@ -283,21 +283,27 @@ mod tests {
     });
 
     /// Generate random problems (domains + propagator)
-    ///
-    /// FIXME: this is taken from the previous implementation of the tests (by @Shi-Raida)
-    /// but it will in fact always generate the same problem.
     fn gen_problems(n: usize) -> Vec<(Domains, VarEqVarMulLit)> {
         let mut problems = Vec::new();
         let mut rng = SmallRng::seed_from_u64(0);
 
         // repeat a large number of random tests
         for _ in 0..n {
-            // create the constraint
             let mut d = Domains::new();
-            let p = d.new_presence_literal(Lit::TRUE);
-            let lit = d.new_presence_literal(p);
-            let original = d.new_optional_var(-10, 10, p);
-            let reified = d.new_var(-10, 10);
+
+            let prez = d.new_presence_literal(Lit::TRUE);
+            let lit = d.new_presence_literal(prez);
+
+            let reif_lb = rng.gen_range(-20..=20);
+            let reif_ub = rng.gen_range(-20..=20).max(reif_lb);
+            let reified = d.new_var(reif_lb, reif_ub);
+
+            let orig_prez = d.new_presence_literal(prez);
+            let orig_lb = rng.gen_range(-20..=20);
+            let orig_ub = rng.gen_range(-20..=20).max(orig_lb);
+            let original = d.new_optional_var(orig_lb, orig_ub, orig_prez);
+            d.add_implication(lit, orig_prez);
+
             let c = VarEqVarMulLit { reified, original, lit };
             problems.push((d, c));
         }

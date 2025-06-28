@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod beta;
 pub mod combinators;
 pub mod conflicts;
 pub mod lexical;
