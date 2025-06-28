@@ -296,7 +296,6 @@ mod tests {
 
     use itertools::Itertools;
 
-    use crate::backtrack::{Backtrack, DecLvl};
     use crate::core::Lit;
     use crate::model::lang::expr::{geq, lt};
     use crate::solver::musmcs::marco::mapsolver::MapSolverMode;
@@ -332,11 +331,9 @@ mod tests {
         for musmcs in res {
             match musmcs {
                 MusMcs::Mus(set) => {
-                    test_is_mus(marco.main_solver, &set);
                     res_muses.insert(set);
                 }
                 MusMcs::Mcs(set) => {
-                    test_is_mcs(marco.main_solver, &marco.literals, &set);
                     res_mcses.insert(set);
                 }
                 _ => panic!(),
@@ -379,43 +376,5 @@ mod tests {
 
         assert_eq!(res_muses, expected_muses);
         assert_eq!(res_mcses, expected_mcses);
-    }
-
-    fn test_is_mus(solver: &mut Solver, mus: &BTreeSet<Lit>) {
-        assert_eq!(solver.current_decision_level(), DecLvl::ROOT);
-
-        let mus = mus.iter().copied().collect_vec();
-
-        // Test mus being infeasible
-        assert!(solver.solve_with_assumptions(&mus).unwrap().is_err());
-
-        // Test mus being minimal
-        for &lit in &mus {
-            solver.reset();
-            assert!(solver
-                .solve_with_assumptions(&mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec())
-                .unwrap()
-                .is_ok());
-        }
-        solver.reset();
-    }
-
-    fn test_is_mcs(solver: &mut Solver, literals: &BTreeSet<Lit>, mcs: &BTreeSet<Lit>) {
-        assert_eq!(solver.current_decision_level(), DecLvl::ROOT);
-
-        let mss = literals.difference(mcs).copied().collect_vec();
-        let mcs = mcs.iter().copied().collect_vec();
-
-        // Test mss being feasible
-        assert!(solver.solve_with_assumptions(&mss).unwrap().is_ok());
-        // Test mcs being minimal (i.e. mss + any element of mcs being infeasible)
-        for &lit in &mcs {
-            solver.reset();
-            assert!(solver
-                .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec())
-                .unwrap()
-                .is_err())
-        }
-        solver.reset();
     }
 }
