@@ -148,60 +148,6 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         }
         Ok(None)
     }
-    #[cfg(not(debug_assertions))]
-    #[expect(unreachable_code)]
-    fn debug_check_mcs_is_new_and_correct(&mut self, _mcs: &BTreeSet<Lit>) {
-        debug_assert!(unreachable!())
-    }
-    #[cfg(not(debug_assertions))]
-    #[expect(unreachable_code)]
-    fn debug_check_mus_is_new_and_correct(&mut self, _mus: &BTreeSet<Lit>) {
-        debug_assert!(unreachable!())
-    }
-    #[cfg(debug_assertions)]
-    fn debug_check_mcs_is_new_and_correct(&mut self, mcs: &BTreeSet<Lit>) {
-        debug_assert!(self.debug_found_mcses.insert(mcs.clone()));
-
-        assert_eq!(self.main_solver.current_decision_level(), DecLvl::ROOT);
-
-        let mss = self.literals.difference(mcs).copied().collect_vec();
-        let mcs = mcs.iter().copied().collect_vec();
-
-        // Test mss being feasible
-        debug_assert!(self.main_solver.solve_with_assumptions(&mss).unwrap().is_ok());
-        // Test mcs being minimal (i.e. mss + any element of mcs being infeasible)
-        for &lit in &mcs {
-            self.main_solver.reset();
-            debug_assert!(self
-                .main_solver
-                .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec())
-                .unwrap()
-                .is_err())
-        }
-        self.main_solver.reset();
-    }
-    #[cfg(debug_assertions)]
-    fn debug_check_mus_is_new_and_correct(&mut self, mus: &BTreeSet<Lit>) {
-        debug_assert!(self.debug_found_muses.insert(mus.clone()));
-
-        assert_eq!(self.main_solver.current_decision_level(), DecLvl::ROOT);
-
-        let mus = mus.iter().copied().collect_vec();
-
-        // Test mus being infeasible
-        debug_assert!(self.main_solver.solve_with_assumptions(&mus).unwrap().is_err());
-
-        // Test mus being minimal
-        for &lit in &mus {
-            self.main_solver.reset();
-            debug_assert!(self
-                .main_solver
-                .solve_with_assumptions(&mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec())
-                .unwrap()
-                .is_ok());
-        }
-        self.main_solver.reset();
-    }
 
     /// Checks whether the given subset literals is satisfiable.
     /// - If SAT: returns *all* literals (considered by the algorithm) that are true in the found assignment (so a superset of `subset`).
@@ -322,6 +268,61 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
                 );
             }
         }
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[expect(unreachable_code)]
+    fn debug_check_mcs_is_new_and_correct(&mut self, _mcs: &BTreeSet<Lit>) {
+        debug_assert!(unreachable!())
+    }
+    #[cfg(not(debug_assertions))]
+    #[expect(unreachable_code)]
+    fn debug_check_mus_is_new_and_correct(&mut self, _mus: &BTreeSet<Lit>) {
+        debug_assert!(unreachable!())
+    }
+    #[cfg(debug_assertions)]
+    fn debug_check_mcs_is_new_and_correct(&mut self, mcs: &BTreeSet<Lit>) {
+        debug_assert!(self.debug_found_mcses.insert(mcs.clone()));
+
+        assert_eq!(self.main_solver.current_decision_level(), DecLvl::ROOT);
+
+        let mss = self.literals.difference(mcs).copied().collect_vec();
+        let mcs = mcs.iter().copied().collect_vec();
+
+        // Test mss being feasible
+        debug_assert!(self.main_solver.solve_with_assumptions(&mss).unwrap().is_ok());
+        // Test mcs being minimal (i.e. mss + any element of mcs being infeasible)
+        for &lit in &mcs {
+            self.main_solver.reset();
+            debug_assert!(self
+                .main_solver
+                .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec())
+                .unwrap()
+                .is_err())
+        }
+        self.main_solver.reset();
+    }
+    #[cfg(debug_assertions)]
+    fn debug_check_mus_is_new_and_correct(&mut self, mus: &BTreeSet<Lit>) {
+        debug_assert!(self.debug_found_muses.insert(mus.clone()));
+
+        assert_eq!(self.main_solver.current_decision_level(), DecLvl::ROOT);
+
+        let mus = mus.iter().copied().collect_vec();
+
+        // Test mus being infeasible
+        debug_assert!(self.main_solver.solve_with_assumptions(&mus).unwrap().is_err());
+
+        // Test mus being minimal
+        for &lit in &mus {
+            self.main_solver.reset();
+            debug_assert!(self
+                .main_solver
+                .solve_with_assumptions(&mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec())
+                .unwrap()
+                .is_ok());
+        }
+        self.main_solver.reset();
     }
 }
 
