@@ -242,7 +242,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
- "structopt",
+ "clap 4.5.40",
  "varisat-dimacs",
  "varisat-formula",
  "zip",

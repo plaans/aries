@@ -114,7 +114,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             }
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
         }
-        SolverResult::Unsat => {
+        SolverResult::Unsat(_) => {
             solver.print_stats();
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");

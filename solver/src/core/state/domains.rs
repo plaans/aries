@@ -8,7 +8,6 @@ use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
-use crate::solver::UnsatCore;
 use std::fmt::{Debug, Formatter};
 
 use super::IntDomain;
@@ -372,6 +371,11 @@ impl Domains {
         self.doms.variables()
     }
 
+    /// Returns the number of variables in the model.
+    pub fn num_variables(&self) -> usize {
+        self.doms.num_variables()
+    }
+
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
         self.doms.bound_variables()
     }
@@ -592,7 +596,7 @@ impl Domains {
             let implying_lits = self.implying_literals(lit, explainer).expect("Encountered ");
             explanation.extend(implying_lits);
         }
-        UnsatCore::from(Vec::from(result))
+        Explanation::from(Vec::from(result))
     }
 
     /// Extract an UNSAT core after a failure to impose or propagate an assumption.
@@ -600,7 +604,7 @@ impl Domains {
         &mut self,
         failed: InvalidUpdate,
         explainer: &mut impl Explainer,
-    ) -> UnsatCore {
+    ) -> Explanation {
         let InvalidUpdate(literal, cause) = failed;
         debug_assert!(
             !matches!(cause, Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)),
@@ -634,7 +638,7 @@ impl Domains {
         &mut self,
         conflict: Conflict,
         explainer: &mut impl Explainer,
-    ) -> UnsatCore {
+    ) -> Explanation {
         let explanation = Explanation::from(conflict.clause.literals().iter().map(|&l| !l).collect_vec());
         self.extract_assumptions_implying(explanation, explainer)
     }
@@ -651,6 +655,20 @@ impl Domains {
         }
 
         decs
+    }
+
+    /// Returns all the assumptions that were made since the root decision level.
+    pub fn assumptions(&self) -> Vec<Lit> {
+        let mut assumptions = Vec::new();
+        let mut lvl = DecLvl::ROOT + 1;
+        for e in self.trail().events() {
+            if e.cause == Origin::ASSUMPTION {
+                assumptions.push(e.new_literal());
+                lvl += 1;
+            }
+        }
+
+        assumptions
     }
 
     /// Computes literals `l_1 ... l_n` such that:

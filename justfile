@@ -49,3 +49,8 @@ fzn-build-dbg:
 # Invoke minizinc, within the development environments (with aries compiled in ci mode)
 minizinc-dbg +args: fzn-build-dbg
     minizinc {{args}}
+
+# Shortcut command to run the samply profiler on a specific binary
+samply bin +args:
+    cargo build --profile perf --bin {{bin}}
+    samply record target/perf/{{bin}} {{args}}

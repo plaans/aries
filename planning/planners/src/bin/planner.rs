@@ -153,7 +153,7 @@ fn main() -> Result<()> {
             print_plan(&finite_problem, &assignment, opt.plan_out_file.as_ref());
             anyhow::ensure!(!opt.unsat, "Solution found to an unsat problem.");
         }
-        SolverResult::Unsat => {
+        SolverResult::Unsat(_) => {
             println!("\nNo plan found");
             anyhow::ensure!(!opt.sat, "No solution found to a solvable pproblem.");
         }
