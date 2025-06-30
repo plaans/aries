@@ -7,6 +7,9 @@ use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use env_param::EnvParam;
 use std::ops::Not;
 
+use super::mul::EqMul;
+use super::IVar;
+
 static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
@@ -66,6 +69,11 @@ pub fn and(disjuncts: impl Into<Box<[Lit]>>) -> And {
 }
 pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
     or([!a.into(), b.into()])
+}
+
+/// Creates a new expression that is true iff `lhs = factor1 * factor2`
+pub fn eq_mul(lhs: impl Into<IVar>, factor1: impl Into<IVar>, factor2: impl Into<IVar>) -> EqMul {
+    EqMul::new(lhs.into(), factor1.into(), factor2.into())
 }
 
 pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl IntoIterator<Item = T>) -> Alternative {

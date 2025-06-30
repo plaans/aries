@@ -35,7 +35,7 @@ digraph constraints {
         mzn_int_ne_reif [label="int_ne_reif"]
         mzn_int_plus [label="int_plus"]
         // mzn_int_pow [label="int_pow"] [shape=ellipse]
-        // mzn_int_times [label="int_times"] [shape=ellipse]
+        mzn_int_times [label="int_times"]
         mzn_array_bool_and [label="array_bool_and"]
         mzn_array_bool_element [label="array_bool_element"]
         // mzn_array_bool_xor [label="array_bool_xor"] [shape=ellipse]
@@ -86,6 +86,7 @@ digraph constraints {
         api_LinNeReif [label="LinNeReif"]
         api_Max [label="Max"]
         api_Min [label="Min"]
+        api_Mul [label="Mul"]
         api_Ne [label="Ne"]
         api_NeReif [label="NeReif"]
         api_OrReif [label="OrReif"]
@@ -106,6 +107,7 @@ digraph constraints {
         sol_Neq [label="Neq"]
         // sol_NeqVal [label="NeqVal"]
         sol_Or [label="Or"]
+        sol_EqMul [label="EqMul"]
     }
 
     // ---------- Minizinc ----------
@@ -135,7 +137,7 @@ digraph constraints {
     mzn_int_ne_reif -> api_NeReif
     mzn_int_plus -> mzn_int_lin_eq
     // mzn_int_pow
-    // mzn_int_times
+    mzn_int_times -> api_Mul
 
     mzn_array_bool_and -> api_AndReif
     mzn_array_bool_element -> api_ArrayElement
@@ -183,6 +185,7 @@ digraph constraints {
     api_LtReif -> sol_MaxDiff
     api_Max -> sol_EqMax
     api_Min -> sol_EqMax
+    api_Mul -> sol_EqMul
     api_Ne -> sol_Neq
     api_NeReif -> sol_Neq
     api_OrReif -> api_Clause
