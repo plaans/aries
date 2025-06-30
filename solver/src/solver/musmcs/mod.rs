@@ -6,12 +6,13 @@ use crate::{core::Lit, solver::musmcs::marco::Marco};
 
 pub type MusMcsEnumerator<'a, Lbl> = Marco<'a, Lbl>;
 
+/// Type alias for representing a Minimal Unsatisfiable Subset (MUS)
 pub type Mus = BTreeSet<Lit>;
+
+/// Type alias for representing a Minimal Correction Set (MCS)
 pub type Mcs = BTreeSet<Lit>;
 
 pub enum MusMcs {
-    Mus(BTreeSet<Lit>),
-    Us(BTreeSet<Lit>),
-    Mcs(BTreeSet<Lit>),
-    Cs(BTreeSet<Lit>),
+    Mus(Mus),
+    Mcs(Mcs),
 }

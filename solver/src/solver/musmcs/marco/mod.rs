@@ -23,6 +23,8 @@ pub enum SubsetSolverOptiMode {
     KnownImplications,
 }
 
+/// Implementation of the Marco algorithm, exposing an interface for iteratively finding
+/// MUS and MCS in a given problem.
 pub struct Marco<'a, Lbl: Label> {
     /// The literals whose powerset makes up the search space of the MARCO.
     literals: BTreeSet<Lit>,
@@ -42,7 +44,6 @@ impl<'a, Lbl: Label> Iterator for Marco<'a, Lbl> {
     type Item = MusMcs;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO: return (non-minimal) Us/Cs-es when, for example, a timeout is reached or an Exit signal is received.
         self._next().map_or(None, |musmcs| musmcs)
     }
 }
@@ -80,29 +81,6 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     /// Returns an arbitrary MUS (the first one encountered by the algorithm).
     pub fn first_mus(self) -> Option<Mus> {
         self.mus_only().next()
-    }
-
-    pub fn run(&mut self, on_mus_found: impl Fn(&Mus), on_mcs_found: impl Fn(&Mcs)) -> Vec<MusMcs> {
-        let mut res = Vec::<MusMcs>::new();
-
-        loop {
-            // TODO: return (non-minimal) Us/Cs-es when, for example, a timeout is reached or an Exit signal is received.
-            if let Ok(Some(musmcs)) = self._next() {
-                match musmcs {
-                    MusMcs::Mus(set) => {
-                        on_mus_found(&set);
-                        res.push(MusMcs::Mus(set));
-                    }
-                    MusMcs::Mcs(set) => {
-                        on_mcs_found(&set);
-                        res.push(MusMcs::Mcs(set));
-                    }
-                    _ => todo!(),
-                }
-            } else {
-                return res;
-            }
-        }
     }
 
     fn _next(&mut self) -> Result<Option<MusMcs>, Exit> {
@@ -315,7 +293,7 @@ mod tests {
     use crate::core::Lit;
     use crate::model::lang::expr::{geq, lt};
     use crate::solver::musmcs::marco::mapsolver::MapSolverMode;
-    use crate::solver::musmcs::MusMcs;
+    use crate::solver::musmcs::{Mcs, Mus, MusMcs};
     type Lbl = &'static str;
 
     type Model = crate::model::Model<Lbl>;
@@ -330,19 +308,19 @@ mod tests {
         let x2 = solver.model.new_ivar(0, 10, "x2");
         let x3 = solver.model.new_ivar(0, 10, "x3");
 
-        let soft_constraints = vec![lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2), lt(x3, 5), geq(x3, 5)];
-        let soft_constraints_reiflits = soft_constraints.iter().map(|sc| solver.half_reify(*sc)).collect_vec();
+        let soft_constraints = [lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2), lt(x3, 5), geq(x3, 5)];
+        let soft_reiflits = soft_constraints.iter().map(|sc| solver.half_reify(*sc)).collect_vec();
 
-        let mut marco = Marco::with(
-            soft_constraints_reiflits.iter().copied(),
+        let marco = Marco::with(
+            soft_reiflits.iter().copied(),
             &mut solver,
             MapSolverMode::HighPreferredValues,
             crate::solver::musmcs::marco::SubsetSolverOptiMode::None,
         );
-        let res = marco.run(|_| {}, |_| {});
+        let res = marco.collect_vec();
 
-        let mut res_muses = BTreeSet::<BTreeSet<Lit>>::new();
-        let mut res_mcses = BTreeSet::<BTreeSet<Lit>>::new();
+        let mut res_muses = BTreeSet::<Mus>::new();
+        let mut res_mcses = BTreeSet::<Mcs>::new();
 
         for musmcs in res {
             match musmcs {
@@ -352,42 +330,21 @@ mod tests {
                 MusMcs::Mcs(set) => {
                     res_mcses.insert(set);
                 }
-                _ => panic!(),
             }
         }
-
+        let set = |elem: &[Lit]| BTreeSet::from_iter(elem.iter().copied());
         let expected_muses = BTreeSet::from_iter(vec![
-            BTreeSet::from_iter(vec![
-                soft_constraints_reiflits[0],
-                soft_constraints_reiflits[1],
-                soft_constraints_reiflits[2],
-            ]),
-            BTreeSet::from_iter(vec![soft_constraints_reiflits[2], soft_constraints_reiflits[3]]),
-            BTreeSet::from_iter(vec![soft_constraints_reiflits[4], soft_constraints_reiflits[5]]),
+            set(&[soft_reiflits[0], soft_reiflits[1], soft_reiflits[2]]),
+            set(&[soft_reiflits[2], soft_reiflits[3]]),
+            set(&[soft_reiflits[4], soft_reiflits[5]]),
         ]);
         let expected_mcses = BTreeSet::from_iter(vec![
-            BTreeSet::from_iter(vec![soft_constraints_reiflits[2], soft_constraints_reiflits[5]]),
-            BTreeSet::from_iter(vec![
-                soft_constraints_reiflits[0],
-                soft_constraints_reiflits[3],
-                soft_constraints_reiflits[5],
-            ]),
-            BTreeSet::from_iter(vec![
-                soft_constraints_reiflits[1],
-                soft_constraints_reiflits[3],
-                soft_constraints_reiflits[5],
-            ]),
-            BTreeSet::from_iter(vec![soft_constraints_reiflits[2], soft_constraints_reiflits[4]]),
-            BTreeSet::from_iter(vec![
-                soft_constraints_reiflits[0],
-                soft_constraints_reiflits[3],
-                soft_constraints_reiflits[4],
-            ]),
-            BTreeSet::from_iter(vec![
-                soft_constraints_reiflits[1],
-                soft_constraints_reiflits[3],
-                soft_constraints_reiflits[4],
-            ]),
+            set(&[soft_reiflits[2], soft_reiflits[5]]),
+            set(&[soft_reiflits[0], soft_reiflits[3], soft_reiflits[5]]),
+            set(&[soft_reiflits[1], soft_reiflits[3], soft_reiflits[5]]),
+            set(&[soft_reiflits[2], soft_reiflits[4]]),
+            set(&[soft_reiflits[0], soft_reiflits[3], soft_reiflits[4]]),
+            set(&[soft_reiflits[1], soft_reiflits[3], soft_reiflits[4]]),
         ]);
 
         assert_eq!(res_muses, expected_muses);

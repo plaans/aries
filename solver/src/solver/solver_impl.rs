@@ -731,6 +731,12 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    /// Returns an iterable datastructure for computing all MUS and MCS.
+    ///
+    /// - MUS (Minimal Unsatisfiable Subset): a subset of `assumptions` that cannot be true at the same time
+    ///   in a solution
+    /// - MCS (Minimal Correction Set): a subset of `assumtions` of which at least one must be false
+    ///   for the problem to have a solution
     pub fn mus_and_mcs_enumerator(&mut self, assumptions: &[Lit]) -> MusMcsEnumerator<Lbl> {
         Marco::with(
             assumptions.iter().copied(),
