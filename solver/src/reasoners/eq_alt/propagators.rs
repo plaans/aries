@@ -2,7 +2,10 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use hashbrown::{HashMap, HashSet};
 
-use crate::{core::{literals::Watches, Lit}, reasoners::eq_alt::core::{EqRelation, Node}};
+use crate::{
+    core::{literals::Watches, Lit},
+    reasoners::eq_alt::core::{EqRelation, Node},
+};
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
@@ -24,6 +27,20 @@ pub(crate) struct Enabler {
 impl Enabler {
     pub fn new(active: Lit, valid: Lit) -> Enabler {
         Enabler { active, valid }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ActivationEvent {
+    /// the edge to enable
+    pub edge: PropagatorId,
+    /// The literals that enabled this edge to become active
+    pub enabler: Enabler,
+}
+
+impl ActivationEvent {
+    pub(crate) fn new(edge: PropagatorId, enabler: Enabler) -> Self {
+        Self { edge, enabler }
     }
 }
 
@@ -55,7 +72,7 @@ impl From<u64> for PropagatorId {
 }
 
 /// One direction of a semi-reified eq or neq constraint
-#[derive(Clone, Hash)]
+#[derive(Clone, Hash, Debug)]
 pub struct Propagator {
     pub a: Node,
     pub b: Node,
@@ -63,16 +80,20 @@ pub struct Propagator {
     pub enabler: Enabler,
 }
 
-
 impl Propagator {
     pub fn new(a: Node, b: Node, relation: EqRelation, active: Lit, valid: Lit) -> Self {
-        Self { a, b, relation, enabler: Enabler::new(active, valid) }
+        Self {
+            a,
+            b,
+            relation,
+            enabler: Enabler::new(active, valid),
+        }
     }
-    
+
     pub fn new_pair(a: Node, b: Node, relation: EqRelation, active: Lit, ab_valid: Lit, ba_valid: Lit) -> (Self, Self) {
         (
             Self::new(a, b, relation, active, ab_valid),
-            Self::new(b, a, relation, active, ba_valid)
+            Self::new(b, a, relation, active, ba_valid),
         )
     }
 }

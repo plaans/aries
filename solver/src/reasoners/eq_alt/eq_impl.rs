@@ -1,6 +1,9 @@
 #![allow(unused)]
 
+use std::collections::VecDeque;
+
 use hashbrown::HashMap;
+use tracing::event;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -17,6 +20,8 @@ use crate::{
         Contradiction, ReasonerId, Theory,
     },
 };
+
+use super::propagators::ActivationEvent;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 struct EdgeLabel {
@@ -48,6 +53,7 @@ pub struct AltEqTheory {
     constraint_store: PropagatorStore,
     active_graph: DirEqGraph<Node, EdgeLabel>,
     model_events: ObsTrailCursor<ModelEvent>,
+    pending_activations: VecDeque<ActivationEvent>,
     trail: Trail<Event>,
 }
 
@@ -58,6 +64,7 @@ impl AltEqTheory {
             active_graph: DirEqGraph::new(),
             model_events: Default::default(),
             trail: Default::default(),
+            pending_activations: Default::default(),
         }
     }
 
@@ -81,10 +88,20 @@ impl AltEqTheory {
         let ba_valid = if model.implies(pa, pb) { Lit::TRUE } else { pb };
 
         let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
+        let ab_enabler = ab_prop.enabler;
+        let ba_enabler = ba_prop.enabler;
         let ab_id = self.constraint_store.add_propagator(ab_prop);
         let ba_id = self.constraint_store.add_propagator(ba_prop);
         self.active_graph.add_node(a.into());
         self.active_graph.add_node(b);
+        if model.entails(ab_valid) && model.entails(l) {
+            self.pending_activations
+                .push_back(ActivationEvent::new(ab_id, ab_enabler));
+        }
+        if model.entails(ba_valid) && model.entails(l) {
+            self.pending_activations
+                .push_back(ActivationEvent::new(ba_id, ba_enabler));
+        }
     }
 
     fn activate_propagator(&mut self, model: &mut Domains, prop_id: PropagatorId) -> Result<(), Contradiction> {
@@ -131,6 +148,29 @@ impl AltEqTheory {
         self.constraint_store.mark_active(prop_id);
         Ok(())
     }
+
+    fn propagate_candidates<'a>(
+        &mut self,
+        model: &mut Domains,
+        enable_candidates: impl Iterator<Item = &'a (Enabler, PropagatorId)>,
+    ) -> Result<(), Contradiction> {
+        let to_enable = enable_candidates
+            .filter(|(enabler, prop_id)| {
+                model.entails(enabler.active)
+                    && model.entails(enabler.valid)
+                    && !self.constraint_store.is_active(*prop_id)
+            })
+            .collect::<Vec<_>>();
+        Ok(
+            if let Some(err) = to_enable
+                .iter()
+                .map(|(enabler, prop_id)| self.activate_propagator(model, *prop_id))
+                .find(|r| r.is_err())
+            {
+                err?
+            },
+        )
+    }
 }
 
 impl Backtrack for AltEqTheory {
@@ -148,6 +188,7 @@ impl Backtrack for AltEqTheory {
             Event::EdgeActivated(prop_id) => {
                 self.active_graph
                     .remove_edge(self.constraint_store.get_propagator(prop_id).clone().into());
+                self.constraint_store.mark_inactive(prop_id);
             }
         });
     }
@@ -159,26 +200,16 @@ impl Theory for AltEqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        while let Some(event) = self.model_events.pop(model.trail()) {
-            // Vec of all propagators which are newly enabled by this event
-            let to_enable = self
-                .constraint_store
-                .enabled_by(event.new_literal())
-                .filter(|(enabler, prop_id)| {
-                    model.entails(enabler.active)
-                        && model.entails(enabler.valid)
-                        && !self.constraint_store.is_active(*prop_id)
-                })
-                .collect::<Vec<_>>();
+        let mut new_activations = vec![];
+        while let Some(event) = self.pending_activations.pop_front() {
+            new_activations.push((event.enabler, event.edge));
+        }
+        self.propagate_candidates(model, new_activations.iter())?;
 
-            // Add all edges and mark active
-            if let Some(err) = to_enable
-                .iter()
-                .map(|(enabler, prop_id)| self.activate_propagator(model, *prop_id))
-                .find(|r| r.is_err())
-            {
-                err?
-            }
+        while let Some(event) = self.model_events.pop(model.trail()) {
+            let enable_candidates: Vec<_> = self.constraint_store.enabled_by(event.new_literal()).collect();
+            // Vec of all propagators which are newly enabled by this event
+            self.propagate_candidates(model, enable_candidates.iter())?;
         }
         Ok(())
     }
@@ -296,6 +327,67 @@ mod test {
         // eq.add_half_reified_eq_edge(l2, var3, 1 as IntCst, &model);
 
         model.set_lb(l2.variable(), 1, Cause::Decision).unwrap();
+        eq.propagate(&mut model).expect_err("Contradiction.");
+    }
+
+    #[test]
+    fn test_with_optionals() {
+        // a => b => c <= 1 --> no inference
+        // 1 => a => b => c --> inference
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+
+        // let l = model.new_var(0, 1).geq(1);
+        let l = Lit::TRUE;
+        let c_pres = model.new_var(0, 1).geq(1);
+        let b_pres = model.new_var(0, 1).geq(1);
+        let a_pres = model.new_var(0, 1).geq(1);
+        model.add_implication(c_pres, b_pres);
+        model.add_implication(b_pres, a_pres);
+        let c = model.new_optional_var(0, 1, c_pres);
+        let b = model.new_optional_var(0, 1, b_pres);
+        let a = model.new_optional_var(0, 1, a_pres);
+
+        eq.add_half_reified_eq_edge(l, a, b, &model);
+        eq.add_half_reified_eq_edge(l, b, c, &model);
+        eq.add_half_reified_eq_edge(l, c, 1 as IntCst, &model);
+
+        eq.propagate(&mut model).unwrap();
+
+        assert_eq!(model.lb(c), 1);
+        assert_eq!(model.lb(b), 0);
+        assert_eq!(model.lb(a), 0);
+
+        eq.add_half_reified_eq_edge(l, a, 1 as IntCst, &model);
+        eq.propagate(&mut model).unwrap();
+
+        assert_eq!(model.lb(c), 1);
+        assert_eq!(model.lb(b), 1);
+        assert_eq!(model.lb(a), 1);
+    }
+
+    #[test]
+    fn test_opt_contradiction() {
+        // a => b => c && a !=> c
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+
+        let l = Lit::TRUE;
+        let c_pres = model.new_var(0, 1).geq(1);
+        let b_pres = model.new_var(0, 1).geq(1);
+        let a_pres = model.new_var(0, 1).geq(1);
+
+        model.add_implication(c_pres, b_pres);
+        model.add_implication(b_pres, a_pres);
+
+        let c = model.new_optional_var(0, 1, c_pres);
+        let b = model.new_optional_var(0, 1, b_pres);
+        let a = model.new_optional_var(0, 1, a_pres);
+
+        eq.add_half_reified_eq_edge(l, a, b, &model);
+        eq.add_half_reified_eq_edge(l, b, c, &model);
+        eq.add_half_reified_neq_edge(l, a, c, &model);
+
         eq.propagate(&mut model).expect_err("Contradiction.");
     }
 }
