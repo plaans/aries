@@ -82,11 +82,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         self.mus_only().next()
     }
 
-    pub fn run(
-        &mut self,
-        on_mus_found: Option<fn(&BTreeSet<Lit>)>,
-        on_mcs_found: Option<fn(&BTreeSet<Lit>)>,
-    ) -> Vec<MusMcs> {
+    pub fn run(&mut self, on_mus_found: impl Fn(&Mus), on_mcs_found: impl Fn(&Mcs)) -> Vec<MusMcs> {
         let mut res = Vec::<MusMcs>::new();
 
         loop {
@@ -94,11 +90,11 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
             if let Ok(Some(musmcs)) = self._next() {
                 match musmcs {
                     MusMcs::Mus(set) => {
-                        on_mus_found.unwrap_or(|_| ())(&set);
+                        on_mus_found(&set);
                         res.push(MusMcs::Mus(set));
                     }
                     MusMcs::Mcs(set) => {
-                        on_mcs_found.unwrap_or(|_| ())(&set);
+                        on_mcs_found(&set);
                         res.push(MusMcs::Mcs(set));
                     }
                     _ => todo!(),
@@ -343,7 +339,7 @@ mod tests {
             MapSolverMode::HighPreferredValues,
             crate::solver::musmcs::marco::SubsetSolverOptiMode::None,
         );
-        let res = marco.run(None, None);
+        let res = marco.run(|_| {}, |_| {});
 
         let mut res_muses = BTreeSet::<BTreeSet<Lit>>::new();
         let mut res_mcses = BTreeSet::<BTreeSet<Lit>>::new();
