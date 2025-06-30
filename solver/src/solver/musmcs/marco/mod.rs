@@ -85,21 +85,24 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
 
     fn _next(&mut self) -> Result<Option<MusMcs>, Exit> {
         if let Some(seed) = self.map_solver.find_unexplored_seed()? {
-            if self.check_subset(&seed)?.is_ok() {
-                let (_, mcs) = self.grow(&seed)?;
-                self.map_solver.block_down(&mcs);
+            match self.check_subset(&seed)? {
+                Ok(sat_subset) => {
+                    let (_, mcs) = self.grow(&sat_subset)?;
+                    self.map_solver.block_down(&mcs);
 
-                if !mcs.is_empty() {
-                    self.debug_check_mcs_is_new_and_correct(&mcs);
-                    return Ok(Some(MusMcs::Mcs(mcs)));
+                    if !mcs.is_empty() {
+                        self.debug_check_mcs_is_new_and_correct(&mcs);
+                        return Ok(Some(MusMcs::Mcs(mcs)));
+                    }
                 }
-            } else {
-                let mus = self.shrink(&seed)?;
-                self.map_solver.block_up(&mus);
+                Err(unsat_subset) => {
+                    let mus = self.shrink(&unsat_subset)?;
+                    self.map_solver.block_up(&mus);
 
-                if !mus.is_empty() {
-                    self.debug_check_mus_is_new_and_correct(&mus);
-                    return Ok(Some(MusMcs::Mus(mus)));
+                    if !mus.is_empty() {
+                        self.debug_check_mus_is_new_and_correct(&mus);
+                        return Ok(Some(MusMcs::Mus(mus)));
+                    }
                 }
             }
         }
