@@ -48,7 +48,6 @@ impl<'a, Lbl: Label> Iterator for Marco<'a, Lbl> {
 }
 
 impl<'a, Lbl: Label> Marco<'a, Lbl> {
-    #[cfg(not(debug_assertions))]
     pub fn with(
         literals: impl Iterator<Item = Lit> + Clone,
         main_solver: &'a mut Solver<Lbl>,
@@ -63,26 +62,10 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
             main_solver,
             map_solver,
             grow_shrink_optional_optimisation: main_solver_opti_mode,
-        }
-    }
-
-    #[cfg(debug_assertions)]
-    pub fn with(
-        literals: impl Iterator<Item = Lit> + Clone,
-        main_solver: &'a mut Solver<Lbl>,
-        map_solver_mode: MapSolverMode,
-        main_solver_opti_mode: SubsetSolverOptiMode,
-    ) -> Self {
-        assert_eq!(main_solver.current_decision_level(), DecLvl::ROOT);
-        let map_solver = MapSolver::new(literals.clone(), map_solver_mode);
-
-        Self {
-            literals: literals.into_iter().collect(),
-            main_solver,
-            map_solver,
-            grow_shrink_optional_optimisation: main_solver_opti_mode,
-            debug_found_muses: BTreeSet::<_>::new(),
-            debug_found_mcses: BTreeSet::<_>::new(),
+            #[cfg(debug_assertions)]
+            debug_found_muses: BTreeSet::new(),
+            #[cfg(debug_assertions)]
+            debug_found_mcses: BTreeSet::new(),
         }
     }
 
