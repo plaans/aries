@@ -3,7 +3,7 @@ use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Label, ModelShape};
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
-use crate::solver::{Exit, Solver};
+use crate::solver::{Exit, SearchLimit, Solver};
 use crossbeam_channel::{select, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -118,14 +118,16 @@ impl<Lbl: Label> ParSolver<Lbl> {
 
     /// Solve the problem that was given on initialization using all available solvers.
     pub fn solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
-        self.race_solvers(|s| s.solve(), |_| {}, deadline)
+        // TODO: leverage deadline search
+        self.race_solvers(|s| s.solve(SearchLimit::None), |_| {}, deadline)
     }
 
     /// Minimize the value of the given expression.
     pub fn minimize(&mut self, objective: impl Into<IAtom>, deadline: Option<Instant>) -> SolverResult<Solution> {
+        // TODO: leverage deadline search
         let objective = objective.into();
         self.race_solvers(
-            move |s| match s.minimize(objective) {
+            move |s| match s.minimize(objective, SearchLimit::None) {
                 Ok(Some((_cost, sol))) => Ok(Some(sol)),
                 Ok(None) => Ok(None),
                 Err(x) => Err(x),
@@ -162,8 +164,14 @@ impl<Lbl: Label> ParSolver<Lbl> {
                 previous_best = Some(obj_value)
             }
         };
+
+        // TODO: leverage deadline search
         self.race_solvers(
-            move |s| match s.minimize_with_optional_initial_solution(objective, initial_solution.clone()) {
+            move |s| match s.minimize_with_optional_initial_solution(
+                objective,
+                initial_solution.clone(),
+                SearchLimit::None,
+            ) {
                 Ok(Some((_cost, sol))) => Ok(Some(sol)),
                 Ok(None) => Ok(None),
                 Err(x) => Err(x),

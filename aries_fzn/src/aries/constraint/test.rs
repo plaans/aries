@@ -10,6 +10,7 @@ use aries::model::Model;
 use aries::model::lang::BVar;
 use aries::model::lang::IVar;
 use aries::model::lang::linear::NFLinearSumItem;
+use aries::solver::SearchLimit;
 use aries::solver::Solver;
 use itertools::Itertools;
 
@@ -22,7 +23,7 @@ fn get_solutions<const N: usize>(
 ) -> Vec<[IntCst; N]> {
     let mut solver = Solver::new(model);
     let mut solutions: Vec<[IntCst; N]> = solver
-        .enumerate(&vars)
+        .enumerate(&vars, SearchLimit::None)
         .unwrap()
         .into_iter()
         .map(|v| v.try_into().expect("wrong number of elements"))
