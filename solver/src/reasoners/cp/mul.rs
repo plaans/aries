@@ -39,7 +39,7 @@ impl Propagator for Mul {
             return Ok(());
         }
 
-        // If multiplication is trivially inconsistent, we can inactivate constraint
+        // If multiplication is trivially inconsistent, we can deactivate the constraint
         if self.trivially_inconsistent(domains) {
             let changed_something = domains.set(!self.active, cause)?;
             debug_assert!(

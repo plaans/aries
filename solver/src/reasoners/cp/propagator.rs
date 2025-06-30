@@ -223,7 +223,8 @@ pub mod test {
         /// The test will verify that the explanations:
         ///  - can be generated for all inferences made
         ///  - are correct (calling the propagator with only the implying literals will result in the same inference)
-        ///  - are minimal (the inference is not made if any implying literal is missing)
+        ///  - are minimal (the inference is not made if any implying literal is missing).
+        ///    The minimality check can be deactivated by setting the `check_minimality` parameter to `false`
         ///
         /// IMPORTANT: These tests rely on the `propagate` implementation and are not meaningful if this one is buggy
         /// (but they may show that it is in fact incoherent when called in different contexts)
