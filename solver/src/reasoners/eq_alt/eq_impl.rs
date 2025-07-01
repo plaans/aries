@@ -3,7 +3,6 @@
 use std::collections::VecDeque;
 
 use hashbrown::HashMap;
-use tracing::event;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -192,27 +191,17 @@ impl AltEqTheory {
         Ok(())
     }
 
-    fn propagate_candidates<'a>(
+    fn propagate_candidate(
         &mut self,
         model: &mut Domains,
-        enable_candidates: impl Iterator<Item = &'a (Enabler, PropagatorId)>,
+        enabler: Enabler,
+        prop_id: PropagatorId,
     ) -> Result<(), Contradiction> {
-        if let Some(err) = enable_candidates
-            .filter_map(|(enabler, prop_id)| {
-                if model.entails(enabler.active)
-                    && model.entails(enabler.valid)
-                    && !self.constraint_store.is_active(*prop_id)
-                {
-                    Some(self.activate_propagator(model, *prop_id))
-                } else {
-                    None
-                }
-            })
-            .find(|r| r.is_err())
-        {
-            err?
-        };
-        Ok(())
+        if model.entails(enabler.active) && model.entails(enabler.valid) && !self.constraint_store.is_active(prop_id) {
+            self.activate_propagator(model, prop_id)
+        } else {
+            Ok(())
+        }
     }
 
     fn propagate_eq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
@@ -276,16 +265,18 @@ impl Theory for AltEqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        let mut new_activations = vec![];
         while let Some(event) = self.pending_activations.pop_front() {
-            new_activations.push((event.enabler, event.edge));
+            self.propagate_candidate(model, event.enabler, event.edge)?;
         }
-        self.propagate_candidates(model, new_activations.iter())?;
-
         while let Some(event) = self.model_events.pop(model.trail()) {
-            let enable_candidates: Vec<_> = self.constraint_store.enabled_by(event.new_literal()).collect();
-            // Vec of all propagators which are newly enabled by this event
-            self.propagate_candidates(model, enable_candidates.iter())?;
+            for (enabler, prop_id) in self
+                .constraint_store
+                .enabled_by(event.new_literal())
+                .collect::<Vec<_>>() // To satisfy borrow checker
+                .iter()
+            {
+                self.propagate_candidate(model, *enabler, *prop_id)?;
+            }
         }
         Ok(())
     }

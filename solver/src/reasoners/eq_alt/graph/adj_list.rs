@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{
     fmt::{Debug, Formatter},
     hash::Hash,
@@ -18,7 +20,7 @@ pub(super) struct AdjacencyList<N: AdjNode, E: AdjEdge<N>>(HashMap<N, HashSet<E>
 
 impl<N: AdjNode, E: AdjEdge<N>> Debug for AdjacencyList<N, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(f);
+        writeln!(f)?;
         for (node, edges) in &self.0 {
             writeln!(f, "{:?}:", node)?;
             if edges.is_empty() {

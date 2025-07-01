@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -156,19 +154,13 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
     }
 
     fn paths_requiring_neq(&self, edge: Edge<N, L>) -> impl Iterator<Item = NodePair<N>> + use<'_, N, L> {
-        let predecessors = Dft::new(&self.rev_adj_list, edge.source, (), |_, e| match e.relation {
-            EqRelation::Eq => Some(()),
-            EqRelation::Neq => None,
-        });
-        let successors = Dft::new(&self.fwd_adj_list, edge.target, (), |_, e| match e.relation {
-            EqRelation::Eq => Some(()),
-            EqRelation::Neq => None,
-        });
+        let predecessors = Self::eq_dft(&self.rev_adj_list, edge.source);
+        let successors = Self::eq_dft(&self.fwd_adj_list, edge.target);
 
         predecessors
             .cartesian_product(successors)
-            .filter(|((source, _), (target, _))| !self.neq_path_exists(*source, *target))
-            .map(|(p, s)| NodePair::new(p.0, s.0, EqRelation::Neq))
+            .filter(|(source, target)| !self.neq_path_exists(*source, *target))
+            .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq))
     }
 
     /// Util for Dft only on eq edges
