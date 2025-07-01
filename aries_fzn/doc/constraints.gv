@@ -16,8 +16,10 @@ digraph constraints {
         mzn_int_abs [label="int_abs"]
         // mzn_int_div [label="int_div"] [shape=ellipse]
         mzn_int_eq [label="int_eq"]
+        mzn_int_eq_imp [label="int_eq_imp"]
         mzn_int_eq_reif [label="int_eq_reif"]
         mzn_int_le [label="int_le"]
+        mzn_int_le_imp [label="int_le_imp"]
         mzn_int_le_reif [label="int_le_reif"]
         mzn_int_lin_eq [label="int_lin_eq"]
         mzn_int_lin_eq_reif [label="int_lin_eq_reif"]
@@ -44,6 +46,7 @@ digraph constraints {
         mzn_bool_clause [label="bool_clause"]
         mzn_bool_clause_reif [label="bool_clause_reif"]
         mzn_bool_eq [label="bool_eq"]
+        mzn_bool_eq_imp [label="bool_eq_imp"]
         mzn_bool_eq_reif [label="bool_eq_reif"]
         mzn_bool_le [label="bool_le"]
         mzn_bool_le_reif [label="bool_le_reif"]
@@ -67,9 +70,11 @@ digraph constraints {
         api_Clause [label="Clause"]
         api_ClauseReif [label="ClauseReif"]
         api_Eq [label="Eq"]
+        api_EqHalf [label="EqHalf"]
         api_EqReif [label="EqReif"]
         api_InSet [label="InSet"]
         api_Le [label="Le"]
+        api_LeHalf [label="LeHalf"]
         api_LeReif [label="LeReif"]
         api_Lt [label="Lt"]
         api_LtReif [label="LtReif"]
@@ -118,8 +123,10 @@ digraph constraints {
     mzn_int_abs -> api_Abs
     // mzn_int_div
     mzn_int_eq -> api_Eq
+    mzn_int_eq_imp -> api_EqHalf
     mzn_int_eq_reif -> api_EqReif
     mzn_int_le -> api_Le
+    mzn_int_le_imp -> api_LeHalf
     mzn_int_le_reif -> api_LeReif
     mzn_int_lin_eq -> api_LinEq
     mzn_int_lin_eq_reif -> api_LinEqReif
@@ -147,6 +154,7 @@ digraph constraints {
     mzn_bool_clause -> api_Clause
     mzn_bool_clause_reif -> api_ClauseReif
     mzn_bool_eq -> api_Eq
+    mzn_bool_eq_imp -> api_EqHalf
     mzn_bool_eq_reif -> api_EqReif
     mzn_bool_le -> api_Le
     mzn_bool_le_reif -> api_LeReif
@@ -166,9 +174,11 @@ digraph constraints {
     api_Clause -> sol_Or
     api_ClauseReif -> sol_Or
     api_Eq -> sol_Eq
+    api_EqHalf -> sol_Eq
     api_EqReif -> sol_Eq
     api_InSet -> { sol_Or; sol_Lit } [label="*"]
     api_Le -> sol_MaxDiff
+    api_LeHalf -> sol_MaxDiff
     api_LeReif -> sol_MaxDiff
     api_LinEq -> { api_LinLe; api_LinGe }
     api_LinEqHalf -> { api_LinLeHalf; api_LinGeHalf }
