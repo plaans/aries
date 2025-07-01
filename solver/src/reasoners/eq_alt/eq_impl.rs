@@ -17,6 +17,7 @@ use crate::{
             graph::{DirEqGraph, Edge, NodePair},
             propagators::{Enabler, Propagator, PropagatorId, PropagatorStore},
         },
+        stn::theory::Identity,
         Contradiction, ReasonerId, Theory,
     },
 };
@@ -48,6 +49,52 @@ enum Event {
     EdgeActivated(PropagatorId),
 }
 
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+enum ModelUpdateCause {
+    /// a -=-> b && b -=-> c && a -=-> c
+    Deactivation(PropagatorId),
+    // DomUpper,
+    // DomLower,
+    DomNeq,
+    DomEq,
+    // DomSingleton,
+}
+
+impl From<ModelUpdateCause> for u32 {
+    #[allow(clippy::identity_op)]
+    fn from(value: ModelUpdateCause) -> Self {
+        use ModelUpdateCause::*;
+        match value {
+            Deactivation(p) => 0u32 + (u32::from(p) << 1),
+            // DomUpper => 1u32 + (0u32 << 1),
+            // DomLower => 1u32 + (1u32 << 1),
+            DomNeq => 1u32 + (2u32 << 1),
+            DomEq => 1u32 + (3u32 << 1),
+            // DomSingleton => 1u32 + (4u32 << 1),
+        }
+    }
+}
+
+impl From<u32> for ModelUpdateCause {
+    fn from(value: u32) -> Self {
+        use ModelUpdateCause::*;
+        let kind = value & 0x1;
+        let payload = value >> 1;
+        match kind {
+            0 => Deactivation(PropagatorId::from(payload)),
+            1 => match payload {
+                // 0 => DomUpper,
+                // 1 => DomLower,
+                2 => DomNeq,
+                3 => DomEq,
+                // 4 => DomSingleton,
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AltEqTheory {
     constraint_store: PropagatorStore,
@@ -55,6 +102,7 @@ pub struct AltEqTheory {
     model_events: ObsTrailCursor<ModelEvent>,
     pending_activations: VecDeque<ActivationEvent>,
     trail: Trail<Event>,
+    identity: Identity<ModelUpdateCause>,
 }
 
 impl AltEqTheory {
@@ -65,6 +113,7 @@ impl AltEqTheory {
             model_events: Default::default(),
             trail: Default::default(),
             pending_activations: Default::default(),
+            identity: Identity::new(ReasonerId::Eq(0)),
         }
     }
 
@@ -110,10 +159,7 @@ impl AltEqTheory {
         let mut disable = |model: &mut Domains| {
             model.set(
                 !prop.enabler.active,
-                Cause::Inference(InferenceCause {
-                    writer: ReasonerId::Eq(0),
-                    payload: 0,
-                }),
+                self.identity.inference(ModelUpdateCause::Deactivation(prop_id)),
             )
         };
         if let Some(e) = self
@@ -122,13 +168,13 @@ impl AltEqTheory {
             .map(|p| -> Result<(), InvalidUpdate> {
                 match p.relation {
                     EqRelation::Eq => {
-                        propagate_eq(model, p.source, p.target)?;
+                        self.propagate_eq(model, p.source, p.target)?;
                         if self.active_graph.neq_path_exists(p.source, p.target) {
                             disable(model)?;
                         }
                     }
                     EqRelation::Neq => {
-                        propagate_neq(model, p.source, p.target)?;
+                        self.propagate_neq(model, p.source, p.target)?;
                         if self.active_graph.eq_path_exists(p.source, p.target) {
                             disable(model)?;
                         }
@@ -166,6 +212,40 @@ impl AltEqTheory {
         {
             err?
         };
+        Ok(())
+    }
+
+    fn propagate_eq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
+        let cause = self.identity.inference(ModelUpdateCause::DomEq);
+        let s_bounds = match s {
+            Node::Var(v) => (model.lb(v), model.ub(v)),
+            Node::Val(v) => (v, v),
+        };
+        if let Node::Var(t) = t {
+            model.set_lb(t, s_bounds.0, cause)?;
+            model.set_ub(t, s_bounds.1, cause)?;
+        } // else reverse propagator will be active, so nothing to do
+        Ok(())
+    }
+
+    fn propagate_neq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
+        let cause = self.identity.inference(ModelUpdateCause::DomNeq);
+        // If domains don't overlap, nothing to do
+        // If source domain is fixed and ub or lb of target == source lb, exclude that value
+        let (s_lb, s_ub) = match s {
+            Node::Var(v) => (model.lb(v), model.ub(v)),
+            Node::Val(v) => (v, v),
+        };
+        if let Node::Var(t) = t {
+            if s_lb == s_ub {
+                if model.ub(t) == s_lb {
+                    model.set_ub(t, s_lb - 1, cause)?;
+                }
+                if model.lb(t) == s_lb {
+                    model.set_lb(t, s_lb + 1, cause)?;
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -217,6 +297,9 @@ impl Theory for AltEqTheory {
         model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
+        // We may be asked to explain:
+        // A contradiction (l set to false) => find propagator responsible, and find eq/neq path from a to b
+        // An inference
         todo!()
     }
 
@@ -227,46 +310,6 @@ impl Theory for AltEqTheory {
     fn clone_box(&self) -> Box<dyn Theory> {
         Box::new(self.clone())
     }
-}
-
-fn propagate_eq(model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
-    let cause = Cause::Inference(InferenceCause {
-        writer: ReasonerId::Eq(0),
-        payload: 0,
-    });
-    let s_bounds = match s {
-        Node::Var(v) => (model.lb(v), model.ub(v)),
-        Node::Val(v) => (v, v),
-    };
-    if let Node::Var(t) = t {
-        model.set_lb(t, s_bounds.0, cause)?;
-        model.set_ub(t, s_bounds.1, cause)?;
-    } // else reverse propagator will be active, so nothing to do
-    Ok(())
-}
-
-fn propagate_neq(model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
-    let cause = Cause::Inference(InferenceCause {
-        writer: ReasonerId::Eq(0),
-        payload: 0,
-    });
-    // If domains don't overlap, nothing to do
-    // If source domain is fixed and ub or lb of target == source lb, exclude that value
-    let (s_lb, s_ub) = match s {
-        Node::Var(v) => (model.lb(v), model.ub(v)),
-        Node::Val(v) => (v, v),
-    };
-    if let Node::Var(t) = t {
-        if s_lb == s_ub {
-            if model.ub(t) == s_lb {
-                model.set_ub(t, s_lb - 1, cause)?;
-            }
-            if model.lb(t) == s_lb {
-                model.set_lb(t, s_lb + 1, cause)?;
-            }
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

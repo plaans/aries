@@ -1,5 +1,3 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 use hashbrown::{HashMap, HashSet};
 
 use crate::{
@@ -48,25 +46,28 @@ impl ActivationEvent {
 ///  - forward (source to target)
 ///  - backward (target to source)
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub(crate) struct PropagatorId(u64);
+pub(crate) struct PropagatorId(u32);
 
 impl From<PropagatorId> for usize {
     fn from(e: PropagatorId) -> Self {
         e.0 as usize
     }
 }
+
 impl From<usize> for PropagatorId {
     fn from(u: usize) -> Self {
-        PropagatorId(u as u64)
+        PropagatorId(u as u32)
     }
 }
-impl From<PropagatorId> for u64 {
+
+impl From<PropagatorId> for u32 {
     fn from(e: PropagatorId) -> Self {
         e.0
     }
 }
-impl From<u64> for PropagatorId {
-    fn from(u: u64) -> Self {
+
+impl From<u32> for PropagatorId {
+    fn from(u: u32) -> Self {
         PropagatorId(u)
     }
 }
@@ -107,9 +108,7 @@ pub struct PropagatorStore {
 
 impl PropagatorStore {
     pub fn add_propagator(&mut self, prop: Propagator) -> PropagatorId {
-        let mut hasher = DefaultHasher::new();
-        prop.hash(&mut hasher);
-        let id = hasher.finish().into();
+        let id = self.propagators.len().into();
         let enabler = prop.enabler;
         self.propagators.insert(id, prop);
         self.watches.add_watch((enabler, id), enabler.active);

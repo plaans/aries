@@ -4,7 +4,7 @@ use crate::core::{state::Term, IntCst, VarRef};
 
 /// Represents a eq or neq relationship between two variables.
 /// Option\<EqRelation> should be used to represent a relationship between any two vars
-/// 
+///
 /// Use + to combine two relationships. eq + neq = Some(neq), neq + neq = None
 #[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
 pub enum EqRelation {
@@ -37,6 +37,7 @@ impl From<VarRef> for Node {
         Node::Var(v)
     }
 }
+
 impl From<IntCst> for Node {
     fn from(v: IntCst) -> Self {
         Node::Val(v)
