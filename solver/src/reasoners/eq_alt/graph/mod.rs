@@ -20,10 +20,10 @@ impl<T: Eq + Copy + Debug + Hash> Label for T {}
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub struct Edge<N: AdjNode, L: Label> {
-    source: N,
-    target: N,
-    label: L,
-    relation: EqRelation,
+    pub source: N,
+    pub target: N,
+    pub label: L,
+    pub relation: EqRelation,
 }
 
 impl<N: AdjNode, L: Label> Edge<N, L> {
@@ -49,6 +49,10 @@ impl<N: AdjNode, L: Label> Edge<N, L> {
 impl<N: AdjNode, L: Label> AdjEdge<N> for Edge<N, L> {
     fn target(&self) -> N {
         self.target
+    }
+
+    fn source(&self) -> N {
+        self.source
     }
 }
 
@@ -119,6 +123,29 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         Self::eq_or_neq_dft(&self.fwd_adj_list, source).any(|(e, r)| e == target && r == EqRelation::Neq)
     }
 
+    /// Return a Dft struct over nodes which can be reached with Eq in reverse adjacency list
+    pub fn rev_eq_dft_path(&self, source: N) -> Dft<'_, N, Edge<N, L>, ()> {
+        Self::eq_path_dft(&self.rev_adj_list, source)
+    }
+
+    /// Return an iterator over nodes which can be reached with Neq in reverse adjacency list
+    pub fn rev_eq_or_neq_dft_path(&self, source: N) -> Dft<'_, N, Edge<N, L>, EqRelation> {
+        Self::eq_or_neq_path_dft(&self.rev_adj_list, source)
+    }
+
+    /// Get a path with EqRelation::Eq from source to target
+    pub fn get_eq_path(&self, source: N, target: N) -> Option<Vec<Edge<N, L>>> {
+        let mut dft = Self::eq_path_dft(&self.fwd_adj_list, source);
+        dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n))
+    }
+
+    /// Get a path with EqRelation::Neq from source to target
+    pub fn get_neq_path(&self, source: N, target: N) -> Option<Vec<Edge<N, L>>> {
+        let mut dft = Self::eq_or_neq_path_dft(&self.fwd_adj_list, source);
+        dft.find(|(n, r)| *n == target && *r == EqRelation::Neq)
+            .map(|(n, _)| dft.get_path(n))
+    }
+
     /// Get all paths which would require the given edge to exist.
     /// Edge should not be already present in graph
     ///
@@ -168,10 +195,16 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         adj_list: &AdjacencyList<N, Edge<N, L>>,
         node: N,
     ) -> impl Iterator<Item = N> + Clone + Debug + use<'_, N, L> {
-        Dft::new(adj_list, node, (), |_, e| match e.relation {
-            EqRelation::Eq => Some(()),
-            EqRelation::Neq => None,
-        })
+        Dft::new(
+            adj_list,
+            node,
+            (),
+            |_, e| match e.relation {
+                EqRelation::Eq => Some(()),
+                EqRelation::Neq => None,
+            },
+            false,
+        )
         .map(|(e, _)| e)
     }
 
@@ -180,7 +213,25 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         adj_list: &AdjacencyList<N, Edge<N, L>>,
         node: N,
     ) -> impl Iterator<Item = (N, EqRelation)> + Clone + use<'_, N, L> {
-        Dft::new(adj_list, node, EqRelation::Eq, |r, e| r + e.relation)
+        Dft::new(adj_list, node, EqRelation::Eq, |r, e| *r + e.relation, false)
+    }
+
+    fn eq_path_dft(adj_list: &AdjacencyList<N, Edge<N, L>>, node: N) -> Dft<'_, N, Edge<N, L>, ()> {
+        Dft::new(
+            adj_list,
+            node,
+            (),
+            |_, e| match e.relation {
+                EqRelation::Eq => Some(()),
+                EqRelation::Neq => None,
+            },
+            true,
+        )
+    }
+
+    /// Util for Dft while 0 or 1 neqs
+    fn eq_or_neq_path_dft(adj_list: &AdjacencyList<N, Edge<N, L>>, node: N) -> Dft<'_, N, Edge<N, L>, EqRelation> {
+        Dft::new(adj_list, node, EqRelation::Eq, |r, e| *r + e.relation, true)
     }
 }
 
@@ -265,25 +316,35 @@ mod test {
         );
     }
 
-    // #[test]
-    // fn test_paths_requiring() {
-    //     let mut g = DirEqGraph::new();
-    //     // 0 -> 1
-    //     g.add_edge(Edge::new(Node(0), Node(1), ()));
-    //     // 2 --> 3
-    //     g.add_edge(Edge::new(Node(2), Node(3), ()));
+    #[test]
+    fn test_path() {
+        let mut g = DirEqGraph::new();
 
-    //     // paths requiring
-    //     assert_eq!(
-    //         g.get_paths_requiring(Edge::new(Node(1), Node(2), ()))
-    //             .collect::<HashSet<_>>(),
-    //         [
-    //             (Node(0), Node(2)).into(),
-    //             (Node(0), Node(3)).into(),
-    //             (Node(1), Node(2)).into(),
-    //             (Node(1), Node(3)).into()
-    //         ]
-    //         .into()
-    //     )
-    // }
+        // 0 -=-> 2
+        g.add_edge(Edge::new(Node(0), Node(2), (), EqRelation::Eq));
+        // 1 -!=-> 2
+        g.add_edge(Edge::new(Node(1), Node(2), (), EqRelation::Neq));
+        // 3 -=-> 4
+        g.add_edge(Edge::new(Node(3), Node(4), (), EqRelation::Eq));
+        // 3 -!=-> 5
+        g.add_edge(Edge::new(Node(3), Node(5), (), EqRelation::Neq));
+        // 0 -=-> 4
+        g.add_edge(Edge::new(Node(0), Node(4), (), EqRelation::Eq));
+
+        let path = g.get_neq_path(Node(0), Node(5));
+        assert_eq!(path, None);
+
+        g.add_edge(Edge::new(Node(2), Node(3), (), EqRelation::Eq));
+
+        let path = g.get_neq_path(Node(0), Node(5));
+        assert_eq!(
+            path,
+            vec![
+                Edge::new(Node(3), Node(5), (), EqRelation::Neq),
+                Edge::new(Node(2), Node(3), (), EqRelation::Eq),
+                Edge::new(Node(0), Node(2), (), EqRelation::Eq)
+            ]
+            .into()
+        );
+    }
 }

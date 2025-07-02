@@ -1,4 +1,4 @@
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 
 use crate::reasoners::eq_alt::graph::{AdjEdge, AdjNode, AdjacencyList};
 
@@ -12,7 +12,7 @@ use crate::reasoners::eq_alt::graph::{AdjEdge, AdjNode, AdjacencyList};
 ///
 /// This allows to continue traversal while 0 or 1 NEQ edges have been taken, and stop on the second
 #[derive(Clone, Debug)]
-pub(super) struct Dft<'a, N: AdjNode, E: AdjEdge<N>, S: Copy> {
+pub struct Dft<'a, N: AdjNode, E: AdjEdge<N>, S> {
     /// A directed graph in the form of an adjacency list
     adj_list: &'a AdjacencyList<N, E>,
     /// The set of visited nodes
@@ -22,33 +22,42 @@ pub(super) struct Dft<'a, N: AdjNode, E: AdjEdge<N>, S: Copy> {
     /// A function which takes an element of extra stack data and an edge
     /// and returns the new element to add to the stack
     /// None indicates the edge shouldn't be visited
-    fold: fn(S, &E) -> Option<S>,
+    fold: fn(&S, &E) -> Option<S>,
+    mem_path: bool,
+    parents: HashMap<N, E>,
 }
 
-impl<'a, N: AdjNode, E: AdjEdge<N>, S: Copy> Dft<'a, N, E, S> {
-    pub(super) fn new(adj_list: &'a AdjacencyList<N, E>, node: N, init: S, fold: fn(S, &E) -> Option<S>) -> Self {
+impl<'a, N: AdjNode, E: AdjEdge<N>, S> Dft<'a, N, E, S> {
+    pub(super) fn new(
+        adj_list: &'a AdjacencyList<N, E>,
+        node: N,
+        init: S,
+        fold: fn(&S, &E) -> Option<S>,
+        mem_path: bool,
+    ) -> Self {
         Dft {
             adj_list,
             visited: HashSet::new(),
             stack: vec![(node, init)],
             fold,
+            mem_path,
+            parents: Default::default(),
         }
+    }
+
+    /// Get the the path from source to node (in reverse order)
+    pub fn get_path(&self, mut node: N) -> Vec<E> {
+        assert!(self.mem_path);
+        let mut res = Vec::new();
+        while let Some(e) = self.parents.get(&node) {
+            node = e.source();
+            res.push(*e);
+        }
+        res
     }
 }
 
-impl<'a, N: AdjNode, E: AdjEdge<N>> Dft<'a, N, E, ()> {
-    /// New DFT which doesn't make use of the stack data
-    pub(super) fn new_basic(adj_list: &'a AdjacencyList<N, E>, node: N) -> Self {
-        Dft {
-            adj_list,
-            visited: HashSet::new(),
-            stack: vec![(node, ())],
-            fold: |_, _| Some(()),
-        }
-    }
-}
-
-impl<'a, N: AdjNode, E: AdjEdge<N>, S: Copy> Iterator for Dft<'a, N, E, S> {
+impl<'a, N: AdjNode, E: AdjEdge<N>, S> Iterator for Dft<'a, N, E, S> {
     type Item = (N, S);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -57,13 +66,13 @@ impl<'a, N: AdjNode, E: AdjEdge<N>, S: Copy> Iterator for Dft<'a, N, E, S> {
                 self.visited.insert(node);
 
                 // Push on to stack edges where mut_stack returns Some
-                self.stack.extend(
-                    self.adj_list
-                        .get_edges(node)
-                        .unwrap()
-                        .iter()
-                        .filter_map(|e| Some((e.target(), (self.fold)(d, e)?))),
-                );
+                self.stack
+                    .extend(self.adj_list.get_edges(node).unwrap().iter().filter_map(|e| {
+                        if self.mem_path {
+                            self.parents.insert(e.target(), *e);
+                        }
+                        Some((e.target(), (self.fold)(&d, e)?))
+                    }));
 
                 return Some((node, d));
             }

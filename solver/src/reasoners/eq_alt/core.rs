@@ -1,6 +1,9 @@
 use std::ops::Add;
 
-use crate::core::{state::Term, IntCst, VarRef};
+use crate::core::{
+    state::{Domains, DomainsSnapshot, Term},
+    IntCst, VarRef,
+};
 
 /// Represents a eq or neq relationship between two variables.
 /// Option\<EqRelation> should be used to represent a relationship between any two vars
@@ -30,6 +33,36 @@ impl Add for EqRelation {
 pub enum Node {
     Var(VarRef),
     Val(IntCst),
+}
+
+impl Node {
+    pub fn get_bound(&self, model: &Domains) -> Option<IntCst> {
+        match *self {
+            Node::Var(v) => model.get_bound(v),
+            Node::Val(v) => Some(v),
+        }
+    }
+
+    pub fn get_bound_snap(&self, model: &DomainsSnapshot) -> Option<IntCst> {
+        match *self {
+            Node::Var(v) => model.get_bound(v),
+            Node::Val(v) => Some(v),
+        }
+    }
+
+    pub fn get_bounds(&self, model: &Domains) -> (IntCst, IntCst) {
+        match *self {
+            Node::Var(v) => model.bounds(v),
+            Node::Val(v) => (v, v),
+        }
+    }
+
+    pub fn get_bounds_snap(&self, model: &DomainsSnapshot) -> (IntCst, IntCst) {
+        match *self {
+            Node::Var(v) => model.bounds(v),
+            Node::Val(v) => (v, v),
+        }
+    }
 }
 
 impl From<VarRef> for Node {

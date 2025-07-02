@@ -9,6 +9,7 @@ use hashbrown::{HashMap, HashSet};
 
 pub trait AdjEdge<N>: Eq + Copy + Debug + Hash {
     fn target(&self) -> N;
+    fn source(&self) -> N;
 }
 
 pub trait AdjNode: Eq + Hash + Copy + Debug {}
