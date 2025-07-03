@@ -3,33 +3,43 @@ name = "aries"
 version = "0.0.6"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2021"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-
 # If enabled, will instruct the the solver to count cpu cycles at various point of its execution.
 # The implementation relies to time-stamp counter and intrinsic for the x86_64 platform.
 # If the target platform is not supported, activating this feature will have no effects.
 cpu_cycles = []
 
 
+# The "i64" and "i128" features below allow selecting wider integers for representing integer constants.
+# It allows a greater precision that the default i32 but may come with a performance hit (very roughly estimated around 20%).
+# Note that in cargo, features are assumed to be additive, with no down-side for enabling them (other than compilation time).
+# This assumption  allows cargo to take the union of all features and compile a single version of the crate.
+# However, we have a down-side (performance impact), so this should be avoided.
+# IMPORTANT: do NOT enable one of these in the workspace (otherwise, it will be enabled for all members of the workspace,
+#            with a potential performance hit for crates that do not need the wider int constants, e.g., scheduler, sat solver).
+
+# If enabled, use i64 for integer constants and i128 for long constants.
+# Note that if both "i64" and "i128" are enabled, then "i128" will take precedence.
+i64 = []
+
+# If enabled, use i128 for integer constants and long constants.
+i128 = []
+
+
 [dependencies]
 anyhow = { workspace = true }
-streaming-iterator = "0.1.5"
-lazy_static = "1.4.0"
-vec_map = "0.8.1"
+streaming-iterator = { workspace = true }
+vec_map = { workspace = true }
+crossbeam-channel = { workspace = true }
+smallvec = { workspace = true }
+lru = { workspace = true }
+format_num = { workspace = true }
 itertools = { workspace = true }
-bit-set = { default-features = false, version = "0.5.2" }
-crossbeam-channel = "0.5"
 env_param = { path = "../env_param" }
-smallvec = "1.4.2"
-num-integer = { default-features = false, version = "0.1.44" }
+num-integer = { workspace = true }
 tracing = { workspace = true }
-lru = "0.12.3"
 rand = { workspace = true }
 num-rational = { workspace = true }
-hashbrown = "0.15"
-
-[dev-dependencies]
-rand = "0.8"
+hashbrown = { workspace = true }

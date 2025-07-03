@@ -2,10 +2,10 @@ use crate::core::state::{FixedDomain, IntDomain, OptDomain};
 use crate::core::*;
 use crate::model::extensions::SavedAssignment;
 use crate::model::lang::linear::LinearSum;
-use crate::model::lang::{Atom, Cst, IAtom, IVar, SAtom};
+use crate::model::lang::{Atom, Cst, IAtom, IVar, Rational, SAtom};
 use crate::model::symbols::SymId;
 use crate::model::symbols::{ContiguousSymbols, TypedSym};
-use num_rational::Rational32;
+use state::Term;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait AssignmentExt {
@@ -13,7 +13,7 @@ pub trait AssignmentExt {
 
     fn var_domain(&self, var: impl Into<IAtom>) -> IntDomain;
 
-    fn presence_literal(&self, variable: VarRef) -> Lit;
+    fn presence_literal(&self, variable: impl Term) -> Lit;
 
     fn value_of_literal(&self, literal: Lit) -> Option<bool> {
         if self.entails(literal) {
@@ -37,7 +37,7 @@ pub trait AssignmentExt {
     fn sym_present(&self, atom: impl Into<SAtom>) -> Option<bool> {
         let atom = atom.into();
         match atom {
-            SAtom::Var(v) => self.boolean_value_of(self.presence_literal(v.into())),
+            SAtom::Var(v) => self.boolean_value_of(self.presence_literal(v)),
             SAtom::Cst(_) => Some(true),
         }
     }
@@ -66,7 +66,7 @@ pub trait AssignmentExt {
     fn opt_domain_of(&self, atom: impl Into<IAtom>) -> OptDomain {
         let atom = atom.into();
         let (lb, ub) = self.domain_of(atom);
-        let prez = self.presence_literal(atom.var.into());
+        let prez = self.presence_literal(atom.var);
         match self.value_of_literal(prez) {
             Some(true) => OptDomain::Present(lb, ub),
             Some(false) => OptDomain::Absent,
@@ -103,7 +103,7 @@ pub trait AssignmentExt {
             Atom::Fixed(f) => self
                 .var_domain(f.num)
                 .as_singleton()
-                .map(|i| Cst::Fixed(Rational32::new(i, f.denom))),
+                .map(|i| Cst::Fixed(Rational::new(i, f.denom))),
             Atom::Sym(s) => self.sym_value_of(s).map(|sym| Cst::Sym(TypedSym::new(sym, s.tpe()))),
         }
     }

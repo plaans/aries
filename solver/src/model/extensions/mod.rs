@@ -1,4 +1,4 @@
-//! This module contains extension traits to [Model] and [Domains] that
+//! This module contains extension traits to [Model](crate::model::Model) and [Domains] that
 //! when imported provide convenience methods.
 //!
 //! - [DisjunctionExt] allows querying the value of a disjunction,
@@ -13,6 +13,7 @@ pub mod partial_assignment;
 pub use assignments::*;
 pub use disjunction::*;
 pub use format::*;
+use state::Term;
 
 use crate::core::state::{Domains, IntDomain};
 use crate::core::*;
@@ -59,7 +60,7 @@ impl AssignmentExt for SavedAssignment {
         }
     }
 
-    fn presence_literal(&self, variable: VarRef) -> Lit {
+    fn presence_literal(&self, variable: impl Term) -> Lit {
         self.presence(variable)
     }
 

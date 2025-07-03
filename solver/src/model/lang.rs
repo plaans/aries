@@ -16,7 +16,7 @@ mod variables;
 pub use atom::Atom;
 pub use boolean::BVar;
 pub use cst::Cst;
-pub use fixed::{FAtom, FVar};
+pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;
 
@@ -108,12 +108,12 @@ impl From<ConversionError> for String {
 }
 
 /// Given three types A, B and C with the following traits:
-/// - From<B> for A, From<C> for B,
-/// - TryFrom<A> for B, TryFrom<B> for C
+/// - `From<B>` for `A`, `From<C>` for `B`,
+/// - `TryFrom<A>` for `B`, `TryFrom<B>` for `C`
 ///
 /// The macro implements the traits:
-///  - From<C> for A
-///  - TryFrom<A> for C
+///  - `From<C>` for `A`
+///  - `TryFrom<A>` for `C`
 #[macro_export]
 macro_rules! transitive_conversions {
     ($A: ty, $B: ty, $C: ty) => {
@@ -137,10 +137,10 @@ macro_rules! transitive_conversions {
 }
 
 /// Given three types A, B and C with the following traits:
-/// - From<B> for A, From<C> for B,
+/// - `From<B>` for `A`, `From<C>` for `B`,
 ///
 /// The macro implements the traits:
-///  - From<C> for A
+///  - `From<C>` for `A`
 #[macro_export]
 macro_rules! transitive_conversion {
     ($A: ty, $B: ty, $C: ty) => {

@@ -16,7 +16,7 @@ use walkdir::WalkDir;
 #[derive(Debug, StructOpt)]
 #[structopt(name = "aries-scheduler")]
 pub struct Opt {
-    /// Kind of the problem to be solved in {jobshop, openshop}
+    /// Kind of the problem to be solved in {jobshop, openshop, flexible}
     kind: ProblemKind,
     /// File containing the instance to solve.
     file: String,
@@ -93,6 +93,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let result = solver.minimize_with(
         makespan,
         |s| println!("New solution with makespan: {}", s.domain_of(makespan).0),
+        None,
         deadline,
     );
 
@@ -113,7 +114,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             }
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
         }
-        SolverResult::Unsat => {
+        SolverResult::Unsat(_) => {
             solver.print_stats();
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
@@ -188,7 +189,7 @@ mod test {
             let solver = &mut Solver::new(model);
             solver.set_brancher(RandomChoice::new(seed as u64));
             let result = if let Some((makespan, assignment)) = solver
-                .minimize_with(objective, |makespan, _| {
+                .minimize_with_callback(objective, |makespan, _| {
                     if expected_result == Some(makespan) {
                         // we have found the expected solution, remove the witness because the current solution
                         // will be disallowed to force an improvement

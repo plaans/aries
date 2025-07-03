@@ -33,7 +33,7 @@ pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", 
 /// *state function* `at` to these parameters:
 /// `(at bob kitchen)` is a *state variable* of boolean type.
 // TODO: make internals private
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Debug, Eq, PartialOrd, Ord)]
 pub struct Fluent {
     /// Human readable name of the fluent
     pub name: Sym,

@@ -9,11 +9,10 @@ use aries::core::state::Term;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
 use aries::model::extensions::partial_assignment::{PartialAssignment, PartialAssignmentBuilder};
 use aries::model::lang::linear::LinearSum;
-use aries::model::lang::{Atom, Cst, FAtom, IAtom};
+use aries::model::lang::{Atom, Cst, FAtom, IAtom, Rational};
 use aries::model::Model;
 use aries::solver::Solver;
 use itertools::Itertools;
-use num_rational::Rational32;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -363,7 +362,7 @@ impl Graph {
 
     /// Computes all shortest-path from this node
     pub fn shortest_paths(&self, from: Node) -> impl Iterator<Item = (Node, Cost)> + '_ {
-        pathfinding::directed::dijkstra::dijkstra_reach(&from, |n, _c| self.adjacency[n].iter().copied())
+        pathfinding::directed::dijkstra::dijkstra_reach(&from, |n| self.adjacency[n].iter().copied())
             .map(|item| (item.node, item.total_cost))
     }
 
@@ -467,7 +466,7 @@ impl RollCompilation {
         // now rebuild the sequence of actions that was rolled-up
         let mut actions = Vec::with_capacity(path.len());
 
-        let epsilon = Rational32::new(1, TIME_SCALE.get());
+        let epsilon = Rational::new(1, TIME_SCALE.get());
         let mut next_start = action.start;
         for (src, tgt, dur) in path {
             let mut instance = action.clone();
@@ -475,7 +474,7 @@ impl RollCompilation {
             instance.params[tgt_param_index] = tgt;
 
             instance.start = next_start;
-            let dur = Rational32::new(dur, TIME_SCALE.get()) - epsilon;
+            let dur = Rational::new(dur, TIME_SCALE.get()) - epsilon;
             instance.duration = dur;
             next_start = next_start + dur + epsilon;
             actions.push(instance);

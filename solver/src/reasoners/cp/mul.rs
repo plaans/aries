@@ -1,167 +1,97 @@
-use std::cmp::{max, min};
-
 use crate::{
     core::{
-        state::{Explanation, Term},
-        Lit, Relation, VarRef,
+        state::{Cause, Domains, DomainsSnapshot, Explanation, IntDomain},
+        IntCst, Lit, VarRef,
     },
-    model::extensions::AssignmentExt,
-    reasoners::Contradiction,
-    reif,
+    reasoners::{
+        cp::{Propagator, PropagatorId, Watches},
+        Contradiction,
+    },
 };
 
-use super::Propagator;
-
-#[derive(Clone, Debug)]
-/// Propagator for the constraint `reified <=> original * lit`
-pub(super) struct VarEqVarMulLit {
-    pub reified: VarRef,
-    pub original: VarRef,
-    pub lit: Lit,
+/// A propagator for multiplication (prod = fact1 * fact2) with reification.
+///
+/// Can handle prod == factn (x = y * x) and fact1 = fact2 (x = y * y)
+///
+/// Propagations are maximal for active && fact1 != fact2.
+/// Explanations are far from minimal.
+#[derive(Clone)]
+pub(super) struct Mul {
+    pub prod: VarRef,
+    pub fact1: VarRef,
+    pub fact2: VarRef,
+    pub active: Lit,
+    pub valid: Lit,
 }
 
-impl std::fmt::Display for VarEqVarMulLit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} <=> {:?} * {:?}", self.reified, self.original, self.lit)
-    }
-}
-
-impl Propagator for VarEqVarMulLit {
-    fn setup(&self, id: super::PropagatorId, context: &mut super::Watches) {
-        context.add_watch(self.reified, id);
-        context.add_watch(self.original, id);
-        context.add_watch(self.lit.variable(), id);
+impl Propagator for Mul {
+    fn setup(&self, id: PropagatorId, context: &mut Watches) {
+        context.add_watch(self.prod, id);
+        context.add_watch(self.fact1, id);
+        context.add_watch(self.fact2, id);
+        context.add_lit_watch(self.active, id);
+        context.add_lit_watch(self.valid, id);
     }
 
-    fn propagate(
-        &self,
-        domains: &mut crate::core::state::Domains,
-        cause: crate::core::state::Cause,
-    ) -> Result<(), crate::reasoners::Contradiction> {
-        let n = domains.trail().len();
-
-        let orig_prez = domains.presence_literal(self.original);
-        debug_assert!(domains.implies(self.lit, orig_prez));
-
-        if domains.entails(self.lit) {
-            // lit is true, so reified = original
-            let (orig_lb, orig_ub) = domains.bounds(self.original);
-            let (reif_lb, reif_ub) = domains.bounds(self.reified);
-
-            domains.set_lb(self.reified, orig_lb, cause)?;
-            domains.set_ub(self.reified, orig_ub, cause)?;
-            domains.set_lb(self.original, reif_lb, cause)?;
-            domains.set_ub(self.original, reif_ub, cause)?;
-        } else if domains.entails(!self.lit) {
-            // lit is false, so reified = 0
-            domains.set_lb(self.reified, 0, cause)?;
-            domains.set_ub(self.reified, 0, cause)?;
-        } else {
-            // lit is not fixed
-            let (orig_lb, orig_ub) = domains.bounds(self.original);
-            let (reif_lb, reif_ub) = domains.bounds(self.reified);
-
-            if reif_lb > orig_ub || reif_ub < orig_lb {
-                // intersection(dom(reif), dom(orig)) is empty, so lit = false and reified = 0
-                domains.set(!self.lit, cause)?;
-                domains.set_lb(self.reified, 0, cause)?;
-                domains.set_ub(self.reified, 0, cause)?;
-            } else if reif_lb > 0 || reif_ub < 0 {
-                // reified != 0, so lit = true
-                domains.set(self.lit, cause)?;
-            } else if domains.entails(orig_prez) {
-                // original is present, can reduce the bounds of reified while keeping 0 in the domain
-                domains.set_lb(self.reified, min(0, orig_lb), cause)?;
-                domains.set_ub(self.reified, max(0, orig_ub), cause)?;
-            }
+    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+        if domains.entails(!self.valid) || domains.entails(!self.active) {
+            // constraint is necessarily inactive, no propagations can be made
+            return Ok(());
         }
 
-        if n != domains.trail().len() {
-            // At least one domain has been modified
-            self.propagate(domains, cause)
-        } else {
-            Ok(())
+        // If multiplication is trivially inconsistent, we can deactivate the constraint
+        if self.trivially_inconsistent(domains) {
+            let changed_something = domains.set(!self.active, cause)?;
+            debug_assert!(
+                changed_something,
+                "inconsistent constraint resulted neither in conflict nor in deactivation"
+            );
+            return Ok(());
         }
+
+        if domains.entails(self.active) && domains.entails(self.valid) {
+            // Handle xyx case separately
+            if self.xyx_fact().is_some() {
+                self.propagate_xyx(domains, cause)?;
+            } else {
+                // While changes have been made, continue propagating
+                while self.propagate_iteration(domains, cause)? {}
+            };
+        }
+        Ok(())
     }
 
-    fn explain(
-        &self,
-        literal: Lit,
-        state: &crate::core::state::DomainsSnapshot,
-        out_explanation: &mut crate::core::state::Explanation,
-    ) {
-        // At least one element of the constraint must be the subject of the explanation
-        debug_assert!([self.reified, self.original, self.lit.variable()]
-            .iter()
-            .any(|&v| v == literal.variable()));
+    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
+        // Unfortunately it is very difficult to give minimal explanations due to the iterative nature of the propagation
+        // For instance if explanation on product bound is demanded,
+        // we would expect it to be the two factor bounds that were multiplied to give that result
+        // However, it could be that the factors were updated based on the previous bounds of the product
+        // and one of the product bounds would be needed for the explanation
 
-        let (reif_lb, reif_ub) = state.bounds(self.reified);
-        let (orig_lb, orig_ub) = state.bounds(self.original);
-        let orig_prez = state.presence(self.original);
+        if literal == !self.active {
+            // We must explain a contradiction in the multiplication
+            // Just push all variables
+            state.explain_var(self.prod, out_explanation);
+            state.explain_var(self.fact1, out_explanation);
+            state.explain_var(self.fact2, out_explanation);
+            return;
+        }
 
-        if literal == self.lit {
-            // Explain why lit is true
-            // reified != 0, so lit = true
-            if reif_lb > 0 {
-                out_explanation.push(self.reified.geq(reif_lb));
-            } else if reif_ub < 0 {
-                out_explanation.push(self.reified.leq(reif_ub));
-            }
-        } else if literal == !self.lit {
-            // Explain why lit is false
-            // intersection(dom(reif), dom(orig)) is empty, so lit = false
-            if reif_lb > orig_ub {
-                out_explanation.push(self.original.leq(orig_ub));
-                out_explanation.push(self.reified.geq(reif_lb));
-            }
-            if reif_ub < orig_lb {
-                out_explanation.push(self.original.geq(orig_lb));
-                out_explanation.push(self.reified.leq(reif_ub));
+        // explanation is always conditioned by the activity of the propagator
+        if self.active != Lit::TRUE {
+            out_explanation.push(self.active);
+            out_explanation.push(self.valid);
+        }
+        if literal.variable() == self.prod {
+            state.explain_var(self.fact1, out_explanation);
+            if !self.is_square() {
+                state.explain_var(self.fact2, out_explanation);
             }
         } else {
-            let (var, rel, val) = literal.unpack();
-            if var == self.reified {
-                // Explain the bounds of reified
-                match rel {
-                    Relation::Gt => {
-                        if val < 0 {
-                            if state.entails(!orig_prez) {
-                                out_explanation.push(!orig_prez);
-                            } else if state.entails(!self.lit) {
-                                out_explanation.push(!self.lit);
-                            } else if state.entails(orig_prez) {
-                                out_explanation.push(orig_prez);
-                                out_explanation.push(self.original.gt(val));
-                            }
-                        } else if state.entails(self.lit) {
-                            out_explanation.push(self.lit);
-                            out_explanation.push(self.original.gt(val));
-                        }
-                    }
-                    Relation::Leq => {
-                        if val >= 0 {
-                            if state.entails(!orig_prez) {
-                                out_explanation.push(!orig_prez);
-                            } else if state.entails(!self.lit) {
-                                out_explanation.push(!self.lit);
-                            } else if state.entails(orig_prez) {
-                                out_explanation.push(orig_prez);
-                                out_explanation.push(self.original.leq(val));
-                            }
-                        } else if state.entails(self.lit) {
-                            out_explanation.push(self.lit);
-                            out_explanation.push(self.original.leq(val));
-                        }
-                    }
-                };
-            } else if var == self.original && state.entails(self.lit) {
-                // Explain the bounds of original
-                out_explanation.push(self.lit);
-                match rel {
-                    Relation::Gt => out_explanation.push(self.reified.gt(val)),
-                    Relation::Leq => out_explanation.push(self.reified.leq(val)),
-                };
-            }
+            // Both factors are responsible due to explain_signs function (see PR)
+            state.explain_var(self.prod, out_explanation);
+            state.explain_var(self.fact1, out_explanation);
+            state.explain_var(self.fact2, out_explanation);
         }
     }
 
@@ -170,287 +100,580 @@ impl Propagator for VarEqVarMulLit {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use itertools::Itertools;
-    use rand::prelude::SmallRng;
-    use rand::seq::SliceRandom;
-    use rand::{Rng, SeedableRng};
+impl Mul {
+    /// Does one iteration of forward and backward propagation, return true if bounds updated
+    fn propagate_iteration(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
+        let mut updated = self.propagate_forward(domains, cause)?;
+        updated |= self.propagate_signs(domains, cause)?;
+        updated |= self.propagate_backward(domains, cause, self.fact1, self.fact2)?;
+        updated |= self.propagate_backward(domains, cause, self.fact2, self.fact1)?;
+        Ok(updated)
+    }
 
-    use crate::backtrack::Backtrack;
-    use crate::core::literals::Disjunction;
-    use crate::core::state::{Event, Origin};
-    use crate::core::{IntCst, Relation};
-    use crate::{
-        core::state::{Cause, Domains, Explainer, Explanation, InferenceCause, InvalidUpdate},
-        reasoners::{Contradiction, ReasonerId},
-    };
+    /// Propagates bounds on product, returns true if bounds updated
+    fn propagate_forward(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
+        // Product bounds are max/min of all combinations of factor bounds
+        let f1_dom = domains.int_domain(self.fact1);
+        let f2_dom = domains.int_domain(self.fact2);
+        let prod = f1_dom * f2_dom;
+
+        domains.set_bounds(self.prod, (prod.lb, prod.ub), cause)
+    }
+
+    /// Propagates bounds on fact, return true if bounds updated
+    fn propagate_backward(
+        &self,
+        domains: &mut Domains,
+        cause: Cause,
+        fact: VarRef,
+        other_fact: VarRef,
+    ) -> Result<bool, Contradiction> {
+        let p = domains.int_domain(self.prod);
+        let of = domains.int_domain(other_fact);
+        if p.contains(0) && of.contains(0) {
+            // Both upper and lower bounds of fact can be anything since other_fact can be 0
+            Ok(false)
+        } else if of.is_bound_to(0) {
+            Ok(domains.set_bounds(self.prod, (0, 0), cause)?)
+        } else if of.lb <= -1 && of.ub >= 1 {
+            // Other fact can be 1 or -1, so fact can be as high or low as abs(prod)
+            let abs_max = p.lb.abs().max(p.ub.abs());
+            Ok(domains.set_bounds(fact, (-abs_max, abs_max), cause)?)
+        } else {
+            // Case 4a: prod stricly positive or negative, other_fact >= 0
+            let mut updated_of = false;
+            if !p.contains(0) && of.lb == 0 {
+                updated_of |= domains.set_lb(other_fact, 1, cause)?;
+            }
+            if !p.contains(0) && of.ub == 0 {
+                updated_of |= domains.set_ub(other_fact, -1, cause)?;
+            }
+
+            // Logic from choco solver adapted to integer division
+            let (a, b, (c, d)) = (p.lb, p.ub, domains.bounds(other_fact));
+
+            let (ac_floor, ac_ceil) = div_floor_ceil(a, c);
+            let (ad_floor, ad_ceil) = div_floor_ceil(a, d);
+            let (bc_floor, bc_ceil) = div_floor_ceil(b, c);
+            let (bd_floor, bd_ceil) = div_floor_ceil(b, d);
+            let low = ac_ceil.min(ad_ceil).min(bc_ceil).min(bd_ceil);
+            let high = ac_floor.max(ad_floor).max(bc_floor).max(bd_floor);
+            Ok(domains.set_bounds(fact, (low, high), cause)? || updated_of)
+        }
+    }
+
+    fn propagate_signs(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
+        // Handle cases like
+        // test_propagation(
+        //     (36, 67),
+        //     (-8, 8),
+        //     (-3, 10),
+        //     false,
+        //     (36, 67),
+        //     (4, 8),
+        //     (5, 10),
+        // );
+        // Where -8 * -3 < 36 => f1 >= 0 && f2 >= 0
+        let p = domains.int_domain(self.prod);
+        let f1 = domains.int_domain(self.fact1);
+        let f2 = domains.int_domain(self.fact2);
+
+        if p.contains(0) || !f1.contains(0) || !f2.contains(0) {
+            return Ok(false);
+        }
+
+        // TODO: more elegant solution
+        if f1.lb * f2.lb < p.lb {
+            // Change guaranteed
+            domains.set_lb(self.fact1, 1, cause)?;
+            domains.set_lb(self.fact2, 1, cause)?;
+        } else if f1.lb * f2.ub > p.ub {
+            domains.set_lb(self.fact1, 1, cause)?;
+            domains.set_ub(self.fact2, -1, cause)?;
+        } else if f1.ub * f2.lb > p.ub {
+            domains.set_lb(self.fact2, 1, cause)?;
+            domains.set_ub(self.fact1, -1, cause)?;
+        } else if f1.ub * f2.ub < p.lb {
+            domains.set_ub(self.fact1, -1, cause)?;
+            domains.set_ub(self.fact2, -1, cause)?;
+        } else {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
+    /// Simple propagation for x = y * x
+    fn propagate_xyx(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+        // Forward propagation
+        // Case 1: y spans 1 => x can be anything
+        // Case 2: y doesn't span 1 => prod is 0
+        let fact = self.xyx_fact().unwrap();
+        let prod_dom = domains.int_domain(self.prod);
+        let fact_dom = domains.int_domain(fact);
+        if !fact_dom.contains(1) {
+            domains.set_bounds(self.prod, (0, 0), cause)?;
+        }
+
+        // Backward propagation
+        // Case 1: x spans 0 => y can be anything
+        // Case 2: x doesn't span 0 => y can only be 1
+        if !prod_dom.contains(0) {
+            domains.set_bounds(fact, (1, 1), cause)?;
+        }
+
+        Ok(())
+    }
+
+    /// Check for simple inconsistencies that can quickly be verified without modifying bounds
+    fn trivially_inconsistent(&self, domains: &Domains) -> bool {
+        let prod = domains.int_domain(self.prod);
+        let f1 = domains.int_domain(self.fact1);
+        let f2 = domains.int_domain(self.fact2);
+        let rhs = f1 * f2;
+        prod.disjoint(&rhs)
+    }
+
+    /// Returns true if fact1 == fact2
+    fn is_square(&self) -> bool {
+        self.fact1 == self.fact2
+    }
+
+    /// If x = y * x case, returns y
+    fn xyx_fact(&self) -> Option<VarRef> {
+        if self.fact1 == self.prod {
+            Some(self.fact2)
+        } else if self.fact2 == self.prod {
+            Some(self.fact1)
+        } else {
+            None
+        }
+    }
+}
+
+// Utils for common operations on domains
+impl DomainsSnapshot<'_> {
+    /// Creates literal v <= ub(v)
+    fn ub_literal(&self, v: VarRef) -> Lit {
+        v.leq(self.ub(v))
+    }
+
+    /// Creates literal v >= lb(v)
+    fn lb_literal(&self, v: VarRef) -> Lit {
+        v.geq(self.lb(v))
+    }
+
+    // Pushes v <= ub(v) and v >= lb(v) into explanation
+    fn explain_var(&self, v: VarRef, out_explanation: &mut Explanation) {
+        out_explanation.push(self.lb_literal(v));
+        out_explanation.push(self.ub_literal(v));
+    }
+}
+
+impl Domains {
+    // Set upper and lower bounds, return true if either changed
+    fn set_bounds(&mut self, v: VarRef, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
+        let changed1 = self.set_lb(v, lb, cause)?;
+        let changed2 = self.set_ub(v, ub, cause)?;
+        Ok(changed1 || changed2)
+    }
+}
+
+/// Computes div_floor and div_ceil for positive and negative values (using integer division)
+fn div_floor_ceil(x: IntCst, y: IntCst) -> (IntCst, IntCst) {
+    let quotient_positive = (x >= 0) == (y >= 0);
+    let q = x / y;
+    let m = x % y;
+    (
+        q - (m != 0 && !quotient_positive) as IntCst,
+        q + (m != 0 && quotient_positive) as IntCst,
+    )
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+
+    use rand::{rngs::SmallRng, Rng, SeedableRng};
 
     use super::*;
+    use crate::{core::*, reasoners::cp::test::utils::test_explanations};
 
-    fn mul(reif: VarRef, orig: VarRef, lit: Lit) -> VarEqVarMulLit {
-        VarEqVarMulLit {
-            reified: reif,
-            original: orig,
-            lit,
-        }
+    // === Assertions ===
+
+    /// Asserts that bounds of var are as expected
+    fn check_bounds(v: VarRef, d: &Domains, expected_bounds: (IntCst, IntCst)) {
+        assert_eq!(d.bounds(v), expected_bounds, "Unexpected bounds for {v:?}");
     }
 
-    fn check_bounds(v: VarRef, d: &Domains, lb: IntCst, ub: IntCst) {
-        assert_eq!(d.lb(v), lb);
-        assert_eq!(d.ub(v), ub);
+    /// Asserts that val is in var's bounds
+    fn check_in_bounds(d: &Domains, var: VarRef, val: IntCst) {
+        let (lb, ub) = d.bounds(var);
+        assert!(lb <= val && val <= ub, "{} <= {} <= {} failed", lb, val, ub);
     }
 
-    #[test]
-    fn test_propagation_with_true_lit() {
-        let mut d = Domains::new();
-        let r = d.new_var(-5, 10);
-        let o = d.new_var(-10, 5);
-        let c = mul(r, o, Lit::TRUE);
-
-        // Check initial bounds
-        check_bounds(r, &d, -5, 10);
-        check_bounds(o, &d, -10, 5);
-
-        // Check propagation
-        assert!(c.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(r, &d, -5, 5);
-        check_bounds(o, &d, -5, 5);
+    /// Asserts that two explanations contain the same literals
+    #[allow(unused)]
+    fn check_explanations(prop: &Mul, lit: Lit, d: &Domains, expected: Explanation) {
+        let out_explanation = &mut Explanation::new();
+        prop.explain(lit, &DomainsSnapshot::current(d), out_explanation);
+        let expected_set: HashSet<&Lit> = expected.lits.iter().collect();
+        let res_set: HashSet<&Lit> = out_explanation.lits.iter().collect();
+        assert_eq!(expected_set, res_set);
     }
 
-    #[test]
-    fn test_propagation_with_false_lit() {
-        let mut d = Domains::new();
-        let r = d.new_var(-5, 10);
-        let o = d.new_var(-10, 5);
-        let c = mul(r, o, Lit::FALSE);
-
-        // Check initial bounds
-        check_bounds(r, &d, -5, 10);
-        check_bounds(o, &d, -10, 5);
-
-        // Check propagation
-        assert!(c.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(r, &d, 0, 0);
-        check_bounds(o, &d, -10, 5);
+    // === Utils ===
+    #[allow(unused)]
+    fn print_domains(d: &Domains, prop: &Mul) {
+        println!("Problem: ");
+        let (prod_lb, prod_ub) = d.bounds(prop.prod);
+        println!("  {prod_lb} <= prod <= {prod_ub}");
+        let (fact1_lb, fact1_ub) = d.bounds(prop.fact1);
+        println!("  {fact1_lb} <= fact1 <= {fact1_ub}");
+        let (fact2_lb, fact2_ub) = d.bounds(prop.fact2);
+        println!("  {fact2_lb} <= fact2 <= {fact2_ub}\n");
     }
 
-    #[test]
-    fn test_propagation_with_non_zero_reif() {
-        let mut d = Domains::new();
-        let p = d.new_presence_literal(Lit::TRUE);
-        let r = d.new_var(1, 10);
-        let o = d.new_optional_var(-10, 5, p);
-        let l = d.new_presence_literal(p);
-        let c = mul(r, o, l);
-
-        // Check initial bounds
-        check_bounds(r, &d, 1, 10);
-        check_bounds(o, &d, -10, 5);
-        check_bounds(l.variable(), &d, 0, 1);
-
-        // Check propagation
-        assert!(c.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(r, &d, 1, 5);
-        check_bounds(o, &d, 1, 5);
-        check_bounds(l.variable(), &d, 1, 1);
-    }
-
-    #[test]
-    fn test_propagation_with_exclusive_bounds() {
-        let mut d = Domains::new();
-        let p = d.new_presence_literal(Lit::TRUE);
-        let r = d.new_var(-5, 0);
-        let o = d.new_optional_var(1, 5, p);
-        let l = d.new_presence_literal(p);
-        let c = mul(r, o, l);
-
-        // Check initial bounds
-        check_bounds(r, &d, -5, 0);
-        check_bounds(o, &d, 1, 5);
-        check_bounds(l.variable(), &d, 0, 1);
-
-        // Check propagation
-        assert!(c.propagate(&mut d, Cause::Decision).is_ok());
-        check_bounds(r, &d, 0, 0);
-        check_bounds(o, &d, 1, 5);
-        check_bounds(l.variable(), &d, 0, 0);
-    }
-
-    static INFERENCE_CAUSE: Cause = Cause::Inference(InferenceCause {
-        writer: ReasonerId::Cp,
-        payload: 0,
-    });
-
-    /// Test that triggers propagation of random decisions and checks that the explanations are minimal
-    #[test]
-    fn test_explanations() {
+    /// Generates factors, calculates result, returns propagator and true mult
+    fn gen_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst, IntCst))> {
+        let max = max as IntCst;
+        let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
-        // function that returns a given number of decisions to be applied later
-        // it use the RNG above to drive its random choices
-        let mut pick_decisions = |d: &Domains, min: usize, max: usize| -> Vec<Lit> {
-            let num_decisions = rng.gen_range(min..=max);
-            let vars = d.variables().filter(|v| !d.is_bound(*v)).collect_vec();
-            let mut lits = Vec::with_capacity(num_decisions);
-            for _ in 0..num_decisions {
-                let var_id = rng.gen_range(0..vars.len());
-                let var = vars[var_id];
-                let (lb, ub) = d.bounds(var);
-                let below: bool = rng.gen();
-                let lit = if below {
-                    let ub = rng.gen_range(lb..ub);
-                    Lit::leq(var, ub)
-                } else {
-                    let lb = rng.gen_range((lb + 1)..=ub);
-                    Lit::geq(var, lb)
-                };
-                lits.push(lit);
-            }
-            lits
-        };
-        // new rng for local use
-        let mut rng = SmallRng::seed_from_u64(0);
-
-        // repeat a large number of random tests
-        for _ in 0..1000 {
-            // create the constraint
+        for _ in 0..n {
+            let fact1_val = rng.gen_range(-max..max);
+            let fact2_val = rng.gen_range(-max..max);
+            let prod_val = fact1_val * fact2_val;
             let mut d = Domains::new();
-            let p = d.new_presence_literal(Lit::TRUE);
-            let lit = d.new_presence_literal(p);
-            let original = d.new_optional_var(-10, 10, p);
-            let reified = d.new_var(-10, 10);
-            let mut c = VarEqVarMulLit { reified, original, lit };
-            println!("\nConstraint: {c:?} with prez(original) = {p:?}");
-
-            // pick a random set of decisions
-            let decisions = pick_decisions(&d, 1, 10);
-            println!("Decisions: {decisions:?}");
-
-            // get a copy of the domain on which to apply all decisions
-            let mut d = d.clone();
-            d.save_state();
-
-            // apply all decisions
-            for dec in decisions {
-                d.set(dec, Cause::Decision);
-            }
-
-            // propagate
-            match c.propagate(&mut d, INFERENCE_CAUSE) {
-                Ok(()) => {
-                    // propagation successful, check that all inferences have correct explanations
-                    check_events(&d, &mut c);
-                }
-                Err(contradiction) => {
-                    // propagation failure, check that the contradiction is a valid one
-                    let explanation = match contradiction {
-                        Contradiction::InvalidUpdate(InvalidUpdate(lit, cause)) => {
-                            let mut expl = Explanation::with_capacity(16);
-                            expl.push(!lit);
-                            d.add_implying_literals_to_explanation(lit, cause, &mut expl, &mut c);
-                            expl
-                        }
-                        Contradiction::Explanation(expl) => expl,
-                    };
-                    let mut d = d.clone();
-                    d.reset();
-                    // get the conjunction and shuffle it
-                    // note that we do not check minimality here
-                    let mut conjuncts = explanation.lits;
-                    conjuncts.shuffle(&mut rng);
-                    for &conjunct in &conjuncts {
-                        let ret = d.set(conjunct, Cause::Decision);
-                        if ret.is_err() {
-                            println!("Invalid update: {conjunct:?}");
-                        }
-                    }
-
-                    assert!(
-                        c.propagate(&mut d, INFERENCE_CAUSE).is_err(),
-                        "Explanation: {conjuncts:?}\n {c:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    /// Check that all events since the last decision have a minimal explanation
-    pub fn check_events(d: &Domains, explainer: &mut (impl Propagator + Explainer)) {
-        let events = d
-            .trail()
-            .events()
-            .iter()
-            .rev()
-            .take_while(|ev| ev.cause != Origin::DECISION)
-            .cloned()
-            .collect_vec();
-        // check that all events have minimal explanations
-        for ev in &events {
-            check_event_explanation(d, ev, explainer);
-        }
-    }
-
-    /// Checks that the event has a minimal explanation
-    pub fn check_event_explanation(d: &Domains, ev: &Event, explainer: &mut (impl Propagator + Explainer)) {
-        let implied = ev.new_literal();
-        // generate explanation
-        let implicants = d.implying_literals(implied, explainer).unwrap();
-        let clause = Disjunction::new(implicants.iter().map(|l| !*l).collect_vec());
-        // check minimality
-        check_explanation_minimality(d, implied, clause, explainer);
-    }
-
-    pub fn check_explanation_minimality(
-        domains: &Domains,
-        implied: Lit,
-        clause: Disjunction,
-        propagator: &dyn Propagator,
-    ) {
-        let mut domains = domains.clone();
-        // println!("=== original trail ===");
-        // domains.trail().print();
-        domains.reset();
-        assert!(!domains.entails(implied));
-
-        // gather all decisions not already entailed at root level
-        let mut decisions = clause
-            .literals()
-            .iter()
-            .copied()
-            .filter(|&l| !domains.entails(l))
-            .map(|l| !l)
-            .collect_vec();
-
-        for _rotation_id in 0..decisions.len() {
-            // println!("Clause: {implied:?} <- {decisions:?}");
-            for i in 0..decisions.len() {
-                let l = decisions[i];
-                if domains.entails(l) {
-                    continue;
-                }
-                // println!("Decide {l:?}");
-                domains.decide(l);
-                propagator
-                    .propagate(&mut domains, INFERENCE_CAUSE)
-                    .expect("failed prop");
-
-                let decisions_left = decisions[i + 1..]
-                    .iter()
-                    .filter(|&l| !domains.entails(*l))
-                    .collect_vec();
-
-                if !decisions_left.is_empty() {
-                    assert!(!domains.entails(implied), "Not minimal, useless: {:?}", &decisions_left)
-                }
-            }
-
-            // println!("=== Post trail ===");
-            // solver.trail().print();
-            assert!(
-                domains.entails(implied),
-                "Literal {implied:?} not implied after all implicants ({decisions:?}) enforced"
+            let prod_bounds = (
+                rng.gen_range(-max * max..=prod_val),
+                rng.gen_range(prod_val..=max * max),
             );
-            decisions.rotate_left(1);
+            let fact1_bounds = (rng.gen_range(-max..=fact1_val), rng.gen_range(fact1_val..=max));
+            let fact2_bounds = (rng.gen_range(-max..=fact2_val), rng.gen_range(fact2_val..=max));
+            let prod = d.new_var(prod_bounds.0, prod_bounds.1);
+            let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
+            let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
+            let prop = Mul {
+                prod,
+                fact1,
+                fact2,
+                active: if always_active {
+                    Lit::TRUE
+                } else {
+                    d.new_var(-1, 1).geq(0)
+                },
+                valid: Lit::TRUE,
+            };
+            res.push((d, prop, (prod_val, fact1_val, fact2_val)));
+        }
+        res
+    }
+
+    fn gen_square_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst))> {
+        let max = max as IntCst;
+        let mut res = vec![];
+        let mut rng = SmallRng::seed_from_u64(0);
+        for _ in 0..n {
+            let fact_val = rng.gen_range(-max..max);
+            let prod_val = fact_val.pow(2);
+            let mut d = Domains::new();
+            let prod = d.new_var(
+                rng.gen_range(-max * max..=prod_val),
+                rng.gen_range(prod_val..=max * max),
+            );
+            let fact = d.new_var(rng.gen_range(-max..=fact_val), rng.gen_range(fact_val..=max));
+            let prop = Mul {
+                prod,
+                fact1: fact,
+                fact2: fact,
+                active: if always_active {
+                    Lit::TRUE
+                } else {
+                    d.new_var(-1, 1).geq(0)
+                },
+                valid: Lit::TRUE,
+            };
+            res.push((d, prop, (prod_val, fact_val)));
+        }
+        res
+    }
+
+    /// Quickly test propagation
+    fn test_propagation(
+        prod_bounds: (IntCst, IntCst),
+        fact1_bounds: (IntCst, IntCst),
+        fact2_bounds: (IntCst, IntCst),
+        should_fail: bool,
+        prop_res: (IntCst, IntCst),
+        fact1_res: (IntCst, IntCst),
+        fact2_res: (IntCst, IntCst),
+    ) {
+        let mut d = Domains::new();
+        let prop = {
+            let d: &mut Domains = &mut d;
+            let prod = d.new_var(prod_bounds.0, prod_bounds.1);
+            let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
+            let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
+            Mul {
+                prod,
+                fact1,
+                fact2,
+                active: Lit::TRUE,
+                valid: Lit::TRUE,
+            }
+        };
+
+        let res = prop.propagate(&mut d, Cause::Decision);
+        assert!(res.is_err() == should_fail, "{:?}", res.err());
+        if !should_fail {
+            check_bounds(prop.prod, &d, prop_res);
+            check_bounds(prop.fact1, &d, fact1_res);
+            check_bounds(prop.fact2, &d, fact2_res);
+        }
+    }
+
+    fn test_square_propagation(
+        prod_bounds: (IntCst, IntCst),
+        fact_bounds: (IntCst, IntCst),
+        should_fail: bool,
+        prop_res: (IntCst, IntCst),
+        fact_res: (IntCst, IntCst),
+    ) {
+        let mut d = Domains::new();
+        let prod = d.new_var(prod_bounds.0, prod_bounds.1);
+        let fact = d.new_var(fact_bounds.0, fact_bounds.1);
+        let prop = Mul {
+            prod,
+            fact1: fact,
+            fact2: fact,
+            active: Lit::TRUE,
+            valid: Lit::TRUE,
+        };
+
+        assert!(prop.propagate(&mut d, Cause::Decision).is_err() == should_fail);
+        if !should_fail {
+            check_bounds(prod, &d, prop_res);
+            check_bounds(fact, &d, fact_res);
+        }
+    }
+
+    fn test_xyx_propagation(
+        prod_bounds: (IntCst, IntCst),
+        fact_bounds: (IntCst, IntCst),
+        should_fail: bool,
+        prop_res: (IntCst, IntCst),
+        fact_res: (IntCst, IntCst),
+    ) {
+        let mut d = Domains::new();
+        let prod = d.new_var(prod_bounds.0, prod_bounds.1);
+        let fact = d.new_var(fact_bounds.0, fact_bounds.1);
+        let prop = Mul {
+            prod,
+            fact1: fact,
+            fact2: prod,
+            active: Lit::TRUE,
+            valid: Lit::TRUE,
+        };
+
+        assert!(prop.propagate(&mut d, Cause::Decision).is_err() == should_fail);
+        if !should_fail {
+            check_bounds(prod, &d, prop_res);
+            check_bounds(fact, &d, fact_res);
+        }
+    }
+
+    fn test_xyx_explanation(prod_bounds: (IntCst, IntCst), fact_bounds: (IntCst, IntCst)) {
+        let mut d = Domains::new();
+        let prod = d.new_var(prod_bounds.0, prod_bounds.1);
+        let fact = d.new_var(fact_bounds.0, fact_bounds.1);
+        let prop = Mul {
+            prod,
+            fact1: fact,
+            fact2: prod,
+            active: d.new_var(-1, 1).geq(0),
+            valid: Lit::TRUE,
+        };
+        test_explanations(&d, &prop, false);
+    }
+
+    // === Tests ===
+
+    #[rustfmt::skip]
+    #[test]
+    fn test_propagations() {
+        // Simple case
+        test_propagation(
+            (1, 9),
+            (2, 3),
+            (4, 5),
+            false,
+            (8, 8),
+            (2, 2),
+            (4, 4),
+        );
+        // All 0s
+        test_propagation(
+            (0, 0),
+            (0, 0),
+            (0, 0),
+            false,
+            (0, 0),
+            (0, 0),
+            (0, 0),
+        );
+        // -3 * -8 < 36 => f1 >= 0 && f2 >= 0
+        test_propagation(
+            (36, 67),
+            (-8, 8),
+            (-3, 10),
+            false,
+            (36, 67),
+            (4, 8),
+            (5, 10),
+        );
+        // Negative form of above
+        test_propagation(
+            (36, 67),
+            (-8, 8),
+            (-10, 3),
+            false,
+            (36, 67),
+            (-8, -4),
+            (-10, -5),
+        );
+        // Other negative form of above
+        test_propagation(
+            (-67, -36),
+            (-8, 8),
+            (-10, 3),
+            false,
+            (-67, -36),
+            (4, 8),
+            (-10, -5),
+        );
+        // Failure
+        test_propagation(
+            (1, 10),
+            (0, 0),
+            (10, 10),
+            true,
+            (0, 0),  // Ignored
+            (0, 0),
+            (0, 0),
+        );
+        // Max and Min int stuff
+        // Note that our INT_CST_MAX == -INT_CST_MIN (unlike standard two's complement)
+        test_propagation(
+            (1, INT_CST_MAX),
+            (INT_CST_MIN, 0),
+            (-1, 1),
+            false,
+            (1, INT_CST_MAX),
+            (INT_CST_MIN, -1),
+            (-1, -1),
+        );
+        // Check case where there is multiplication between two maxes
+        test_propagation(
+            (INT_CST_MIN, INT_CST_MAX),
+            (INT_CST_MIN, INT_CST_MAX),
+            (INT_CST_MIN, INT_CST_MAX),
+            false,
+            (INT_CST_MIN, INT_CST_MAX),
+            (INT_CST_MIN, INT_CST_MAX),
+            (INT_CST_MIN, INT_CST_MAX),
+        );
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn test_square_propagations() {
+        // Props aren't minimal, but test a couple cases anyway
+        test_square_propagation(
+            (25, 26),
+            (5, 6),
+            false,
+            (25, 25),
+            (5, 5)
+        );
+        test_square_propagation(
+            (24, 24),
+            (5, 6),
+            true,
+            (0, 0),
+            (0, 0)
+        );
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn test_xyx_propagations() {
+        test_xyx_propagation(
+            (5, 10),
+            (-1, 5),
+            false,
+            (5, 10),
+            (1, 1)
+        );
+        test_xyx_propagation(
+            (0, 10),
+            (-5, 5),
+            false,
+            (0, 10),
+            (-5, 5)
+        );
+        test_xyx_propagation(
+            (1, 10),
+            (2, 5),
+            true,
+            (0, 0),
+            (0, 0)
+        );
+        test_xyx_propagation(
+            (1, 10),
+            (-1, 0),
+            true,
+            (0, 0),
+            (0, 0)
+        );
+    }
+
+    #[test]
+    fn test_xyx_explanations() {
+        test_xyx_explanation((5, 10), (-1, 5));
+        test_xyx_explanation((0, 10), (-5, 5));
+    }
+
+    #[test]
+    fn test_propagation_random() {
+        // Standard
+        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, true) {
+            // Propagate and check that bounds are consistent with true values
+            assert!(
+                prop.propagate(&mut d, Cause::Decision).is_ok(),
+                "p={prod_val}, f1={fact1_val}, f2={fact2_val} failed"
+            );
+            check_in_bounds(&d, prop.prod, prod_val);
+            check_in_bounds(&d, prop.fact1, fact1_val);
+            check_in_bounds(&d, prop.fact2, fact2_val);
+        }
+        // Square
+        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, true) {
+            // Propagate and check that bounds are consistent with true values
+            assert!(
+                prop.propagate(&mut d, Cause::Decision).is_ok(),
+                "p={prod_val}, f={fact_val} failed"
+            );
+            check_in_bounds(&d, prop.prod, prod_val);
+            check_in_bounds(&d, prop.fact1, fact_val);
+        }
+    }
+
+    #[test]
+    fn test_explanations_random() {
+        for (d, prop, _) in gen_problems(1000, 10, false) {
+            test_explanations(&d, &prop, false);
+        }
+        for (d, prop, _) in gen_square_problems(1000, 10, false) {
+            test_explanations(&d, &prop, false);
         }
     }
 }

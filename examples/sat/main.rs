@@ -8,28 +8,60 @@ use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
 use aries::solver::search::SearchControl;
 use aries::solver::Solver;
-use std::collections::HashMap;
+use clap::{Parser, Subcommand};
+use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use structopt::StructOpt;
+use varisat_formula::CnfFormula;
 
 type Model = aries::model::Model<String>;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "minisat")]
-struct Opt {
-    #[structopt(long = "source")]
+/// Simple SAT solver based on the aries constraint solving library.
+///
+/// The solver allows solving SAT problems (in CNF) as well
+/// as identifying Minimal Unsatisfiable Subset (MUS) of clauses.
+#[derive(Parser)]
+#[command(version, about, name = "aries-sat")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Debug, Subcommand)]
+enum Commands {
+    /// Solve a SAT problem in CNF format
+    Solve(SolveOpt),
+    /// Prints the first MUS of an UNSAT problem
+    Mus(MusOpt),
+    /// Prints all MUSs of an UNSAT problem
+    AllMus(MusOpt),
+}
+
+#[derive(Parser, Debug)]
+struct SolveOpt {
+    /// Directory or zip file from which to take the problem
+    #[arg(long = "source")]
     source: Option<PathBuf>,
+    /// Problem file (CNF format)
     file: PathBuf,
-    #[structopt(long = "sat")]
+    #[arg(long = "sat")]
     expected_satisfiability: Option<bool>,
     /// Timeout of the solver, in seconds
-    #[structopt(long, short)]
+    #[arg(long, short)]
     timeout: Option<u64>,
-    #[structopt(long, short, default_value = "")]
+    #[arg(long, short, default_value = "")]
     search: String,
+}
+
+#[derive(Parser, Debug)]
+struct MusOpt {
+    /// Directory or zip file from which to take the problem
+    #[arg(long = "source")]
+    source: Option<PathBuf>,
+    /// Problem file (CNF format)
+    file: PathBuf,
 }
 
 enum Source {
@@ -82,25 +114,67 @@ impl Source {
 }
 
 fn main() -> Result<()> {
-    let opt = Opt::from_args();
+    let opt = Cli::parse();
+    use Commands::*;
+    match &opt.command {
+        Commands::Solve(solve_opt) => {
+            let deadline = solve_opt
+                .timeout
+                .map(|timeout| Instant::now() + Duration::from_secs(timeout));
 
-    let deadline = opt.timeout.map(|timeout| Instant::now() + Duration::from_secs(timeout));
+            let cnf = cnf(&solve_opt.source, &solve_opt.file)?;
+            let model = load(cnf)?;
+            solve_multi_threads(model, solve_opt, deadline)?;
+        }
+        Commands::Mus(mus_opt) | Commands::AllMus(mus_opt) => {
+            let cnf = cnf(&mus_opt.source, &mus_opt.file)?;
+            let (model, clause_reifs) = load_half_reif(cnf)?;
+            let mut solver = Solver::new(model);
+            let mus_mcs_enumerator = solver.mus_and_mcs_enumerator(&clause_reifs);
+            let print_mus = |mus: &BTreeSet<Lit>| {
+                print!("MUS: {{");
+                for l in mus {
+                    let constraint = clause_reifs.iter().position(|c| l == c).unwrap();
+                    print!(" c{constraint}")
+                }
+                println!(" }}");
+            };
+            match &opt.command {
+                Mus(_) => {
+                    println!("Looking for the first Minimal Unsatisfiable Subset (MUS)...");
+                    if let Some(mus) = mus_mcs_enumerator.first_mus() {
+                        print_mus(&mus);
+                    } else {
+                        println!("ERROR: Problem is SAT");
+                    }
+                }
+                AllMus(_) => {
+                    println!("Looking for the first Minimal Unsatisfiable Subset (MUS)...");
+                    for mus in mus_mcs_enumerator.mus_only() {
+                        print_mus(&mus);
+                    }
+                }
+                _ => unreachable!(),
+            }
+            solver.print_stats();
+        }
+    }
+    Ok(())
+}
 
-    let mut source = if let Some(f) = &opt.source {
+/// Parses a file from the given source and converts it into a CNF formula
+fn cnf(source: &Option<PathBuf>, file: &Path) -> Result<CnfFormula> {
+    let mut source = if let Some(f) = source {
         Source::new(f)?
     } else {
         Source::working_directory()?
     };
-
-    let input = source.read(&opt.file)?;
-
-    let cnf = varisat_dimacs::DimacsParser::parse(input.as_bytes())?;
-    let model = load(cnf)?;
-
-    solve_multi_threads(model, &opt, deadline)
+    let input = source.read(file)?;
+    Ok(varisat_dimacs::DimacsParser::parse(input.as_bytes())?)
 }
 
-fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Result<()> {
+/// Solve the problem, with as many threads as specified in the options.
+fn solve_multi_threads(model: Model, opt: &SolveOpt, deadline: Option<Instant>) -> Result<()> {
     let choices: Vec<_> = model.state.variables().map(|v| Lit::geq(v, 1)).collect();
     let solver = Box::new(Solver::new(model));
 
@@ -153,7 +227,7 @@ fn solve_multi_threads(model: Model, opt: &Opt, deadline: Option<Instant>) -> Re
                 std::process::exit(1);
             }
         }
-        SolverResult::Unsat => {
+        SolverResult::Unsat(_) => {
             println!("> UNSATISFIABLE");
             if opt.expected_satisfiability == Some(true) {
                 eprintln!("Error: expected SAT but got UNSAT");
@@ -197,4 +271,32 @@ pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
     }
 
     Ok(model)
+}
+
+/// Load a CNF formula into a model and returns a model with set of half reified constraints and the list of activation literals (in the order of the clauses in the problem)
+pub fn load_half_reif(cnf: varisat_formula::CnfFormula) -> anyhow::Result<(Model, Vec<Lit>)> {
+    let mut var_bindings = HashMap::new();
+    let mut model = Model::new();
+
+    let mut clause_reifs: Vec<Lit> = Vec::new();
+    let mut clause_lits: Vec<Lit> = Vec::new();
+    for clause in cnf.iter() {
+        clause_lits.clear();
+        for &lit in clause {
+            let var = lit.var();
+            let var = if let Some(var) = var_bindings.get(&var) {
+                *var
+            } else {
+                let model_var = model.new_bvar(var.to_dimacs().to_string());
+                var_bindings.insert(var, model_var);
+                model_var
+            };
+            let lit: Lit = if lit.is_positive() { var.into() } else { !var };
+            clause_lits.push(lit);
+        }
+        let c = model.half_reify(or(clause_lits.as_slice()));
+        clause_reifs.push(c);
+    }
+
+    Ok((model, clause_reifs))
 }

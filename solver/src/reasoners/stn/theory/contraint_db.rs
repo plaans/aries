@@ -111,9 +111,21 @@ impl ConstraintDb {
     pub fn add_propagator_enabler(&mut self, propagator: PropagatorId, enabler: Enabler) {
         // watch both the `active` and the `valid` literal.
         // when notified that one becomes true, we will need to check that the other is true before taking any action
-        self.watches.add_watch((enabler, propagator), enabler.active);
-        self.watches.add_watch((enabler, propagator), enabler.valid);
         let constraint = &self.propagators[propagator];
+        if constraint.is_dynamic() {
+            // for a dynamic constraint, the active literal is always true (computed directly from the current upper bound of the corresponding varaible)
+            // hence we do not need to place a watch on it (and doing so could be potentially costly because it is an integer variable with potentially many bound updates).
+            debug_assert!({
+                let x = constraint.dyn_weight.unwrap();
+                assert_eq!(x.valid, enabler.valid);
+                assert_eq!(x.var_ub, enabler.active.svar());
+                true
+            });
+            self.watches.add_watch((enabler, propagator), enabler.active);
+        } else {
+            self.watches.add_watch((enabler, propagator), enabler.active);
+            self.watches.add_watch((enabler, propagator), enabler.valid);
+        }
         self.intermittent_propagators.fill_with(constraint.source, Vec::new);
 
         self.intermittent_propagators[constraint.source].push(PropagatorTarget {
@@ -137,18 +149,19 @@ impl ConstraintDb {
     /// Returns the ID of the propagator set it was added to and a description for how the integration was made.
     #[allow(clippy::comparison_chain)]
     pub fn add_propagator(&mut self, prop: Propagator) -> (PropagatorId, PropagatorIntegration) {
-        if self.trail.current_decision_level() == DecLvl::ROOT {
-            // At the root level, try to optimize the organization of the propagators
-            // It can not (easily) be done beyond the root level because it makes undoing it harder.
-
+        // At the root level, try to optimize the organization of the propagators
+        // It can not (easily) be done beyond the root level because it makes undoing it harder.
+        // Additionally we only optimize the layout for non-dynamic edges (i.e. with a non-constant weight)
+        let optimize_layout = self.trail.current_decision_level() == DecLvl::ROOT && prop.dyn_weight.is_none();
+        if optimize_layout {
             // first try to find a propagator set that is compatible
             self.propagator_indices.entry((prop.source, prop.target)).or_default();
             for &id in &self.propagator_indices[&(prop.source, prop.target)] {
                 let existing = &mut self.propagators[id];
-                if existing.source == prop.source && existing.target == prop.target {
+                if existing.source == prop.source && existing.target == prop.target && !existing.is_dynamic() {
                     // on same
                     if existing.weight == prop.weight {
-                        // propagator with same weight exists, just add our propagators to if
+                        // propagator with same weight exists, just add our propagators to it
                         if !existing.enablers.contains(&prop.enabler) {
                             existing.enablers.push(prop.enabler);
                             return (id, PropagatorIntegration::Merged(prop.enabler));
@@ -196,6 +209,10 @@ impl ConstraintDb {
             weight: prop.weight,
             enabler: None,
             enablers: vec![prop.enabler],
+            dyn_weight: prop.dyn_weight,
+            // the propagator is not in the active list yet. Initialize to large value to get a manic if it is ever used.
+            index_in_active: u32::MAX,
+            index_in_incoming_active: u32::MAX,
         };
         self.vertices.insert(prop.source);
         self.vertices.insert(prop.target);

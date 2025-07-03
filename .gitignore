@@ -8,6 +8,7 @@ flamegraph.svg
 perf.data
 perf.data.old
 examples/sat/instances/*.cnf
+aries_fzn/share/aries_fzn
 __pycache__/
 *.profraw
 lcov.info

@@ -10,9 +10,9 @@ use std::num::NonZeroU32;
 /// Each time a decision is made, the decision level increases.
 ///
 /// As a layout optimization, the internal representation disallows the 0 value.
-/// This enables the compiler to use this value to represent an Option<DecLvl>
+/// This enables the compiler to use this value to represent an `Option<DecLvl>`
 /// on 32 bits (rather than 64 without this optimisation).
-/// This niche is especially useful for representing an Option<TrailLoc>.
+/// This niche is especially useful for representing an `Option<TrailLoc>`.
 #[derive(Copy, Clone, Ord, PartialOrd, PartialEq, Eq, Hash)]
 pub struct DecLvl(NonZeroU32);
 
@@ -248,14 +248,11 @@ impl<V> ObsTrail<V> {
     }
 
     pub fn decision_level(&self, id: EventIndex) -> DecLvl {
-        let mut dl = self.current_decision_level();
-        while dl > DecLvl::ROOT {
-            if id >= self.backtrack_points[dl] {
-                return dl;
-            } else {
-                dl -= 1;
-            }
-        }
+        // find the index for of the next decision level in the backtrack points
+        let idx = self.backtrack_points.partition_point(|ev| *ev <= id);
+        let dl = DecLvl::from(idx);
+        debug_assert!(dl == DecLvl::ROOT || self.backtrack_points[dl] <= id);
+        debug_assert!(dl == self.current_decision_level() || id < self.backtrack_points[dl + 1]);
         dl
     }
 
@@ -636,5 +633,25 @@ mod tests {
         test_last(3, Some((dl(2), ei(5))));
         test_last(4, None);
         test_last(5, Some((dl(2), ei(4))));
+    }
+
+    #[test]
+    fn test_decision_levels() {
+        let mut trail = ObsTrail::new();
+        debug_assert_eq!(trail.current_decision_level(), DecLvl::ROOT);
+        let ia = trail.push("a");
+        let ib = trail.push("b");
+        trail.save_state();
+        let ic = trail.push("c");
+        let id = trail.push("d");
+        trail.save_state();
+        trail.save_state();
+        let ie = trail.push("e");
+
+        assert_eq!(trail.decision_level(ia), DecLvl::ROOT);
+        assert_eq!(trail.decision_level(ib), DecLvl::ROOT);
+        assert_eq!(trail.decision_level(ic), DecLvl::new(1));
+        assert_eq!(trail.decision_level(id), DecLvl::new(1));
+        assert_eq!(trail.decision_level(ie), DecLvl::new(3));
     }
 }

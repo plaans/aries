@@ -1,0 +1,10 @@
+x = false;
+y = false;
+----------
+x = false;
+y = true;
+----------
+x = true;
+y = false;
+----------
+==========

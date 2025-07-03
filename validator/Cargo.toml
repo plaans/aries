@@ -9,7 +9,6 @@ version = "0.1.0"
 aries = { path = "../solver" }
 unified_planning = { path = "../planning/grpc/api" }
 anyhow = { workspace = true }
-im = "15.1"
-malachite = "0.4.14"
-prost = { workspace = true }
-regex = "1.5"
+im = { workspace = true }
+malachite = { workspace = true }
+regex = { workspace = true }

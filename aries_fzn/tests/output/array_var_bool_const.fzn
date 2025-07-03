@@ -1,0 +1,5 @@
+% array of var bool with literals
+var bool: x1 = true;
+var bool: x3 = false;
+array [1..5] of var bool: x:: output_array([1..5]) = [x1, true, x3, false, false];
+solve satisfy;

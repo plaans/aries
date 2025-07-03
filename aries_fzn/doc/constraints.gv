@@ -1,0 +1,192 @@
+// This document describes constraint encoding from minizinc to aries.
+// Ellipse shape means the constraint is not yet implemented.
+// Use Graphviz to generate the graph.
+
+digraph constraints {
+    label="Constraint encoding from minizinc to aries."
+    node [shape=rectangle colorscheme=pubugn3 style=filled] 
+
+    // ---------- Minizinc ----------
+    {
+        node [fillcolor=1]
+        mzn_array_int_element [label="array_int_element"]
+        mzn_array_int_maximum [label="array_int_maximum"]
+        mzn_array_int_minimum [label="array_int_minimum"]
+        mzn_array_var_int_element [label="array_var_int_element"]
+        mzn_int_abs [label="int_abs"]
+        // mzn_int_div [label="int_div"] [shape=ellipse]
+        mzn_int_eq [label="int_eq"]
+        mzn_int_eq_reif [label="int_eq_reif"]
+        mzn_int_le [label="int_le"]
+        mzn_int_le_reif [label="int_le_reif"]
+        mzn_int_lin_eq [label="int_lin_eq"]
+        mzn_int_lin_eq_reif [label="int_lin_eq_reif"]
+        mzn_int_lin_le [label="int_lin_le"]
+        mzn_int_lin_le_imp [label="int_lin_le_imp"]
+        mzn_int_lin_le_reif [label="int_lin_le_reif"]
+        mzn_int_lin_ne [label="int_lin_ne"]
+        mzn_int_lin_ne_reif [label="int_lin_ne_reif"]
+        mzn_int_lt [label="int_lt"]
+        mzn_int_lt_reif [label="int_lt_reif"]
+        mzn_int_max [label="int_max"]
+        mzn_int_min [label="int_min"]
+        // mzn_int_mod [label="int_mod"] [shape=ellipse]
+        mzn_int_ne [label="int_ne"]
+        mzn_int_ne_reif [label="int_ne_reif"]
+        mzn_int_plus [label="int_plus"]
+        // mzn_int_pow [label="int_pow"] [shape=ellipse]
+        mzn_int_times [label="int_times"]
+        mzn_array_bool_and [label="array_bool_and"]
+        mzn_array_bool_element [label="array_bool_element"]
+        // mzn_array_bool_xor [label="array_bool_xor"] [shape=ellipse]
+        mzn_array_var_bool_element [label="array_var_bool_element"]
+        mzn_bool_and [label="bool_and"]
+        mzn_bool_clause [label="bool_clause"]
+        mzn_bool_clause_reif [label="bool_clause_reif"]
+        mzn_bool_eq [label="bool_eq"]
+        mzn_bool_eq_reif [label="bool_eq_reif"]
+        mzn_bool_le [label="bool_le"]
+        mzn_bool_le_reif [label="bool_le_reif"]
+        mzn_bool_lin_eq [label="bool_lin_eq"]
+        mzn_bool_lin_le [label="bool_lin_le"]
+        mzn_bool_lt [label="bool_lt"]
+        mzn_bool_lt_reif [label="bool_lt_reif"]
+        mzn_bool_not [label="bool_not"]
+        mzn_bool_or [label="bool_or"]
+        mzn_bool_xor [label="bool_xor"]
+        mzn_bool2int [label="bool2int"]
+    }
+        
+
+    // ---------- Solver API ----------
+    {
+        node [fillcolor=2]
+        api_Abs [label="Abs"]
+        api_AndReif [label="AndReif"]
+        api_ArrayElement [label="ArrayElement"]
+        api_Clause [label="Clause"]
+        api_ClauseReif [label="ClauseReif"]
+        api_Eq [label="Eq"]
+        api_EqReif [label="EqReif"]
+        api_InSet [label="InSet"]
+        api_Le [label="Le"]
+        api_LeReif [label="LeReif"]
+        api_Lt [label="Lt"]
+        api_LtReif [label="LtReif"]
+        api_LinEq [label="LinEq"]
+        api_LinEqHalf [label="LinEqHalf"]
+        api_LinEqReif [label="LinEqReif"]
+        api_LinGe [label="LinGe"]
+        api_LinGeHalf [label="LinGeHalf"]
+        api_LinGeReif [label="LinGeReif"]
+        api_LinLe [label="LinLe"]
+        api_LinLeHalf [label="LinLeHalf"]
+        api_LinLeReif [label="LinLeReif"]
+        api_LinNe [label="LinNe"]
+        api_LinNeReif [label="LinNeReif"]
+        api_Max [label="Max"]
+        api_Min [label="Min"]
+        api_Mul [label="Mul"]
+        api_Ne [label="Ne"]
+        api_NeReif [label="NeReif"]
+        api_OrReif [label="OrReif"]
+    }
+
+    // ---------- Solver ----------
+    {
+        node [fillcolor=3]
+        // sol_Alternative [label="Alternative"]
+        sol_And [label="And"]
+        sol_Eq [label="Eq"]
+        sol_EqMax [label="EqMax"]
+        // sol_EqVal [label="EqVal"]
+        // sol_EqVarMulLit [label="EqVarMulLit"]
+        sol_Linear [label="Linear"]
+        sol_Lit [label="Lit"]
+        sol_MaxDiff [label="MaxDiff"] // b - a <= ub
+        sol_Neq [label="Neq"]
+        // sol_NeqVal [label="NeqVal"]
+        sol_Or [label="Or"]
+        sol_EqMul [label="EqMul"]
+    }
+
+    // ---------- Minizinc ----------
+    mzn_array_int_element -> api_ArrayElement
+    mzn_array_int_maximum -> api_Max
+    mzn_array_int_minimum -> api_Min
+    mzn_array_var_int_element -> api_ArrayElement
+    mzn_int_abs -> api_Abs
+    // mzn_int_div
+    mzn_int_eq -> api_Eq
+    mzn_int_eq_reif -> api_EqReif
+    mzn_int_le -> api_Le
+    mzn_int_le_reif -> api_LeReif
+    mzn_int_lin_eq -> api_LinEq
+    mzn_int_lin_eq_reif -> api_LinEqReif
+    mzn_int_lin_le -> api_LinLe
+    mzn_int_lin_le_imp -> api_LinLeHalf
+    mzn_int_lin_le_reif -> api_LinLeReif
+    mzn_int_lin_ne -> api_LinNe
+    mzn_int_lin_ne_reif -> api_LinNeReif
+    mzn_int_lt -> api_Lt
+    mzn_int_lt_reif -> api_LtReif
+    mzn_int_max -> mzn_array_int_maximum
+    mzn_int_min -> mzn_array_int_minimum
+    // mzn_int_mod
+    mzn_int_ne -> api_Ne
+    mzn_int_ne_reif -> api_NeReif
+    mzn_int_plus -> mzn_int_lin_eq
+    // mzn_int_pow
+    mzn_int_times -> api_Mul
+
+    mzn_array_bool_and -> api_AndReif
+    mzn_array_bool_element -> api_ArrayElement
+    // mzn_array_bool_xor
+    mzn_array_var_bool_element -> api_ArrayElement
+    mzn_bool_and -> mzn_array_bool_and
+    mzn_bool_clause -> api_Clause
+    mzn_bool_clause_reif -> api_ClauseReif
+    mzn_bool_eq -> api_Eq
+    mzn_bool_eq_reif -> api_EqReif
+    mzn_bool_le -> api_Le
+    mzn_bool_le_reif -> api_LeReif
+    mzn_bool_lin_eq -> api_LinEq
+    mzn_bool_lin_le -> api_LinLe
+    mzn_bool_lt -> mzn_bool_eq [label="2"]
+    mzn_bool_lt_reif -> { mzn_array_bool_and; mzn_bool_eq_reif }
+    mzn_bool_not -> api_Ne
+    mzn_bool_or -> mzn_bool_clause
+    mzn_bool_xor -> api_NeReif
+    mzn_bool2int -> api_Eq
+
+    // ---------- Solver API ----------
+    api_Abs -> api_Max
+    api_AndReif -> sol_And
+    api_ArrayElement -> { sol_Eq; sol_Or } [label="*"]
+    api_Clause -> sol_Or
+    api_ClauseReif -> sol_Or
+    api_Eq -> sol_Eq
+    api_EqReif -> sol_Eq
+    api_InSet -> { sol_Or; sol_Lit } [label="*"]
+    api_Le -> sol_MaxDiff
+    api_LeReif -> sol_MaxDiff
+    api_LinEq -> { api_LinLe; api_LinGe }
+    api_LinEqHalf -> { api_LinLeHalf; api_LinGeHalf }
+    api_LinEqReif -> { api_LinLeReif; api_LinGeReif; api_AndReif }
+    api_LinGe -> api_LinLe
+    api_LinGeHalf -> api_LinLeHalf
+    api_LinGeReif -> api_LinLeReif
+    api_LinLe -> sol_Linear
+    api_LinLeHalf -> api_LinLe
+    api_LinLeReif -> { api_LinLeHalf; api_LinGeHalf }
+    api_LinNe -> { api_LinEq; api_Ne }
+    api_LinNeReif -> { api_LinLeReif; api_LinGeReif; api_OrReif }
+    api_Lt -> sol_MaxDiff
+    api_LtReif -> sol_MaxDiff
+    api_Max -> sol_EqMax
+    api_Min -> sol_EqMax
+    api_Mul -> sol_EqMul
+    api_Ne -> sol_Neq
+    api_NeReif -> sol_Neq
+    api_OrReif -> api_Clause
+}

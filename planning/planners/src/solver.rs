@@ -1,3 +1,6 @@
+use crate::encode::warm_up::{
+    add_flexible_same_plan_constraints, add_strict_same_plan_constraints, populate_with_warm_up_plan,
+};
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
@@ -15,6 +18,8 @@ use aries::solver::search::activity::*;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::{Brancher, SearchControl};
+use aries_planning::chronicles::analysis::Metadata;
+use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
@@ -31,6 +36,41 @@ static PRINT_RAW_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RAW_MODEL", 
 
 /// If set to true, will print the preprocessed model
 static PRINT_MODEL: EnvParam<bool> = EnvParam::new("ARIES_PRINT_MODEL", "false");
+
+/// The list of strategies to use for the search, separated by commas.
+static STRATEGIES: EnvParam<StratList> = EnvParam::new("ARIES_STRATEGIES", "");
+
+/// The type of warming up constraints to add to the problem.
+static WARM_UP: EnvParam<WarmUpType> = EnvParam::new("ARIES_WARM_UP", "flexible");
+
+/// The type of warming up constraints to add to the problem.
+#[derive(Copy, Clone, PartialEq)]
+enum WarmUpType {
+    /// No warming up constraints.
+    None,
+    /// The first plan must be exactly the same as the warm-up plan, presence included.
+    /// This option can cause some problems with the plan space (PSP) symmetry breaking.
+    Strict,
+    /// The first plan must a subplan (included or equal) of the warm-up plan.
+    /// The plan is constrained to be the same as the warm-up plan, while letting the solver to choose
+    /// which chronicle instances is attributed to which action.
+    /// If used with the plan space (PSP) symmetry breaking, some instances could not be present in the
+    /// solution plan if they are found useless, leading to non-strict equivalence with the warm-up plan.
+    Flexible,
+}
+
+impl std::str::FromStr for WarmUpType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(WarmUpType::None),
+            "strict" => Ok(WarmUpType::Strict),
+            "flexible" | "flex" => Ok(WarmUpType::Flexible),
+            x => Err(format!("Unknown warming up type: {x}")),
+        }
+    }
+}
 
 pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
 
@@ -65,6 +105,82 @@ impl FromStr for Metric {
     }
 }
 
+pub type WarmingResult = SolverResult<(Arc<FiniteProblem>, Arc<Domains>, Option<IntCst>)>;
+
+pub fn preprocess(problem: &mut Problem) -> Arc<Metadata> {
+    if PRINT_RAW_MODEL.get() {
+        Printer::print_problem(problem);
+    }
+    println!("===== Preprocessing ======");
+    aries_planning::chronicles::preprocessing::preprocess(problem);
+    println!("==========================");
+    if PRINT_MODEL.get() {
+        Printer::print_problem(problem);
+    }
+    Arc::new(analysis::analyse(problem))
+}
+
+/// Search for a plan based on the `base_problem` that reproduce the given `plan`.
+#[allow(clippy::too_many_arguments)]
+pub fn reproduce(
+    pb: &mut FiniteProblem,
+    base_problem: Problem,
+    strategies: &[Strat],
+    metric: Option<Metric>,
+    htn_mode: bool,
+    warm_up_plan: Option<Vec<ActionInstance>>,
+    on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
+    deadline: Option<Instant>,
+) -> Result<Option<WarmingResult>> {
+    if warm_up_plan.is_none() {
+        return Ok(None);
+    }
+    let plan = &warm_up_plan.unwrap();
+    let start = Instant::now();
+
+    println!("===== Warming up ======");
+    populate_with_warm_up_plan(pb, &base_problem, plan, 0)?;
+
+    let mut constrained_pb = pb.clone();
+    match WARM_UP.get() {
+        WarmUpType::None => {}
+        WarmUpType::Strict => add_strict_same_plan_constraints(&mut constrained_pb, plan)?,
+        WarmUpType::Flexible => add_flexible_same_plan_constraints(&mut constrained_pb, plan)?,
+    };
+
+    let pb = Arc::new(pb.clone());
+    let constrained_pb = Arc::new(constrained_pb.clone());
+    let on_new_valid_assignment = {
+        let constrained_pb = constrained_pb.clone();
+        let on_new_sol = on_new_sol.clone();
+        move |ass: Arc<SavedAssignment>| on_new_sol(&constrained_pb, ass)
+    };
+
+    println!("  [{:.3}s] Warm Up Populated", start.elapsed().as_secs_f32());
+    let result = solve_finite_problem(
+        constrained_pb.clone(),
+        strategies,
+        metric,
+        false, // Do not try to optimize for the moment
+        htn_mode,
+        on_new_valid_assignment,
+        None,
+        deadline,
+        INT_CST_MAX,
+    );
+    println!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
+    println!("=======================");
+
+    let warming_result = match result {
+        SolverResult::Sol((sol, cost)) => SolverResult::Sol((pb, sol, cost)),
+        SolverResult::Timeout(Some((sol, cost))) => SolverResult::Timeout(Some((pb, sol, cost))),
+        SolverResult::Timeout(None) => SolverResult::Timeout(None),
+        SolverResult::Unsat(unsat_core) => SolverResult::Unsat(unsat_core),
+    };
+
+    Ok(Some(warming_result))
+}
+
 /// Search for plan based on the `base_problem`.
 ///
 /// The solver will look for plan by generating subproblem of increasing `depth`
@@ -83,75 +199,137 @@ pub fn solve(
     strategies: &[Strat],
     metric: Option<Metric>,
     htn_mode: bool,
+    warm_up_plan: Option<Vec<ActionInstance>>,
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
-    if PRINT_RAW_MODEL.get() {
-        Printer::print_problem(&base_problem);
-    }
-    println!("===== Preprocessing ======");
-    aries_planning::chronicles::preprocessing::preprocess(&mut base_problem);
-    println!("==========================");
-    if PRINT_MODEL.get() {
-        Printer::print_problem(&base_problem);
-    }
+    let default_best_cost = INT_CST_MAX + 1;
+    let metadata = preprocess(&mut base_problem);
+    let init_pb = FiniteProblem {
+        model: base_problem.context.model.clone(),
+        origin: base_problem.context.origin(),
+        horizon: base_problem.context.horizon(),
+        makespan_ub: base_problem.context.makespan_ub(),
+        chronicles: base_problem.chronicles.clone(),
+        meta: metadata.clone(),
+    };
 
-    let metadata = Arc::new(analysis::analyse(&base_problem));
+    let warming_result = reproduce(
+        &mut init_pb.clone(),
+        base_problem.clone(),
+        strategies,
+        metric,
+        htn_mode,
+        warm_up_plan.clone(),
+        on_new_sol.clone(),
+        deadline,
+    )?;
 
-    let mut best_cost = INT_CST_MAX + 1;
+    let warmed_pb = warming_result.as_ref().and_then(|res| match res {
+        SolverResult::Sol((pb, _, _)) => Some(pb.clone()),
+        _ => None,
+    });
+    let mut best = warming_result.as_ref().and_then(|res| match res {
+        SolverResult::Sol((pb, sol, cost)) => Some((pb.clone(), sol.clone(), cost.unwrap_or(default_best_cost))),
+        _ => None,
+    });
+    let initial_solution = best.as_ref().map(|(_, sol, cost)| (*cost, sol.clone()));
+    let best_cost = |b: &Option<(Arc<_>, Arc<_>, IntCst)>| b.as_ref().map(|(_, _, c)| *c).unwrap_or(default_best_cost);
+
+    if warm_up_plan.is_some() {
+        if let Some(warming_result) = warming_result {
+            // A solution has been found and there is no metric to optimize, stop here.
+            if metric.is_none() {
+                return Ok(warming_result.map(|(pb, sol, _)| (pb, sol)));
+            }
+            // A solution has been found but the initial solution is empty, stop here.
+            else if initial_solution.is_none() {
+                println!("No solution found for the warm-up plan");
+                return Ok(SolverResult::Unsat(None));
+            }
+            // A solution has been found and the optimization process can start.
+            // Notify the user of the initial solution.
+            else {
+                on_new_sol(
+                    &warmed_pb.clone().expect("No warm-up problem"),
+                    initial_solution.as_ref().unwrap().1.clone(),
+                );
+            }
+        }
+        // No solution found for the warm-up plan, stop here.
+        else {
+            println!("No solution found for the warm-up plan");
+            return Ok(SolverResult::Unsat(None));
+        }
+    }
 
     let start = Instant::now();
     for depth in min_depth..=max_depth {
-        let mut pb = FiniteProblem {
-            model: base_problem.context.model.clone(),
-            origin: base_problem.context.origin(),
-            horizon: base_problem.context.horizon(),
-            makespan_ub: base_problem.context.makespan_ub(),
-            chronicles: base_problem.chronicles.clone(),
-            meta: metadata.clone(),
-        };
+        // Get the finite problem.
+        let mut pb: FiniteProblem = warmed_pb
+            .as_ref()
+            .filter(|_| depth == min_depth)
+            .map(|pb| pb.as_ref().clone())
+            .unwrap_or(init_pb.clone());
+
+        // Log current depth.
         let depth_string = if depth == u32::MAX {
             "∞".to_string()
         } else {
             depth.to_string()
         };
         println!("{depth_string} Solving with depth {depth_string}");
-        if htn_mode {
-            populate_with_task_network(&mut pb, &base_problem, depth)?;
-        } else {
-            populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
-        }
-        let pb = Arc::new(pb);
 
+        // Populate the finite problem with the chronicle instances.
+        if depth != min_depth || warmed_pb.is_none() {
+            if htn_mode {
+                populate_with_task_network(&mut pb, &base_problem, depth)?;
+            } else if let Some(ref plan) = warm_up_plan {
+                populate_with_warm_up_plan(&mut pb, &base_problem, plan, depth)?;
+            } else {
+                populate_with_template_instances(&mut pb, &base_problem, |_| Some(depth))?;
+            }
+        }
+
+        let pb = Arc::new(pb);
         let on_new_valid_assignment = {
             let pb = pb.clone();
             let on_new_sol = on_new_sol.clone();
             move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
         };
+
+        // Solve the initial problem with the warming assignment if any.
         println!("  [{:.3}s] Populated", start.elapsed().as_secs_f32());
         let result = solve_finite_problem(
             pb.clone(),
             strategies,
             metric,
+            true,
             htn_mode,
             on_new_valid_assignment,
+            if depth != 0 { None } else { initial_solution.clone() },
             deadline,
-            best_cost - 1,
+            best_cost(&best) - 1,
         );
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
         let result = result.map(|assignment| (pb, assignment));
         match result {
-            SolverResult::Unsat => {} // continue (increase depth)
-            SolverResult::Sol((_, (_, cost))) if metric.is_some() && depth < max_depth => {
+            SolverResult::Unsat(_) => {} // continue (increase depth)
+            SolverResult::Sol((pb, (sol, cost))) if metric.is_some() && depth < max_depth => {
                 let cost = cost.expect("Not cost provided in optimization problem");
-                assert!(cost < best_cost);
-                best_cost = cost; // continue with new cost bound
+                assert!(
+                    cost < best_cost(&best),
+                    "New cost ({cost}) isn't better than the current best ({})",
+                    best_cost(&best)
+                );
+                best = Some((pb, sol, cost)); // continue with new cost bound
             }
+            SolverResult::Timeout(None) => return Ok(SolverResult::Timeout(best.map(|(pb, sol, _)| (pb, sol)))), // stop here with the current best solution
             other => return Ok(other.map(|(pb, (ass, _))| (pb, ass))),
         }
     }
-    Ok(SolverResult::Unsat)
+    Ok(SolverResult::Unsat(None))
 }
 
 /// This function mimics the instantiation of the subproblem, run the propagation and prints the result.
@@ -325,18 +503,39 @@ impl FromStr for Strat {
     }
 }
 
+/// Newtype wrapper to allow parsing comma-separated strategies.
+#[derive(Debug, Clone)]
+pub struct StratList(pub Vec<Strat>);
+
+impl FromStr for StratList {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.trim().is_empty() {
+            return Ok(StratList(vec![]));
+        }
+        s.split(',')
+            .map(|item| item.trim().parse())
+            .collect::<Result<Vec<Strat>, _>>()
+            .map(StratList)
+    }
+}
+
 /// Instantiates a solver for the given subproblem and attempts to solve it.
 ///
 /// If more than one strategy is given, each strategy will have its own solver run on a dedicated thread.
 /// If no strategy is given, then a default set of strategies will be automatically selected.
 ///
 /// If a valid solution of the subproblem is found, the solver will return a satisfying assignment.
+#[allow(clippy::too_many_arguments)]
 fn solve_finite_problem(
     pb: Arc<FiniteProblem>,
     strategies: &[Strat],
     metric: Option<Metric>,
+    minimize_metric: bool,
     htn_mode: bool,
     on_new_solution: impl Fn(Arc<SavedAssignment>),
+    initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
@@ -354,17 +553,22 @@ fn solve_finite_problem(
         encoding,
     }) = encode(&pb, metric)
     else {
-        return SolverResult::Unsat;
+        return SolverResult::Unsat(None);
     };
     if let Some(metric) = metric {
-        model.enforce(metric.le_lit(cost_upper_bound), []);
+        if minimize_metric {
+            model.enforce(metric.le_lit(cost_upper_bound), []);
+        }
     }
     let solver = init_solver(model);
     let encoding = Arc::new(encoding);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
+    let env_strats = STRATEGIES.get_ref().0.clone();
     let strats: &[Strat] = if !strategies.is_empty() {
         strategies
+    } else if !env_strats.is_empty() {
+        &env_strats
     } else if htn_mode {
         &HTN_DEFAULT_STRATEGIES
     } else {
@@ -375,7 +579,11 @@ fn solve_finite_problem(
     });
 
     let result = if let Some(metric) = metric {
-        solver.minimize_with(metric, on_new_solution, deadline)
+        if minimize_metric {
+            solver.minimize_with(metric, on_new_solution, initial_solution, deadline)
+        } else {
+            solver.solve(deadline)
+        }
     } else {
         solver.solve(deadline)
     };
