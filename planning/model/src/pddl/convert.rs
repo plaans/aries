@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use errors::Message;
+use errors::*;
 use itertools::Itertools;
 use pddl::parser::TypedSymbol;
 use pddl::sexpr::SExpr;
@@ -64,7 +64,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<()> {
     let mut fluents = Fluents::new();
     for pred in &dom.predicates {
         let parameters = parse_parameters(&pred.args, &types)?;
-        let _ = fluents.add_fluent(&pred.name, parameters, Type::Bool, pred.name.loc());
+        fluents.add_fluent(&pred.name, parameters, Type::Bool, pred.name.loc())?;
     }
 
     let mut objects = Objects::new();
@@ -84,23 +84,15 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<()> {
         let sub_goals = conjuncts(g);
         for sg in sub_goals {
             let sg = parse(sg, &model.fluents, &bindings)?;
-            let sg = Goal::at_horizon(sg);
+            let sg = Condition::at(Timestamp::HORIZON, sg);
             model.goals.push(sg);
         }
     }
 
     for a in &dom.actions {
-        let parameters = parse_parameters(&a.args, &model.types)?;
-
-        let bindings = Rc::new(Bindings::stacked(&parameters, &bindings));
-
-        let mut action = Action::instantaneous(&a.name, parameters);
-
-        for e in &a.eff {
-            for e in conjuncts(e) {
-                let e = parse(e, &model.fluents, &bindings)?;
-            }
-        }
+        let name: crate::Sym = a.name.clone().into();
+        let action = into_action(a, &model, &bindings).with_info(|| name.info("when parsing action"))?;
+        model.actions.add(action)?;
     }
 
     println!("{model}");
@@ -108,15 +100,49 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn into_effect(time: Timestamp, expr: TypedExpr) -> Result<Effect, Message> {
+fn into_action(a: &pddl::Action, model: &Model, bindings: &Rc<Bindings>) -> Result<Action, Message> {
+    let parameters = parse_parameters(&a.args, &model.types)?;
+
+    let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
+
+    let mut action = Action::instantaneous(&a.name, parameters);
+
+    for c in &a.pre {
+        for c in conjuncts(c) {
+            let c = parse(c, &model.fluents, &bindings)?;
+            action.conditions.push(Condition::at(action.start(), c));
+        }
+    }
+
+    for e in &a.eff {
+        for e in conjuncts(e) {
+            let e = parse(e, &model.fluents, &bindings)?;
+            let e = into_effect(action.end(), e)?;
+            action.effects.push(e);
+        }
+    }
+    Ok(action)
+}
+
+fn into_effect(time: impl Into<Timestamp>, expr: TypedExpr) -> Result<Effect, Message> {
+    let time = time.into();
     Type::Bool.accepts(&expr)?;
     match expr.expr() {
-        Expr::Int(_) => todo!(),
-        Expr::Bool(_) => todo!(),
-        Expr::Object(object) => todo!(),
-        Expr::Param(param) => todo!(),
-        Expr::App(fun, vec) => todo!(),
-        Expr::StateVariable(fluent, vec) => todo!(),
+        // Expr::Int(_) => todo!(),
+        // Expr::Bool(_) => todo!(),
+        // Expr::Object(object) => todo!(),
+        // Expr::Param(param) => todo!(),
+        // Expr::App(fun, vec) => todo!(),
+        Expr::StateVariable(fluent, args) => {
+            let sv = StateVariable::new(fluent.clone(), args.clone(), expr.span_or_default());
+            Ok(Effect::assignement(time, sv, Expr::Bool(true).typed(None)?))
+        }
+        Expr::App(Fun::Not, args) if args.len() == 1 => {
+            let (fluent, args) = args[0].state_variable()?;
+            let sv = StateVariable::new(fluent.clone(), args.clone(), expr.span_or_default());
+            Ok(Effect::assignement(time, sv, Expr::Bool(false).typed(None)?))
+        }
+        x => Err(Message::error("Unhandled conversion into effect").snippet(expr.error("unrecognized pattern"))),
     }
 }
 
@@ -155,7 +181,7 @@ fn conjuncts(sexpr: &SExpr) -> Vec<&SExpr> {
     }
 }
 
-pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> anyhow::Result<TypedExpr> {
+pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Result<TypedExpr, Message> {
     let expr = match sexpr {
         SExpr::Atom(atom) => bindings.get(atom)?,
         SExpr::List(l) => {

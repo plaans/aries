@@ -3,6 +3,9 @@ pub mod input;
 pub mod parser;
 pub mod sexpr;
 
+pub use parser::*;
+pub use sexpr::{SAtom, SExpr, SList};
+
 #[cfg(test)]
 mod test {
 

@@ -70,6 +70,17 @@ impl PartialEq for Sym {
 
 impl Eq for Sym {}
 
+impl PartialOrd for Sym {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.symbol.partial_cmp(&other.symbol)
+    }
+}
+impl Ord for Sym {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.symbol.cmp(&other.symbol)
+    }
+}
+
 impl Hash for Sym {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.symbol.hash(state)

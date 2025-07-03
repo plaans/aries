@@ -4,7 +4,7 @@ use derive_more::derive::Display;
 use errors::Spanned;
 use utils::disp_iter;
 
-use crate::*;
+use crate::{errors::Message, *};
 
 #[derive(Clone, Display)]
 #[display("{}", expr)]
@@ -12,6 +12,23 @@ pub struct TypedExpr {
     expr: Arc<Expr>,
     tpe: Type,
     span: Option<Span>,
+}
+
+impl TypedExpr {
+    pub fn bool(&self) -> Result<bool, Message> {
+        if let Expr::Bool(value) = self.expr.as_ref() {
+            Ok(*value)
+        } else {
+            Err(Message::error("expected boolean value").snippet(self.error("not a boolean")))
+        }
+    }
+    pub fn state_variable(&self) -> Result<(&Fluent, &Vec<TypedExpr>), Message> {
+        if let Expr::StateVariable(fun, args) = self.expr.as_ref() {
+            Ok((fun, args))
+        } else {
+            Err(Message::error("expected state variable value").snippet(self.error("not a state variable")))
+        }
+    }
 }
 
 impl Debug for TypedExpr {

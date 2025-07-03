@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::pddl::input::Input;
+use crate::pddl::input::{ErrLoc, Input};
 use annotate_snippets::*;
 use thiserror::Error;
 
@@ -14,6 +14,18 @@ pub struct Span {
     span: Range<usize>,
 }
 pub type OSpan = Option<Span>;
+
+impl Span {
+    pub fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
+        let message = message.to_string();
+        // build a source from the object itself
+        Annot {
+            level: lvl,
+            span: self.clone(),
+            message,
+        }
+    }
+}
 
 impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -38,6 +50,10 @@ pub trait Spanned: Display {
 
     fn error(&self, message: impl ToString) -> Annot {
         self.annotate(Level::Error, message)
+    }
+
+    fn info(&self, message: impl ToString) -> Annot {
+        self.annotate(Level::Info, message)
     }
 
     fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
@@ -113,6 +129,29 @@ impl Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
+}
+
+impl From<ErrLoc> for Message {
+    fn from(value: ErrLoc) -> Self {
+        let message_string = value.inline_err.unwrap_or("error".to_string());
+        let message = Message::error(&message_string);
+        if let Some(loc) = value.loc {
+            let span = Span::from(loc);
+            message.snippet(span.annotate(Level::Error, message_string))
+        } else {
+            message
+        }
+    }
+}
+
+impl<T> ErrorMessageExt<T> for Result<T, Message> {
+    fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message> {
+        self.map_err(|m| m.snippet(annot()))
+    }
+}
+
+pub trait ErrorMessageExt<T> {
+    fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message>;
 }
 
 // pub struct Span(Arc<dyn SourceLoc>);

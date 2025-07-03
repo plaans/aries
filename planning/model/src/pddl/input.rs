@@ -1,3 +1,4 @@
+use crate::errors::Spanned;
 use crate::utils::Fmt;
 use itertools::Itertools;
 use std::convert::TryFrom;
@@ -193,9 +194,9 @@ impl std::fmt::Debug for Loc {
 }
 
 pub struct ErrLoc {
-    context: Vec<String>,
-    inline_err: Option<String>,
-    loc: Option<Loc>,
+    pub(crate) context: Vec<String>,
+    pub(crate) inline_err: Option<String>,
+    pub(crate) loc: Option<Loc>,
 }
 
 impl ErrLoc {
