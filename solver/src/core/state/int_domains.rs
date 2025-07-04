@@ -54,6 +54,10 @@ impl IntDomains {
     }
 
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
+        assert!(
+            INT_CST_MIN <= lb && ub <= INT_CST_MAX,
+            "Variable bounds [{lb},{ub}] exceeds maximum values [{INT_CST_MIN}, {INT_CST_MAX}]. Consider using the i64/i128 features for larger domains."
+        );
         let var_lb = self.bounds.push(ValueCause::new(-lb, None));
         let var_ub = self.bounds.push(ValueCause::new(ub, None));
         debug_assert_eq!(var_lb.variable(), var_ub.variable());
@@ -80,9 +84,9 @@ impl IntDomains {
         self.ub(lit.svar()) <= lit.ub_value()
     }
 
-    /// Attempts to set the bound to the given value.
+    /// Attempts to reduce the upper bound to the given value.
     /// Results:
-    ///  - Ok(true): The model was updated ans is consistent.
+    ///  - Ok(true): The model was updated and is consistent.
     ///  - Ok(false): The change is as no-op (was previously entailed) and nothing changed. The model is consistent.
     ///  - Err(EmptyDom(var)): update was not carried out as it would have resulted in an empty domain.
     #[allow(clippy::if_same_then_else)]
@@ -164,8 +168,8 @@ impl IntDomains {
     /// to the initial value. Each upper-bound is tagged with the index of the event that enforced it.
     ///
     /// A typical output would a stream:
-    ///  - (ub: 10, Some(event-id-: 14)    current upper bound is 10 and was enforced by the 14th event
-    ///  - (ub: 16, Some(event-id-: 11)    previous upper bound was 16, enforced by the 11th even
+    ///  - (ub: 10, Some(event-id: 14)    current upper bound is 10 and was enforced by the 14th event
+    ///  - (ub: 16, Some(event-id: 11)    previous upper bound was 16, enforced by the 11th even
     ///  - (ub: 20, None)                  Initial value of the upper bound was 20
     pub(super) fn upper_bounds_history(
         &self,
