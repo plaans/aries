@@ -1,9 +1,10 @@
+use eq_alt::AltEqTheory;
+
 use crate::backtrack::Backtrack;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::core::Lit;
 use crate::reasoners::cp::Cp;
-use crate::reasoners::eq::SplitEqTheory;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::theory::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
@@ -101,7 +102,7 @@ pub(crate) const REASONERS: [ReasonerId; 5] = [
 pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
-    pub eq: SplitEqTheory,
+    pub eq: AltEqTheory,
     pub cp: Cp,
     pub tautologies: Tautologies,
 }
@@ -110,7 +111,7 @@ impl Reasoners {
         Reasoners {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
-            eq: Default::default(),
+            eq: AltEqTheory::new(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
         }

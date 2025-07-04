@@ -12,7 +12,12 @@ use crate::reasoners::eq_alt::graph::{AdjEdge, AdjNode, AdjacencyList};
 ///
 /// This allows to continue traversal while 0 or 1 NEQ edges have been taken, and stop on the second
 #[derive(Clone, Debug)]
-pub struct Dft<'a, N: AdjNode, E: AdjEdge<N>, S> {
+pub struct Dft<'a, N, E, S, F>
+where
+    N: AdjNode,
+    E: AdjEdge<N>,
+    F: Fn(&S, &E) -> Option<S>,
+{
     /// A directed graph in the form of an adjacency list
     adj_list: &'a AdjacencyList<N, E>,
     /// The set of visited nodes
@@ -22,23 +27,22 @@ pub struct Dft<'a, N: AdjNode, E: AdjEdge<N>, S> {
     /// A function which takes an element of extra stack data and an edge
     /// and returns the new element to add to the stack
     /// None indicates the edge shouldn't be visited
-    fold: fn(&S, &E) -> Option<S>,
+    fold: F,
     mem_path: bool,
     parents: HashMap<N, E>,
 }
 
-impl<'a, N: AdjNode, E: AdjEdge<N>, S> Dft<'a, N, E, S> {
-    pub(super) fn new(
-        adj_list: &'a AdjacencyList<N, E>,
-        node: N,
-        init: S,
-        fold: fn(&S, &E) -> Option<S>,
-        mem_path: bool,
-    ) -> Self {
+impl<'a, N, E, S, F> Dft<'a, N, E, S, F>
+where
+    N: AdjNode,
+    E: AdjEdge<N>,
+    F: Fn(&S, &E) -> Option<S>,
+{
+    pub(super) fn new(adj_list: &'a AdjacencyList<N, E>, source: N, init: S, fold: F, mem_path: bool) -> Self {
         Dft {
             adj_list,
             visited: HashSet::new(),
-            stack: vec![(node, init)],
+            stack: vec![(source, init)],
             fold,
             mem_path,
             parents: Default::default(),
@@ -47,17 +51,25 @@ impl<'a, N: AdjNode, E: AdjEdge<N>, S> Dft<'a, N, E, S> {
 
     /// Get the the path from source to node (in reverse order)
     pub fn get_path(&self, mut node: N) -> Vec<E> {
-        assert!(self.mem_path);
+        assert!(self.mem_path, "Set mem_path to true if you want to get path later.");
         let mut res = Vec::new();
         while let Some(e) = self.parents.get(&node) {
             node = e.source();
             res.push(*e);
+            // if node == self.source {
+            //     break;
+            // }
         }
         res
     }
 }
 
-impl<'a, N: AdjNode, E: AdjEdge<N>, S> Iterator for Dft<'a, N, E, S> {
+impl<'a, N, E, S, F> Iterator for Dft<'a, N, E, S, F>
+where
+    N: AdjNode,
+    E: AdjEdge<N>,
+    F: Fn(&S, &E) -> Option<S>,
+{
     type Item = (N, S);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -65,13 +77,20 @@ impl<'a, N: AdjNode, E: AdjEdge<N>, S> Iterator for Dft<'a, N, E, S> {
             if !self.visited.contains(&node) {
                 self.visited.insert(node);
 
-                // Push on to stack edges where mut_stack returns Some
+                // Push adjacent edges onto stack according to fold func
                 self.stack
                     .extend(self.adj_list.get_edges(node).unwrap().iter().filter_map(|e| {
-                        if self.mem_path {
-                            self.parents.insert(e.target(), *e);
+                        // If self.fold returns None, filter edge, otherwise stack e.target and self.fold result
+                        if let Some(s) = (self.fold)(&d, e) {
+                            // Set the edge's target's parent to the current node
+                            if self.mem_path && !self.visited.contains(&e.target()) {
+                                // debug_assert!(!self.parents.contains_key(&e.target()));
+                                self.parents.insert(e.target(), *e);
+                            }
+                            Some((e.target(), s))
+                        } else {
+                            None
                         }
-                        Some((e.target(), (self.fold)(&d, e)?))
                     }));
 
                 return Some((node, d));

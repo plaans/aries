@@ -23,12 +23,10 @@ impl<N: AdjNode, E: AdjEdge<N>> Debug for AdjacencyList<N, E> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f)?;
         for (node, edges) in &self.0 {
-            writeln!(f, "{:?}:", node)?;
-            if edges.is_empty() {
-                writeln!(f, "  (no edges)")?;
-            } else {
+            if !edges.is_empty() {
+                writeln!(f, "{:?}:", node)?;
                 for edge in edges {
-                    writeln!(f, "  -> {:?}", edge.target())?;
+                    writeln!(f, "  -> {:?}    {:?}", edge.target(), edge)?;
                 }
             }
         }
@@ -73,6 +71,10 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
 
     pub(super) fn get_edges_mut(&mut self, node: N) -> Option<&mut HashSet<E>> {
         self.0.get_mut(&node)
+    }
+
+    pub(super) fn iter_all_edges(&self) -> impl Iterator<Item = E> + use<'_, N, E> {
+        self.0.iter().flat_map(|(_, e)| e.iter().cloned())
     }
 
     pub(super) fn iter_nodes(&self, node: N) -> Option<impl Iterator<Item = N> + use<'_, N, E>> {

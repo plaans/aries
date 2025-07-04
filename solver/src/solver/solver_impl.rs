@@ -179,36 +179,54 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::Eq(a, b) => {
-                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                if lit != value {
-                    self.add_clause([!value, lit], scope)?; // value => lit
-                }
+                self.reasoners
+                    .eq
+                    .add_half_reified_eq_edge(value, *a, *b, &self.model.state);
+                // self.reasoners
+                //     .diff
+                //     .add_half_reified_edge(value, *a, *b, 0, &self.model.state);
+                // self.reasoners
+                //     .diff
+                //     .add_half_reified_edge(value, *b, *a, 0, &self.model.state);
+                // let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                // if lit != value {
+                //     self.add_clause([!value, lit], scope)?; // value => lit
+                // }
                 Ok(())
             }
             ReifExpr::Neq(a, b) => {
-                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                if lit != value {
-                    self.add_clause([!value, lit], scope)?; // value => lit
-                }
+                self.reasoners
+                    .eq
+                    .add_half_reified_neq_edge(value, *a, *b, &self.model.state);
+                // let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                // if lit != value {
+                //     self.add_clause([!value, lit], scope)?; // value => lit
+                // }
                 Ok(())
             }
             ReifExpr::EqVal(a, b) => {
-                let (lb, ub) = self.model.state.bounds(*a);
-                let lit = if (lb..=ub).contains(b) {
-                    self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
-                } else {
-                    Lit::FALSE
-                };
-                if lit != value {
-                    self.add_clause([!value, lit], scope)?; // value => lit
-                }
+                self.reasoners
+                    .eq
+                    .add_half_reified_eq_edge(value, *a, *b, &self.model.state);
+                // let (lb, ub) = self.model.state.bounds(*a);
+                // let lit = if (lb..=ub).contains(b) {
+                //     self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
+                // } else {
+                //     Lit::FALSE
+                // };
+                // if lit != value {
+                //     self.add_clause([!value, lit], scope)?; // value => lit
+                // }
                 Ok(())
             }
             ReifExpr::NeqVal(a, b) => {
-                let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
-                if lit != value {
-                    self.add_clause([!value, lit], scope)?; // value => lit
-                }
+                self.reasoners
+                    .eq
+                    .add_half_reified_neq_edge(value, *a, *b, &self.model.state);
+                // let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
+                // if lit != value {
+                //     self.add_clause([!value, lit], scope)?; // value => lit
+                // }
                 Ok(())
             }
             ReifExpr::Or(disjuncts) => {

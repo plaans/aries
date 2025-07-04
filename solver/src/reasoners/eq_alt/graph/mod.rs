@@ -56,14 +56,14 @@ impl<N: AdjNode, L: Label> AdjEdge<N> for Edge<N, L> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) struct DirEqGraph<N: AdjNode, L: Label> {
     fwd_adj_list: AdjacencyList<N, Edge<N, L>>,
     rev_adj_list: AdjacencyList<N, Edge<N, L>>,
 }
 
 /// Directed pair of nodes with a == or != relation
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct NodePair<N> {
     pub source: N,
     pub target: N,
@@ -124,26 +124,46 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
     }
 
     /// Return a Dft struct over nodes which can be reached with Eq in reverse adjacency list
-    pub fn rev_eq_dft_path(&self, source: N) -> Dft<'_, N, Edge<N, L>, ()> {
-        Self::eq_path_dft(&self.rev_adj_list, source)
+    #[allow(clippy::type_complexity)] // Impossible to simplify type due to unstable type alias features
+    pub fn rev_eq_dft_path<'a>(
+        &'a self,
+        source: N,
+        filter: impl Fn(&Edge<N, L>) -> bool + 'a,
+    ) -> Dft<'a, N, Edge<N, L>, (), impl Fn(&(), &Edge<N, L>) -> Option<()>> {
+        Self::eq_path_dft(&self.rev_adj_list, source, filter)
     }
 
     /// Return an iterator over nodes which can be reached with Neq in reverse adjacency list
-    pub fn rev_eq_or_neq_dft_path(&self, source: N) -> Dft<'_, N, Edge<N, L>, EqRelation> {
-        Self::eq_or_neq_path_dft(&self.rev_adj_list, source)
+    #[allow(clippy::type_complexity)] // Impossible to simplify type due to unstable type alias features
+    pub fn rev_eq_or_neq_dft_path<'a>(
+        &'a self,
+        source: N,
+        filter: impl Fn(&Edge<N, L>) -> bool + 'a,
+    ) -> Dft<'a, N, Edge<N, L>, EqRelation, impl Fn(&EqRelation, &Edge<N, L>) -> Option<EqRelation>> {
+        Self::eq_or_neq_path_dft(&self.rev_adj_list, source, filter)
     }
 
     /// Get a path with EqRelation::Eq from source to target
-    pub fn get_eq_path(&self, source: N, target: N) -> Option<Vec<Edge<N, L>>> {
-        let mut dft = Self::eq_path_dft(&self.fwd_adj_list, source);
+    pub fn get_eq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N, L>) -> bool) -> Option<Vec<Edge<N, L>>> {
+        let mut dft = Self::eq_path_dft(&self.fwd_adj_list, source, filter);
         dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n))
     }
 
     /// Get a path with EqRelation::Neq from source to target
-    pub fn get_neq_path(&self, source: N, target: N) -> Option<Vec<Edge<N, L>>> {
-        let mut dft = Self::eq_or_neq_path_dft(&self.fwd_adj_list, source);
+    pub fn get_neq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N, L>) -> bool) -> Option<Vec<Edge<N, L>>> {
+        let mut dft = Self::eq_or_neq_path_dft(&self.fwd_adj_list, source, filter);
         dft.find(|(n, r)| *n == target && *r == EqRelation::Neq)
             .map(|(n, _)| dft.get_path(n))
+    }
+
+    pub fn get_eq_or_neq_path(
+        &self,
+        source: N,
+        target: N,
+        filter: impl Fn(&Edge<N, L>) -> bool,
+    ) -> Option<Vec<Edge<N, L>>> {
+        let mut dft = Self::eq_or_neq_path_dft(&self.fwd_adj_list, source, filter);
+        dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n))
     }
 
     /// Get all paths which would require the given edge to exist.
@@ -161,6 +181,10 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         }
     }
 
+    pub fn iter_all_fwd(&self) -> impl Iterator<Item = Edge<N, L>> + use<'_, N, L> {
+        self.fwd_adj_list.iter_all_edges()
+    }
+
     fn paths_requiring_eq(&self, edge: Edge<N, L>) -> impl Iterator<Item = NodePair<N>> + use<'_, N, L> {
         let predecessors = Self::eq_or_neq_dft(&self.rev_adj_list, edge.source);
         let successors = Self::eq_or_neq_dft(&self.fwd_adj_list, edge.target);
@@ -173,9 +197,11 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
                      source,
                      target,
                      relation,
-                 }| match relation {
-                    EqRelation::Eq => !self.eq_path_exists(source, target),
-                    EqRelation::Neq => !self.neq_path_exists(source, target),
+                 }| {
+                    match relation {
+                        EqRelation::Eq => !self.eq_path_exists(source, target),
+                        EqRelation::Neq => !self.neq_path_exists(source, target),
+                    }
                 },
             )
     }
@@ -186,15 +212,12 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
 
         predecessors
             .cartesian_product(successors)
-            .filter(|(source, target)| !self.neq_path_exists(*source, *target))
+            .filter(|(source, target)| *source != *target && !self.neq_path_exists(*source, *target))
             .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq))
     }
 
     /// Util for Dft only on eq edges
-    fn eq_dft(
-        adj_list: &AdjacencyList<N, Edge<N, L>>,
-        node: N,
-    ) -> impl Iterator<Item = N> + Clone + Debug + use<'_, N, L> {
+    fn eq_dft(adj_list: &AdjacencyList<N, Edge<N, L>>, node: N) -> impl Iterator<Item = N> + Clone + use<'_, N, L> {
         Dft::new(
             adj_list,
             node,
@@ -216,27 +239,55 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         Dft::new(adj_list, node, EqRelation::Eq, |r, e| *r + e.relation, false)
     }
 
-    fn eq_path_dft(adj_list: &AdjacencyList<N, Edge<N, L>>, node: N) -> Dft<'_, N, Edge<N, L>, ()> {
+    #[allow(clippy::type_complexity)] // Impossible to simplify type due to unstable type alias features
+    fn eq_path_dft<'a>(
+        adj_list: &'a AdjacencyList<N, Edge<N, L>>,
+        node: N,
+        filter: impl Fn(&Edge<N, L>) -> bool + 'a,
+    ) -> Dft<'a, N, Edge<N, L>, (), impl Fn(&(), &Edge<N, L>) -> Option<()>> {
         Dft::new(
             adj_list,
             node,
             (),
-            |_, e| match e.relation {
-                EqRelation::Eq => Some(()),
-                EqRelation::Neq => None,
+            move |_, e| {
+                if filter(e) {
+                    match e.relation {
+                        EqRelation::Eq => Some(()),
+                        EqRelation::Neq => None,
+                    }
+                } else {
+                    None
+                }
             },
             true,
         )
     }
 
     /// Util for Dft while 0 or 1 neqs
-    fn eq_or_neq_path_dft(adj_list: &AdjacencyList<N, Edge<N, L>>, node: N) -> Dft<'_, N, Edge<N, L>, EqRelation> {
-        Dft::new(adj_list, node, EqRelation::Eq, |r, e| *r + e.relation, true)
+    #[allow(clippy::type_complexity)] // Impossible to simplify type due to unstable type alias features
+    fn eq_or_neq_path_dft<'a>(
+        adj_list: &'a AdjacencyList<N, Edge<N, L>>,
+        node: N,
+        filter: impl Fn(&Edge<N, L>) -> bool + 'a,
+    ) -> Dft<'a, N, Edge<N, L>, EqRelation, impl Fn(&EqRelation, &Edge<N, L>) -> Option<EqRelation>> {
+        Dft::new(
+            adj_list,
+            node,
+            EqRelation::Eq,
+            move |r, e| {
+                if filter(e) {
+                    *r + e.relation
+                } else {
+                    None
+                }
+            },
+            true,
+        )
     }
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use hashbrown::HashSet;
 
     use super::*;
@@ -331,12 +382,12 @@ mod test {
         // 0 -=-> 4
         g.add_edge(Edge::new(Node(0), Node(4), (), EqRelation::Eq));
 
-        let path = g.get_neq_path(Node(0), Node(5));
+        let path = g.get_neq_path(Node(0), Node(5), |_| true);
         assert_eq!(path, None);
 
         g.add_edge(Edge::new(Node(2), Node(3), (), EqRelation::Eq));
 
-        let path = g.get_neq_path(Node(0), Node(5));
+        let path = g.get_neq_path(Node(0), Node(5), |_| true);
         assert_eq!(
             path,
             vec![
@@ -346,5 +397,13 @@ mod test {
             ]
             .into()
         );
+    }
+
+    #[test]
+    fn test_single_node() {
+        let mut g: DirEqGraph<Node, ()> = DirEqGraph::new();
+        g.add_node(Node(1));
+        assert!(g.eq_path_exists(Node(1), Node(1)));
+        assert!(!g.neq_path_exists(Node(1), Node(1)));
     }
 }
