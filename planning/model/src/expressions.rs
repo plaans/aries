@@ -6,6 +6,8 @@ use utils::disp_iter;
 
 use crate::{errors::Message, *};
 
+pub type IntValue = i64;
+
 #[derive(Clone, Display)]
 #[display("{}", expr)]
 pub struct TypedExpr {
@@ -54,7 +56,7 @@ impl TypedExpr {
 
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Int(u64),
+    Int(IntValue),
     Bool(bool),
     Object(Object),
     Param(Param),
@@ -112,6 +114,7 @@ pub enum Fun {
     And,
     Or,
     Not,
+    Eq,
 }
 
 impl Fun {
@@ -144,6 +147,11 @@ impl Fun {
                 //     Err(TypeError::MissingParameter(Param::new("<negated-term>", Type::Bool)))
                 // } else if args_types.len() >
             }
+            Eq => match args_types {
+                &[] | &[_] => Err(TypeError::MissingParameter(Param::new("<compared-term>", Type::Bool))),
+                &[ref _first, ref _second] => Ok(Type::Bool),
+                &[_, _, ref third, ..] => Err(TypeError::UnexpectedArgument(third.clone())),
+            },
         }
     }
 }
@@ -159,6 +167,7 @@ impl Display for Fun {
                 Fun::And => "and",
                 Fun::Or => "or",
                 Fun::Not => "not",
+                Fun::Eq => "=",
             }
         )
     }

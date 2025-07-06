@@ -1,9 +1,9 @@
 use crate::*;
+use Type::*;
 use errors::{Message, Spanned};
 use std::fmt::Debug;
 use std::{ops::RangeInclusive, sync::Arc};
 use thiserror::Error;
-use Type::*;
 
 #[derive(Error, Debug)]
 pub enum TypeError {
@@ -95,7 +95,13 @@ impl UserTypes {
     }
 
     pub fn is_subtype_of(&self, a: &Sym, b: &Sym) -> bool {
-        a == b
+        if a == b {
+            true
+        } else if let Some(parents) = self.types.get(a) {
+            parents.iter().any(|parent| self.is_subtype_of(parent, b))
+        } else {
+            false
+        }
     }
 
     pub fn contains(&self, name: impl Into<Sym>) -> bool {
@@ -119,11 +125,11 @@ impl UserTypes {
 }
 
 #[derive(Clone, Copy)]
-pub struct IntInterval(Option<u64>, Option<u64>);
+pub struct IntInterval(Option<IntValue>, Option<IntValue>);
 
 impl IntInterval {
     pub const FULL: IntInterval = IntInterval(None, None);
-    pub fn singleton(value: u64) -> Self {
+    pub fn singleton(value: IntValue) -> Self {
         Self(Some(value), Some(value))
     }
 
@@ -145,8 +151,8 @@ impl IntInterval {
     }
 }
 
-impl From<RangeInclusive<u64>> for IntInterval {
-    fn from(value: RangeInclusive<u64>) -> Self {
+impl From<RangeInclusive<IntValue>> for IntInterval {
+    fn from(value: RangeInclusive<IntValue>) -> Self {
         IntInterval(Some(*value.start()), Some(*value.end()))
     }
 }
@@ -179,7 +185,7 @@ impl Type {
     pub fn is_subtype_of(&self, other: &Type) -> bool {
         match (self, other) {
             (Bool, Bool) => true,
-            (Int(bounds1), Int(bounds2)) => bounds1.is_subset_of(&bounds2),
+            (Int(bounds1), Int(bounds2)) => bounds1.is_subset_of(bounds2),
             (User(left, types), User(right, _)) => types.is_subtype_of(left, right),
             _ => false,
         }
@@ -192,8 +198,9 @@ impl Type {
             Err(TypeError::IncompatibleType(expr.clone(), self.clone()))
         }
     }
-}
 
-trait Typed {
-    fn tpe(&self) -> Type;
+    /// Returns true if two types are overlapping
+    pub fn overlaps(&self, other: &Type) -> bool {
+        self.is_subtype_of(other) || other.is_subtype_of(self)
+    }
 }

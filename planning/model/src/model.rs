@@ -8,6 +8,9 @@ pub struct Model {
     pub objects: Objects,
     pub fluents: Fluents,
     pub actions: Actions,
+    /// Set of effects in the problem definition, covering both initial effects (at ORIGIN) and
+    /// timed effects (after ORIGIN)
+    pub init: Vec<Effect>,
     pub goals: Vec<Condition>,
 }
 
@@ -18,6 +21,7 @@ impl Model {
             objects,
             fluents,
             actions: Default::default(),
+            init: Default::default(),
             goals: Default::default(),
         }
     }
@@ -31,8 +35,12 @@ impl Display for Model {
         for a in self.actions.iter() {
             write!(f, "\n\n  {a}")?;
         }
+        write!(f, "\n\nInit:")?;
+        for ini in &self.init {
+            write!(f, "\n  {ini}")?;
+        }
 
-        write!(f, "\nGoals:")?;
+        write!(f, "\n\nGoals:")?;
         for g in &self.goals {
             write!(f, "\n  {g}")?;
         }

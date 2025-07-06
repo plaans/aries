@@ -55,7 +55,7 @@ fn user_types(dom: &Domain) -> Result<UserTypes, UserTypeDeclarationError> {
     Ok(types)
 }
 
-pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<()> {
+pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
     // top types in pddl
 
     let types = user_types(dom)?;
@@ -74,11 +74,15 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<()> {
         objects.add_object(&obj.symbol, tpe)?;
     }
 
-    println!("\n{fluents}\n\n{objects}");
-
     let mut model = Model::new(types, objects, fluents);
 
     let bindings = Rc::new(Bindings::objects(&model.objects));
+
+    for init in &prob.init {
+        let e = parse(init, &model.fluents, &bindings)?;
+        let e = into_effect(Timestamp::ORIGIN, e)?;
+        model.init.push(e);
+    }
 
     for g in &prob.goal {
         let sub_goals = conjuncts(g);
@@ -95,9 +99,15 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<()> {
         model.actions.add(action)?;
     }
 
+    for a in &dom.durative_actions {
+        let name: crate::Sym = a.name.clone().into();
+        let action = into_durative_action(a, &model, &bindings).with_info(|| name.info("when parsing action"))?;
+        model.actions.add(action)?;
+    }
+
     println!("{model}");
 
-    Ok(())
+    Ok(model)
 }
 
 fn into_action(a: &pddl::Action, model: &Model, bindings: &Rc<Bindings>) -> Result<Action, Message> {
@@ -123,16 +133,47 @@ fn into_action(a: &pddl::Action, model: &Model, bindings: &Rc<Bindings>) -> Resu
     }
     Ok(action)
 }
+fn into_durative_action(a: &pddl::DurativeAction, model: &Model, bindings: &Rc<Bindings>) -> Result<Action, Message> {
+    let parameters = parse_parameters(&a.args, &model.types)?;
+
+    let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
+    let duration = parse_duration(&a.duration, &model.fluents, &bindings)?;
+
+    let mut action = Action::new(&a.name, parameters, duration);
+
+    for c in &a.conditions {
+        for c in conjuncts(c) {
+            let span = Span::from(c.loc());
+            let (itv, c) =
+                parse_timed(c, &model.fluents, &bindings).with_info(|| span.info("when parsing condition"))?;
+            action.conditions.push(Condition::over(itv, c));
+        }
+    }
+
+    for e in &a.effects {
+        for e in conjuncts(e) {
+            let span = Span::from(e.loc());
+            let (itv, eff) = timed_sexpr(e)?;
+            let tp = if itv == TimeInterval::at(TimeRef::Start) {
+                TimeRef::Start
+            } else if itv == TimeInterval::at(TimeRef::End) {
+                TimeRef::End
+            } else {
+                return Err(Message::error("Invalid temporal qualifier for effect")
+                    .snippet(span.error("Requires a timepoint `at start` or `at end`")));
+            };
+            let e = parse(eff, &model.fluents, &bindings)?;
+            let e = into_effect(tp, e)?;
+            action.effects.push(e);
+        }
+    }
+    Ok(action)
+}
 
 fn into_effect(time: impl Into<Timestamp>, expr: TypedExpr) -> Result<Effect, Message> {
     let time = time.into();
     Type::Bool.accepts(&expr)?;
     match expr.expr() {
-        // Expr::Int(_) => todo!(),
-        // Expr::Bool(_) => todo!(),
-        // Expr::Object(object) => todo!(),
-        // Expr::Param(param) => todo!(),
-        // Expr::App(fun, vec) => todo!(),
         Expr::StateVariable(fluent, args) => {
             let sv = StateVariable::new(fluent.clone(), args.clone(), expr.span_or_default());
             Ok(Effect::assignement(time, sv, Expr::Bool(true).typed(None)?))
@@ -142,7 +183,7 @@ fn into_effect(time: impl Into<Timestamp>, expr: TypedExpr) -> Result<Effect, Me
             let sv = StateVariable::new(fluent.clone(), args.clone(), expr.span_or_default());
             Ok(Effect::assignement(time, sv, Expr::Bool(false).typed(None)?))
         }
-        x => Err(Message::error("Unhandled conversion into effect").snippet(expr.error("unrecognized pattern"))),
+        _ => Err(Message::error("Unhandled conversion into effect").snippet(expr.error("unrecognized pattern"))),
     }
 }
 
@@ -183,7 +224,14 @@ fn conjuncts(sexpr: &SExpr) -> Vec<&SExpr> {
 
 pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Result<TypedExpr, Message> {
     let expr = match sexpr {
-        SExpr::Atom(atom) => bindings.get(atom)?,
+        SExpr::Atom(atom) => match bindings.get(atom) {
+            Ok(x) => x,
+            Err(err) => atom
+                .canonical_str()
+                .parse::<IntValue>()
+                .map(Expr::Int)
+                .map_err(|_| err)?,
+        },
         SExpr::List(l) => {
             let mut l = l.iter();
             let f = l.pop_atom()?.clone();
@@ -204,6 +252,43 @@ pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Resul
     Ok(expr.typed(sexpr.loc())?)
 }
 
+fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
+    let mut items = sexpr
+        .as_list_iter()
+        .ok_or_else(|| sexpr.invalid("not a temporally qalified expression"))?;
+    let first = items.pop_atom()?;
+    let interval = match first.canonical_str() {
+        "at" => {
+            let second = items.pop_atom()?;
+            match second.canonical_str() {
+                "start" => TimeInterval::at(TimeRef::Start),
+                "end" => TimeInterval::at(TimeRef::End),
+                _ => return Err(second.invalid("expected `start` or `end`").into()),
+            }
+        }
+        "over" => {
+            items.pop_known_atom("all")?;
+            TimeInterval::closed(TimeRef::Start, TimeRef::End)
+        }
+        _ => return Err(first.invalid("expected `at` or `over`").into()),
+    };
+    let expr = items.pop()?;
+    if let Ok(x) = items.pop() {
+        return Err(x.invalid("unexpected expression").into());
+    }
+    Ok((interval, expr))
+}
+
+fn parse_timed(
+    sexpr: &SExpr,
+    fluents: &Fluents,
+    bindings: &Rc<Bindings>,
+) -> Result<(TimeInterval, TypedExpr), Message> {
+    let (interval, expr) = timed_sexpr(sexpr)?;
+    let expr = parse(expr, fluents, bindings)?;
+    Ok((interval, expr))
+}
+
 fn parse_function(sym: &Sym) -> Option<Fun> {
     match sym.canonical.as_str() {
         "+" => Some(Fun::Plus),
@@ -211,8 +296,27 @@ fn parse_function(sym: &Sym) -> Option<Fun> {
         "and" => Some(Fun::And),
         "or" => Some(Fun::Or),
         "not" => Some(Fun::Not),
+        "=" => Some(Fun::Eq),
         _ => None,
     }
+}
+
+fn parse_duration(dur: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Result<Duration, Message> {
+    // handle duration element from durative actions
+    // currently, we only support constraint of the form `(= ?duration <i32>)`
+    // TODO: extend durations constraints, to support the full PDDL spec
+    let mut dur = dur.as_list_iter().unwrap();
+    //Check for first two elements
+    dur.pop_known_atom("=")?;
+    dur.pop_known_atom("?duration")?;
+
+    let dur_expr = dur.pop()?;
+    let duration = parse(dur_expr, fluents, bindings)?;
+    if let Ok(x) = dur.pop() {
+        return Err(x.invalid("Unexpected").into());
+    }
+    Type::INT.accepts(&duration)?;
+    Ok(Duration::Fixed(duration))
 }
 
 /*

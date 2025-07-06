@@ -252,6 +252,7 @@ version = "0.1.0"
 dependencies = [
  "annotate-snippets",
  "anyhow",
+ "clap 4.5.40",
  "derive_more",
  "hashbrown 0.15.4",
  "itertools 0.14.0",

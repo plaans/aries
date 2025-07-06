@@ -25,6 +25,14 @@ impl Span {
             message,
         }
     }
+
+    pub fn error(&self, message: impl ToString) -> Annot {
+        self.annotate(Level::Error, message)
+    }
+
+    pub fn info(&self, message: impl ToString) -> Annot {
+        self.annotate(Level::Info, message)
+    }
 }
 
 impl Debug for Span {

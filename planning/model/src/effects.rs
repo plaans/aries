@@ -6,6 +6,7 @@ use itertools::Itertools;
 pub struct StateVariable {
     fluent: Fluent,
     arguments: Vec<TypedExpr>,
+    #[allow(unused)]
     src: Span,
 }
 

@@ -1,4 +1,3 @@
-use crate::errors::Spanned;
 use crate::utils::Fmt;
 use itertools::Itertools;
 use std::convert::TryFrom;

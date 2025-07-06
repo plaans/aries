@@ -54,3 +54,12 @@ minizinc-dbg +args: fzn-build-dbg
 samply bin +args:
     cargo build --profile perf --bin {{bin}}
     samply record target/perf/{{bin}} {{args}}
+
+
+
+pddl-test-parser:
+    #!/usr/bin/env bash
+    set -e
+    for f in `fd pb.pddl planning/problems/pddl/`; do
+        cargo run --bin pddl-parser -- $f
+    done

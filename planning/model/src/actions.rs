@@ -1,4 +1,3 @@
-use derive_more::derive::Display;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -32,9 +31,11 @@ impl Actions {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Duration {
     Instantaneous,
+    Fixed(TypedExpr),
+    Bounded(TypedExpr, TypedExpr),
 }
 
 #[derive(Debug)]
@@ -47,14 +48,17 @@ pub struct Action {
 }
 
 impl Action {
-    pub fn instantaneous(name: impl Into<Sym>, parameters: Vec<Param>) -> Self {
+    pub fn new(name: impl Into<Sym>, parameters: Vec<Param>, duration: Duration) -> Self {
         Self {
             name: name.into(),
             parameters,
-            duration: Duration::Instantaneous,
+            duration,
             conditions: Default::default(),
             effects: Default::default(),
         }
+    }
+    pub fn instantaneous(name: impl Into<Sym>, parameters: Vec<Param>) -> Self {
+        Self::new(name, parameters, Duration::Instantaneous)
     }
 
     pub fn start(&self) -> TimeRef {
@@ -78,7 +82,7 @@ impl Display for Action {
             self.name,
             self.parameters
                 .iter()
-                .map(|p| format!("{}, {}", p.name(), p.tpe()))
+                .map(|p| format!("{}: {}", p.name(), p.tpe()))
                 .format(", ")
         )?;
         write!(f, "\n    duration: {:?}", self.duration)?;

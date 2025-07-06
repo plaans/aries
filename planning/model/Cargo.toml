@@ -1,15 +1,21 @@
 [package]
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
-edition = "2021"
+edition = "2024"
 name = "aries_planning_model"
 version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
 itertools = { workspace = true }
 hashbrown = { workspace = true }
-anyhow = { workspace = true }
 regex = { workspace = true }
 derive_more = { version = "1.0", features = ["display"] }
 thiserror = "2"
 annotate-snippets = "0.11"
+
+
+[[bin]]
+name = "pddl-parser"
+path = "src/bin/main.rs"
