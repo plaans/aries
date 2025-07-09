@@ -1,4 +1,5 @@
 use hashbrown::{HashMap, HashSet};
+use std::{collections::VecDeque, hash::Hash};
 
 use crate::reasoners::eq_alt::graph::{AdjEdge, AdjNode, AdjacencyList};
 
@@ -12,37 +13,41 @@ use crate::reasoners::eq_alt::graph::{AdjEdge, AdjNode, AdjacencyList};
 ///
 /// This allows to continue traversal while 0 or 1 NEQ edges have been taken, and stop on the second
 #[derive(Clone, Debug)]
-pub struct Dft<'a, N, E, S, F>
+pub struct Bft<'a, N, E, S, F>
 where
     N: AdjNode,
     E: AdjEdge<N>,
+    S: Eq + Hash + Copy,
     F: Fn(&S, &E) -> Option<S>,
 {
     /// A directed graph in the form of an adjacency list
     adj_list: &'a AdjacencyList<N, E>,
     /// The set of visited nodes
-    visited: HashSet<N>,
+    visited: HashSet<(N, S)>,
     /// The stack of nodes to visit + extra data
-    stack: Vec<(N, S)>,
+    queue: VecDeque<(N, S)>,
     /// A function which takes an element of extra stack data and an edge
     /// and returns the new element to add to the stack
     /// None indicates the edge shouldn't be visited
     fold: F,
+    /// Pass true in order to record paths (if you want to call get_path)
     mem_path: bool,
+    /// Records parents of nodes if mem_path is true
     parents: HashMap<N, E>,
 }
 
-impl<'a, N, E, S, F> Dft<'a, N, E, S, F>
+impl<'a, N, E, S, F> Bft<'a, N, E, S, F>
 where
     N: AdjNode,
     E: AdjEdge<N>,
+    S: Eq + Hash + Copy,
     F: Fn(&S, &E) -> Option<S>,
 {
     pub(super) fn new(adj_list: &'a AdjacencyList<N, E>, source: N, init: S, fold: F, mem_path: bool) -> Self {
-        Dft {
+        Bft {
             adj_list,
             visited: HashSet::new(),
-            stack: vec![(source, init)],
+            queue: [(source, init)].into(),
             fold,
             mem_path,
             parents: Default::default(),
@@ -64,26 +69,27 @@ where
     }
 }
 
-impl<'a, N, E, S, F> Iterator for Dft<'a, N, E, S, F>
+impl<'a, N, E, S, F> Iterator for Bft<'a, N, E, S, F>
 where
     N: AdjNode,
     E: AdjEdge<N>,
+    S: Eq + Hash + Copy,
     F: Fn(&S, &E) -> Option<S>,
 {
     type Item = (N, S);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((node, d)) = self.stack.pop() {
-            if !self.visited.contains(&node) {
-                self.visited.insert(node);
+        while let Some((node, d)) = self.queue.pop_front() {
+            if !self.visited.contains(&(node, d)) {
+                self.visited.insert((node, d));
 
                 // Push adjacent edges onto stack according to fold func
-                self.stack
+                self.queue
                     .extend(self.adj_list.get_edges(node).unwrap().iter().filter_map(|e| {
                         // If self.fold returns None, filter edge, otherwise stack e.target and self.fold result
                         if let Some(s) = (self.fold)(&d, e) {
                             // Set the edge's target's parent to the current node
-                            if self.mem_path && !self.visited.contains(&e.target()) {
+                            if self.mem_path && !self.visited.contains(&(e.target(), s)) {
                                 // debug_assert!(!self.parents.contains_key(&e.target()));
                                 self.parents.insert(e.target(), *e);
                             }

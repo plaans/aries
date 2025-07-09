@@ -113,6 +113,7 @@ impl PropagatorStore {
         self.propagators.insert(id, prop);
         self.watches.add_watch((enabler, id), enabler.active);
         self.watches.add_watch((enabler, id), enabler.valid);
+        self.watches.add_watch((enabler, id), !enabler.valid);
         id
     }
 
@@ -124,7 +125,7 @@ impl PropagatorStore {
         self.watches.watches_on(literal)
     }
 
-    pub fn is_active(&self, prop_id: PropagatorId) -> bool {
+    pub fn is_enabled(&self, prop_id: PropagatorId) -> bool {
         self.active_props.contains(&prop_id)
     }
 
@@ -136,5 +137,9 @@ impl PropagatorStore {
     pub fn mark_inactive(&mut self, prop_id: PropagatorId) {
         debug_assert!(self.propagators.contains_key(&prop_id));
         assert!(self.active_props.remove(&prop_id));
+    }
+
+    pub fn inactive_propagators(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> {
+        self.propagators.iter().filter(|(p, _)| !self.active_props.contains(*p))
     }
 }

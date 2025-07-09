@@ -7,12 +7,12 @@ use crate::reasoners::eq_alt::{
     core::EqRelation,
     graph::{
         adj_list::{AdjEdge, AdjNode, AdjacencyList},
-        dft::Dft,
+        bft::Bft,
     },
 };
 
 mod adj_list;
-mod dft;
+mod bft;
 
 pub(super) trait Label: Eq + Copy + Debug + Hash {}
 
@@ -129,7 +129,7 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         &'a self,
         source: N,
         filter: impl Fn(&Edge<N, L>) -> bool + 'a,
-    ) -> Dft<'a, N, Edge<N, L>, (), impl Fn(&(), &Edge<N, L>) -> Option<()>> {
+    ) -> Bft<'a, N, Edge<N, L>, (), impl Fn(&(), &Edge<N, L>) -> Option<()>> {
         Self::eq_path_dft(&self.rev_adj_list, source, filter)
     }
 
@@ -139,7 +139,7 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         &'a self,
         source: N,
         filter: impl Fn(&Edge<N, L>) -> bool + 'a,
-    ) -> Dft<'a, N, Edge<N, L>, EqRelation, impl Fn(&EqRelation, &Edge<N, L>) -> Option<EqRelation>> {
+    ) -> Bft<'a, N, Edge<N, L>, EqRelation, impl Fn(&EqRelation, &Edge<N, L>) -> Option<EqRelation>> {
         Self::eq_or_neq_path_dft(&self.rev_adj_list, source, filter)
     }
 
@@ -156,6 +156,7 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
             .map(|(n, _)| dft.get_path(n))
     }
 
+    #[allow(unused)]
     pub fn get_eq_or_neq_path(
         &self,
         source: N,
@@ -218,7 +219,7 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
 
     /// Util for Dft only on eq edges
     fn eq_dft(adj_list: &AdjacencyList<N, Edge<N, L>>, node: N) -> impl Iterator<Item = N> + Clone + use<'_, N, L> {
-        Dft::new(
+        Bft::new(
             adj_list,
             node,
             (),
@@ -236,7 +237,7 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         adj_list: &AdjacencyList<N, Edge<N, L>>,
         node: N,
     ) -> impl Iterator<Item = (N, EqRelation)> + Clone + use<'_, N, L> {
-        Dft::new(adj_list, node, EqRelation::Eq, |r, e| *r + e.relation, false)
+        Bft::new(adj_list, node, EqRelation::Eq, |r, e| *r + e.relation, false)
     }
 
     #[allow(clippy::type_complexity)] // Impossible to simplify type due to unstable type alias features
@@ -244,8 +245,8 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         adj_list: &'a AdjacencyList<N, Edge<N, L>>,
         node: N,
         filter: impl Fn(&Edge<N, L>) -> bool + 'a,
-    ) -> Dft<'a, N, Edge<N, L>, (), impl Fn(&(), &Edge<N, L>) -> Option<()>> {
-        Dft::new(
+    ) -> Bft<'a, N, Edge<N, L>, (), impl Fn(&(), &Edge<N, L>) -> Option<()>> {
+        Bft::new(
             adj_list,
             node,
             (),
@@ -269,8 +270,8 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
         adj_list: &'a AdjacencyList<N, Edge<N, L>>,
         node: N,
         filter: impl Fn(&Edge<N, L>) -> bool + 'a,
-    ) -> Dft<'a, N, Edge<N, L>, EqRelation, impl Fn(&EqRelation, &Edge<N, L>) -> Option<EqRelation>> {
-        Dft::new(
+    ) -> Bft<'a, N, Edge<N, L>, EqRelation, impl Fn(&EqRelation, &Edge<N, L>) -> Option<EqRelation>> {
+        Bft::new(
             adj_list,
             node,
             EqRelation::Eq,
@@ -283,6 +284,19 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
             },
             true,
         )
+    }
+
+    pub(crate) fn creates_neq_cycle(&self, edge: Edge<N, L>) -> bool {
+        match edge.relation {
+            EqRelation::Eq => self.neq_path_exists(edge.target, edge.source),
+            EqRelation::Neq => self.eq_path_exists(edge.target, edge.source),
+        }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn print_allocated(&self) {
+        println!("Fwd allocated: {}", self.fwd_adj_list.allocated());
+        println!("Rev allocated: {}", self.rev_adj_list.allocated());
     }
 }
 

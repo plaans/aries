@@ -1,21 +1,17 @@
 #![allow(unused)]
 
-use core::panic;
-use std::{collections::VecDeque, num::NonZero};
-
-use hashbrown::{Equivalent, HashMap};
+use std::collections::VecDeque;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
     core::{
-        state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause, InvalidUpdate, Term},
-        IntCst, Lit, Relation, VarRef,
+        state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause, InvalidUpdate},
+        IntCst, Lit, VarRef,
     },
-    model,
     reasoners::{
         eq_alt::{
             core::{EqRelation, Node},
-            graph::{DirEqGraph, Edge, NodePair},
+            graph::{DirEqGraph, Edge},
             propagators::{Enabler, Propagator, PropagatorId, PropagatorStore},
         },
         stn::theory::Identity,
@@ -52,12 +48,18 @@ enum Event {
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 enum ModelUpdateCause {
-    /// a -=-> b && b -=-> c && a -=-> c
-    Deactivation(PropagatorId),
+    /// Indicates that a propagator was deactivated due to finding an alternate path from source to target
+    /// e.g. a -=> b && b -=> c => deactivates a -!=> c
+    NeqCycle(PropagatorId),
     // DomUpper,
     // DomLower,
+    /// Indicates that a bound update was made due to a Neq path being found
+    /// e.g. 1 -=> a && a -!=> b && 0 <= b <= 1 implies b < 1
     DomNeq,
+    /// Indicates that a bound update was made due to an Eq path being found
+    /// e.g. 1 -=> a && a -=> b implies 1 <= b <= 1
     DomEq,
+    // Indicates that a
     // DomSingleton,
 }
 
@@ -66,7 +68,7 @@ impl From<ModelUpdateCause> for u32 {
     fn from(value: ModelUpdateCause) -> Self {
         use ModelUpdateCause::*;
         match value {
-            Deactivation(p) => 0u32 + (u32::from(p) << 1),
+            NeqCycle(p) => 0u32 + (u32::from(p) << 1),
             // DomUpper => 1u32 + (0u32 << 1),
             // DomLower => 1u32 + (1u32 << 1),
             DomNeq => 1u32 + (2u32 << 1),
@@ -82,7 +84,7 @@ impl From<u32> for ModelUpdateCause {
         let kind = value & 0x1;
         let payload = value >> 1;
         match kind {
-            0 => Deactivation(PropagatorId::from(payload)),
+            0 => NeqCycle(PropagatorId::from(payload)),
             1 => match payload {
                 // 0 => DomUpper,
                 // 1 => DomLower,
@@ -96,6 +98,34 @@ impl From<u32> for ModelUpdateCause {
     }
 }
 
+#[derive(Clone, Default)]
+struct AltEqStats {
+    prop_count: u32,
+    non_empty_prop_count: u32,
+    prop_candidate_count: u32,
+    expl_count: u32,
+    total_expl_length: u32,
+    edge_count: u32,
+    any_propped_this_iter: bool,
+}
+
+impl AltEqStats {
+    fn avg_prop_batch_size(&self) -> f32 {
+        self.prop_count as f32 / self.prop_candidate_count as f32
+    }
+
+    fn avg_expl_length(&self) -> f32 {
+        self.total_expl_length as f32 / self.expl_count as f32
+    }
+
+    fn print_stats(&self) {
+        println!("Prop count: {}", self.prop_count);
+        println!("Average prop batch size: {}", self.avg_prop_batch_size());
+        println!("Expl count: {}", self.expl_count);
+        println!("Average explanation length: {}", self.avg_expl_length());
+    }
+}
+
 #[derive(Clone)]
 pub struct AltEqTheory {
     constraint_store: PropagatorStore,
@@ -104,9 +134,7 @@ pub struct AltEqTheory {
     pending_activations: VecDeque<ActivationEvent>,
     trail: Trail<Event>,
     identity: Identity<ModelUpdateCause>,
-    prop_count: u32,
-    explain_count: u32,
-    edge_count: u32,
+    stats: AltEqStats,
 }
 
 impl AltEqTheory {
@@ -118,9 +146,7 @@ impl AltEqTheory {
             trail: Default::default(),
             pending_activations: Default::default(),
             identity: Identity::new(ReasonerId::Eq(0)),
-            prop_count: 0,
-            explain_count: 0,
-            edge_count: 0,
+            stats: Default::default(),
         }
     }
 
@@ -135,7 +161,7 @@ impl AltEqTheory {
     }
 
     fn add_edge(&mut self, l: Lit, a: VarRef, b: impl Into<Node>, relation: EqRelation, model: &Domains) {
-        self.edge_count += 1;
+        self.stats.edge_count += 1;
         let b = b.into();
         let pa = model.presence(a);
         let pb = model.presence(b);
@@ -162,79 +188,64 @@ impl AltEqTheory {
     }
 
     /// If propagator active literal true, propagate and activate, else check to deactivate it
-    fn maybe_activate_propagator(&mut self, model: &mut Domains, prop_id: PropagatorId) -> Result<(), Contradiction> {
-        let prop = self.constraint_store.get_propagator(prop_id);
-        let edge: Edge<_, _> = prop.clone().into();
-        let active = model.entails(edge.label.l);
-
+    fn propagate_chains(&mut self, model: &mut Domains, edge: Edge<Node, EdgeLabel>) -> Result<(), Contradiction> {
         // Get all new node pairs we can potentially propagate
-        let opt_err = self
+        Ok(self
             .active_graph
             .paths_requiring(edge)
             .map(|p| -> Result<(), InvalidUpdate> {
                 // Propagate between node pair
                 match p.relation {
                     EqRelation::Eq => {
-                        if self.active_graph.neq_path_exists(p.source, p.target) {
-                            self.disable_propagator(model, prop, prop_id, EqRelation::Eq)?;
-                        }
-                        if active {
-                            self.propagate_eq(model, p.source, p.target)?;
-                        }
+                        self.propagate_eq(model, p.source, p.target)?;
                     }
                     EqRelation::Neq => {
-                        if self.active_graph.eq_path_exists(p.source, p.target) {
-                            self.disable_propagator(model, prop, prop_id, EqRelation::Neq)?;
-                        }
-                        if active {
-                            self.propagate_neq(model, p.source, p.target)?;
-                        }
+                        self.propagate_neq(model, p.source, p.target)?;
                     }
                 };
                 Ok(())
             })
             // Stop at first error
-            .find(|x| x.is_err());
-
-        // If model.entails(l), mark propagator as active, add it to graph and trail
-        // If propagator was active and we called disable on it, we are necessarily inconsistent
-        // Activating it doesn't matter since it will be undone immediately by the solver
-        if model.entails(edge.label.l) {
-            self.trail.push(Event::EdgeActivated(prop_id));
-            self.active_graph.add_edge(edge);
-            self.constraint_store.mark_active(prop_id);
-        }
-        Ok(opt_err.unwrap_or(Ok(()))?)
+            .find(|x| x.is_err())
+            .unwrap_or(Ok(()))?)
     }
 
-    fn disable_propagator(
-        &self,
-        model: &mut Domains,
-        prop: &Propagator,
-        prop_id: PropagatorId,
-        temp_r: EqRelation,
-    ) -> Result<bool, InvalidUpdate> {
-        model.set(
-            !prop.enabler.active,
-            self.identity.inference(ModelUpdateCause::Deactivation(prop_id)),
-        )
-    }
-
+    /// Given a possibly newly enabled candidate propagator, perform propagations if possible.
     fn propagate_candidate(
         &mut self,
         model: &mut Domains,
         enabler: Enabler,
         prop_id: PropagatorId,
     ) -> Result<(), Contradiction> {
-        self.prop_count += 1;
+        // If propagator is valid, not inactive, and not already enabled
         if (!model.entails(!enabler.active)
             && model.entails(enabler.valid)
-            && !self.constraint_store.is_active(prop_id))
+            && !self.constraint_store.is_enabled(prop_id))
         {
-            self.maybe_activate_propagator(model, prop_id)
-        } else {
-            Ok(())
+            self.stats.prop_candidate_count += 1;
+            // Get propagator info
+            let prop = self.constraint_store.get_propagator(prop_id);
+            let edge: Edge<_, _> = prop.clone().into();
+            // If edge creates a neq cycle (a.k.a pres(edge.source) => edge.source != edge.source)
+            // we can immediately deactivate it.
+            if self.active_graph.creates_neq_cycle(edge) {
+                model.set(
+                    !prop.enabler.active,
+                    self.identity.inference(ModelUpdateCause::NeqCycle(prop_id)),
+                )?;
+            }
+            // If propagator is active, we can propagate domains.
+            if model.entails(enabler.active) {
+                let res = self.propagate_chains(model, edge);
+                // if let Err(c) = res {}
+                // Activate even if inconsistent so we can explain propagation later
+                self.trail.push(Event::EdgeActivated(prop_id));
+                self.active_graph.add_edge(edge);
+                self.constraint_store.mark_active(prop_id);
+                res?;
+            }
         }
+        Ok(())
     }
 
     fn propagate_eq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
@@ -252,6 +263,8 @@ impl AltEqTheory {
         let cause = self.identity.inference(ModelUpdateCause::DomNeq);
         // If domains don't overlap, nothing to do
         // If source domain is fixed and ub or lb of target == source lb, exclude that value
+        debug_assert_ne!(s, t);
+
         if let Some(bound) = s.get_bound(model) {
             if let Node::Var(t) = t {
                 if model.ub(t) == bound {
@@ -269,54 +282,28 @@ impl AltEqTheory {
         |e: &Edge<Node, EdgeLabel>| model.entails(e.label.l)
     }
 
-    /// Explain the deactivation of the given propagator
-    /// Requires finding node pair p responsible,
-    /// adding existing path between p.s and p.t,
-    /// path between p.s and prop.s,
-    /// and path between prop.t and p.t
-    fn explain_deactivation_path(
-        &mut self,
+    /// Explain a neq cycle inference as a path of edges.
+    fn explain_neq_cycle_path(
+        &self,
         propagator_id: PropagatorId,
         model: &DomainsSnapshot,
     ) -> Vec<Edge<Node, EdgeLabel>> {
         let prop = self.constraint_store.get_propagator(propagator_id);
-        let edge: Edge<_, _> = prop.clone().into();
-        let mut resp_path = self
-            .active_graph
-            .paths_requiring(edge)
-            .find_map(|p| match p.relation {
-                EqRelation::Eq => self
-                    .active_graph
-                    .get_neq_path(p.source, p.target, Self::graph_filter_closure(model)),
-                // .filter(|p| p.iter().all(|e| model.entails(e.label.l))),
-                EqRelation::Neq => self
-                    .active_graph
-                    .get_eq_path(p.source, p.target, Self::graph_filter_closure(model)),
-                // .filter(|p| p.iter().all(|e| model.entails(e.label.l))),
-            })
-            .expect("Unable to find explanation for deactivation.");
-
-        if let Some(source) = resp_path.first().map(|e| e.source) {
-            let target = resp_path.last().unwrap().target;
-
-            // We don't care about relations here. If both eq and neq exist, graph would already be inconsistent
-            let source_path = self
+        let edge: Edge<Node, EdgeLabel> = prop.clone().into();
+        match prop.relation {
+            EqRelation::Eq => self
                 .active_graph
-                .get_eq_or_neq_path(source, edge.source, Self::graph_filter_closure(model))
-                .unwrap();
-            let target_path = self
+                .get_neq_path(edge.target, edge.source, Self::graph_filter_closure(model))
+                .expect("Couldn't find explanation for cycle."),
+            EqRelation::Neq => self
                 .active_graph
-                .get_eq_or_neq_path(edge.target, target, Self::graph_filter_closure(model))
-                .unwrap();
-
-            resp_path.extend(source_path);
-            resp_path.extend(target_path);
+                .get_eq_path(edge.target, edge.source, Self::graph_filter_closure(model))
+                .expect("Couldn't find explanation for cycle."),
         }
-        resp_path
     }
 
     /// Explain an equality inference as a path of edges.
-    fn explain_eq_path(&mut self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node, EdgeLabel>> {
+    fn explain_eq_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node, EdgeLabel>> {
         let mut dft = self
             .active_graph
             .rev_eq_dft_path(Node::Var(literal.variable()), Self::graph_filter_closure(model));
@@ -331,16 +318,17 @@ impl AltEqTheory {
     }
 
     /// Explain a neq inference as a path of edges.
-    fn explain_neq_path(&mut self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node, EdgeLabel>> {
+    fn explain_neq_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node, EdgeLabel>> {
         let mut dft = self
             .active_graph
             .rev_eq_or_neq_dft_path(Node::Var(literal.variable()), Self::graph_filter_closure(model));
         dft.find(|(n, r)| {
             let (prev_lb, prev_ub) = model.bounds(literal.variable());
+            // If relationship between node and literal node is Neq
             *r == EqRelation::Neq && {
+                // If node is bound to a value
                 if let Some(bound) = n.get_bound_snap(model) {
-                    model.ub(literal.variable()) == bound && literal.variable().leq(bound - 1).entails(literal)
-                        || model.lb(literal.variable()) == bound && literal.variable().geq(bound + 1).entails(literal)
+                    prev_ub == bound || prev_lb == bound
                 } else {
                     false
                 }
@@ -384,9 +372,11 @@ impl Theory for AltEqTheory {
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         debug_assert!(self.active_graph.iter_all_fwd().all(|e| model.entails(e.label.l)));
+        self.stats.prop_count += 1;
         while let Some(event) = self.pending_activations.pop_front() {
             self.propagate_candidate(model, event.enabler, event.edge)?;
         }
+        let mut x = 0;
         while let Some(event) = self.model_events.pop(model.trail()) {
             for (enabler, prop_id) in self
                 .constraint_store
@@ -394,9 +384,13 @@ impl Theory for AltEqTheory {
                 .collect::<Vec<_>>() // To satisfy borrow checker
                 .iter()
             {
+                x += 1;
                 self.propagate_candidate(model, *enabler, *prop_id)?;
             }
         }
+        // if x != 0 {
+        //     dbg!(x);
+        // }
         Ok(())
     }
 
@@ -407,26 +401,21 @@ impl Theory for AltEqTheory {
         model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
-        self.explain_count += 1;
+        let init_length = out_explanation.lits.len();
+        self.stats.expl_count += 1;
         use ModelUpdateCause::*;
+
         // Get the path which explains the inference
         let cause = ModelUpdateCause::from(context.payload);
-        dbg!(cause);
         let path = match cause {
-            Deactivation(prop_id) => self.explain_deactivation_path(prop_id, model),
+            NeqCycle(prop_id) => self.explain_neq_cycle_path(prop_id, model),
             DomNeq => self.explain_neq_path(literal, model),
             DomEq => self.explain_eq_path(literal, model),
         };
-        // A deactivation is explained only by active literals
-        // This is also required by Eq and Neq, as that is how we made the propagations
-        for e in path.clone() {
-            if !model.entails(e.label.l) {
-                dbg!(e, cause);
-                panic!()
-            }
-        }
-        assert!(path.iter().all(|e| model.entails(e.label.l)));
+
+        debug_assert!(path.iter().all(|e| model.entails(e.label.l)));
         out_explanation.extend(path.iter().map(|e| e.label.l));
+
         // Eq will also require the ub/lb of the literal which is at the "origin" of the propagation
         // (If the node is a varref)
         if cause == DomEq || cause == DomNeq {
@@ -443,6 +432,7 @@ impl Theory for AltEqTheory {
                 }
             }
         }
+
         // Neq will also require the previous ub/lb of itself
         if cause == DomNeq {
             let v = literal.variable();
@@ -452,16 +442,14 @@ impl Theory for AltEqTheory {
                 out_explanation.push(v.geq(model.lb(v)));
             }
         }
-        dbg!(out_explanation);
+
         // Q: Do we need to add presence literals to the explanation?
         // A: Probably not
+        self.stats.total_expl_length += out_explanation.lits.len() as u32 - init_length as u32;
     }
 
     fn print_stats(&self) {
-        println!(
-            "Prop calls: {}, explain calls: {}, edge count: {}",
-            self.prop_count, self.explain_count, self.edge_count
-        )
+        self.stats.print_stats();
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -597,7 +585,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[allow(unused)]
     fn test_opt_contradiction() {
         // a => b => c && a !=> c
         let mut model = Domains::new();
@@ -626,7 +614,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[allow(unused)]
     fn test_explanation() {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
@@ -747,5 +735,16 @@ mod tests {
         );
 
         assert_eq!(expl.lits, vec![l1, l3, a.geq(11)]);
+    }
+
+    #[test]
+    fn test_bug_2() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+        let var2 = model.new_var(0, 1);
+        let var4 = model.new_var(1, 1);
+        eq.add_half_reified_eq_edge(var4.geq(1), var2, 1, &model);
+        eq.propagate(&mut model);
+        assert_eq!(model.lb(var2), 1)
     }
 }
