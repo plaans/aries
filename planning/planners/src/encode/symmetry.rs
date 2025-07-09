@@ -176,7 +176,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
         //  - they may not actually contribute to the condition (the condition could be satisfied even without it due to overshooting)
         //  - they typically persist for a very long time even if canceled out
         // This penalty is such that they are placed last in the queue
-        let penalty = if c.eff.is_assign { 1 } else { 0 };
+        let penalty = if c.eff.is_assign { 0 } else { 1 };
         // Goals (conditions in the original chronicle) should come first,
         // Other conditions are grouped by abstraction level
         let lvl = if let Some(template) = template_id(c.cond.instance_id) {
