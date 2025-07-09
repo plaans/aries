@@ -1211,7 +1211,7 @@ impl<Lbl: Label> Solver<Lbl> {
             "{},{},{},{},{},{},{}",
             self.stats.num_solutions,
             objective,
-            self.stats.solve_time.as_millis(),
+            self.stats.solve_time.as_micros(),
             self.stats.num_decisions,
             self.stats.num_conflicts,
             self.stats.num_dom_updates,
