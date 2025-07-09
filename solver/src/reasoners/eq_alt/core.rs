@@ -1,4 +1,4 @@
-use std::ops::Add;
+use std::{fmt::Display, ops::Add};
 
 use crate::core::{
     state::{Domains, DomainsSnapshot, Term},
@@ -13,6 +13,19 @@ use crate::core::{
 pub enum EqRelation {
     Eq,
     Neq,
+}
+
+impl Display for EqRelation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                EqRelation::Eq => "==",
+                EqRelation::Neq => "!=",
+            }
+        )
+    }
 }
 
 impl Add for EqRelation {
@@ -33,6 +46,15 @@ impl Add for EqRelation {
 pub enum Node {
     Var(VarRef),
     Val(IntCst),
+}
+
+impl Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Node::Var(v) => write!(f, "{:?}", v),
+            Node::Val(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 impl Node {

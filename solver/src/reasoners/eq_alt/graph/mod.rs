@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use itertools::Itertools;
@@ -300,14 +300,40 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
     }
 }
 
+impl<N: AdjNode + Display, L: Label + Display> DirEqGraph<N, L> {
+    #[allow(unused)]
+    pub(crate) fn to_graphviz(&self) -> String {
+        let mut strings = vec!["digraph {".to_string()];
+        for e in self.fwd_adj_list.iter_all_edges() {
+            strings.push(format!(
+                "  {} -> {} [label=\"{} {}\"]",
+                e.source(),
+                e.target(),
+                e.relation,
+                e.label
+            ));
+        }
+        strings.push("}".to_string());
+        strings.join("\n")
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fmt::Display;
+
     use hashbrown::HashSet;
 
     use super::*;
 
     #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
     struct Node(u32);
+
+    impl Display for Node {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
 
     #[test]
     fn test_path_exists() {

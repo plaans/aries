@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Display};
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -26,6 +26,12 @@ struct EdgeLabel {
     l: Lit,
 }
 
+impl Display for EdgeLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.l)
+    }
+}
+
 impl From<Propagator> for Edge<Node, EdgeLabel> {
     fn from(
         Propagator {
@@ -48,8 +54,9 @@ enum Event {
 
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 enum ModelUpdateCause {
-    /// Indicates that a propagator was deactivated due to finding an alternate path from source to target
-    /// e.g. a -=> b && b -=> c => deactivates a -!=> c
+    /// Indicates that a propagator was deactivated due to it creating a cycle with relation Neq.
+    /// Independant of presence values.
+    /// e.g. a -=> b && b -!=> a
     NeqCycle(PropagatorId),
     // DomUpper,
     // DomLower,
@@ -155,7 +162,7 @@ impl AltEqTheory {
         self.add_edge(l, a, b, EqRelation::Eq, model);
     }
 
-    /// Add l => (a != b) constraint
+    /// Add l => (a != b) constraint, a must be a variable, but b can also be a constant
     pub fn add_half_reified_neq_edge(&mut self, l: Lit, a: VarRef, b: impl Into<Node>, model: &Domains) {
         self.add_edge(l, a, b, EqRelation::Neq, model);
     }
@@ -167,9 +174,13 @@ impl AltEqTheory {
         let pb = model.presence(b);
 
         // When pb => pa, edge a -> b is always valid
+        // given that `pa & pb <=> edge_valid`, we can infer that the propagator becomes valid
+        // (i.e. `pb => edge_valid` holds) when `pa` becomes true
         let ab_valid = if model.implies(pb, pa) { Lit::TRUE } else { pa };
+        // Inverse
         let ba_valid = if model.implies(pa, pb) { Lit::TRUE } else { pb };
 
+        // Create and record propagators
         let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
         let ab_enabler = ab_prop.enabler;
         let ba_enabler = ba_prop.enabler;
@@ -177,21 +188,27 @@ impl AltEqTheory {
         let ba_id = self.constraint_store.add_propagator(ba_prop);
         self.active_graph.add_node(a.into());
         self.active_graph.add_node(b);
-        if model.entails(ab_valid) && model.entails(l) {
+
+        // If the propagator is immediately valid, add to queue to be propagated
+        // active is not required, since we can set inactive preemptively
+        if model.entails(ab_valid) {
             self.pending_activations
                 .push_back(ActivationEvent::new(ab_id, ab_enabler));
         }
-        if model.entails(ba_valid) && model.entails(l) {
+        if model.entails(ba_valid) {
             self.pending_activations
                 .push_back(ActivationEvent::new(ba_id, ba_enabler));
         }
+
+        // If b is a constant, we can add negative edges which all other different constants
+        // This avoid 1 -=> 2 being valid
     }
 
-    /// If propagator active literal true, propagate and activate, else check to deactivate it
-    fn propagate_chains(&mut self, model: &mut Domains, edge: Edge<Node, EdgeLabel>) -> Result<(), Contradiction> {
+    /// Given an edge that is both active and valid but not added to the graph
+    /// check all new paths a -=> b that will be created by this edge, and infer b's bounds from a
+    fn propagate_bounds(&mut self, model: &mut Domains, edge: Edge<Node, EdgeLabel>) -> Result<(), InvalidUpdate> {
         // Get all new node pairs we can potentially propagate
-        Ok(self
-            .active_graph
+        self.active_graph
             .paths_requiring(edge)
             .map(|p| -> Result<(), InvalidUpdate> {
                 // Propagate between node pair
@@ -207,19 +224,21 @@ impl AltEqTheory {
             })
             // Stop at first error
             .find(|x| x.is_err())
-            .unwrap_or(Ok(()))?)
+            .unwrap_or(Ok(()))
     }
 
-    /// Given a possibly newly enabled candidate propagator, perform propagations if possible.
+    /// Given any propagator, perform propagations if possible and necessary.
     fn propagate_candidate(
         &mut self,
         model: &mut Domains,
         enabler: Enabler,
         prop_id: PropagatorId,
     ) -> Result<(), Contradiction> {
-        // If propagator is valid, not inactive, and not already enabled
+        // If a propagator is definitely inactive, nothing can be done
         if (!model.entails(!enabler.active)
+            // If a propagator is not valid, nothing can be done
             && model.entails(enabler.valid)
+            // If a propagator is already enabled, all possible propagations are already done
             && !self.constraint_store.is_enabled(prop_id))
         {
             self.stats.prop_candidate_count += 1;
@@ -236,7 +255,7 @@ impl AltEqTheory {
             }
             // If propagator is active, we can propagate domains.
             if model.entails(enabler.active) {
-                let res = self.propagate_chains(model, edge);
+                let res = self.propagate_bounds(model, edge);
                 // if let Err(c) = res {}
                 // Activate even if inconsistent so we can explain propagation later
                 self.trail.push(Event::EdgeActivated(prop_id));
@@ -278,6 +297,8 @@ impl AltEqTheory {
         Ok(())
     }
 
+    /// Util closure used to filter edges that were not active at the time
+    // TODO: Maybe also check is valid
     fn graph_filter_closure<'a>(model: &'a DomainsSnapshot<'a>) -> impl Fn(&Edge<Node, EdgeLabel>) -> bool + use<'a> {
         |e: &Edge<Node, EdgeLabel>| model.entails(e.label.l)
     }
@@ -401,6 +422,7 @@ impl Theory for AltEqTheory {
         model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
+        // println!("{}", self.active_graph.to_graphviz());
         let init_length = out_explanation.lits.len();
         self.stats.expl_count += 1;
         use ModelUpdateCause::*;
@@ -471,6 +493,19 @@ mod tests {
         f(eq);
         eq.restore_last();
         f(eq);
+    }
+
+    #[test]
+    fn test_two_consts_eq() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+        let l = model.new_var(0, 1).geq(1);
+        let a = model.new_var(0, 1);
+        eq.add_half_reified_eq_edge(l, a, 1, &model);
+        eq.add_half_reified_eq_edge(l, a, 0, &model);
+        dbg!(eq.propagate(&mut model));
+        dbg!(model.bounds(l.variable()));
+        panic!()
     }
 
     #[test]

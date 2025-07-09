@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use std::{
-    fmt::{Debug, Formatter},
+    fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
@@ -93,5 +93,9 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
 
     pub(super) fn remove_edge(&mut self, node: N, edge: E) {
         self.0.get_mut(&node).unwrap().remove(&edge);
+    }
+
+    pub(super) fn allocated(&self) -> usize {
+        self.0.allocation_size() + self.0.iter().fold(0, |v, e| e.1.allocation_size())
     }
 }
