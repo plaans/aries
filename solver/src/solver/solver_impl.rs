@@ -182,51 +182,51 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.reasoners
                     .eq
                     .add_half_reified_eq_edge(value, *a, *b, &self.model.state);
-                // self.reasoners
-                //     .diff
-                //     .add_half_reified_edge(value, *a, *b, 0, &self.model.state);
-                // self.reasoners
-                //     .diff
-                //     .add_half_reified_edge(value, *b, *a, 0, &self.model.state);
-                // let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                // if lit != value {
-                //     self.add_clause([!value, lit], scope)?; // value => lit
-                // }
+                self.reasoners
+                    .diff
+                    .add_half_reified_edge(value, *a, *b, 0, &self.model.state);
+                self.reasoners
+                    .diff
+                    .add_half_reified_edge(value, *b, *a, 0, &self.model.state);
                 Ok(())
             }
             ReifExpr::Neq(a, b) => {
                 self.reasoners
                     .eq
                     .add_half_reified_neq_edge(value, *a, *b, &self.model.state);
-                // let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                // if lit != value {
-                //     self.add_clause([!value, lit], scope)?; // value => lit
-                // }
+                let a_lt_b = self
+                    .model
+                    .state
+                    .new_optional_var(0, 1, self.model.state.presence(value))
+                    .geq(1);
+                self.reasoners
+                    .diff
+                    .add_half_reified_edge(a_lt_b, *a, *b, 1, &self.model.state);
+                let b_lt_a = self
+                    .model
+                    .state
+                    .new_optional_var(0, 1, self.model.state.presence(value))
+                    .geq(1);
+                self.reasoners
+                    .diff
+                    .add_half_reified_edge(b_lt_a, *b, *a, 1, &self.model.state);
+
+                self.add_clause([!value, a_lt_b, b_lt_a], scope)?;
                 Ok(())
             }
             ReifExpr::EqVal(a, b) => {
                 self.reasoners
                     .eq
                     .add_half_reified_eq_edge(value, *a, *b, &self.model.state);
-                // let (lb, ub) = self.model.state.bounds(*a);
-                // let lit = if (lb..=ub).contains(b) {
-                //     self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
-                // } else {
-                //     Lit::FALSE
-                // };
-                // if lit != value {
-                //     self.add_clause([!value, lit], scope)?; // value => lit
-                // }
+                self.add_clause([!value, a.leq(*b)], self.model.state.presence(value))?;
+                self.add_clause([!value, a.geq(*b)], self.model.state.presence(value))?;
                 Ok(())
             }
             ReifExpr::NeqVal(a, b) => {
                 self.reasoners
                     .eq
                     .add_half_reified_neq_edge(value, *a, *b, &self.model.state);
-                // let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
-                // if lit != value {
-                //     self.add_clause([!value, lit], scope)?; // value => lit
-                // }
+                self.add_clause([!value, a.geq(*b + 1), a.leq(*b - 1)], self.model.state.presence(value))?;
                 Ok(())
             }
             ReifExpr::Or(disjuncts) => {
