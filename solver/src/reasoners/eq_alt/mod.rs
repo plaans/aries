@@ -1,6 +1,7 @@
-mod core;
-mod eq_impl;
 mod graph;
+mod node;
 mod propagators;
+mod relation;
+mod theory;
 
-pub use eq_impl::AltEqTheory;
+pub use theory::AltEqTheory;

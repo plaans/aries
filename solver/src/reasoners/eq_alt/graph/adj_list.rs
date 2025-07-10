@@ -77,8 +77,12 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
         self.0.iter().flat_map(|(_, e)| e.iter().cloned())
     }
 
-    pub(super) fn iter_nodes(&self, node: N) -> Option<impl Iterator<Item = N> + use<'_, N, E>> {
+    pub(super) fn iter_children(&self, node: N) -> Option<impl Iterator<Item = N> + use<'_, N, E>> {
         self.0.get(&node).map(|v| v.iter().map(|e| e.target()))
+    }
+
+    pub fn iter_nodes(&self) -> impl Iterator<Item = N> + use<'_, N, E> {
+        self.0.iter().map(|(n, _)| *n)
     }
 
     pub(super) fn iter_nodes_where(

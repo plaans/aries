@@ -3,18 +3,17 @@ use std::hash::Hash;
 
 use itertools::Itertools;
 
-use crate::reasoners::eq_alt::{
-    core::EqRelation,
-    graph::{
-        adj_list::{AdjEdge, AdjNode, AdjacencyList},
-        bft::Bft,
-    },
+use crate::reasoners::eq_alt::graph::{
+    adj_list::{AdjEdge, AdjNode, AdjacencyList},
+    bft::Bft,
 };
+
+use super::relation::EqRelation;
 
 mod adj_list;
 mod bft;
 
-pub(super) trait Label: Eq + Copy + Debug + Hash {}
+pub trait Label: Eq + Copy + Debug + Hash {}
 
 impl<T: Eq + Copy + Debug + Hash> Label for T {}
 
@@ -297,6 +296,10 @@ impl<N: AdjNode, L: Label> DirEqGraph<N, L> {
     pub(crate) fn print_allocated(&self) {
         println!("Fwd allocated: {}", self.fwd_adj_list.allocated());
         println!("Rev allocated: {}", self.rev_adj_list.allocated());
+    }
+
+    pub fn iter_nodes(&self) -> impl Iterator<Item = N> + use<'_, N, L> {
+        self.fwd_adj_list.iter_nodes()
     }
 }
 

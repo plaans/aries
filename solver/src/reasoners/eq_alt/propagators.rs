@@ -1,14 +1,13 @@
 use hashbrown::{HashMap, HashSet};
 
-use crate::{
-    core::{literals::Watches, Lit},
-    reasoners::eq_alt::core::{EqRelation, Node},
-};
+use crate::core::{literals::Watches, Lit};
+
+use super::{node::Node, relation::EqRelation};
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct Enabler {
+pub struct Enabler {
     /// A literal that is true (but not necessarily present) when the propagator must be active if present
     pub active: Lit,
     /// A literal that is true when the propagator is within its validity scope, i.e.,
@@ -46,7 +45,7 @@ impl ActivationEvent {
 ///  - forward (source to target)
 ///  - backward (target to source)
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub(crate) struct PropagatorId(u32);
+pub struct PropagatorId(u32);
 
 impl From<PropagatorId> for usize {
     fn from(e: PropagatorId) -> Self {
@@ -72,7 +71,9 @@ impl From<u32> for PropagatorId {
     }
 }
 
-/// One direction of a semi-reified eq or neq constraint
+/// One direction of a semi-reified eq or neq constraint.
+///
+/// The other direction will have flipped a and b, and different enabler.valid
 #[derive(Clone, Hash, Debug)]
 pub struct Propagator {
     pub a: Node,
@@ -139,7 +140,12 @@ impl PropagatorStore {
         assert!(self.active_props.remove(&prop_id));
     }
 
+    #[allow(unused)]
     pub fn inactive_propagators(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> {
         self.propagators.iter().filter(|(p, _)| !self.active_props.contains(*p))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> + use<'_> {
+        self.propagators.iter()
     }
 }
