@@ -1205,7 +1205,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// Log the stats and the given objective on stderr in CSV format.
     pub fn log_stats(&self, objective: IntCst) {
         if self.stats.num_solutions == 0 {
-            eprintln!("num_solution,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
+            eprintln!("num_solutions,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
         }
         eprintln!(
             "{},{},{},{},{},{},{}",
