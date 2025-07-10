@@ -483,29 +483,127 @@ impl Theory for AltEqTheory {
 mod tests {
     use core::panic;
 
+    use hashbrown::HashSet;
+
+    use crate::collections::seq::Seq;
+
     use super::*;
 
-    fn test_with_backtrack<F>(mut f: F, eq: &mut AltEqTheory)
+    fn test_with_backtrack<F>(mut f: F, eq: &mut AltEqTheory, model: &mut Domains)
     where
-        F: FnMut(&mut AltEqTheory),
+        F: FnMut(&mut AltEqTheory, &mut Domains),
     {
         eq.save_state();
-        f(eq);
+        model.save_state();
+        f(eq, model);
         eq.restore_last();
-        f(eq);
+        model.restore_last();
+        f(eq, model);
+    }
+
+    impl Domains {
+        fn new_bool(&mut self) -> Lit {
+            self.new_var(0, 1).geq(1)
+        }
+    }
+
+    fn expect_explanation(
+        cursor: &mut ObsTrailCursor<crate::core::state::Event>,
+        eq: &mut AltEqTheory,
+        model: &Domains,
+        lit: Lit,
+        expl: impl Into<Explanation>,
+    ) {
+        let expl: Explanation = expl.into();
+        while let Some(e) = cursor.pop(model.trail()) {
+            if e.new_literal().entails(lit) {
+                let mut out_expl = vec![].into();
+                eq.explain(
+                    lit,
+                    e.cause.as_external_inference().unwrap(),
+                    &DomainsSnapshot::preceding(model, lit),
+                    &mut out_expl,
+                );
+                assert_eq!(expl.lits.clone().to_set(), out_expl.lits.to_set())
+            }
+        }
+    }
+
+    /// 0 <= a <= 10 && l => a == 5
+    /// No propagation until l true
+    /// l => a == 4 given invalid update
+    #[test]
+    fn test_var_eq_const() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+        let mut cursor = ObsTrailCursor::new();
+        let l = model.new_bool();
+        let a = model.new_var(0, 10);
+        eq.add_half_reified_eq_edge(l, a, 5, &model);
+        cursor.move_to_end(model.trail());
+        assert!(eq.propagate(&mut model).is_ok());
+        assert_eq!(model.ub(a), 10);
+        assert!(model.set(l, Cause::Decision).unwrap_or(false));
+        assert!(eq.propagate(&mut model).is_ok());
+        assert_eq!(model.ub(a), 5);
+        expect_explanation(&mut cursor, &mut eq, &model, a.leq(5), vec![l]);
+        eq.add_half_reified_eq_edge(l, a, 4, &model);
+        cursor.move_to_end(model.trail());
+        assert!(eq
+            .propagate(&mut model)
+            .is_err_and(|e| matches!(e, Contradiction::InvalidUpdate(InvalidUpdate(l,_ )) if l == a.leq(4))));
+        expect_explanation(&mut cursor, &mut eq, &model, a.leq(4), vec![l]);
     }
 
     #[test]
-    fn test_two_consts_eq() {
+    fn test_var_neq_const() {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
-        let l = model.new_var(0, 1).geq(1);
+        let l = model.new_bool();
+        let a = model.new_var(9, 10);
+        eq.add_half_reified_neq_edge(l, a, 10, &model);
+        assert!(eq.propagate(&mut model).is_ok());
+        assert_eq!(model.ub(a), 10);
+        assert!(model.set(l, Cause::Decision).unwrap_or(false));
+        assert!(eq.propagate(&mut model).is_ok());
+        assert_eq!(model.ub(a), 9);
+        eq.add_half_reified_neq_edge(l, a, 9, &model);
+        assert!(eq.propagate(&mut model).is_err_and(
+            |e| matches!(e, Contradiction::InvalidUpdate(InvalidUpdate(l,_ )) if l == a.leq(8) || l == a.geq(10))
+        ));
+    }
+
+    /// l => a != a, infer !l
+    #[test]
+    fn test_neq_self() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+        let l = model.new_bool();
         let a = model.new_var(0, 1);
-        eq.add_half_reified_eq_edge(l, a, 1, &model);
-        eq.add_half_reified_eq_edge(l, a, 0, &model);
-        dbg!(eq.propagate(&mut model));
-        dbg!(model.bounds(l.variable()));
-        panic!()
+        eq.add_half_reified_neq_edge(l, a, a, &model);
+        assert!(eq.propagate(&mut model).is_ok());
+        assert!(model.entails(!l));
+    }
+
+    /// a -=> b && a -!=> b, infer nothing
+    /// when b present, infer !l
+    #[test]
+    fn test_alt_paths() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+        let a_pres = model.new_bool();
+        let b_pres = model.new_bool();
+        model.add_implication(b_pres, a_pres);
+        let a = model.new_optional_var(0, 5, a_pres);
+        let b = model.new_optional_var(0, 5, b_pres);
+        let l = model.new_bool();
+        eq.add_half_reified_eq_edge(Lit::TRUE, a, b, &model);
+        eq.add_half_reified_neq_edge(l, a, b, &model);
+        assert!(eq.propagate(&mut model).is_ok());
+        assert_eq!(model.bounds(l.variable()), (0, 1));
+        model.set(b_pres, Cause::Decision);
+        assert!(eq.propagate(&mut model).is_ok());
+        assert!(model.entails(!l));
     }
 
     #[test]
@@ -524,26 +622,28 @@ mod tests {
         let var5 = model.new_var(0, 1);
 
         test_with_backtrack(
-            |eq| {
-                eq.add_half_reified_eq_edge(l2, var3, var4, &model);
-                eq.add_half_reified_eq_edge(l2, var4, var5, &model);
-                eq.add_half_reified_eq_edge(l2, var3, 1 as IntCst, &model);
+            |eq, model| {
+                eq.add_half_reified_eq_edge(l2, var3, var4, model);
+                eq.add_half_reified_eq_edge(l2, var4, var5, model);
+                eq.add_half_reified_eq_edge(l2, var3, 1 as IntCst, model);
 
-                eq.propagate(&mut model);
+                eq.propagate(model);
                 assert_eq!(model.lb(var4), 0);
             },
             &mut eq,
+            &mut model,
         );
 
         test_with_backtrack(
-            |eq| {
+            |eq, model| {
                 model.set_lb(l2.variable(), 1, Cause::Decision).unwrap();
 
-                eq.propagate(&mut model);
+                eq.propagate(model);
                 assert_eq!(model.lb(var4), 1);
                 assert_eq!(model.lb(var5), 1);
             },
             &mut eq,
+            &mut model,
         );
     }
 
@@ -563,14 +663,15 @@ mod tests {
         let var5 = model.new_var(0, 1);
 
         test_with_backtrack(
-            |eq| {
-                eq.add_half_reified_eq_edge(l2, var3, var4, &model);
-                eq.add_half_reified_neq_edge(l2, var3, var5, &model);
-                eq.add_half_reified_eq_edge(l2, var4, var5, &model);
+            |eq, model| {
+                eq.add_half_reified_eq_edge(l2, var3, var4, model);
+                eq.add_half_reified_neq_edge(l2, var3, var5, model);
+                eq.add_half_reified_eq_edge(l2, var4, var5, model);
                 model.set_lb(l2.variable(), 1, Cause::Decision).unwrap();
-                eq.propagate(&mut model).expect_err("Contradiction.");
+                eq.propagate(model).expect_err("Contradiction.");
             },
             &mut eq,
+            &mut model,
         );
     }
 
@@ -593,30 +694,32 @@ mod tests {
         let a = model.new_optional_var(0, 1, a_pres);
 
         test_with_backtrack(
-            |eq| {
-                eq.add_half_reified_eq_edge(l, a, b, &model);
-                eq.add_half_reified_eq_edge(l, b, c, &model);
-                eq.add_half_reified_eq_edge(l, c, 1 as IntCst, &model);
+            |eq, model| {
+                eq.add_half_reified_eq_edge(l, a, b, model);
+                eq.add_half_reified_eq_edge(l, b, c, model);
+                eq.add_half_reified_eq_edge(l, c, 1 as IntCst, model);
 
-                eq.propagate(&mut model).unwrap();
+                eq.propagate(model).unwrap();
 
                 assert_eq!(model.lb(c), 1);
                 assert_eq!(model.lb(b), 0);
                 assert_eq!(model.lb(a), 0);
             },
             &mut eq,
+            &mut model,
         );
 
         test_with_backtrack(
-            |eq| {
-                eq.add_half_reified_eq_edge(l, a, 1 as IntCst, &model);
-                eq.propagate(&mut model).unwrap();
+            |eq, model| {
+                eq.add_half_reified_eq_edge(l, a, 1 as IntCst, model);
+                eq.propagate(model).unwrap();
 
                 assert_eq!(model.lb(c), 1);
                 assert_eq!(model.lb(b), 1);
                 assert_eq!(model.lb(a), 1);
             },
             &mut eq,
+            &mut model,
         );
     }
 
@@ -639,13 +742,14 @@ mod tests {
         let a = model.new_optional_var(0, 1, a_pres);
 
         test_with_backtrack(
-            |eq| {
-                eq.add_half_reified_eq_edge(l, a, b, &model);
-                eq.add_half_reified_eq_edge(l, b, c, &model);
-                eq.add_half_reified_neq_edge(l, a, c, &model);
-                eq.propagate(&mut model).expect_err("Contradiction.");
+            |eq, model| {
+                eq.add_half_reified_eq_edge(l, a, b, model);
+                eq.add_half_reified_eq_edge(l, b, c, model);
+                eq.add_half_reified_neq_edge(l, a, c, model);
+                eq.propagate(model).expect_err("Contradiction.");
             },
             &mut eq,
+            &mut model,
         );
     }
 
