@@ -89,7 +89,7 @@ impl SExpr {
     /// the arguments of the application.
     ///
     /// ```
-    /// use aries_planning::parsing::sexpr::parse;
+    /// use aries_planning_model::pddl::sexpr::parse;
     /// let sexpr = parse("(add 1 2)").unwrap();
     /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
     /// assert_eq!(args[0].as_atom().unwrap().canonical_str(), "1");
@@ -492,8 +492,8 @@ mod tests {
         let src = parse(src).unwrap();
         displayed_as(
             &src,
-            "(a (b c ",
-            "^^^^^^^^"
+            "(a (b c",
+            "^^^^^^^"
         );
     }
 }

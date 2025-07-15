@@ -11,8 +11,6 @@ mod test {
 
     use std::path::{Path, PathBuf};
 
-    use test_each_file::test_each_path;
-
     use super::*;
 
     #[test]
@@ -33,7 +31,4 @@ mod test {
 
         Ok(())
     }
-
-    //test_each_path! { for ["dom.pddl", "pb.pddl"] in "./planning/problems/pddl" => test }
-    test_each_path! { for ["pddl", "pddl"] in "/home/abitmonnot/work/aries/planning/problems/pddl/" => test_parsing }
 }
