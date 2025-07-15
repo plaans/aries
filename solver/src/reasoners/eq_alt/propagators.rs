@@ -1,8 +1,8 @@
 use hashbrown::{HashMap, HashSet};
 
-use crate::core::{literals::Watches, Lit};
+use crate::core::{literals::Watches, state::Domains, Lit};
 
-use super::{node::Node, relation::EqRelation};
+use super::{graph::Edge, node::Node, relation::EqRelation};
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
@@ -74,7 +74,7 @@ impl From<u32> for PropagatorId {
 /// One direction of a semi-reified eq or neq constraint.
 ///
 /// The other direction will have flipped a and b, and different enabler.valid
-#[derive(Clone, Hash, Debug)]
+#[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub struct Propagator {
     pub a: Node,
     pub b: Node,
@@ -137,7 +137,7 @@ impl PropagatorStore {
 
     pub fn mark_inactive(&mut self, prop_id: PropagatorId) {
         debug_assert!(self.propagators.contains_key(&prop_id));
-        assert!(self.active_props.remove(&prop_id));
+        self.active_props.remove(&prop_id);
     }
 
     #[allow(unused)]
@@ -147,5 +147,13 @@ impl PropagatorStore {
 
     pub fn iter(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> + use<'_> {
         self.propagators.iter()
+    }
+
+    pub(crate) fn get_id_from_edge(&self, model: &Domains, edge: Edge<Node>) -> PropagatorId {
+        *self
+            .propagators
+            .iter()
+            .find_map(|(id, p)| (Edge::from(p.clone()) == edge && model.entails(p.enabler.valid)).then_some(id))
+            .unwrap()
     }
 }

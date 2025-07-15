@@ -65,6 +65,13 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
         )
     }
 
+    pub fn contains_edge(&self, edge: E) -> bool {
+        let Some(edges) = self.0.get(&edge.source()) else {
+            return false;
+        };
+        edges.contains(&edge)
+    }
+
     pub(super) fn get_edges(&self, node: N) -> Option<&HashSet<E>> {
         self.0.get(&node)
     }
@@ -96,7 +103,10 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
     }
 
     pub(super) fn remove_edge(&mut self, node: N, edge: E) {
-        self.0.get_mut(&node).unwrap().remove(&edge);
+        self.0
+            .get_mut(&node)
+            .expect("Attempted to remove edge which isn't present.")
+            .remove(&edge);
     }
 
     pub(super) fn allocated(&self) -> usize {

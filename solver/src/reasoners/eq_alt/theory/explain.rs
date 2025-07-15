@@ -8,31 +8,41 @@ use crate::{
     },
 };
 
-use super::{edge::EdgeLabel, AltEqTheory};
+use super::AltEqTheory;
 
 impl AltEqTheory {
+    /// Util closure used to filter edges that were not active at the time
+    // TODO: Maybe also check is valid
+    fn graph_filter_closure<'a>(model: &'a DomainsSnapshot<'a>) -> impl Fn(&Edge<Node>) -> bool + use<'a> {
+        |e: &Edge<Node>| model.entails(e.active)
+    }
+
     /// Explain a neq cycle inference as a path of edges.
-    pub fn neq_cycle_explanation_path(
-        &self,
-        propagator_id: PropagatorId,
-        model: &DomainsSnapshot,
-    ) -> Vec<Edge<Node, EdgeLabel>> {
+    pub fn neq_cycle_explanation_path(&self, propagator_id: PropagatorId, model: &DomainsSnapshot) -> Vec<Edge<Node>> {
         let prop = self.constraint_store.get_propagator(propagator_id);
-        let edge: Edge<Node, EdgeLabel> = prop.clone().into();
+        let edge: Edge<Node> = prop.clone().into();
         match prop.relation {
-            EqRelation::Eq => self
-                .active_graph
-                .get_neq_path(edge.target, edge.source, Self::graph_filter_closure(model))
-                .expect("Couldn't find explanation for cycle."),
-            EqRelation::Neq => self
-                .active_graph
-                .get_eq_path(edge.target, edge.source, Self::graph_filter_closure(model))
-                .expect("Couldn't find explanation for cycle."),
+            EqRelation::Eq => {
+                self.active_graph
+                    .get_neq_path(edge.target, edge.source, Self::graph_filter_closure(model))
+            }
+            EqRelation::Neq => {
+                self.active_graph
+                    .get_eq_path(edge.target, edge.source, Self::graph_filter_closure(model))
+            }
         }
+        .unwrap_or_else(|| {
+            panic!(
+                "Unable to explain active graph{}\n{}\n{:?}",
+                self.active_graph.to_graphviz(),
+                self.undecided_graph.to_graphviz(),
+                edge
+            )
+        })
     }
 
     /// Explain an equality inference as a path of edges.
-    pub fn eq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node, EdgeLabel>> {
+    pub fn eq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node>> {
         let mut dft = self
             .active_graph
             .rev_eq_dft_path(Node::Var(literal.variable()), Self::graph_filter_closure(model));
@@ -47,7 +57,7 @@ impl AltEqTheory {
     }
 
     /// Explain a neq inference as a path of edges.
-    pub fn neq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node, EdgeLabel>> {
+    pub fn neq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge<Node>> {
         let mut dft = self
             .active_graph
             .rev_eq_or_neq_dft_path(Node::Var(literal.variable()), Self::graph_filter_closure(model));
@@ -72,11 +82,11 @@ impl AltEqTheory {
         model: &DomainsSnapshot<'_>,
         literal: Lit,
         cause: ModelUpdateCause,
-        path: Vec<Edge<Node, EdgeLabel>>,
+        path: Vec<Edge<Node>>,
         out_explanation: &mut Explanation,
     ) {
         use ModelUpdateCause::*;
-        out_explanation.extend(path.iter().map(|e| e.label.l));
+        out_explanation.extend(path.iter().map(|e| e.active));
 
         // Eq will also require the ub/lb of the literal which is at the "origin" of the propagation
         // (If the node is a varref)

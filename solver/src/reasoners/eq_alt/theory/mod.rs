@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 mod cause;
+mod check;
 mod edge;
 mod explain;
 mod propagate;
@@ -8,7 +9,7 @@ mod propagate;
 use std::{collections::VecDeque, fmt::Display};
 
 use cause::ModelUpdateCause;
-use edge::EdgeLabel;
+use hashbrown::HashMap;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -66,7 +67,12 @@ impl AltEqStats {
 #[derive(Clone)]
 pub struct AltEqTheory {
     constraint_store: PropagatorStore,
-    active_graph: DirEqGraph<Node, EdgeLabel>,
+    /// Directed graph containt valid and active edges
+    active_graph: DirEqGraph<Node>,
+    /// Graph to store undecided-activity edges
+    undecided_graph: DirEqGraph<Node>,
+    /// Used to quickly find an inactive edge between two nodes
+    // inactive_edges: HashMap<(Node, Node, EqRelation), Vec<Lit>>,
     model_events: ObsTrailCursor<ModelEvent>,
     pending_activations: VecDeque<ActivationEvent>,
     trail: Trail<Event>,
@@ -79,6 +85,7 @@ impl AltEqTheory {
         AltEqTheory {
             constraint_store: Default::default(),
             active_graph: DirEqGraph::new(),
+            undecided_graph: DirEqGraph::new(),
             model_events: Default::default(),
             trail: Default::default(),
             pending_activations: Default::default(),
@@ -117,10 +124,11 @@ impl AltEqTheory {
         let ab_id = self.constraint_store.add_propagator(ab_prop);
         let ba_id = self.constraint_store.add_propagator(ba_prop);
         self.active_graph.add_node(a.into());
+        self.undecided_graph.add_node(a.into());
         self.active_graph.add_node(b);
+        self.undecided_graph.add_node(b);
 
-        // If the propagator is immediately valid, add to queue to be propagated
-        // active is not required, since we can set inactive preemptively
+        // If the propagator is immediately valid, add to queue to be added to be propagated
         if model.entails(ab_valid) {
             self.pending_activations
                 .push_back(ActivationEvent::new(ab_id, ab_enabler));
@@ -129,15 +137,6 @@ impl AltEqTheory {
             self.pending_activations
                 .push_back(ActivationEvent::new(ba_id, ba_enabler));
         }
-
-        // If b is a constant, we can add negative edges which all other different constants
-        // This avoid 1 -=> 2 being valid
-    }
-
-    /// Util closure used to filter edges that were not active at the time
-    // TODO: Maybe also check is valid
-    fn graph_filter_closure<'a>(model: &'a DomainsSnapshot<'a>) -> impl Fn(&Edge<Node, EdgeLabel>) -> bool + use<'a> {
-        |e: &Edge<Node, EdgeLabel>| model.entails(e.label.l)
     }
 }
 
@@ -159,9 +158,13 @@ impl Backtrack for AltEqTheory {
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|event| match event {
             Event::EdgeActivated(prop_id) => {
-                self.active_graph
-                    .remove_edge(self.constraint_store.get_propagator(prop_id).clone().into());
-                self.constraint_store.mark_inactive(prop_id);
+                let edge = self.constraint_store.get_propagator(prop_id).clone().into();
+                if self.constraint_store.is_enabled(prop_id) {
+                    self.active_graph.remove_edge(edge);
+                    self.constraint_store.mark_inactive(prop_id);
+                } else {
+                    self.undecided_graph.remove_edge(edge);
+                }
             }
         });
     }
@@ -173,12 +176,18 @@ impl Theory for AltEqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        debug_assert!(self.active_graph.iter_all_fwd().all(|e| model.entails(e.label.l)));
+        if let Some(e) = self.active_graph.iter_all_fwd().find(|e| !model.entails(e.active)) {
+            panic!("{:?} in active graph but not active", e)
+        }
+        // println!(
+        //     "Before:\n{}\n{}",
+        //     self.active_graph.to_graphviz(),
+        //     self.undecided_graph.to_graphviz()
+        // );
         self.stats.prop_count += 1;
         while let Some(event) = self.pending_activations.pop_front() {
             self.propagate_candidate(model, event.enabler, event.edge)?;
         }
-        let mut x = 0;
         while let Some(event) = self.model_events.pop(model.trail()) {
             for (enabler, prop_id) in self
                 .constraint_store
@@ -186,13 +195,10 @@ impl Theory for AltEqTheory {
                 .collect::<Vec<_>>() // To satisfy borrow checker
                 .iter()
             {
-                x += 1;
                 self.propagate_candidate(model, *enabler, *prop_id)?;
             }
         }
-        // if x != 0 {
-        //     dbg!(x);
-        // }
+        // self.check_propagations(model);
         Ok(())
     }
 
@@ -216,7 +222,7 @@ impl Theory for AltEqTheory {
             DomEq => self.eq_explanation_path(literal, model),
         };
 
-        debug_assert!(path.iter().all(|e| model.entails(e.label.l)));
+        debug_assert!(path.iter().all(|e| model.entails(e.active)));
         self.explain_from_path(model, literal, cause, path, out_explanation);
 
         // Q: Do we need to add presence literals to the explanation?
@@ -356,6 +362,7 @@ mod tests {
         assert!(eq.propagate(&mut model).is_ok());
         assert_eq!(model.bounds(l.variable()), (0, 1));
         model.set(b_pres, Cause::Decision);
+        dbg!();
         assert!(eq.propagate(&mut model).is_ok());
         assert!(model.entails(!l));
     }
@@ -601,7 +608,7 @@ mod tests {
 
         model.decide(!l4);
         model.decide(l3);
-        eq.propagate(&mut model);
+        assert!(eq.propagate(&mut model).is_ok());
         model.decide(a.geq(11));
         model.decide(!l2);
         model.decide(l1);
