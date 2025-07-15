@@ -151,20 +151,20 @@ impl<N: AdjNode> DirEqGraph<N> {
     /// Get a path with EqRelation::Eq from source to target
     pub fn get_eq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
         let mut dft = Self::eq_path_dft(&self.fwd_adj_list, source, filter);
-        dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n))
+        dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n, ()))
     }
 
     /// Get a path with EqRelation::Neq from source to target
     pub fn get_neq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
         let mut dft = Self::eq_or_neq_path_dft(&self.fwd_adj_list, source, filter);
         dft.find(|(n, r)| *n == target && *r == EqRelation::Neq)
-            .map(|(n, _)| dft.get_path(n))
+            .map(|(n, _)| dft.get_path(n, EqRelation::Neq))
     }
 
     #[allow(unused)]
     pub fn get_eq_or_neq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
         let mut dft = Self::eq_or_neq_path_dft(&self.fwd_adj_list, source, filter);
-        dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n))
+        dft.find(|(n, _)| *n == target).map(|(n, r)| dft.get_path(n, r))
     }
 
     /// Get all paths which would require the given edge to exist.

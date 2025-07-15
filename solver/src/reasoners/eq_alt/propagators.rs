@@ -108,6 +108,10 @@ pub struct PropagatorStore {
 }
 
 impl PropagatorStore {
+    pub fn print_sizes(&self) {
+        println!("N propagators: {}", self.propagators.len())
+    }
+
     pub fn add_propagator(&mut self, prop: Propagator) -> PropagatorId {
         let id = self.propagators.len().into();
         let enabler = prop.enabler;

@@ -33,7 +33,7 @@ where
     /// Pass true in order to record paths (if you want to call get_path)
     mem_path: bool,
     /// Records parents of nodes if mem_path is true
-    parents: HashMap<N, E>,
+    parents: HashMap<(N, S), (E, S)>,
 }
 
 impl<'a, N, E, S, F> Bft<'a, N, E, S, F>
@@ -55,10 +55,11 @@ where
     }
 
     /// Get the the path from source to node (in reverse order)
-    pub fn get_path(&self, mut node: N) -> Vec<E> {
+    pub fn get_path(&self, mut node: N, mut s: S) -> Vec<E> {
         assert!(self.mem_path, "Set mem_path to true if you want to get path later.");
         let mut res = Vec::new();
-        while let Some(e) = self.parents.get(&node) {
+        while let Some((e, new_s)) = self.parents.get(&(node, s)) {
+            s = *new_s;
             node = e.source();
             res.push(*e);
             // if node == self.source {
@@ -91,7 +92,7 @@ where
                             // Set the edge's target's parent to the current node
                             if self.mem_path && !self.visited.contains(&(e.target(), s)) {
                                 // debug_assert!(!self.parents.contains_key(&e.target()));
-                                self.parents.insert(e.target(), *e);
+                                self.parents.insert((e.target(), s), (*e, d));
                             }
                             Some((e.target(), s))
                         } else {

@@ -52,7 +52,7 @@ impl AltEqTheory {
             literal.svar().is_plus() && literal.variable().leq(ub).entails(literal)
                 || literal.svar().is_minus() && literal.variable().geq(lb).entails(literal)
         })
-        .map(|(n, _)| dft.get_path(n))
+        .map(|(n, r)| dft.get_path(n, r))
         .expect("Unable to explain eq propagation.")
     }
 
@@ -73,7 +73,7 @@ impl AltEqTheory {
                 }
             }
         })
-        .map(|(n, _)| dft.get_path(n))
+        .map(|(n, r)| dft.get_path(n, r))
         .expect("Unable to explain neq propagation.")
     }
 

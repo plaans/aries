@@ -81,6 +81,13 @@ pub struct AltEqTheory {
 }
 
 impl AltEqTheory {
+    fn print_sizes(&self) {
+        self.constraint_store.print_sizes();
+        self.active_graph.print_allocated();
+        println!("pending: {}", self.pending_activations.len());
+        println!("trail: {}", self.trail.num_saved());
+    }
+
     pub fn new() -> Self {
         AltEqTheory {
             constraint_store: Default::default(),
