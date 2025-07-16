@@ -857,7 +857,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         self.print_stats();
                     }
                     if LOG_CSV.get() {
-                        self.log_stats(objective_value);
+                        self.log_stats("new_solution", objective_value);
                     }
                     on_new_solution(objective_value, &sol);
                     sol
@@ -1202,13 +1202,14 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    /// Log the stats and the given objective on stderr in CSV format.
-    pub fn log_stats(&self, objective: IntCst) {
+    /// Log stats on stderr in CSV format.
+    pub fn log_stats(&self, event_type: &str, objective: IntCst) {
         if self.stats.num_solutions == 0 {
-            eprintln!("num_solutions,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
+            eprintln!("type,num_solutions,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
         }
         eprintln!(
-            "{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{}",
+            event_type,
             self.stats.num_solutions,
             objective,
             self.stats.solve_time.as_micros(),
