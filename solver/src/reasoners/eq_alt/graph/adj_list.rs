@@ -112,22 +112,34 @@ impl<N: AdjNode> EqAdjList<N> {
         self.0.allocation_size() + self.0.iter().fold(0, |v, e| e.1.allocation_size())
     }
 
-    pub fn eq_bft(&self, source: N) -> impl Iterator<Item = N> + use<'_, N> + Clone {
+    pub fn eq_bft<'a, F: Fn(&Edge<N>) -> bool + Clone + 'a>(
+        &'a self,
+        source: N,
+        filter: F,
+    ) -> impl Iterator<Item = N> + use<'a, N, F> + Clone {
         Bft::new(
             self,
             source,
             (),
-            |_, e| match e.relation {
-                EqRelation::Eq => Some(()),
-                EqRelation::Neq => None,
-            },
+            move |_, e| (e.relation == EqRelation::Eq && filter(e)).then_some(()),
             false,
         )
         .map(|(e, _)| e)
     }
 
-    pub fn eq_or_neq_bft(&self, source: N) -> impl Iterator<Item = (N, EqRelation)> + use<'_, N> + Clone {
-        Bft::new(self, source, EqRelation::Eq, move |r, e| *r + e.relation, false)
+    /// IMPORTANT: relation passed to filter closure is relation that node will be reached with
+    pub fn eq_or_neq_bft<'a, F: Fn(&Edge<N>, &EqRelation) -> bool + Clone + 'a>(
+        &'a self,
+        source: N,
+        filter: F,
+    ) -> impl Iterator<Item = (N, EqRelation)> + use<'a, N, F> + Clone {
+        Bft::new(
+            self,
+            source,
+            EqRelation::Eq,
+            move |r, e| (*r + e.relation).filter(|new_r| filter(e, new_r)),
+            false,
+        )
     }
 
     pub fn eq_path_bft<'a>(
@@ -174,7 +186,17 @@ impl<N: AdjNode> EqAdjList<N> {
         )
     }
 
-    // pub fn reachable_from(&self, node: N) -> HashSet<N> {
-    // let res = HashSet::new();
-    // }
+    pub fn eq_reachable_from(&self, source: N) -> HashSet<N> {
+        self.eq_bft(source, |_| true).collect()
+    }
+
+    pub fn eq_or_neq_reachable_from(&self, source: N) -> HashSet<(N, EqRelation)> {
+        self.eq_or_neq_bft(source, |_, _| true).collect()
+    }
+
+    pub fn neq_reachable_from(&self, source: N) -> HashSet<N> {
+        self.eq_or_neq_bft(source, |_, _| true)
+            .filter_map(|(n, r)| (r == EqRelation::Neq).then_some(n))
+            .collect()
+    }
 }

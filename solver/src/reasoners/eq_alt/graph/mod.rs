@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
+use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::core::Lit;
@@ -100,13 +101,13 @@ impl<N: AdjNode> DirEqGraph<N> {
 
     // Returns true if source -=-> target
     pub fn eq_path_exists(&self, source: N, target: N) -> bool {
-        self.fwd_adj_list.eq_bft(source).any(|e| e == target)
+        self.fwd_adj_list.eq_bft(source, |_| true).any(|e| e == target)
     }
 
     // Returns true if source -!=-> target
     pub fn neq_path_exists(&self, source: N, target: N) -> bool {
         self.fwd_adj_list
-            .eq_or_neq_bft(source)
+            .eq_or_neq_bft(source, |_, _| true)
             .any(|(e, r)| e == target && r == EqRelation::Neq)
     }
 
@@ -157,26 +158,48 @@ impl<N: AdjNode> DirEqGraph<N> {
     }
 
     fn paths_requiring_eq(&self, edge: Edge<N>) -> impl Iterator<Item = NodePair<N>> + use<'_, N> {
-        let predecessors = self.rev_adj_list.eq_or_neq_bft(edge.source);
-        let successors = self.fwd_adj_list.eq_or_neq_bft(edge.target);
+        let reachable_preds = self.rev_adj_list.eq_or_neq_reachable_from(edge.target);
+        let reachable_succs = self.fwd_adj_list.eq_or_neq_reachable_from(edge.source);
+        let predecessors = self
+            .rev_adj_list
+            .eq_or_neq_bft(edge.source, move |e, r| !reachable_preds.contains(&(e.target, *r)));
+        let successors = self
+            .fwd_adj_list
+            .eq_or_neq_bft(edge.target, move |e, r| !reachable_succs.contains(&(e.target, *r)));
 
         predecessors
             .cartesian_product(successors)
             .filter_map(|(p, s)| Some(NodePair::new(p.0, s.0, (p.1 + s.1)?)))
-            .filter(|np| match np.relation {
-                EqRelation::Eq => !self.eq_path_exists(np.source, np.target),
-                EqRelation::Neq => !self.neq_path_exists(np.source, np.target),
-            })
     }
 
     fn paths_requiring_neq(&self, edge: Edge<N>) -> impl Iterator<Item = NodePair<N>> + use<'_, N> {
-        let predecessors = self.rev_adj_list.eq_bft(edge.source);
-        let successors = self.fwd_adj_list.eq_bft(edge.target);
+        let reachable_preds = self.rev_adj_list.eq_reachable_from(edge.target);
+        let reachable_succs = self.fwd_adj_list.neq_reachable_from(edge.source);
+        let predecessors = self
+            .rev_adj_list
+            .eq_bft(edge.source, move |e| !reachable_preds.contains(&e.target));
+        let successors = self
+            .fwd_adj_list
+            .eq_bft(edge.target, move |e| !reachable_succs.contains(&e.target));
 
-        predecessors
+        let res = predecessors
             .cartesian_product(successors)
-            .filter(|(source, target)| *source != *target && !self.neq_path_exists(*source, *target))
-            .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq))
+            .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq));
+
+        let reachable_preds = self.rev_adj_list.neq_reachable_from(edge.target);
+        let reachable_succs = self.fwd_adj_list.eq_reachable_from(edge.source);
+        let predecessors = self
+            .rev_adj_list
+            .eq_bft(edge.source, move |e| !reachable_preds.contains(&e.target));
+        let successors = self
+            .fwd_adj_list
+            .eq_bft(edge.target, move |e| !reachable_succs.contains(&e.target));
+
+        res.chain(
+            predecessors
+                .cartesian_product(successors)
+                .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq)),
+        )
     }
 
     #[allow(unused)]
