@@ -1,9 +1,6 @@
-use itertools::Itertools;
-
 use crate::{
-    backtrack::ObsTrailCursor,
     core::state::Domains,
-    reasoners::eq_alt::{graph::Edge, propagators::Propagator, relation::EqRelation},
+    reasoners::eq_alt::{propagators::Propagator, relation::EqRelation},
 };
 
 use super::AltEqTheory;

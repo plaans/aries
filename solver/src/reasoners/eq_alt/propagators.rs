@@ -114,7 +114,6 @@ pub struct PropagatorStore {
     propagators: HashMap<PropagatorId, Propagator>,
     propagator_indices: HashMap<(Node, Node), Vec<PropagatorId>>,
     marked_active: HashSet<PropagatorId>,
-    marked_undecided: HashSet<PropagatorId>,
     watches: Watches<(Enabler, PropagatorId)>,
     trail: Trail<Event>,
 }
@@ -156,28 +155,11 @@ impl PropagatorStore {
         self.marked_active.contains(prop_id)
     }
 
-    pub fn marked_undecided(&self, prop_id: &PropagatorId) -> bool {
-        self.marked_undecided.contains(prop_id)
-    }
-
     /// Marks prop as active, unmarking it as undecided in the process
     /// Returns true if change was made, else false
     pub fn mark_active(&mut self, prop_id: PropagatorId) -> bool {
         self.trail.push(Event::MarkedActive(prop_id));
-        let changed = self.marked_undecided.remove(&prop_id);
-        self.marked_active.insert(prop_id) || changed
-    }
-
-    /// Marks prop as undecided, unmarking it as active in the process
-    /// Returns true if change was made, else false
-    pub fn mark_undecided(&mut self, prop_id: PropagatorId) -> bool {
-        let changed = self.marked_active.remove(&prop_id);
-        self.marked_undecided.insert(prop_id) || changed
-    }
-
-    pub fn unmark(&mut self, prop_id: &PropagatorId) -> bool {
-        let changed = self.marked_active.remove(prop_id);
-        self.marked_undecided.remove(prop_id) || changed
+        self.marked_active.insert(prop_id)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> + use<'_> {
@@ -201,7 +183,6 @@ impl Backtrack for PropagatorStore {
                 let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
                 self.propagators.remove(&last_prop_id);
                 self.marked_active.remove(&last_prop_id);
-                self.marked_undecided.remove(&last_prop_id);
                 self.propagator_indices
                     .get_mut(&(last_prop.a, last_prop.b))
                     .unwrap()

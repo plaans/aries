@@ -1,10 +1,8 @@
-use itertools::Itertools;
-
 use crate::{
     core::state::{Domains, InvalidUpdate},
     reasoners::{
         eq_alt::{
-            graph::{DirEqGraph, Edge, NodePair},
+            graph::{Edge, NodePair},
             node::Node,
             propagators::{Enabler, Propagator, PropagatorId},
             relation::EqRelation,
@@ -34,9 +32,7 @@ impl AltEqTheory {
             .find_map(|id| {
                 let prop = self.constraint_store.get_propagator(*id);
                 let activity_ok = active && self.constraint_store.marked_active(id)
-                    || !active && self.constraint_store.marked_undecided(id);
-                // let activity_ok = active && model.entails(prop.enabler.active)
-                //     || !active && !model.entails(prop.enabler.active) && !model.entails(!prop.enabler.active);
+                    || !active && !model.entails(prop.enabler.active) && !model.entails(!prop.enabler.active);
                 (activity_ok
                     && prop.a == target
                     && prop.b == source
@@ -59,15 +55,7 @@ impl AltEqTheory {
             relation,
         } = pair;
         // Find an active edge which creates a negative cycle
-        if let Some((id, back_prop)) = self.find_back_edge(model, true, &pair) {
-            // if !self.constraint_store.marked_active(&id) {
-            // We found a back edge which is active but not yet in graph. Will be needed for explanation.
-            // self.trail.push(Event::EdgeActivated(id));
-            // self.active_graph.add_edge(back_prop.clone().into());
-            // self.constraint_store.mark_active(id);
-            // println!("Used active but not yet propagated back_prop");
-            // }
-            // println!("back edge: {edge:?}");
+        if let Some((_id, _back_prop)) = self.find_back_edge(model, true, &pair) {
             model.set(
                 !edge.active,
                 self.identity.inference(ModelUpdateCause::NeqCycle(prop_id)),
@@ -141,10 +129,8 @@ impl AltEqTheory {
             self.active_graph.add_edge(edge);
             self.constraint_store.mark_active(prop_id);
             res?;
-        } else if !model.entails(enabler.active) && !self.constraint_store.marked_undecided(&prop_id) {
-            let res = self.propagate_edge(model, prop_id, edge);
-            self.constraint_store.mark_undecided(prop_id);
-            res?;
+        } else if !model.entails(enabler.active) {
+            self.propagate_edge(model, prop_id, edge)?;
         }
 
         Ok(())

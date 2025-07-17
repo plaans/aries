@@ -1,12 +1,7 @@
-use std::fmt::Display;
-
-use crate::{
-    core::Lit,
-    reasoners::eq_alt::{
-        graph::Edge,
-        node::Node,
-        propagators::{Enabler, Propagator},
-    },
+use crate::reasoners::eq_alt::{
+    graph::Edge,
+    node::Node,
+    propagators::{Enabler, Propagator},
 };
 
 /// A propagator is essentially the same as an edge, except an edge is necessarily valid

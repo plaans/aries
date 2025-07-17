@@ -1,27 +1,24 @@
-#![allow(unused)]
-
 mod cause;
 mod check;
 mod edge;
 mod explain;
 mod propagate;
 
-use std::{collections::VecDeque, fmt::Display};
+use std::collections::VecDeque;
 
 use cause::ModelUpdateCause;
-use hashbrown::HashMap;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
     core::{
-        state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause, InvalidUpdate},
-        IntCst, Lit, VarRef,
+        state::{Domains, DomainsSnapshot, Explanation, InferenceCause},
+        Lit, VarRef,
     },
     reasoners::{
         eq_alt::{
-            graph::{DirEqGraph, Edge},
+            graph::DirEqGraph,
             node::Node,
-            propagators::{ActivationEvent, Enabler, Propagator, PropagatorId, PropagatorStore},
+            propagators::{ActivationEvent, Propagator, PropagatorId, PropagatorStore},
             relation::EqRelation,
         },
         stn::theory::Identity,
@@ -36,6 +33,7 @@ enum Event {
     EdgeActivated(PropagatorId),
 }
 
+#[allow(unused)]
 #[derive(Clone, Default)]
 struct AltEqStats {
     prop_count: u32,
@@ -231,12 +229,14 @@ impl Theory for AltEqTheory {
 
 #[cfg(test)]
 mod tests {
-    // IMPORTANT: Invariant: no pending activations when saving state
-    use core::panic;
 
-    use hashbrown::HashSet;
-
-    use crate::collections::seq::Seq;
+    use crate::{
+        collections::seq::Seq,
+        core::{
+            state::{Cause, InvalidUpdate},
+            IntCst,
+        },
+    };
 
     use super::*;
 
@@ -353,7 +353,7 @@ mod tests {
         eq.add_half_reified_neq_edge(l, a, b, &model);
         eq.propagate(&mut model).unwrap();
         assert_eq!(model.bounds(l.variable()), (0, 1));
-        model.set(b_pres, Cause::Decision);
+        model.set(b_pres, Cause::Decision).unwrap();
         dbg!();
         assert!(eq.propagate(&mut model).is_ok());
         assert!(model.entails(!l));
@@ -380,7 +380,7 @@ mod tests {
                 eq.add_half_reified_eq_edge(l2, var4, var5, model);
                 eq.add_half_reified_eq_edge(l2, var3, 1 as IntCst, model);
 
-                eq.propagate(model);
+                eq.propagate(model).unwrap();
                 assert_eq!(model.lb(var4), 0);
             },
             &mut eq,
@@ -391,7 +391,7 @@ mod tests {
             |eq, model| {
                 model.set_lb(l2.variable(), 1, Cause::Decision).unwrap();
 
-                eq.propagate(model);
+                eq.propagate(model).unwrap();
                 assert_eq!(model.lb(var4), 1);
                 assert_eq!(model.lb(var5), 1);
             },
@@ -571,17 +571,6 @@ mod tests {
     }
 
     #[test]
-    fn test_explain_neq() {
-        let mut model = Domains::new();
-        let mut eq = AltEqTheory::new();
-
-        let a = model.new_var(0, 1);
-        let b = model.new_var(0, 1);
-        let c = model.new_var(0, 1);
-        let l = model.new_var(0, 1).geq(1);
-    }
-
-    #[test]
     fn test_bug() {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
@@ -598,12 +587,12 @@ mod tests {
         eq.add_half_reified_eq_edge(l3, b, 10, &model);
         eq.add_half_reified_eq_edge(l4, b, 11, &model);
 
-        model.decide(!l4);
-        model.decide(l3);
+        model.decide(!l4).unwrap();
+        model.decide(l3).unwrap();
         assert!(eq.propagate(&mut model).is_ok());
-        model.decide(a.geq(11));
-        model.decide(!l2);
-        model.decide(l1);
+        model.decide(a.geq(11)).unwrap();
+        model.decide(!l2).unwrap();
+        model.decide(l1).unwrap();
 
         let err = eq.propagate(&mut model).unwrap_err();
         assert!(
@@ -636,7 +625,7 @@ mod tests {
         let var2 = model.new_var(0, 1);
         let var4 = model.new_var(1, 1);
         eq.add_half_reified_eq_edge(var4.geq(1), var2, 1, &model);
-        eq.propagate(&mut model);
+        eq.propagate(&mut model).unwrap();
         assert_eq!(model.lb(var2), 1)
     }
 
