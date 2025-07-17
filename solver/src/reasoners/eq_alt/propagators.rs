@@ -1,8 +1,11 @@
 use hashbrown::{HashMap, HashSet};
 
-use crate::core::{literals::Watches, state::Domains, Lit};
+use crate::{
+    backtrack::{Backtrack, DecLvl, Trail},
+    core::{literals::Watches, Lit},
+};
 
-use super::{graph::Edge, node::Node, relation::EqRelation};
+use super::{node::Node, relation::EqRelation};
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
@@ -100,25 +103,37 @@ impl Propagator {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Event {
+    PropagatorAdded,
+    MarkedActive(PropagatorId),
+}
+
 #[derive(Clone, Default)]
 pub struct PropagatorStore {
     propagators: HashMap<PropagatorId, Propagator>,
-    active_props: HashSet<PropagatorId>,
+    propagator_indices: HashMap<(Node, Node), Vec<PropagatorId>>,
+    marked_active: HashSet<PropagatorId>,
+    marked_undecided: HashSet<PropagatorId>,
     watches: Watches<(Enabler, PropagatorId)>,
+    trail: Trail<Event>,
 }
 
 impl PropagatorStore {
-    pub fn print_sizes(&self) {
-        println!("N propagators: {}", self.propagators.len())
-    }
-
     pub fn add_propagator(&mut self, prop: Propagator) -> PropagatorId {
+        self.trail.push(Event::PropagatorAdded);
         let id = self.propagators.len().into();
         let enabler = prop.enabler;
-        self.propagators.insert(id, prop);
+        self.propagators.insert(id, prop.clone());
+
+        if let Some(v) = self.propagator_indices.get_mut(&(prop.a, prop.b)) {
+            v.push(id);
+        } else {
+            self.propagator_indices.insert((prop.a, prop.b), vec![id]);
+        }
+
         self.watches.add_watch((enabler, id), enabler.active);
         self.watches.add_watch((enabler, id), enabler.valid);
-        self.watches.add_watch((enabler, id), !enabler.valid);
         id
     }
 
@@ -126,38 +141,79 @@ impl PropagatorStore {
         self.propagators.get(&prop_id).unwrap()
     }
 
+    pub fn get_from_nodes(&self, source: Node, target: Node) -> Vec<PropagatorId> {
+        self.propagator_indices
+            .get(&(source, target))
+            .cloned()
+            .unwrap_or(vec![])
+    }
+
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
         self.watches.watches_on(literal)
     }
 
-    pub fn is_enabled(&self, prop_id: PropagatorId) -> bool {
-        self.active_props.contains(&prop_id)
+    pub fn marked_active(&self, prop_id: &PropagatorId) -> bool {
+        self.marked_active.contains(prop_id)
     }
 
-    pub fn mark_active(&mut self, prop_id: PropagatorId) {
-        debug_assert!(self.propagators.contains_key(&prop_id));
-        self.active_props.insert(prop_id);
+    pub fn marked_undecided(&self, prop_id: &PropagatorId) -> bool {
+        self.marked_undecided.contains(prop_id)
     }
 
-    pub fn mark_inactive(&mut self, prop_id: PropagatorId) {
-        debug_assert!(self.propagators.contains_key(&prop_id));
-        self.active_props.remove(&prop_id);
+    /// Marks prop as active, unmarking it as undecided in the process
+    /// Returns true if change was made, else false
+    pub fn mark_active(&mut self, prop_id: PropagatorId) -> bool {
+        self.trail.push(Event::MarkedActive(prop_id));
+        let changed = self.marked_undecided.remove(&prop_id);
+        self.marked_active.insert(prop_id) || changed
     }
 
-    #[allow(unused)]
-    pub fn inactive_propagators(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> {
-        self.propagators.iter().filter(|(p, _)| !self.active_props.contains(*p))
+    /// Marks prop as undecided, unmarking it as active in the process
+    /// Returns true if change was made, else false
+    pub fn mark_undecided(&mut self, prop_id: PropagatorId) -> bool {
+        let changed = self.marked_active.remove(&prop_id);
+        self.marked_undecided.insert(prop_id) || changed
+    }
+
+    pub fn unmark(&mut self, prop_id: &PropagatorId) -> bool {
+        let changed = self.marked_active.remove(prop_id);
+        self.marked_undecided.remove(prop_id) || changed
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> + use<'_> {
         self.propagators.iter()
     }
+}
 
-    pub(crate) fn get_id_from_edge(&self, model: &Domains, edge: Edge<Node>) -> PropagatorId {
-        *self
-            .propagators
-            .iter()
-            .find_map(|(id, p)| (Edge::from(p.clone()) == edge && model.entails(p.enabler.valid)).then_some(id))
-            .unwrap()
+impl Backtrack for PropagatorStore {
+    fn save_state(&mut self) -> DecLvl {
+        self.trail.save_state()
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.trail.num_saved()
+    }
+
+    fn restore_last(&mut self) {
+        self.trail.restore_last_with(|event| match event {
+            Event::PropagatorAdded => {
+                let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
+                let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
+                self.propagators.remove(&last_prop_id);
+                self.marked_active.remove(&last_prop_id);
+                self.marked_undecided.remove(&last_prop_id);
+                self.propagator_indices
+                    .get_mut(&(last_prop.a, last_prop.b))
+                    .unwrap()
+                    .retain(|id| *id != last_prop_id);
+                self.watches
+                    .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.active);
+                self.watches
+                    .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.valid);
+            }
+            Event::MarkedActive(prop_id) => {
+                self.marked_active.remove(&prop_id);
+            }
+        });
     }
 }

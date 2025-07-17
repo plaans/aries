@@ -33,9 +33,8 @@ impl AltEqTheory {
         }
         .unwrap_or_else(|| {
             panic!(
-                "Unable to explain active graph{}\n{}\n{:?}",
+                "Unable to explain active graph\n{}\n{:?}",
                 self.active_graph.to_graphviz(),
-                self.undecided_graph.to_graphviz(),
                 edge
             )
         })

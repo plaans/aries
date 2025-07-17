@@ -6,7 +6,7 @@ use crate::{
         eq_alt::{
             graph::{DirEqGraph, Edge, NodePair},
             node::Node,
-            propagators::{Enabler, PropagatorId},
+            propagators::{Enabler, Propagator, PropagatorId},
             relation::EqRelation,
         },
         Contradiction,
@@ -17,16 +17,32 @@ use super::{cause::ModelUpdateCause, AltEqTheory, Event};
 
 impl AltEqTheory {
     /// Find some edge in the specified that forms a negative cycle with pair
-    fn find_back_edge<'a>(&self, graph: &'a DirEqGraph<Node>, pair: &NodePair<Node>) -> Option<&'a Edge<Node>> {
+    fn find_back_edge(
+        &self,
+        model: &Domains,
+        active: bool,
+        pair: &NodePair<Node>,
+    ) -> Option<(PropagatorId, Propagator)> {
         let NodePair {
             source,
             target,
             relation,
         } = *pair;
-        graph
-            .get_fwd_out_edges(target)?
+        self.constraint_store
+            .get_from_nodes(pair.target, pair.source)
             .iter()
-            .find(|e| e.target == source && e.source == target && e.relation + relation == Some(EqRelation::Neq))
+            .find_map(|id| {
+                let prop = self.constraint_store.get_propagator(*id);
+                let activity_ok = active && self.constraint_store.marked_active(id)
+                    || !active && self.constraint_store.marked_undecided(id);
+                // let activity_ok = active && model.entails(prop.enabler.active)
+                //     || !active && !model.entails(prop.enabler.active) && !model.entails(!prop.enabler.active);
+                (activity_ok
+                    && prop.a == target
+                    && prop.b == source
+                    && relation + prop.relation == Some(EqRelation::Neq))
+                .then_some((*id, prop.clone()))
+            })
     }
 
     /// Propagate between pair.source and pair.target if edge were to be added
@@ -43,7 +59,15 @@ impl AltEqTheory {
             relation,
         } = pair;
         // Find an active edge which creates a negative cycle
-        if self.find_back_edge(&self.active_graph, &pair).is_some() {
+        if let Some((id, back_prop)) = self.find_back_edge(model, true, &pair) {
+            // if !self.constraint_store.marked_active(&id) {
+            // We found a back edge which is active but not yet in graph. Will be needed for explanation.
+            // self.trail.push(Event::EdgeActivated(id));
+            // self.active_graph.add_edge(back_prop.clone().into());
+            // self.constraint_store.mark_active(id);
+            // println!("Used active but not yet propagated back_prop");
+            // }
+            // println!("back edge: {edge:?}");
             model.set(
                 !edge.active,
                 self.identity.inference(ModelUpdateCause::NeqCycle(prop_id)),
@@ -51,12 +75,11 @@ impl AltEqTheory {
         }
 
         if model.entails(edge.active) {
-            if let Some(back_edge) = self.find_back_edge(&self.undecided_graph, &pair) {
+            if let Some((id, back_prop)) = self.find_back_edge(model, false, &pair) {
+                // println!("back edge: {back_prop:?}");
                 model.set(
-                    !back_edge.active,
-                    self.identity.inference(ModelUpdateCause::NeqCycle(
-                        self.constraint_store.get_id_from_edge(model, *back_edge),
-                    )),
+                    !back_prop.enabler.active,
+                    self.identity.inference(ModelUpdateCause::NeqCycle(id)),
                 )?;
             }
             match relation {
@@ -96,26 +119,6 @@ impl AltEqTheory {
             .unwrap_or(Ok(()))
     }
 
-    fn add_to_undecided_graph(&mut self, prop_id: PropagatorId, edge: Edge<Node>) {
-        self.trail.push(Event::EdgeActivated(prop_id));
-        if self.constraint_store.is_enabled(prop_id) {
-            unreachable!();
-            // self.active_graph.remove_edge(edge);
-            // self.constraint_store.mark_inactive(prop_id);
-        }
-        self.undecided_graph.add_edge(edge);
-        self.constraint_store.mark_inactive(prop_id);
-    }
-
-    fn add_to_active_graph(&mut self, prop_id: PropagatorId, edge: Edge<Node>) {
-        self.trail.push(Event::EdgeActivated(prop_id));
-        if self.undecided_graph.contains_edge(edge) {
-            self.undecided_graph.remove_edge(edge);
-        }
-        self.active_graph.add_edge(edge);
-        self.constraint_store.mark_active(prop_id);
-    }
-
     /// Given any propagator, perform propagations if possible and necessary.
     pub fn propagate_candidate(
         &mut self,
@@ -125,27 +128,25 @@ impl AltEqTheory {
     ) -> Result<(), Contradiction> {
         let prop = self.constraint_store.get_propagator(prop_id);
         let edge: Edge<Node> = prop.clone().into();
-        // If not valid, nothing to do
-        if !model.entails(enabler.valid) {
+        // If not valid or inactive, nothing to do
+        if !model.entails(enabler.valid) || model.entails(!enabler.active) {
             return Ok(());
         }
 
-        if !model.entails(enabler.active) && self.constraint_store.is_enabled(prop_id) {
-            unreachable!();
-            // self.active_graph.remove_edge(edge);
-            // self.constraint_store.mark_inactive(prop_id);
-            // return Ok(());
+        // If propagator is newly activated, propagate and add
+        if model.entails(enabler.active) && !self.constraint_store.marked_active(&prop_id) {
+            let res = self.propagate_edge(model, prop_id, edge);
+            // If the propagator was previously undecided, we know it was just activated
+            self.trail.push(Event::EdgeActivated(prop_id));
+            self.active_graph.add_edge(edge);
+            self.constraint_store.mark_active(prop_id);
+            res?;
+        } else if !model.entails(enabler.active) && !self.constraint_store.marked_undecided(&prop_id) {
+            let res = self.propagate_edge(model, prop_id, edge);
+            self.constraint_store.mark_undecided(prop_id);
+            res?;
         }
 
-        if model.entails(enabler.active) {
-            let prop_res = self.propagate_edge(model, prop_id, edge);
-            self.add_to_active_graph(prop_id, edge);
-            prop_res?;
-        } else if !model.entails(!enabler.active) {
-            let prop_res = self.propagate_edge(model, prop_id, edge);
-            self.add_to_undecided_graph(prop_id, edge);
-            prop_res?;
-        }
         Ok(())
     }
 

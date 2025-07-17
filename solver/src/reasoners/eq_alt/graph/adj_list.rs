@@ -102,11 +102,11 @@ impl<N: AdjNode, E: AdjEdge<N>> AdjacencyList<N, E> {
             .map(move |v| v.iter().filter(move |e: &&E| filter(*e)).map(|e| e.target()))
     }
 
-    pub(super) fn remove_edge(&mut self, node: N, edge: E) {
+    pub(super) fn remove_edge(&mut self, node: N, edge: E) -> bool {
         self.0
             .get_mut(&node)
             .expect("Attempted to remove edge which isn't present.")
-            .remove(&edge);
+            .remove(&edge)
     }
 
     pub(super) fn allocated(&self) -> usize {

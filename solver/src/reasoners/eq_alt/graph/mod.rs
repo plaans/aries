@@ -113,9 +113,8 @@ impl<N: AdjNode> DirEqGraph<N> {
         self.fwd_adj_list.contains_edge(edge)
     }
 
-    pub fn remove_edge(&mut self, edge: Edge<N>) {
-        self.fwd_adj_list.remove_edge(edge.source, edge);
-        self.rev_adj_list.remove_edge(edge.target, edge.reverse());
+    pub fn remove_edge(&mut self, edge: Edge<N>) -> bool {
+        self.fwd_adj_list.remove_edge(edge.source, edge) && self.rev_adj_list.remove_edge(edge.target, edge.reverse())
     }
 
     // Returns true if source -=-> target

@@ -1,6 +1,9 @@
+use itertools::Itertools;
+
 use crate::{
+    backtrack::ObsTrailCursor,
     core::state::Domains,
-    reasoners::eq_alt::{propagators::Propagator, relation::EqRelation},
+    reasoners::eq_alt::{graph::Edge, propagators::Propagator, relation::EqRelation},
 };
 
 use super::AltEqTheory;
@@ -16,8 +19,10 @@ impl AltEqTheory {
                         .iter()
                         .filter(|(_, p)| p.a == source && p.b == target && p.relation == EqRelation::Neq)
                         .for_each(|(_, p)| {
-                            // Check necessarily inactive or maybe invalid
-                            if !model.entails(!p.enabler.active) && model.entails(p.enabler.valid) {
+                            if !model.entails(!p.enabler.active)
+                                && model.entails(model.presence(p.a))
+                                && model.entails(model.presence(p.b))
+                            {
                                 problems.push(p)
                             }
                         });
@@ -27,7 +32,10 @@ impl AltEqTheory {
                         .iter()
                         .filter(|(_, p)| p.a == source && p.b == target && p.relation == EqRelation::Eq)
                         .for_each(|(_, p)| {
-                            if !model.entails(!p.enabler.active) && model.entails(p.enabler.valid) {
+                            if !model.entails(!p.enabler.active)
+                                && model.entails(model.presence(p.a))
+                                && model.entails(model.presence(p.b))
+                            {
                                 problems.push(p)
                             }
                         });
@@ -58,25 +66,45 @@ impl AltEqTheory {
         problems
     }
 
+    fn check_state(&self, model: &Domains) {
+        // Check that all the propagators marked active are active and present in graph
+        self.constraint_store.iter().for_each(|(id, prop)| {
+            if !model.entails(prop.enabler.valid) {
+                return;
+            }
+            // let edge = prop.clone().into();
+            // Propagation has finished, constraint store activity markers should be consistent with activity of constraints
+            assert_eq!(
+                self.constraint_store.marked_active(id),
+                model.entails(prop.enabler.active),
+                "{prop:?} debug: {}",
+                model.entails(prop.enabler.valid)
+            );
+        });
+    }
+
     pub fn check_propagations(&self, model: &Domains) {
+        self.check_state(model);
         let path_prop_problems = self.check_path_propagation(model);
         assert_eq!(
             path_prop_problems.len(),
             0,
-            "Path propagation problems: {:#?}\nGraph:\n{}\n{}",
+            "Path propagation problems: {:#?}\nGraph:\n{}\nDebug: {:?}",
             path_prop_problems,
             self.active_graph.to_graphviz(),
-            self.undecided_graph.to_graphviz(),
+            self.constraint_store
+                .iter()
+                .find(|(_, prop)| prop == path_prop_problems.first().unwrap()) // model.entails(!path_prop_problems.first().unwrap().enabler.active) // self.undecided_graph
+                                                                               // .contains_edge((*path_prop_problems.first().unwrap()).clone().into())
         );
 
         let constraint_problems = self.check_active_constraint_in_graph(model);
         assert_eq!(
             constraint_problems,
             0,
-            "{} constraint problems\nGraph:\n{}\n{}",
+            "{} constraint problems\nGraph:\n{}",
             constraint_problems,
             self.active_graph.to_graphviz(),
-            self.undecided_graph.to_graphviz()
         );
     }
 }
