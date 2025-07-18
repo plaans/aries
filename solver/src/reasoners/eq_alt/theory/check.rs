@@ -72,7 +72,7 @@ impl AltEqTheory {
             // let edge = prop.clone().into();
             // Propagation has finished, constraint store activity markers should be consistent with activity of constraints
             assert_eq!(
-                self.constraint_store.marked_active(id),
+                self.constraint_store.marked_active(&id),
                 model.entails(prop.enabler.active),
                 "{prop:?} debug: {}",
                 model.entails(prop.enabler.valid)

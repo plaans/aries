@@ -1,5 +1,5 @@
 use hashbrown::{HashMap, HashSet};
-use std::{collections::VecDeque, hash::Hash};
+use std::hash::Hash;
 
 use crate::reasoners::eq_alt::graph::{AdjNode, EqAdjList};
 
@@ -25,8 +25,11 @@ where
     adj_list: &'a EqAdjList<N>,
     /// The set of visited nodes
     visited: HashSet<(N, S)>,
+    // TODO: For best explanations, VecDeque queue should be used with pop_front
+    // However, for propagation, Vec is much more performant
+    // We should add a generic collection param
     /// The stack of nodes to visit + extra data
-    queue: VecDeque<(N, S)>,
+    queue: Vec<(N, S)>,
     /// A function which takes an element of extra stack data and an edge
     /// and returns the new element to add to the stack
     /// None indicates the edge shouldn't be visited
@@ -44,6 +47,7 @@ where
     F: Fn(&S, &Edge<N>) -> Option<S>,
 {
     pub(super) fn new(adj_list: &'a EqAdjList<N>, source: N, init: S, fold: F, mem_path: bool) -> Self {
+        // TODO: For performance, maybe create queue with capacity
         Bft {
             adj_list,
             visited: HashSet::new(),
@@ -68,6 +72,11 @@ where
         }
         res
     }
+
+    pub fn get_reachable(&mut self) -> &HashSet<(N, S)> {
+        while self.next().is_some() {}
+        &self.visited
+    }
 }
 
 impl<'a, N, S, F> Iterator for Bft<'a, N, S, F>
@@ -79,29 +88,33 @@ where
     type Item = (N, S);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((node, d)) = self.queue.pop_front() {
-            if !self.visited.contains(&(node, d)) {
-                self.visited.insert((node, d));
+        // Pop a node from the stack. We know it hasn't been visited since we check before pushing
+        if let Some((node, d)) = self.queue.pop() {
+            // Mark as visited
+            self.visited.insert((node, d));
 
-                // Push adjacent edges onto stack according to fold func
-                self.queue
-                    .extend(self.adj_list.get_edges(node).unwrap().iter().filter_map(|e| {
-                        // If self.fold returns None, filter edge, otherwise stack e.target and self.fold result
-                        if let Some(s) = (self.fold)(&d, e) {
-                            // Set the edge's target's parent to the current node
-                            if self.mem_path && !self.visited.contains(&(e.target, s)) {
-                                // debug_assert!(!self.parents.contains_key(&e.target()));
+            // Push adjacent edges onto stack according to fold func
+            self.queue
+                .extend(self.adj_list.get_edges(node).unwrap().iter().filter_map(|e| {
+                    // If self.fold returns None, filter edge
+                    if let Some(s) = (self.fold)(&d, e) {
+                        // If edge target visited, filter edge
+                        if !self.visited.contains(&(e.target, s)) {
+                            if self.mem_path {
                                 self.parents.insert((e.target, s), (*e, d));
                             }
                             Some((e.target, s))
                         } else {
                             None
                         }
-                    }));
+                    } else {
+                        None
+                    }
+                }));
 
-                return Some((node, d));
-            }
+            Some((node, d))
+        } else {
+            None
         }
-        None
     }
 }

@@ -116,17 +116,19 @@ impl AltEqTheory {
         let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
         let ab_enabler = ab_prop.enabler;
         let ba_enabler = ba_prop.enabler;
-        let ab_id = self.constraint_store.add_propagator(ab_prop);
-        let ba_id = self.constraint_store.add_propagator(ba_prop);
+        let ab_id = self.constraint_store.add_propagator(ab_prop.clone());
+        let ba_id = self.constraint_store.add_propagator(ba_prop.clone());
         self.active_graph.add_node(a.into());
         self.active_graph.add_node(b);
 
         // If the propagator is immediately valid, add to queue to be added to be propagated
         if model.entails(ab_valid) {
+            self.constraint_store.mark_valid(ab_id);
             self.pending_activations
                 .push_back(ActivationEvent::new(ab_id, ab_enabler));
         }
         if model.entails(ba_valid) {
+            self.constraint_store.mark_valid(ba_id);
             self.pending_activations
                 .push_back(ActivationEvent::new(ba_id, ba_enabler));
         }
@@ -186,6 +188,10 @@ impl Theory for AltEqTheory {
                 .iter()
             {
                 changed = true;
+                let prop = self.constraint_store.get_propagator(*prop_id);
+                if model.entails(prop.enabler.valid) {
+                    self.constraint_store.mark_valid(*prop_id);
+                }
                 self.propagate_candidate(model, *enabler, *prop_id)?;
             }
         }

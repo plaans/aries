@@ -16,7 +16,7 @@ pub trait AdjNode: Eq + Hash + Copy + Debug {}
 impl<T: Eq + Hash + Copy + Debug> AdjNode for T {}
 
 #[derive(Default, Clone)]
-pub(super) struct EqAdjList<N: AdjNode>(HashMap<N, HashSet<Edge<N>>>);
+pub(super) struct EqAdjList<N: AdjNode>(HashMap<N, Vec<Edge<N>>>);
 
 impl<N: AdjNode> Debug for EqAdjList<N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -41,7 +41,7 @@ impl<N: AdjNode> EqAdjList<N> {
     /// Insert a node if not present, returns None if node was inserted, else Some(edges)
     pub(super) fn insert_node(&mut self, node: N) -> Option<Vec<Edge<N>>> {
         if !self.0.contains_key(&node) {
-            self.0.insert(node, HashSet::new());
+            self.0.insert(node, Default::default());
         }
         None
     }
@@ -58,7 +58,7 @@ impl<N: AdjNode> EqAdjList<N> {
             if edges.contains(&edge) {
                 false
             } else {
-                edges.insert(edge);
+                edges.push(edge);
                 true
             },
         )
@@ -71,11 +71,11 @@ impl<N: AdjNode> EqAdjList<N> {
         edges.contains(&edge)
     }
 
-    pub(super) fn get_edges(&self, node: N) -> Option<&HashSet<Edge<N>>> {
+    pub(super) fn get_edges(&self, node: N) -> Option<&Vec<Edge<N>>> {
         self.0.get(&node)
     }
 
-    pub(super) fn get_edges_mut(&mut self, node: N) -> Option<&mut HashSet<Edge<N>>> {
+    pub(super) fn get_edges_mut(&mut self, node: N) -> Option<&mut Vec<Edge<N>>> {
         self.0.get_mut(&node)
     }
 
@@ -101,22 +101,17 @@ impl<N: AdjNode> EqAdjList<N> {
             .map(move |v| v.iter().filter(move |e: &&Edge<N>| filter(*e)).map(|e| e.target))
     }
 
-    pub(super) fn remove_edge(&mut self, node: N, edge: Edge<N>) -> bool {
+    pub(super) fn remove_edge(&mut self, node: N, edge: Edge<N>) {
         self.0
             .get_mut(&node)
             .expect("Attempted to remove edge which isn't present.")
-            .remove(&edge)
+            .retain(|e| *e != edge);
     }
 
-    pub(super) fn allocated(&self) -> usize {
-        self.0.allocation_size() + self.0.iter().fold(0, |v, e| e.1.allocation_size())
-    }
-
-    pub fn eq_bft<'a, F: Fn(&Edge<N>) -> bool + Clone + 'a>(
-        &'a self,
-        source: N,
-        filter: F,
-    ) -> impl Iterator<Item = N> + use<'a, N, F> + Clone {
+    pub fn eq_bft<F>(&self, source: N, filter: F) -> Bft<'_, N, (), impl Fn(&(), &Edge<N>) -> Option<()>>
+    where
+        F: Fn(&Edge<N>) -> bool,
+    {
         Bft::new(
             self,
             source,
@@ -124,15 +119,17 @@ impl<N: AdjNode> EqAdjList<N> {
             move |_, e| (e.relation == EqRelation::Eq && filter(e)).then_some(()),
             false,
         )
-        .map(|(e, _)| e)
     }
 
     /// IMPORTANT: relation passed to filter closure is relation that node will be reached with
-    pub fn eq_or_neq_bft<'a, F: Fn(&Edge<N>, &EqRelation) -> bool + Clone + 'a>(
-        &'a self,
+    pub fn eq_or_neq_bft<F>(
+        &self,
         source: N,
         filter: F,
-    ) -> impl Iterator<Item = (N, EqRelation)> + use<'a, N, F> + Clone {
+    ) -> Bft<'_, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>>
+    where
+        F: Fn(&Edge<N>, &EqRelation) -> bool,
+    {
         Bft::new(
             self,
             source,
@@ -142,11 +139,10 @@ impl<N: AdjNode> EqAdjList<N> {
         )
     }
 
-    pub fn eq_path_bft<'a>(
-        &'a self,
-        node: N,
-        filter: impl Fn(&Edge<N>) -> bool + 'a,
-    ) -> Bft<'a, N, (), impl Fn(&(), &Edge<N>) -> Option<()>> {
+    pub fn eq_path_bft<F>(&self, node: N, filter: F) -> Bft<'_, N, (), impl Fn(&(), &Edge<N>) -> Option<()>>
+    where
+        F: Fn(&Edge<N>) -> bool,
+    {
         Bft::new(
             self,
             node,
@@ -166,11 +162,14 @@ impl<N: AdjNode> EqAdjList<N> {
     }
 
     /// Util for bft while 0 or 1 neqs
-    pub fn eq_or_neq_path_bft<'a>(
-        &'a self,
+    pub fn eq_or_neq_path_bft<F>(
+        &self,
         node: N,
-        filter: impl Fn(&Edge<N>) -> bool + 'a,
-    ) -> Bft<'a, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>> {
+        filter: F,
+    ) -> Bft<N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>>
+    where
+        F: Fn(&Edge<N>) -> bool,
+    {
         Bft::new(
             self,
             node,
@@ -186,17 +185,21 @@ impl<N: AdjNode> EqAdjList<N> {
         )
     }
 
-    pub fn eq_reachable_from(&self, source: N) -> HashSet<N> {
-        self.eq_bft(source, |_| true).collect()
+    pub fn eq_reachable_from(&self, source: N) -> HashSet<(N, ())> {
+        self.eq_bft(source, |_| true).get_reachable().clone()
     }
 
     pub fn eq_or_neq_reachable_from(&self, source: N) -> HashSet<(N, EqRelation)> {
-        self.eq_or_neq_bft(source, |_, _| true).collect()
+        self.eq_or_neq_bft(source, |_, _| true).get_reachable().clone()
     }
 
     pub fn neq_reachable_from(&self, source: N) -> HashSet<N> {
         self.eq_or_neq_bft(source, |_, _| true)
             .filter_map(|(n, r)| (r == EqRelation::Neq).then_some(n))
             .collect()
+    }
+
+    pub(crate) fn n_nodes(&self) -> usize {
+        self.0.len()
     }
 }

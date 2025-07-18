@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::core::Lit;
@@ -95,13 +94,14 @@ impl<N: AdjNode> DirEqGraph<N> {
         self.rev_adj_list.insert_node(node);
     }
 
-    pub fn remove_edge(&mut self, edge: Edge<N>) -> bool {
-        self.fwd_adj_list.remove_edge(edge.source, edge) && self.rev_adj_list.remove_edge(edge.target, edge.reverse())
+    pub fn remove_edge(&mut self, edge: Edge<N>) {
+        self.fwd_adj_list.remove_edge(edge.source, edge);
+        self.rev_adj_list.remove_edge(edge.target, edge.reverse())
     }
 
     // Returns true if source -=-> target
     pub fn eq_path_exists(&self, source: N, target: N) -> bool {
-        self.fwd_adj_list.eq_bft(source, |_| true).any(|e| e == target)
+        self.fwd_adj_list.eq_bft(source, |_| true).any(|(e, _)| e == target)
     }
 
     // Returns true if source -!=-> target
@@ -165,7 +165,8 @@ impl<N: AdjNode> DirEqGraph<N> {
             .eq_or_neq_bft(edge.source, move |e, r| !reachable_preds.contains(&(e.target, *r)));
         let successors = self
             .fwd_adj_list
-            .eq_or_neq_bft(edge.target, move |e, r| !reachable_succs.contains(&(e.target, *r)));
+            .eq_or_neq_bft(edge.target, move |e, r| !reachable_succs.contains(&(e.target, *r)))
+            .collect_vec();
 
         predecessors
             .cartesian_product(successors)
@@ -177,10 +178,13 @@ impl<N: AdjNode> DirEqGraph<N> {
         let reachable_succs = self.fwd_adj_list.neq_reachable_from(edge.source);
         let predecessors = self
             .rev_adj_list
-            .eq_bft(edge.source, move |e| !reachable_preds.contains(&e.target));
+            .eq_bft(edge.source, move |e| !reachable_preds.contains(&(e.target, ())))
+            .map(|(e, _)| e);
         let successors = self
             .fwd_adj_list
-            .eq_bft(edge.target, move |e| !reachable_succs.contains(&e.target));
+            .eq_bft(edge.target, move |e| !reachable_succs.contains(&e.target))
+            .map(|(e, _)| e)
+            .collect_vec();
 
         let res = predecessors
             .cartesian_product(successors)
@@ -190,22 +194,19 @@ impl<N: AdjNode> DirEqGraph<N> {
         let reachable_succs = self.fwd_adj_list.eq_reachable_from(edge.source);
         let predecessors = self
             .rev_adj_list
-            .eq_bft(edge.source, move |e| !reachable_preds.contains(&e.target));
+            .eq_bft(edge.source, move |e| !reachable_preds.contains(&e.target))
+            .map(|(e, _)| e);
         let successors = self
             .fwd_adj_list
-            .eq_bft(edge.target, move |e| !reachable_succs.contains(&e.target));
+            .eq_bft(edge.target, move |e| !reachable_succs.contains(&(e.target, ())))
+            .map(|(e, _)| e)
+            .collect_vec();
 
         res.chain(
             predecessors
                 .cartesian_product(successors)
                 .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq)),
         )
-    }
-
-    #[allow(unused)]
-    pub(crate) fn print_allocated(&self) {
-        println!("Fwd allocated: {}", self.fwd_adj_list.allocated());
-        println!("Rev allocated: {}", self.rev_adj_list.allocated());
     }
 
     pub fn iter_nodes(&self) -> impl Iterator<Item = N> + use<'_, N> {

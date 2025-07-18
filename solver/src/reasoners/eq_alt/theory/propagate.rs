@@ -31,6 +31,7 @@ impl AltEqTheory {
             .iter()
             .find_map(|id| {
                 let prop = self.constraint_store.get_propagator(*id);
+                assert!(model.entails(prop.enabler.valid));
                 let activity_ok = active && self.constraint_store.marked_active(id)
                     || !active && !model.entails(prop.enabler.active) && !model.entails(!prop.enabler.active);
                 (activity_ok

@@ -2,6 +2,7 @@ use hashbrown::{HashMap, HashSet};
 
 use crate::{
     backtrack::{Backtrack, DecLvl, Trail},
+    collections::ref_store::RefVec,
     core::{literals::Watches, Lit},
 };
 
@@ -107,11 +108,12 @@ impl Propagator {
 enum Event {
     PropagatorAdded,
     MarkedActive(PropagatorId),
+    MarkedValid(PropagatorId),
 }
 
 #[derive(Clone, Default)]
 pub struct PropagatorStore {
-    propagators: HashMap<PropagatorId, Propagator>,
+    propagators: RefVec<PropagatorId, Propagator>,
     propagator_indices: HashMap<(Node, Node), Vec<PropagatorId>>,
     marked_active: HashSet<PropagatorId>,
     watches: Watches<(Enabler, PropagatorId)>,
@@ -123,13 +125,7 @@ impl PropagatorStore {
         self.trail.push(Event::PropagatorAdded);
         let id = self.propagators.len().into();
         let enabler = prop.enabler;
-        self.propagators.insert(id, prop.clone());
-
-        if let Some(v) = self.propagator_indices.get_mut(&(prop.a, prop.b)) {
-            v.push(id);
-        } else {
-            self.propagator_indices.insert((prop.a, prop.b), vec![id]);
-        }
+        self.propagators.push(prop.clone());
 
         self.watches.add_watch((enabler, id), enabler.active);
         self.watches.add_watch((enabler, id), enabler.valid);
@@ -137,9 +133,24 @@ impl PropagatorStore {
     }
 
     pub fn get_propagator(&self, prop_id: PropagatorId) -> &Propagator {
-        self.propagators.get(&prop_id).unwrap()
+        // self.propagators.get(&prop_id).unwrap()
+        &self.propagators[prop_id]
     }
 
+    pub fn mark_valid(&mut self, prop_id: PropagatorId) {
+        let prop = self.get_propagator(prop_id).clone();
+        if let Some(v) = self.propagator_indices.get_mut(&(prop.a, prop.b)) {
+            if !v.contains(&prop_id) {
+                self.trail.push(Event::MarkedValid(prop_id));
+                v.push(prop_id);
+            }
+        } else {
+            self.trail.push(Event::MarkedValid(prop_id));
+            self.propagator_indices.insert((prop.a, prop.b), vec![prop_id]);
+        }
+    }
+
+    /// Get valid propagators by source and target
     pub fn get_from_nodes(&self, source: Node, target: Node) -> Vec<PropagatorId> {
         self.propagator_indices
             .get(&(source, target))
@@ -162,8 +173,8 @@ impl PropagatorStore {
         self.marked_active.insert(prop_id)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&PropagatorId, &Propagator)> + use<'_> {
-        self.propagators.iter()
+    pub fn iter(&self) -> impl Iterator<Item = (PropagatorId, &Propagator)> + use<'_> {
+        self.propagators.entries()
     }
 }
 
@@ -180,13 +191,10 @@ impl Backtrack for PropagatorStore {
         self.trail.restore_last_with(|event| match event {
             Event::PropagatorAdded => {
                 let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
-                let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
-                self.propagators.remove(&last_prop_id);
+                // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
+                // self.propagators.remove(&last_prop_id);
+                let last_prop = self.propagators.pop().unwrap();
                 self.marked_active.remove(&last_prop_id);
-                self.propagator_indices
-                    .get_mut(&(last_prop.a, last_prop.b))
-                    .unwrap()
-                    .retain(|id| *id != last_prop_id);
                 self.watches
                     .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.active);
                 self.watches
@@ -194,6 +202,14 @@ impl Backtrack for PropagatorStore {
             }
             Event::MarkedActive(prop_id) => {
                 self.marked_active.remove(&prop_id);
+            }
+            Event::MarkedValid(prop_id) => {
+                let prop = &self.propagators[prop_id];
+                let entry = self.propagator_indices.get_mut(&(prop.a, prop.b)).unwrap();
+                entry.retain(|e| *e != prop_id);
+                if entry.is_empty() {
+                    self.propagator_indices.remove(&(prop.a, prop.b));
+                }
             }
         });
     }
