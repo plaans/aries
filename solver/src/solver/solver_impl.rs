@@ -21,8 +21,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::instrument;
 
-/// If true: each time a solution is found, the solver's stats will be printed on stderr in CSV format (in optimization)
-static LOG_CSV: EnvParam<bool> = EnvParam::new("ARIES_LOG_CSV", "false");
+/// If true, the solver stats will be printed on stderr in CSV format (in optimization)
+static CSV_STATS: EnvParam<bool> = EnvParam::new("ARIES_CSV_STATS", "false");
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
@@ -835,6 +835,11 @@ impl<Lbl: Label> Solver<Lbl> {
         // best solution found so far
         let mut best = None;
 
+        if CSV_STATS.get() {
+            self.print_csv_header();
+            self.print_csv_line("start", None);
+        }
+
         if let Some((objective_value, sol)) = initial_solution {
             self.brancher.new_assignment_found(objective_value, sol.clone());
         }
@@ -855,9 +860,6 @@ impl<Lbl: Label> Solver<Lbl> {
                     if STATS_AT_SOLUTION.get() {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
-                    }
-                    if LOG_CSV.get() {
-                        self.log_stats("new_solution", objective_value);
                     }
                     on_new_solution(objective_value, &sol);
                     sol
@@ -888,6 +890,10 @@ impl<Lbl: Label> Solver<Lbl> {
 
                 // save the best solution
                 best = Some((objective_value, sol));
+
+                if CSV_STATS.get() {
+                    self.print_csv_line("new_solution", Some(objective_value));
+                }
 
                 // force future solutions to improve on this one
                 let improvement_literal = if minimize {
@@ -1202,16 +1208,18 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
+    /// Log CSV stats header on stderr.
+    pub fn print_csv_header(&self) {
+        eprintln!("type,num_solutions,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
+    }
+
     /// Log stats on stderr in CSV format.
-    pub fn log_stats(&self, event_type: &str, objective: IntCst) {
-        if self.stats.num_solutions == 0 {
-            eprintln!("type,num_solutions,objective,time,num_decisions,num_conflicts,num_dom_updates,num_restarts");
-        }
+    pub fn print_csv_line(&self, event_type: &str, objective: Option<IntCst>) {
         eprintln!(
             "{},{},{},{},{},{},{},{}",
             event_type,
             self.stats.num_solutions,
-            objective,
+            objective.map_or("".to_string(), |o| o.to_string()),
             self.stats.solve_time.as_micros(),
             self.stats.num_decisions,
             self.stats.num_conflicts,
