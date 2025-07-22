@@ -196,6 +196,15 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
 }
 
 fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> ReifExpr {
+    if USE_EQUALITY_LOGIC.get() {
+        if a.is_const() && !b.is_const() && b.shift == 0 {
+            return ReifExpr::EqVal(b.var.into(), a.shift);
+        } else if b.is_const() && !a.is_const() && a.shift == 0 {
+            return ReifExpr::EqVal(a.var.into(), b.shift);
+        } else if !b.is_const() && !a.is_const() && a.shift == 0 && b.shift == 0 {
+            return ReifExpr::Eq(a.var.into(), b.var.into());
+        }
+    }
     let lr = model.reify(leq(a, b));
     let rl = model.reify(leq(b, a));
     and([lr, rl]).into()
