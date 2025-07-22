@@ -201,7 +201,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     .geq(1);
                 self.reasoners
                     .diff
-                    .add_half_reified_edge(a_lt_b, *a, *b, 1, &self.model.state);
+                    .add_half_reified_edge(a_lt_b, *a, *b, -1, &self.model.state);
                 let b_lt_a = self
                     .model
                     .state
@@ -209,7 +209,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     .geq(1);
                 self.reasoners
                     .diff
-                    .add_half_reified_edge(b_lt_a, *b, *a, 1, &self.model.state);
+                    .add_half_reified_edge(b_lt_a, *b, *a, -1, &self.model.state);
 
                 self.add_clause([!value, a_lt_b, b_lt_a], scope)?;
                 Ok(())
