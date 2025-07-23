@@ -4,7 +4,11 @@ use crate::{
         Lit,
     },
     reasoners::eq_alt::{
-        graph::Edge, node::Node, propagators::PropagatorId, relation::EqRelation, theory::cause::ModelUpdateCause,
+        graph::{Edge, TaggedNode},
+        node::Node,
+        propagators::PropagatorId,
+        relation::EqRelation,
+        theory::cause::ModelUpdateCause,
     },
 };
 
@@ -18,10 +22,10 @@ impl AltEqTheory {
     }
 
     /// Explain a neq cycle inference as a path of edges.
-    pub fn neq_cycle_explanation_path(&self, propagator_id: PropagatorId, model: &DomainsSnapshot) -> Vec<Edge<Node>> {
-        let prop = self.constraint_store.get_propagator(propagator_id);
-        let edge: Edge<Node> = prop.clone().into();
-        match prop.relation {
+    pub fn neq_cycle_explanation_path(&self, prop_id: PropagatorId, model: &DomainsSnapshot) -> Vec<Edge<Node>> {
+        let prop = self.constraint_store.get_propagator(prop_id);
+        let edge = Edge::from_prop(prop_id, prop.clone());
+        match edge.relation {
             EqRelation::Eq => {
                 self.active_graph
                     .get_neq_path(edge.target, edge.source, Self::graph_filter_closure(model))
@@ -46,12 +50,12 @@ impl AltEqTheory {
             .active_graph
             .rev_eq_dft_path(Node::Var(literal.variable()), Self::graph_filter_closure(model));
         dft.next();
-        dft.find(|(n, _)| {
+        dft.find(|TaggedNode(n, _)| {
             let (lb, ub) = model.get_node_bounds(n);
             literal.svar().is_plus() && literal.variable().leq(ub).entails(literal)
                 || literal.svar().is_minus() && literal.variable().geq(lb).entails(literal)
         })
-        .map(|(n, r)| dft.get_path(n, r))
+        .map(|TaggedNode(n, r)| dft.get_path(TaggedNode(n, r)))
         .expect("Unable to explain eq propagation.")
     }
 
@@ -60,7 +64,7 @@ impl AltEqTheory {
         let mut dft = self
             .active_graph
             .rev_eq_or_neq_dft_path(Node::Var(literal.variable()), Self::graph_filter_closure(model));
-        dft.find(|(n, r)| {
+        dft.find(|TaggedNode(n, r)| {
             let (prev_lb, prev_ub) = model.bounds(literal.variable());
             // If relationship between node and literal node is Neq
             *r == EqRelation::Neq && {
@@ -72,7 +76,7 @@ impl AltEqTheory {
                 }
             }
         })
-        .map(|(n, r)| dft.get_path(n, r))
+        .map(|TaggedNode(n, r)| dft.get_path(TaggedNode(n, r)))
         .expect("Unable to explain neq propagation.")
     }
 

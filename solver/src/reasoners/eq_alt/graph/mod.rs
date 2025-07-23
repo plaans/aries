@@ -2,42 +2,61 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use itertools::Itertools;
+pub use traversal::TaggedNode;
 
 use crate::core::Lit;
 use crate::reasoners::eq_alt::graph::{
     adj_list::{AdjNode, EqAdjList},
-    bft::Bft,
+    traversal::GraphTraversal,
 };
 
+use super::node::Node;
+use super::propagators::{Propagator, PropagatorId};
 use super::relation::EqRelation;
 
 mod adj_list;
-mod bft;
+mod traversal;
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct Edge<N: AdjNode> {
     pub source: N,
     pub target: N,
     pub active: Lit,
     pub relation: EqRelation,
+    pub prop_id: PropagatorId,
+}
+
+impl Edge<Node> {
+    pub fn from_prop(prop_id: PropagatorId, prop: Propagator) -> Self {
+        Self {
+            prop_id,
+            source: prop.a,
+            target: prop.b,
+            active: prop.enabler.active,
+            relation: prop.relation,
+        }
+    }
 }
 
 impl<N: AdjNode> Edge<N> {
-    pub fn new(source: N, target: N, active: Lit, relation: EqRelation) -> Self {
+    pub fn new(source: N, target: N, active: Lit, relation: EqRelation, prop_id: PropagatorId) -> Self {
         Self {
             source,
             target,
             active,
             relation,
+            prop_id,
         }
     }
 
+    /// Should only be used for reverse adjacency graph. Propagator id is not reversed.
     pub fn reverse(&self) -> Self {
         Edge {
             source: self.target,
             target: self.source,
             active: self.active,
             relation: self.relation,
+            prop_id: self.prop_id,
         }
     }
 }
@@ -101,14 +120,16 @@ impl<N: AdjNode> DirEqGraph<N> {
 
     // Returns true if source -=-> target
     pub fn eq_path_exists(&self, source: N, target: N) -> bool {
-        self.fwd_adj_list.eq_bft(source, |_| true).any(|(e, _)| e == target)
+        self.fwd_adj_list
+            .eq_traversal(source, |_| true)
+            .any(|TaggedNode(e, _)| e == target)
     }
 
     // Returns true if source -!=-> target
     pub fn neq_path_exists(&self, source: N, target: N) -> bool {
         self.fwd_adj_list
-            .eq_or_neq_bft(source, |_, _| true)
-            .any(|(e, r)| e == target && r == EqRelation::Neq)
+            .eq_or_neq_traversal(source, |_, _| true)
+            .any(|TaggedNode(e, r)| e == target && r == EqRelation::Neq)
     }
 
     /// Return a Dft struct over nodes which can be reached with Eq in reverse adjacency list
@@ -116,8 +137,8 @@ impl<N: AdjNode> DirEqGraph<N> {
         &'a self,
         source: N,
         filter: impl Fn(&Edge<N>) -> bool + 'a,
-    ) -> Bft<'a, N, (), impl Fn(&(), &Edge<N>) -> Option<()>> {
-        self.rev_adj_list.eq_path_bft(source, filter)
+    ) -> GraphTraversal<'a, N, bool, impl Fn(&bool, &Edge<N>) -> Option<bool>> {
+        self.rev_adj_list.eq_path_traversal(source, filter)
     }
 
     /// Return an iterator over nodes which can be reached with Neq in reverse adjacency list
@@ -125,21 +146,22 @@ impl<N: AdjNode> DirEqGraph<N> {
         &'a self,
         source: N,
         filter: impl Fn(&Edge<N>) -> bool + 'a,
-    ) -> Bft<'a, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>> {
-        self.rev_adj_list.eq_or_neq_path_bft(source, filter)
+    ) -> GraphTraversal<'a, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>> {
+        self.rev_adj_list.eq_or_neq_path_traversal(source, filter)
     }
 
     /// Get a path with EqRelation::Eq from source to target
     pub fn get_eq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
-        let mut dft = self.fwd_adj_list.eq_path_bft(source, filter);
-        dft.find(|(n, _)| *n == target).map(|(n, _)| dft.get_path(n, ()))
+        let mut dft = self.fwd_adj_list.eq_path_traversal(source, filter);
+        dft.find(|TaggedNode(n, _)| *n == target)
+            .map(|TaggedNode(n, _)| dft.get_path(TaggedNode(n, false)))
     }
 
     /// Get a path with EqRelation::Neq from source to target
     pub fn get_neq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
-        let mut dft = self.fwd_adj_list.eq_or_neq_path_bft(source, filter);
-        dft.find(|(n, r)| *n == target && *r == EqRelation::Neq)
-            .map(|(n, _)| dft.get_path(n, EqRelation::Neq))
+        let mut dft = self.fwd_adj_list.eq_or_neq_path_traversal(source, filter);
+        dft.find(|TaggedNode(n, r)| *n == target && *r == EqRelation::Neq)
+            .map(|TaggedNode(n, _)| dft.get_path(TaggedNode(n, EqRelation::Neq)))
     }
 
     /// Get all paths which would require the given edge to exist.
@@ -160,12 +182,14 @@ impl<N: AdjNode> DirEqGraph<N> {
     fn paths_requiring_eq(&self, edge: Edge<N>) -> impl Iterator<Item = NodePair<N>> + use<'_, N> {
         let reachable_preds = self.rev_adj_list.eq_or_neq_reachable_from(edge.target);
         let reachable_succs = self.fwd_adj_list.eq_or_neq_reachable_from(edge.source);
-        let predecessors = self
-            .rev_adj_list
-            .eq_or_neq_bft(edge.source, move |e, r| !reachable_preds.contains(&(e.target, *r)));
+        let predecessors = self.rev_adj_list.eq_or_neq_traversal(edge.source, move |e, r| {
+            !reachable_preds.contains(TaggedNode(e.target, *r))
+        });
         let successors = self
             .fwd_adj_list
-            .eq_or_neq_bft(edge.target, move |e, r| !reachable_succs.contains(&(e.target, *r)))
+            .eq_or_neq_traversal(edge.target, move |e, r| {
+                !reachable_succs.contains(TaggedNode(e.target, *r))
+            })
             .collect_vec();
 
         predecessors
@@ -175,31 +199,41 @@ impl<N: AdjNode> DirEqGraph<N> {
 
     fn paths_requiring_neq(&self, edge: Edge<N>) -> impl Iterator<Item = NodePair<N>> + use<'_, N> {
         let reachable_preds = self.rev_adj_list.eq_reachable_from(edge.target);
-        let reachable_succs = self.fwd_adj_list.neq_reachable_from(edge.source);
+        let reachable_succs = self.fwd_adj_list.eq_or_neq_reachable_from(edge.source);
+        // let reachable_succs = self.fwd_adj_list.neq_reachable_from(edge.source);
         let predecessors = self
             .rev_adj_list
-            .eq_bft(edge.source, move |e| !reachable_preds.contains(&(e.target, ())))
-            .map(|(e, _)| e);
+            .eq_traversal(edge.source, move |e| {
+                !reachable_preds.contains(TaggedNode(e.target, false))
+            })
+            .map(|TaggedNode(e, _)| e);
         let successors = self
             .fwd_adj_list
-            .eq_bft(edge.target, move |e| !reachable_succs.contains(&e.target))
-            .map(|(e, _)| e)
+            .eq_traversal(edge.target, move |e| {
+                !reachable_succs.contains(TaggedNode(e.target, EqRelation::Neq))
+            })
+            .map(|TaggedNode(e, _)| e)
             .collect_vec();
 
         let res = predecessors
             .cartesian_product(successors)
             .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq));
 
-        let reachable_preds = self.rev_adj_list.neq_reachable_from(edge.target);
+        // let reachable_preds = self.rev_adj_list.neq_reachable_from(edge.target);
+        let reachable_preds = self.rev_adj_list.eq_or_neq_reachable_from(edge.target);
         let reachable_succs = self.fwd_adj_list.eq_reachable_from(edge.source);
         let predecessors = self
             .rev_adj_list
-            .eq_bft(edge.source, move |e| !reachable_preds.contains(&e.target))
-            .map(|(e, _)| e);
+            .eq_traversal(edge.source, move |e| {
+                !reachable_preds.contains(TaggedNode(e.target, EqRelation::Neq))
+            })
+            .map(|TaggedNode(e, _)| e);
         let successors = self
             .fwd_adj_list
-            .eq_bft(edge.target, move |e| !reachable_succs.contains(&(e.target, ())))
-            .map(|(e, _)| e)
+            .eq_traversal(edge.target, move |e| {
+                !reachable_succs.contains(TaggedNode(e.target, false))
+            })
+            .map(|TaggedNode(e, _)| e)
             .collect_vec();
 
         res.chain(
@@ -238,7 +272,19 @@ mod tests {
     use super::*;
 
     #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-    struct Node(u32);
+    struct Node(usize);
+
+    impl From<usize> for Node {
+        fn from(value: usize) -> Self {
+            Self(value)
+        }
+    }
+
+    impl From<Node> for usize {
+        fn from(value: Node) -> Self {
+            value.0
+        }
+    }
 
     impl Display for Node {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -250,13 +296,13 @@ mod tests {
     fn test_path_exists() {
         let mut g = DirEqGraph::new();
         // 0 -=-> 2
-        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
         // 1 -!=-> 2
-        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq));
+        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq, 1_u32.into()));
         // 2 -=-> 3
-        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 2_u32.into()));
         // 2 -!=-> 4
-        g.add_edge(Edge::new(Node(2), Node(4), Lit::TRUE, EqRelation::Neq));
+        g.add_edge(Edge::new(Node(2), Node(4), Lit::TRUE, EqRelation::Neq, 3_u32.into()));
 
         // 0 -=-> 3
         assert!(g.eq_path_exists(Node(0), Node(3)));
@@ -268,7 +314,7 @@ mod tests {
         assert!(!g.eq_path_exists(Node(1), Node(4)) && !g.neq_path_exists(Node(1), Node(4)));
 
         // 3 -=-> 0
-        g.add_edge(Edge::new(Node(3), Node(0), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(3), Node(0), Lit::TRUE, EqRelation::Eq, 4_u32.into()));
         assert!(g.eq_path_exists(Node(2), Node(0)));
     }
 
@@ -277,15 +323,15 @@ mod tests {
         let mut g = DirEqGraph::new();
 
         // 0 -=-> 2
-        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
         // 1 -!=-> 2
-        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq));
+        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq, 1_u32.into()));
         // 3 -=-> 4
-        g.add_edge(Edge::new(Node(3), Node(4), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(3), Node(4), Lit::TRUE, EqRelation::Eq, 2_u32.into()));
         // 3 -!=-> 5
-        g.add_edge(Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq));
+        g.add_edge(Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq, 3_u32.into()));
         // 0 -=-> 4
-        g.add_edge(Edge::new(Node(0), Node(4), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(0), Node(4), Lit::TRUE, EqRelation::Eq, 3_u32.into()));
 
         let res = [
             (Node(0), Node(3), EqRelation::Eq).into(),
@@ -298,21 +344,21 @@ mod tests {
         ]
         .into();
         assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq))
+            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()))
                 .collect::<HashSet<_>>(),
             res
         );
 
-        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
         assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq))
+            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()))
                 .collect::<HashSet<_>>(),
             [].into()
         );
 
-        g.remove_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq));
+        g.remove_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
         assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq))
+            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()))
                 .collect::<HashSet<_>>(),
             res
         );
@@ -323,28 +369,28 @@ mod tests {
         let mut g = DirEqGraph::new();
 
         // 0 -=-> 2
-        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
         // 1 -!=-> 2
-        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq));
+        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq, 1_u32.into()));
         // 3 -=-> 4
-        g.add_edge(Edge::new(Node(3), Node(4), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(3), Node(4), Lit::TRUE, EqRelation::Eq, 2_u32.into()));
         // 3 -!=-> 5
-        g.add_edge(Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq));
+        g.add_edge(Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq, 3_u32.into()));
         // 0 -=-> 4
-        g.add_edge(Edge::new(Node(0), Node(4), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(0), Node(4), Lit::TRUE, EqRelation::Eq, 4_u32.into()));
 
         let path = g.get_neq_path(Node(0), Node(5), |_| true);
         assert_eq!(path, None);
 
-        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq));
+        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 5_u32.into()));
 
         let path = g.get_neq_path(Node(0), Node(5), |_| true);
         assert_eq!(
             path,
             vec![
-                Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq),
-                Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq),
-                Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq)
+                Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq, 3_u32.into()),
+                Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 5_u32.into()),
+                Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into())
             ]
             .into()
         );

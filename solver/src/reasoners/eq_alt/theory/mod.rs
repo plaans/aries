@@ -1,6 +1,5 @@
 mod cause;
 mod check;
-mod edge;
 mod explain;
 mod propagate;
 
@@ -25,6 +24,8 @@ use crate::{
         Contradiction, ReasonerId, Theory,
     },
 };
+
+use super::graph::Edge;
 
 type ModelEvent = crate::core::state::Event;
 
@@ -155,7 +156,7 @@ impl Backtrack for AltEqTheory {
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|event| match event {
             Event::EdgeActivated(prop_id) => {
-                let edge = self.constraint_store.get_propagator(prop_id).clone().into();
+                let edge = Edge::from_prop(prop_id, self.constraint_store.get_propagator(prop_id).clone());
                 self.active_graph.remove_edge(edge);
             }
         });

@@ -1,8 +1,8 @@
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, Trail},
-    collections::ref_store::RefVec,
+    collections::{ref_store::RefVec, set::RefSet},
     core::{literals::Watches, Lit},
 };
 
@@ -48,7 +48,7 @@ impl ActivationEvent {
 /// Represents an edge together with a particular propagation direction:
 ///  - forward (source to target)
 ///  - backward (target to source)
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct PropagatorId(u32);
 
 impl From<PropagatorId> for usize {
@@ -115,7 +115,7 @@ enum Event {
 pub struct PropagatorStore {
     propagators: RefVec<PropagatorId, Propagator>,
     propagator_indices: HashMap<(Node, Node), Vec<PropagatorId>>,
-    marked_active: HashSet<PropagatorId>,
+    marked_active: RefSet<PropagatorId>,
     watches: Watches<(Enabler, PropagatorId)>,
     trail: Trail<Event>,
 }
@@ -163,12 +163,12 @@ impl PropagatorStore {
     }
 
     pub fn marked_active(&self, prop_id: &PropagatorId) -> bool {
-        self.marked_active.contains(prop_id)
+        self.marked_active.contains(*prop_id)
     }
 
     /// Marks prop as active, unmarking it as undecided in the process
     /// Returns true if change was made, else false
-    pub fn mark_active(&mut self, prop_id: PropagatorId) -> bool {
+    pub fn mark_active(&mut self, prop_id: PropagatorId) {
         self.trail.push(Event::MarkedActive(prop_id));
         self.marked_active.insert(prop_id)
     }
@@ -194,14 +194,14 @@ impl Backtrack for PropagatorStore {
                 // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
                 // self.propagators.remove(&last_prop_id);
                 let last_prop = self.propagators.pop().unwrap();
-                self.marked_active.remove(&last_prop_id);
+                self.marked_active.remove(last_prop_id);
                 self.watches
                     .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.active);
                 self.watches
                     .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.valid);
             }
             Event::MarkedActive(prop_id) => {
-                self.marked_active.remove(&prop_id);
+                self.marked_active.remove(prop_id);
             }
             Event::MarkedValid(prop_id) => {
                 let prop = &self.propagators[prop_id];

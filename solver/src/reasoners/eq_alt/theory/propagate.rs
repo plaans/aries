@@ -116,7 +116,7 @@ impl AltEqTheory {
         prop_id: PropagatorId,
     ) -> Result<(), Contradiction> {
         let prop = self.constraint_store.get_propagator(prop_id);
-        let edge: Edge<Node> = prop.clone().into();
+        let edge = Edge::from_prop(prop_id, prop.clone());
         // If not valid or inactive, nothing to do
         if !model.entails(enabler.valid) || model.entails(!enabler.active) {
             return Ok(());

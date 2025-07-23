@@ -397,6 +397,13 @@ impl<K, V> Default for RefMap<K, V> {
 }
 
 impl<K: Ref, V> RefMap<K, V> {
+    pub fn with_capacity(capacity: usize) -> RefMap<K, V> {
+        RefMap {
+            entries: Vec::with_capacity(capacity),
+            phantom: Default::default(),
+        }
+    }
+
     pub fn insert(&mut self, k: K, v: V) {
         let index = k.into();
         while self.entries.len() <= index {
@@ -466,6 +473,11 @@ impl<K: Ref, V> RefMap<K, V> {
             self.insert(k, default())
         }
         &mut self[k]
+    }
+
+    /// Return len of entries
+    pub fn capacity(&self) -> usize {
+        self.entries.len()
     }
 
     #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
@@ -613,6 +625,10 @@ impl<K: Ref, V> IterableRefMap<K, V> {
 
     pub fn entries(&self) -> impl Iterator<Item = (K, &V)> {
         self.keys().map(|k| (k, &self.map[k]))
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.map.capacity()
     }
 }
 

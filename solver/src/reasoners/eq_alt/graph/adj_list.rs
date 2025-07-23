@@ -7,21 +7,30 @@ use std::{
 
 use hashbrown::{HashMap, HashSet};
 
-use crate::reasoners::eq_alt::relation::EqRelation;
+use crate::{
+    collections::{
+        ref_store::{IterableRefMap, RefMap},
+        set::RefSet,
+    },
+    reasoners::eq_alt::relation::EqRelation,
+};
 
-use super::{bft::Bft, Edge};
+use super::{
+    traversal::{GraphTraversal, TaggedNode},
+    Edge,
+};
 
-pub trait AdjNode: Eq + Hash + Copy + Debug {}
+pub trait AdjNode: Eq + Hash + Copy + Debug + Into<usize> + From<usize> {}
 
-impl<T: Eq + Hash + Copy + Debug> AdjNode for T {}
+impl<T: Eq + Hash + Copy + Debug + Into<usize> + From<usize>> AdjNode for T {}
 
 #[derive(Default, Clone)]
-pub(super) struct EqAdjList<N: AdjNode>(HashMap<N, Vec<Edge<N>>>);
+pub(super) struct EqAdjList<N: AdjNode>(IterableRefMap<N, Vec<Edge<N>>>);
 
 impl<N: AdjNode> Debug for EqAdjList<N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f)?;
-        for (node, edges) in &self.0 {
+        for (node, edges) in self.0.entries() {
             if !edges.is_empty() {
                 writeln!(f, "{:?}:", node)?;
                 for edge in edges {
@@ -35,12 +44,12 @@ impl<N: AdjNode> Debug for EqAdjList<N> {
 
 impl<N: AdjNode> EqAdjList<N> {
     pub(super) fn new() -> Self {
-        Self(HashMap::new())
+        Self(Default::default())
     }
 
     /// Insert a node if not present, returns None if node was inserted, else Some(edges)
     pub(super) fn insert_node(&mut self, node: N) -> Option<Vec<Edge<N>>> {
-        if !self.0.contains_key(&node) {
+        if !self.0.contains(node) {
             self.0.insert(node, Default::default());
         }
         None
@@ -65,30 +74,30 @@ impl<N: AdjNode> EqAdjList<N> {
     }
 
     pub fn contains_edge(&self, edge: Edge<N>) -> bool {
-        let Some(edges) = self.0.get(&edge.source) else {
+        let Some(edges) = self.0.get(edge.source) else {
             return false;
         };
         edges.contains(&edge)
     }
 
     pub(super) fn get_edges(&self, node: N) -> Option<&Vec<Edge<N>>> {
-        self.0.get(&node)
+        self.0.get(node)
     }
 
     pub(super) fn get_edges_mut(&mut self, node: N) -> Option<&mut Vec<Edge<N>>> {
-        self.0.get_mut(&node)
+        self.0.get_mut(node)
     }
 
     pub(super) fn iter_all_edges(&self) -> impl Iterator<Item = Edge<N>> + use<'_, N> {
-        self.0.iter().flat_map(|(_, e)| e.iter().cloned())
+        self.0.entries().flat_map(|(_, e)| e.iter().cloned())
     }
 
     pub(super) fn iter_children(&self, node: N) -> Option<impl Iterator<Item = N> + use<'_, N>> {
-        self.0.get(&node).map(|v| v.iter().map(|e| e.target))
+        self.0.get(node).map(|v| v.iter().map(|e| e.target))
     }
 
     pub fn iter_nodes(&self) -> impl Iterator<Item = N> + use<'_, N> {
-        self.0.iter().map(|(n, _)| *n)
+        self.0.entries().map(|(n, _)| n)
     }
 
     pub(super) fn iter_nodes_where(
@@ -97,40 +106,44 @@ impl<N: AdjNode> EqAdjList<N> {
         filter: fn(&Edge<N>) -> bool,
     ) -> Option<impl Iterator<Item = N> + use<'_, N>> {
         self.0
-            .get(&node)
+            .get(node)
             .map(move |v| v.iter().filter(move |e: &&Edge<N>| filter(*e)).map(|e| e.target))
     }
 
     pub(super) fn remove_edge(&mut self, node: N, edge: Edge<N>) {
         self.0
-            .get_mut(&node)
+            .get_mut(node)
             .expect("Attempted to remove edge which isn't present.")
             .retain(|e| *e != edge);
     }
 
-    pub fn eq_bft<F>(&self, source: N, filter: F) -> Bft<'_, N, (), impl Fn(&(), &Edge<N>) -> Option<()>>
+    pub fn eq_traversal<F>(
+        &self,
+        source: N,
+        filter: F,
+    ) -> GraphTraversal<'_, N, bool, impl Fn(&bool, &Edge<N>) -> Option<bool>>
     where
         F: Fn(&Edge<N>) -> bool,
     {
-        Bft::new(
+        GraphTraversal::new(
             self,
             source,
-            (),
-            move |_, e| (e.relation == EqRelation::Eq && filter(e)).then_some(()),
+            false,
+            move |_, e| (e.relation == EqRelation::Eq && filter(e)).then_some(false),
             false,
         )
     }
 
     /// IMPORTANT: relation passed to filter closure is relation that node will be reached with
-    pub fn eq_or_neq_bft<F>(
+    pub fn eq_or_neq_traversal<F>(
         &self,
         source: N,
         filter: F,
-    ) -> Bft<'_, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>>
+    ) -> GraphTraversal<'_, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>>
     where
         F: Fn(&Edge<N>, &EqRelation) -> bool,
     {
-        Bft::new(
+        GraphTraversal::new(
             self,
             source,
             EqRelation::Eq,
@@ -139,18 +152,22 @@ impl<N: AdjNode> EqAdjList<N> {
         )
     }
 
-    pub fn eq_path_bft<F>(&self, node: N, filter: F) -> Bft<'_, N, (), impl Fn(&(), &Edge<N>) -> Option<()>>
+    pub fn eq_path_traversal<F>(
+        &self,
+        node: N,
+        filter: F,
+    ) -> GraphTraversal<'_, N, bool, impl Fn(&bool, &Edge<N>) -> Option<bool>>
     where
         F: Fn(&Edge<N>) -> bool,
     {
-        Bft::new(
+        GraphTraversal::new(
             self,
             node,
-            (),
+            false,
             move |_, e| {
                 if filter(e) {
                     match e.relation {
-                        EqRelation::Eq => Some(()),
+                        EqRelation::Eq => Some(false),
                         EqRelation::Neq => None,
                     }
                 } else {
@@ -161,16 +178,16 @@ impl<N: AdjNode> EqAdjList<N> {
         )
     }
 
-    /// Util for bft while 0 or 1 neqs
-    pub fn eq_or_neq_path_bft<F>(
+    /// Util for traversal while 0 or 1 neqs
+    pub fn eq_or_neq_path_traversal<F>(
         &self,
         node: N,
         filter: F,
-    ) -> Bft<N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>>
+    ) -> GraphTraversal<N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>>
     where
         F: Fn(&Edge<N>) -> bool,
     {
-        Bft::new(
+        GraphTraversal::new(
             self,
             node,
             EqRelation::Eq,
@@ -185,21 +202,19 @@ impl<N: AdjNode> EqAdjList<N> {
         )
     }
 
-    pub fn eq_reachable_from(&self, source: N) -> HashSet<(N, ())> {
-        self.eq_bft(source, |_| true).get_reachable().clone()
+    pub fn eq_reachable_from(&self, source: N) -> RefSet<TaggedNode<N, bool>> {
+        self.eq_traversal(source, |_| true).get_reachable().clone()
     }
 
-    pub fn eq_or_neq_reachable_from(&self, source: N) -> HashSet<(N, EqRelation)> {
-        self.eq_or_neq_bft(source, |_, _| true).get_reachable().clone()
-    }
-
-    pub fn neq_reachable_from(&self, source: N) -> HashSet<N> {
-        self.eq_or_neq_bft(source, |_, _| true)
-            .filter_map(|(n, r)| (r == EqRelation::Neq).then_some(n))
-            .collect()
+    pub fn eq_or_neq_reachable_from(&self, source: N) -> RefSet<TaggedNode<N, EqRelation>> {
+        self.eq_or_neq_traversal(source, |_, _| true).get_reachable().clone()
     }
 
     pub(crate) fn n_nodes(&self) -> usize {
         self.0.len()
+    }
+
+    pub(crate) fn capacity(&self) -> usize {
+        self.0.capacity()
     }
 }
