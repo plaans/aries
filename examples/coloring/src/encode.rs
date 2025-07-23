@@ -18,6 +18,7 @@ impl EncodedNode {
 
 pub struct Encoding {
     pub n_colors: IVar,
+    #[allow(unused)]
     pub nodes: Vec<EncodedNode>,
 }
 

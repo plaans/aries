@@ -40,6 +40,7 @@ impl Problem {
         res
     }
 
+    #[allow(unused)]
     pub fn check_solution(&self, proposed_solution: u32) {
         if let Some(solution) = self.solution {
             assert_eq!(solution, proposed_solution)
@@ -66,6 +67,6 @@ impl TryFrom<&str> for Node {
     type Error = ParseIntError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        usize::from_str_radix(value, 10).map(|u| u.into())
+        value.parse::<usize>().map(|u| u.into())
     }
 }
