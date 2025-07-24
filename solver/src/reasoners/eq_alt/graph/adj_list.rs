@@ -6,11 +6,12 @@ use std::{
 };
 
 use hashbrown::{HashMap, HashSet};
+use itertools::Itertools;
 
 use crate::{
     collections::{
         ref_store::{IterableRefMap, RefMap},
-        set::RefSet,
+        set::{IterableRefSet, RefSet},
     },
     reasoners::eq_alt::relation::EqRelation,
 };
@@ -216,5 +217,40 @@ impl<N: AdjNode> EqAdjList<N> {
 
     pub(crate) fn capacity(&self) -> usize {
         self.0.capacity()
+    }
+
+    #[allow(deprecated)]
+    pub fn print_stats(&self) {
+        println!("N nodes: {}", self.n_nodes());
+        println!("Capacity: {}", self.capacity());
+        println!("N edges: {}", self.iter_all_edges().count());
+        let mut reached: HashSet<(N, EqRelation)> = HashSet::new();
+        let mut group_sizes = vec![];
+        for (n, r) in self
+            .iter_nodes()
+            .cartesian_product(vec![EqRelation::Eq, EqRelation::Neq])
+        {
+            if reached.contains(&(n, r)) {
+                continue;
+            }
+            let mut group_size = 0_usize;
+            if r == EqRelation::Eq {
+                self.eq_or_neq_reachable_from(n).iter().for_each(|TaggedNode(np, rp)| {
+                    reached.insert((np, rp));
+                    group_size += 1;
+                });
+            } else {
+                self.eq_reachable_from(n).iter().for_each(|TaggedNode(np, _)| {
+                    reached.insert((np, EqRelation::Neq));
+                    group_size += 1;
+                });
+            }
+            group_sizes.push(group_size);
+        }
+        println!(
+            "Average group size: {}",
+            group_sizes.iter().sum::<usize>() / group_sizes.len()
+        );
+        println!("Maximum group size: {:?}", group_sizes.iter().max());
     }
 }

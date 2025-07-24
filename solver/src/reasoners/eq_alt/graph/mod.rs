@@ -246,6 +246,10 @@ impl<N: AdjNode> DirEqGraph<N> {
     pub fn iter_nodes(&self) -> impl Iterator<Item = N> + use<'_, N> {
         self.fwd_adj_list.iter_nodes()
     }
+
+    pub(crate) fn print_stats(&self) {
+        self.fwd_adj_list.print_stats();
+    }
 }
 
 impl<N: AdjNode + Display> DirEqGraph<N> {

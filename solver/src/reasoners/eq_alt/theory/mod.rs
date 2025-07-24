@@ -176,9 +176,9 @@ impl Theory for AltEqTheory {
         //     // self.undecided_graph.to_graphviz()
         // );
         self.stats.prop_count += 1;
-        let mut changed = false;
+        let mut propagated = false;
         while let Some(event) = self.pending_activations.pop_front() {
-            changed = true;
+            propagated = true;
             self.propagate_candidate(model, event.enabler, event.edge)?;
         }
         while let Some(event) = self.model_events.pop(model.trail()) {
@@ -188,7 +188,7 @@ impl Theory for AltEqTheory {
                 .collect::<Vec<_>>() // To satisfy borrow checker
                 .iter()
             {
-                changed = true;
+                propagated = true;
                 let prop = self.constraint_store.get_propagator(*prop_id);
                 if model.entails(prop.enabler.valid) {
                     self.constraint_store.mark_valid(*prop_id);
@@ -196,7 +196,7 @@ impl Theory for AltEqTheory {
                 self.propagate_candidate(model, *enabler, *prop_id)?;
             }
         }
-        if changed {
+        if propagated {
             // self.check_propagations(model);
         }
         Ok(())
