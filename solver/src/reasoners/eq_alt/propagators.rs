@@ -109,6 +109,7 @@ enum Event {
     PropagatorAdded,
     MarkedActive(PropagatorId),
     MarkedValid(PropagatorId),
+    EnablerAdded(PropagatorId),
 }
 
 #[derive(Clone, Default)]
@@ -124,12 +125,15 @@ impl PropagatorStore {
     pub fn add_propagator(&mut self, prop: Propagator) -> PropagatorId {
         self.trail.push(Event::PropagatorAdded);
         let id = self.propagators.len().into();
-        let enabler = prop.enabler;
         self.propagators.push(prop.clone());
+        id
+    }
 
+    pub fn watch_propagator(&mut self, id: PropagatorId, prop: Propagator) {
+        let enabler = prop.enabler;
         self.watches.add_watch((enabler, id), enabler.active);
         self.watches.add_watch((enabler, id), enabler.valid);
-        id
+        self.trail.push(Event::EnablerAdded(id));
     }
 
     pub fn get_propagator(&self, prop_id: PropagatorId) -> &Propagator {
@@ -193,12 +197,7 @@ impl Backtrack for PropagatorStore {
                 let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
                 // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
                 // self.propagators.remove(&last_prop_id);
-                let last_prop = self.propagators.pop().unwrap();
                 self.marked_active.remove(last_prop_id);
-                self.watches
-                    .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.active);
-                self.watches
-                    .remove_watch((last_prop.enabler, last_prop_id), last_prop.enabler.valid);
             }
             Event::MarkedActive(prop_id) => {
                 self.marked_active.remove(prop_id);
@@ -210,6 +209,11 @@ impl Backtrack for PropagatorStore {
                 if entry.is_empty() {
                     self.propagator_indices.remove(&(prop.a, prop.b));
                 }
+            }
+            Event::EnablerAdded(prop_id) => {
+                let prop = &self.propagators[prop_id];
+                self.watches.remove_watch((prop.enabler, prop_id), prop.enabler.active);
+                self.watches.remove_watch((prop.enabler, prop_id), prop.enabler.valid);
             }
         });
     }

@@ -68,8 +68,6 @@ pub struct AltEqTheory {
     constraint_store: PropagatorStore,
     /// Directed graph containt valid and active edges
     active_graph: DirEqGraph<Node>,
-    /// Used to quickly find an inactive edge between two nodes
-    // inactive_edges: HashMap<(Node, Node, EqRelation), Vec<Lit>>,
     model_events: ObsTrailCursor<ModelEvent>,
     pending_activations: VecDeque<ActivationEvent>,
     trail: Trail<Event>,
@@ -115,23 +113,31 @@ impl AltEqTheory {
 
         // Create and record propagators
         let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
-        let ab_enabler = ab_prop.enabler;
-        let ba_enabler = ba_prop.enabler;
-        let ab_id = self.constraint_store.add_propagator(ab_prop.clone());
-        let ba_id = self.constraint_store.add_propagator(ba_prop.clone());
-        self.active_graph.add_node(a.into());
-        self.active_graph.add_node(b);
+        for prop in [ab_prop, ba_prop] {
+            if model.entails(!prop.enabler.active) || model.entails(!prop.enabler.valid) {
+                continue;
+            }
+            let id = self.constraint_store.add_propagator(prop.clone());
+            self.active_graph.add_node(a.into());
+            self.active_graph.add_node(b);
 
-        // If the propagator is immediately valid, add to queue to be added to be propagated
-        if model.entails(ab_valid) {
-            self.constraint_store.mark_valid(ab_id);
-            self.pending_activations
-                .push_back(ActivationEvent::new(ab_id, ab_enabler));
-        }
-        if model.entails(ba_valid) {
-            self.constraint_store.mark_valid(ba_id);
-            self.pending_activations
-                .push_back(ActivationEvent::new(ba_id, ba_enabler));
+            if model.entails(prop.enabler.valid) && model.entails(prop.enabler.active) {
+                println!("{prop:?} enabled once");
+                // Propagator always active and valid, only need to propagate once
+                // So don't add watches
+                self.constraint_store.mark_valid(id);
+                self.pending_activations
+                    .push_back(ActivationEvent::new(id, prop.enabler));
+            } else if model.entails(prop.enabler.valid) {
+                println!("{prop:?} valid");
+                self.constraint_store.mark_valid(id);
+                self.pending_activations
+                    .push_back(ActivationEvent::new(id, prop.enabler));
+                self.constraint_store.watch_propagator(id, prop);
+            } else {
+                println!("{prop:?} undecided");
+                self.constraint_store.watch_propagator(id, prop);
+            }
         }
     }
 }
