@@ -4,6 +4,7 @@ members = [
     "solver",
     "env_param",
     "planning/model",
+    "planning/sched",
     "planning/planning",
     "planning/planners",
     "planning/grpc/api",

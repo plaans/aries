@@ -273,6 +273,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_sched"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries",
+ "env_param",
+ "fixedbitset 0.5.7",
+ "itertools 0.14.0",
+ "pathfinding",
+ "regex",
+ "streaming-iterator",
+ "tracing",
+]
+
+[[package]]
 name = "aries_scheduling"
 version = "0.1.0"
 dependencies = [

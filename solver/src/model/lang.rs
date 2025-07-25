@@ -13,6 +13,7 @@ mod sym;
 mod validity_scope;
 mod variables;
 
+pub use crate::core::Lit;
 pub use atom::Atom;
 pub use boolean::BVar;
 pub use cst::Cst;

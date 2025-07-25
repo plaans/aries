@@ -1,0 +1,18 @@
+[package]
+name = "aries_sched"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { workspace = true }
+fixedbitset = { workspace = true }
+itertools = { workspace = true }
+tracing = { workspace = true }
+streaming-iterator = { workspace = true }
+regex = { workspace = true }
+aries = { path = "../../solver" }
+env_param = { path = "../../env_param" }
+pathfinding = { workspace = true }
