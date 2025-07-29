@@ -15,12 +15,6 @@ impl<K: Ref> RefSet<K> {
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> RefSet<K> {
-        RefSet {
-            set: RefMap::with_capacity(capacity),
-        }
-    }
-
     #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
     pub fn len(&self) -> usize {
         #[allow(deprecated)]

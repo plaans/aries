@@ -397,15 +397,11 @@ impl<K, V> Default for RefMap<K, V> {
 }
 
 impl<K: Ref, V> RefMap<K, V> {
-    pub fn with_capacity(capacity: usize) -> RefMap<K, V> {
-        RefMap {
-            entries: Vec::with_capacity(capacity),
-            phantom: Default::default(),
-        }
-    }
-
     pub fn insert(&mut self, k: K, v: V) {
         let index = k.into();
+        if index > self.entries.len() {
+            self.entries.reserve_exact(index - self.entries.len());
+        }
         while self.entries.len() <= index {
             self.entries.push(None);
         }
@@ -449,7 +445,8 @@ impl<K: Ref, V> RefMap<K, V> {
         if index >= self.entries.len() {
             None
         } else {
-            self.entries[index].as_ref()
+            let res: &Option<V> = &self.entries[index];
+            res.as_ref()
         }
     }
 
@@ -458,9 +455,13 @@ impl<K: Ref, V> RefMap<K, V> {
         if index >= self.entries.len() {
             None
         } else {
-            self.entries[index].as_mut()
+            let res: &mut Option<V> = &mut self.entries[index];
+            res.as_mut()
         }
     }
+
+    // pub fn get_many_mut_or_insert<const N: usize>(&mut self, ks: [K; N], default: impl Fn() -> V) -> [&mut V; N] {}
+
     pub fn get_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &V {
         if !self.contains(k) {
             self.insert(k, default())
@@ -473,11 +474,6 @@ impl<K: Ref, V> RefMap<K, V> {
             self.insert(k, default())
         }
         &mut self[k]
-    }
-
-    /// Return len of entries
-    pub fn capacity(&self) -> usize {
-        self.entries.len()
     }
 
     #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
@@ -574,6 +570,11 @@ impl<K: Ref, V> IterableRefMap<K, V> {
         self.map.insert(k, v)
     }
 
+    pub fn remove(&mut self, k: K) {
+        self.map.remove(k);
+        self.keys.retain(|e| *e != k);
+    }
+
     /// Removes all elements from the Map.
     #[inline(never)]
     pub fn clear(&mut self) {
@@ -625,10 +626,6 @@ impl<K: Ref, V> IterableRefMap<K, V> {
 
     pub fn entries(&self) -> impl Iterator<Item = (K, &V)> {
         self.keys().map(|k| (k, &self.map[k]))
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.map.capacity()
     }
 }
 
