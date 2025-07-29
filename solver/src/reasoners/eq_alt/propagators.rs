@@ -34,14 +34,12 @@ impl Enabler {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ActivationEvent {
     /// the edge to enable
-    pub edge: PropagatorId,
-    /// The literals that enabled this edge to become active
-    pub enabler: Enabler,
+    pub prop_id: PropagatorId,
 }
 
 impl ActivationEvent {
-    pub(crate) fn new(edge: PropagatorId, enabler: Enabler) -> Self {
-        Self { edge, enabler }
+    pub(crate) fn new(prop_id: PropagatorId) -> Self {
+        Self { prop_id }
     }
 }
 

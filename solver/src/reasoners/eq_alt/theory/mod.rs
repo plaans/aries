@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use cause::ModelUpdateCause;
 
 use crate::{
-    backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
+    backtrack::{Backtrack, DecLvl, ObsTrailCursor},
     core::{
         state::{Domains, DomainsSnapshot, Explanation, InferenceCause},
         Lit, VarRef,
@@ -17,7 +17,7 @@ use crate::{
         eq_alt::{
             graph::DirEqGraph,
             node::Node,
-            propagators::{ActivationEvent, Propagator, PropagatorId, PropagatorStore},
+            propagators::{ActivationEvent, Propagator, PropagatorStore},
             relation::EqRelation,
         },
         stn::theory::Identity,
@@ -25,54 +25,16 @@ use crate::{
     },
 };
 
-use super::graph::Edge;
-
 type ModelEvent = crate::core::state::Event;
-
-#[derive(Clone, Copy)]
-enum Event {
-    EdgeActivated(PropagatorId),
-}
-
-#[allow(unused)]
-#[derive(Clone, Default)]
-struct AltEqStats {
-    prop_count: u32,
-    non_empty_prop_count: u32,
-    prop_candidate_count: u32,
-    expl_count: u32,
-    total_expl_length: u32,
-    edge_count: u32,
-    any_propped_this_iter: bool,
-}
-
-impl AltEqStats {
-    fn avg_prop_batch_size(&self) -> f32 {
-        self.prop_count as f32 / self.prop_candidate_count as f32
-    }
-
-    fn avg_expl_length(&self) -> f32 {
-        self.total_expl_length as f32 / self.expl_count as f32
-    }
-
-    fn print_stats(&self) {
-        println!("Prop count: {}", self.prop_count);
-        println!("Average prop batch size: {}", self.avg_prop_batch_size());
-        println!("Expl count: {}", self.expl_count);
-        println!("Average explanation length: {}", self.avg_expl_length());
-    }
-}
 
 #[derive(Clone)]
 pub struct AltEqTheory {
     constraint_store: PropagatorStore,
     /// Directed graph containt valid and active edges
-    active_graph: DirEqGraph<Node>,
+    active_graph: DirEqGraph,
     model_events: ObsTrailCursor<ModelEvent>,
     pending_activations: VecDeque<ActivationEvent>,
-    trail: Trail<Event>,
     identity: Identity<ModelUpdateCause>,
-    stats: AltEqStats,
 }
 
 impl AltEqTheory {
@@ -81,10 +43,8 @@ impl AltEqTheory {
             constraint_store: Default::default(),
             active_graph: DirEqGraph::new(),
             model_events: Default::default(),
-            trail: Default::default(),
             pending_activations: Default::default(),
             identity: Identity::new(ReasonerId::Eq(0)),
-            stats: Default::default(),
         }
     }
 
@@ -99,7 +59,6 @@ impl AltEqTheory {
     }
 
     fn add_edge(&mut self, l: Lit, a: VarRef, b: impl Into<Node>, relation: EqRelation, model: &Domains) {
-        self.stats.edge_count += 1;
         let b = b.into();
         let pa = model.presence(a);
         let pb = model.presence(b);
@@ -118,24 +77,17 @@ impl AltEqTheory {
                 continue;
             }
             let id = self.constraint_store.add_propagator(prop.clone());
-            self.active_graph.add_node(a.into());
-            self.active_graph.add_node(b);
 
             if model.entails(prop.enabler.valid) && model.entails(prop.enabler.active) {
-                println!("{prop:?} enabled once");
                 // Propagator always active and valid, only need to propagate once
                 // So don't add watches
                 self.constraint_store.mark_valid(id);
-                self.pending_activations
-                    .push_back(ActivationEvent::new(id, prop.enabler));
+                self.pending_activations.push_back(ActivationEvent::new(id));
             } else if model.entails(prop.enabler.valid) {
-                println!("{prop:?} valid");
                 self.constraint_store.mark_valid(id);
-                self.pending_activations
-                    .push_back(ActivationEvent::new(id, prop.enabler));
+                self.pending_activations.push_back(ActivationEvent::new(id));
                 self.constraint_store.watch_propagator(id, prop);
             } else {
-                println!("{prop:?} undecided");
                 self.constraint_store.watch_propagator(id, prop);
             }
         }
@@ -152,21 +104,16 @@ impl Backtrack for AltEqTheory {
     fn save_state(&mut self) -> DecLvl {
         assert!(self.pending_activations.is_empty());
         self.constraint_store.save_state();
-        self.trail.save_state()
+        self.active_graph.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
+        self.constraint_store.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.trail.restore_last_with(|event| match event {
-            Event::EdgeActivated(prop_id) => {
-                let edge = Edge::from_prop(prop_id, self.constraint_store.get_propagator(prop_id).clone());
-                self.active_graph.remove_edge(edge);
-            }
-        });
         self.constraint_store.restore_last();
+        self.active_graph.restore_last();
     }
 }
 
@@ -181,14 +128,13 @@ impl Theory for AltEqTheory {
         //     self.active_graph.to_graphviz(),
         //     // self.undecided_graph.to_graphviz()
         // );
-        self.stats.prop_count += 1;
         let mut propagated = false;
         while let Some(event) = self.pending_activations.pop_front() {
             propagated = true;
-            self.propagate_candidate(model, event.enabler, event.edge)?;
+            self.propagate_candidate(model, event.prop_id)?;
         }
         while let Some(event) = self.model_events.pop(model.trail()) {
-            for (enabler, prop_id) in self
+            for (_, prop_id) in self
                 .constraint_store
                 .enabled_by(event.new_literal())
                 .collect::<Vec<_>>() // To satisfy borrow checker
@@ -199,7 +145,7 @@ impl Theory for AltEqTheory {
                 if model.entails(prop.enabler.valid) {
                     self.constraint_store.mark_valid(*prop_id);
                 }
-                self.propagate_candidate(model, *enabler, *prop_id)?;
+                self.propagate_candidate(model, *prop_id)?;
             }
         }
         if propagated {
@@ -216,8 +162,6 @@ impl Theory for AltEqTheory {
         out_explanation: &mut Explanation,
     ) {
         // println!("{}", self.active_graph.to_graphviz());
-        let init_length = out_explanation.lits.len();
-        self.stats.expl_count += 1;
         use ModelUpdateCause::*;
 
         // Get the path which explains the inference
@@ -230,14 +174,10 @@ impl Theory for AltEqTheory {
 
         debug_assert!(path.iter().all(|e| model.entails(e.active)));
         self.explain_from_path(model, literal, cause, path, out_explanation);
-
-        // Q: Do we need to add presence literals to the explanation?
-        // A: Probably not
-        self.stats.total_expl_length += out_explanation.lits.len() as u32 - init_length as u32;
     }
 
     fn print_stats(&self) {
-        self.stats.print_stats();
+        // self.stats.print_stats();
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
