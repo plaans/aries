@@ -21,6 +21,7 @@ pub struct Stats {
     pub solve_cycles: CycleCount,
     pub num_decisions: u64,
     pub num_conflicts: u64,
+    pub num_dom_updates: u64,
     pub num_restarts: u64,
     pub num_solutions: u64,
     pub propagation_time: CycleCount,
@@ -33,6 +34,7 @@ pub struct Stats {
 pub struct ModuleStat {
     pub propagation_time: CycleCount,
     pub conflicts: u64,
+    pub dom_updates: u64,
     pub propagation_loops: u64,
 }
 
@@ -50,6 +52,7 @@ impl Stats {
             solve_cycles: CycleCount::zero(),
             num_decisions: 0,
             num_conflicts: 0,
+            num_dom_updates: 0,
             num_restarts: 0,
             num_solutions: 0,
             propagation_time: CycleCount::zero(),
@@ -115,11 +118,19 @@ impl Default for Stats {
 
 impl Display for Stats {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        fn number(f: &mut Formatter<'_>, format_str: &str, n: u64) -> Result<(), Error> {
+            write!(f, "{}", format_num::format_num!(format_str, n as f64))
+        }
         fn label(f: &mut Formatter<'_>, label: &str) -> Result<(), Error> {
             write!(f, "{label:<20}: ")
         }
         fn val_throughput(f: &mut Formatter<'_>, value: u64, time: &Duration) -> Result<(), Error> {
-            write!(f, "{:<12} ({:.0} /sec)", value, (value as f64) / time.as_secs_f64())
+            number(f, "<12,.3d", value)?;
+            write!(
+                f,
+                " ({} /sec)",
+                format_num::format_num!(".3s", (value as f64) / time.as_secs_f64())
+            )
         }
         fn new_line(f: &mut Formatter<'_>) -> Result<(), Error> {
             f.write_str("\n")
@@ -139,6 +150,10 @@ impl Display for Stats {
         val_throughput(f, self.num_conflicts, &self.solve_time)?;
         new_line(f)?;
 
+        label(f, "dom-updates")?;
+        val_throughput(f, self.num_dom_updates, &self.solve_time)?;
+        new_line(f)?;
+
         writeln!(f, "================= ")?;
         label(f, "Solvers")?;
         for i in self.per_module_stat.keys() {
@@ -147,7 +162,7 @@ impl Display for Stats {
 
         if SUPPORT_CPU_TIMING {
             new_line(f)?;
-            label(f, "% propagation cycles")?;
+            label(f, "% CPU (propagation)")?;
             for ms in self.per_module_stat.values() {
                 let portion = format!("{}", ms.propagation_time / self.propagation_time);
                 write!(f, "{portion:>15}")?;
@@ -156,12 +171,17 @@ impl Display for Stats {
         new_line(f)?;
         label(f, "# propagation loops")?;
         for ms in self.per_module_stat.values() {
-            write!(f, "{:>15}", ms.propagation_loops)?;
+            number(f, ">15,.3d", ms.propagation_loops)?;
+        }
+        new_line(f)?;
+        label(f, "# bound updates")?;
+        for ms in self.per_module_stat.values() {
+            number(f, ">15,.3d", ms.dom_updates)?;
         }
         new_line(f)?;
         label(f, "# conflicts")?;
         for ms in self.per_module_stat.values() {
-            write!(f, "{:>15}", ms.conflicts)?;
+            number(f, ">15,.3d", ms.conflicts)?;
         }
 
         writeln!(f, "\n================= ")?;

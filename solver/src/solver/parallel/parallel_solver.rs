@@ -1,3 +1,4 @@
+use crate::core::IntCst;
 use crate::core::Lit;
 use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
@@ -17,6 +18,7 @@ pub struct ParSolver<Lbl> {
 
 pub type Solution = Arc<SavedAssignment>;
 
+#[derive(Clone)]
 pub enum SolverResult<Solution> {
     /// The solver terminated with a solution.
     Sol(Solution),
@@ -132,7 +134,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
                             res = Err(unsat_core);
                         }
                     }
-                },
+                }
             }
         }
         res
@@ -147,21 +149,32 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// Currently, as a workaround, pushing assumptions should be done in the `adapt` closure given to `new`.
     pub fn incremental_solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
         debug_assert!(
-            self.solvers.iter()
+            self.solvers
+                .iter()
                 .map(|s| match s {
-                        Worker::Running(_) => panic!(),
-                        Worker::Halting => panic!(),
-                        Worker::Idle(s) => s.model.state.assumptions(),
-                    }
-                )
+                    Worker::Running(_) => panic!(),
+                    Worker::Halting => panic!(),
+                    Worker::Idle(s) => s.model.state.assumptions(),
+                })
                 .all_equal(),
             "Workers need to have the same assumptions pushed into them",
         );
-        self.race_solvers(|s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))), |_| {}, deadline)
+        self.race_solvers(
+            |s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))),
+            |_| {},
+            deadline,
+        )
     }
 
-    pub fn solve_with_assumptions(&mut self, assumptions: Vec<Lit>, deadline: Option<Instant>) -> SolverResult<Solution> {
-        let run = move |s: &mut Solver<Lbl>| s.solve_with_assumptions(assumptions.iter().copied().collect_vec()).map(|res| res.map_err(|uc: UnsatCore| Some(uc)));
+    pub fn solve_with_assumptions(
+        &mut self,
+        assumptions: Vec<Lit>,
+        deadline: Option<Instant>,
+    ) -> SolverResult<Solution> {
+        let run = move |s: &mut Solver<Lbl>| {
+            s.solve_with_assumptions(assumptions.iter().as_slice())
+                .map(|res| res.map_err(|uc: UnsatCore| Some(uc)))
+        };
         self.race_solvers(run, |_| {}, deadline)
     }
 
@@ -191,6 +204,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         on_improved_solution: impl Fn(Solution),
+        initial_solution: Option<(IntCst, Solution)>,
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let objective = objective.into();
@@ -211,7 +225,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
             }
         };
         self.race_solvers(
-            move |s| match s.minimize(objective) {
+            move |s| match s.minimize_with_optional_initial_solution(objective, initial_solution.clone()) {
                 Ok(Some((_cost, sol))) => Ok(Ok(sol)),
                 Ok(None) => Ok(Err(None)),
                 Err(x) => Err(x),
@@ -256,7 +270,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         for (i, worker) in self.solvers.iter_mut().enumerate() {
             let solver = worker.extract().expect("A solver is already busy");
             solvers_inputs.push(solver.input_stream());
-            (spawn.clone())(i, solver, result_snd.clone());
+            spawn.clone()(i, solver, result_snd.clone());
         }
 
         let mut status = SolverStatus::Pending;

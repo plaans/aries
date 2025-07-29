@@ -10,6 +10,8 @@ use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, Explana
 use crate::core::*;
 use std::fmt::{Debug, Formatter};
 
+use super::IntDomain;
+
 #[cfg(debug_assertions)]
 pub mod witness;
 
@@ -157,6 +159,12 @@ impl Domains {
         }
     }
 
+    /// Returns the domain of an integer variable (ignoring its presence status)
+    pub fn int_domain(&self, var: impl Into<VarRef>) -> IntDomain {
+        let (lb, ub) = self.bounds(var.into());
+        IntDomain::new(lb, ub)
+    }
+
     // ============== Integer domain accessors =====================
 
     pub fn bounds(&self, v: VarRef) -> (IntCst, IntCst) {
@@ -212,9 +220,9 @@ impl Domains {
     /// The function returns:
     ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain.
     ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
-    ///     provided bound is less constraining than the existing one.
+    ///    provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
-    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_lb(&mut self, var: impl Into<SignedVar>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         // var >= lb   <=>    -var <= -lb
@@ -228,9 +236,9 @@ impl Domains {
     /// The function returns:
     ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain
     ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
-    ///     provided bound is less constraining than the existing one.
+    ///    provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
-    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
     pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
         self.set_upper_bound(var.into(), new_ub, cause)
@@ -719,17 +727,13 @@ impl Domains {
     /// For a literal `l` that is true in the current state, returns a list of entailing literals `l_1 ... l_n`
     /// that forms an explanation `(l_1 & ... l_n) => l`.
     /// Returns None if the literal is a decision.
-    ///
-    /// Limitation: differently from the explanations provided in the main clause construction loop,
-    /// the explanation will not be built in the exact state where the inference was made (which might be problematic
-    /// for some reasoners).
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));
         let event = if let Some(event) = self.implying_event(literal) {
             event
         } else {
-            // event is always true (entailed at root), and does have any implying literals
+            // event is always true (entailed at root), and thus does not have any implying literals
             return Some(Vec::new());
         };
         let event = self.get_event(event);
@@ -749,7 +753,6 @@ impl Domains {
                 &mut explanation,
                 explainer,
             );
-
             Some(explanation.lits)
         }
     }

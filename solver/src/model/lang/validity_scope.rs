@@ -5,7 +5,7 @@ use crate::core::Lit;
 ///
 /// It is composed of:
 /// - `required_presence`: the set of presence literals of all variables that appear in the expression
-/// - `guards`: a set of literals such that if one of them is true, the expression is defined.  
+/// - `guards`: a set of literals such that if one of them is true, the expression is defined.
 ///
 /// # Example (no guards)
 ///
@@ -29,7 +29,7 @@ use crate::core::Lit;
 ///
 /// # Flattening to a conjunction of literals
 ///
-/// The [`ValidityScope::flatten`] method allows transforming a `ValidityScope` into a conjunction
+/// The [`ValidityScope::to_conjunction`] method allows transforming a `ValidityScope` into a conjunction
 /// of literals that must hold for the expression to be defined.
 #[derive(Debug)]
 pub struct ValidityScope {
@@ -56,7 +56,7 @@ impl ValidityScope {
     ///
     /// - `flattened`: if the given literal `l` is defined as a conjunction of literals `[l1, l2, ... ln]`,
     ///   it must return a iterator over them. Returns `None` otherwise.
-    /// - `tautology`: Returns true if the given literal always holds.   
+    /// - `tautology`: Returns true if the given literal always holds.
     pub fn to_conjunction<Lits: IntoIterator<Item = Lit>>(
         &self,
         flattened: impl Fn(Lit) -> Option<Lits>,

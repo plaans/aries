@@ -1,0 +1,17 @@
+a = [false, false, false];
+----------
+a = [false, false, true];
+----------
+a = [false, true, false];
+----------
+a = [false, true, true];
+----------
+a = [true, false, false];
+----------
+a = [true, false, true];
+----------
+a = [true, true, false];
+----------
+a = [true, true, true];
+----------
+==========

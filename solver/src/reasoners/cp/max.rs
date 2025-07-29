@@ -16,13 +16,13 @@ impl MaxElem {
     }
 }
 
-/// Propagator for a constraint that enforces that at least on element from the RHS is present and greater than or
+/// Propagator for a constraint that enforces that at least one element from the RHS is present and greater than or
 /// equal to the element at the LHS. The scope of the propagator is the presence of the LHS.
 ///
 /// Constraint:  `prez(lhs)   =>    OR_i  prez(rhs[i]) & (rhs[i] >= lhs)`
 /// Assumes that:   `forall i , prez(rhs[i]) => prez(lhs)`  i.e.  RHS elements are in the (sub?)scope of LHS
 ///
-/// This is not sufficient to implement a propagator of the Max constraint and is only used as of several propagators in a decomposition.
+/// This is not sufficient to implement a propagator of the Max constraint and is only used as one of several propagators in a decomposition.
 #[derive(Clone)]
 pub(crate) struct AtLeastOneGeq {
     /// presence of LHS and scope of the constraint

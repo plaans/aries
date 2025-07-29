@@ -833,6 +833,9 @@ pub struct PlanRequest {
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
+    /// Plan that can be used to warm start the search.
+    #[prost(message, optional, tag = "5")]
+    pub warm_start_plan: ::core::option::Option<Plan>,
 }
 /// Nested message and enum types in `PlanRequest`.
 pub mod plan_request {

@@ -9,7 +9,6 @@ use crate::model::{Label, Model};
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 use env_param::EnvParam;
-use itertools::Itertools;
 use std::sync::Arc;
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");
@@ -20,7 +19,10 @@ pub static USE_LNS: EnvParam<bool> = EnvParam::new("ARIES_ACTIVITY_USES_LNS", "t
 
 #[derive(Clone)]
 pub struct BranchingParams {
+    /// Set the default polarity of the variables
     pub prefer_min_value: bool,
+    /// If true, once a solution is found, the brancher will prefer the value from the last solution
+    pub solution_guidance: bool,
     pub allowed_conflicts: u64,
     pub increase_ratio_for_allowed_conflicts: f32,
 }
@@ -29,6 +31,7 @@ impl Default for BranchingParams {
     fn default() -> Self {
         BranchingParams {
             prefer_min_value: PREFER_MIN_VALUE.get(),
+            solution_guidance: USE_LNS.get(),
             allowed_conflicts: INITIALLY_ALLOWED_CONFLICTS.get(),
             increase_ratio_for_allowed_conflicts: INCREASE_RATIO_FOR_ALLOWED_CONFLICTS.get(),
         }
@@ -62,7 +65,7 @@ pub struct ActivityBrancher<Lbl> {
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
     /// Associates presence literals to the optional variables
-    /// Essentially a Map<Lit, Set<VarRef>>
+    /// Essentially a `Map<Lit, Set<VarRef>>`
     presences: Watches<VarRef>,
     cursor: ObsTrailCursor<Event>,
 }
@@ -107,28 +110,24 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
     }
 
     pub fn import_vars(&mut self, model: &Model<Lbl>) {
-        if self.num_processed_var < model.state.num_variables() {
-            let mut count = 0;
-            // go through the model's variables and declare any newly declared variable
-            // TODO: use `advance_by` when it is stabilized. The current usage of `dropping` is very expensive
-            //       when compiled without opt-level=3. advance_by should be easier to optimize but dropping will
-            //       have to wait to adopt it. [Tracking issue](https://github.com/rust-lang/rust/issues/77404)
-            for var in model.state.variables().dropping(self.num_processed_var) {
-                debug_assert!(!self.heap.is_declared(var));
-                let prez = model.presence_literal(var);
-                self.heap.declare_variable(var, self.priority(var, model), None);
-                // remember that, when `prez` becomes true we must enqueue the variable
-                self.presences.add_watch(var, prez);
+        let mut count = 0;
+        // go through the model's variables and declare any newly declared variable
+        let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(VarRef::from);
+        for var in unprocessed_vars {
+            debug_assert!(!self.heap.is_declared(var));
+            let prez = model.presence_literal(var);
+            self.heap.declare_variable(var, self.priority(var, model), None);
+            // remember that, when `prez` becomes true we must enqueue the variable
+            self.presences.add_watch(var, prez);
 
-                // `prez` is already true, enqueue the variable immediately
-                if model.entails(prez) {
-                    self.heap.enqueue_variable(var);
-                }
-                count += 1;
+            // `prez` is already true, enqueue the variable immediately
+            if model.entails(prez) {
+                self.heap.enqueue_variable(var);
             }
-            self.num_processed_var += count;
-            debug_assert_eq!(self.num_processed_var, model.state.num_variables());
+            count += 1;
         }
+        self.num_processed_var += count;
+
         // process all new events and enqueue the variables that became present
         while let Some(x) = self.cursor.pop(model.state.trail()) {
             for var in self.presences.watches_on(x.new_literal()) {
@@ -476,7 +475,7 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
             .objective_found
             .map(|prev| objective < prev)
             .unwrap_or(true);
-        if USE_LNS.get() && is_improvement {
+        if self.params.solution_guidance && is_improvement {
             self.default_assignment.objective_found = Some(objective);
             for (var, val) in assignment.bound_variables() {
                 self.set_default_value(var, val);
