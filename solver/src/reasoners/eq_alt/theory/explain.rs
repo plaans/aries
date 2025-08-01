@@ -63,7 +63,7 @@ impl AltEqTheory {
         let cause = traversal
             .find(|TaggedNode(id, _)| {
                 let n = self.active_graph.get_node(*id);
-                let (lb, ub) = model.get_node_bounds(&n);
+                let (lb, ub) = model.node_bounds(&n);
                 literal.svar().is_plus() && literal.variable().leq(ub).entails(literal)
                     || literal.svar().is_minus() && literal.variable().geq(lb).entails(literal)
             })
@@ -90,7 +90,7 @@ impl AltEqTheory {
                 *r == EqRelation::Neq && {
                     let n = self.active_graph.get_node(*id);
                     // If node is bound to a value
-                    if let Some(bound) = model.get_node_bound(&n) {
+                    if let Some(bound) = model.node_bound(&n) {
                         prev_ub == bound || prev_lb == bound
                     } else {
                         false

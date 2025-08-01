@@ -194,30 +194,43 @@ mod tests {
             IntCst,
         },
     };
+    use std::fmt::Debug;
 
     use super::*;
 
-    fn test_with_backtrack<F>(mut f: F, eq: &mut AltEqTheory, model: &mut Domains)
+    fn test_with_backtrack<T, F>(mut f: F, eq: &mut AltEqTheory, model: &mut Domains) -> T
     where
-        F: FnMut(&mut AltEqTheory, &mut Domains),
+        T: Eq + Debug,
+        F: FnMut(&mut AltEqTheory, &mut Domains) -> T,
     {
-        // TODO: reenable by making sure there are no pending activations when saving state
-        // eq.save_state();
-        // model.save_state();
-        // f(eq, model);
-        // eq.restore_last();
-        // model.restore_last();
-        f(eq, model);
+        assert!(
+            eq.pending_activations.is_empty(),
+            "Cannot test backtrack when activations pending"
+        );
+        eq.save_state();
+        model.save_state();
+        let res1 = f(eq, model);
+        eq.restore_last();
+        model.restore_last();
+        let res2 = f(eq, model);
+        assert_eq!(res1, res2);
+        res1
     }
 
     impl Domains {
         fn new_bool(&mut self) -> Lit {
             self.new_var(0, 1).geq(1)
         }
+
+        fn cursor_at_end(&self) -> ObsTrailCursor<crate::core::state::Event> {
+            let mut cursor = ObsTrailCursor::new();
+            cursor.move_to_end(self.trail());
+            cursor
+        }
     }
 
     fn expect_explanation(
-        cursor: &mut ObsTrailCursor<crate::core::state::Event>,
+        mut cursor: ObsTrailCursor<crate::core::state::Event>,
         eq: &mut AltEqTheory,
         model: &Domains,
         lit: Lit,
@@ -238,6 +251,144 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_eq_domain_prop() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+
+        let a_prez = model.new_bool();
+        let b_prez = model.new_bool();
+        let a = model.new_optional_var(0, 10, a_prez);
+        let b = model.new_optional_var(1, 9, b_prez);
+        let c = model.new_var(2, 8);
+        let lab = model.new_bool();
+        let lbc = model.new_bool();
+        let la5 = model.new_bool();
+
+        eq.add_half_reified_eq_edge(lab, a, b, &model);
+        eq.add_half_reified_eq_edge(lbc, b, c, &model);
+        eq.add_half_reified_eq_edge(la5, a, 5, &model);
+        eq.propagate(&mut model).unwrap();
+
+        model.set(b_prez, Cause::Decision).unwrap();
+        eq.propagate(&mut model).unwrap();
+        assert_eq!(model.bounds(a), (0, 10));
+        assert_eq!(model.bounds(b), (1, 9));
+
+        test_with_backtrack(
+            |eq, model| {
+                model.set(lab, Cause::Decision).unwrap();
+                eq.propagate(model).unwrap();
+                assert_eq!(model.bounds(a), (1, 9));
+                assert_eq!(model.bounds(b), (1, 9));
+            },
+            &mut eq,
+            &mut model,
+        );
+
+        test_with_backtrack(
+            |eq, model| {
+                model.set(lbc, Cause::Decision).unwrap();
+                eq.propagate(model).unwrap();
+                let cursor = model.cursor_at_end();
+                assert_eq!(model.bounds(a), (2, 8));
+                assert_eq!(model.bounds(b), (2, 8));
+                assert_eq!(model.bounds(c), (2, 8));
+                expect_explanation(cursor, eq, model, a.leq(8), vec![lab, lbc, c.leq(8)]);
+            },
+            &mut eq,
+            &mut model,
+        );
+
+        test_with_backtrack(
+            |eq, model| {
+                model.set(la5, Cause::Decision).unwrap();
+                let cursor = model.cursor_at_end();
+                eq.propagate(model).unwrap();
+                assert_eq!(model.bounds(a), (5, 5));
+                assert_eq!(model.bounds(b), (2, 8));
+                assert_eq!(model.bounds(c), (2, 8));
+                expect_explanation(cursor, eq, model, a.leq(5), vec![la5]);
+            },
+            &mut eq,
+            &mut model,
+        );
+    }
+
+    #[test]
+    fn test_neq_domain_prop() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+
+        let a_prez = model.new_bool();
+        let a = model.new_optional_var(0, 10, a_prez);
+        let l1 = model.new_bool();
+        let l2 = model.new_bool();
+        let l3 = model.new_bool();
+        let l4 = model.new_bool();
+
+        eq.add_half_reified_neq_edge(l1, a, 10, &model);
+        eq.add_half_reified_neq_edge(l2, a, 0, &model);
+        eq.add_half_reified_neq_edge(l3, a, 5, &model);
+        eq.add_half_reified_neq_edge(l4, a, 9, &model);
+
+        eq.propagate(&mut model).unwrap();
+
+        test_with_backtrack(
+            |eq, model| {
+                model.set(l3, Cause::Decision).unwrap();
+                eq.propagate(model).unwrap();
+                assert_eq!(model.bounds(a), (0, 10));
+            },
+            &mut eq,
+            &mut model,
+        );
+
+        test_with_backtrack(
+            |eq, model| {
+                // FIXME: Swapping these two lines causes test to fail.
+                // Need to figure out some solution
+                model.set(l1, Cause::Decision).unwrap();
+                model.set(l4, Cause::Decision).unwrap();
+                model.set(l2, Cause::Decision).unwrap();
+                eq.propagate(model).unwrap();
+                assert_eq!(model.bounds(a), (1, 8));
+            },
+            &mut eq,
+            &mut model,
+        );
+    }
+
+    #[test]
+    fn test_neq_cycle_prop() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+
+        let a = model.new_var(0, 1);
+        let b = model.new_var(0, 1);
+        let c = model.new_var(0, 1);
+        let lab = model.new_bool();
+        let lbc = model.new_bool();
+        let lca = model.new_bool();
+        eq.add_half_reified_eq_edge(lab, a, b, &model);
+        eq.add_half_reified_eq_edge(lbc, b, c, &model);
+        eq.add_half_reified_neq_edge(lca, c, a, &model);
+        eq.propagate(&mut model).unwrap();
+
+        test_with_backtrack(
+            |eq, model| {
+                let cursor = model.cursor_at_end();
+                model.set(lab, Cause::Decision).unwrap();
+                model.set(lbc, Cause::Decision).unwrap();
+                eq.propagate(model).unwrap();
+                println!("{}", eq.active_graph.to_graphviz());
+                assert!(model.entails(!lca));
+                expect_explanation(cursor, eq, model, !lca, vec![lab, lbc]);
+            },
+            &mut eq,
+            &mut model,
+        );
+    }
     /// 0 <= a <= 10 && l => a == 5
     /// No propagation until l true
     /// l => a == 4 given invalid update
@@ -245,24 +396,23 @@ mod tests {
     fn test_var_eq_const() {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
-        let mut cursor = ObsTrailCursor::new();
 
         let l = model.new_bool();
         let a = model.new_var(0, 10);
         eq.add_half_reified_eq_edge(l, a, 5, &model);
-        cursor.move_to_end(model.trail());
+        let cursor = model.cursor_at_end();
         assert!(eq.propagate(&mut model).is_ok());
         assert_eq!(model.ub(a), 10);
         assert!(model.set(l, Cause::Decision).unwrap_or(false));
         assert!(eq.propagate(&mut model).is_ok());
         assert_eq!(model.ub(a), 5);
-        expect_explanation(&mut cursor, &mut eq, &model, a.leq(5), vec![l]);
+        expect_explanation(cursor, &mut eq, &model, a.leq(5), vec![l]);
         eq.add_half_reified_eq_edge(l, a, 4, &model);
-        cursor.move_to_end(model.trail());
+        let cursor = model.cursor_at_end();
         assert!(eq
             .propagate(&mut model)
             .is_err_and(|e| matches!(e, Contradiction::InvalidUpdate(InvalidUpdate(l,_ )) if l == a.leq(4))));
-        expect_explanation(&mut cursor, &mut eq, &model, a.leq(4), vec![l]);
+        expect_explanation(cursor, &mut eq, &model, a.leq(4), vec![l]);
     }
 
     #[test]

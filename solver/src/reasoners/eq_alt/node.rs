@@ -43,14 +43,14 @@ impl Display for Node {
 }
 
 impl Domains {
-    pub(super) fn get_node_bound(&self, n: &Node) -> Option<IntCst> {
+    pub(super) fn node_bound(&self, n: &Node) -> Option<IntCst> {
         match *n {
             Node::Var(v) => self.get_bound(v),
             Node::Val(v) => Some(v),
         }
     }
 
-    pub(super) fn get_node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
+    pub(super) fn node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
         match *n {
             Node::Var(v) => self.bounds(v),
             Node::Val(v) => (v, v),
@@ -59,14 +59,14 @@ impl Domains {
 }
 
 impl DomainsSnapshot<'_> {
-    pub(super) fn get_node_bound(&self, n: &Node) -> Option<IntCst> {
+    pub(super) fn node_bound(&self, n: &Node) -> Option<IntCst> {
         match *n {
             Node::Var(v) => self.get_bound(v),
             Node::Val(v) => Some(v),
         }
     }
 
-    pub(super) fn get_node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
+    pub(super) fn node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
         match *n {
             Node::Var(v) => self.bounds(v),
             Node::Val(v) => (v, v),

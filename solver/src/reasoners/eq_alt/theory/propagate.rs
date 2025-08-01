@@ -133,7 +133,9 @@ impl AltEqTheory {
         }
 
         if model.entails(edge.active) {
+            dbg!(&path);
             if let Some((id, back_prop)) = self.find_back_edge(model, false, &path, EqRelation::Neq) {
+                dbg!("Found back edge");
                 model.set(
                     !back_prop.enabler.active,
                     self.identity.inference(ModelUpdateCause::NeqCycle(id)),
@@ -225,7 +227,7 @@ impl AltEqTheory {
     /// Propagate `s` and `t`'s bounds if s -=-> t
     fn propagate_eq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
         let cause = self.identity.inference(ModelUpdateCause::DomEq);
-        let s_bounds = model.get_node_bounds(&s);
+        let s_bounds = model.node_bounds(&s);
         if let Node::Var(t) = t {
             model.set_lb(t, s_bounds.0, cause)?;
             model.set_ub(t, s_bounds.1, cause)?;
@@ -241,7 +243,7 @@ impl AltEqTheory {
         // If source domain is fixed and ub or lb of target == source lb, exclude that value
         debug_assert_ne!(s, t);
 
-        if let Some(bound) = model.get_node_bound(&s) {
+        if let Some(bound) = model.node_bound(&s) {
             if let Node::Var(t) = t {
                 if model.ub(t) == bound {
                     model.set_ub(t, bound - 1, cause)?;
