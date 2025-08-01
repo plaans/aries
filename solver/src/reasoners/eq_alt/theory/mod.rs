@@ -187,7 +187,6 @@ impl Theory for AltEqTheory {
 
 #[cfg(test)]
 mod tests {
-
     use crate::{
         collections::seq::Seq,
         core::{
@@ -247,6 +246,7 @@ mod tests {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
         let mut cursor = ObsTrailCursor::new();
+
         let l = model.new_bool();
         let a = model.new_var(0, 10);
         eq.add_half_reified_eq_edge(l, a, 5, &model);
@@ -587,6 +587,10 @@ mod tests {
         assert_eq!(model.lb(var2), 1)
     }
 
+    // var1 != (l) var2
+    // var1 == con
+    // var2 == con
+    // Check !l
     #[test]
     fn test_bug_3() {
         let mut model = Domains::new();

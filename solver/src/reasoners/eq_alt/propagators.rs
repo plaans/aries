@@ -168,8 +168,6 @@ impl PropagatorStore {
         self.marked_active.contains(*prop_id)
     }
 
-    /// Marks prop as active, unmarking it as undecided in the process
-    /// Returns true if change was made, else false
     pub fn mark_active(&mut self, prop_id: PropagatorId) {
         self.trail.push(Event::MarkedActive(prop_id));
         self.marked_active.insert(prop_id)

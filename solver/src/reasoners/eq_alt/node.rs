@@ -24,17 +24,6 @@ impl From<IntCst> for Node {
     }
 }
 
-impl TryInto<VarRef> for Node {
-    type Error = IntCst;
-
-    fn try_into(self) -> Result<VarRef, Self::Error> {
-        match self {
-            Node::Var(v) => Ok(v),
-            Node::Val(v) => Err(v),
-        }
-    }
-}
-
 impl Term for Node {
     fn variable(self) -> VarRef {
         match self {
@@ -54,14 +43,14 @@ impl Display for Node {
 }
 
 impl Domains {
-    pub fn get_node_bound(&self, n: &Node) -> Option<IntCst> {
+    pub(super) fn get_node_bound(&self, n: &Node) -> Option<IntCst> {
         match *n {
             Node::Var(v) => self.get_bound(v),
             Node::Val(v) => Some(v),
         }
     }
 
-    pub fn get_node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
+    pub(super) fn get_node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
         match *n {
             Node::Var(v) => self.bounds(v),
             Node::Val(v) => (v, v),
@@ -70,14 +59,14 @@ impl Domains {
 }
 
 impl DomainsSnapshot<'_> {
-    pub fn get_node_bound(&self, n: &Node) -> Option<IntCst> {
+    pub(super) fn get_node_bound(&self, n: &Node) -> Option<IntCst> {
         match *n {
             Node::Var(v) => self.get_bound(v),
             Node::Val(v) => Some(v),
         }
     }
 
-    pub fn get_node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
+    pub(super) fn get_node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
         match *n {
             Node::Var(v) => self.bounds(v),
             Node::Val(v) => (v, v),

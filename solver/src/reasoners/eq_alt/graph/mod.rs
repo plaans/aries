@@ -1,258 +1,277 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
+use folds::{EqFold, EqOrNeqFold, ReducingFold};
 use itertools::Itertools;
+use node_store::{GroupId, NodeStore};
+use subsets::MergedGraph;
 pub use traversal::TaggedNode;
+use traversal::{Fold, NodeTag};
 
+use crate::backtrack::{Backtrack, DecLvl, Trail};
+use crate::collections::set::RefSet;
 use crate::core::Lit;
-use crate::reasoners::eq_alt::graph::{
-    adj_list::{AdjNode, EqAdjList},
-    traversal::GraphTraversal,
-};
+use crate::create_ref_type;
+use crate::reasoners::eq_alt::graph::{adj_list::EqAdjList, traversal::GraphTraversal};
 
 use super::node::Node;
-use super::propagators::{Propagator, PropagatorId};
+use super::propagators::Propagator;
 use super::relation::EqRelation;
 
 mod adj_list;
-mod traversal;
+pub mod folds;
+mod node_store;
+pub mod subsets;
+pub mod traversal;
 
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
-pub struct Edge<N: AdjNode> {
-    pub source: N,
-    pub target: N,
-    pub active: Lit,
-    pub relation: EqRelation,
-    pub prop_id: PropagatorId,
-}
+create_ref_type!(NodeId);
 
-impl Edge<Node> {
-    pub fn from_prop(prop_id: PropagatorId, prop: Propagator) -> Self {
-        Self {
-            prop_id,
-            source: prop.a,
-            target: prop.b,
-            active: prop.enabler.active,
-            relation: prop.relation,
-        }
+impl Display for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(&self, f)
     }
 }
 
-impl<N: AdjNode> Edge<N> {
-    pub fn new(source: N, target: N, active: Lit, relation: EqRelation, prop_id: PropagatorId) -> Self {
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+pub struct IdEdge {
+    pub source: NodeId,
+    pub target: NodeId,
+    pub active: Lit,
+    pub relation: EqRelation,
+}
+
+impl IdEdge {
+    fn new(source: NodeId, target: NodeId, active: Lit, relation: EqRelation) -> Self {
         Self {
             source,
             target,
             active,
             relation,
-            prop_id,
         }
     }
 
     /// Should only be used for reverse adjacency graph. Propagator id is not reversed.
-    pub fn reverse(&self) -> Self {
-        Edge {
+    fn reverse(&self) -> Self {
+        IdEdge {
             source: self.target,
             target: self.source,
             active: self.active,
             relation: self.relation,
-            prop_id: self.prop_id,
         }
     }
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct DirEqGraph<N: AdjNode> {
-    fwd_adj_list: EqAdjList<N>,
-    rev_adj_list: EqAdjList<N>,
+#[derive(Clone)]
+enum Event {
+    EdgeAdded(IdEdge),
 }
 
-/// Directed pair of nodes with a == or != relation
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub struct NodePair<N> {
-    pub source: N,
-    pub target: N,
-    pub relation: EqRelation,
+#[derive(Clone, Default)]
+pub(super) struct DirEqGraph {
+    pub node_store: NodeStore,
+    fwd_adj_list: EqAdjList,
+    rev_adj_list: EqAdjList,
+    trail: Trail<Event>,
 }
 
-impl<N> NodePair<N> {
-    pub fn new(source: N, target: N, relation: EqRelation) -> Self {
-        Self {
-            source,
-            target,
-            relation,
-        }
-    }
-}
-
-impl<N> From<(N, N, EqRelation)> for NodePair<N> {
-    fn from(val: (N, N, EqRelation)) -> Self {
-        NodePair {
-            source: val.0,
-            target: val.1,
-            relation: val.2,
-        }
-    }
-}
-
-impl<N: AdjNode> DirEqGraph<N> {
+impl DirEqGraph {
     pub fn new() -> Self {
-        Self {
-            fwd_adj_list: EqAdjList::new(),
-            rev_adj_list: EqAdjList::new(),
+        Default::default()
+    }
+
+    /// Add node to graph if not present. Returns the id of the Node.
+    pub fn insert_node(&mut self, node: Node) -> NodeId {
+        self.node_store
+            .get_id(&node)
+            .unwrap_or_else(|| self.node_store.insert_node(node))
+    }
+
+    /// Get node from id.
+    ///
+    /// # Panics
+    ///
+    /// Panics if node with `id` is not in graph.
+    pub fn get_node(&self, id: NodeId) -> Node {
+        self.node_store.get_node(id)
+    }
+
+    pub fn get_id(&self, node: &Node) -> Option<NodeId> {
+        self.node_store.get_id(node)
+    }
+
+    /// Returns an edge from a propagator without adding it to the graph.
+    ///
+    /// Adds the nodes to the graph if they are not present.
+    pub fn create_edge(&mut self, prop: &Propagator) -> IdEdge {
+        let source_id = self.insert_node(prop.a);
+        let target_id = self.insert_node(prop.b);
+        IdEdge::new(source_id, target_id, prop.enabler.active, prop.relation)
+    }
+
+    /// Adds an edge to the graph.
+    pub fn add_edge(&mut self, edge: IdEdge) {
+        self.trail.push(Event::EdgeAdded(edge));
+        self.fwd_adj_list.insert_edge(edge);
+        self.rev_adj_list.insert_edge(edge.reverse());
+    }
+
+    /// Merges node groups of both elements of `ids`
+    pub fn merge_nodes(&mut self, ids: (NodeId, NodeId)) {
+        self.node_store.merge(ids);
+    }
+
+    pub fn get_traversal_graph(&self, dir: GraphDir) -> impl traversal::Graph + use<'_> {
+        match dir {
+            GraphDir::Forward => &self.fwd_adj_list,
+            GraphDir::Reverse => &self.rev_adj_list,
         }
     }
 
-    pub fn add_edge(&mut self, edge: Edge<N>) {
-        self.fwd_adj_list.insert_edge(edge.source, edge);
-        self.rev_adj_list.insert_edge(edge.target, edge.reverse());
+    pub fn iter_nodes(&self) -> impl Iterator<Item = Node> + use<'_> {
+        self.fwd_adj_list.iter_nodes().map(|id| self.node_store.get_node(id))
     }
 
-    pub fn add_node(&mut self, node: N) {
-        self.fwd_adj_list.insert_node(node);
-        self.rev_adj_list.insert_node(node);
-    }
-
-    pub fn remove_edge(&mut self, edge: Edge<N>) {
-        self.fwd_adj_list.remove_edge(edge.source, edge);
-        self.rev_adj_list.remove_edge(edge.target, edge.reverse())
-    }
-
-    // Returns true if source -=-> target
-    pub fn eq_path_exists(&self, source: N, target: N) -> bool {
-        self.fwd_adj_list
-            .eq_traversal(source, |_| true)
-            .any(|TaggedNode(e, _)| e == target)
-    }
-
-    // Returns true if source -!=-> target
-    pub fn neq_path_exists(&self, source: N, target: N) -> bool {
-        self.fwd_adj_list
-            .eq_or_neq_traversal(source, |_, _| true)
-            .any(|TaggedNode(e, r)| e == target && r == EqRelation::Neq)
-    }
-
-    /// Return a Dft struct over nodes which can be reached with Eq in reverse adjacency list
-    pub fn rev_eq_dft_path<'a>(
-        &'a self,
-        source: N,
-        filter: impl Fn(&Edge<N>) -> bool + 'a,
-    ) -> GraphTraversal<'a, N, bool, impl Fn(&bool, &Edge<N>) -> Option<bool>> {
-        self.rev_adj_list.eq_path_traversal(source, filter)
-    }
-
-    /// Return an iterator over nodes which can be reached with Neq in reverse adjacency list
-    pub fn rev_eq_or_neq_dft_path<'a>(
-        &'a self,
-        source: N,
-        filter: impl Fn(&Edge<N>) -> bool + 'a,
-    ) -> GraphTraversal<'a, N, EqRelation, impl Fn(&EqRelation, &Edge<N>) -> Option<EqRelation>> {
-        self.rev_adj_list.eq_or_neq_path_traversal(source, filter)
-    }
-
-    /// Get a path with EqRelation::Eq from source to target
-    pub fn get_eq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
-        let mut dft = self.fwd_adj_list.eq_path_traversal(source, filter);
-        dft.find(|TaggedNode(n, _)| *n == target)
-            .map(|TaggedNode(n, _)| dft.get_path(TaggedNode(n, false)))
-    }
-
-    /// Get a path with EqRelation::Neq from source to target
-    pub fn get_neq_path(&self, source: N, target: N, filter: impl Fn(&Edge<N>) -> bool) -> Option<Vec<Edge<N>>> {
-        let mut dft = self.fwd_adj_list.eq_or_neq_path_traversal(source, filter);
-        dft.find(|TaggedNode(n, r)| *n == target && *r == EqRelation::Neq)
-            .map(|TaggedNode(n, _)| dft.get_path(TaggedNode(n, EqRelation::Neq)))
-    }
-
-    /// Get all paths which would require the given edge to exist.
-    /// Edge should not be already present in graph
-    ///
-    /// For an edge x -==-> y, returns a vec of all pairs (w, z) such that w -=-> z or w -!=-> z in G union x -=-> y, but not in G.
-    ///
-    /// For an edge x -!=-> y, returns a vec of all pairs (w, z) such that w -!=> z in G union x -!=-> y, but not in G.
-    pub fn paths_requiring(&self, edge: Edge<N>) -> Box<dyn Iterator<Item = NodePair<N>> + '_> {
-        // Brute force algo: Form pairs from all antecedants of x and successors of y
-        // Then check if a path exists in graph
-        match edge.relation {
-            EqRelation::Eq => Box::new(self.paths_requiring_eq(edge)),
-            EqRelation::Neq => Box::new(self.paths_requiring_neq(edge)),
+    // /// Get all paths which would require the given edge to exist.
+    // /// Edge should not be already present in graph
+    // ///
+    // /// For an edge x -==-> y, returns a vec of all pairs (w, z) such that w -=-> z or w -!=-> z in G union x -=-> y, but not in G.
+    // ///
+    // /// For an edge x -!=-> y, returns a vec of all pairs (w, z) such that w -!=> z in G union x -!=-> y, but not in G.
+    // /// propagator nodes must already be added
+    pub fn paths_requiring(&self, edge: IdEdge) -> Vec<Path> {
+        // Convert edge to edge between groups
+        let edge = IdEdge {
+            source: self.node_store.get_representative(edge.source).into(),
+            target: self.node_store.get_representative(edge.target).into(),
+            ..edge
+        };
+        // If edge already exists, no paths require it
+        // FIXME: Very expensive check, may not be needed?
+        if self
+            .node_store
+            .get_group(edge.source.into())
+            .into_iter()
+            .flat_map(|n| self.fwd_adj_list.iter_edges(n))
+            .any(|e| self.node_store.get_representative(e.target) == edge.target.into() && e.relation == edge.relation)
+        {
+            Vec::new()
+        } else {
+            match edge.relation {
+                EqRelation::Eq => self.paths_requiring_eq(edge),
+                EqRelation::Neq => self.paths_requiring_neq(edge),
+            }
         }
     }
 
-    fn paths_requiring_eq(&self, edge: Edge<N>) -> impl Iterator<Item = NodePair<N>> + use<'_, N> {
-        let reachable_preds = self.rev_adj_list.eq_or_neq_reachable_from(edge.target);
-        let reachable_succs = self.fwd_adj_list.eq_or_neq_reachable_from(edge.source);
-        let predecessors = self.rev_adj_list.eq_or_neq_traversal(edge.source, move |e, r| {
-            !reachable_preds.contains(TaggedNode(e.target, *r))
-        });
-        let successors = self
-            .fwd_adj_list
-            .eq_or_neq_traversal(edge.target, move |e, r| {
-                !reachable_succs.contains(TaggedNode(e.target, *r))
-            })
-            .collect_vec();
+    /// NOTE: This set will only contain representatives, not any node.
+    ///
+    /// TODO: Return a reference to the set if possible (maybe box)
+    fn reachable_set<T: NodeTag>(
+        &self,
+        adj_list: &EqAdjList,
+        source: NodeId,
+        fold: impl Fold<T>,
+    ) -> RefSet<TaggedNode<T>> {
+        let mut traversal = GraphTraversal::new(MergedGraph::new(&self.node_store, adj_list), fold, source, false);
+        // Consume iterator
+        for _ in traversal.by_ref() {}
+        traversal.get_reachable().clone()
+    }
+
+    fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
+        let reachable_preds = self.reachable_set(&self.rev_adj_list, edge.target, EqOrNeqFold());
+        let reachable_succs = self.reachable_set(&self.fwd_adj_list, edge.source, EqOrNeqFold());
+
+        let predecessors = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, &self.rev_adj_list),
+            ReducingFold::new(&reachable_preds, EqOrNeqFold()),
+            edge.source,
+            false,
+        );
+
+        let successors = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, &self.fwd_adj_list),
+            ReducingFold::new(&reachable_succs, EqOrNeqFold()),
+            edge.target,
+            false,
+        )
+        .collect_vec();
 
         predecessors
+            .into_iter()
             .cartesian_product(successors)
-            .filter_map(|(p, s)| Some(NodePair::new(p.0, s.0, (p.1 + s.1)?)))
+            .filter_map(
+                |(TaggedNode(pred_id, pred_relation), TaggedNode(succ_id, succ_relation))| {
+                    // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
+                    Some(Path::new(
+                        pred_id.into(),
+                        succ_id.into(),
+                        (pred_relation + succ_relation)?,
+                    ))
+                },
+            )
+            .collect_vec()
     }
 
-    fn paths_requiring_neq(&self, edge: Edge<N>) -> impl Iterator<Item = NodePair<N>> + use<'_, N> {
-        let reachable_preds = self.rev_adj_list.eq_reachable_from(edge.target);
-        let reachable_succs = self.fwd_adj_list.eq_or_neq_reachable_from(edge.source);
-        // let reachable_succs = self.fwd_adj_list.neq_reachable_from(edge.source);
-        let predecessors = self
-            .rev_adj_list
-            .eq_traversal(edge.source, move |e| {
-                !reachable_preds.contains(TaggedNode(e.target, false))
-            })
-            .map(|TaggedNode(e, _)| e);
-        let successors = self
-            .fwd_adj_list
-            .eq_traversal(edge.target, move |e| {
-                !reachable_succs.contains(TaggedNode(e.target, EqRelation::Neq))
-            })
-            .map(|TaggedNode(e, _)| e)
-            .collect_vec();
+    fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
+        let source_group = self.node_store.get_representative(edge.source).into();
+        let target_group = self.node_store.get_representative(edge.target).into();
 
-        let res = predecessors
-            .cartesian_product(successors)
-            .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq));
+        let reachable_preds = self.reachable_set(&self.rev_adj_list, target_group, EqFold());
+        let reachable_succs = self.reachable_set(&self.fwd_adj_list, source_group, EqOrNeqFold());
 
-        // let reachable_preds = self.rev_adj_list.neq_reachable_from(edge.target);
-        let reachable_preds = self.rev_adj_list.eq_or_neq_reachable_from(edge.target);
-        let reachable_succs = self.fwd_adj_list.eq_reachable_from(edge.source);
-        let predecessors = self
-            .rev_adj_list
-            .eq_traversal(edge.source, move |e| {
-                !reachable_preds.contains(TaggedNode(e.target, EqRelation::Neq))
-            })
-            .map(|TaggedNode(e, _)| e);
-        let successors = self
-            .fwd_adj_list
-            .eq_traversal(edge.target, move |e| {
-                !reachable_succs.contains(TaggedNode(e.target, false))
-            })
-            .map(|TaggedNode(e, _)| e)
-            .collect_vec();
+        let predecessors = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, &self.rev_adj_list),
+            ReducingFold::new(&reachable_preds, EqFold()),
+            source_group,
+            false,
+        );
 
-        res.chain(
-            predecessors
-                .cartesian_product(successors)
-                .map(|(p, s)| NodePair::new(p, s, EqRelation::Neq)),
+        let successors = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, &self.fwd_adj_list),
+            ReducingFold::new(&reachable_succs, EqOrNeqFold()),
+            target_group,
+            false,
         )
+        .collect_vec();
+
+        let mut res = predecessors.cartesian_product(successors).map(
+            // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
+            |(TaggedNode(pred_id, ..), TaggedNode(succ_id, ..))| {
+                Path::new(pred_id.into(), succ_id.into(), EqRelation::Neq)
+            },
+        );
+        // Edge will be duplicated otherwise
+        res.next().unwrap();
+
+        // TODO: This can be optimized by getting reachable set one for EqOrNeq and then filtering them
+        let reachable_preds = self.reachable_set(&self.rev_adj_list, target_group, EqOrNeqFold());
+        let reachable_succs = self.reachable_set(&self.fwd_adj_list, source_group, EqFold());
+
+        let predecessors = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, &self.rev_adj_list),
+            ReducingFold::new(&reachable_preds, EqOrNeqFold()),
+            source_group,
+            false,
+        );
+
+        let successors = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, &self.fwd_adj_list),
+            ReducingFold::new(&reachable_succs, EqFold()),
+            target_group,
+            false,
+        )
+        .collect_vec();
+
+        res.chain(predecessors.cartesian_product(successors).map(
+            // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
+            |(TaggedNode(pred_id, ..), TaggedNode(succ_id, ..))| {
+                Path::new(pred_id.into(), succ_id.into(), EqRelation::Neq)
+            },
+        ))
+        .collect_vec()
     }
 
-    pub fn iter_nodes(&self) -> impl Iterator<Item = N> + use<'_, N> {
-        self.fwd_adj_list.iter_nodes()
-    }
-
-    pub(crate) fn print_stats(&self) {
-        self.fwd_adj_list.print_stats();
-    }
-}
-
-impl<N: AdjNode + Display> DirEqGraph<N> {
     #[allow(unused)]
     pub(crate) fn to_graphviz(&self) -> String {
         let mut strings = vec!["digraph {".to_string()];
@@ -267,144 +286,302 @@ impl<N: AdjNode + Display> DirEqGraph<N> {
     }
 }
 
+impl Backtrack for DirEqGraph {
+    fn save_state(&mut self) -> DecLvl {
+        self.node_store.save_state();
+        self.trail.save_state()
+    }
+
+    fn num_saved(&self) -> u32 {
+        self.trail.num_saved()
+    }
+
+    fn restore_last(&mut self) {
+        self.node_store.restore_last();
+        self.trail.restore_last_with(|Event::EdgeAdded(edge)| {
+            self.fwd_adj_list.remove_edge(edge);
+            self.rev_adj_list.remove_edge(edge.reverse());
+        });
+    }
+}
+
+/// Directed pair of nodes with a == or != relation
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct Path {
+    pub source_id: GroupId,
+    pub target_id: GroupId,
+    pub relation: EqRelation,
+}
+
+impl Debug for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let &Path {
+            source_id,
+            target_id,
+            relation,
+        } = self;
+        write!(f, "{source_id:?} --{relation}--> {target_id:?}")
+    }
+}
+
+impl Path {
+    pub fn new(source: GroupId, target: GroupId, relation: EqRelation) -> Self {
+        Self {
+            source_id: source,
+            target_id: target,
+            relation,
+        }
+    }
+}
+
+pub enum GraphDir {
+    Forward,
+    Reverse,
+}
+
 #[cfg(test)]
 mod tests {
-    use std::fmt::Display;
+    use EqRelation::*;
 
-    use hashbrown::HashSet;
+    use crate::reasoners::eq_alt::graph::folds::EmptyTag;
 
     use super::*;
 
-    #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
-    struct Node(usize);
+    macro_rules! assert_eq_unordered_unique {
+        ($left:expr, $right:expr $(,)?) => {{
+            use std::collections::HashSet;
+            let left = $left.into_iter().collect_vec();
+            let right = $right.into_iter().collect_vec();
+            assert!(
+                left.clone().into_iter().all_unique(),
+                "{:?} is duplicated in left",
+                left.clone().into_iter().duplicates().collect_vec()
+            );
+            assert!(
+                right.clone().into_iter().all_unique(),
+                "{:?} is duplicated in right",
+                right.clone().into_iter().duplicates().collect_vec()
+            );
+            let l_set: HashSet<_> = left.into_iter().collect();
+            let r_set: HashSet<_> = right.into_iter().collect();
 
-    impl From<usize> for Node {
-        fn from(value: usize) -> Self {
-            Self(value)
-        }
+            let lr_diff: HashSet<_> = l_set.difference(&r_set).cloned().collect();
+            let rl_diff: HashSet<_> = r_set.difference(&l_set).cloned().collect();
+
+            assert!(lr_diff.is_empty(), "Found in left but not in right: {:?}", lr_diff);
+            assert!(rl_diff.is_empty(), "Found in right but not in left: {:?}", rl_diff);
+        }};
     }
 
-    impl From<Node> for usize {
-        fn from(value: Node) -> Self {
-            value.0
-        }
+    fn prop(src: i32, tgt: i32, relation: EqRelation) -> Propagator {
+        Propagator::new(Node::Val(src), Node::Val(tgt), relation, Lit::TRUE, Lit::TRUE)
     }
 
-    impl Display for Node {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.0)
+    fn id(g: &DirEqGraph, node: i32) -> NodeId {
+        g.get_id(&Node::Val(node)).unwrap()
+    }
+
+    fn edge(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> IdEdge {
+        IdEdge::new(
+            g.get_id(&Node::Val(src)).unwrap(),
+            g.get_id(&Node::Val(tgt)).unwrap(),
+            Lit::TRUE,
+            relation,
+        )
+    }
+
+    fn tn<T: NodeTag>(g: &DirEqGraph, node: i32, tag: T) -> TaggedNode<T> {
+        TaggedNode(id(g, node), tag)
+    }
+
+    fn path(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> Path {
+        Path::new(
+            g.get_id(&Node::Val(src)).unwrap().into(),
+            g.get_id(&Node::Val(tgt)).unwrap().into(),
+            relation,
+        )
+    }
+
+    /* Copy this into https://magjac.com/graphviz-visual-editor/
+    digraph {
+       0 -> 1 [label=" ="]
+       1 -> 2 [label=" !="]
+       1 -> 3 [label=" ="]
+       2 -> 4 [label=" !="]
+       1 -> 5 [label=" ="]
+       5 -> 6 [label=" ="]
+       6 -> 0 [label=" !="]
+       5 -> 0 [label=" ="]
+    }
+    */
+    fn instance1() -> DirEqGraph {
+        let mut g = DirEqGraph::new();
+        for prop in [
+            prop(0, 1, Eq),
+            prop(1, 2, Neq),
+            prop(1, 3, Eq),
+            prop(2, 4, Neq),
+            prop(1, 5, Eq),
+            prop(5, 6, Eq),
+            prop(6, 0, Neq),
+            prop(5, 0, Eq),
+        ] {
+            let edge = g.create_edge(&prop);
+            g.add_edge(edge);
         }
+        g
+    }
+
+    /* Instance focused on merging
+    digraph {
+        0 -> 1 [label=" ="]
+        1 -> 0 [label=" ="]
+        1 -> 2 [label=" ="]
+        2 -> 0 [label=" ="]
+        2 -> 3 [label=" !="]
+        3 -> 4 [label=" ="]
+        4 -> 5 [label=" ="]
+        5 -> 3 [label=" ="]
+        0 -> 5 [label=" !="]
+        4 -> 1 [label=" ="]
+    }
+    */
+    fn instance2() -> DirEqGraph {
+        let mut g = DirEqGraph::new();
+        for prop in [
+            prop(0, 1, Eq),
+            prop(1, 0, Eq),
+            prop(1, 2, Eq),
+            prop(2, 0, Eq),
+            prop(2, 3, Neq),
+            prop(3, 4, Eq),
+            prop(4, 5, Eq),
+            prop(5, 3, Eq),
+            prop(0, 5, Neq),
+            prop(4, 1, Eq),
+        ] {
+            let edge = g.create_edge(&prop);
+            g.add_edge(edge);
+        }
+        g
     }
 
     #[test]
-    fn test_path_exists() {
-        let mut g = DirEqGraph::new();
-        // 0 -=-> 2
-        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
-        // 1 -!=-> 2
-        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq, 1_u32.into()));
-        // 2 -=-> 3
-        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 2_u32.into()));
-        // 2 -!=-> 4
-        g.add_edge(Edge::new(Node(2), Node(4), Lit::TRUE, EqRelation::Neq, 3_u32.into()));
+    fn test_traversal() {
+        let g = instance1();
 
-        // 0 -=-> 3
-        assert!(g.eq_path_exists(Node(0), Node(3)));
+        let traversal = GraphTraversal::new(&g.fwd_adj_list, EqFold(), id(&g, 0), false);
+        assert_eq_unordered_unique!(
+            traversal,
+            vec![
+                tn(&g, 0, EmptyTag()),
+                tn(&g, 1, EmptyTag()),
+                tn(&g, 3, EmptyTag()),
+                tn(&g, 5, EmptyTag()),
+                tn(&g, 6, EmptyTag()),
+            ],
+        );
 
-        // 0 -!=-> 4
-        assert!(g.neq_path_exists(Node(0), Node(4)));
+        let traversal = GraphTraversal::new(&g.fwd_adj_list, EqFold(), id(&g, 6), false);
+        assert_eq_unordered_unique!(traversal, vec![tn(&g, 6, EmptyTag())]);
 
-        // !1 -!=-> 4 && !1 -==-> 4
-        assert!(!g.eq_path_exists(Node(1), Node(4)) && !g.neq_path_exists(Node(1), Node(4)));
+        let traversal = GraphTraversal::new(&g.rev_adj_list, EqOrNeqFold(), id(&g, 0), false);
+        assert_eq_unordered_unique!(
+            traversal,
+            vec![
+                tn(&g, 0, Eq),
+                tn(&g, 6, Neq),
+                tn(&g, 5, Eq),
+                tn(&g, 5, Neq),
+                tn(&g, 1, Eq),
+                tn(&g, 1, Neq),
+                tn(&g, 0, Neq),
+            ],
+        );
+    }
 
-        // 3 -=-> 0
-        g.add_edge(Edge::new(Node(3), Node(0), Lit::TRUE, EqRelation::Eq, 4_u32.into()));
-        assert!(g.eq_path_exists(Node(2), Node(0)));
+    #[test]
+    fn test_merging() {
+        let mut g = instance2();
+        g.merge_nodes((id(&g, 0), id(&g, 1)));
+        g.merge_nodes((id(&g, 1), id(&g, 2)));
+
+        g.merge_nodes((id(&g, 3), id(&g, 4)));
+        g.merge_nodes((id(&g, 3), id(&g, 5)));
+
+        let g1_rep = g.node_store.get_representative(id(&g, 0));
+        let g2_rep = g.node_store.get_representative(id(&g, 3));
+        assert_eq_unordered_unique!(g.node_store.get_group(g1_rep), vec![id(&g, 0), id(&g, 1), id(&g, 2)]);
+        assert_eq_unordered_unique!(g.node_store.get_group(g2_rep), vec![id(&g, 3), id(&g, 4), id(&g, 5)]);
+
+        let traversal = GraphTraversal::new(
+            MergedGraph::new(&g.node_store, &g.fwd_adj_list),
+            EqOrNeqFold(),
+            id(&g, 0),
+            false,
+        );
+
+        assert_eq_unordered_unique!(
+            traversal,
+            vec![
+                TaggedNode(g1_rep.into(), Eq),
+                TaggedNode(g2_rep.into(), Neq),
+                TaggedNode(g1_rep.into(), Neq),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_reduced_path() {
+        let g = instance2();
+        let mut traversal = GraphTraversal::new(&g.fwd_adj_list, EqOrNeqFold(), id(&g, 0), true);
+        let target = traversal
+            .find(|&TaggedNode(n, r)| n == id(&g, 4) && r == Neq)
+            .expect("Path exists");
+
+        let path1 = vec![edge(&g, 3, 4, Eq), edge(&g, 5, 3, Eq), edge(&g, 0, 5, Neq)];
+        let path2 = vec![
+            edge(&g, 3, 4, Eq),
+            edge(&g, 2, 3, Neq),
+            edge(&g, 1, 2, Eq),
+            edge(&g, 0, 1, Eq),
+        ];
+        let mut set = RefSet::new();
+        if traversal.get_path(target) == path1 {
+            set.insert(TaggedNode(id(&g, 5), Neq));
+            let mut traversal =
+                GraphTraversal::new(&g.fwd_adj_list, ReducingFold::new(&set, EqOrNeqFold()), id(&g, 0), true);
+            let target = traversal
+                .find(|&TaggedNode(n, r)| n == id(&g, 4) && r == Neq)
+                .expect("Path exists");
+            assert_eq!(traversal.get_path(target), path2);
+        } else if traversal.get_path(target) == path2 {
+            set.insert(TaggedNode(id(&g, 1), Eq));
+            let mut traversal =
+                GraphTraversal::new(&g.fwd_adj_list, ReducingFold::new(&set, EqOrNeqFold()), id(&g, 0), true);
+            let target = traversal
+                .find(|&TaggedNode(n, r)| n == id(&g, 4) && r == Neq)
+                .expect("Path exists");
+            assert_eq!(traversal.get_path(target), path1);
+        }
     }
 
     #[test]
     fn test_paths_requiring() {
-        let mut g = DirEqGraph::new();
-
-        // 0 -=-> 2
-        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
-        // 1 -!=-> 2
-        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq, 1_u32.into()));
-        // 3 -=-> 4
-        g.add_edge(Edge::new(Node(3), Node(4), Lit::TRUE, EqRelation::Eq, 2_u32.into()));
-        // 3 -!=-> 5
-        g.add_edge(Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq, 3_u32.into()));
-        // 0 -=-> 4
-        g.add_edge(Edge::new(Node(0), Node(4), Lit::TRUE, EqRelation::Eq, 3_u32.into()));
-
-        let res = [
-            (Node(0), Node(3), EqRelation::Eq).into(),
-            (Node(0), Node(5), EqRelation::Neq).into(),
-            (Node(1), Node(3), EqRelation::Neq).into(),
-            (Node(1), Node(4), EqRelation::Neq).into(),
-            (Node(2), Node(3), EqRelation::Eq).into(),
-            (Node(2), Node(4), EqRelation::Eq).into(),
-            (Node(2), Node(5), EqRelation::Neq).into(),
-        ]
-        .into();
-        assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()))
-                .collect::<HashSet<_>>(),
-            res
-        );
-
-        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
-        assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()))
-                .collect::<HashSet<_>>(),
-            [].into()
-        );
-
-        g.remove_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
-        assert_eq!(
-            g.paths_requiring(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 0_u32.into()))
-                .collect::<HashSet<_>>(),
-            res
-        );
-    }
-
-    #[test]
-    fn test_path() {
-        let mut g = DirEqGraph::new();
-
-        // 0 -=-> 2
-        g.add_edge(Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into()));
-        // 1 -!=-> 2
-        g.add_edge(Edge::new(Node(1), Node(2), Lit::TRUE, EqRelation::Neq, 1_u32.into()));
-        // 3 -=-> 4
-        g.add_edge(Edge::new(Node(3), Node(4), Lit::TRUE, EqRelation::Eq, 2_u32.into()));
-        // 3 -!=-> 5
-        g.add_edge(Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq, 3_u32.into()));
-        // 0 -=-> 4
-        g.add_edge(Edge::new(Node(0), Node(4), Lit::TRUE, EqRelation::Eq, 4_u32.into()));
-
-        let path = g.get_neq_path(Node(0), Node(5), |_| true);
-        assert_eq!(path, None);
-
-        g.add_edge(Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 5_u32.into()));
-
-        let path = g.get_neq_path(Node(0), Node(5), |_| true);
-        assert_eq!(
-            path,
-            vec![
-                Edge::new(Node(3), Node(5), Lit::TRUE, EqRelation::Neq, 3_u32.into()),
-                Edge::new(Node(2), Node(3), Lit::TRUE, EqRelation::Eq, 5_u32.into()),
-                Edge::new(Node(0), Node(2), Lit::TRUE, EqRelation::Eq, 0_u32.into())
+        let g = instance1();
+        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Eq)), []);
+        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Neq)), [path(&g, 0, 1, Neq)]);
+        assert_eq_unordered_unique!(
+            g.paths_requiring(edge(&g, 1, 2, Eq)),
+            [
+                path(&g, 1, 2, Eq),
+                path(&g, 0, 2, Eq),
+                path(&g, 0, 4, Neq),
+                path(&g, 1, 4, Neq),
+                path(&g, 5, 2, Eq),
+                path(&g, 5, 4, Neq),
+                path(&g, 6, 2, Neq)
             ]
-            .into()
-        );
-    }
-
-    #[test]
-    fn test_single_node() {
-        let mut g: DirEqGraph<Node> = DirEqGraph::new();
-        g.add_node(Node(1));
-        assert!(g.eq_path_exists(Node(1), Node(1)));
-        assert!(!g.neq_path_exists(Node(1), Node(1)));
+        )
     }
 }
