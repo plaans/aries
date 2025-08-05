@@ -1,16 +1,17 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Error};
 
+use aries::backtrack::Backtrack;
 use aries::core::Lit;
 use aries::model::extensions::{SavedAssignment, Shaped};
 use aries::model::{Label, Model};
+use aries::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
+use aries::solver::musmcs::{Mcs, Mus, MusMcs};
 use aries::solver::parallel::ParSolver;
 use aries::solver::{Exit, Solver, UnsatCore};
-use aries_explainability::musmcs_enumeration::marco::Marco;
-use aries_explainability::musmcs_enumeration::marco::subsolvers::SubsetSolverImpl;
-use aries_explainability::musmcs_enumeration::{MusMcsEnumerationConfig, MusMcsEnumerationResult};
 use aries_grpc_server::serialize::serialize_plan;
 use aries_planners::encode::{encode, EncodedProblem};
 use aries_planners::encoding::Encoding;
@@ -130,7 +131,7 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
     finite_problem: Arc<FiniteProblem>,
     deadline_to_enumerate: Option<f64>,
     properties_lits: &HashMap<Lit, VarLabel>,
-) -> MusMcsEnumerationResult {
+) -> (Vec<Mus>, Vec<Mcs>) {
 
     // let start = std::time::Instant::now();
     // let deadline = deadline_to_enumerate.map(|val| start + std::time::Duration::from_secs_f64(val));
@@ -143,44 +144,82 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
     let properties_lits_cloned = properties_lits.clone();
     let properties_lits_cloned2 = properties_lits.clone();
 
-    // let subset_solver_impl = Box::new(VerySimpleSubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
-    let subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
-    // let mut subset_solver_impl = Box::new(SimpleNonWorking2SubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
+    //// let subset_solver_impl = Box::new(VerySimpleSubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
+    //let subset_solver_impl = Box::new(SimpleSubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
+    //// let mut subset_solver_impl = Box::new(SimpleNonWorking2SubsetSolverImpl::new(encoded_problem_model, finite_problem.clone(), encoded_problem_encoding.into()));
 
-    let mut marco = Marco::with_reified_soft_constraints(
-        subset_solver_impl,
-        properties_lits.keys().copied().collect::<Vec<_>>(),
-        MusMcsEnumerationConfig {
-            return_muses: true,
-            return_mcses: true,
-            on_mus_found: Some(Box::new(
-                move |mus: &BTreeSet<Lit>| {
-                    let mus_str = mus
-                        .iter()
-                        .map(|l| properties_lits_cloned.get(l).unwrap())
-                        .join(", \n");
-                    let mus_str = format!(r#"{}"#, mus_str);
-                    println!("propMUS: {{\n{mus_str}\n}}\n");
-            })),
-            on_mcs_found: Some(Box::new(
-                move |mus: &BTreeSet<Lit>| {
-                    let mcs_str = mus
-                        .iter()
-                        .map(|l| properties_lits_cloned2.get(l).unwrap())
-                        .join(", \n");
-                    let mcs_str = format!(r#"{}"#, mcs_str);
-                    println!("propMCS: {{\n{mcs_str}\n}}\n");
-            })),
+    let mut solver = Solver::new(encoded_problem_model);
+    solver.reasoners.diff.config = aries::reasoners::stn::theory::StnConfig {
+        theory_propagation: aries::reasoners::stn::theory::TheoryPropagationLevel::Full,
+        ..Default::default()
+    };
+    let strats = [
+        solver::Strat::ActivityBool,
+        solver::Strat::ActivityBoolLight,
+        solver::Strat::Causal,
+    ];
+    // strats[0].adapt_solver(&mut solver, finite_problem.clone(), encoded_problem_encoding.into());
+
+    // let marco = solver.mus_and_mcs_enumerator(&properties_lits.keys().copied().collect::<Vec<_>>())
+    let marco = Marco::with(
+        properties_lits.keys().copied(),
+        &mut solver,
+        Some(Box::new(
+            move |main_solver, assumptions| {
+                let mut par_solver = ParSolver::new(
+                    Box::new(main_solver.clone()),
+                    3,
+                    |id, s| {
+                        strats[id].adapt_solver(s, finite_problem.clone(), encoded_problem_encoding.clone().into());
+                    },
+                );
+                match par_solver.solve_with_assumptions(assumptions.into_iter().copied().collect::<Vec<_>>(), None) {
+                    aries::solver::parallel::SolverResult::Sol(sol) => Ok(Ok(sol)),
+                    aries::solver::parallel::SolverResult::Unsat(unsat_core) => {
+                        main_solver.enforce(aries::model::lang::expr::or(unsat_core.as_ref().unwrap().literals().iter().map(|&l| !l).collect::<Vec<_>>().into_boxed_slice()), []);
+                        Ok(Err(unsat_core.unwrap()))
+                    },
+                    _ => unreachable!(),
+                }
+            }
+        )),
+        MapSolverMode::default(),
+        SubsetSolverOptiMode::default(),
+    );
+
+    let marco = marco
+        .inspect(|mus_mcs| match mus_mcs {
+            MusMcs::Mus(mus) => {
+                let mus_str = mus
+                    .iter()
+                    .map(|l| properties_lits_cloned.get(l).unwrap())
+                    .join(", \n");
+                let mus_str = format!(r#"{}"#, mus_str);
+                println!("propMUS: {{\n{mus_str}\n}}\n");
+            },
+            MusMcs::Mcs(mcs) => {
+                let mcs_str = mcs
+                    .iter()
+                    .map(|l| properties_lits_cloned2.get(l).unwrap())
+                    .join(", \n");
+                let mcs_str = format!(r#"{}"#, mcs_str);
+                println!("propMCS: {{\n{mcs_str}\n}}\n");
+            },
+        });
+
+    let (res_muses, res_mcses) = marco.fold(
+        (Vec::new(), Vec::new()),
+        |(mut muses, mut mcses), musmcs| {
+            match musmcs {
+                MusMcs::Mus(mus) => muses.push(mus),
+                MusMcs::Mcs(mcs) => mcses.push(mcs),
+            }
+            (muses, mcses)
         },
     );
 
-    let marco_res = marco.run();
-
-    println!("\n");
-    println!("{marco_res:?}");
-
     println!("MUSes: \n");
-    for mus in marco_res.muses.as_ref().unwrap() {
+    for mus in &res_muses {
         let mus_str = mus
             .iter()
             .map(|l| properties_lits.get(l).unwrap())
@@ -190,7 +229,7 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
     }
 
     println!("MCSes: \n");
-    for mcs in marco_res.mcses.as_ref().unwrap() {
+    for mcs in &res_mcses {
         let mcs_str = mcs
             .iter()
             .map(|l| properties_lits.get(l).unwrap())
@@ -199,9 +238,9 @@ pub fn enumerate_finite_beluga_property_muses_and_mcses(
         println!("{{\n{mcs_str}\n}}\n");
     }
 
-    marco_res
+    (res_muses, res_mcses)
 }
-
+/*
 struct VerySimpleSubsetSolverImpl<Lbl: Label> {
     solver: Solver<Lbl>,
     finite_problem: Arc<FiniteProblem>,
@@ -260,8 +299,8 @@ impl SubsetSolverImpl<VarLabel> for VerySimpleSubsetSolverImpl<VarLabel> {
         };
         res
     }
-}
-
+}*/
+/*
 struct SimpleSubsetSolverImpl<Lbl: Label> {
     solver: Solver<Lbl>,
     finite_problem: Arc<FiniteProblem>,
@@ -319,7 +358,7 @@ impl SubsetSolverImpl<VarLabel> for SimpleSubsetSolverImpl<VarLabel> {
             },
         }
     }
-}
+}*/
 
 pub fn main() -> Result<(), Error> {
 
@@ -394,9 +433,10 @@ pub fn main() -> Result<(), Error> {
                 .collect::<HashMap<_,_>>();
 
             let encoded_problem_encoding = encoded_problem.encoding.clone();
-            let mut encoded_problem_model = encoded_problem.model.clone();
+            let encoded_problem_model = encoded_problem.model.clone();
 
-            let result = enumerate_finite_beluga_property_muses_and_mcses(
+            let start = Instant::now();
+            let (res_muses, res_mcses) = enumerate_finite_beluga_property_muses_and_mcses(
                 encoded_problem_model,
                 encoded_problem_encoding,
                 // finite_problem,
@@ -404,22 +444,18 @@ pub fn main() -> Result<(), Error> {
                 None,
                 &properties_lits,
             );
+            let run_time = start.elapsed();
+            println!("run_time: {run_time:?}");
 
             let results_file_path = explain_args.results_file_path;
 
-            let prop_ids_muses = result
-                .muses
-                .as_ref()
-                .unwrap_or(&vec![])
+            let prop_ids_muses = res_muses
                 .iter().map(|mus| {
                     mus.iter().map(|l| format!("{}", properties_var_labels_rev.get(properties_lits.get(l).unwrap()).unwrap())).collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
 
-            let prop_ids_mcses = result
-                .mcses
-                .as_ref()
-                .unwrap_or(&vec![])
+            let prop_ids_mcses = res_mcses
                 .iter().map(|mcs| {
                     mcs.iter().map(|l| format!("{}", properties_var_labels_rev.get(properties_lits.get(l).unwrap()).unwrap())).collect::<Vec<_>>()
                 })
@@ -427,7 +463,7 @@ pub fn main() -> Result<(), Error> {
         
             let _ = io::write_mus_mcs_enumeration_result_to_file(
                 results_file_path,
-                result.complete,
+                None, //Some(true),
                 prop_ids_muses,
                 prop_ids_mcses,
             )?;

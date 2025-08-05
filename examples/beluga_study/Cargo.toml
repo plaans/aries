@@ -8,11 +8,10 @@ version = "0.1.0"
 
 [dependencies]
 aries = { path = "../../solver" }
-aries_planners = { path = "../planners" }
-aries_planning = { path = "../planning" }
-aries_grpc_server = { path = "../grpc/server" }
-unified_planning = { path = "../grpc/api" }
-aries_explainability = { path = "../../explainability" }
+aries_planners = { path = "../../planning/planners" }
+aries_planning = { path = "../../planning/planning" }
+aries_grpc_server = { path = "../../planning/grpc/server" }
+unified_planning = { path = "../../planning/grpc/api" }
 clap = { workspace = true }
 anyhow = { workspace = true }
 prost = { workspace = true }
