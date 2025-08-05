@@ -762,6 +762,7 @@ impl<Lbl: Label> Solver<Lbl> {
         Marco::with(
             assumptions.iter().copied(),
             self,
+            None,
             MapSolverMode::default(),
             SubsetSolverOptiMode::default(),
         )

@@ -2,16 +2,20 @@ mod mapsolver;
 
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::Lit;
+use crate::model::extensions::SavedAssignment;
 use crate::model::Label;
-use crate::solver::{Exit, Solver};
+use crate::solver::{Exit, Solver, UnsatCore};
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use itertools::Itertools;
 
 use crate::solver::musmcs::*;
 use mapsolver::MapSolver;
 pub use mapsolver::MapSolverMode;
+
+type FindUnsatCoreFn<Lbl> = dyn FnMut(&mut Solver<Lbl>, &[Lit]) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit>;
 
 /// In theory, `KnownImplications` should be strictly better than `KnownSingletonMCSes`,
 /// but the additional work needed to find these implications (involves propagations back and forth) could certainly be not worth it.
@@ -34,6 +38,8 @@ pub struct Marco<'a, Lbl: Label> {
     map_solver: MapSolver,
     grow_shrink_optional_optimisation: SubsetSolverOptiMode,
 
+    find_unsat_core_fn: Box<FindUnsatCoreFn<Lbl>>,
+
     #[cfg(debug_assertions)]
     debug_found_muses: BTreeSet<BTreeSet<Lit>>,
     #[cfg(debug_assertions)]
@@ -52,17 +58,27 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     pub fn with(
         literals: impl Iterator<Item = Lit> + Clone,
         main_solver: &'a mut Solver<Lbl>,
+        custom_find_unsat_core_fn: Option<Box<FindUnsatCoreFn<Lbl>>>,
         map_solver_mode: MapSolverMode,
         main_solver_opti_mode: SubsetSolverOptiMode,
     ) -> Self {
         assert_eq!(main_solver.current_decision_level(), DecLvl::ROOT);
         let map_solver = MapSolver::new(literals.clone(), map_solver_mode);
 
+        let find_unsat_core_fn = custom_find_unsat_core_fn.unwrap_or_else(|| Box::new(
+            |main_solver: &mut Solver<Lbl>, assumptions: &[Lit]| {
+                let res = main_solver.solve_with_assumptions(assumptions)?;
+                main_solver.reset();
+                Ok(res)
+            }
+        ));
+
         Self {
             literals: literals.into_iter().collect(),
             main_solver,
             map_solver,
             grow_shrink_optional_optimisation: main_solver_opti_mode,
+            find_unsat_core_fn,
             #[cfg(debug_assertions)]
             debug_found_muses: BTreeSet::new(),
             #[cfg(debug_assertions)]
@@ -113,13 +129,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     /// - If SAT: returns *all* literals (considered by the algorithm) that are true in the found assignment (so a superset of `subset`).
     /// - If UNSAT: returns an unsat core of `subset`.
     fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<BTreeSet<Lit>, BTreeSet<Lit>>, Exit> {
-        let mut find_unsat_core_fn = |assumptions: &[Lit]| {
-            let res = self.main_solver.solve_with_assumptions(assumptions)?;
-            self.main_solver.reset();
-            Ok(res)
-        };
-
-        let res = match find_unsat_core_fn(&subset.iter().copied().collect_vec())? {
+        let res = match (self.find_unsat_core_fn)(self.main_solver, &subset.iter().copied().collect_vec())? {
             Ok(assignment) => Ok(self
                 .literals
                 .iter()
@@ -317,6 +327,7 @@ mod tests {
         let marco = Marco::with(
             soft_reiflits.iter().copied(),
             &mut solver,
+            None,
             MapSolverMode::HighPreferredValues,
             crate::solver::musmcs::marco::SubsetSolverOptiMode::None,
         );

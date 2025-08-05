@@ -25,7 +25,7 @@ type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>
 /// while the latter corresponds to maximizing (minimizing)
 /// the literals' cardinality / sum of their variables.
 /// Both are functionally equivalent, however the preferred values method is expected to be more performant.
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub enum MapSolverMode {
     None,
     #[default]
