@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::core::state::DomainsSnapshot;
 
 use super::{
@@ -66,7 +64,8 @@ impl<'a, G: traversal::Graph> traversal::Graph for MergedGraph<'a, G> {
                 ..e
             }));
         }
-        res.into_iter().unique()
+
+        res.into_iter()
     }
 }
 

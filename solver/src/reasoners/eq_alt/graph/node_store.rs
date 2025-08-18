@@ -61,6 +61,7 @@ pub struct NodeStore {
     /// Relations between elements of a group of nodes
     group_relations: RefCell<RefVec<NodeId, Relations>>,
     trail: RefCell<Trail<Event>>,
+    path: RefCell<Vec<NodeId>>,
 }
 
 #[allow(unused)]
@@ -147,7 +148,9 @@ impl NodeStore {
 
     pub fn get_representative(&self, mut id: NodeId) -> GroupId {
         // Get the path from id to rep (inclusive)
-        let mut path = vec![id];
+        let mut path = self.path.borrow_mut();
+        path.clear();
+        path.push(id);
         while let Some(parent_id) = self.group_relations.borrow()[id].parent {
             id = parent_id;
             path.push(id);
@@ -158,8 +161,8 @@ impl NodeStore {
         // The last element doesn't need reparenting
         path.pop();
 
-        for child_id in path {
-            self.reparent(child_id, rep_id);
+        for child_id in path.iter() {
+            self.reparent(*child_id, rep_id);
         }
         rep_id.into()
     }
@@ -185,6 +188,10 @@ impl NodeStore {
             }
         }
         res
+    }
+
+    pub fn get_group_nodes(&self, id: GroupId) -> Vec<Node> {
+        self.get_group(id).into_iter().map(|id| self.get_node(id)).collect()
     }
 }
 

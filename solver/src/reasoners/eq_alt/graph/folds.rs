@@ -1,4 +1,4 @@
-use crate::{collections::set::RefSet, reasoners::eq_alt::relation::EqRelation};
+use crate::{collections::set::IterableRefSet, reasoners::eq_alt::relation::EqRelation};
 
 use super::{
     traversal::{self, NodeTag},
@@ -77,12 +77,12 @@ impl From<EqRelation> for bool {
 
 /// Fold which filters out TaggedNodes in set (after performing previous fold)
 pub struct ReducingFold<'a, F: traversal::Fold<T>, T: NodeTag> {
-    set: &'a RefSet<TaggedNode<T>>,
+    set: &'a IterableRefSet<TaggedNode<T>>,
     fold: F,
 }
 
 impl<'a, F: traversal::Fold<T>, T: NodeTag> ReducingFold<'a, F, T> {
-    pub fn new(set: &'a RefSet<TaggedNode<T>>, fold: F) -> Self {
+    pub fn new(set: &'a IterableRefSet<TaggedNode<T>>, fold: F) -> Self {
         Self { set, fold }
     }
 }

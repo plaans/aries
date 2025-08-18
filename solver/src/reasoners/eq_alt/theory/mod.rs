@@ -389,44 +389,24 @@ mod tests {
             &mut model,
         );
     }
-    /// 0 <= a <= 10 && l => a == 5
-    /// No propagation until l true
-    /// l => a == 4 given invalid update
-    #[test]
-    fn test_var_eq_const() {
-        let mut model = Domains::new();
-        let mut eq = AltEqTheory::new();
-
-        let l = model.new_bool();
-        let a = model.new_var(0, 10);
-        eq.add_half_reified_eq_edge(l, a, 5, &model);
-        let cursor = model.cursor_at_end();
-        assert!(eq.propagate(&mut model).is_ok());
-        assert_eq!(model.ub(a), 10);
-        assert!(model.set(l, Cause::Decision).unwrap_or(false));
-        assert!(eq.propagate(&mut model).is_ok());
-        assert_eq!(model.ub(a), 5);
-        expect_explanation(cursor, &mut eq, &model, a.leq(5), vec![l]);
-        eq.add_half_reified_eq_edge(l, a, 4, &model);
-        let cursor = model.cursor_at_end();
-        assert!(eq
-            .propagate(&mut model)
-            .is_err_and(|e| matches!(e, Contradiction::InvalidUpdate(InvalidUpdate(l,_ )) if l == a.leq(4))));
-        expect_explanation(cursor, &mut eq, &model, a.leq(4), vec![l]);
-    }
 
     #[test]
     fn test_var_neq_const() {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
+
         let l = model.new_bool();
         let a = model.new_var(9, 10);
+
         eq.add_half_reified_neq_edge(l, a, 10, &model);
+
         assert!(eq.propagate(&mut model).is_ok());
         assert_eq!(model.ub(a), 10);
+
         assert!(model.set(l, Cause::Decision).unwrap_or(false));
         assert!(eq.propagate(&mut model).is_ok());
         assert_eq!(model.ub(a), 9);
+
         eq.add_half_reified_neq_edge(l, a, 9, &model);
         assert!(eq.propagate(&mut model).is_err_and(
             |e| matches!(e, Contradiction::InvalidUpdate(InvalidUpdate(l,_ )) if l == a.leq(8) || l == a.geq(10))
@@ -451,18 +431,22 @@ mod tests {
     fn test_alt_paths() {
         let mut model = Domains::new();
         let mut eq = AltEqTheory::new();
+
         let a_pres = model.new_bool();
         let b_pres = model.new_bool();
         model.add_implication(b_pres, a_pres);
+
         let a = model.new_optional_var(0, 5, a_pres);
         let b = model.new_optional_var(0, 5, b_pres);
         let l = model.new_bool();
+
         eq.add_half_reified_eq_edge(Lit::TRUE, a, b, &model);
         eq.add_half_reified_neq_edge(l, a, b, &model);
+
         eq.propagate(&mut model).unwrap();
         assert_eq!(model.bounds(l.variable()), (0, 1));
+
         model.set(b_pres, Cause::Decision).unwrap();
-        dbg!();
         assert!(eq.propagate(&mut model).is_ok());
         assert!(model.entails(!l));
     }

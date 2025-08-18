@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use folds::{EqFold, EqOrNeqFold, ReducingFold};
+use folds::{EmptyTag, EqFold, EqOrNeqFold, ReducingFold};
 use itertools::Itertools;
 use node_store::{GroupId, NodeStore};
 use subsets::MergedGraph;
@@ -9,7 +9,7 @@ pub use traversal::TaggedNode;
 use traversal::{Fold, NodeTag};
 
 use crate::backtrack::{Backtrack, DecLvl, Trail};
-use crate::collections::set::RefSet;
+use crate::collections::set::{IterableRefSet, RefSet};
 use crate::core::Lit;
 use crate::create_ref_type;
 use crate::reasoners::eq_alt::graph::{adj_list::EqAdjList, traversal::GraphTraversal};
@@ -146,7 +146,7 @@ impl DirEqGraph {
             ..edge
         };
         // If edge already exists, no paths require it
-        // FIXME: Very expensive check, may not be needed?
+        // FIXME: Expensive check, may not be needed?
         if self
             .node_store
             .get_group(edge.source.into())
@@ -171,11 +171,23 @@ impl DirEqGraph {
         adj_list: &EqAdjList,
         source: NodeId,
         fold: impl Fold<T>,
-    ) -> RefSet<TaggedNode<T>> {
+    ) -> IterableRefSet<TaggedNode<T>> {
         let mut traversal = GraphTraversal::new(MergedGraph::new(&self.node_store, adj_list), fold, source, false);
         // Consume iterator
         for _ in traversal.by_ref() {}
         traversal.get_reachable().clone()
+    }
+
+    fn reachable_set_neq(&self, adj_list: &EqAdjList, source: NodeId) -> IterableRefSet<TaggedNode<EmptyTag>> {
+        let traversal = GraphTraversal::new(
+            MergedGraph::new(&self.node_store, adj_list),
+            EqOrNeqFold(),
+            source,
+            false,
+        );
+        traversal
+            .filter_map(|TaggedNode(id, t)| (t == EqRelation::Neq).then_some(TaggedNode(id, EmptyTag())))
+            .collect()
     }
 
     fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
@@ -218,7 +230,7 @@ impl DirEqGraph {
         let target_group = self.node_store.get_representative(edge.target).into();
 
         let reachable_preds = self.reachable_set(&self.rev_adj_list, target_group, EqFold());
-        let reachable_succs = self.reachable_set(&self.fwd_adj_list, source_group, EqOrNeqFold());
+        let reachable_succs = self.reachable_set_neq(&self.fwd_adj_list, source_group);
 
         let predecessors = GraphTraversal::new(
             MergedGraph::new(&self.node_store, &self.rev_adj_list),
@@ -229,7 +241,7 @@ impl DirEqGraph {
 
         let successors = GraphTraversal::new(
             MergedGraph::new(&self.node_store, &self.fwd_adj_list),
-            ReducingFold::new(&reachable_succs, EqOrNeqFold()),
+            ReducingFold::new(&reachable_succs, EqFold()),
             target_group,
             false,
         )
@@ -245,12 +257,12 @@ impl DirEqGraph {
         res.next().unwrap();
 
         // TODO: This can be optimized by getting reachable set one for EqOrNeq and then filtering them
-        let reachable_preds = self.reachable_set(&self.rev_adj_list, target_group, EqOrNeqFold());
+        let reachable_preds = self.reachable_set_neq(&self.rev_adj_list, target_group);
         let reachable_succs = self.reachable_set(&self.fwd_adj_list, source_group, EqFold());
 
         let predecessors = GraphTraversal::new(
             MergedGraph::new(&self.node_store, &self.rev_adj_list),
-            ReducingFold::new(&reachable_preds, EqOrNeqFold()),
+            ReducingFold::new(&reachable_preds, EqFold()),
             source_group,
             false,
         );

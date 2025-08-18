@@ -1,11 +1,17 @@
 use std::fmt::Debug;
+use std::hash::Hash;
 
-use crate::collections::{ref_store::RefMap, set::RefSet};
+use itertools::Itertools;
+
+use crate::collections::{
+    ref_store::{IterableRefMap, RefMap},
+    set::{IterableRefSet, RefSet},
+};
 
 use super::{IdEdge, NodeId};
 
-pub trait NodeTag: Debug + Eq + Copy + Into<bool> + From<bool> {}
-impl<T: Debug + Eq + Copy + Into<bool> + From<bool>> NodeTag for T {}
+pub trait NodeTag: Debug + Eq + Copy + Into<bool> + From<bool> + Hash {}
+impl<T: Debug + Eq + Copy + Into<bool> + From<bool> + Hash> NodeTag for T {}
 
 pub trait Fold<T: NodeTag> {
     fn init(&self) -> T;
@@ -41,7 +47,7 @@ where
     /// Initial element and fold function for node tags
     fold: F,
     /// The set of visited nodes
-    visited: RefSet<TaggedNode<T>>,
+    visited: IterableRefSet<TaggedNode<T>>,
     // TODO: For best explanations, VecDeque queue should be used with pop_front
     // However, for propagation, Vec is much more performant
     // We should add a generic collection param
@@ -50,7 +56,7 @@ where
     /// Pass true in order to record paths (if you want to call get_path)
     mem_path: bool,
     /// Records parents of nodes if mem_path is true
-    parents: RefMap<TaggedNode<T>, (IdEdge, T)>,
+    parents: IterableRefMap<TaggedNode<T>, (IdEdge, T)>,
 }
 
 impl<T, F, G> GraphTraversal<T, F, G>
@@ -61,7 +67,7 @@ where
 {
     pub fn new(graph: G, fold: F, source: NodeId, mem_path: bool) -> Self {
         GraphTraversal {
-            stack: [TaggedNode(graph.map_source(source), fold.init())].into(),
+            stack: vec![TaggedNode(source, fold.init())],
             graph,
             fold,
             visited: Default::default(),
@@ -79,18 +85,11 @@ where
             s = *new_s;
             node = e.source;
             res.push(*e);
-            // if node == self.source {
-            //     break;
-            // }
         }
-        // assert!(
-        //     !res.is_empty() || tagged_node == *self.stack.first().unwrap(),
-        //     "called get_path with a node that hasn't yet been visited"
-        // );
         res
     }
 
-    pub fn get_reachable(&mut self) -> &RefSet<TaggedNode<T>> {
+    pub fn get_reachable(&mut self) -> &IterableRefSet<TaggedNode<T>> {
         while self.next().is_some() {}
         &self.visited
     }
@@ -105,34 +104,36 @@ where
     type Item = TaggedNode<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Pop a node from the stack. We know it hasn't been visited since we check before pushing
-        if let Some(TaggedNode(node, d)) = self.stack.pop() {
-            // Mark as visited
-            debug_assert!(!self.visited.contains(TaggedNode(node, d)));
-            self.visited.insert(TaggedNode(node, d));
+        // Pop a node from the stack
+        let mut node = self.stack.pop()?;
+        while self.visited.contains(node) {
+            node = self.stack.pop()?;
+        }
 
-            // Push adjacent edges onto stack according to fold func
-            self.stack.extend(self.graph.edges(node).filter_map(|e| {
-                // If self.fold returns None, filter edge
-                if let Some(s) = self.fold.fold(&d, &e) {
-                    // If edge target visited, filter edge
-                    if !self.visited.contains(TaggedNode(e.target, s)) {
-                        if self.mem_path {
-                            self.parents.insert(TaggedNode(e.target, s), (e, d));
-                        }
-                        Some(TaggedNode(e.target, s))
-                    } else {
-                        None
+        // Mark as visited
+        self.visited.insert(node);
+
+        // Push adjacent edges onto stack according to fold func
+        let new_edges = self.graph.edges(node.0).filter_map(|e| {
+            // If self.fold returns None, filter edge
+            if let Some(s) = self.fold.fold(&node.1, &e) {
+                // If edge target visited, filter edge
+                let new = TaggedNode(e.target, s);
+                if !self.visited.contains(new) {
+                    if self.mem_path {
+                        self.parents.insert(new, (e, node.1));
                     }
+                    Some(new)
                 } else {
                     None
                 }
-            }));
+            } else {
+                None
+            }
+        });
 
-            Some(TaggedNode(node, d))
-        } else {
-            None
-        }
+        self.stack.extend(new_edges);
+        Some(node)
     }
 }
 

@@ -63,9 +63,9 @@ impl AltEqTheory {
         }
     }
 
-    /// Find an edge which completes a negative cycle when added to the path pair
+    /// Find an edge which completes a cycle when added to the path pair
     ///
-    /// Optionally returns  an edge from pair.target to pair.source such that pair.relation + edge.relation = check_relation
+    /// Optionally returns an edge from pair.target to pair.source such that pair.relation + edge.relation = check_relation
     /// * `active`: If true, the edge must be marked as active (present in active graph), else it's activity must be undecided according to the model
     fn find_back_edge(
         &self,
@@ -74,26 +74,13 @@ impl AltEqTheory {
         path: &Path,
         check_relation: EqRelation,
     ) -> Option<(PropagatorId, Propagator)> {
-        let sources = self
-            .active_graph
-            .node_store
-            .get_group(path.source_id)
-            .into_iter()
-            .map(|id| self.active_graph.get_node(id))
-            .collect_vec();
-
-        let targets = self
-            .active_graph
-            .node_store
-            .get_group(path.source_id)
-            .into_iter()
-            .map(|id| self.active_graph.get_node(id))
-            .collect_vec();
+        let sources = self.active_graph.node_store.get_group_nodes(path.source_id);
+        let targets = self.active_graph.node_store.get_group_nodes(path.target_id);
 
         sources
             .into_iter()
             .cartesian_product(targets)
-            .find_map(|(target, source)| {
+            .find_map(|(source, target)| {
                 self.constraint_store
                     .get_from_nodes(target, source)
                     .iter()
@@ -112,7 +99,7 @@ impl AltEqTheory {
     }
 
     /// Propagate along `path` if `edge` (identified by `prop_id`) were to be added to the graph
-    fn propagate_pair(
+    fn propagate_path(
         &mut self,
         model: &mut Domains,
         prop_id: PropagatorId,
@@ -124,7 +111,8 @@ impl AltEqTheory {
             target_id,
             relation,
         } = path;
-        // Find an active edge which creates a negative cycle
+
+        // Find an active edge which creates a negative cycle, then disable current edge
         if let Some((_id, _back_prop)) = self.find_back_edge(model, true, &path, EqRelation::Neq) {
             model.set(
                 !edge.active,
@@ -133,35 +121,26 @@ impl AltEqTheory {
         }
 
         if model.entails(edge.active) {
-            dbg!(&path);
+            // Find some activity undecided edge which creates a negative cycle, then disable it
             if let Some((id, back_prop)) = self.find_back_edge(model, false, &path, EqRelation::Neq) {
-                dbg!("Found back edge");
                 model.set(
                     !back_prop.enabler.active,
                     self.identity.inference(ModelUpdateCause::NeqCycle(id)),
                 )?;
             }
-            let sources = self
-                .active_graph
-                .node_store
-                .get_group(source_id)
-                .into_iter()
-                .map(|s| self.active_graph.get_node(s));
-            let targets = self
-                .active_graph
-                .node_store
-                .get_group(target_id)
-                .into_iter()
-                .map(|s| self.active_graph.get_node(s));
+
+            // Propagate eq and neq between all members of affected groups
+            let sources = self.active_graph.node_store.get_group_nodes(source_id);
+            let targets = self.active_graph.node_store.get_group_nodes(target_id);
 
             match relation {
                 EqRelation::Eq => {
-                    for (source, target) in sources.cartesian_product(targets) {
+                    for (source, target) in sources.into_iter().cartesian_product(targets) {
                         self.propagate_eq(model, source, target)?;
                     }
                 }
                 EqRelation::Neq => {
-                    for (source, target) in sources.cartesian_product(targets) {
+                    for (source, target) in sources.into_iter().cartesian_product(targets) {
                         self.propagate_neq(model, source, target)?;
                     }
                 }
@@ -191,14 +170,11 @@ impl AltEqTheory {
             )?;
         }
 
-        // Get all new node pairs we can potentially propagate
+        // Get all new node paths we can potentially propagate
         self.active_graph
             .paths_requiring(edge)
             .into_iter()
-            .map(|p| self.propagate_pair(model, prop_id, edge, p))
-            // Stop at first error
-            .find(|x| x.is_err())
-            .unwrap_or(Ok(()))
+            .try_for_each(|p| self.propagate_path(model, prop_id, edge, p))
     }
 
     /// Given any propagator, perform propagations if possible and necessary.
