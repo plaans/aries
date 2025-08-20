@@ -1,12 +1,6 @@
-use std::fmt::Debug;
-use std::hash::Hash;
+use std::{fmt::Debug, hash::Hash};
 
-use itertools::Itertools;
-
-use crate::collections::{
-    ref_store::{IterableRefMap, RefMap},
-    set::{IterableRefSet, RefSet},
-};
+use crate::collections::{ref_store::IterableRefMap, set::IterableRefSet};
 
 use super::{IdEdge, NodeId};
 
@@ -67,7 +61,7 @@ where
 {
     pub fn new(graph: G, fold: F, source: NodeId, mem_path: bool) -> Self {
         GraphTraversal {
-            stack: vec![TaggedNode(source, fold.init())],
+            stack: vec![TaggedNode(graph.map_source(source), fold.init())],
             graph,
             fold,
             visited: Default::default(),

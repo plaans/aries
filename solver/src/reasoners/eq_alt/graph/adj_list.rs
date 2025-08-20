@@ -35,14 +35,17 @@ impl EqAdjList {
         }
     }
 
-    /// Insert an edge and possibly a node
-    /// First return val is if source node was inserted, second is if target val was inserted, third is if edge was inserted
-    pub(super) fn insert_edge(&mut self, edge: IdEdge) {
+    /// Possibly insert an edge and both nodes
+    /// Returns true if edge was inserted
+    pub(super) fn insert_edge(&mut self, edge: IdEdge) -> bool {
         self.insert_node(edge.source);
         self.insert_node(edge.target);
         let edges = self.get_edges_mut(edge.source).unwrap();
         if !edges.contains(&edge) {
             edges.push(edge);
+            true
+        } else {
+            false
         }
     }
 

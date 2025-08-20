@@ -4,9 +4,7 @@ use crate::{
     core::state::{Domains, InvalidUpdate},
     reasoners::{
         eq_alt::{
-            graph::{
-                folds::EqFold, subsets::MergedGraph, traversal::GraphTraversal, GraphDir, IdEdge, Path, TaggedNode,
-            },
+            graph::{folds::EqFold, traversal::GraphTraversal, GraphDir, IdEdge, Path, TaggedNode},
             node::Node,
             propagators::{Propagator, PropagatorId},
             relation::EqRelation,
@@ -21,45 +19,38 @@ impl AltEqTheory {
     /// Merge all nodes in a cycle together.
     fn merge_cycle(&mut self, path: &Path, edge: IdEdge) {
         // Important for the .find()s to work correctly. Should always be the case, but there may be issues with repeated merges
-        debug_assert_eq!(
-            self.active_graph.node_store.get_representative(path.source_id.into()),
-            path.source_id
-        );
-        debug_assert_eq!(
-            self.active_graph.node_store.get_representative(path.target_id.into()),
-            path.target_id
-        );
+        let g = &self.active_graph;
+        debug_assert_eq!(g.get_group_id(path.source_id.into()), path.source_id);
+        debug_assert_eq!(g.get_group_id(path.target_id.into()), path.target_id);
+        let edge_source = g.get_group_id(edge.source).into();
+        let edge_target = g.get_group_id(edge.target).into();
 
         // Get path from path.source to edge.source and the path from edge.target to path.target
         let source_path = {
             let mut traversal = GraphTraversal::new(
-                MergedGraph::new(
-                    &self.active_graph.node_store,
-                    self.active_graph.get_traversal_graph(GraphDir::Forward),
-                ),
+                self.active_graph.get_traversal_graph(GraphDir::ForwardGrouped),
                 EqFold(),
                 path.source_id.into(),
                 true,
             );
-            let n = traversal.find(|&TaggedNode(n, ..)| n == edge.source).unwrap();
+            let n = traversal.find(|&TaggedNode(n, ..)| n == edge_source).unwrap();
             traversal.get_path(n)
         };
 
         let target_path = {
             let mut traversal = GraphTraversal::new(
-                MergedGraph::new(
-                    &self.active_graph.node_store,
-                    self.active_graph.get_traversal_graph(GraphDir::Forward),
-                ),
+                self.active_graph.get_traversal_graph(GraphDir::ForwardGrouped),
                 EqFold(),
-                edge.target,
+                edge_target,
                 true,
             );
             let n = traversal.find(|&TaggedNode(n, ..)| n == path.target_id.into()).unwrap();
             traversal.get_path(n)
         };
+
+        self.active_graph.merge((edge_target, edge_source));
         for edge in source_path.into_iter().chain(target_path) {
-            self.active_graph.merge_nodes((edge.target, path.source_id.into()));
+            self.active_graph.merge((edge.target, path.source_id.into()));
         }
     }
 
@@ -74,8 +65,8 @@ impl AltEqTheory {
         path: &Path,
         check_relation: EqRelation,
     ) -> Option<(PropagatorId, Propagator)> {
-        let sources = self.active_graph.node_store.get_group_nodes(path.source_id);
-        let targets = self.active_graph.node_store.get_group_nodes(path.target_id);
+        let sources = self.active_graph.get_group_nodes(path.source_id);
+        let targets = self.active_graph.get_group_nodes(path.target_id);
 
         sources
             .into_iter()

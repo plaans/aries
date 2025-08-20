@@ -87,11 +87,9 @@ impl NodeStore {
         self.nodes[id]
     }
 
-    pub fn merge(&mut self, ids: (NodeId, NodeId)) {
-        let rep1 = self.get_representative(ids.0);
-        let rep2 = self.get_representative(ids.1);
-        if rep1 != rep2 {
-            self.set_new_parent(rep1.into(), rep2.into());
+    pub fn merge(&mut self, child: GroupId, parent: GroupId) {
+        if child != parent {
+            self.set_new_parent(child.into(), parent.into());
         }
     }
 
@@ -146,7 +144,7 @@ impl NodeStore {
         }
     }
 
-    pub fn get_representative(&self, mut id: NodeId) -> GroupId {
+    pub fn get_group_id(&self, mut id: NodeId) -> GroupId {
         // Get the path from id to rep (inclusive)
         let mut path = self.path.borrow_mut();
         path.clear();
@@ -285,47 +283,41 @@ mod tests {
         let n1 = ns.insert_node(Val(1));
         let n2 = ns.insert_node(Val(2));
 
-        assert_ne!(ns.get_representative(n0), ns.get_representative(n1));
-        assert_ne!(ns.get_representative(n1), ns.get_representative(n2));
+        assert_ne!(ns.get_group_id(n0), ns.get_group_id(n1));
+        assert_ne!(ns.get_group_id(n1), ns.get_group_id(n2));
 
         // Merge n0 and n1, then n1 and n2 => all should be in one group
-        ns.merge((n0, n1));
-        ns.merge((n1, n2));
-        let rep = ns.get_representative(n0);
-        assert_eq!(rep, ns.get_representative(n2));
+        ns.merge(n0.into(), n1.into());
+        ns.merge(n1.into(), n2.into());
+        let rep = ns.get_group_id(n0);
+        assert_eq!(rep, ns.get_group_id(n2));
         assert_eq!(
-            ns.get_group(ns.get_representative(n1))
-                .into_iter()
-                .collect::<HashSet<_>>(),
+            ns.get_group(ns.get_group_id(n1)).into_iter().collect::<HashSet<_>>(),
             [n0, n1, n2].into()
         );
 
         // Merge same nodes again to check idempotency
-        ns.merge((n0, n2));
-        assert_eq!(ns.get_representative(n0), rep);
+        ns.merge(n0.into(), n2.into());
+        assert_eq!(ns.get_group_id(n0), rep);
 
         // Add a new node and ensure it's separate
         let n3 = ns.insert_node(Val(3));
-        assert_ne!(ns.get_representative(n3), rep);
+        assert_ne!(ns.get_group_id(n3), rep);
 
         ns.save_state();
 
         // Merge into existing group
-        ns.merge((n2, n3));
+        ns.merge(n2.into(), n3.into());
         assert_eq!(
-            ns.get_group(ns.get_representative(n3))
-                .into_iter()
-                .collect::<HashSet<_>>(),
+            ns.get_group(ns.get_group_id(n3)).into_iter().collect::<HashSet<_>>(),
             [n0, n1, n2, n3].into()
         );
 
         // Restore to state before n3 was merged
         ns.restore_last();
-        assert_ne!(ns.get_representative(n3), rep);
+        assert_ne!(ns.get_group_id(n3), rep);
         assert_eq!(
-            ns.get_group(ns.get_representative(n2))
-                .into_iter()
-                .collect::<HashSet<_>>(),
+            ns.get_group(ns.get_group_id(n2)).into_iter().collect::<HashSet<_>>(),
             [n0, n1, n2].into()
         );
 

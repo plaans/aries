@@ -3,7 +3,7 @@ mod check;
 mod explain;
 mod propagate;
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, io::stdin};
 
 use cause::ModelUpdateCause;
 
@@ -123,34 +123,36 @@ impl Theory for AltEqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        // println!(
-        //     "Before:\n{}\n",
-        //     self.active_graph.to_graphviz(),
-        //     // self.undecided_graph.to_graphviz()
-        // );
-        let mut propagated = false;
         while let Some(event) = self.pending_activations.pop_front() {
-            propagated = true;
             self.propagate_candidate(model, event.prop_id)?;
         }
-        while let Some(event) = self.model_events.pop(model.trail()) {
+        while let Some(&event) = self.model_events.pop(model.trail()) {
+            let mut act = false;
             for (_, prop_id) in self
                 .constraint_store
                 .enabled_by(event.new_literal())
                 .collect::<Vec<_>>() // To satisfy borrow checker
                 .iter()
             {
-                propagated = true;
+                act = true;
                 let prop = self.constraint_store.get_propagator(*prop_id);
+                // println!("prop: {prop:?}");
                 if model.entails(prop.enabler.valid) {
                     self.constraint_store.mark_valid(*prop_id);
                 }
                 self.propagate_candidate(model, *prop_id)?;
             }
+            if act {
+                // println!("event: {event:?}");
+            }
         }
-        if propagated {
-            // self.check_propagations(model);
-        }
+        // println!(
+        //     "{}\n{}\n",
+        //     self.active_graph.to_graphviz().lines().count(),
+        //     self.active_graph.to_graphviz_grouped().lines().count()
+        // );
+        // let mut input = String::new();
+        // stdin().read_line(&mut input).unwrap();
         Ok(())
     }
 
@@ -381,13 +383,73 @@ mod tests {
                 model.set(lab, Cause::Decision).unwrap();
                 model.set(lbc, Cause::Decision).unwrap();
                 eq.propagate(model).unwrap();
-                println!("{}", eq.active_graph.to_graphviz());
                 assert!(model.entails(!lca));
                 expect_explanation(cursor, eq, model, !lca, vec![lab, lbc]);
             },
             &mut eq,
             &mut model,
         );
+    }
+
+    #[test]
+    fn test_grouping() {
+        let mut model = Domains::new();
+        let mut eq = AltEqTheory::new();
+
+        // a -==-> b
+        let a_pres = model.new_bool();
+        let b_pres = model.new_bool();
+        model.add_implication(b_pres, a_pres);
+        let a = model.new_optional_var(0, 1, a_pres);
+        let b = model.new_optional_var(0, 1, b_pres);
+        eq.add_half_reified_eq_edge(Lit::TRUE, a, b, &model);
+
+        // b <-==-> c
+        let c = model.new_optional_var(0, 1, b_pres);
+        eq.add_half_reified_eq_edge(Lit::TRUE, b, c, &model);
+
+        eq.propagate(&mut model).unwrap();
+
+        {
+            let g = &eq.active_graph;
+            let a_id = g.get_id(&a.into()).unwrap();
+            let b_id = g.get_id(&b.into()).unwrap();
+            let c_id = g.get_id(&c.into()).unwrap();
+            assert_eq!(g.get_group_id(b_id), g.get_group_id(c_id));
+            assert_ne!(g.get_group_id(a_id), g.get_group_id(b_id));
+        }
+        // c -==-> d -==-> a
+        let d_pres = model.new_bool();
+        model.add_implication(d_pres, b_pres);
+        model.add_implication(a_pres, d_pres);
+        let d = model.new_optional_var(0, 1, d_pres);
+        eq.add_half_reified_eq_edge(Lit::TRUE, c, d, &model);
+        eq.add_half_reified_eq_edge(Lit::TRUE, d, a, &model);
+        eq.propagate(&mut model).unwrap();
+
+        {
+            let g = &eq.active_graph;
+            let a_id = g.get_id(&a.into()).unwrap();
+            let b_id = g.get_id(&b.into()).unwrap();
+            let c_id = g.get_id(&c.into()).unwrap();
+            let d_id = g.get_id(&d.into()).unwrap();
+            assert_eq!(g.get_group_id(a_id), g.get_group_id(b_id));
+            assert_eq!(g.get_group_id(a_id), g.get_group_id(c_id));
+            assert_eq!(g.get_group_id(a_id), g.get_group_id(d_id));
+        }
+
+        eq.add_half_reified_eq_edge(Lit::TRUE, a, 1, &model);
+        eq.propagate(&mut model).unwrap();
+        assert!(model.entails(a.geq(1)));
+        assert!(model.entails(b.geq(1)));
+        assert!(model.entails(c.geq(1)));
+        assert!(model.entails(d.geq(1)));
+
+        let l = model.new_bool();
+        eq.add_half_reified_neq_edge(l, a, c, &model);
+        eq.propagate(&mut model).unwrap();
+
+        assert!(model.entails(!l));
     }
 
     #[test]
