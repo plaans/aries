@@ -4,7 +4,7 @@ use aries::{
     model::Model,
     solver::{
         Solver,
-        search::activity::{ActivityBrancher, Heuristic},
+        search::activity::{ActivityBrancher, BranchingParams, Heuristic},
     },
 };
 use encode::Encoding;
@@ -29,7 +29,14 @@ fn main() {
     let mut model = Model::new();
     let encoding = Encoding::new(&problem, &mut model);
     let mut solver = Solver::new(model);
-    solver.set_brancher(ActivityBrancher::new_with_heuristic(BooleanFavoringHeuristic {}));
+    solver.set_brancher(ActivityBrancher::new_with(
+        BranchingParams {
+            prefer_min_value: false,
+            ..Default::default()
+        },
+        BooleanFavoringHeuristic {},
+        // DefaultHeuristic {},
+    ));
     let res = solver.minimize_with_callback(encoding.n_colors, |n, _| println!("Found solution {n}"));
     if let Ok(Some((n_cols, _))) = res {
         solver.print_stats();

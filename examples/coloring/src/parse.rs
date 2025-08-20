@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{self, BufRead},
     num::ParseIntError,
@@ -19,11 +19,22 @@ pub struct Problem {
 }
 
 impl Problem {
+    pub fn upper_bound(&self) -> u32 {
+        let mut n_edges = HashMap::new();
+        for (source, target) in self.edges.iter() {
+            n_edges.entry(source).and_modify(|x| *x += 1).or_insert(1);
+            n_edges.entry(target).and_modify(|x| *x += 1).or_insert(1);
+        }
+        n_edges.into_values().max().unwrap() + 1
+    }
+
     fn add_edge(&mut self, node1: Node, node2: Node) {
+        assert!(!self.edges.contains(&(node2, node1)));
         self.nodes.insert(node1);
         self.nodes.insert(node2);
         self.edges.insert((node1, node2));
     }
+
     pub fn from_file(path: &Path) -> Self {
         let mut res: Problem = Default::default();
         assert!(path.is_file());
