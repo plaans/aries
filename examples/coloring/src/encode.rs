@@ -3,6 +3,7 @@ use aries::model::Model;
 use aries::model::lang::IVar;
 use aries::model::lang::expr::{eq, leq, neq};
 
+use super::REIFY_EQ;
 use crate::parse::{Node, Problem};
 
 pub struct EncodedNode {
@@ -47,8 +48,10 @@ impl Encoding {
                 if problem.edges.contains(&(n1.node, n2.node)) || problem.edges.contains(&(n2.node, n1.node)) {
                     let lit = model.half_reify(neq(n1.color, n2.color));
                     model.state.set(lit, Cause::Encoding).unwrap();
-                } else {
+                } else if REIFY_EQ.get() {
                     model.reify(eq(n1.color, n2.color));
+                } else {
+                    model.half_reify(eq(n1.color, n2.color));
                 }
             }
         }

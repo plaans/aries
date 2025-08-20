@@ -488,6 +488,7 @@ name = "coloring"
 version = "0.1.0"
 dependencies = [
  "aries",
+ "env_param",
 ]
 
 [[package]]

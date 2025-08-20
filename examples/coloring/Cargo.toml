@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 aries = { path = "../../solver", features = ["cpu_cycles"] }
+env_param = { version = "0.1.0", path = "../../env_param" }
