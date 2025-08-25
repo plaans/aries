@@ -16,7 +16,6 @@ pub trait Fold<T: NodeTag> {
 }
 
 pub trait Graph {
-    fn map_source(&self, node: NodeId) -> NodeId;
     fn edges(&self, node: NodeId) -> impl Iterator<Item = IdEdge>;
 }
 
@@ -61,7 +60,7 @@ where
 {
     pub fn new(graph: G, fold: F, source: NodeId, mem_path: bool) -> Self {
         GraphTraversal {
-            stack: vec![TaggedNode(graph.map_source(source), fold.init())],
+            stack: vec![TaggedNode(source, fold.init())],
             graph,
             fold,
             visited: Default::default(),

@@ -104,6 +104,7 @@ impl DirEqGraph {
         self.node_store.get_group_id(id)
     }
 
+    #[allow(unused)]
     pub fn get_group(&self, id: GroupId) -> Vec<NodeId> {
         self.node_store.get_group(id)
     }
@@ -202,24 +203,15 @@ impl DirEqGraph {
             target: self.node_store.get_group_id(edge.target).into(),
             ..edge
         };
-        // If edge already exists, no paths require it
-        // FIXME: Expensive check, may not be needed?
-        let res = if self
-            .node_store
-            .get_group(edge.source.into())
-            .into_iter()
-            .flat_map(|n| self.outgoing.iter_edges(n))
-            .any(|e| self.node_store.get_group_id(e.target) == edge.target.into() && e.relation == edge.relation)
-        {
+        if self.outgoing_grouped.contains_edge(edge) {
+            // println!("Edge exists");
             Vec::new()
         } else {
             match edge.relation {
                 EqRelation::Eq => self.paths_requiring_eq(edge),
                 EqRelation::Neq => self.paths_requiring_neq(edge),
             }
-        };
-        // println!("Paths: {}", res.len());
-        res
+        }
     }
 
     /// NOTE: This set will only contain representatives, not any node.
@@ -432,6 +424,7 @@ pub enum GraphDir {
     Forward,
     Reverse,
     ForwardGrouped,
+    #[allow(unused)]
     ReverseGrouped,
 }
 

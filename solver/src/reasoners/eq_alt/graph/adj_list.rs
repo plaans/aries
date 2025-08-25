@@ -1,11 +1,13 @@
 use std::fmt::{Debug, Formatter};
 
+use hashbrown::HashSet;
+
 use crate::collections::ref_store::IterableRefMap;
 
 use super::{IdEdge, NodeId};
 
 #[derive(Default, Clone)]
-pub(super) struct EqAdjList(IterableRefMap<NodeId, Vec<IdEdge>>);
+pub(super) struct EqAdjList(IterableRefMap<NodeId, HashSet<IdEdge>>);
 
 impl Debug for EqAdjList {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -29,7 +31,7 @@ impl EqAdjList {
     }
 
     /// Insert a node if not present
-    pub(super) fn insert_node(&mut self, node: NodeId) {
+    fn insert_node(&mut self, node: NodeId) {
         if !self.0.contains(node) {
             self.0.insert(node, Default::default());
         }
@@ -37,16 +39,11 @@ impl EqAdjList {
 
     /// Possibly insert an edge and both nodes
     /// Returns true if edge was inserted
-    pub(super) fn insert_edge(&mut self, edge: IdEdge) -> bool {
+    pub fn insert_edge(&mut self, edge: IdEdge) -> bool {
         self.insert_node(edge.source);
         self.insert_node(edge.target);
         let edges = self.get_edges_mut(edge.source).unwrap();
-        if !edges.contains(&edge) {
-            edges.push(edge);
-            true
-        } else {
-            false
-        }
+        edges.insert(edge)
     }
 
     pub fn contains_edge(&self, edge: IdEdge) -> bool {
@@ -56,23 +53,23 @@ impl EqAdjList {
         edges.contains(&edge)
     }
 
-    pub(super) fn get_edges(&self, node: NodeId) -> Option<&Vec<IdEdge>> {
+    pub fn get_edges(&self, node: NodeId) -> Option<&HashSet<IdEdge>> {
         self.0.get(node)
     }
 
-    pub(super) fn iter_edges(&self, node: NodeId) -> impl Iterator<Item = &IdEdge> {
+    pub fn iter_edges(&self, node: NodeId) -> impl Iterator<Item = &IdEdge> {
         self.0.get(node).into_iter().flat_map(|v| v.iter())
     }
 
-    pub(super) fn get_edges_mut(&mut self, node: NodeId) -> Option<&mut Vec<IdEdge>> {
+    pub fn get_edges_mut(&mut self, node: NodeId) -> Option<&mut HashSet<IdEdge>> {
         self.0.get_mut(node)
     }
 
-    pub(super) fn iter_all_edges(&self) -> impl Iterator<Item = IdEdge> + use<'_> {
+    pub fn iter_all_edges(&self) -> impl Iterator<Item = IdEdge> + use<'_> {
         self.0.entries().flat_map(|(_, e)| e.iter().cloned())
     }
 
-    pub(super) fn iter_children(&self, node: NodeId) -> Option<impl Iterator<Item = NodeId> + use<'_>> {
+    pub fn iter_children(&self, node: NodeId) -> Option<impl Iterator<Item = NodeId> + use<'_>> {
         self.0.get(node).map(|v| v.iter().map(|e| e.target))
     }
 
@@ -80,7 +77,7 @@ impl EqAdjList {
         self.0.entries().map(|(n, _)| n)
     }
 
-    pub(super) fn iter_nodes_where(
+    pub fn iter_nodes_where(
         &self,
         node: NodeId,
         filter: fn(&IdEdge) -> bool,
@@ -90,10 +87,7 @@ impl EqAdjList {
             .map(move |v| v.iter().filter(move |e| filter(e)).map(|e| e.target))
     }
 
-    pub(super) fn remove_edge(&mut self, edge: IdEdge) {
-        self.0
-            .get_mut(edge.source)
-            .expect("Attempted to remove edge which isn't present.")
-            .retain(|e| *e != edge);
+    pub fn remove_edge(&mut self, edge: IdEdge) -> bool {
+        self.0.get_mut(edge.source).is_some_and(|set| set.remove(&edge))
     }
 }

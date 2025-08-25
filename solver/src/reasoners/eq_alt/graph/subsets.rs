@@ -7,11 +7,7 @@ use super::{
 
 impl traversal::Graph for &EqAdjList {
     fn edges(&self, node: NodeId) -> impl Iterator<Item = IdEdge> {
-        self.get_edges(node).into_iter().flat_map(|v| v.clone())
-    }
-
-    fn map_source(&self, node: NodeId) -> NodeId {
-        node
+        self.get_edges(node).into_iter().flat_map(|v| v.iter().cloned())
     }
 }
 
@@ -30,9 +26,5 @@ impl<'a, G: traversal::Graph> ActiveGraphSnapshot<'a, G> {
 impl<G: traversal::Graph> traversal::Graph for ActiveGraphSnapshot<'_, G> {
     fn edges(&self, node: NodeId) -> impl Iterator<Item = IdEdge> {
         self.graph.edges(node).filter(|e| self.model.entails(e.active))
-    }
-
-    fn map_source(&self, node: NodeId) -> NodeId {
-        self.graph.map_source(node)
     }
 }

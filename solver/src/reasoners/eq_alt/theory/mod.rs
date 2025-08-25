@@ -3,7 +3,7 @@ mod check;
 mod explain;
 mod propagate;
 
-use std::{collections::VecDeque, io::stdin};
+use std::collections::VecDeque;
 
 use cause::ModelUpdateCause;
 
@@ -127,32 +127,19 @@ impl Theory for AltEqTheory {
             self.propagate_candidate(model, event.prop_id)?;
         }
         while let Some(&event) = self.model_events.pop(model.trail()) {
-            let mut act = false;
             for (_, prop_id) in self
                 .constraint_store
                 .enabled_by(event.new_literal())
                 .collect::<Vec<_>>() // To satisfy borrow checker
                 .iter()
             {
-                act = true;
                 let prop = self.constraint_store.get_propagator(*prop_id);
-                // println!("prop: {prop:?}");
                 if model.entails(prop.enabler.valid) {
                     self.constraint_store.mark_valid(*prop_id);
                 }
                 self.propagate_candidate(model, *prop_id)?;
             }
-            if act {
-                // println!("event: {event:?}");
-            }
         }
-        // println!(
-        //     "{}\n{}\n",
-        //     self.active_graph.to_graphviz().lines().count(),
-        //     self.active_graph.to_graphviz_grouped().lines().count()
-        // );
-        // let mut input = String::new();
-        // stdin().read_line(&mut input).unwrap();
         Ok(())
     }
 
@@ -163,7 +150,6 @@ impl Theory for AltEqTheory {
         model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
-        // println!("{}", self.active_graph.to_graphviz());
         use ModelUpdateCause::*;
 
         // Get the path which explains the inference
