@@ -15,7 +15,7 @@ mod encode;
 mod parse;
 
 pub static SPECIAL_BRANCHER: EnvParam<bool> = EnvParam::new("ARIES_COLORING_SPECIAL_BRANCHER", "true");
-pub static REIFY_EQ: EnvParam<bool> = EnvParam::new("ARIES_COLORING_REIFY_EQ", "false");
+pub static REIFY_EQ: EnvParam<bool> = EnvParam::new("ARIES_COLORING_REIFY_EQ", "true");
 
 pub struct BooleanFavoringHeuristic;
 
@@ -40,7 +40,6 @@ fn main() {
                 ..Default::default()
             },
             BooleanFavoringHeuristic {},
-            // DefaultHeuristic {},
         ));
     }
     let res = solver.minimize_with_callback(encoding.n_colors, |n, _| println!("Found solution {n}"));
