@@ -87,7 +87,15 @@ impl NodeStore {
         self.nodes[id]
     }
 
+    pub fn merge_nodes(&mut self, child: NodeId, parent: NodeId) {
+        let child = self.get_group_id(child);
+        let parent = self.get_group_id(parent);
+        self.merge(child, parent);
+    }
+
     pub fn merge(&mut self, child: GroupId, parent: GroupId) {
+        debug_assert_eq!(child, self.get_group_id(child.into()));
+        debug_assert_eq!(parent, self.get_group_id(parent.into()));
         if child != parent {
             self.set_new_parent(child.into(), parent.into());
         }
@@ -271,7 +279,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test() {
+    fn test_node_store() {
         use std::collections::HashSet;
         use Node::*;
 
@@ -287,8 +295,8 @@ mod tests {
         assert_ne!(ns.get_group_id(n1), ns.get_group_id(n2));
 
         // Merge n0 and n1, then n1 and n2 => all should be in one group
-        ns.merge(n0.into(), n1.into());
-        ns.merge(n1.into(), n2.into());
+        ns.merge_nodes(n0, n1);
+        ns.merge_nodes(n1, n2);
         let rep = ns.get_group_id(n0);
         assert_eq!(rep, ns.get_group_id(n2));
         assert_eq!(
@@ -297,7 +305,7 @@ mod tests {
         );
 
         // Merge same nodes again to check idempotency
-        ns.merge(n0.into(), n2.into());
+        ns.merge_nodes(n0, n2);
         assert_eq!(ns.get_group_id(n0), rep);
 
         // Add a new node and ensure it's separate
@@ -307,7 +315,7 @@ mod tests {
         ns.save_state();
 
         // Merge into existing group
-        ns.merge(n2.into(), n3.into());
+        ns.merge_nodes(n2, n3);
         assert_eq!(
             ns.get_group(ns.get_group_id(n3)).into_iter().collect::<HashSet<_>>(),
             [n0, n1, n2, n3].into()

@@ -203,14 +203,24 @@ impl DirEqGraph {
             target: self.node_store.get_group_id(edge.target).into(),
             ..edge
         };
-        if self.outgoing_grouped.contains_edge(edge) {
-            // println!("Edge exists");
+
+        if self.path_exists(edge.source, edge.target, edge.relation) {
             Vec::new()
         } else {
             match edge.relation {
                 EqRelation::Eq => self.paths_requiring_eq(edge),
                 EqRelation::Neq => self.paths_requiring_neq(edge),
             }
+        }
+    }
+
+    fn path_exists(&self, source: NodeId, target: NodeId, relation: EqRelation) -> bool {
+        match relation {
+            EqRelation::Eq => {
+                GraphTraversal::new(&self.outgoing_grouped, EqFold(), source, false).any(|n| n.0 == target)
+            }
+            EqRelation::Neq => GraphTraversal::new(&self.outgoing_grouped, EqOrNeqFold(), source, false)
+                .any(|n| n.0 == target && n.1 == EqRelation::Neq),
         }
     }
 
@@ -311,21 +321,15 @@ impl DirEqGraph {
     }
 
     fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
-        let source_group = self.node_store.get_group_id(edge.source).into();
-        let target_group = self.node_store.get_group_id(edge.target).into();
+        let (reachable_rev_eq, reachable_rev_neq) = self.reachable_set_seperated(&self.incoming_grouped, edge.target);
+        let (reachable_fwd_eq, reachable_fwd_neq) = self.reachable_set_seperated(&self.outgoing_grouped, edge.source);
 
-        // let reachable_preds = self.reachable_set(&self.rev_adj_list, target_group, EqFold());
-        // let reachable_succs = self.reachable_set_neq(&self.fwd_adj_list, source_group);
-        let (reachable_rev_eq, reachable_rev_neq) = self.reachable_set_seperated(&self.incoming_grouped, target_group);
-        let (reachable_fwd_eq, reachable_fwd_neq) = self.reachable_set_seperated(&self.outgoing_grouped, target_group);
-
-        let mut res =
-            self.paths_requiring_neq_partial(&reachable_rev_eq, &reachable_fwd_neq, source_group, target_group);
+        let mut res = self.paths_requiring_neq_partial(&reachable_rev_eq, &reachable_fwd_neq, edge.source, edge.target);
 
         // Edge will be duplicated otherwise
         res.next().unwrap();
 
-        res.chain(self.paths_requiring_neq_partial(&reachable_rev_neq, &reachable_fwd_eq, source_group, target_group))
+        res.chain(self.paths_requiring_neq_partial(&reachable_rev_neq, &reachable_fwd_eq, edge.source, edge.target))
             .collect_vec()
     }
 
@@ -659,7 +663,7 @@ mod tests {
     fn test_paths_requiring() {
         let g = instance1();
         assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Eq)), []);
-        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Neq)), [path(&g, 0, 1, Neq)]);
+        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Neq)), []);
         assert_eq_unordered_unique!(
             g.paths_requiring(edge(&g, 1, 2, Eq)),
             [
