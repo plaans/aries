@@ -199,6 +199,26 @@ impl NodeStore {
     pub fn get_group_nodes(&self, id: GroupId) -> Vec<Node> {
         self.get_group(id).into_iter().map(|id| self.get_node(id)).collect()
     }
+
+    pub fn groups(&self) -> Vec<GroupId> {
+        let relations = self.group_relations.borrow();
+        (0..relations.len())
+            .filter_map(|i| (relations[i.into()].parent.is_none()).then_some(i.into()))
+            .collect()
+    }
+
+    pub fn count_groups(&self) -> usize {
+        self.groups().len()
+    }
+
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn nodes(&self) -> Vec<NodeId> {
+        let relations = self.group_relations.borrow();
+        (0..relations.len()).map(|i| i.into()).collect()
+    }
 }
 
 // impl Default for NodeStore {

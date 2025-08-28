@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use folds::{EmptyTag, EqFold, EqOrNeqFold, ReducingFold};
+use hashbrown::HashSet;
 use itertools::Itertools;
 use node_store::{GroupId, NodeStore};
 pub use traversal::TaggedNode;
@@ -127,6 +128,11 @@ impl DirEqGraph {
                 source: parent.into(),
                 ..edge
             };
+            // Avoid adding edges from a group into the same group
+            if new_edge.source == new_edge.target {
+                continue;
+            }
+
             let added = self.outgoing_grouped.insert_edge(new_edge);
             assert_eq!(added, self.incoming_grouped.insert_edge(new_edge.reverse()));
             if added {
@@ -144,6 +150,11 @@ impl DirEqGraph {
                 target: parent.into(),
                 ..edge
             };
+            // Avoid adding edges from a group into the same group
+            if new_edge.source == new_edge.target {
+                continue;
+            }
+
             let added = self.outgoing_grouped.insert_edge(new_edge);
             assert_eq!(added, self.incoming_grouped.insert_edge(new_edge.reverse()));
             if added {
@@ -204,23 +215,9 @@ impl DirEqGraph {
             ..edge
         };
 
-        if self.path_exists(edge.source, edge.target, edge.relation) {
-            Vec::new()
-        } else {
-            match edge.relation {
-                EqRelation::Eq => self.paths_requiring_eq(edge),
-                EqRelation::Neq => self.paths_requiring_neq(edge),
-            }
-        }
-    }
-
-    fn path_exists(&self, source: NodeId, target: NodeId, relation: EqRelation) -> bool {
-        match relation {
-            EqRelation::Eq => {
-                GraphTraversal::new(&self.outgoing_grouped, EqFold(), source, false).any(|n| n.0 == target)
-            }
-            EqRelation::Neq => GraphTraversal::new(&self.outgoing_grouped, EqOrNeqFold(), source, false)
-                .any(|n| n.0 == target && n.1 == EqRelation::Neq),
+        match edge.relation {
+            EqRelation::Eq => self.paths_requiring_eq(edge),
+            EqRelation::Neq => self.paths_requiring_neq(edge),
         }
     }
 
@@ -257,6 +254,9 @@ impl DirEqGraph {
 
     fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
         let reachable_preds = self.reachable_set(&self.incoming_grouped, edge.target);
+        if reachable_preds.contains(TaggedNode(edge.source, EqRelation::Eq)) {
+            return Vec::new();
+        }
         let reachable_succs = self.reachable_set(&self.outgoing_grouped, edge.source);
 
         let predecessors = GraphTraversal::new(
@@ -322,6 +322,9 @@ impl DirEqGraph {
 
     fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
         let (reachable_rev_eq, reachable_rev_neq) = self.reachable_set_seperated(&self.incoming_grouped, edge.target);
+        if reachable_rev_neq.contains(TaggedNode(edge.source, EmptyTag())) {
+            return Vec::new();
+        }
         let (reachable_fwd_eq, reachable_fwd_neq) = self.reachable_set_seperated(&self.outgoing_grouped, edge.source);
 
         let mut res = self.paths_requiring_neq_partial(&reachable_rev_eq, &reachable_fwd_neq, edge.source, edge.target);
@@ -363,6 +366,44 @@ impl DirEqGraph {
         }
         strings.push("}".to_string());
         strings.join("\n")
+    }
+
+    #[allow(unused)]
+    pub fn print_merge_statistics(&self) {
+        println!("Total nodes: {}", self.node_store.len());
+        println!("Total groups: {}", self.node_store.count_groups());
+        // let merged_edges = self
+        //     .outgoing
+        //     .iter_all_edges()
+        //     .filter(|e| !self.outgoing_grouped.contains_edge(*e))
+        //     .count();
+        // println!("Merged edges: {merged_edges}");
+        println!("Outgoing edges: {}", self.outgoing.iter_all_edges().count());
+        println!(
+            "Outgoing_grouped edges: {}",
+            self.outgoing_grouped.iter_all_edges().count()
+        );
+    }
+
+    /// Check that nodes that are not group representatives are not group reps
+    #[allow(unused)]
+    pub fn verify_grouping(&self) {
+        let groups = self.node_store.groups().into_iter().collect::<HashSet<_>>();
+        for node in self.node_store.nodes() {
+            if groups.contains(&GroupId::from(node)) {
+                continue;
+            }
+            if let Some(out_edges) = self.outgoing_grouped.get_edges(node) {
+                if !out_edges.is_empty() {
+                    panic!()
+                }
+            }
+            if let Some(out_edges) = self.incoming_grouped.get_edges(node) {
+                if !out_edges.is_empty() {
+                    panic!()
+                }
+            }
+        }
     }
 }
 
@@ -593,36 +634,24 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_merging() {
-    //     let mut g = instance2();
-    //     g.merge((id(&g, 0), id(&g, 1)));
-    //     g.merge((id(&g, 1), id(&g, 2)));
-
-    //     g.merge((id(&g, 3), id(&g, 4)));
-    //     g.merge((id(&g, 3), id(&g, 5)));
-
-    //     let g1_rep = g.node_store.get_group_id(id(&g, 0));
-    //     let g2_rep = g.node_store.get_group_id(id(&g, 3));
-    //     assert_eq_unordered_unique!(g.node_store.get_group(g1_rep), vec![id(&g, 0), id(&g, 1), id(&g, 2)]);
-    //     assert_eq_unordered_unique!(g.node_store.get_group(g2_rep), vec![id(&g, 3), id(&g, 4), id(&g, 5)]);
-
-    //     let traversal = GraphTraversal::new(
-    //         MergedGraph::new(&g.node_store, &g.outgoing),
-    //         EqOrNeqFold(),
-    //         id(&g, 0),
-    //         false,
-    //     );
-
-    //     assert_eq_unordered_unique!(
-    //         traversal,
-    //         vec![
-    //             TaggedNode(g1_rep.into(), Eq),
-    //             TaggedNode(g2_rep.into(), Neq),
-    //             TaggedNode(g1_rep.into(), Neq),
-    //         ],
-    //     );
-    // }
+    #[test]
+    fn test_merging() {
+        let mut g = instance1();
+        g.merge((id(&g, 0), id(&g, 1)));
+        g.merge((id(&g, 5), id(&g, 1)));
+        let rep = g.get_group_id(id(&g, 0));
+        let Node::Val(rep) = g.get_node(rep.into()) else {
+            panic!()
+        };
+        assert_eq_unordered_unique!(
+            g.outgoing_grouped.get_edges(id(&g, rep)).unwrap().into_iter().cloned(),
+            vec![edge(&g, rep, 6, Eq), edge(&g, rep, 3, Eq), edge(&g, rep, 2, Neq)]
+        );
+        assert_eq_unordered_unique!(
+            g.incoming_grouped.get_edges(id(&g, rep)).unwrap().into_iter().cloned(),
+            vec![edge(&g, rep, 6, Neq)]
+        );
+    }
 
     #[test]
     fn test_reduced_path() {

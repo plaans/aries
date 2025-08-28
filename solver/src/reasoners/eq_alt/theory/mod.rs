@@ -35,6 +35,7 @@ pub struct AltEqTheory {
     model_events: ObsTrailCursor<ModelEvent>,
     pending_activations: VecDeque<ActivationEvent>,
     identity: Identity<ModelUpdateCause>,
+    stats: Stats,
 }
 
 impl AltEqTheory {
@@ -45,6 +46,7 @@ impl AltEqTheory {
             model_events: Default::default(),
             pending_activations: Default::default(),
             identity: Identity::new(ReasonerId::Eq(0)),
+            stats: Default::default(),
         }
     }
 
@@ -73,6 +75,7 @@ impl AltEqTheory {
         // Create and record propagators
         let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
         for prop in [ab_prop, ba_prop] {
+            self.stats.propagators += 1;
             if model.entails(!prop.enabler.active) || model.entails(!prop.enabler.valid) {
                 continue;
             }
@@ -123,10 +126,20 @@ impl Theory for AltEqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
+        // Propagate initial propagators
         while let Some(event) = self.pending_activations.pop_front() {
             self.propagate_candidate(model, event.prop_id)?;
         }
+
+        // For each new model event, propagate all propagators which may be enabled by it
         while let Some(&event) = self.model_events.pop(model.trail()) {
+            // Optimisation: If we deactivated an edge with literal l due to a neq cycle, the propagator with literal !l (from reification) is redundant
+            if let Some(cause) = event.cause.as_external_inference() {
+                if cause.writer == self.identity() && matches!(cause.payload.into(), ModelUpdateCause::NeqCycle(_)) {
+                    self.stats.skipped_events += 1;
+                    continue;
+                }
+            }
             for (_, prop_id) in self
                 .constraint_store
                 .enabled_by(event.new_literal())
@@ -137,6 +150,7 @@ impl Theory for AltEqTheory {
                 if model.entails(prop.enabler.valid) {
                     self.constraint_store.mark_valid(*prop_id);
                 }
+                self.stats.propagations += 1;
                 self.propagate_candidate(model, *prop_id)?;
             }
         }
@@ -165,12 +179,26 @@ impl Theory for AltEqTheory {
     }
 
     fn print_stats(&self) {
-        // self.stats.print_stats();
+        println!("{:#?}", self.stats);
+        self.active_graph.print_merge_statistics();
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
         Box::new(self.clone())
     }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Stats {
+    propagators: u32,
+    propagations: u32,
+    skipped_events: u32,
+    neq_cycle_props: u32,
+    eq_props: u32,
+    neq_props: u32,
+    merges: u32,
+    total_paths: u32,
+    edges_propagated: u32,
 }
 
 #[cfg(test)]

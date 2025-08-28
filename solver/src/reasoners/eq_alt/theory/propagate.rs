@@ -18,10 +18,9 @@ use super::{cause::ModelUpdateCause, AltEqTheory};
 impl AltEqTheory {
     /// Merge all nodes in a cycle together.
     fn merge_cycle(&mut self, path: &Path, edge: IdEdge) {
-        // Important for the .find()s to work correctly. Should always be the case, but there may be issues with repeated merges
         let g = &self.active_graph;
-        debug_assert_eq!(g.get_group_id(path.source_id.into()), path.source_id);
-        debug_assert_eq!(g.get_group_id(path.target_id.into()), path.target_id);
+        let path_source = g.get_group_id(path.source_id.into());
+        let path_target = g.get_group_id(path.target_id.into());
         let edge_source = g.get_group_id(edge.source).into();
         let edge_target = g.get_group_id(edge.target).into();
 
@@ -30,7 +29,7 @@ impl AltEqTheory {
             let mut traversal = GraphTraversal::new(
                 self.active_graph.get_traversal_graph(GraphDir::ForwardGrouped),
                 EqFold(),
-                path.source_id.into(),
+                path_source.into(),
                 true,
             );
             let n = traversal.find(|&TaggedNode(n, ..)| n == edge_source).unwrap();
@@ -44,13 +43,13 @@ impl AltEqTheory {
                 edge_target,
                 true,
             );
-            let n = traversal.find(|&TaggedNode(n, ..)| n == path.target_id.into()).unwrap();
+            let n = traversal.find(|&TaggedNode(n, ..)| n == path_target.into()).unwrap();
             traversal.get_path(n)
         };
 
         self.active_graph.merge((edge_target, edge_source));
         for edge in source_path.into_iter().chain(target_path) {
-            self.active_graph.merge((edge.target, path.source_id.into()));
+            self.active_graph.merge((edge.target, path_source.into()));
         }
     }
 
@@ -105,6 +104,7 @@ impl AltEqTheory {
 
         // Find an active edge which creates a negative cycle, then disable current edge
         if let Some((_id, _back_prop)) = self.find_back_edge(model, true, &path, EqRelation::Neq) {
+            self.stats.neq_cycle_props += 1;
             model.set(
                 !edge.active,
                 self.identity.inference(ModelUpdateCause::NeqCycle(prop_id)),
@@ -114,6 +114,7 @@ impl AltEqTheory {
         if model.entails(edge.active) {
             // Find some activity undecided edge which creates a negative cycle, then disable it
             if let Some((id, back_prop)) = self.find_back_edge(model, false, &path, EqRelation::Neq) {
+                self.stats.neq_cycle_props += 1;
                 model.set(
                     !back_prop.enabler.active,
                     self.identity.inference(ModelUpdateCause::NeqCycle(id)),
@@ -139,6 +140,7 @@ impl AltEqTheory {
 
             // If we detect an eq cycle, find the path that created this cycle and merge
             if self.find_back_edge(model, true, &path, EqRelation::Eq).is_some() {
+                self.stats.merges += 1;
                 self.merge_cycle(&path, edge);
             }
         }
@@ -162,8 +164,11 @@ impl AltEqTheory {
         }
 
         // Get all new node paths we can potentially propagate
-        self.active_graph
-            .paths_requiring(edge)
+        let paths = self.active_graph.paths_requiring(edge);
+        self.stats.total_paths += paths.len() as u32;
+        self.stats.edges_propagated += 1;
+
+        paths
             .into_iter()
             .try_for_each(|p| self.propagate_path(model, prop_id, edge, p))
     }
@@ -192,19 +197,23 @@ impl AltEqTheory {
     }
 
     /// Propagate `s` and `t`'s bounds if s -=-> t
-    fn propagate_eq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
+    fn propagate_eq(&mut self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
         let cause = self.identity.inference(ModelUpdateCause::DomEq);
         let s_bounds = model.node_bounds(&s);
         if let Node::Var(t) = t {
-            model.set_lb(t, s_bounds.0, cause)?;
-            model.set_ub(t, s_bounds.1, cause)?;
+            if model.set_lb(t, s_bounds.0, cause)? {
+                self.stats.eq_props += 1;
+            }
+            if model.set_ub(t, s_bounds.1, cause)? {
+                self.stats.eq_props += 1;
+            }
         } // else reverse propagator will be active, so nothing to do
           // TODO: Maybe handle reverse propagator immediately
         Ok(())
     }
 
     /// Propagate `s` and `t`'s bounds if s -!=-> t
-    fn propagate_neq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
+    fn propagate_neq(&mut self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
         let cause = self.identity.inference(ModelUpdateCause::DomNeq);
         // If domains don't overlap, nothing to do
         // If source domain is fixed and ub or lb of target == source lb, exclude that value
@@ -212,11 +221,11 @@ impl AltEqTheory {
 
         if let Some(bound) = model.node_bound(&s) {
             if let Node::Var(t) = t {
-                if model.ub(t) == bound {
-                    model.set_ub(t, bound - 1, cause)?;
+                if model.ub(t) == bound && model.set_ub(t, bound - 1, cause)? {
+                    self.stats.neq_props += 1;
                 }
-                if model.lb(t) == bound {
-                    model.set_lb(t, bound + 1, cause)?;
+                if model.lb(t) == bound && model.set_lb(t, bound + 1, cause)? {
+                    self.stats.neq_props += 1;
                 }
             }
         }
