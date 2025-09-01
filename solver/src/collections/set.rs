@@ -99,6 +99,10 @@ impl<K: Ref> IterableRefSet<K> {
         self.set.insert(k, ());
     }
 
+    pub fn remove(&mut self, k: K) {
+        self.set.remove(k);
+    }
+
     pub fn clear(&mut self) {
         self.set.clear()
     }

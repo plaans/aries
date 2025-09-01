@@ -2,7 +2,7 @@ use hashbrown::HashMap;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, Trail},
-    collections::{ref_store::RefVec, set::RefSet},
+    collections::ref_store::RefVec,
     core::{literals::Watches, Lit},
 };
 
@@ -105,7 +105,6 @@ impl Propagator {
 #[derive(Debug, Clone, Copy)]
 enum Event {
     PropagatorAdded,
-    MarkedActive(PropagatorId),
     MarkedValid(PropagatorId),
     EnablerAdded(PropagatorId),
 }
@@ -114,7 +113,6 @@ enum Event {
 pub struct PropagatorStore {
     propagators: RefVec<PropagatorId, Propagator>,
     propagator_indices: HashMap<(Node, Node), Vec<PropagatorId>>,
-    marked_active: RefSet<PropagatorId>,
     watches: Watches<(Enabler, PropagatorId)>,
     trail: Trail<Event>,
 }
@@ -164,15 +162,6 @@ impl PropagatorStore {
         self.watches.watches_on(literal)
     }
 
-    pub fn marked_active(&self, prop_id: &PropagatorId) -> bool {
-        self.marked_active.contains(*prop_id)
-    }
-
-    pub fn mark_active(&mut self, prop_id: PropagatorId) {
-        self.trail.push(Event::MarkedActive(prop_id));
-        self.marked_active.insert(prop_id)
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (PropagatorId, &Propagator)> + use<'_> {
         self.propagators.entries()
     }
@@ -190,13 +179,10 @@ impl Backtrack for PropagatorStore {
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|event| match event {
             Event::PropagatorAdded => {
-                let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
+                // let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
                 // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
                 // self.propagators.remove(&last_prop_id);
-                self.marked_active.remove(last_prop_id);
-            }
-            Event::MarkedActive(prop_id) => {
-                self.marked_active.remove(prop_id);
+                self.propagators.pop();
             }
             Event::MarkedValid(prop_id) => {
                 let prop = &self.propagators[prop_id];

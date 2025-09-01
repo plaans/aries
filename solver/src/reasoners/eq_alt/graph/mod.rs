@@ -1,10 +1,11 @@
+use std::array;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use folds::{EmptyTag, EqFold, EqOrNeqFold, ReducingFold};
 use hashbrown::HashSet;
 use itertools::Itertools;
-use node_store::{GroupId, NodeStore};
+use node_store::NodeStore;
 pub use traversal::TaggedNode;
 
 use crate::backtrack::{Backtrack, DecLvl, Trail};
@@ -24,6 +25,7 @@ pub mod subsets;
 pub mod traversal;
 
 create_ref_type!(NodeId);
+pub use node_store::GroupId;
 
 impl Display for NodeId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -163,6 +165,12 @@ impl DirEqGraph {
         }
     }
 
+    pub fn group_product(&self, source_id: GroupId, target_id: GroupId) -> impl Iterator<Item = (Node, Node)> {
+        let sources = self.get_group_nodes(source_id);
+        let targets = self.get_group_nodes(target_id);
+        sources.into_iter().cartesian_product(targets)
+    }
+
     /// Returns an edge from a propagator without adding it to the graph.
     ///
     /// Adds the nodes to the graph if they are not present.
@@ -187,7 +195,7 @@ impl DirEqGraph {
         self.incoming_grouped.insert_edge(grouped_edge.reverse());
     }
 
-    pub fn get_traversal_graph(&self, dir: GraphDir) -> impl traversal::Graph + use<'_> {
+    fn get_dir(&self, dir: GraphDir) -> &EqAdjList {
         match dir {
             GraphDir::Forward => &self.outgoing,
             GraphDir::Reverse => &self.incoming,
@@ -196,12 +204,22 @@ impl DirEqGraph {
         }
     }
 
+    pub fn get_out_edges(&self, node: NodeId, dir: GraphDir) -> Vec<IdEdge> {
+        self.get_dir(dir)
+            .get_edges(node)
+            .map(|s| s.into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    pub fn get_traversal_graph(&self, dir: GraphDir) -> impl traversal::Graph + use<'_> {
+        self.get_dir(dir)
+    }
+
     pub fn iter_nodes(&self) -> impl Iterator<Item = Node> + use<'_> {
         self.outgoing.iter_nodes().map(|id| self.node_store.get_node(id))
     }
 
     /// Get all paths which would require the given edge to exist.
-    /// Edge should not be already present in graph
     ///
     /// For an edge x -==-> y, returns a vec of all pairs (w, z) such that w -=-> z or w -!=-> z in G union x -=-> y, but not in G.
     ///
@@ -231,33 +249,31 @@ impl DirEqGraph {
         traversal.get_reachable().clone()
     }
 
-    fn reachable_set_seperated(
+    fn reachable_set_excluding(
         &self,
         adj_list: &EqAdjList,
         source: NodeId,
-    ) -> (
-        IterableRefSet<TaggedNode<EmptyTag>>,
-        IterableRefSet<TaggedNode<EmptyTag>>,
-    ) {
-        let reachable = self.reachable_set(adj_list, source);
-        let mut eq = IterableRefSet::new();
-        let mut neq = IterableRefSet::new();
-        for elem in reachable.iter() {
-            let res = TaggedNode(elem.0, EmptyTag());
-            match elem.1 {
-                EqRelation::Eq => eq.insert(res),
-                EqRelation::Neq => neq.insert(res),
-            }
+        exclude: TaggedNode<EqRelation>,
+    ) -> Option<IterableRefSet<TaggedNode<EqRelation>>> {
+        let mut traversal = GraphTraversal::new(adj_list, EqOrNeqFold(), source, false);
+        // Consume iterator
+        if traversal.contains(&exclude) {
+            None
+        } else {
+            Some(traversal.get_reachable().clone())
         }
-        (eq, neq)
     }
 
     fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
-        let reachable_preds = self.reachable_set(&self.incoming_grouped, edge.target);
-        if reachable_preds.contains(TaggedNode(edge.source, EqRelation::Eq)) {
+        let Some(reachable_preds) = self.reachable_set_excluding(
+            &self.incoming_grouped,
+            edge.target,
+            TaggedNode(edge.source, EqRelation::Eq),
+        ) else {
             return Vec::new();
-        }
+        };
         let reachable_succs = self.reachable_set(&self.outgoing_grouped, edge.source);
+        debug_assert!(!reachable_succs.contains(TaggedNode(edge.target, EqRelation::Eq)));
 
         let predecessors = GraphTraversal::new(
             &self.incoming_grouped,
@@ -321,24 +337,43 @@ impl DirEqGraph {
     }
 
     fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
-        let (reachable_rev_eq, reachable_rev_neq) = self.reachable_set_seperated(&self.incoming_grouped, edge.target);
-        if reachable_rev_neq.contains(TaggedNode(edge.source, EmptyTag())) {
+        let Some(reachable_preds) = self.reachable_set_excluding(
+            &self.incoming_grouped,
+            edge.target,
+            TaggedNode(edge.source, EqRelation::Neq),
+        ) else {
             return Vec::new();
-        }
-        let (reachable_fwd_eq, reachable_fwd_neq) = self.reachable_set_seperated(&self.outgoing_grouped, edge.source);
+        };
+        let reachable_succs = self.reachable_set(&self.outgoing_grouped, edge.source);
+        let [mut reachable_preds_eq, mut reachable_preds_neq, mut reachable_succs_eq, mut reachable_succs_neq] =
+            array::from_fn(|_| IterableRefSet::new());
 
-        let mut res = self.paths_requiring_neq_partial(&reachable_rev_eq, &reachable_fwd_neq, edge.source, edge.target);
+        for e in reachable_succs.iter() {
+            match e.1 {
+                EqRelation::Eq => reachable_succs_eq.insert(TaggedNode(e.0, EmptyTag())),
+                EqRelation::Neq => reachable_succs_neq.insert(TaggedNode(e.0, EmptyTag())),
+            }
+        }
+        for e in reachable_preds.iter() {
+            match e.1 {
+                EqRelation::Eq => reachable_preds_eq.insert(TaggedNode(e.0, EmptyTag())),
+                EqRelation::Neq => reachable_preds_neq.insert(TaggedNode(e.0, EmptyTag())),
+            }
+        }
+
+        let mut res =
+            self.paths_requiring_neq_partial(&reachable_preds_eq, &reachable_succs_neq, edge.source, edge.target);
 
         // Edge will be duplicated otherwise
         res.next().unwrap();
 
-        res.chain(self.paths_requiring_neq_partial(&reachable_rev_neq, &reachable_fwd_eq, edge.source, edge.target))
+        res.chain(self.paths_requiring_neq_partial(&reachable_preds_neq, &reachable_succs_eq, edge.source, edge.target))
             .collect_vec()
     }
 
     #[allow(unused)]
-    pub(crate) fn to_graphviz(&self) -> String {
-        let mut strings = vec!["digraph {".to_string()];
+    pub fn to_graphviz(&self) -> String {
+        let mut strings = vec!["Ungrouped: ".to_string(), "digraph {".to_string()];
         for e in self.outgoing.iter_all_edges() {
             strings.push(format!(
                 "  {} -> {} [label=\"{} ({:?})\"]",
@@ -354,7 +389,7 @@ impl DirEqGraph {
 
     #[allow(unused)]
     pub fn to_graphviz_grouped(&self) -> String {
-        let mut strings = vec!["digraph {".to_string()];
+        let mut strings = vec!["Grouped: ".to_string(), "digraph {".to_string()];
         for e in self.outgoing_grouped.iter_all_edges() {
             strings.push(format!(
                 "  {} -> {} [label=\"{} ({:?})\"]",
@@ -372,12 +407,6 @@ impl DirEqGraph {
     pub fn print_merge_statistics(&self) {
         println!("Total nodes: {}", self.node_store.len());
         println!("Total groups: {}", self.node_store.count_groups());
-        // let merged_edges = self
-        //     .outgoing
-        //     .iter_all_edges()
-        //     .filter(|e| !self.outgoing_grouped.contains_edge(*e))
-        //     .count();
-        // println!("Merged edges: {merged_edges}");
         println!("Outgoing edges: {}", self.outgoing.iter_all_edges().count());
         println!(
             "Outgoing_grouped edges: {}",
@@ -689,8 +718,47 @@ mod tests {
     }
 
     #[test]
+    fn test_paths_requiring_cycles() {
+        let mut g = DirEqGraph::new();
+        for i in -3..=3 {
+            g.insert_node(Node::Val(i));
+        }
+
+        g.add_edge(edge(&g, -3, -2, Eq));
+        g.add_edge(edge(&g, -2, -1, Eq));
+        assert_eq_unordered_unique!(
+            g.paths_requiring(edge(&g, -1, -3, Eq)),
+            [
+                path(&g, -2, -2, Eq),
+                path(&g, -1, -3, Eq),
+                path(&g, -1, -2, Eq),
+                path(&g, -2, -3, Eq)
+            ]
+        );
+        g.add_edge(edge(&g, -1, -3, Eq));
+        g.merge((id(&g, -1), id(&g, -3)));
+        g.merge((id(&g, -2), id(&g, -3)));
+        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, -1, -3, Eq)), []);
+        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, -3, -3, Eq)), []);
+
+        g.add_edge(edge(&g, 0, 1, Eq));
+        assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 1, 0, Eq)), [path(&g, 1, 0, Eq)]);
+
+        assert_eq_unordered_unique!(
+            g.paths_requiring(edge(&g, 1, 0, Neq)),
+            [path(&g, 1, 0, Neq), path(&g, 0, 0, Neq), path(&g, 1, 1, Neq)]
+        );
+
+        g.add_edge(edge(&g, 2, 3, Neq));
+        assert_eq_unordered_unique!(
+            g.paths_requiring(edge(&g, 3, 2, Eq)),
+            [path(&g, 3, 2, Eq), path(&g, 2, 2, Neq), path(&g, 3, 3, Neq)]
+        );
+    }
+
+    #[test]
     fn test_paths_requiring() {
-        let g = instance1();
+        let mut g = instance1();
         assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Eq)), []);
         assert_eq_unordered_unique!(g.paths_requiring(edge(&g, 0, 1, Neq)), []);
         assert_eq_unordered_unique!(
@@ -704,6 +772,28 @@ mod tests {
                 path(&g, 5, 4, Neq),
                 path(&g, 6, 2, Neq)
             ]
-        )
+        );
+        assert_eq_unordered_unique!(
+            g.paths_requiring(edge(&g, 2, 1, Eq)),
+            [
+                path(&g, 2, 1, Eq),
+                path(&g, 2, 2, Neq),
+                path(&g, 2, 5, Eq),
+                path(&g, 2, 6, Eq),
+                path(&g, 2, 0, Eq),
+                path(&g, 2, 0, Neq),
+                path(&g, 2, 3, Eq),
+                path(&g, 2, 1, Neq),
+                path(&g, 2, 3, Neq),
+                path(&g, 2, 5, Neq),
+                path(&g, 2, 6, Neq),
+            ]
+        );
+        g.insert_node(Node::Val(7));
+        g.add_edge(edge(&g, 4, 7, Eq));
+        assert_eq_unordered_unique!(
+            g.paths_requiring(edge(&g, 7, 4, Neq)),
+            [path(&g, 7, 4, Neq), path(&g, 7, 7, Neq), path(&g, 4, 4, Neq)]
+        );
     }
 }

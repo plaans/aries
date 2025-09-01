@@ -100,25 +100,7 @@ impl AltEqTheory {
         problems
     }
 
-    fn check_state(&self, model: &Domains) {
-        // Check that all the propagators marked active are active and present in graph
-        self.constraint_store.iter().for_each(|(id, prop)| {
-            if !model.entails(prop.enabler.valid) {
-                return;
-            }
-            // let edge = prop.clone().into();
-            // Propagation has finished, constraint store activity markers should be consistent with activity of constraints
-            assert_eq!(
-                self.constraint_store.marked_active(&id),
-                model.entails(prop.enabler.active),
-                "{prop:?} debug: {}",
-                model.entails(prop.enabler.valid)
-            );
-        });
-    }
-
     pub fn check_propagations(&mut self, model: &Domains) {
-        self.check_state(model);
         let path_prop_problems = self.check_path_propagation(model);
         assert_eq!(
             path_prop_problems.len(),

@@ -41,10 +41,24 @@ impl AltEqTheory {
             }
         }
         .unwrap_or_else(|| {
+            let a_id = self.active_graph.get_id(&prop.a).unwrap();
+            let b_id = self.active_graph.get_id(&prop.b).unwrap();
             panic!(
-                "Unable to explain active graph\n{}\n{:?}",
+                "Unable to explain active graph: \n\
+                    {}\n\
+                    {}\n\
+                    {:?}\n\
+                    ({:?} -{}-> {:?}),\n\
+                    ({:?} -{}-> {:?})",
                 self.active_graph.to_graphviz(),
-                prop
+                self.active_graph.to_graphviz_grouped(),
+                prop,
+                a_id,
+                prop.relation,
+                b_id,
+                self.active_graph.get_group_id(a_id),
+                prop.relation,
+                self.active_graph.get_group_id(b_id)
             )
         })
     }
