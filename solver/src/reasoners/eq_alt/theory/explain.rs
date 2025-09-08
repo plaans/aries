@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{
     core::{
         state::{DomainsSnapshot, Explanation},
@@ -5,10 +7,9 @@ use crate::{
     },
     reasoners::eq_alt::{
         graph::{
-            folds::{EqFold, EqOrNeqFold},
-            subsets::ActiveGraphSnapshot,
-            traversal::GraphTraversal,
-            GraphDir, IdEdge, TaggedNode,
+            transforms::{EqExt, EqNeqExt, EqNode, FilterExt},
+            traversal::{Graph, PathStore},
+            IdEdge,
         },
         node::Node,
         propagators::PropagatorId,
@@ -25,19 +26,27 @@ impl AltEqTheory {
         let prop = self.constraint_store.get_propagator(prop_id);
         let source_id = self.active_graph.get_id(&prop.b).unwrap();
         let target_id = self.active_graph.get_id(&prop.a).unwrap();
-        let graph = ActiveGraphSnapshot::new(model, self.active_graph.get_traversal_graph(GraphDir::Forward));
+
+        let graph = self.active_graph.outgoing.filter(|_, e| model.entails(e.active));
+
         match prop.relation {
             EqRelation::Eq => {
-                let mut traversal = GraphTraversal::new(graph, EqOrNeqFold(), source_id, true);
-                traversal
-                    .find(|&TaggedNode(n, r)| n == target_id && r == EqRelation::Neq)
-                    .map(|n| traversal.get_path(n))
+                let mut path_store = PathStore::new();
+                graph
+                    .eq_neq()
+                    .traverse(EqNode::new(source_id))
+                    .mem_path(&mut path_store)
+                    .find(|&n| n == EqNode(target_id, EqRelation::Neq))
+                    .map(|n| path_store.get_path(n).map(|e| e.0).collect_vec())
             }
             EqRelation::Neq => {
-                let mut traversal = GraphTraversal::new(graph, EqFold(), source_id, true);
-                traversal
-                    .find(|&TaggedNode(n, ..)| n == target_id)
-                    .map(|n| traversal.get_path(n))
+                let mut path_store = PathStore::new();
+                graph
+                    .eq()
+                    .traverse(source_id)
+                    .mem_path(&mut path_store)
+                    .find(|&n| n == target_id)
+                    .map(|n| path_store.get_path(n).collect_vec())
             }
         }
         .unwrap_or_else(|| {
@@ -66,39 +75,40 @@ impl AltEqTheory {
     /// Explain an equality inference as a path of edges.
     pub fn eq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<IdEdge> {
         let source_id = self.active_graph.get_id(&Node::Var(literal.variable())).unwrap();
-        let mut traversal = GraphTraversal::new(
-            ActiveGraphSnapshot::new(model, self.active_graph.get_traversal_graph(GraphDir::Reverse)),
-            EqFold(),
-            source_id,
-            true,
-        );
-        // Node can't be it's own update cause
-        traversal.next();
-        let cause = traversal
-            .find(|TaggedNode(id, _)| {
+
+        let mut path_store = PathStore::new();
+        let cause = self
+            .active_graph
+            .incoming
+            .filter(|_, e| model.entails(e.active))
+            .eq()
+            .traverse(source_id)
+            .mem_path(&mut path_store)
+            .skip(1) // Cannot cause own propagation
+            .find(|id| {
                 let n = self.active_graph.get_node(*id);
                 let (lb, ub) = model.node_bounds(&n);
                 literal.svar().is_plus() && literal.variable().leq(ub).entails(literal)
                     || literal.svar().is_minus() && literal.variable().geq(lb).entails(literal)
             })
-            // .flamap(|TaggedNode(n, r)| dft.get_path(TaggedNode(n, r)))
-            .expect("Unable to explain eq propagation.");
-        traversal.get_path(cause)
+            .expect("Unable to explain eq propagation");
+        path_store.get_path(cause).collect()
     }
 
     /// Explain a neq inference as a path of edges.
     pub fn neq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<IdEdge> {
         let source_id = self.active_graph.get_id(&Node::Var(literal.variable())).unwrap();
-        let mut traversal = GraphTraversal::new(
-            ActiveGraphSnapshot::new(model, self.active_graph.get_traversal_graph(GraphDir::Reverse)),
-            EqOrNeqFold(),
-            source_id,
-            true,
-        );
-        // Node can't be it's own update cause
-        traversal.next();
-        let cause = traversal
-            .find(|TaggedNode(id, r)| {
+
+        let mut path_store = PathStore::new();
+        let cause = self
+            .active_graph
+            .incoming
+            .filter(|_, e| model.entails(e.active))
+            .eq_neq()
+            .traverse(EqNode::new(source_id))
+            .mem_path(&mut path_store)
+            .skip(1)
+            .find(|EqNode(id, r)| {
                 let (prev_lb, prev_ub) = model.bounds(literal.variable());
                 // If relationship between node and literal node is Neq
                 *r == EqRelation::Neq && {
@@ -111,9 +121,9 @@ impl AltEqTheory {
                     }
                 }
             })
-            .expect("Unable to explain neq propagation.");
+            .expect("Unable to explain Neq propagation");
 
-        traversal.get_path(cause)
+        path_store.get_path(cause).map(|e| e.0).collect()
     }
 
     pub fn explain_from_path(

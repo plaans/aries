@@ -1,4 +1,8 @@
-use std::{fmt::Display, ops::Add};
+use std::{
+    fmt::Display,
+    ops::{Add, Not, Sub},
+};
+use EqRelation::*;
 
 /// Represents a eq or neq relationship between two variables.
 /// Option\<EqRelation> should be used to represent a relationship between any two vars
@@ -16,8 +20,8 @@ impl Display for EqRelation {
             f,
             "{}",
             match self {
-                EqRelation::Eq => "==",
-                EqRelation::Neq => "!=",
+                Eq => "==",
+                Neq => "!=",
             }
         )
     }
@@ -28,10 +32,34 @@ impl Add for EqRelation {
 
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
-            (EqRelation::Eq, EqRelation::Eq) => Some(EqRelation::Eq),
-            (EqRelation::Neq, EqRelation::Eq) => Some(EqRelation::Neq),
-            (EqRelation::Eq, EqRelation::Neq) => Some(EqRelation::Neq),
-            (EqRelation::Neq, EqRelation::Neq) => None,
+            (Eq, Eq) => Some(Eq),
+            (Neq, Eq) => Some(Neq),
+            (Eq, Neq) => Some(Neq),
+            (Neq, Neq) => None,
+        }
+    }
+}
+
+impl Sub for EqRelation {
+    type Output = Option<Self>;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Eq, Eq) => Some(Eq),
+            (Eq, Neq) => None,
+            (Neq, Eq) => Some(Neq),
+            (Neq, Neq) => Some(Eq),
+        }
+    }
+}
+
+impl Not for EqRelation {
+    type Output = EqRelation;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Eq => Neq,
+            Neq => Eq,
         }
     }
 }

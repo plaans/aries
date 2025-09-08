@@ -7,7 +7,7 @@ use crate::collections::ref_store::IterableRefMap;
 use super::{IdEdge, NodeId};
 
 #[derive(Default, Clone)]
-pub(super) struct EqAdjList(IterableRefMap<NodeId, HashSet<IdEdge>>);
+pub struct EqAdjList(IterableRefMap<NodeId, HashSet<IdEdge>>);
 
 impl Debug for EqAdjList {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -51,10 +51,6 @@ impl EqAdjList {
             return false;
         };
         edges.contains(&edge)
-    }
-
-    pub fn get_edges(&self, node: NodeId) -> Option<&HashSet<IdEdge>> {
-        self.0.get(node)
     }
 
     pub fn iter_edges(&self, node: NodeId) -> impl Iterator<Item = &IdEdge> {

@@ -2,26 +2,25 @@ use std::array;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use folds::{EmptyTag, EqFold, EqOrNeqFold, ReducingFold};
 use hashbrown::HashSet;
 use itertools::Itertools;
 use node_store::NodeStore;
-pub use traversal::TaggedNode;
+use transforms::{EqExt, EqNeqExt, EqNode, FilterExt};
+use traversal::{Edge, Graph};
 
 use crate::backtrack::{Backtrack, DecLvl, Trail};
 use crate::collections::set::IterableRefSet;
 use crate::core::Lit;
 use crate::create_ref_type;
-use crate::reasoners::eq_alt::graph::{adj_list::EqAdjList, traversal::GraphTraversal};
+use crate::reasoners::eq_alt::graph::adj_list::EqAdjList;
 
 use super::node::Node;
 use super::propagators::Propagator;
 use super::relation::EqRelation;
 
 mod adj_list;
-pub mod folds;
 mod node_store;
-pub mod subsets;
+pub mod transforms;
 pub mod traversal;
 
 create_ref_type!(NodeId);
@@ -71,10 +70,11 @@ enum Event {
 #[derive(Clone, Default)]
 pub(super) struct DirEqGraph {
     pub node_store: NodeStore,
-    outgoing: EqAdjList,
-    incoming: EqAdjList,
-    outgoing_grouped: EqAdjList,
-    incoming_grouped: EqAdjList,
+    // These are pub to allow graph traversal API at theory level
+    pub outgoing: EqAdjList,
+    pub incoming: EqAdjList,
+    pub outgoing_grouped: EqAdjList,
+    pub incoming_grouped: EqAdjList,
     trail: Trail<Event>,
 }
 
@@ -195,26 +195,6 @@ impl DirEqGraph {
         self.incoming_grouped.insert_edge(grouped_edge.reverse());
     }
 
-    fn get_dir(&self, dir: GraphDir) -> &EqAdjList {
-        match dir {
-            GraphDir::Forward => &self.outgoing,
-            GraphDir::Reverse => &self.incoming,
-            GraphDir::ForwardGrouped => &self.outgoing_grouped,
-            GraphDir::ReverseGrouped => &self.incoming_grouped,
-        }
-    }
-
-    pub fn get_out_edges(&self, node: NodeId, dir: GraphDir) -> Vec<IdEdge> {
-        self.get_dir(dir)
-            .get_edges(node)
-            .map(|s| s.into_iter().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    pub fn get_traversal_graph(&self, dir: GraphDir) -> impl traversal::Graph + use<'_> {
-        self.get_dir(dir)
-    }
-
     pub fn iter_nodes(&self) -> impl Iterator<Item = Node> + use<'_> {
         self.outgoing.iter_nodes().map(|id| self.node_store.get_node(id))
     }
@@ -242,122 +222,87 @@ impl DirEqGraph {
     /// NOTE: This set will only contain representatives, not any node.
     ///
     /// TODO: Return a reference to the set if possible (maybe box)
-    fn reachable_set(&self, adj_list: &EqAdjList, source: NodeId) -> IterableRefSet<TaggedNode<EqRelation>> {
-        let mut traversal = GraphTraversal::new(adj_list, EqOrNeqFold(), source, false);
-        // Consume iterator
-        for _ in traversal.by_ref() {}
-        traversal.get_reachable().clone()
-    }
-
-    fn reachable_set_excluding(
-        &self,
-        adj_list: &EqAdjList,
-        source: NodeId,
-        exclude: TaggedNode<EqRelation>,
-    ) -> Option<IterableRefSet<TaggedNode<EqRelation>>> {
-        let mut traversal = GraphTraversal::new(adj_list, EqOrNeqFold(), source, false);
-        // Consume iterator
-        if traversal.contains(&exclude) {
-            None
-        } else {
-            Some(traversal.get_reachable().clone())
-        }
-    }
-
     fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
-        let Some(reachable_preds) = self.reachable_set_excluding(
-            &self.incoming_grouped,
-            edge.target,
-            TaggedNode(edge.source, EqRelation::Eq),
-        ) else {
+        let mut t = self.incoming_grouped.eq_neq().traverse(EqNode::new(edge.target));
+        if t.any(|n| n == EqNode(edge.source, EqRelation::Eq)) {
             return Vec::new();
-        };
-        let reachable_succs = self.reachable_set(&self.outgoing_grouped, edge.source);
-        debug_assert!(!reachable_succs.contains(TaggedNode(edge.target, EqRelation::Eq)));
+        }
+        let reachable_preds = t.visited().clone();
 
-        let predecessors = GraphTraversal::new(
-            &self.incoming_grouped,
-            ReducingFold::new(&reachable_preds, EqOrNeqFold()),
-            edge.source,
-            false,
-        );
+        let reachable_succs = self.outgoing_grouped.eq_neq().reachable(EqNode::new(edge.source));
+        debug_assert!(!reachable_succs.contains(EqNode::new(edge.target)));
 
-        let successors = GraphTraversal::new(
-            &self.outgoing_grouped,
-            ReducingFold::new(&reachable_succs, EqOrNeqFold()),
-            edge.target,
-            false,
-        )
-        .collect_vec();
+        let predecessors = self
+            .incoming_grouped
+            .eq_neq()
+            .filter(|_, e| !reachable_preds.contains(e.target()))
+            .traverse(EqNode::new(edge.source));
+
+        let successors = self
+            .outgoing_grouped
+            .eq_neq()
+            .filter(|_, e| !reachable_succs.contains(e.target()))
+            .traverse(EqNode::new(edge.target))
+            .collect_vec();
 
         predecessors
             .into_iter()
             .cartesian_product(successors)
-            .filter_map(
-                |(TaggedNode(pred_id, pred_relation), TaggedNode(succ_id, succ_relation))| {
-                    // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
-                    Some(Path::new(
-                        pred_id.into(),
-                        succ_id.into(),
-                        (pred_relation + succ_relation)?,
-                    ))
-                },
-            )
+            .filter_map(|(source, target)| {
+                // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
+                source.path_to(&target)
+            })
             .collect_vec()
     }
 
     fn paths_requiring_neq_partial<'a>(
         &'a self,
-        rev_set: &'a IterableRefSet<TaggedNode<EmptyTag>>,
-        fwd_set: &'a IterableRefSet<TaggedNode<EmptyTag>>,
+        rev_set: &'a IterableRefSet<NodeId>,
+        fwd_set: &'a IterableRefSet<NodeId>,
         source: NodeId,
         target: NodeId,
     ) -> impl Iterator<Item = Path> + use<'a> {
-        let predecessors = GraphTraversal::new(
-            &self.incoming_grouped,
-            ReducingFold::new(rev_set, EqFold()),
-            source,
-            false,
-        );
+        let predecessors = self
+            .incoming_grouped
+            .eq()
+            .filter(|_, e| !rev_set.contains(e.target()))
+            .traverse(source);
 
-        let successors = GraphTraversal::new(
-            &self.outgoing_grouped,
-            ReducingFold::new(fwd_set, EqFold()),
-            target,
-            false,
-        )
-        .collect_vec();
+        let successors = self
+            .outgoing_grouped
+            .eq()
+            .filter(|_, e| !fwd_set.contains(e.target()))
+            .traverse(target)
+            .collect_vec();
 
         predecessors.cartesian_product(successors).map(
             // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
-            |(TaggedNode(pred_id, ..), TaggedNode(succ_id, ..))| {
-                Path::new(pred_id.into(), succ_id.into(), EqRelation::Neq)
-            },
+            |(source, target)| Path::new(source.into(), target.into(), EqRelation::Neq),
         )
     }
 
     fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
-        let Some(reachable_preds) = self.reachable_set_excluding(
-            &self.incoming_grouped,
-            edge.target,
-            TaggedNode(edge.source, EqRelation::Neq),
-        ) else {
+        let mut t = self.incoming_grouped.eq_neq().traverse(EqNode::new(edge.target));
+        if t.any(|n| n == EqNode(edge.source, EqRelation::Neq)) {
             return Vec::new();
-        };
-        let reachable_succs = self.reachable_set(&self.outgoing_grouped, edge.source);
+        }
+        let reachable_preds = t.visited().clone();
+
+        let reachable_succs = self.outgoing_grouped.eq_neq().reachable(EqNode::new(edge.source));
+
         let [mut reachable_preds_eq, mut reachable_preds_neq, mut reachable_succs_eq, mut reachable_succs_neq] =
             array::from_fn(|_| IterableRefSet::new());
 
         for e in reachable_succs.iter() {
             match e.1 {
-                EqRelation::Eq => reachable_succs_eq.insert(TaggedNode(e.0, EmptyTag())),
-                EqRelation::Neq => reachable_succs_neq.insert(TaggedNode(e.0, EmptyTag())),
+                EqRelation::Eq => reachable_succs_eq.insert(e.0),
+                EqRelation::Neq => reachable_succs_neq.insert(e.0),
             }
         }
         for e in reachable_preds.iter() {
             match e.1 {
-                EqRelation::Eq => reachable_preds_eq.insert(TaggedNode(e.0, EmptyTag())),
-                EqRelation::Neq => reachable_preds_neq.insert(TaggedNode(e.0, EmptyTag())),
+                EqRelation::Eq => reachable_preds_eq.insert(e.0),
+                EqRelation::Neq => reachable_preds_neq.insert(e.0),
             }
         }
 
@@ -422,16 +367,8 @@ impl DirEqGraph {
             if groups.contains(&GroupId::from(node)) {
                 continue;
             }
-            if let Some(out_edges) = self.outgoing_grouped.get_edges(node) {
-                if !out_edges.is_empty() {
-                    panic!()
-                }
-            }
-            if let Some(out_edges) = self.incoming_grouped.get_edges(node) {
-                if !out_edges.is_empty() {
-                    panic!()
-                }
-            }
+            assert!(self.outgoing_grouped.iter_edges(node).all(|_| false));
+            assert!(self.incoming_grouped.iter_edges(node).all(|_| false));
         }
     }
 }
@@ -494,21 +431,11 @@ impl Path {
     }
 }
 
-pub enum GraphDir {
-    Forward,
-    Reverse,
-    ForwardGrouped,
-    #[allow(unused)]
-    ReverseGrouped,
-}
-
 #[cfg(test)]
 mod tests {
     use EqRelation::*;
 
-    use crate::reasoners::eq_alt::graph::folds::EmptyTag;
-
-    use super::{traversal::NodeTag, *};
+    use super::{traversal::PathStore, *};
 
     macro_rules! assert_eq_unordered_unique {
         ($left:expr, $right:expr $(,)?) => {{
@@ -544,6 +471,10 @@ mod tests {
         g.get_id(&Node::Val(node)).unwrap()
     }
 
+    fn eqn(g: &DirEqGraph, node: i32, r: EqRelation) -> EqNode {
+        EqNode(id(g, node), r)
+    }
+
     fn edge(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> IdEdge {
         IdEdge::new(
             g.get_id(&Node::Val(src)).unwrap(),
@@ -551,10 +482,6 @@ mod tests {
             Lit::TRUE,
             relation,
         )
-    }
-
-    fn tn<T: NodeTag>(g: &DirEqGraph, node: i32, tag: T) -> TaggedNode<T> {
-        TaggedNode(id(g, node), tag)
     }
 
     fn path(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> Path {
@@ -633,32 +560,26 @@ mod tests {
     fn test_traversal() {
         let g = instance1();
 
-        let traversal = GraphTraversal::new(&g.outgoing, EqFold(), id(&g, 0), false);
+        let traversal = g.outgoing.eq().traverse(id(&g, 0));
         assert_eq_unordered_unique!(
             traversal,
-            vec![
-                tn(&g, 0, EmptyTag()),
-                tn(&g, 1, EmptyTag()),
-                tn(&g, 3, EmptyTag()),
-                tn(&g, 5, EmptyTag()),
-                tn(&g, 6, EmptyTag()),
-            ],
+            vec![id(&g, 0,), id(&g, 1,), id(&g, 3,), id(&g, 5,), id(&g, 6,)],
         );
 
-        let traversal = GraphTraversal::new(&g.outgoing, EqFold(), id(&g, 6), false);
-        assert_eq_unordered_unique!(traversal, vec![tn(&g, 6, EmptyTag())]);
+        let traversal = g.outgoing.eq().traverse(id(&g, 6));
+        assert_eq_unordered_unique!(traversal, vec![id(&g, 6)]);
 
-        let traversal = GraphTraversal::new(&g.incoming, EqOrNeqFold(), id(&g, 0), false);
+        let traversal = g.incoming.eq_neq().traverse(eqn(&g, 0, Eq));
         assert_eq_unordered_unique!(
             traversal,
             vec![
-                tn(&g, 0, Eq),
-                tn(&g, 6, Neq),
-                tn(&g, 5, Eq),
-                tn(&g, 5, Neq),
-                tn(&g, 1, Eq),
-                tn(&g, 1, Neq),
-                tn(&g, 0, Neq),
+                eqn(&g, 0, Eq),
+                eqn(&g, 6, Neq),
+                eqn(&g, 5, Eq),
+                eqn(&g, 5, Neq),
+                eqn(&g, 1, Eq),
+                eqn(&g, 1, Neq),
+                eqn(&g, 0, Neq),
             ],
         );
     }
@@ -673,11 +594,11 @@ mod tests {
             panic!()
         };
         assert_eq_unordered_unique!(
-            g.outgoing_grouped.get_edges(id(&g, rep)).unwrap().into_iter().cloned(),
+            g.outgoing_grouped.iter_edges(id(&g, rep)).cloned(),
             vec![edge(&g, rep, 6, Eq), edge(&g, rep, 3, Eq), edge(&g, rep, 2, Neq)]
         );
         assert_eq_unordered_unique!(
-            g.incoming_grouped.get_edges(id(&g, rep)).unwrap().into_iter().cloned(),
+            g.incoming_grouped.iter_edges(id(&g, rep)).cloned(),
             vec![edge(&g, rep, 6, Neq)]
         );
     }
@@ -685,9 +606,13 @@ mod tests {
     #[test]
     fn test_reduced_path() {
         let g = instance2();
-        let mut traversal = GraphTraversal::new(&g.outgoing, EqOrNeqFold(), id(&g, 0), true);
-        let target = traversal
-            .find(|&TaggedNode(n, r)| n == id(&g, 4) && r == Neq)
+        let mut path_store = PathStore::new();
+        let target = g
+            .outgoing
+            .eq_neq()
+            .traverse(eqn(&g, 0, Eq))
+            .mem_path(&mut path_store)
+            .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
             .expect("Path exists");
 
         let path1 = vec![edge(&g, 3, 4, Eq), edge(&g, 5, 3, Eq), edge(&g, 0, 5, Neq)];
@@ -698,22 +623,34 @@ mod tests {
             edge(&g, 0, 1, Eq),
         ];
         let mut set = IterableRefSet::new();
-        if traversal.get_path(target) == path1 {
-            set.insert(TaggedNode(id(&g, 5), Neq));
-            let mut traversal =
-                GraphTraversal::new(&g.outgoing, ReducingFold::new(&set, EqOrNeqFold()), id(&g, 0), true);
-            let target = traversal
-                .find(|&TaggedNode(n, r)| n == id(&g, 4) && r == Neq)
+        let out_path1 = path_store.get_path(target).map(|e| e.0).collect_vec();
+        if out_path1 == path1 {
+            set.insert(eqn(&g, 5, Neq));
+
+            let mut path_store_2 = PathStore::new();
+            let target = g
+                .outgoing
+                .eq_neq()
+                .filter(|_, e| !set.contains(e.target()))
+                .traverse(eqn(&g, 0, Eq))
+                .mem_path(&mut path_store_2)
+                .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                 .expect("Path exists");
-            assert_eq!(traversal.get_path(target), path2);
-        } else if traversal.get_path(target) == path2 {
-            set.insert(TaggedNode(id(&g, 1), Eq));
-            let mut traversal =
-                GraphTraversal::new(&g.outgoing, ReducingFold::new(&set, EqOrNeqFold()), id(&g, 0), true);
-            let target = traversal
-                .find(|&TaggedNode(n, r)| n == id(&g, 4) && r == Neq)
+
+            assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path2);
+        } else if out_path1 == path2 {
+            set.insert(eqn(&g, 1, Eq));
+
+            let mut path_store_2 = PathStore::new();
+            let target = g
+                .outgoing
+                .eq_neq()
+                .filter(|_, e| !set.contains(e.target()))
+                .traverse(eqn(&g, 0, Eq))
+                .mem_path(&mut path_store_2)
+                .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                 .expect("Path exists");
-            assert_eq!(traversal.get_path(target), path1);
+            assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path1);
         }
     }
 

@@ -4,9 +4,8 @@ use crate::{
     core::state::Domains,
     reasoners::eq_alt::{
         graph::{
-            folds::{EqFold, EqOrNeqFold},
-            traversal::GraphTraversal,
-            GraphDir, TaggedNode,
+            transforms::{EqExt, EqNeqExt, EqNode},
+            traversal::Graph,
         },
         node::Node,
         propagators::Propagator,
@@ -21,26 +20,22 @@ impl AltEqTheory {
     fn eq_path_exists(&self, source: &Node, target: &Node) -> bool {
         let source_id = self.active_graph.get_id(source).unwrap();
         let target_id = self.active_graph.get_id(target).unwrap();
-        GraphTraversal::new(
-            self.active_graph.get_traversal_graph(GraphDir::Forward),
-            EqFold(),
-            source_id,
-            false,
-        )
-        .any(|TaggedNode(n, ..)| n == target_id)
+        self.active_graph
+            .outgoing
+            .eq()
+            .traverse(source_id)
+            .any(|n| n == target_id)
     }
 
     /// Check if source -!=-> target in active graph
     fn neq_path_exists(&self, source: &Node, target: &Node) -> bool {
         let source_id = self.active_graph.get_id(source).unwrap();
         let target_id = self.active_graph.get_id(target).unwrap();
-        GraphTraversal::new(
-            self.active_graph.get_traversal_graph(GraphDir::Forward),
-            EqOrNeqFold(),
-            source_id,
-            false,
-        )
-        .any(|TaggedNode(n, r)| n == target_id && r == EqRelation::Neq)
+        self.active_graph
+            .outgoing
+            .eq_neq()
+            .traverse(EqNode::new(source_id))
+            .any(|n| n == EqNode(target_id, EqRelation::Neq))
     }
 
     /// Check for paths which exist but don't propagate correctly on constraint literals

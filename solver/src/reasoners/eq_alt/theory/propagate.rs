@@ -2,7 +2,7 @@ use crate::{
     core::state::{Domains, InvalidUpdate},
     reasoners::{
         eq_alt::{
-            graph::{GraphDir, IdEdge, Path},
+            graph::{IdEdge, Path},
             node::Node,
             propagators::PropagatorId,
             relation::EqRelation,
@@ -110,8 +110,8 @@ impl AltEqTheory {
         } else {
             debug_assert!(!self
                 .active_graph
-                .get_out_edges(edge.source, GraphDir::ForwardGrouped)
-                .iter()
+                .outgoing_grouped
+                .iter_edges(edge.source)
                 .any(|e| e.target == edge.target && e.relation == edge.relation));
         }
 
@@ -125,8 +125,8 @@ impl AltEqTheory {
         if edge.relation == EqRelation::Eq
             && self
                 .active_graph
-                .get_out_edges(edge.target, GraphDir::ForwardGrouped)
-                .into_iter()
+                .outgoing_grouped
+                .iter_edges(edge.target)
                 .any(|e| e.target == edge.source && e.relation == EqRelation::Eq)
         {
             self.stats.merges += 1;
