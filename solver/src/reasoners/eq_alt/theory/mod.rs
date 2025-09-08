@@ -76,22 +76,26 @@ impl AltEqTheory {
         let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
         for prop in [ab_prop, ba_prop] {
             self.stats.propagators += 1;
+
             if model.entails(!prop.enabler.active) || model.entails(!prop.enabler.valid) {
                 continue;
             }
             let id = self.constraint_store.add_propagator(prop.clone());
 
+            if model.entails(prop.enabler.valid) {
+                self.constraint_store.mark_valid(id);
+            } else {
+                self.constraint_store.add_watch(id, prop.enabler.valid);
+            }
+
+            if !model.entails(prop.enabler.active) {
+                self.constraint_store.add_watch(id, prop.enabler.active);
+            }
+
             if model.entails(prop.enabler.valid) && model.entails(prop.enabler.active) {
                 // Propagator always active and valid, only need to propagate once
                 // So don't add watches
-                self.constraint_store.mark_valid(id);
                 self.pending_activations.push_back(ActivationEvent::new(id));
-            } else if model.entails(prop.enabler.valid) {
-                self.constraint_store.mark_valid(id);
-                self.pending_activations.push_back(ActivationEvent::new(id));
-                self.constraint_store.watch_propagator(id, prop);
-            } else {
-                self.constraint_store.watch_propagator(id, prop);
             }
         }
     }
@@ -140,14 +144,18 @@ impl Theory for AltEqTheory {
                     continue;
                 }
             }
-            for (_, prop_id) in self
+            for (enabler, prop_id) in self
                 .constraint_store
                 .enabled_by(event.new_literal())
                 .collect::<Vec<_>>()
             {
-                let prop = self.constraint_store.get_propagator(prop_id);
-                if model.entails(prop.enabler.valid) {
+                if model.entails(enabler.valid) {
                     self.constraint_store.mark_valid(prop_id);
+                } else {
+                    continue;
+                }
+                if !model.entails(enabler.active) {
+                    continue;
                 }
                 self.stats.propagations += 1;
                 self.propagate_edge(model, prop_id)?;

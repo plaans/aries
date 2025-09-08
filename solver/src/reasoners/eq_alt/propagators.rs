@@ -106,7 +106,7 @@ impl Propagator {
 enum Event {
     PropagatorAdded,
     MarkedValid(PropagatorId),
-    EnablerAdded(PropagatorId),
+    WatchAdded((PropagatorId, Lit)),
 }
 
 #[derive(Clone, Default)]
@@ -125,11 +125,10 @@ impl PropagatorStore {
         id
     }
 
-    pub fn watch_propagator(&mut self, id: PropagatorId, prop: Propagator) {
-        let enabler = prop.enabler;
-        self.watches.add_watch((enabler, id), enabler.active);
-        self.watches.add_watch((enabler, id), enabler.valid);
-        self.trail.push(Event::EnablerAdded(id));
+    pub fn add_watch(&mut self, id: PropagatorId, literal: Lit) {
+        let enabler = self.propagators[id].enabler;
+        self.watches.add_watch((enabler, id), literal);
+        self.trail.push(Event::WatchAdded((id, literal)));
     }
 
     pub fn get_propagator(&self, prop_id: PropagatorId) -> &Propagator {
@@ -192,10 +191,9 @@ impl Backtrack for PropagatorStore {
                     self.propagator_indices.remove(&(prop.a, prop.b));
                 }
             }
-            Event::EnablerAdded(prop_id) => {
-                let prop = &self.propagators[prop_id];
-                self.watches.remove_watch((prop.enabler, prop_id), prop.enabler.active);
-                self.watches.remove_watch((prop.enabler, prop_id), prop.enabler.valid);
+            Event::WatchAdded((id, l)) => {
+                let enabler = self.propagators[id].enabler;
+                self.watches.remove_watch((enabler, id), l);
             }
         });
     }

@@ -86,10 +86,8 @@ impl AltEqTheory {
     pub fn propagate_edge(&mut self, model: &mut Domains, prop_id: PropagatorId) -> Result<(), Contradiction> {
         let prop = self.constraint_store.get_propagator(prop_id);
 
-        // If not valid or inactive, nothing to do
-        if !model.entails(prop.enabler.valid) || !model.entails(prop.enabler.active) {
-            return Ok(());
-        }
+        debug_assert!(model.entails(prop.enabler.active));
+        debug_assert!(model.entails(prop.enabler.valid));
 
         let edge = self.active_graph.create_edge(prop);
 
