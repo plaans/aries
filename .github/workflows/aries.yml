@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: plaans/mzn-problems
-          ref: v3
+          ref: v4
           path: mzn-problems
       - name: Compile aries_fzn (optimized + debug)
         run: |
