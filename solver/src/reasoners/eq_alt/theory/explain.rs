@@ -34,7 +34,7 @@ impl AltEqTheory {
                 let mut path_store = PathStore::new();
                 graph
                     .eq_neq()
-                    .traverse(EqNode::new(source_id))
+                    .traverse(EqNode::new(source_id), &mut Default::default())
                     .mem_path(&mut path_store)
                     .find(|&n| n == EqNode(target_id, EqRelation::Neq))
                     .map(|n| path_store.get_path(n).map(|e| e.0).collect_vec())
@@ -43,7 +43,7 @@ impl AltEqTheory {
                 let mut path_store = PathStore::new();
                 graph
                     .eq()
-                    .traverse(source_id)
+                    .traverse(source_id, &mut Default::default())
                     .mem_path(&mut path_store)
                     .find(|&n| n == target_id)
                     .map(|n| path_store.get_path(n).collect_vec())
@@ -82,7 +82,7 @@ impl AltEqTheory {
             .incoming
             .filter(|_, e| model.entails(e.active))
             .eq()
-            .traverse(source_id)
+            .traverse(source_id, &mut Default::default())
             .mem_path(&mut path_store)
             .skip(1) // Cannot cause own propagation
             .find(|id| {
@@ -105,7 +105,7 @@ impl AltEqTheory {
             .incoming
             .filter(|_, e| model.entails(e.active))
             .eq_neq()
-            .traverse(EqNode::new(source_id))
+            .traverse(EqNode::new(source_id), &mut Default::default())
             .mem_path(&mut path_store)
             .skip(1)
             .find(|EqNode(id, r)| {

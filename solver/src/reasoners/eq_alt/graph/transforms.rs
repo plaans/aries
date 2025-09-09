@@ -37,7 +37,7 @@ impl EqNode {
     }
 
     pub fn path_to(&self, other: &EqNode) -> Option<Path> {
-        Some(Path::new(self.0.into(), other.0.into(), (self.1 + other.1)?))
+        Some(Path::new(self.0, other.0, (self.1 + other.1)?))
     }
 }
 

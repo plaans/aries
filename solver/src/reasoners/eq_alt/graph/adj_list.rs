@@ -1,13 +1,11 @@
 use std::fmt::{Debug, Formatter};
 
-use hashbrown::HashSet;
-
 use crate::collections::ref_store::IterableRefMap;
 
 use super::{IdEdge, NodeId};
 
 #[derive(Default, Clone)]
-pub struct EqAdjList(IterableRefMap<NodeId, HashSet<IdEdge>>);
+pub struct EqAdjList(IterableRefMap<NodeId, Vec<IdEdge>>);
 
 impl Debug for EqAdjList {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -43,7 +41,12 @@ impl EqAdjList {
         self.insert_node(edge.source);
         self.insert_node(edge.target);
         let edges = self.get_edges_mut(edge.source).unwrap();
-        edges.insert(edge)
+        if edges.contains(&edge) {
+            false
+        } else {
+            edges.push(edge);
+            true
+        }
     }
 
     pub fn contains_edge(&self, edge: IdEdge) -> bool {
@@ -57,7 +60,7 @@ impl EqAdjList {
         self.0.get(node).into_iter().flat_map(|v| v.iter())
     }
 
-    pub fn get_edges_mut(&mut self, node: NodeId) -> Option<&mut HashSet<IdEdge>> {
+    pub fn get_edges_mut(&mut self, node: NodeId) -> Option<&mut Vec<IdEdge>> {
         self.0.get_mut(node)
     }
 
@@ -83,7 +86,9 @@ impl EqAdjList {
             .map(move |v| v.iter().filter(move |e| filter(e)).map(|e| e.target))
     }
 
-    pub fn remove_edge(&mut self, edge: IdEdge) -> bool {
-        self.0.get_mut(edge.source).is_some_and(|set| set.remove(&edge))
+    pub fn remove_edge(&mut self, edge: IdEdge) {
+        if let Some(set) = self.0.get_mut(edge.source) {
+            set.retain(|e| *e != edge)
+        }
     }
 }

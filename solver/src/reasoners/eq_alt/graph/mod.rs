@@ -1,4 +1,7 @@
+/// This module exports an adjacency list graph of the active constraints,
+/// methods to transform and traverse it, and the method paths_requiring(edge).
 use std::array;
+use std::cell::{RefCell, RefMut};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
@@ -6,10 +9,9 @@ use hashbrown::HashSet;
 use itertools::Itertools;
 use node_store::NodeStore;
 use transforms::{EqExt, EqNeqExt, EqNode, FilterExt};
-use traversal::{Edge, Graph};
+use traversal::{Edge, Graph, Scratch};
 
 use crate::backtrack::{Backtrack, DecLvl, Trail};
-use crate::collections::set::IterableRefSet;
 use crate::core::Lit;
 use crate::create_ref_type;
 use crate::reasoners::eq_alt::graph::adj_list::EqAdjList;
@@ -65,6 +67,23 @@ enum Event {
     EdgeAdded(IdEdge),
     GroupEdgeAdded(IdEdge),
     GroupEdgeRemoved(IdEdge),
+}
+
+thread_local! {
+    static SCRATCHES: [RefCell<Scratch>; 4] = array::from_fn(|_| Default::default());
+}
+
+fn with_scratches<R, F, const N: usize>(f: F) -> R
+where
+    F: FnOnce([RefMut<'_, Scratch>; N]) -> R,
+{
+    SCRATCHES.with(|cells| {
+        f(cells[0..N]
+            .iter()
+            .map(|cell| cell.borrow_mut())
+            .collect_array()
+            .unwrap())
+    })
 }
 
 #[derive(Clone, Default)]
@@ -219,101 +238,100 @@ impl DirEqGraph {
         }
     }
 
-    /// NOTE: This set will only contain representatives, not any node.
-    ///
-    /// TODO: Return a reference to the set if possible (maybe box)
     fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
-        let mut t = self.incoming_grouped.eq_neq().traverse(EqNode::new(edge.target));
-        if t.any(|n| n == EqNode(edge.source, EqRelation::Eq)) {
-            return Vec::new();
-        }
-        let reachable_preds = t.visited().clone();
+        with_scratches(|[mut s1, mut s2, mut s3, mut s4]| {
+            let mut t = self
+                .incoming_grouped
+                .eq_neq()
+                .traverse(EqNode::new(edge.target), &mut s1);
+            if t.any(|n| n == EqNode(edge.source, EqRelation::Eq)) {
+                return Vec::new();
+            }
 
-        let reachable_succs = self.outgoing_grouped.eq_neq().reachable(EqNode::new(edge.source));
-        debug_assert!(!reachable_succs.contains(EqNode::new(edge.target)));
+            let reachable_preds = t.visited();
 
-        let predecessors = self
-            .incoming_grouped
-            .eq_neq()
-            .filter(|_, e| !reachable_preds.contains(e.target()))
-            .traverse(EqNode::new(edge.source));
+            let reachable_succs = self
+                .outgoing_grouped
+                .eq_neq()
+                .reachable(EqNode::new(edge.source), &mut s2);
+            debug_assert!(!reachable_succs.contains(EqNode::new(edge.target)));
 
-        let successors = self
-            .outgoing_grouped
-            .eq_neq()
-            .filter(|_, e| !reachable_succs.contains(e.target()))
-            .traverse(EqNode::new(edge.target))
-            .collect_vec();
+            let predecessors = self
+                .incoming_grouped
+                .eq_neq()
+                .filter(|_, e| !reachable_preds.contains(e.target()))
+                .traverse(EqNode::new(edge.source), &mut s3);
 
-        predecessors
-            .into_iter()
-            .cartesian_product(successors)
-            .filter_map(|(source, target)| {
-                // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
-                source.path_to(&target)
-            })
-            .collect_vec()
-    }
+            let successors = self
+                .outgoing_grouped
+                .eq_neq()
+                .filter(|_, e| !reachable_succs.contains(e.target()))
+                .traverse(EqNode::new(edge.target), &mut s4)
+                .collect_vec();
 
-    fn paths_requiring_neq_partial<'a>(
-        &'a self,
-        rev_set: &'a IterableRefSet<NodeId>,
-        fwd_set: &'a IterableRefSet<NodeId>,
-        source: NodeId,
-        target: NodeId,
-    ) -> impl Iterator<Item = Path> + use<'a> {
-        let predecessors = self
-            .incoming_grouped
-            .eq()
-            .filter(|_, e| !rev_set.contains(e.target()))
-            .traverse(source);
-
-        let successors = self
-            .outgoing_grouped
-            .eq()
-            .filter(|_, e| !fwd_set.contains(e.target()))
-            .traverse(target)
-            .collect_vec();
-
-        predecessors.cartesian_product(successors).map(
-            // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
-            |(source, target)| Path::new(source.into(), target.into(), EqRelation::Neq),
-        )
+            predecessors
+                .into_iter()
+                .cartesian_product(successors)
+                .filter_map(|(source, target)| {
+                    // pred id and succ id are GroupIds since all above graph traversals are on MergedGraphs
+                    source.path_to(&target)
+                })
+                .collect_vec()
+        })
     }
 
     fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
-        let mut t = self.incoming_grouped.eq_neq().traverse(EqNode::new(edge.target));
-        if t.any(|n| n == EqNode(edge.source, EqRelation::Neq)) {
-            return Vec::new();
-        }
-        let reachable_preds = t.visited().clone();
-
-        let reachable_succs = self.outgoing_grouped.eq_neq().reachable(EqNode::new(edge.source));
-
-        let [mut reachable_preds_eq, mut reachable_preds_neq, mut reachable_succs_eq, mut reachable_succs_neq] =
-            array::from_fn(|_| IterableRefSet::new());
-
-        for e in reachable_succs.iter() {
-            match e.1 {
-                EqRelation::Eq => reachable_succs_eq.insert(e.0),
-                EqRelation::Neq => reachable_succs_neq.insert(e.0),
+        with_scratches(|[mut s1, mut s2, mut s3, mut s4]| {
+            let mut t = self
+                .incoming_grouped
+                .eq_neq()
+                .traverse(EqNode::new(edge.target), &mut s1);
+            if t.any(|n| n == EqNode(edge.source, EqRelation::Neq)) {
+                return Vec::new();
             }
-        }
-        for e in reachable_preds.iter() {
-            match e.1 {
-                EqRelation::Eq => reachable_preds_eq.insert(e.0),
-                EqRelation::Neq => reachable_preds_neq.insert(e.0),
-            }
-        }
+            let reachable_preds = t.visited();
 
-        let mut res =
-            self.paths_requiring_neq_partial(&reachable_preds_eq, &reachable_succs_neq, edge.source, edge.target);
+            let reachable_succs = self
+                .outgoing_grouped
+                .eq_neq()
+                .reachable(EqNode::new(edge.source), &mut s2);
 
-        // Edge will be duplicated otherwise
-        res.next().unwrap();
+            let neq_successors = self
+                .outgoing_grouped
+                .eq()
+                .filter(|_, e| reachable_succs.contains(EqNode(e.target(), EqRelation::Neq)))
+                .traverse(edge.target, &mut s3)
+                .collect_vec();
 
-        res.chain(self.paths_requiring_neq_partial(&reachable_preds_neq, &reachable_succs_eq, edge.source, edge.target))
-            .collect_vec()
+            let eq_successors = self
+                .outgoing_grouped
+                .eq()
+                .filter(|_, e| reachable_succs.contains(EqNode(e.target(), EqRelation::Eq)))
+                .traverse(edge.target, &mut s3)
+                .collect_vec();
+
+            let eq_predecessors = self
+                .incoming_grouped
+                .eq()
+                .filter(|_, e| reachable_preds.contains(EqNode(e.target(), EqRelation::Eq)))
+                .traverse(edge.source, &mut s3);
+
+            let neq_predecessors = self
+                .incoming_grouped
+                .eq()
+                .filter(|_, e| reachable_preds.contains(EqNode(e.target(), EqRelation::Neq)))
+                .traverse(edge.source, &mut s4);
+
+            let create_path =
+                |(source, target): (NodeId, NodeId)| -> Path { Path::new(source, target, EqRelation::Neq) };
+
+            neq_predecessors
+                .cartesian_product(eq_successors)
+                .map(create_path)
+                .skip(1)
+                .chain(eq_predecessors.cartesian_product(neq_successors).map(create_path))
+                .collect()
+        })
     }
 
     #[allow(unused)]
@@ -422,10 +440,10 @@ impl Debug for Path {
 }
 
 impl Path {
-    pub fn new(source: GroupId, target: GroupId, relation: EqRelation) -> Self {
+    pub fn new(source: impl Into<GroupId>, target: impl Into<GroupId>, relation: EqRelation) -> Self {
         Self {
-            source_id: source,
-            target_id: target,
+            source_id: source.into(),
+            target_id: target.into(),
             relation,
         }
     }
@@ -434,6 +452,8 @@ impl Path {
 #[cfg(test)]
 mod tests {
     use EqRelation::*;
+
+    use crate::collections::set::IterableRefSet;
 
     use super::{traversal::PathStore, *};
 
@@ -486,8 +506,8 @@ mod tests {
 
     fn path(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> Path {
         Path::new(
-            g.get_id(&Node::Val(src)).unwrap().into(),
-            g.get_id(&Node::Val(tgt)).unwrap().into(),
+            g.get_id(&Node::Val(src)).unwrap(),
+            g.get_id(&Node::Val(tgt)).unwrap(),
             relation,
         )
     }
@@ -560,28 +580,34 @@ mod tests {
     fn test_traversal() {
         let g = instance1();
 
-        let traversal = g.outgoing.eq().traverse(id(&g, 0));
-        assert_eq_unordered_unique!(
-            traversal,
-            vec![id(&g, 0,), id(&g, 1,), id(&g, 3,), id(&g, 5,), id(&g, 6,)],
-        );
+        with_scratches(|[mut s]| {
+            let traversal = g.outgoing.eq().traverse(id(&g, 0), &mut s);
+            assert_eq_unordered_unique!(
+                traversal,
+                vec![id(&g, 0,), id(&g, 1,), id(&g, 3,), id(&g, 5,), id(&g, 6,)],
+            );
+        });
 
-        let traversal = g.outgoing.eq().traverse(id(&g, 6));
-        assert_eq_unordered_unique!(traversal, vec![id(&g, 6)]);
+        with_scratches(|[mut s]| {
+            let traversal = g.outgoing.eq().traverse(id(&g, 6), &mut s);
+            assert_eq_unordered_unique!(traversal, vec![id(&g, 6)]);
+        });
 
-        let traversal = g.incoming.eq_neq().traverse(eqn(&g, 0, Eq));
-        assert_eq_unordered_unique!(
-            traversal,
-            vec![
-                eqn(&g, 0, Eq),
-                eqn(&g, 6, Neq),
-                eqn(&g, 5, Eq),
-                eqn(&g, 5, Neq),
-                eqn(&g, 1, Eq),
-                eqn(&g, 1, Neq),
-                eqn(&g, 0, Neq),
-            ],
-        );
+        with_scratches(|[mut s]| {
+            let traversal = g.incoming.eq_neq().traverse(eqn(&g, 0, Eq), &mut s);
+            assert_eq_unordered_unique!(
+                traversal,
+                vec![
+                    eqn(&g, 0, Eq),
+                    eqn(&g, 6, Neq),
+                    eqn(&g, 5, Eq),
+                    eqn(&g, 5, Neq),
+                    eqn(&g, 1, Eq),
+                    eqn(&g, 1, Neq),
+                    eqn(&g, 0, Neq),
+                ],
+            );
+        });
     }
 
     #[test]
@@ -607,13 +633,23 @@ mod tests {
     fn test_reduced_path() {
         let g = instance2();
         let mut path_store = PathStore::new();
-        let target = g
-            .outgoing
-            .eq_neq()
-            .traverse(eqn(&g, 0, Eq))
-            .mem_path(&mut path_store)
-            .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
-            .expect("Path exists");
+        let target = with_scratches(|[mut scratch]| {
+            g.outgoing
+                .eq_neq()
+                .traverse(eqn(&g, 0, Eq), &mut scratch)
+                .mem_path(&mut path_store)
+                .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
+                .expect("Path exists")
+        });
+
+        with_scratches(|[mut s]| {
+            g.outgoing
+                .eq_neq()
+                .traverse(eqn(&g, 0, Eq), &mut s)
+                .mem_path(&mut path_store)
+                .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
+                .expect("Path exists");
+        });
 
         let path1 = vec![edge(&g, 3, 4, Eq), edge(&g, 5, 3, Eq), edge(&g, 0, 5, Neq)];
         let path2 = vec![
@@ -628,29 +664,33 @@ mod tests {
             set.insert(eqn(&g, 5, Neq));
 
             let mut path_store_2 = PathStore::new();
-            let target = g
-                .outgoing
-                .eq_neq()
-                .filter(|_, e| !set.contains(e.target()))
-                .traverse(eqn(&g, 0, Eq))
-                .mem_path(&mut path_store_2)
-                .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
-                .expect("Path exists");
 
-            assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path2);
+            with_scratches(|[mut s]| {
+                let target = g
+                    .outgoing
+                    .eq_neq()
+                    .filter(|_, e| !set.contains(e.target()))
+                    .traverse(eqn(&g, 0, Eq), &mut s)
+                    .mem_path(&mut path_store_2)
+                    .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
+                    .expect("Path exists");
+                assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path2);
+            });
         } else if out_path1 == path2 {
             set.insert(eqn(&g, 1, Eq));
 
             let mut path_store_2 = PathStore::new();
-            let target = g
-                .outgoing
-                .eq_neq()
-                .filter(|_, e| !set.contains(e.target()))
-                .traverse(eqn(&g, 0, Eq))
-                .mem_path(&mut path_store_2)
-                .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
-                .expect("Path exists");
-            assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path1);
+            with_scratches(|[mut s]| {
+                let target = g
+                    .outgoing
+                    .eq_neq()
+                    .filter(|_, e| !set.contains(e.target()))
+                    .traverse(eqn(&g, 0, Eq), &mut s)
+                    .mem_path(&mut path_store_2)
+                    .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
+                    .expect("Path exists");
+                assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path1);
+            });
         }
     }
 
