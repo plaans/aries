@@ -61,17 +61,26 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
         candidate_domain_files.push(name.into());
     }
 
+    // if the problem if of the form instance-NN.Zddl
+    // the add domain-NN.Zddl to the candidates filenames
+    let re = Regex::new("^instance-([1-9]+)\\.([hp]ddl)$").unwrap();
+    for m in re.captures_iter(problem_filename) {
+        let name = format!("domain-{}.{}", &m[1], &m[2]);
+        candidate_domain_files.push(name.into());
+    }
+
     // directories where to look for the domain
     let mut candidate_directories = Vec::with_capacity(2);
     if let Some(curr) = problem_file.parent() {
-        candidate_directories.push(curr);
+        candidate_directories.push(curr.to_owned());
         if let Some(parent) = curr.parent() {
-            candidate_directories.push(parent);
+            candidate_directories.push(parent.to_owned());
+            candidate_directories.push(parent.join("domains"));
         }
     }
 
     for f in &candidate_domain_files {
-        for &dir in &candidate_directories {
+        for dir in &candidate_directories {
             let candidate = dir.join(f);
             if candidate.exists() {
                 return Ok(candidate);
