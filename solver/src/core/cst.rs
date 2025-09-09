@@ -53,9 +53,13 @@ pub(crate) const fn cst_long_to_int(cst: LongCst) -> IntCst {
 }
 
 /// Overflow tolerant max value for integer constants.
-/// It is used as a default for the upper bound of integer variable domains
+/// It is used as a default for the upper bound of integer variable domains.
+///
+/// A larger value can be select by enlarging the [`IntCst`] representation  with the `i64` and `i128` cargo features
 pub const INT_CST_MAX: IntCst = IntCst::MAX / 4 - 1;
 
 /// Overflow tolerant min value for integer constants.
 /// It is used as a default for the lower bound of integer variable domains
+///
+/// A larger value can be select by enlarging the [`IntCst`] representation  with the `i64` and `i128` cargo features
 pub const INT_CST_MIN: IntCst = -INT_CST_MAX;
