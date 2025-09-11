@@ -3,14 +3,21 @@ use crate::collections::{
     set::IterableRefSet,
 };
 
+/// A trait representing a generic directed edge with a source and target.
 pub trait Edge<N>: Clone {
     fn target(&self) -> N;
     fn source(&self) -> N;
 }
 
+/// A trait representing a generic directed Graph.
 pub trait Graph<N: Ref, E: Edge<N>> {
+    /// Get outgoing edges from the node.
     fn outgoing(&self, node: N) -> impl Iterator<Item = E>;
 
+    /// Traverse the graph (depth first) from a given source. This method return a GraphTraversal object which implements Iterator.
+    ///
+    /// Scratch contains the large data structures used by the graph traversal algorithm. Useful to reuse memory.
+    /// `&mut default::default()` can used if performance is not critical.
     fn traverse<'a>(self, source: N, scratch: &'a mut Scratch) -> GraphTraversal<'a, N, E, Self>
     where
         Self: Sized,
@@ -18,6 +25,9 @@ pub trait Graph<N: Ref, E: Edge<N>> {
         GraphTraversal::new(self, source, scratch)
     }
 
+    /// Get the set of nodes which can be reached from the source.
+    ///
+    /// See traverse for details about scratch.
     fn reachable<'a>(self, source: N, scratch: &'a mut Scratch) -> Visited<'a, N>
     where
         Self: Sized + 'a,
@@ -30,6 +40,10 @@ pub trait Graph<N: Ref, E: Edge<N>> {
     }
 }
 
+/// A data structure that can be passed to GraphTraversal in order to record parents of visited nodes.
+/// This allows for path queries after traversal.
+///
+/// Call record_paths on GraphTraversal with this struct.
 pub struct PathStore<N: Ref, E: Edge<N>>(IterableRefMap<N, E>);
 
 impl<N: Ref, E: Edge<N>> PathStore<N, E> {
@@ -47,15 +61,20 @@ impl<N: Ref, E: Edge<N>> PathStore<N, E> {
     }
 }
 
+/// Scratch contains the large data structures used by the graph traversal algorithm. Useful to reuse memory.
+///
+/// In order to avoid having to deal with generics when reusing an instance, we use usize instead of N: Into\<usize> + From\<usize>.
+/// We therefore need structs to access these data structures with N.
 #[derive(Default)]
 pub struct Scratch {
     stack: Vec<usize>,
     visited: IterableRefSet<usize>,
 }
 
-struct MutStack<'a, N: Into<usize> + From<usize>>(&'a mut Vec<usize>, std::marker::PhantomData<N>);
+/// Used to access Scratch.stack as if it were `Vec<N>`
+struct StackMut<'a, N: Into<usize> + From<usize>>(&'a mut Vec<usize>, std::marker::PhantomData<N>);
 
-impl<'a, N: Into<usize> + From<usize>> MutStack<'a, N> {
+impl<'a, N: Into<usize> + From<usize>> StackMut<'a, N> {
     fn new(s: &'a mut Vec<usize>) -> Self {
         Self(s, std::marker::PhantomData {})
     }
@@ -73,10 +92,10 @@ impl<'a, N: Into<usize> + From<usize>> MutStack<'a, N> {
     }
 }
 
-pub struct MutVisited<'a, N: Into<usize> + From<usize>>(&'a mut IterableRefSet<usize>, std::marker::PhantomData<N>);
-pub struct Visited<'a, N: Into<usize> + From<usize>>(&'a IterableRefSet<usize>, std::marker::PhantomData<N>);
+/// Used to access Scratch.visited as if it were `IterableRefSet<N>`
+pub struct VisitedMut<'a, N: Into<usize> + From<usize>>(&'a mut IterableRefSet<usize>, std::marker::PhantomData<N>);
 
-impl<'a, N: Into<usize> + From<usize>> MutVisited<'a, N> {
+impl<'a, N: Into<usize> + From<usize>> VisitedMut<'a, N> {
     fn new(v: &'a mut IterableRefSet<usize>) -> Self {
         Self(v, std::marker::PhantomData {})
     }
@@ -89,6 +108,9 @@ impl<'a, N: Into<usize> + From<usize>> MutVisited<'a, N> {
         self.0.insert(n.into())
     }
 }
+
+/// Used to access Scratch.visited as if it were `IterableRefSet<N>`
+pub struct Visited<'a, N: Into<usize> + From<usize>>(&'a IterableRefSet<usize>, std::marker::PhantomData<N>);
 impl<'a, N: Into<usize> + From<usize>> Visited<'a, N> {
     fn new(v: &'a IterableRefSet<usize>) -> Self {
         Self(v, std::marker::PhantomData {})
@@ -100,12 +122,12 @@ impl<'a, N: Into<usize> + From<usize>> Visited<'a, N> {
 }
 
 impl Scratch {
-    fn stack<'a, N: Into<usize> + From<usize>>(&'a mut self) -> MutStack<'a, N> {
-        MutStack::new(&mut self.stack)
+    fn stack<'a, N: Into<usize> + From<usize>>(&'a mut self) -> StackMut<'a, N> {
+        StackMut::new(&mut self.stack)
     }
 
-    fn visited_mut<'a, N: Into<usize> + From<usize>>(&'a mut self) -> MutVisited<'a, N> {
-        MutVisited::new(&mut self.visited)
+    fn visited_mut<'a, N: Into<usize> + From<usize>>(&'a mut self) -> VisitedMut<'a, N> {
+        VisitedMut::new(&mut self.visited)
     }
 
     fn visited<'a, N: Into<usize> + From<usize>>(&'a self) -> Visited<'a, N> {
@@ -135,7 +157,7 @@ impl<'a, N: Ref, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
         }
     }
 
-    pub fn mem_path(mut self, path_store: &'a mut PathStore<N, E>) -> Self {
+    pub fn record_paths(mut self, path_store: &'a mut PathStore<N, E>) -> Self {
         debug_assert!(self.parents.is_none());
         debug_assert!(self.scratch.visited.is_empty());
         self.parents = Some(path_store);
@@ -158,7 +180,7 @@ impl<N: Ref, E: Edge<N>, G: Graph<N, E>> Iterator for GraphTraversal<'_, N, E, G
 
         self.scratch.visited_mut().insert(node);
 
-        let mut stack = MutStack::new(&mut self.scratch.stack);
+        let mut stack = StackMut::new(&mut self.scratch.stack);
         let visited = Visited::new(&self.scratch.visited);
 
         let new_nodes = self.graph.outgoing(node).filter_map(|e| {

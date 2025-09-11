@@ -2,9 +2,9 @@ use crate::{
     core::state::{Domains, InvalidUpdate},
     reasoners::{
         eq_alt::{
-            graph::{IdEdge, Path},
+            constraints::ConstraintId,
+            graph::{Edge, Path},
             node::Node,
-            propagators::PropagatorId,
             relation::EqRelation,
         },
         Contradiction,
@@ -18,46 +18,50 @@ impl AltEqTheory {
     fn propagate_path(
         &mut self,
         model: &mut Domains,
-        prop_id: PropagatorId,
-        edge: IdEdge,
+        constraint_id: ConstraintId,
+        edge: Edge,
         path: Path,
     ) -> Result<(), InvalidUpdate> {
-        let prop = self.constraint_store.get_propagator(prop_id);
+        let constraint = self.constraint_store.get_constraint(constraint_id);
         let Path {
             source_id,
             target_id,
             relation,
         } = path;
+
+        // Handle source to target edge case
         if source_id == target_id {
             match relation {
                 EqRelation::Neq => {
                     model.set(
-                        !prop.enabler.active,
-                        self.identity.inference(ModelUpdateCause::NeqCycle(prop_id)),
+                        !constraint.enabler.active,
+                        self.identity.inference(ModelUpdateCause::NeqCycle(constraint_id)),
                     )?;
                 }
                 EqRelation::Eq => {
-                    // Not sure if we should handle cycles here, quite inconsistent
-                    // Works for triangles but not pairs
                     return Ok(());
                 }
             }
         }
+
         debug_assert!(model.entails(edge.active));
 
         // Find propagators which create a negative cycle, then disable them
         self.active_graph
+            // Get all possible constraints that go from target group to source group
             .group_product(path.source_id, path.target_id)
             .flat_map(|(source, target)| self.constraint_store.get_from_nodes(target, source))
+            // that would create a Neq cycle if enabled
             .filter_map(|id| {
-                let prop = self.constraint_store.get_propagator(id);
-                (path.relation + prop.relation == Some(EqRelation::Neq)).then_some((id, prop.clone()))
+                let constraint = self.constraint_store.get_constraint(id);
+                (path.relation + constraint.relation == Some(EqRelation::Neq)).then_some((id, constraint.clone()))
             })
-            .try_for_each(|(id, prop)| {
-                self.stats.neq_cycle_props += 1;
+            // and deactivate them
+            .try_for_each(|(id, constraint)| {
+                self.stats().neq_cycle_props += 1;
                 model
                     .set(
-                        !prop.enabler.active,
+                        !constraint.enabler.active,
                         self.identity.inference(ModelUpdateCause::NeqCycle(id)),
                     )
                     .map(|_| ())
@@ -82,28 +86,30 @@ impl AltEqTheory {
         Ok(())
     }
 
-    /// Given any propagator, perform propagations if possible and necessary.
-    pub fn propagate_edge(&mut self, model: &mut Domains, prop_id: PropagatorId) -> Result<(), Contradiction> {
-        let prop = self.constraint_store.get_propagator(prop_id);
+    /// Given a constraint that has just been enabled, run propagations on all new paths it creates.
+    pub fn propagate_edge(&mut self, model: &mut Domains, constraint_id: ConstraintId) -> Result<(), Contradiction> {
+        let constraint = self.constraint_store.get_constraint(constraint_id);
 
-        debug_assert!(model.entails(prop.enabler.active));
-        debug_assert!(model.entails(prop.enabler.valid));
+        debug_assert!(model.entails(constraint.enabler.active));
+        debug_assert!(model.entails(constraint.enabler.valid));
 
-        let edge = self.active_graph.create_edge(prop);
+        let edge = self.active_graph.create_edge(constraint);
 
         // Check for edge case
         if edge.source == edge.target && edge.relation == EqRelation::Neq {
             model.set(
                 !edge.active,
-                self.identity.inference(ModelUpdateCause::NeqCycle(prop_id)),
+                self.identity.inference(ModelUpdateCause::NeqCycle(constraint_id)),
             )?;
             return Ok(());
         }
 
-        // Get all new node paths we can potentially propagate along
+        // Get all new paths we can potentially propagate along
         let paths = self.active_graph.paths_requiring(edge);
-        self.stats.total_paths += paths.len() as u32;
-        self.stats.edges_propagated += 1;
+
+        self.stats().total_paths += paths.len() as u32;
+        self.stats().edges_propagated += 1;
+
         if paths.is_empty() {
             // Edge is redundant, don't add it to the graph
             return Ok(());
@@ -117,11 +123,12 @@ impl AltEqTheory {
 
         let res = paths
             .into_iter()
-            .try_for_each(|p| self.propagate_path(model, prop_id, edge, p));
+            .try_for_each(|p| self.propagate_path(model, constraint_id, edge, p));
 
+        // If we have a <=> b, we can merge a and b together
         // For now, only handle the simplest case of Eq fusion, a -=-> b && b -=-> a
         // Theoretically, this should be sufficient, as implication cycles should automatically go both ways
-        // However to due limits in the implication graph, this is not sufficient, but good enough
+        // However due to limits in the implication graph, this is not sufficient, but good enough
         if edge.relation == EqRelation::Eq
             && self
                 .active_graph
@@ -129,32 +136,37 @@ impl AltEqTheory {
                 .iter_edges(edge.target)
                 .any(|e| e.target == edge.source && e.relation == EqRelation::Eq)
         {
-            self.stats.merges += 1;
+            self.stats().merges += 1;
             self.active_graph.merge((edge.source, edge.target));
         }
 
+        // Once all propagations are complete, we can add edge to the graph
         self.active_graph.add_edge(edge);
         Ok(res?)
     }
 
-    /// Propagate `s` and `t`'s bounds if s -=-> t
-    fn propagate_eq(&mut self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
+    /// Propagate `target`'s bounds where `source` -=-> `target`
+    ///
+    /// dom(target) := dom(target) U dom(source)
+    fn propagate_eq(&self, model: &mut Domains, source: Node, target: Node) -> Result<(), InvalidUpdate> {
         let cause = self.identity.inference(ModelUpdateCause::DomEq);
-        let s_bounds = model.node_bounds(&s);
-        if let Node::Var(t) = t {
+        let s_bounds = model.node_bounds(&source);
+        if let Node::Var(t) = target {
             if model.set_lb(t, s_bounds.0, cause)? {
-                self.stats.eq_props += 1;
+                self.stats().eq_props += 1;
             }
             if model.set_ub(t, s_bounds.1, cause)? {
-                self.stats.eq_props += 1;
+                self.stats().eq_props += 1;
             }
-        } // else reverse propagator will be active, so nothing to do
-          // TODO: Maybe handle reverse propagator immediately
+        } // else reverse constraint will be active, so nothing to do
+          // TODO: Maybe handle reverse constraint immediately
         Ok(())
     }
 
-    /// Propagate `s` and `t`'s bounds if s -!=-> t
-    fn propagate_neq(&mut self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
+    /// Propagate `target`'s bounds where `source` -!=-> `target`
+    ///
+    /// dom(target) := dom(target) \ dom(source) if |dom(source)| = 1
+    fn propagate_neq(&self, model: &mut Domains, s: Node, t: Node) -> Result<(), InvalidUpdate> {
         let cause = self.identity.inference(ModelUpdateCause::DomNeq);
         // If domains don't overlap, nothing to do
         // If source domain is fixed and ub or lb of target == source lb, exclude that value
@@ -163,10 +175,10 @@ impl AltEqTheory {
         if let Some(bound) = model.node_bound(&s) {
             if let Node::Var(t) = t {
                 if model.ub(t) == bound && model.set_ub(t, bound - 1, cause)? {
-                    self.stats.neq_props += 1;
+                    self.stats().neq_props += 1;
                 }
                 if model.lb(t) == bound && model.set_lb(t, bound + 1, cause)? {
-                    self.stats.neq_props += 1;
+                    self.stats().neq_props += 1;
                 }
             }
         }

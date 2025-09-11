@@ -6,13 +6,13 @@ use crate::{
         Lit,
     },
     reasoners::eq_alt::{
+        constraints::ConstraintId,
         graph::{
             transforms::{EqExt, EqNeqExt, EqNode, FilterExt},
             traversal::{Graph, PathStore},
-            IdEdge,
+            Edge,
         },
         node::Node,
-        propagators::PropagatorId,
         relation::EqRelation,
         theory::cause::ModelUpdateCause,
     },
@@ -21,37 +21,41 @@ use crate::{
 use super::AltEqTheory;
 
 impl AltEqTheory {
-    /// Explain a neq cycle inference as a path of edges.
-    pub fn neq_cycle_explanation_path(&self, prop_id: PropagatorId, model: &DomainsSnapshot) -> Vec<IdEdge> {
-        let prop = self.constraint_store.get_propagator(prop_id);
-        let source_id = self.active_graph.get_id(&prop.b).unwrap();
-        let target_id = self.active_graph.get_id(&prop.a).unwrap();
+    /// Get the path of enabled edges from prop.target to prop.source.
+    /// This should allow us to explain a cycle propagation.
+    pub fn neq_cycle_explanation_path(&self, constraint_id: ConstraintId, model: &DomainsSnapshot) -> Vec<Edge> {
+        let constraint = self.constraint_store.get_constraint(constraint_id);
+        let source_id = self.active_graph.get_id(&constraint.b).unwrap();
+        let target_id = self.active_graph.get_id(&constraint.a).unwrap();
 
+        // Transform the enabled graph to get a snapshot of it just before the propagation
         let graph = self.active_graph.outgoing.filter(|_, e| model.entails(e.active));
 
-        match prop.relation {
+        match constraint.relation {
             EqRelation::Eq => {
                 let mut path_store = PathStore::new();
+                // Find a path from target to source with relation Neq
                 graph
                     .eq_neq()
                     .traverse(EqNode::new(source_id), &mut Default::default())
-                    .mem_path(&mut path_store)
+                    .record_paths(&mut path_store)
                     .find(|&n| n == EqNode(target_id, EqRelation::Neq))
                     .map(|n| path_store.get_path(n).map(|e| e.0).collect_vec())
             }
             EqRelation::Neq => {
                 let mut path_store = PathStore::new();
+                // Find a path from target to source with relation Eq
                 graph
                     .eq()
                     .traverse(source_id, &mut Default::default())
-                    .mem_path(&mut path_store)
+                    .record_paths(&mut path_store)
                     .find(|&n| n == target_id)
                     .map(|n| path_store.get_path(n).collect_vec())
             }
         }
         .unwrap_or_else(|| {
-            let a_id = self.active_graph.get_id(&prop.a).unwrap();
-            let b_id = self.active_graph.get_id(&prop.b).unwrap();
+            let a_id = self.active_graph.get_id(&constraint.a).unwrap();
+            let b_id = self.active_graph.get_id(&constraint.b).unwrap();
             panic!(
                 "Unable to explain active graph: \n\
                     {}\n\
@@ -61,19 +65,20 @@ impl AltEqTheory {
                     ({:?} -{}-> {:?})",
                 self.active_graph.to_graphviz(),
                 self.active_graph.to_graphviz_grouped(),
-                prop,
+                constraint,
                 a_id,
-                prop.relation,
+                constraint.relation,
                 b_id,
                 self.active_graph.get_group_id(a_id),
-                prop.relation,
+                constraint.relation,
                 self.active_graph.get_group_id(b_id)
             )
         })
     }
 
-    /// Explain an equality inference as a path of edges.
-    pub fn eq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<IdEdge> {
+    /// Look for a path from the variable whose bounds were modified to any variable which
+    /// could have caused the bound update though equality propagation.
+    pub fn eq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge> {
         let source_id = self.active_graph.get_id(&Node::Var(literal.variable())).unwrap();
 
         let mut path_store = PathStore::new();
@@ -83,7 +88,7 @@ impl AltEqTheory {
             .filter(|_, e| model.entails(e.active))
             .eq()
             .traverse(source_id, &mut Default::default())
-            .mem_path(&mut path_store)
+            .record_paths(&mut path_store)
             .skip(1) // Cannot cause own propagation
             .find(|id| {
                 let n = self.active_graph.get_node(*id);
@@ -95,8 +100,9 @@ impl AltEqTheory {
         path_store.get_path(cause).collect()
     }
 
-    /// Explain a neq inference as a path of edges.
-    pub fn neq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<IdEdge> {
+    /// Look for a path from the variable whose bounds were modified to any variable which
+    /// could have caused the bound update though inequality propagation.
+    pub fn neq_explanation_path(&self, literal: Lit, model: &DomainsSnapshot<'_>) -> Vec<Edge> {
         let source_id = self.active_graph.get_id(&Node::Var(literal.variable())).unwrap();
 
         let mut path_store = PathStore::new();
@@ -106,7 +112,7 @@ impl AltEqTheory {
             .filter(|_, e| model.entails(e.active))
             .eq_neq()
             .traverse(EqNode::new(source_id), &mut Default::default())
-            .mem_path(&mut path_store)
+            .record_paths(&mut path_store)
             .skip(1)
             .find(|EqNode(id, r)| {
                 let (prev_lb, prev_ub) = model.bounds(literal.variable());
@@ -126,12 +132,13 @@ impl AltEqTheory {
         path_store.get_path(cause).map(|e| e.0).collect()
     }
 
+    /// Given a path computed from one of the functions defined above, constructs an explanation from this path
     pub fn explain_from_path(
         &self,
         model: &DomainsSnapshot<'_>,
         literal: Lit,
         cause: ModelUpdateCause,
-        path: Vec<IdEdge>,
+        path: Vec<Edge>,
         out_explanation: &mut Explanation,
     ) {
         use ModelUpdateCause::*;

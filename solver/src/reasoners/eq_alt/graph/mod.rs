@@ -9,15 +9,15 @@ use hashbrown::HashSet;
 use itertools::Itertools;
 use node_store::NodeStore;
 use transforms::{EqExt, EqNeqExt, EqNode, FilterExt};
-use traversal::{Edge, Graph, Scratch};
+use traversal::{Edge as _, Graph, Scratch};
 
 use crate::backtrack::{Backtrack, DecLvl, Trail};
 use crate::core::Lit;
 use crate::create_ref_type;
 use crate::reasoners::eq_alt::graph::adj_list::EqAdjList;
 
+use super::constraints::Constraint;
 use super::node::Node;
-use super::propagators::Propagator;
 use super::relation::EqRelation;
 
 mod adj_list;
@@ -34,15 +34,17 @@ impl Display for NodeId {
     }
 }
 
+/// A directed edge between two nodes (identified by ids)
+/// with an associated relation and activity literal.
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
-pub struct IdEdge {
+pub struct Edge {
     pub source: NodeId,
     pub target: NodeId,
     pub active: Lit,
     pub relation: EqRelation,
 }
 
-impl IdEdge {
+impl Edge {
     fn new(source: NodeId, target: NodeId, active: Lit, relation: EqRelation) -> Self {
         Self {
             source,
@@ -52,9 +54,9 @@ impl IdEdge {
         }
     }
 
-    /// Should only be used for reverse adjacency graph. Propagator id is not reversed.
+    /// Swaps source and target. Useful to convert from outgoing-graph edge and incoming-graph edge.
     fn reverse(&self) -> Self {
-        IdEdge {
+        Edge {
             source: self.target,
             target: self.source,
             ..*self
@@ -62,18 +64,22 @@ impl IdEdge {
     }
 }
 
+/// A backtrackable event affecting the graph.
 #[derive(Clone)]
 enum Event {
-    EdgeAdded(IdEdge),
-    GroupEdgeAdded(IdEdge),
-    GroupEdgeRemoved(IdEdge),
+    EdgeAdded(Edge),
+    GroupEdgeAdded(Edge),
+    GroupEdgeRemoved(Edge),
 }
 
 thread_local! {
+    /// A reusable bit of memory to be used by graph traversal.
     static SCRATCHES: [RefCell<Scratch>; 4] = array::from_fn(|_| Default::default());
 }
 
-fn with_scratches<R, F, const N: usize>(f: F) -> R
+/// Run f with any number of scratches (max determined by SCRATCHES variables)
+/// Array destructuring syntax allows you to specify the number and get multiple as mut
+pub fn with_scratches<R, F, const N: usize>(f: F) -> R
 where
     F: FnOnce([RefMut<'_, Scratch>; N]) -> R,
 {
@@ -86,6 +92,19 @@ where
     })
 }
 
+/// An adjacency list representation of a directed "equality graph"
+/// where each edge has an eq/neq relation and an activity literal.
+///
+/// 4 adjacency lists are stored in memory:
+/// - Outgoing (forward)
+/// - Incoming (reverse/backward)
+/// - Grouped outgoing (SCCs of equal nodes are merged into one)
+/// - Grouped incoming
+///
+/// Notable methods include path_requiring(edge) which is useful for propagation.
+///
+/// It is also possible to transform and traverse the graph with
+/// `graph.outgoing_grouped.eq_neq().filter(...).traverse(source, Default::default()).find(...)` for example.
 #[derive(Clone, Default)]
 pub(super) struct DirEqGraph {
     pub node_store: NodeStore,
@@ -135,17 +154,24 @@ impl DirEqGraph {
         self.node_store.get_group_nodes(id)
     }
 
+    /// Merge together two nodes when they are determined to belong to the same Eq SCC.
     pub fn merge(&mut self, ids: (NodeId, NodeId)) {
         let child = self.get_group_id(ids.0);
         let parent = self.get_group_id(ids.1);
+
+        // Merge NodeIds
         self.node_store.merge(child, parent);
 
+        // For each edge that goes out of the child group
         for edge in self.outgoing_grouped.iter_edges(child.into()).cloned().collect_vec() {
             self.trail.push(Event::GroupEdgeRemoved(edge));
+
+            // Remove it from both adjacency lists
             self.outgoing_grouped.remove_edge(edge);
             self.incoming_grouped.remove_edge(edge.reverse());
 
-            let new_edge = IdEdge {
+            // Modify it to have the parent group as a source
+            let new_edge = Edge {
                 source: parent.into(),
                 ..edge
             };
@@ -154,6 +180,7 @@ impl DirEqGraph {
                 continue;
             }
 
+            // Possibly insert it back in
             let added = self.outgoing_grouped.insert_edge(new_edge);
             assert_eq!(added, self.incoming_grouped.insert_edge(new_edge.reverse()));
             if added {
@@ -161,17 +188,17 @@ impl DirEqGraph {
             }
         }
 
+        // Same for incoming edges
         for edge in self.incoming_grouped.iter_edges(child.into()).cloned().collect_vec() {
             let edge = edge.reverse();
             self.trail.push(Event::GroupEdgeRemoved(edge));
             self.outgoing_grouped.remove_edge(edge);
             self.incoming_grouped.remove_edge(edge.reverse());
 
-            let new_edge = IdEdge {
+            let new_edge = Edge {
                 target: parent.into(),
                 ..edge
             };
-            // Avoid adding edges from a group into the same group
             if new_edge.source == new_edge.target {
                 continue;
             }
@@ -184,6 +211,7 @@ impl DirEqGraph {
         }
     }
 
+    /// Cartesian product between source group nodes and target group nodes, useful for propagation
     pub fn group_product(&self, source_id: GroupId, target_id: GroupId) -> impl Iterator<Item = (Node, Node)> {
         let sources = self.get_group_nodes(source_id);
         let targets = self.get_group_nodes(target_id);
@@ -193,18 +221,18 @@ impl DirEqGraph {
     /// Returns an edge from a propagator without adding it to the graph.
     ///
     /// Adds the nodes to the graph if they are not present.
-    pub fn create_edge(&mut self, prop: &Propagator) -> IdEdge {
+    pub fn create_edge(&mut self, prop: &Constraint) -> Edge {
         let source_id = self.insert_node(prop.a);
         let target_id = self.insert_node(prop.b);
-        IdEdge::new(source_id, target_id, prop.enabler.active, prop.relation)
+        Edge::new(source_id, target_id, prop.enabler.active, prop.relation)
     }
 
     /// Adds an edge to the graph.
-    pub fn add_edge(&mut self, edge: IdEdge) {
+    pub fn add_edge(&mut self, edge: Edge) {
         self.trail.push(Event::EdgeAdded(edge));
         self.outgoing.insert_edge(edge);
         self.incoming.insert_edge(edge.reverse());
-        let grouped_edge = IdEdge {
+        let grouped_edge = Edge {
             source: self.get_group_id(edge.source).into(),
             target: self.get_group_id(edge.target).into(),
             ..edge
@@ -224,9 +252,9 @@ impl DirEqGraph {
     ///
     /// For an edge x -!=-> y, returns a vec of all pairs (w, z) such that w -!=> z in G union x -!=-> y, but not in G.
     /// propagator nodes must already be added
-    pub fn paths_requiring(&self, edge: IdEdge) -> Vec<Path> {
+    pub fn paths_requiring(&self, edge: Edge) -> Vec<Path> {
         // Convert edge to edge between groups
-        let edge = IdEdge {
+        let edge = Edge {
             source: self.node_store.get_group_id(edge.source).into(),
             target: self.node_store.get_group_id(edge.target).into(),
             ..edge
@@ -238,30 +266,37 @@ impl DirEqGraph {
         }
     }
 
-    fn paths_requiring_eq(&self, edge: IdEdge) -> Vec<Path> {
+    fn paths_requiring_eq(&self, edge: Edge) -> Vec<Path> {
+        debug_assert_eq!(edge.relation, EqRelation::Eq);
+
         with_scratches(|[mut s1, mut s2, mut s3, mut s4]| {
+            // Traverse backwards from target to find reachable predecessors
             let mut t = self
                 .incoming_grouped
                 .eq_neq()
                 .traverse(EqNode::new(edge.target), &mut s1);
+            // If there is already a path from source to target, no paths are created
             if t.any(|n| n == EqNode(edge.source, EqRelation::Eq)) {
                 return Vec::new();
             }
 
             let reachable_preds = t.visited();
 
+            // Do the same for reachable successors
             let reachable_succs = self
                 .outgoing_grouped
                 .eq_neq()
                 .reachable(EqNode::new(edge.source), &mut s2);
             debug_assert!(!reachable_succs.contains(EqNode::new(edge.target)));
 
+            // Traverse backwards from the source excluding nodes which can reach the target
             let predecessors = self
                 .incoming_grouped
                 .eq_neq()
                 .filter(|_, e| !reachable_preds.contains(e.target()))
                 .traverse(EqNode::new(edge.source), &mut s3);
 
+            // Traverse forward from the target excluding nodes which can be reached by the source
             let successors = self
                 .outgoing_grouped
                 .eq_neq()
@@ -269,6 +304,8 @@ impl DirEqGraph {
                 .traverse(EqNode::new(edge.target), &mut s4)
                 .collect_vec();
 
+            // A cartesian product between predecessors which cannot reach the target and successors which cannot be reached by source
+            // is equivalent to the set of paths which require the addition of this edge to exist.
             predecessors
                 .into_iter()
                 .cartesian_product(successors)
@@ -280,8 +317,14 @@ impl DirEqGraph {
         })
     }
 
-    fn paths_requiring_neq(&self, edge: IdEdge) -> Vec<Path> {
+    fn paths_requiring_neq(&self, edge: Edge) -> Vec<Path> {
+        debug_assert_eq!(edge.relation, EqRelation::Neq);
+
+        // Same principle as Eq, but the logic is a little more complicated
+        // We want to exclude predecessors reachable with Eq and successors reachable with Neq first
+        // then the opposite
         with_scratches(|[mut s1, mut s2, mut s3, mut s4]| {
+            // Reachable sets
             let mut t = self
                 .incoming_grouped
                 .eq_neq()
@@ -296,40 +339,44 @@ impl DirEqGraph {
                 .eq_neq()
                 .reachable(EqNode::new(edge.source), &mut s2);
 
-            let neq_successors = self
+            let neq_filtered_successors = self
                 .outgoing_grouped
                 .eq()
-                .filter(|_, e| reachable_succs.contains(EqNode(e.target(), EqRelation::Neq)))
+                .filter(|_, e| !reachable_succs.contains(EqNode(e.target(), EqRelation::Neq)))
                 .traverse(edge.target, &mut s3)
                 .collect_vec();
 
-            let eq_successors = self
+            let eq_filtered_successors = self
                 .outgoing_grouped
                 .eq()
-                .filter(|_, e| reachable_succs.contains(EqNode(e.target(), EqRelation::Eq)))
+                .filter(|_, e| !reachable_succs.contains(EqNode(e.target(), EqRelation::Eq)))
                 .traverse(edge.target, &mut s3)
                 .collect_vec();
 
-            let eq_predecessors = self
+            let eq_filtered_predecessors = self
                 .incoming_grouped
                 .eq()
-                .filter(|_, e| reachable_preds.contains(EqNode(e.target(), EqRelation::Eq)))
+                .filter(|_, e| !reachable_preds.contains(EqNode(e.target(), EqRelation::Eq)))
                 .traverse(edge.source, &mut s3);
 
-            let neq_predecessors = self
+            let neq_filtered_predecessors = self
                 .incoming_grouped
                 .eq()
-                .filter(|_, e| reachable_preds.contains(EqNode(e.target(), EqRelation::Neq)))
+                .filter(|_, e| !reachable_preds.contains(EqNode(e.target(), EqRelation::Neq)))
                 .traverse(edge.source, &mut s4);
 
             let create_path =
                 |(source, target): (NodeId, NodeId)| -> Path { Path::new(source, target, EqRelation::Neq) };
 
-            neq_predecessors
-                .cartesian_product(eq_successors)
+            neq_filtered_predecessors
+                .cartesian_product(eq_filtered_successors)
                 .map(create_path)
                 .skip(1)
-                .chain(eq_predecessors.cartesian_product(neq_successors).map(create_path))
+                .chain(
+                    eq_filtered_predecessors
+                        .cartesian_product(neq_filtered_successors)
+                        .map(create_path),
+                )
                 .collect()
         })
     }
@@ -483,8 +530,8 @@ mod tests {
         }};
     }
 
-    fn prop(src: i32, tgt: i32, relation: EqRelation) -> Propagator {
-        Propagator::new(Node::Val(src), Node::Val(tgt), relation, Lit::TRUE, Lit::TRUE)
+    fn prop(src: i32, tgt: i32, relation: EqRelation) -> Constraint {
+        Constraint::new(Node::Val(src), Node::Val(tgt), relation, Lit::TRUE, Lit::TRUE)
     }
 
     fn id(g: &DirEqGraph, node: i32) -> NodeId {
@@ -495,8 +542,8 @@ mod tests {
         EqNode(id(g, node), r)
     }
 
-    fn edge(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> IdEdge {
-        IdEdge::new(
+    fn edge(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> Edge {
+        Edge::new(
             g.get_id(&Node::Val(src)).unwrap(),
             g.get_id(&Node::Val(tgt)).unwrap(),
             Lit::TRUE,
@@ -637,7 +684,7 @@ mod tests {
             g.outgoing
                 .eq_neq()
                 .traverse(eqn(&g, 0, Eq), &mut scratch)
-                .mem_path(&mut path_store)
+                .record_paths(&mut path_store)
                 .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                 .expect("Path exists")
         });
@@ -646,7 +693,7 @@ mod tests {
             g.outgoing
                 .eq_neq()
                 .traverse(eqn(&g, 0, Eq), &mut s)
-                .mem_path(&mut path_store)
+                .record_paths(&mut path_store)
                 .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                 .expect("Path exists");
         });
@@ -671,7 +718,7 @@ mod tests {
                     .eq_neq()
                     .filter(|_, e| !set.contains(e.target()))
                     .traverse(eqn(&g, 0, Eq), &mut s)
-                    .mem_path(&mut path_store_2)
+                    .record_paths(&mut path_store_2)
                     .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                     .expect("Path exists");
                 assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path2);
@@ -686,7 +733,7 @@ mod tests {
                     .eq_neq()
                     .filter(|_, e| !set.contains(e.target()))
                     .traverse(eqn(&g, 0, Eq), &mut s)
-                    .mem_path(&mut path_store_2)
+                    .record_paths(&mut path_store_2)
                     .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                     .expect("Path exists");
                 assert_eq!(path_store_2.get_path(target).map(|e| e.0).collect_vec(), path1);

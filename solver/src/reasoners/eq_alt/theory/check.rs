@@ -8,7 +8,7 @@ use crate::{
             traversal::Graph,
         },
         node::Node,
-        propagators::Propagator,
+        constraints::Constraint,
         relation::EqRelation,
     },
 };
@@ -39,7 +39,7 @@ impl AltEqTheory {
     }
 
     /// Check for paths which exist but don't propagate correctly on constraint literals
-    fn check_path_propagation(&self, model: &Domains) -> Vec<&Propagator> {
+    fn check_path_propagation(&self, model: &Domains) -> Vec<&Constraint> {
         let mut problems = vec![];
         for source in self.active_graph.iter_nodes().collect_vec() {
             for target in self.active_graph.iter_nodes().collect_vec() {

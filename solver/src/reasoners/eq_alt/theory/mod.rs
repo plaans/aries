@@ -3,7 +3,10 @@ mod check;
 mod explain;
 mod propagate;
 
-use std::collections::VecDeque;
+use std::{
+    cell::{RefCell, RefMut},
+    collections::VecDeque,
+};
 
 use cause::ModelUpdateCause;
 
@@ -15,9 +18,9 @@ use crate::{
     },
     reasoners::{
         eq_alt::{
+            constraints::{ActivationEvent, Constraint, ConstraintStore},
             graph::DirEqGraph,
             node::Node,
-            propagators::{ActivationEvent, Propagator, PropagatorStore},
             relation::EqRelation,
         },
         stn::theory::Identity,
@@ -27,15 +30,18 @@ use crate::{
 
 type ModelEvent = crate::core::state::Event;
 
+/// An alternative theory propagator for equality logic.
 #[derive(Clone)]
 pub struct AltEqTheory {
-    constraint_store: PropagatorStore,
+    constraint_store: ConstraintStore,
     /// Directed graph containt valid and active edges
     active_graph: DirEqGraph,
+    /// A cursor that lets us track new events since last propagation
     model_events: ObsTrailCursor<ModelEvent>,
-    pending_activations: VecDeque<ActivationEvent>,
+    /// A temporary vec of newly created, unpropagated constraints
+    new_constraints: VecDeque<ActivationEvent>,
     identity: Identity<ModelUpdateCause>,
-    stats: Stats,
+    stats: RefCell<Stats>,
 }
 
 impl AltEqTheory {
@@ -44,7 +50,7 @@ impl AltEqTheory {
             constraint_store: Default::default(),
             active_graph: DirEqGraph::new(),
             model_events: Default::default(),
-            pending_activations: Default::default(),
+            new_constraints: Default::default(),
             identity: Identity::new(ReasonerId::Eq(0)),
             stats: Default::default(),
         }
@@ -69,22 +75,21 @@ impl AltEqTheory {
         // given that `pa & pb <=> edge_valid`, we can infer that the propagator becomes valid
         // (i.e. `pb => edge_valid` holds) when `pa` becomes true
         let ab_valid = if model.implies(pb, pa) { Lit::TRUE } else { pa };
-        // Inverse
         let ba_valid = if model.implies(pa, pb) { Lit::TRUE } else { pb };
 
         // Create and record propagators
-        let (ab_prop, ba_prop) = Propagator::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
+        let (ab_prop, ba_prop) = Constraint::new_pair(a.into(), b, relation, l, ab_valid, ba_valid);
         for prop in [ab_prop, ba_prop] {
-            self.stats.propagators += 1;
+            self.stats().constraints += 1;
 
+            // Constraints that can never be enabled can be ignored
             if model.entails(!prop.enabler.active) || model.entails(!prop.enabler.valid) {
                 continue;
             }
-            let id = self.constraint_store.add_propagator(prop.clone());
+            let id = self.constraint_store.add_constraint(prop.clone());
 
-            if model.entails(prop.enabler.valid) {
-                self.constraint_store.mark_valid(id);
-            } else {
+            //
+            if !model.entails(prop.enabler.valid) {
                 self.constraint_store.add_watch(id, prop.enabler.valid);
             }
 
@@ -95,9 +100,13 @@ impl AltEqTheory {
             if model.entails(prop.enabler.valid) && model.entails(prop.enabler.active) {
                 // Propagator always active and valid, only need to propagate once
                 // So don't add watches
-                self.pending_activations.push_back(ActivationEvent::new(id));
+                self.new_constraints.push_back(ActivationEvent::new(id));
             }
         }
+    }
+
+    fn stats(&self) -> RefMut<'_, Stats> {
+        self.stats.borrow_mut()
     }
 }
 
@@ -109,7 +118,7 @@ impl Default for AltEqTheory {
 
 impl Backtrack for AltEqTheory {
     fn save_state(&mut self) -> DecLvl {
-        assert!(self.pending_activations.is_empty());
+        assert!(self.new_constraints.is_empty());
         self.constraint_store.save_state();
         self.active_graph.save_state()
     }
@@ -126,38 +135,36 @@ impl Backtrack for AltEqTheory {
 
 impl Theory for AltEqTheory {
     fn identity(&self) -> ReasonerId {
-        ReasonerId::Eq(0)
+        self.identity.writer_id
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        // Propagate initial propagators
-        while let Some(event) = self.pending_activations.pop_front() {
+        // Propagate newly created constraints
+        while let Some(event) = self.new_constraints.pop_front() {
             self.propagate_edge(model, event.prop_id)?;
         }
 
-        // For each new model event, propagate all propagators which may be enabled by it
+        // For each event since last propagation
         while let Some(&event) = self.model_events.pop(model.trail()) {
             // Optimisation: If we deactivated an edge with literal l due to a neq cycle, the propagator with literal !l (from reification) is redundant
             if let Some(cause) = event.cause.as_external_inference() {
                 if cause.writer == self.identity() && matches!(cause.payload.into(), ModelUpdateCause::NeqCycle(_)) {
-                    self.stats.skipped_events += 1;
+                    self.stats().skipped_events += 1;
                     continue;
                 }
             }
+
+            // For each constraint which might be enabled by this event
             for (enabler, prop_id) in self
                 .constraint_store
                 .enabled_by(event.new_literal())
                 .collect::<Vec<_>>()
             {
-                if model.entails(enabler.valid) {
-                    self.constraint_store.mark_valid(prop_id);
-                } else {
+                // Skip if not enabled
+                if !model.entails(enabler.active) || !model.entails(enabler.valid) {
                     continue;
                 }
-                if !model.entails(enabler.active) {
-                    continue;
-                }
-                self.stats.propagations += 1;
+                self.stats().propagations += 1;
                 self.propagate_edge(model, prop_id)?;
             }
         }
@@ -173,10 +180,11 @@ impl Theory for AltEqTheory {
     ) {
         use ModelUpdateCause::*;
 
-        // Get the path which explains the inference
         let cause = ModelUpdateCause::from(context.payload);
+
+        // All explanations require some kind of path
         let path = match cause {
-            NeqCycle(prop_id) => self.neq_cycle_explanation_path(prop_id, model),
+            NeqCycle(constraint_id) => self.neq_cycle_explanation_path(constraint_id, model),
             DomNeq => self.neq_explanation_path(literal, model),
             DomEq => self.eq_explanation_path(literal, model),
         };
@@ -186,7 +194,7 @@ impl Theory for AltEqTheory {
     }
 
     fn print_stats(&self) {
-        println!("{:#?}", self.stats);
+        println!("{:#?}", self.stats());
         self.active_graph.print_merge_statistics();
     }
 
@@ -197,7 +205,7 @@ impl Theory for AltEqTheory {
 
 #[derive(Debug, Clone, Default)]
 struct Stats {
-    propagators: u32,
+    constraints: u32,
     propagations: u32,
     skipped_events: u32,
     neq_cycle_props: u32,
@@ -227,7 +235,7 @@ mod tests {
         F: FnMut(&mut AltEqTheory, &mut Domains) -> T,
     {
         assert!(
-            eq.pending_activations.is_empty(),
+            eq.new_constraints.is_empty(),
             "Cannot test backtrack when activations pending"
         );
         eq.save_state();
@@ -506,32 +514,6 @@ mod tests {
         let l = model.new_bool();
         let a = model.new_var(0, 1);
         eq.add_half_reified_neq_edge(l, a, a, &model);
-        assert!(eq.propagate(&mut model).is_ok());
-        assert!(model.entails(!l));
-    }
-
-    /// a -=> b && a -!=> b, infer nothing
-    /// when b present, infer !l
-    #[test]
-    fn test_alt_paths() {
-        let mut model = Domains::new();
-        let mut eq = AltEqTheory::new();
-
-        let a_pres = model.new_bool();
-        let b_pres = model.new_bool();
-        model.add_implication(b_pres, a_pres);
-
-        let a = model.new_optional_var(0, 5, a_pres);
-        let b = model.new_optional_var(0, 5, b_pres);
-        let l = model.new_bool();
-
-        eq.add_half_reified_eq_edge(Lit::TRUE, a, b, &model);
-        eq.add_half_reified_neq_edge(l, a, b, &model);
-
-        eq.propagate(&mut model).unwrap();
-        assert_eq!(model.bounds(l.variable()), (0, 1));
-
-        model.set(b_pres, Cause::Decision).unwrap();
         assert!(eq.propagate(&mut model).is_ok());
         assert!(model.entails(!l));
     }

@@ -2,11 +2,11 @@ use crate::{collections::ref_store::Ref, reasoners::eq_alt::relation::EqRelation
 
 use super::{
     traversal::{self},
-    EqAdjList, IdEdge, NodeId, Path,
+    Edge, EqAdjList, NodeId, Path,
 };
 
 // Implementations of generic edge for concrete edge type
-impl traversal::Edge<NodeId> for IdEdge {
+impl traversal::Edge<NodeId> for Edge {
     fn target(&self) -> NodeId {
         self.target
     }
@@ -17,8 +17,8 @@ impl traversal::Edge<NodeId> for IdEdge {
 }
 
 // Implementation of generic graph for concrete graph
-impl traversal::Graph<NodeId, IdEdge> for &EqAdjList {
-    fn outgoing(&self, node: NodeId) -> impl Iterator<Item = IdEdge> {
+impl traversal::Graph<NodeId, Edge> for &EqAdjList {
+    fn outgoing(&self, node: NodeId) -> impl Iterator<Item = Edge> {
         self.iter_edges(node).cloned()
     }
 }
@@ -42,8 +42,8 @@ impl EqNode {
 }
 
 // Node trait implementation for Eq Node
+// Relation gets first bit, N is shifted to the left by one
 
-// T gets first bit, N is shifted by one
 impl From<usize> for EqNode {
     fn from(value: usize) -> Self {
         let r = if value & 1 != 0 {
@@ -66,10 +66,12 @@ impl From<EqNode> for usize {
     }
 }
 
+/// EqEdge type that goes with EqNode for graph traversal.
+///
 /// Second field is the relation of the target node
 /// (Hence the - in source)
 #[derive(Debug, Clone)]
-pub struct EqEdge(pub IdEdge, EqRelation);
+pub struct EqEdge(pub Edge, EqRelation);
 
 impl traversal::Edge<EqNode> for EqEdge {
     fn target(&self) -> EqNode {
@@ -81,30 +83,41 @@ impl traversal::Edge<EqNode> for EqEdge {
     }
 }
 
-/// Filters the traversal to only include Eq
-pub struct EqFilter<G: traversal::Graph<NodeId, IdEdge>>(G);
+/// Filters the graph to only include edges with equality relation.
+///
+/// Commonly used when looking for nodes which are equal to the source
+pub struct EqFilter<G: traversal::Graph<NodeId, Edge>>(G);
 
-impl<G: traversal::Graph<NodeId, IdEdge>> traversal::Graph<NodeId, IdEdge> for EqFilter<G> {
-    fn outgoing(&self, node: NodeId) -> impl Iterator<Item = IdEdge> {
+impl<G: traversal::Graph<NodeId, Edge>> traversal::Graph<NodeId, Edge> for EqFilter<G> {
+    fn outgoing(&self, node: NodeId) -> impl Iterator<Item = Edge> {
         self.0.outgoing(node).filter(|e| e.relation == EqRelation::Eq)
     }
 }
 
-pub trait EqExt<G: traversal::Graph<NodeId, IdEdge>> {
+/// Extension trait used to add the eq method to implementations of Graph<NodeId, Edge>
+pub trait EqExt<G: traversal::Graph<NodeId, Edge>> {
+    /// Filters the graph to only include edges with equality relation.
+    ///
+    /// Commonly used when looking for nodes which are equal to the source
     fn eq(self) -> EqFilter<G>;
 }
 impl<G> EqExt<G> for G
 where
-    G: traversal::Graph<NodeId, IdEdge>,
+    G: traversal::Graph<NodeId, Edge>,
 {
     fn eq(self) -> EqFilter<G> {
         EqFilter(self)
     }
 }
 
-pub struct EqNeqFilter<G: traversal::Graph<NodeId, IdEdge>>(G);
+/// Transform the graph in order to traverse it following equality's transitivity laws.
+///
+/// Modifies the graph so that each node has two copies: One with Eq relation, and one with Neq relation.
+///
+/// Adapts edges so that a -=> b && b -!=-> c, a -!=-> c and so on.
+pub struct EqNeqFilter<G: traversal::Graph<NodeId, Edge>>(G);
 
-impl<G: traversal::Graph<NodeId, IdEdge>> traversal::Graph<EqNode, EqEdge> for EqNeqFilter<G> {
+impl<G: traversal::Graph<NodeId, Edge>> traversal::Graph<EqNode, EqEdge> for EqNeqFilter<G> {
     fn outgoing(&self, node: EqNode) -> impl Iterator<Item = EqEdge> {
         self.0.outgoing(node.0).filter_map(move |e| {
             let r = (e.relation + node.1)?;
@@ -113,18 +126,24 @@ impl<G: traversal::Graph<NodeId, IdEdge>> traversal::Graph<EqNode, EqEdge> for E
     }
 }
 
-pub trait EqNeqExt<G: traversal::Graph<NodeId, IdEdge>> {
+pub trait EqNeqExt<G: traversal::Graph<NodeId, Edge>> {
+    /// Transform the graph in order to traverse it following equality's transitivity laws.
+    ///
+    /// Modifies the graph so that each node has two copies: One with Eq relation, and one with Neq relation.
+    ///
+    /// Adapts edges so that a -=> b && b -!=-> c, a -!=-> c and so on.
     fn eq_neq(self) -> EqNeqFilter<G>;
 }
 impl<G> EqNeqExt<G> for G
 where
-    G: traversal::Graph<NodeId, IdEdge>,
+    G: traversal::Graph<NodeId, Edge>,
 {
     fn eq_neq(self) -> EqNeqFilter<G> {
         EqNeqFilter(self)
     }
 }
 
+/// Filter the graph according to a closure.
 pub struct FilteredGraph<N, E, G, F>(G, F, std::marker::PhantomData<(N, E)>)
 where
     N: Ref,
@@ -151,6 +170,7 @@ where
     G: traversal::Graph<N, E>,
     F: Fn(N, &E) -> bool,
 {
+    /// Filter the graph according to a closure.
     fn filter(self, f: F) -> FilteredGraph<N, E, G, F>;
 }
 impl<N, E, G, F> FilterExt<N, E, G, F> for G

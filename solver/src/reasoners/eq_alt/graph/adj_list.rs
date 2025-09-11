@@ -2,10 +2,10 @@ use std::fmt::{Debug, Formatter};
 
 use crate::collections::ref_store::IterableRefMap;
 
-use super::{IdEdge, NodeId};
+use super::{Edge, NodeId};
 
 #[derive(Default, Clone)]
-pub struct EqAdjList(IterableRefMap<NodeId, Vec<IdEdge>>);
+pub struct EqAdjList(IterableRefMap<NodeId, Vec<Edge>>);
 
 impl Debug for EqAdjList {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -37,7 +37,7 @@ impl EqAdjList {
 
     /// Possibly insert an edge and both nodes
     /// Returns true if edge was inserted
-    pub fn insert_edge(&mut self, edge: IdEdge) -> bool {
+    pub fn insert_edge(&mut self, edge: Edge) -> bool {
         self.insert_node(edge.source);
         self.insert_node(edge.target);
         let edges = self.get_edges_mut(edge.source).unwrap();
@@ -49,22 +49,22 @@ impl EqAdjList {
         }
     }
 
-    pub fn contains_edge(&self, edge: IdEdge) -> bool {
+    pub fn contains_edge(&self, edge: Edge) -> bool {
         let Some(edges) = self.0.get(edge.source) else {
             return false;
         };
         edges.contains(&edge)
     }
 
-    pub fn iter_edges(&self, node: NodeId) -> impl Iterator<Item = &IdEdge> {
+    pub fn iter_edges(&self, node: NodeId) -> impl Iterator<Item = &Edge> {
         self.0.get(node).into_iter().flat_map(|v| v.iter())
     }
 
-    pub fn get_edges_mut(&mut self, node: NodeId) -> Option<&mut Vec<IdEdge>> {
+    pub fn get_edges_mut(&mut self, node: NodeId) -> Option<&mut Vec<Edge>> {
         self.0.get_mut(node)
     }
 
-    pub fn iter_all_edges(&self) -> impl Iterator<Item = IdEdge> + use<'_> {
+    pub fn iter_all_edges(&self) -> impl Iterator<Item = Edge> + use<'_> {
         self.0.entries().flat_map(|(_, e)| e.iter().cloned())
     }
 
@@ -79,14 +79,14 @@ impl EqAdjList {
     pub fn iter_nodes_where(
         &self,
         node: NodeId,
-        filter: fn(&IdEdge) -> bool,
+        filter: fn(&Edge) -> bool,
     ) -> Option<impl Iterator<Item = NodeId> + use<'_>> {
         self.0
             .get(node)
             .map(move |v| v.iter().filter(move |e| filter(e)).map(|e| e.target))
     }
 
-    pub fn remove_edge(&mut self, edge: IdEdge) {
+    pub fn remove_edge(&mut self, edge: Edge) {
         if let Some(set) = self.0.get_mut(edge.source) {
             set.retain(|e| *e != edge)
         }

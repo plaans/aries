@@ -1,12 +1,16 @@
 use hashbrown::HashMap;
+use std::fmt::Debug;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, Trail},
     collections::ref_store::RefVec,
     core::{literals::Watches, Lit},
+    create_ref_type,
 };
 
 use super::{node::Node, relation::EqRelation};
+
+// TODO: Identical to STN, maybe identify some other common logic and bump up to reasoner module
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
@@ -32,44 +36,22 @@ impl Enabler {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ActivationEvent {
+pub struct ActivationEvent {
     /// the edge to enable
-    pub prop_id: PropagatorId,
+    pub prop_id: ConstraintId,
 }
 
 impl ActivationEvent {
-    pub(crate) fn new(prop_id: PropagatorId) -> Self {
+    pub(crate) fn new(prop_id: ConstraintId) -> Self {
         Self { prop_id }
     }
 }
 
-/// Represents an edge together with a particular propagation direction:
-///  - forward (source to target)
-///  - backward (target to source)
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct PropagatorId(u32);
+create_ref_type!(ConstraintId);
 
-impl From<PropagatorId> for usize {
-    fn from(e: PropagatorId) -> Self {
-        e.0 as usize
-    }
-}
-
-impl From<usize> for PropagatorId {
-    fn from(u: usize) -> Self {
-        PropagatorId(u as u32)
-    }
-}
-
-impl From<PropagatorId> for u32 {
-    fn from(e: PropagatorId) -> Self {
-        e.0
-    }
-}
-
-impl From<u32> for PropagatorId {
-    fn from(u: u32) -> Self {
-        PropagatorId(u)
+impl Debug for ConstraintId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Propagator {}", self.to_u32())
     }
 }
 
@@ -77,14 +59,14 @@ impl From<u32> for PropagatorId {
 ///
 /// The other direction will have flipped a and b, and different enabler.valid
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
-pub struct Propagator {
+pub struct Constraint {
     pub a: Node,
     pub b: Node,
     pub relation: EqRelation,
     pub enabler: Enabler,
 }
 
-impl Propagator {
+impl Constraint {
     pub fn new(a: Node, b: Node, relation: EqRelation, active: Lit, valid: Lit) -> Self {
         Self {
             a,
@@ -105,68 +87,59 @@ impl Propagator {
 #[derive(Debug, Clone, Copy)]
 enum Event {
     PropagatorAdded,
-    MarkedValid(PropagatorId),
-    WatchAdded((PropagatorId, Lit)),
+    WatchAdded((ConstraintId, Lit)),
 }
 
+/// Data structures to store propagators.
 #[derive(Clone, Default)]
-pub struct PropagatorStore {
-    propagators: RefVec<PropagatorId, Propagator>,
-    propagator_indices: HashMap<(Node, Node), Vec<PropagatorId>>,
-    watches: Watches<(Enabler, PropagatorId)>,
+pub struct ConstraintStore {
+    propagators: RefVec<ConstraintId, Constraint>,
+    propagator_indices: HashMap<(Node, Node), Vec<ConstraintId>>,
+    watches: Watches<(Enabler, ConstraintId)>,
     trail: Trail<Event>,
 }
 
-impl PropagatorStore {
-    pub fn add_propagator(&mut self, prop: Propagator) -> PropagatorId {
+impl ConstraintStore {
+    pub fn add_constraint(&mut self, prop: Constraint) -> ConstraintId {
         self.trail.push(Event::PropagatorAdded);
         let id = self.propagators.len().into();
         self.propagators.push(prop.clone());
+        self.propagator_indices
+            .entry((prop.a, prop.b))
+            .and_modify(|e| e.push(id))
+            .or_insert(vec![id]);
         id
     }
 
-    pub fn add_watch(&mut self, id: PropagatorId, literal: Lit) {
+    pub fn add_watch(&mut self, id: ConstraintId, literal: Lit) {
         let enabler = self.propagators[id].enabler;
         self.watches.add_watch((enabler, id), literal);
         self.trail.push(Event::WatchAdded((id, literal)));
     }
 
-    pub fn get_propagator(&self, prop_id: PropagatorId) -> &Propagator {
+    pub fn get_constraint(&self, prop_id: ConstraintId) -> &Constraint {
         // self.propagators.get(&prop_id).unwrap()
         &self.propagators[prop_id]
     }
 
-    pub fn mark_valid(&mut self, prop_id: PropagatorId) {
-        let prop = self.get_propagator(prop_id).clone();
-        if let Some(v) = self.propagator_indices.get_mut(&(prop.a, prop.b)) {
-            if !v.contains(&prop_id) {
-                self.trail.push(Event::MarkedValid(prop_id));
-                v.push(prop_id);
-            }
-        } else {
-            self.trail.push(Event::MarkedValid(prop_id));
-            self.propagator_indices.insert((prop.a, prop.b), vec![prop_id]);
-        }
-    }
-
     /// Get valid propagators by source and target
-    pub fn get_from_nodes(&self, source: Node, target: Node) -> Vec<PropagatorId> {
+    pub fn get_from_nodes(&self, source: Node, target: Node) -> Vec<ConstraintId> {
         self.propagator_indices
             .get(&(source, target))
             .cloned()
             .unwrap_or(vec![])
     }
 
-    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, PropagatorId)> + '_ {
+    pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, ConstraintId)> + '_ {
         self.watches.watches_on(literal)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (PropagatorId, &Propagator)> + use<'_> {
+    pub fn iter(&self) -> impl Iterator<Item = (ConstraintId, &Constraint)> + use<'_> {
         self.propagators.entries()
     }
 }
 
-impl Backtrack for PropagatorStore {
+impl Backtrack for ConstraintStore {
     fn save_state(&mut self) -> DecLvl {
         self.trail.save_state()
     }
@@ -182,14 +155,6 @@ impl Backtrack for PropagatorStore {
                 // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
                 // self.propagators.remove(&last_prop_id);
                 self.propagators.pop();
-            }
-            Event::MarkedValid(prop_id) => {
-                let prop = &self.propagators[prop_id];
-                let entry = self.propagator_indices.get_mut(&(prop.a, prop.b)).unwrap();
-                entry.retain(|e| *e != prop_id);
-                if entry.is_empty() {
-                    self.propagator_indices.remove(&(prop.a, prop.b));
-                }
             }
             Event::WatchAdded((id, l)) => {
                 let enabler = self.propagators[id].enabler;
