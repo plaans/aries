@@ -67,6 +67,6 @@ pddl-test-parser:
 pddl:
     #!/usr/bin/env bash
     set -e
-    for f in `fd instance-1.pddl planning/ext/pddl/`; do
-        cargo run --bin pddl-parser -- $f
+    for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v adl | grep 2004`; do
+        cargo run --profile ci --bin pddl-parser -- $f
     done

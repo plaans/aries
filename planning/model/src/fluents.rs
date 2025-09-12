@@ -1,26 +1,58 @@
 use derive_more::derive::Display;
 use thiserror::Error;
-use utils::disp_slice;
 
-use crate::{env::Environment, *};
+use crate::{env::Environment, utils::disp_iter, *};
 
 #[derive(Error, Debug)]
 pub enum FluentError {
     #[error("Duplicate fluent")]
-    DuplicateFluent(Fluent, Fluent),
+    DuplicateFluent(Sym, Sym),
     #[error("Unknown fluent")]
     UnkonwnFluent(Sym),
 }
 
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy)]
+pub struct FluentId(pub(crate) u32);
+
+impl<'a> Env<'a, FluentId> {
+    pub fn get(&self) -> &'a Fluent {
+        self.env.fluents.get(self.elem)
+    }
+
+    pub fn name(&self) -> &'a Sym {
+        self.get().name()
+    }
+
+    pub fn tpe(&self) -> &Type {
+        &self.get().return_type
+    }
+}
+
+impl idmap::IntegerId for FluentId {
+    fn from_id(id: u64) -> Self {
+        assert!(id <= (u32::MAX as u64));
+        Self(id as u32)
+    }
+
+    fn id(&self) -> u64 {
+        self.0 as u64
+    }
+
+    fn id32(&self) -> u32 {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Fluents {
-    fluents: Vec<Fluent>,
+    fluents: idmap::DirectIdMap<FluentId, Fluent>,
+    next_fluent_id: u32,
 }
 
 impl Display for Fluents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Fluents:\n  ")?;
-        disp_slice(f, &self.fluents, "\n  ")
+        disp_iter(f, self.fluents.values(), "\n  ")
     }
 }
 
@@ -29,11 +61,16 @@ impl Fluents {
         Self::default()
     }
 
-    pub fn get(&self, name: impl Into<Sym>) -> Result<&Fluent, FluentError> {
+    pub fn get(&self, id: FluentId) -> &Fluent {
+        self.fluents.get(id).unwrap()
+    }
+
+    pub fn get_by_name(&self, name: impl Into<Sym>) -> Result<FluentId, FluentError> {
         let name = name.into();
         self.fluents
             .iter()
-            .find(|f| f.name == name)
+            .find(|&(_id, f)| f.name == name)
+            .map(|(id, _)| *id)
             .ok_or(FluentError::UnkonwnFluent(name))
     }
 
@@ -43,18 +80,22 @@ impl Fluents {
         parameters: Vec<Param>,
         return_type: Type,
         origin: impl Into<Span>,
-    ) -> Result<&Fluent, FluentError> {
+    ) -> Result<FluentId, FluentError> {
         let fluent = Fluent {
             name: name.into(),
             parameters,
             return_type,
             origin: origin.into(),
         };
-        if let Some(other) = self.fluents.iter().find(|f| f.name() == fluent.name()) {
-            Err(FluentError::DuplicateFluent(fluent, other.clone()))
+        if let Ok(other) = self.get_by_name(fluent.name().clone()) {
+            let other_sym = self.fluents.get(other).unwrap().name().clone();
+            Err(FluentError::DuplicateFluent(fluent.name.clone(), other_sym))
         } else {
-            self.fluents.push(fluent);
-            Ok(self.fluents.last().unwrap())
+            let id = FluentId(self.next_fluent_id);
+            self.next_fluent_id += 1;
+            let prev = self.fluents.insert(id, fluent);
+            debug_assert!(prev.is_none());
+            Ok(id)
         }
     }
 }

@@ -1,5 +1,6 @@
 use errors::Spanned;
 use idmap::IntegerId;
+use num_rational::Rational64;
 use smallvec::SmallVec;
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
 };
 
 pub type IntValue = i64;
+pub type RealValue = Rational64;
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Clone, Copy)]
 pub struct ExprId(pub(crate) u32);
@@ -56,9 +58,9 @@ impl<'a> TExpr<'a> {
             Err(Message::error("expected boolean value").snippet(self.error("not a boolean")))
         }
     }
-    pub fn state_variable(&self) -> Result<(&'a Fluent, &'a [ExprId]), Message> {
+    pub fn state_variable(&self) -> Result<(FluentId, &'a [ExprId]), Message> {
         if let Expr::StateVariable(fun, args) = &self.get().expr {
-            Ok((fun, args.as_slice()))
+            Ok((*fun, args.as_slice()))
         } else {
             Err(Message::error("expected state variable value").snippet(self.error("not a state variable")))
         }
@@ -86,17 +88,20 @@ impl<'a> Spanned for TExpr<'a> {
 #[derive(Clone, Debug)]
 pub enum Expr {
     Int(IntValue),
+    Real(RealValue),
     Bool(bool),
     Object(Object),
     Param(Param),
     App(Fun, SeqExprId),
-    StateVariable(Fluent, SeqExprId),
+    StateVariable(FluentId, SeqExprId),
+    Duration,
 }
 
 impl<'a> Display for TExpr<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.expr() {
             Expr::Int(i) => write!(f, "{i}"),
+            Expr::Real(r) => write!(f, "{r}"),
             Expr::Bool(b) => write!(f, "{b}"),
             Expr::Object(o) => write!(f, "{o}"),
             Expr::Param(p) => write!(f, "{p}"),
@@ -106,10 +111,11 @@ impl<'a> Display for TExpr<'a> {
                 write!(f, ")")
             }
             Expr::StateVariable(fluent, args) => {
-                write!(f, "{}(", fluent.name())?;
+                write!(f, "{}(", (self.env / *fluent).name())?;
                 disp_iter(f, args.iter().map(|&e| self.env / e), ", ")?;
                 write!(f, ")")
             }
+            Expr::Duration => write!(f, "?duration"),
         }
     }
 }
@@ -118,11 +124,13 @@ impl Expr {
     pub fn tpe(&self, env: &Environment) -> Result<Type, TypeError> {
         match self {
             Expr::Int(i) => Ok(Type::Int(IntInterval::singleton(*i))),
+            Expr::Real(_) => Ok(Type::Real),
             Expr::Bool(_) => Ok(Type::Bool),
             Expr::App(fun, args) => fun.return_type(args.as_slice(), env),
-            Expr::StateVariable(fluent, args) => fluent.return_type(args.as_slice(), env),
+            Expr::StateVariable(fluent, args) => env.fluents.get(*fluent).return_type(args.as_slice(), env),
             Expr::Object(o) => Ok(o.tpe().clone()),
             Expr::Param(p) => Ok(p.tpe().clone()),
+            Expr::Duration => Ok(Type::Real),
         }
     }
 }
@@ -131,10 +139,16 @@ impl Expr {
 pub enum Fun {
     Plus,
     Minus,
+    Div,
+    Mul,
     And,
     Or,
     Not,
     Eq,
+    Leq,
+    Geq,
+    Lt,
+    Gt,
 }
 
 impl Fun {
@@ -142,11 +156,21 @@ impl Fun {
         // TODO: specialize for parameters
         use Fun::*;
         match self {
-            Fun::Plus | Fun::Minus => {
+            Fun::Plus | Fun::Minus | Fun::Mul => {
+                let mut is_int = true;
                 for a in args_types {
-                    Type::INT.accepts(*a, env)?;
+                    if !(env / *a).tpe().is_subtype_of(&Type::INT) {
+                        is_int = false;
+                    }
+                    Type::Real.accepts(*a, env)?;
                 }
-                Ok(Type::INT)
+                if is_int { Ok(Type::INT) } else { Ok(Type::Real) }
+            }
+            Fun::Div => {
+                for a in args_types {
+                    Type::Real.accepts(*a, env)?;
+                }
+                Ok(Type::Real)
             }
             And | Or => {
                 for a in args_types {
@@ -167,9 +191,20 @@ impl Fun {
                 //     Err(TypeError::MissingParameter(Param::new("<negated-term>", Type::Bool)))
                 // } else if args_types.len() >
             }
-            Eq => match args_types {
+            // binary operator
+            Eq | Leq | Geq | Lt | Gt => match args_types {
                 &[] | &[_] => Err(TypeError::MissingParameter(Param::new("<compared-term>", Type::Bool))),
-                &[_first, _second] => Ok(Type::Bool),
+                &[first, second] => {
+                    match self {
+                        Eq => Ok(Type::Bool), // do not enforce coherent typing for equality
+                        Leq | Geq | Gt | Lt => {
+                            Type::Real.accepts(first, env)?;
+                            Type::Real.accepts(second, env)?;
+                            Ok(Type::Bool)
+                        }
+                        _ => unreachable!(),
+                    }
+                }
                 &[_, _, third, ..] => Err(TypeError::UnexpectedArgument(third)),
             },
         }
@@ -184,10 +219,16 @@ impl Display for Fun {
             match self {
                 Fun::Plus => "+",
                 Fun::Minus => "-",
+                Fun::Div => "/",
+                Fun::Mul => "*",
                 Fun::And => "and",
                 Fun::Or => "or",
                 Fun::Not => "not",
                 Fun::Eq => "=",
+                Fun::Leq => "<=",
+                Fun::Geq => ">=",
+                Fun::Lt => "<",
+                Fun::Gt => ">",
             }
         )
     }

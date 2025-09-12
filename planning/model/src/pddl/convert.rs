@@ -4,6 +4,7 @@ use errors::*;
 use itertools::Itertools;
 use pddl::parser::TypedSymbol;
 use pddl::sexpr::SExpr;
+use smallvec::SmallVec;
 
 use crate::*;
 
@@ -60,26 +61,35 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
 
     let types = user_types(dom)?;
     let types = Types::new(types);
+    let mut model = Model::new(types);
 
-    let mut fluents = Fluents::new();
     for pred in &dom.predicates {
-        let parameters = parse_parameters(&pred.args, &types).unwrap(); // TODO: requires env !
-        fluents.add_fluent(&pred.name, parameters, Type::Bool, pred.name.loc())?;
+        let parameters = parse_parameters(&pred.args, &model.env.types).msg(&model.env)?; // TODO: requires env !
+        model
+            .env
+            .fluents
+            .add_fluent(&pred.name, parameters, Type::Bool, pred.name.loc())?;
+    }
+
+    for func in &dom.functions {
+        let parameters = parse_parameters(&func.args, &model.env.types).msg(&model.env)?; // TODO: requires env !
+        model
+            .env
+            .fluents
+            .add_fluent(&func.name, parameters, Type::Real, func.name.loc())?; // TODO: not int
     }
 
     let mut objects = Objects::new();
 
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
-        let tpe = types.get_user_type_or_top(obj.tpe.as_ref()).unwrap(); // TODO: require evn
+        let tpe = model.env.types.get_user_type_or_top(obj.tpe.as_ref()).msg(&model.env)?;
         objects.add_object(&obj.symbol, tpe)?;
     }
 
     let bindings = Rc::new(Bindings::objects(&objects));
-    let mut model = Model::new(types, objects, fluents);
 
     for init in &prob.init {
-        let e = parse(init, &mut model.env, &bindings)?;
-        let e = into_effect(Timestamp::ORIGIN, e, &mut model.env)?;
+        let e = into_effect(Timestamp::ORIGIN, init, &mut model.env, &bindings)?;
         model.init.push(e);
     }
 
@@ -126,8 +136,7 @@ fn into_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>)
 
     for e in &a.eff {
         for e in conjuncts(e) {
-            let e = parse(e, env, &bindings)?;
-            let e = into_effect(action.end(), e, env)?;
+            let e = into_effect(action.end(), e, env, &bindings)?;
             action.effects.push(e);
         }
     }
@@ -165,33 +174,72 @@ fn into_durative_action(
                 return Err(Message::error("Invalid temporal qualifier for effect")
                     .snippet(span.error("Requires a timepoint `at start` or `at end`")));
             };
-            let e = parse(eff, env, &bindings)?;
-            let e = into_effect(tp, e, env)?;
+            let e = into_effect(tp, eff, env, &bindings)?;
             action.effects.push(e);
         }
     }
     Ok(action)
 }
 
-fn into_effect(time: impl Into<Timestamp>, expr: ExprId, env: &mut Environment) -> Result<Effect, Message> {
-    let time = time.into();
-    Type::Bool.accepts(expr, env).map_err(|e| e.to_message(env))?;
-    let e = env.node(expr);
-    match e.expr() {
-        Expr::StateVariable(fluent, args) => {
-            let sv = StateVariable::new(fluent.clone(), args.clone(), e.span_or_default());
-            let tautology = env.intern(Expr::Bool(true), None).map_err(|e| e.to_message(env))?;
-            Ok(Effect::assignement(time, sv, tautology))
+fn into_effect(
+    time: impl Into<Timestamp>,
+    expr: &SExpr,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<Effect, Message> {
+    fn parse_sv(
+        expr: &SExpr,
+        expected_type: Option<Type>,
+        env: &mut Environment,
+        bindings: &Rc<Bindings>,
+    ) -> Result<StateVariable, Message> {
+        let x = parse(expr, env, bindings)?;
+        if let Some(expected_type) = expected_type {
+            expected_type.accepts(x, env).msg(env)?;
         }
-        Expr::App(Fun::Not, args) if args.len() == 1 => {
-            let arg = args[0];
-            let contradiction = env.intern(Expr::Bool(false), None).map_err(|e| e.to_message(env))?;
-            let (fluent, args) = env.node(arg).state_variable()?;
-            let args = SeqExprId::from_slice(args);
-            let sv = StateVariable::new(fluent.clone(), args, (env / expr).span_or_default());
-            Ok(Effect::assignement(time, sv, contradiction))
-        }
-        _ => Err(Message::error("Unhandled conversion into effect").snippet(e.error("unrecognized pattern"))),
+        let (fluent, sv_args) = env.node(x).state_variable()?;
+        Ok(StateVariable::new(
+            fluent,
+            sv_args.iter().copied().collect(),
+            expr.loc().into(),
+        ))
+    }
+    if let Some([arg]) = expr.as_application("not") {
+        let contradiction = env.intern(Expr::Bool(false), None).msg(env)?;
+        let sv = parse_sv(arg, Some(Type::Bool), env, bindings)?;
+        Ok(Effect::assignement(time.into(), sv, contradiction))
+    } else if let Some([sv, val]) = expr.as_application("=") {
+        let sv = parse_sv(sv, None, env, bindings)?;
+        let val = parse(val, env, bindings)?;
+        env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
+        Ok(Effect::assignement(time.into(), sv, val))
+    } else if let Some([sv, val]) = expr.as_application("assign") {
+        let sv = parse_sv(sv, None, env, bindings)?;
+        let val = parse(val, env, bindings)?;
+        env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
+        Ok(Effect::assignement(time.into(), sv, val))
+    } else if let Some([sv, val]) = expr.as_application("increase") {
+        // (increase (fuel-level r1) 2)
+        let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
+        let val = parse(val, env, bindings)?;
+        env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
+        Ok(Effect::increase(time.into(), sv, val))
+    } else if let Some([sv, val]) = expr.as_application("decrease") {
+        // (increase (fuel-level r1) 2)
+        let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
+        let val = parse(val, env, bindings)?;
+        let neg_val = env
+            .intern(
+                Expr::App(Fun::Minus, SmallVec::from_slice(&[val])),
+                env.node(val).span().cloned(),
+            )
+            .msg(env)?;
+        env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
+        Ok(Effect::increase(time.into(), sv, neg_val))
+    } else {
+        let tautology = env.intern(Expr::Bool(true), None).msg(env)?;
+        let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
+        Ok(Effect::assignement(time.into(), sv, tautology))
     }
 }
 
@@ -232,13 +280,10 @@ fn conjuncts(sexpr: &SExpr) -> Vec<&SExpr> {
 
 pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<ExprId, Message> {
     let expr = match sexpr {
+        SExpr::Atom(atom) if atom.canonical_str() == "?duration" => Expr::Duration,
         SExpr::Atom(atom) => match bindings.get(atom) {
             Ok(x) => x,
-            Err(err) => atom
-                .canonical_str()
-                .parse::<IntValue>()
-                .map(Expr::Int)
-                .map_err(|_| err)?,
+            Err(err) => parse_number(atom.canonical_str()).ok_or(err)?,
         },
         SExpr::List(l) => {
             let mut l = l.iter();
@@ -248,7 +293,7 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
                 let arg = parse(e, env, bindings)?;
                 args.push(arg);
             }
-            if let Ok(f) = env.fluents.get(&f).cloned() {
+            if let Ok(f) = env.fluents.get_by_name(&f) {
                 Expr::StateVariable(f, args)
             } else if let Some(f) = parse_function(&f) {
                 Expr::App(f, args)
@@ -257,7 +302,21 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
             }
         }
     };
-    env.intern(expr, sexpr.loc()).map_err(|e| e.to_message(env))
+    env.intern(expr, sexpr.loc()).msg(env)
+}
+
+/// Parse a number number ("32", "-3", "3.14", -323.3")
+fn parse_number(decimal_str: &str) -> Option<Expr> {
+    if let Ok(i) = decimal_str.parse::<IntValue>() {
+        Some(Expr::Int(i))
+    } else {
+        let (lhs, rhs) = decimal_str.split_once(".")?;
+        let denom = rhs.len() as i64;
+        let lhs: i64 = lhs.parse().ok()?;
+        let rhs: u64 = rhs.parse().ok()?;
+        let numer = lhs * denom + (rhs as i64);
+        Some(Expr::Real(RealValue::new(numer, denom)))
+    }
 }
 
 fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
@@ -301,10 +360,16 @@ fn parse_function(sym: &Sym) -> Option<Fun> {
     match sym.canonical.as_str() {
         "+" => Some(Fun::Plus),
         "-" => Some(Fun::Minus),
+        "/" => Some(Fun::Div),
+        "*" => Some(Fun::Mul),
         "and" => Some(Fun::And),
         "or" => Some(Fun::Or),
         "not" => Some(Fun::Not),
         "=" => Some(Fun::Eq),
+        "<=" => Some(Fun::Leq),
+        ">=" => Some(Fun::Geq),
+        "<" => Some(Fun::Lt),
+        ">" => Some(Fun::Gt),
         _ => None,
     }
 }
@@ -323,7 +388,7 @@ fn parse_duration(dur: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -
     if let Ok(x) = dur.pop() {
         return Err(x.invalid("Unexpected").into());
     }
-    Type::INT.accepts(duration, env).map_err(|e| e.to_message(env))?;
+    Type::REAL.accepts(duration, env).msg(env)?;
     Ok(Duration::Fixed(duration))
 }
 

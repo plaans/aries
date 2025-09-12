@@ -257,6 +257,7 @@ dependencies = [
  "hashbrown 0.15.4",
  "idmap",
  "itertools 0.14.0",
+ "num-rational",
  "regex",
  "smallvec",
  "thiserror 2.0.12",

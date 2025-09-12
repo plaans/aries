@@ -1,6 +1,6 @@
 use idmap::DirectIdMap;
 
-use crate::{Expr, ExprId, ExprNode, Fluents, Objects, TExpr, TypeError, Types, errors::Span};
+use crate::{Expr, ExprId, ExprNode, Fluents, Objects, TypeError, Types, errors::Span};
 
 pub struct Environment {
     pub types: Types,
@@ -17,11 +17,11 @@ pub struct Env<'a, T> {
 }
 
 impl Environment {
-    pub fn new(types: Types, objects: Objects, fluents: Fluents) -> Self {
+    pub fn new(types: Types) -> Self {
         Self {
             types,
-            objects,
-            fluents,
+            objects: Default::default(),
+            fluents: Default::default(),
             exprs: Default::default(),
             next_expr_id: 0u32,
         }
@@ -30,7 +30,7 @@ impl Environment {
         self.exprs.get(id).unwrap()
     }
 
-    pub fn node(&self, id: ExprId) -> TExpr {
+    pub fn node<T>(&self, id: T) -> Env<T> {
         self / id
     }
 

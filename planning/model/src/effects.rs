@@ -3,8 +3,8 @@ use itertools::Itertools;
 
 #[derive(Debug, Clone)]
 pub struct StateVariable {
-    fluent: Fluent,
-    arguments: SeqExprId,
+    pub fluent: FluentId,
+    pub arguments: SeqExprId,
     #[allow(unused)]
     src: Span,
 }
@@ -14,14 +14,14 @@ impl<'env> Display for Env<'env, &StateVariable> {
         write!(
             f,
             "{}({})",
-            self.elem.fluent.name(),
+            (self.env / self.elem.fluent).name(),
             self.elem.arguments.iter().map(|&a| self.env / a).format(", ")
         )
     }
 }
 
 impl StateVariable {
-    pub fn new(fluent: Fluent, args: SeqExprId, src: Span) -> Self {
+    pub fn new(fluent: FluentId, args: SeqExprId, src: Span) -> Self {
         StateVariable {
             fluent,
             arguments: args,
@@ -33,12 +33,14 @@ impl StateVariable {
 #[derive(Debug, Clone)]
 pub enum EffectOp {
     Assign(ExprId),
+    Increase(ExprId),
 }
 
 impl<'env> Display for Env<'env, &EffectOp> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.elem {
             EffectOp::Assign(expr_id) => write!(f, ":= {}", self.env / *expr_id),
+            EffectOp::Increase(delta) => write!(f, "+= {}", self.env / *delta),
         }
     }
 }
@@ -56,6 +58,13 @@ impl Effect {
             timing,
             state_variable,
             operation: EffectOp::Assign(value),
+        }
+    }
+    pub fn increase(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
+        Effect {
+            timing,
+            state_variable,
+            operation: EffectOp::Increase(delta),
         }
     }
 }

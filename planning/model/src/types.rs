@@ -157,6 +157,7 @@ impl From<RangeInclusive<IntValue>> for IntInterval {
 pub enum Type {
     Bool,
     Int(IntInterval),
+    Real,
     User(Sym, Arc<UserTypes>),
 }
 
@@ -165,6 +166,7 @@ impl Debug for Type {
         match self {
             Bool => write!(f, "bool"),
             Int(_) => write!(f, "int"),
+            Real => write!(f, "real"),
             User(name, _) => write!(f, "{name}"),
         }
     }
@@ -176,13 +178,19 @@ impl Display for Type {
 }
 
 impl Type {
+    /// Unbounded int type
     pub const INT: Type = Type::Int(IntInterval::FULL);
+
+    /// Unbounded real type
+    pub const REAL: Type = Type::Real;
 
     pub fn is_subtype_of(&self, other: &Type) -> bool {
         match (self, other) {
             (Bool, Bool) => true,
+            (Real, Real) => true,
             (Int(bounds1), Int(bounds2)) => bounds1.is_subset_of(bounds2),
             (User(left, types), User(right, _)) => types.is_subtype_of(left, right),
+            (Int(_), Real) => true,
             _ => false,
         }
     }

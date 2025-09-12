@@ -13,9 +13,9 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn new(types: Types, objects: Objects, fluents: Fluents) -> Self {
+    pub fn new(types: Types) -> Self {
         Self {
-            env: Environment::new(types, objects, fluents),
+            env: Environment::new(types),
             actions: Default::default(),
             init: Default::default(),
             goals: Default::default(),

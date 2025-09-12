@@ -94,7 +94,9 @@ pub enum PddlFeature {
     Hierarchy,
     MethodPreconditions,
     DurativeAction,
+    DurationInequalities,
     Fluents,
+    ConditionalEffects,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -109,6 +111,8 @@ impl std::str::FromStr for PddlFeature {
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             ":durative-actions" => Ok(PddlFeature::DurativeAction),
+            ":duration-inequalities" => Ok(PddlFeature::DurationInequalities),
+            ":conditional-effects" => Ok(PddlFeature::ConditionalEffects),
             ":fluents" => Ok(PddlFeature::Fluents),
             _ => Err(format!("Unknown feature `{s}`")),
         }
@@ -125,6 +129,8 @@ impl Display for PddlFeature {
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
             PddlFeature::DurativeAction => ":durative-action",
+            PddlFeature::DurationInequalities => ":duration-inequalities",
+            PddlFeature::ConditionalEffects => ":conditional-effects",
             PddlFeature::Fluents => ":fluents",
         };
         write!(f, "{formatted}")

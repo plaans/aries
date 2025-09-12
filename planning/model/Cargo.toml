@@ -11,6 +11,7 @@ clap = { workspace = true }
 itertools = { workspace = true }
 hashbrown = { workspace = true }
 regex = { workspace = true }
+num-rational = { workspace = true }
 derive_more = { version = "1.0", features = ["display"] }
 thiserror = "2"
 annotate-snippets = "0.11"
