@@ -300,7 +300,7 @@ impl StnTheory {
     /// Adds a conditional edge `literal => (source ---(weight)--> target)` which is activate when `literal` is true.
     /// The associated propagator will ensure that the domains of the variables are appropriately updated
     /// and that `literal` is set to false if the edge contradicts other constraints.
-    // This equivalent to  `literal => (target <= source + weight)`
+    /// This equivalent to  `literal => (target <= source + weight)`
     pub fn add_half_reified_edge(
         &mut self,
         literal: Lit,

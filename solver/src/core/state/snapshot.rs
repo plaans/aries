@@ -65,6 +65,17 @@ impl<'a> DomainsSnapshot<'a> {
         (self.lb(var), self.ub(var))
     }
 
+    /// Returns Some(bound) is ub = lb
+    pub fn get_bound(&self, var: impl Into<SignedVar>) -> Option<IntCst> {
+        let var = var.into();
+        let (lb, ub) = self.bounds(var);
+        if lb == ub {
+            Some(lb)
+        } else {
+            None
+        }
+    }
+
     /// Returns true if the given literal is entailed by the current state;
     pub fn entails(&self, lit: Lit) -> bool {
         let curr_ub = self.ub(lit.svar());
