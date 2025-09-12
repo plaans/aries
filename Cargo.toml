@@ -13,7 +13,7 @@ members = [
     "examples/smt",
     "examples/gg",
     "examples/knapsack",
-    "validator",
+    "validator", "examples/coloring",
 ]
 resolver = "2"
 
