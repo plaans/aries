@@ -3,12 +3,12 @@ use itertools::Itertools;
 use crate::{
     core::state::Domains,
     reasoners::eq_alt::{
+        constraints::Constraint,
         graph::{
             transforms::{EqExt, EqNeqExt, EqNode},
             traversal::Graph,
         },
         node::Node,
-        constraints::Constraint,
         relation::EqRelation,
     },
 };

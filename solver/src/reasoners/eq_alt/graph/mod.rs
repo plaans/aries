@@ -500,7 +500,7 @@ impl Path {
 mod tests {
     use EqRelation::*;
 
-    use crate::collections::set::IterableRefSet;
+    use crate::{collections::set::IterableRefSet, core::IntCst};
 
     use super::{traversal::PathStore, *};
 
@@ -530,19 +530,19 @@ mod tests {
         }};
     }
 
-    fn prop(src: i32, tgt: i32, relation: EqRelation) -> Constraint {
+    fn prop(src: IntCst, tgt: IntCst, relation: EqRelation) -> Constraint {
         Constraint::new(Node::Val(src), Node::Val(tgt), relation, Lit::TRUE, Lit::TRUE)
     }
 
-    fn id(g: &DirEqGraph, node: i32) -> NodeId {
+    fn id(g: &DirEqGraph, node: IntCst) -> NodeId {
         g.get_id(&Node::Val(node)).unwrap()
     }
 
-    fn eqn(g: &DirEqGraph, node: i32, r: EqRelation) -> EqNode {
+    fn eqn(g: &DirEqGraph, node: IntCst, r: EqRelation) -> EqNode {
         EqNode(id(g, node), r)
     }
 
-    fn edge(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> Edge {
+    fn edge(g: &DirEqGraph, src: IntCst, tgt: IntCst, relation: EqRelation) -> Edge {
         Edge::new(
             g.get_id(&Node::Val(src)).unwrap(),
             g.get_id(&Node::Val(tgt)).unwrap(),
@@ -551,7 +551,7 @@ mod tests {
         )
     }
 
-    fn path(g: &DirEqGraph, src: i32, tgt: i32, relation: EqRelation) -> Path {
+    fn path(g: &DirEqGraph, src: IntCst, tgt: IntCst, relation: EqRelation) -> Path {
         Path::new(
             g.get_id(&Node::Val(src)).unwrap(),
             g.get_id(&Node::Val(tgt)).unwrap(),
