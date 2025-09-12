@@ -11,6 +11,8 @@ fn read_lines(filename: &Path) -> io::Result<io::Lines<io::BufReader<File>>> {
     Ok(io::BufReader::new(file).lines())
 }
 
+/// A graph represented as a set of nodes and a set of edges.
+/// May optionally be have a know chromatic number.
 #[derive(Default)]
 pub struct Problem {
     pub edges: HashSet<(Node, Node)>,
@@ -19,6 +21,7 @@ pub struct Problem {
 }
 
 impl Problem {
+    /// Get an upper bound on the number of colors.
     pub fn upper_bound(&self) -> u32 {
         let mut n_edges = HashMap::new();
         for (source, target) in self.edges.iter() {
@@ -35,10 +38,17 @@ impl Problem {
         self.edges.insert((node1, node2));
     }
 
+    /// Load a problem from a .col file
+    ///
+    /// The file must contain a newline seperated list of edges, e.g.:
+    /// e 0 1
+    /// e 1 2
+    ///
+    /// Everything else is ignored
     pub fn from_file(path: &Path) -> Self {
         let mut res: Problem = Default::default();
         assert!(path.is_file());
-        let lines = read_lines(path).unwrap();
+        let lines = read_lines(path).expect("File provided was not able to be read.");
         for line in lines.map_while(Result::ok) {
             if line.starts_with("e") {
                 let mut split = line.split_whitespace();
