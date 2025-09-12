@@ -57,7 +57,8 @@ impl Debug for ConstraintId {
 
 /// One direction of a semi-reified eq or neq constraint.
 ///
-/// The other direction will have flipped a and b, and different enabler.valid
+/// Formally enabler.active => a (relation) b
+/// with enabler.valid = presence(b) => presence(a)
 #[derive(Clone, Hash, Debug, PartialEq, Eq)]
 pub struct Constraint {
     pub a: Node,
@@ -93,8 +94,8 @@ enum Event {
 /// Data structures to store propagators.
 #[derive(Clone, Default)]
 pub struct ConstraintStore {
-    propagators: RefVec<ConstraintId, Constraint>,
-    propagator_indices: HashMap<(Node, Node), Vec<ConstraintId>>,
+    constraints: RefVec<ConstraintId, Constraint>,
+    constraint_lookup: HashMap<(Node, Node), Vec<ConstraintId>>,
     watches: Watches<(Enabler, ConstraintId)>,
     trail: Trail<Event>,
 }
@@ -102,9 +103,9 @@ pub struct ConstraintStore {
 impl ConstraintStore {
     pub fn add_constraint(&mut self, prop: Constraint) -> ConstraintId {
         self.trail.push(Event::PropagatorAdded);
-        let id = self.propagators.len().into();
-        self.propagators.push(prop.clone());
-        self.propagator_indices
+        let id = self.constraints.len().into();
+        self.constraints.push(prop.clone());
+        self.constraint_lookup
             .entry((prop.a, prop.b))
             .and_modify(|e| e.push(id))
             .or_insert(vec![id]);
@@ -112,22 +113,19 @@ impl ConstraintStore {
     }
 
     pub fn add_watch(&mut self, id: ConstraintId, literal: Lit) {
-        let enabler = self.propagators[id].enabler;
+        let enabler = self.constraints[id].enabler;
         self.watches.add_watch((enabler, id), literal);
         self.trail.push(Event::WatchAdded((id, literal)));
     }
 
     pub fn get_constraint(&self, prop_id: ConstraintId) -> &Constraint {
         // self.propagators.get(&prop_id).unwrap()
-        &self.propagators[prop_id]
+        &self.constraints[prop_id]
     }
 
     /// Get valid propagators by source and target
     pub fn get_from_nodes(&self, source: Node, target: Node) -> Vec<ConstraintId> {
-        self.propagator_indices
-            .get(&(source, target))
-            .cloned()
-            .unwrap_or(vec![])
+        self.constraint_lookup.get(&(source, target)).cloned().unwrap_or(vec![])
     }
 
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, ConstraintId)> + '_ {
@@ -135,7 +133,7 @@ impl ConstraintStore {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (ConstraintId, &Constraint)> + use<'_> {
-        self.propagators.entries()
+        self.constraints.entries()
     }
 }
 
@@ -154,10 +152,10 @@ impl Backtrack for ConstraintStore {
                 // let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
                 // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
                 // self.propagators.remove(&last_prop_id);
-                self.propagators.pop();
+                self.constraints.pop();
             }
             Event::WatchAdded((id, l)) => {
-                let enabler = self.propagators[id].enabler;
+                let enabler = self.constraints[id].enabler;
                 self.watches.remove_watch((enabler, id), l);
             }
         });

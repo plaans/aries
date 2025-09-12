@@ -1,4 +1,4 @@
-use crate::{collections::ref_store::Ref, reasoners::eq_alt::relation::EqRelation};
+use crate::reasoners::eq_alt::relation::EqRelation;
 
 use super::{
     traversal::{self},
@@ -146,14 +146,14 @@ where
 /// Filter the graph according to a closure.
 pub struct FilteredGraph<N, E, G, F>(G, F, std::marker::PhantomData<(N, E)>)
 where
-    N: Ref,
+    N: traversal::Node,
     E: traversal::Edge<N>,
     G: traversal::Graph<N, E>,
     F: Fn(N, &E) -> bool;
 
 impl<N, E, G, F> traversal::Graph<N, E> for FilteredGraph<N, E, G, F>
 where
-    N: Ref,
+    N: traversal::Node,
     E: traversal::Edge<N>,
     G: traversal::Graph<N, E>,
     F: Fn(N, &E) -> bool,
@@ -165,7 +165,7 @@ where
 
 pub trait FilterExt<N, E, G, F>
 where
-    N: Ref,
+    N: traversal::Node,
     E: traversal::Edge<N>,
     G: traversal::Graph<N, E>,
     F: Fn(N, &E) -> bool,
@@ -175,7 +175,7 @@ where
 }
 impl<N, E, G, F> FilterExt<N, E, G, F> for G
 where
-    N: Ref,
+    N: traversal::Node,
     E: traversal::Edge<N>,
     G: traversal::Graph<N, E>,
     F: Fn(N, &E) -> bool,

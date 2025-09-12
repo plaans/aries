@@ -3,6 +3,9 @@ use crate::collections::{
     set::IterableRefSet,
 };
 
+pub trait Node: Ref {}
+impl<T: Ref> Node for T {}
+
 /// A trait representing a generic directed edge with a source and target.
 pub trait Edge<N>: Clone {
     fn target(&self) -> N;
@@ -10,7 +13,7 @@ pub trait Edge<N>: Clone {
 }
 
 /// A trait representing a generic directed Graph.
-pub trait Graph<N: Ref, E: Edge<N>> {
+pub trait Graph<N: Node, E: Edge<N>> {
     /// Get outgoing edges from the node.
     fn outgoing(&self, node: N) -> impl Iterator<Item = E>;
 
@@ -44,9 +47,9 @@ pub trait Graph<N: Ref, E: Edge<N>> {
 /// This allows for path queries after traversal.
 ///
 /// Call record_paths on GraphTraversal with this struct.
-pub struct PathStore<N: Ref, E: Edge<N>>(IterableRefMap<N, E>);
+pub struct PathStore<N: Node, E: Edge<N>>(IterableRefMap<N, E>);
 
-impl<N: Ref, E: Edge<N>> PathStore<N, E> {
+impl<N: Node, E: Edge<N>> PathStore<N, E> {
     pub fn new() -> Self {
         Self(Default::default())
     }
@@ -140,14 +143,16 @@ impl Scratch {
     }
 }
 
-pub struct GraphTraversal<'a, N: Ref, E: Edge<N>, G: Graph<N, E>> {
+/// Struct for traversing a Graph with DFS.
+/// Implements iterator.
+pub struct GraphTraversal<'a, N: Node, E: Edge<N>, G: Graph<N, E>> {
     graph: G,
     scratch: &'a mut Scratch,
     parents: Option<&'a mut PathStore<N, E>>,
 }
 
-impl<'a, N: Ref, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
-    pub fn new(graph: G, source: N, scratch: &'a mut Scratch) -> Self {
+impl<'a, N: Node, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
+    fn new(graph: G, source: N, scratch: &'a mut Scratch) -> Self {
         scratch.clear();
         scratch.stack().push(source);
         GraphTraversal {
@@ -157,7 +162,9 @@ impl<'a, N: Ref, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
         }
     }
 
+    /// Record paths taken during traversal to PathStore, allowing for path from source to visited node queries.
     pub fn record_paths(mut self, path_store: &'a mut PathStore<N, E>) -> Self {
+        // TODO: We should make this safe by introducing a new type for iteration
         debug_assert!(self.parents.is_none());
         debug_assert!(self.scratch.visited.is_empty());
         self.parents = Some(path_store);
@@ -169,20 +176,23 @@ impl<'a, N: Ref, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
     }
 }
 
-impl<N: Ref, E: Edge<N>, G: Graph<N, E>> Iterator for GraphTraversal<'_, N, E, G> {
+impl<N: Node, E: Edge<N>, G: Graph<N, E>> Iterator for GraphTraversal<'_, N, E, G> {
     type Item = N;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // Get the next unvisited node
         let mut node = self.scratch.stack().pop()?;
         while self.scratch.visited_mut().contains(node) {
             node = self.scratch.stack().pop()?;
         }
 
+        // Mark as visited
         self.scratch.visited_mut().insert(node);
 
         let mut stack = StackMut::new(&mut self.scratch.stack);
         let visited = Visited::new(&self.scratch.visited);
 
+        // Get all (unvisited) nodes that can be reached through an outgoing edge
         let new_nodes = self.graph.outgoing(node).filter_map(|e| {
             let target = e.target();
             if !visited.contains(target) {
@@ -195,6 +205,7 @@ impl<N: Ref, E: Edge<N>, G: Graph<N, E>> Iterator for GraphTraversal<'_, N, E, G
             }
         });
         stack.extend(new_nodes);
+
         Some(node)
     }
 }

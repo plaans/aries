@@ -174,6 +174,8 @@ impl NodeStore {
     }
 
     pub fn get_group(&self, id: GroupId) -> Vec<NodeId> {
+        debug_assert_eq!(id, self.get_group_id(id.into()));
+
         let mut res = vec![];
 
         // Depth first traversal using first_child and next_sibling
