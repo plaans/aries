@@ -24,9 +24,9 @@ mod minimize;
 ///  - an integer variable that give the domain of the optional variable if is is present.
 ///
 /// Note that under this scheme, a non-optional variable could be represented a variable whose presence literal is
-/// the `TRUE` literal.
+/// the [`Lit::TRUE`] literal.
 ///
-/// Invariant:
+/// Invariants:
 ///  - all presence variables are non-optional
 ///  - a presence variable `a` might be declared with a *scope* literal `b`, meaning that `b => a`
 ///  - every variable always have a valid domain (which might be the empty domain if the variable is optional)
@@ -58,6 +58,13 @@ impl Domains {
         domains
     }
 
+    /// Creates a new variable with the domain `[lb, ub]`.
+    ///
+    /// # Limitations
+    ///
+    /// The domain must be a subset of \[[`INT_CST_MIN`], [`INT_CST_MAX`]\], representing the extremes of domain values.
+    /// These value are dependent on the representation of domain values ([`IntCst`]) which defaults to 32 bits.
+    /// Larger domain values can be used (with a small runtime cost) with the `i64` and `i128` features.
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
         self.doms.new_var(lb, ub)
     }

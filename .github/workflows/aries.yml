@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: plaans/mzn-problems
-          ref: v2
+          ref: v3
           path: mzn-problems
       - name: Compile aries_fzn (optimized + debug)
         run: |
@@ -124,16 +124,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - uses: extractions/setup-just@v3
       - name: Submodules initialization
         run: git submodule update --init # get our own copy of unified-planing repos
       - name: Install python dependencies
         run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
-      - name: Install just
-        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to .
       - name: Solver tests
-        run: ./just ci-up-solve
+        run: just ci-up-solve
       - name: Validator tests
-        run: ./just ci-up-val
+        run: just ci-up-val
 
   ipc-tests:
     name: IPC Tests
@@ -141,14 +140,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - uses: extractions/setup-just@v3
       - name: Submodules initialization
         run: git submodule update --init # get our own copy of unified-planing repos
       - name: Install python dependencies
         run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
-      - name: Install just
-        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to .
       - name: Resolution
-        run: ./just ci-ipc
+        run: just ci-ipc
 
   warm-up-tests:
     name: Warm-up tests
@@ -156,14 +154,13 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
+      - uses: extractions/setup-just@v3
       - name: Submodules initialization
         run: git submodule update --init # get our own copy of unified-planing repos
       - name: Install python dependencies
         run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
-      - name: Install just
-        run: curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to .
       - name: Resolution
-        run: ./just ci-warm-up
+        run: just ci-warm-up
 
   tests: # Meta-job that only requires all test-jobs to pass
     needs:
