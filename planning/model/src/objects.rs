@@ -32,7 +32,7 @@ pub enum ObjectError {
     UnknownObject(Sym),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Objects {
     objects: hashbrown::HashMap<Sym, Type>,
 }
@@ -43,15 +43,13 @@ impl Display for Objects {
         for o in self.iter() {
             write!(f, "\n  {}: {}", o.name, o.tpe)?;
         }
-        write!(f, "\n")
+        writeln!(f)
     }
 }
 
 impl Objects {
     pub fn new() -> Self {
-        Self {
-            objects: Default::default(),
-        }
+        Self::default()
     }
 
     pub fn add_object(&mut self, name: impl Into<Sym>, tpe: Type) -> Result<(), ObjectError> {

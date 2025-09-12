@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
-use crate::*;
+use crate::{env::Env, *};
 
 #[derive(Error, Debug)]
 pub enum ActionsError {
@@ -34,8 +34,8 @@ impl Actions {
 #[derive(Debug, Clone)]
 pub enum Duration {
     Instantaneous,
-    Fixed(TypedExpr),
-    Bounded(TypedExpr, TypedExpr),
+    Fixed(ExprId),
+    Bounded(ExprId, ExprId),
 }
 
 #[derive(Debug)]
@@ -74,25 +74,26 @@ impl Action {
     }
 }
 
-impl Display for Action {
+impl<'env> Display for Env<'env, &Action> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}({})",
-            self.name,
-            self.parameters
+            self.elem.name,
+            self.elem
+                .parameters
                 .iter()
                 .map(|p| format!("{}: {}", p.name(), p.tpe()))
                 .format(", ")
         )?;
-        write!(f, "\n    duration: {:?}", self.duration)?;
+        write!(f, "\n    duration: {:?}", self.elem.duration)?;
         write!(f, "\n    conditions:")?;
-        for c in &self.conditions {
-            write!(f, "\n      {c}")?;
+        for c in &self.elem.conditions {
+            write!(f, "\n      {}", self.env / c)?;
         }
         write!(f, "\n    effects:")?;
-        for eff in &self.effects {
-            write!(f, "\n      {eff}")?;
+        for eff in &self.elem.effects {
+            write!(f, "\n      {}", self.env / eff)?;
         }
         Ok(())
     }

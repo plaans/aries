@@ -1,8 +1,8 @@
 use derive_more::derive::Display;
 use thiserror::Error;
-use utils::disp_iter;
+use utils::disp_slice;
 
-use crate::*;
+use crate::{env::Environment, *};
 
 #[derive(Error, Debug)]
 pub enum FluentError {
@@ -12,7 +12,7 @@ pub enum FluentError {
     UnkonwnFluent(Sym),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Fluents {
     fluents: Vec<Fluent>,
 }
@@ -20,15 +20,13 @@ pub struct Fluents {
 impl Display for Fluents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Fluents:\n  ")?;
-        disp_iter(f, &self.fluents, "\n  ")
+        disp_slice(f, &self.fluents, "\n  ")
     }
 }
 
 impl Fluents {
     pub fn new() -> Self {
-        Self {
-            fluents: Default::default(),
-        }
+        Self::default()
     }
 
     pub fn get(&self, name: impl Into<Sym>) -> Result<&Fluent, FluentError> {
@@ -75,14 +73,14 @@ impl Fluent {
         &self.name
     }
 
-    pub fn return_type(&self, args: &[TypedExpr]) -> Result<Type, TypeError> {
+    pub fn return_type(&self, args: &[ExprId], env: &Environment) -> Result<Type, TypeError> {
         if args.len() < self.parameters.len() {
             return Err(TypeError::MissingParameter(self.parameters[args.len()].clone()));
         } else if args.len() > self.parameters.len() {
-            return Err(TypeError::UnexpectedArgument(args[self.parameters.len()].clone()));
+            return Err(TypeError::UnexpectedArgument(args[self.parameters.len()]));
         }
-        for i in 0..args.len() {
-            self.parameters[i].tpe.accepts(&args[i])?;
+        for (i, arg) in args.iter().enumerate() {
+            self.parameters[i].tpe.accepts(*arg, env)?;
         }
         Ok(self.return_type.clone())
     }

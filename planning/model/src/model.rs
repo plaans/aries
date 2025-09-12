@@ -1,12 +1,10 @@
-use crate::*;
+use crate::{env::Environment, *};
 
 mod conditions;
 pub use conditions::*;
 
 pub struct Model {
-    pub types: Types,
-    pub objects: Objects,
-    pub fluents: Fluents,
+    pub env: Environment,
     pub actions: Actions,
     /// Set of effects in the problem definition, covering both initial effects (at ORIGIN) and
     /// timed effects (after ORIGIN)
@@ -17,9 +15,7 @@ pub struct Model {
 impl Model {
     pub fn new(types: Types, objects: Objects, fluents: Fluents) -> Self {
         Self {
-            types,
-            objects,
-            fluents,
+            env: Environment::new(types, objects, fluents),
             actions: Default::default(),
             init: Default::default(),
             goals: Default::default(),
@@ -29,20 +25,20 @@ impl Model {
 
 impl Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}\n{}\n", self.objects, self.fluents)?;
+        write!(f, "{}\n{}\n", self.env.objects, self.env.fluents)?;
 
         write!(f, "\nActions:")?;
         for a in self.actions.iter() {
-            write!(f, "\n\n  {a}")?;
+            write!(f, "\n\n  {}", &self.env / a)?;
         }
         write!(f, "\n\nInit:")?;
         for ini in &self.init {
-            write!(f, "\n  {ini}")?;
+            write!(f, "\n  {}", &self.env / ini)?;
         }
 
         write!(f, "\n\nGoals:")?;
         for g in &self.goals {
-            write!(f, "\n  {g}")?;
+            write!(f, "\n  {}", &self.env / g)?;
         }
         Ok(())
     }

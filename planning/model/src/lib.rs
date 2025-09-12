@@ -1,5 +1,6 @@
 mod actions;
 mod effects;
+mod env;
 pub mod errors;
 mod expressions;
 mod fluents;
@@ -18,6 +19,7 @@ use std::{
 
 pub use actions::*;
 pub use effects::*;
+pub use env::*;
 pub use expressions::*;
 pub use fluents::*;
 pub use model::*;
@@ -72,7 +74,7 @@ impl Eq for Sym {}
 
 impl PartialOrd for Sym {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.symbol.partial_cmp(&other.symbol)
+        Some(self.cmp(other))
     }
 }
 impl Ord for Sym {

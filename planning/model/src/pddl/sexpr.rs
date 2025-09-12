@@ -1,5 +1,5 @@
 use crate::pddl::input::*;
-use crate::utils::disp_iter;
+use crate::utils::disp_slice;
 use anyhow::Result;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
@@ -16,7 +16,7 @@ pub struct SList {
 impl Display for SList {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "(")?;
-        disp_iter(f, &self.list, " ")?;
+        disp_slice(f, &self.list, " ")?;
         write!(f, ")")
     }
 }
@@ -217,7 +217,7 @@ impl Display for SExpr {
             SExpr::Atom(a) => write!(f, "{a}"),
             SExpr::List(l) => {
                 write!(f, "(")?;
-                disp_iter(f, &l.list, " ")?;
+                disp_slice(f, &l.list, " ")?;
                 write!(f, ")")
             }
         }

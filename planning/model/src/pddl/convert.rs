@@ -63,31 +63,30 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
 
     let mut fluents = Fluents::new();
     for pred in &dom.predicates {
-        let parameters = parse_parameters(&pred.args, &types)?;
+        let parameters = parse_parameters(&pred.args, &types).unwrap(); // TODO: requires env !
         fluents.add_fluent(&pred.name, parameters, Type::Bool, pred.name.loc())?;
     }
 
     let mut objects = Objects::new();
 
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
-        let tpe = types.get_user_type_or_top(obj.tpe.as_ref())?;
+        let tpe = types.get_user_type_or_top(obj.tpe.as_ref()).unwrap(); // TODO: require evn
         objects.add_object(&obj.symbol, tpe)?;
     }
 
+    let bindings = Rc::new(Bindings::objects(&objects));
     let mut model = Model::new(types, objects, fluents);
 
-    let bindings = Rc::new(Bindings::objects(&model.objects));
-
     for init in &prob.init {
-        let e = parse(init, &model.fluents, &bindings)?;
-        let e = into_effect(Timestamp::ORIGIN, e)?;
+        let e = parse(init, &mut model.env, &bindings)?;
+        let e = into_effect(Timestamp::ORIGIN, e, &mut model.env)?;
         model.init.push(e);
     }
 
     for g in &prob.goal {
         let sub_goals = conjuncts(g);
         for sg in sub_goals {
-            let sg = parse(sg, &model.fluents, &bindings)?;
+            let sg = parse(sg, &mut model.env, &bindings)?;
             let sg = Condition::at(Timestamp::HORIZON, sg);
             model.goals.push(sg);
         }
@@ -95,13 +94,14 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
 
     for a in &dom.actions {
         let name: crate::Sym = a.name.clone().into();
-        let action = into_action(a, &model, &bindings).with_info(|| name.info("when parsing action"))?;
+        let action = into_action(a, &mut model.env, &bindings).with_info(|| name.info("when parsing action"))?;
         model.actions.add(action)?;
     }
 
     for a in &dom.durative_actions {
         let name: crate::Sym = a.name.clone().into();
-        let action = into_durative_action(a, &model, &bindings).with_info(|| name.info("when parsing action"))?;
+        let action =
+            into_durative_action(a, &mut model.env, &bindings).with_info(|| name.info("when parsing action"))?;
         model.actions.add(action)?;
     }
 
@@ -110,8 +110,8 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
     Ok(model)
 }
 
-fn into_action(a: &pddl::Action, model: &Model, bindings: &Rc<Bindings>) -> Result<Action, Message> {
-    let parameters = parse_parameters(&a.args, &model.types)?;
+fn into_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<Action, Message> {
+    let parameters = parse_parameters(&a.args, &env.types).msg(env)?;
 
     let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
 
@@ -119,33 +119,36 @@ fn into_action(a: &pddl::Action, model: &Model, bindings: &Rc<Bindings>) -> Resu
 
     for c in &a.pre {
         for c in conjuncts(c) {
-            let c = parse(c, &model.fluents, &bindings)?;
+            let c = parse(c, env, &bindings)?;
             action.conditions.push(Condition::at(action.start(), c));
         }
     }
 
     for e in &a.eff {
         for e in conjuncts(e) {
-            let e = parse(e, &model.fluents, &bindings)?;
-            let e = into_effect(action.end(), e)?;
+            let e = parse(e, env, &bindings)?;
+            let e = into_effect(action.end(), e, env)?;
             action.effects.push(e);
         }
     }
     Ok(action)
 }
-fn into_durative_action(a: &pddl::DurativeAction, model: &Model, bindings: &Rc<Bindings>) -> Result<Action, Message> {
-    let parameters = parse_parameters(&a.args, &model.types)?;
+fn into_durative_action(
+    a: &pddl::DurativeAction,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<Action, Message> {
+    let parameters = parse_parameters(&a.args, &env.types).msg(env)?;
 
     let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
-    let duration = parse_duration(&a.duration, &model.fluents, &bindings)?;
+    let duration = parse_duration(&a.duration, env, &bindings)?;
 
     let mut action = Action::new(&a.name, parameters, duration);
 
     for c in &a.conditions {
         for c in conjuncts(c) {
             let span = Span::from(c.loc());
-            let (itv, c) =
-                parse_timed(c, &model.fluents, &bindings).with_info(|| span.info("when parsing condition"))?;
+            let (itv, c) = parse_timed(c, env, &bindings).with_info(|| span.info("when parsing condition"))?;
             action.conditions.push(Condition::over(itv, c));
         }
     }
@@ -162,28 +165,33 @@ fn into_durative_action(a: &pddl::DurativeAction, model: &Model, bindings: &Rc<B
                 return Err(Message::error("Invalid temporal qualifier for effect")
                     .snippet(span.error("Requires a timepoint `at start` or `at end`")));
             };
-            let e = parse(eff, &model.fluents, &bindings)?;
-            let e = into_effect(tp, e)?;
+            let e = parse(eff, env, &bindings)?;
+            let e = into_effect(tp, e, env)?;
             action.effects.push(e);
         }
     }
     Ok(action)
 }
 
-fn into_effect(time: impl Into<Timestamp>, expr: TypedExpr) -> Result<Effect, Message> {
+fn into_effect(time: impl Into<Timestamp>, expr: ExprId, env: &mut Environment) -> Result<Effect, Message> {
     let time = time.into();
-    Type::Bool.accepts(&expr)?;
-    match expr.expr() {
+    Type::Bool.accepts(expr, env).map_err(|e| e.to_message(env))?;
+    let e = env.node(expr);
+    match e.expr() {
         Expr::StateVariable(fluent, args) => {
-            let sv = StateVariable::new(fluent.clone(), args.clone(), expr.span_or_default());
-            Ok(Effect::assignement(time, sv, Expr::Bool(true).typed(None)?))
+            let sv = StateVariable::new(fluent.clone(), args.clone(), e.span_or_default());
+            let tautology = env.intern(Expr::Bool(true), None).map_err(|e| e.to_message(env))?;
+            Ok(Effect::assignement(time, sv, tautology))
         }
         Expr::App(Fun::Not, args) if args.len() == 1 => {
-            let (fluent, args) = args[0].state_variable()?;
-            let sv = StateVariable::new(fluent.clone(), args.clone(), expr.span_or_default());
-            Ok(Effect::assignement(time, sv, Expr::Bool(false).typed(None)?))
+            let arg = args[0];
+            let contradiction = env.intern(Expr::Bool(false), None).map_err(|e| e.to_message(env))?;
+            let (fluent, args) = env.node(arg).state_variable()?;
+            let args = SeqExprId::from_slice(args);
+            let sv = StateVariable::new(fluent.clone(), args, (env / expr).span_or_default());
+            Ok(Effect::assignement(time, sv, contradiction))
         }
-        _ => Err(Message::error("Unhandled conversion into effect").snippet(expr.error("unrecognized pattern"))),
+        _ => Err(Message::error("Unhandled conversion into effect").snippet(e.error("unrecognized pattern"))),
     }
 }
 
@@ -222,7 +230,7 @@ fn conjuncts(sexpr: &SExpr) -> Vec<&SExpr> {
     }
 }
 
-pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Result<TypedExpr, Message> {
+pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<ExprId, Message> {
     let expr = match sexpr {
         SExpr::Atom(atom) => match bindings.get(atom) {
             Ok(x) => x,
@@ -235,12 +243,12 @@ pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Resul
         SExpr::List(l) => {
             let mut l = l.iter();
             let f = l.pop_atom()?.clone();
-            let mut args = Vec::new();
+            let mut args = SeqExprId::new();
             for e in l {
-                let arg = parse(e, fluents, bindings)?;
+                let arg = parse(e, env, bindings)?;
                 args.push(arg);
             }
-            if let Ok(f) = fluents.get(&f).cloned() {
+            if let Ok(f) = env.fluents.get(&f).cloned() {
                 Expr::StateVariable(f, args)
             } else if let Some(f) = parse_function(&f) {
                 Expr::App(f, args)
@@ -249,7 +257,7 @@ pub fn parse(sexpr: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Resul
             }
         }
     };
-    Ok(expr.typed(sexpr.loc())?)
+    env.intern(expr, sexpr.loc()).map_err(|e| e.to_message(env))
 }
 
 fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
@@ -281,11 +289,11 @@ fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
 
 fn parse_timed(
     sexpr: &SExpr,
-    fluents: &Fluents,
+    env: &mut Environment,
     bindings: &Rc<Bindings>,
-) -> Result<(TimeInterval, TypedExpr), Message> {
+) -> Result<(TimeInterval, ExprId), Message> {
     let (interval, expr) = timed_sexpr(sexpr)?;
-    let expr = parse(expr, fluents, bindings)?;
+    let expr = parse(expr, env, bindings)?;
     Ok((interval, expr))
 }
 
@@ -301,7 +309,7 @@ fn parse_function(sym: &Sym) -> Option<Fun> {
     }
 }
 
-fn parse_duration(dur: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Result<Duration, Message> {
+fn parse_duration(dur: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<Duration, Message> {
     // handle duration element from durative actions
     // currently, we only support constraint of the form `(= ?duration <i32>)`
     // TODO: extend durations constraints, to support the full PDDL spec
@@ -311,11 +319,11 @@ fn parse_duration(dur: &SExpr, fluents: &Fluents, bindings: &Rc<Bindings>) -> Re
     dur.pop_known_atom("?duration")?;
 
     let dur_expr = dur.pop()?;
-    let duration = parse(dur_expr, fluents, bindings)?;
+    let duration = parse(dur_expr, env, bindings)?;
     if let Ok(x) = dur.pop() {
         return Err(x.invalid("Unexpected").into());
     }
-    Type::INT.accepts(&duration)?;
+    Type::INT.accepts(duration, env).map_err(|e| e.to_message(env))?;
     Ok(Duration::Fixed(duration))
 }
 

@@ -255,8 +255,10 @@ dependencies = [
  "clap 4.5.40",
  "derive_more",
  "hashbrown 0.15.4",
+ "idmap",
  "itertools 0.14.0",
  "regex",
+ "smallvec",
  "thiserror 2.0.12",
 ]
 
@@ -893,6 +895,15 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-io-timeout",
+]
+
+[[package]]
+name = "idmap"
+version = "0.2.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f92530a7d4564864380ca6747ef14312d264a342d1e6ada9e754debb2c789d4"
+dependencies = [
+ "fixedbitset 0.5.7",
 ]
 
 [[package]]

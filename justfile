@@ -63,3 +63,10 @@ pddl-test-parser:
     for f in `fd pb.pddl planning/problems/pddl/`; do
         cargo run --bin pddl-parser -- $f
     done
+
+pddl:
+    #!/usr/bin/env bash
+    set -e
+    for f in `fd instance-1.pddl planning/ext/pddl/`; do
+        cargo run --bin pddl-parser -- $f
+    done

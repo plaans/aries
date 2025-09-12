@@ -226,7 +226,7 @@ impl std::fmt::Display for ErrLoc {
             let prefix = if i > 0 { "Caused by" } else { "Error" };
             writeln!(f, "{prefix}: {context}")?;
         }
-        let inline_err = self.inline_err.as_ref().map(|s| s.as_str()).unwrap_or("");
+        let inline_err = self.inline_err.as_deref().unwrap_or("");
         if let Some(Loc { source, span }) = &self.loc {
             let snippet = source.snippet();
             let (start, end) = source.indices(*span).unwrap();

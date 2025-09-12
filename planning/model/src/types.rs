@@ -1,3 +1,4 @@
+use crate::errors::ToEnvMessage;
 use crate::*;
 use Type::*;
 use errors::{Message, Spanned};
@@ -5,19 +6,20 @@ use std::fmt::Debug;
 use std::{ops::RangeInclusive, sync::Arc};
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum TypeError {
     UnknownType(Sym),
-    IncompatibleType(TypedExpr, Type),
+    IncompatibleType(ExprId, Type),
     MissingParameter(Param),
-    UnexpectedArgument(TypedExpr),
+    UnexpectedArgument(ExprId),
 }
 
-impl From<&TypeError> for Message {
-    fn from(value: &TypeError) -> Self {
-        match value {
+impl ToEnvMessage for TypeError {
+    fn to_message(self, env: &Environment) -> Message {
+        match self {
             TypeError::UnknownType(_) => todo!(),
             TypeError::IncompatibleType(expr, expected) => {
+                let expr = env / expr;
                 errors::Message::error("Incompatible types").snippet(expr.error(format!(
                     "has type `{}` but type `{}` was expected",
                     expr.tpe(),
@@ -26,18 +28,6 @@ impl From<&TypeError> for Message {
             }
             _ => todo!(),
         }
-    }
-}
-impl From<TypeError> for Message {
-    fn from(value: TypeError) -> Self {
-        (&value).into()
-    }
-}
-
-impl Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let message = Message::from(self);
-        writeln!(f, "{message}")
     }
 }
 
@@ -62,7 +52,7 @@ impl Types {
     pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<Type, TypeError> {
         let name = name.into();
         if self.user_types.contains(name.clone()) {
-            Ok(Type::User(name.into(), self.user_types.clone()))
+            Ok(Type::User(name, self.user_types.clone()))
         } else {
             Err(TypeError::UnknownType(name))
         }
@@ -81,6 +71,12 @@ impl Types {
 pub struct UserTypes {
     top_type: Sym,
     types: hashbrown::HashMap<Sym, Vec<Sym>>,
+}
+
+impl Default for UserTypes {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UserTypes {
@@ -191,11 +187,11 @@ impl Type {
         }
     }
 
-    pub fn accepts(&self, expr: &TypedExpr) -> Result<(), TypeError> {
-        if expr.tpe().is_subtype_of(self) {
+    pub fn accepts(&self, expr: ExprId, env: &Environment) -> Result<(), TypeError> {
+        if env.node(expr).tpe().is_subtype_of(self) {
             Ok(())
         } else {
-            Err(TypeError::IncompatibleType(expr.clone(), self.clone()))
+            Err(TypeError::IncompatibleType(expr, self.clone()))
         }
     }
 

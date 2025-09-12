@@ -4,7 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use crate::pddl::input::{ErrLoc, Input};
+use crate::{
+    Environment,
+    pddl::input::{ErrLoc, Input},
+};
 use annotate_snippets::*;
 use thiserror::Error;
 
@@ -180,28 +183,16 @@ impl From<crate::pddl::input::Loc> for OSpan {
     }
 }
 
-// pub trait SourceLoc {
-//     fn invalid(&self, message: String) -> Box<dyn LocalizedErrorMessage>;
-// }
+pub(crate) trait ToEnvMessage {
+    fn to_message(self, env: &Environment) -> Message;
+}
 
-// impl SourceLoc for crate::pddl::input::Loc {
-//     fn invalid(&self, message: String) -> Box<dyn LocalizedErrorMessage> {
-//         Box::new(Loc::invalid(self.clone(), message))
-//     }
-// }
+pub(crate) trait EnvError<T> {
+    fn msg(self, env: &Environment) -> Result<T, Message>;
+}
 
-// impl SourceLoc for () {
-//     fn invalid(&self, message: String) -> Box<dyn LocalizedErrorMessage> {
-//         todo!()
-//     }
-// }
-
-// pub trait LocalizedErrorMessage: Display + Error {}
-
-// impl LocalizedErrorMessage for crate::pddl::input::ErrLoc {}
-
-// #[derive(Error, Debug, Display)]
-// #[display("{_0}")]
-// pub struct ErrorMessage(String);
-
-// impl LocalizedErrorMessage for ErrorMessage {}
+impl<T, E: ToEnvMessage> EnvError<T> for Result<T, E> {
+    fn msg(self, env: &Environment) -> Result<T, Message> {
+        self.map_err(|e| e.to_message(env))
+    }
+}

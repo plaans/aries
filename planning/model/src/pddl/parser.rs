@@ -5,7 +5,7 @@ use std::fmt::{Display, Error, Formatter};
 
 use crate::pddl::input::*;
 use crate::pddl::sexpr::*;
-use crate::utils::disp_iter;
+use crate::utils::disp_slice;
 use anyhow::Result;
 use regex::Regex;
 use std::path::{Path, PathBuf};
@@ -148,19 +148,19 @@ impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "# Domain : {}", self.name)?;
         write!(f, "\n# Types \n  ")?;
-        disp_iter(f, self.types.as_slice(), "\n  ")?;
+        disp_slice(f, self.types.as_slice(), "\n  ")?;
         write!(f, "\n# Predicates \n  ")?;
-        disp_iter(f, self.predicates.as_slice(), "\n  ")?;
+        disp_slice(f, self.predicates.as_slice(), "\n  ")?;
         write!(f, "\n# Functions \n  ")?;
-        disp_iter(f, self.functions.as_slice(), "\n  ")?;
+        disp_slice(f, self.functions.as_slice(), "\n  ")?;
         write!(f, "\n# Tasks \n  ")?;
-        disp_iter(f, self.tasks.as_slice(), "\n  ")?;
+        disp_slice(f, self.tasks.as_slice(), "\n  ")?;
         write!(f, "\n# Methods \n  ")?;
-        disp_iter(f, self.methods.as_slice(), "\n  ")?;
+        disp_slice(f, self.methods.as_slice(), "\n  ")?;
         write!(f, "\n# Actions \n  ")?;
-        disp_iter(f, self.actions.as_slice(), "\n  ")?;
+        disp_slice(f, self.actions.as_slice(), "\n  ")?;
         write!(f, "\n# Durative Actions \n  ")?;
-        disp_iter(f, self.durative_actions.as_slice(), "\n  ")?;
+        disp_slice(f, self.durative_actions.as_slice(), "\n  ")?;
 
         Result::Ok(())
     }
@@ -204,7 +204,7 @@ pub struct Predicate {
 impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}(", self.name)?;
-        disp_iter(f, self.args.as_slice(), ", ")?;
+        disp_slice(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
@@ -218,7 +218,7 @@ pub struct Function {
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.name)?;
-        disp_iter(f, self.args.as_slice(), ", ")?;
+        disp_slice(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
@@ -233,7 +233,7 @@ pub struct TaskDef {
 impl Display for TaskDef {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}(", self.name)?;
-        disp_iter(f, self.args.as_slice(), ", ")?;
+        disp_slice(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
@@ -253,7 +253,7 @@ pub struct Task {
 impl std::fmt::Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "({} ", self.name)?;
-        disp_iter(f, &self.arguments, " ")?;
+        disp_slice(f, &self.arguments, " ")?;
         write!(f, ")")
     }
 }
@@ -303,7 +303,7 @@ pub struct Action {
 impl Display for Action {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}(", self.name)?;
-        disp_iter(f, self.args.as_slice(), ", ")?;
+        disp_slice(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
@@ -320,7 +320,7 @@ pub struct DurativeAction {
 impl Display for DurativeAction {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "{}(", self.name)?;
-        disp_iter(f, self.args.as_slice(), ", ")?;
+        disp_slice(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
     }
 }
@@ -536,7 +536,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let parameters = consume_typed_symbols(&mut params.iter())?;
                 property.pop_known_atom(":task")?;
                 let task = parse_task(property.pop()?, false)?;
-                let precondition = if property.peek().map_or(false, |e| e.is_atom(":precondition")) {
+                let precondition = if property.peek().is_some_and(|e| e.is_atom(":precondition")) {
                     property.pop_known_atom(":precondition").unwrap();
                     vec![property.pop()?.clone()]
                 } else {
@@ -698,11 +698,11 @@ impl Display for Problem {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         write!(f, "# Problem {} (domain: {})", &self.problem_name, &self.domain_name)?;
         write!(f, "\n# Objects \n  ")?;
-        disp_iter(f, self.objects.as_slice(), "\n  ")?;
+        disp_slice(f, self.objects.as_slice(), "\n  ")?;
         write!(f, "\n# Init \n  ")?;
-        disp_iter(f, self.init.as_slice(), "\n  ")?;
+        disp_slice(f, self.init.as_slice(), "\n  ")?;
         write!(f, "\n# Goal \n  ")?;
-        disp_iter(f, self.goal.as_slice(), "\n  ")?;
+        disp_slice(f, self.goal.as_slice(), "\n  ")?;
         if let Some(tn) = &self.task_network {
             write!(f, "\n# Tasks \n")?;
             for task in tn.ordered_tasks.iter().chain(tn.unordered_tasks.iter()) {
