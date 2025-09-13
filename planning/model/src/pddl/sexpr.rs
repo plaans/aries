@@ -22,7 +22,7 @@ impl Display for SList {
 }
 
 impl SList {
-    pub fn iter(&self) -> ListIter {
+    pub fn iter(&self) -> ListIter<'_> {
         ListIter {
             elems: self.list.as_slice(),
             source: self.source.clone(),
@@ -113,7 +113,7 @@ impl SExpr {
         }
     }
 
-    pub fn as_list_iter(&self) -> Option<ListIter> {
+    pub fn as_list_iter(&self) -> Option<ListIter<'_>> {
         match &self {
             SExpr::List(v) => Some(ListIter {
                 elems: v.list.as_slice(),

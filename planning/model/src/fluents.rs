@@ -68,7 +68,7 @@ impl Fluents {
     pub fn get_by_name(&self, name: &str) -> Option<FluentId> {
         self.fluents
             .iter()
-            .find(|&(_id, f)| &f.name.symbol == name)
+            .find(|&(_id, f)| f.name.symbol == name)
             .map(|(id, _)| *id)
     }
 

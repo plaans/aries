@@ -71,7 +71,7 @@ impl Input {
         Fmt(formatter)
     }
 
-    pub fn snippet(&self) -> annotate_snippets::Snippet {
+    pub fn snippet(&self) -> annotate_snippets::Snippet<'_> {
         let snippet = annotate_snippets::Snippet::source(&self.text).line_start(1).fold(true);
         if let Some(file) = &self.source {
             snippet.origin(file)

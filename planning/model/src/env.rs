@@ -30,7 +30,7 @@ impl Environment {
         self.exprs.get(id).unwrap()
     }
 
-    pub fn node<T>(&self, id: T) -> Env<T> {
+    pub fn node<T>(&self, id: T) -> Env<'_, T> {
         self / id
     }
 

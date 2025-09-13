@@ -85,7 +85,7 @@ pub struct Annot {
 }
 
 impl Annot {
-    pub fn build(&self) -> Snippet {
+    pub fn build(&self) -> Snippet<'_> {
         let annotation = self.level.span(self.span.span.clone()).label(&self.message);
         let snippet = Snippet::source(&self.span.input.text)
             .line_start(1)

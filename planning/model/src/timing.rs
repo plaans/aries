@@ -57,7 +57,7 @@ pub struct TimeInterval {
 impl TimeInterval {
     pub fn at(tp: impl Into<Timestamp>) -> Self {
         let tp = tp.into();
-        TimeInterval::closed(tp.clone(), tp)
+        TimeInterval::closed(tp, tp)
     }
     pub fn closed(start: impl Into<Timestamp>, end: impl Into<Timestamp>) -> Self {
         TimeInterval {

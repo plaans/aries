@@ -307,7 +307,7 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
                 let arg = parse(e, env, bindings)?;
                 args.push(arg);
             }
-            if let Some(f) = env.fluents.get_by_name(&f.canonical_str()) {
+            if let Some(f) = env.fluents.get_by_name(f.canonical_str()) {
                 Expr::StateVariable(f, args)
             } else if let Some(f) = parse_function(&f) {
                 Expr::App(f, args)
