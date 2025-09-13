@@ -88,8 +88,22 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
 
     let bindings = Rc::new(Bindings::objects(&objects));
 
+    let has_at_fluent = model.env.fluents.get_by_name("at").is_some();
     for init in &prob.init {
-        let e = into_effect(Timestamp::ORIGIN, init, &mut model.env, &bindings)?;
+        let (timestamp, expr) = if !has_at_fluent && let Some([tp, init]) = init.as_application("at") {
+            // (at 54 (loc r1 l2))
+            if let Some(tp) = tp.as_atom()
+                && let Some(num) = parse_number(tp.canonical_str())
+            {
+                let tp = Timestamp::new(TimeRef::Origin, num);
+                (tp, init)
+            } else {
+                return Err(tp.loc().invalid("expected an absolute time").into());
+            }
+        } else {
+            (Timestamp::ORIGIN, init)
+        };
+        let e = into_effect(timestamp, expr, &mut model.env, &bindings)?;
         model.init.push(e);
     }
 
@@ -283,7 +297,7 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
         SExpr::Atom(atom) if atom.canonical_str() == "?duration" => Expr::Duration,
         SExpr::Atom(atom) => match bindings.get(atom) {
             Ok(x) => x,
-            Err(err) => parse_number(atom.canonical_str()).ok_or(err)?,
+            Err(err) => parse_number(atom.canonical_str()).map(Expr::Real).ok_or(err)?,
         },
         SExpr::List(l) => {
             let mut l = l.iter();
@@ -293,7 +307,7 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
                 let arg = parse(e, env, bindings)?;
                 args.push(arg);
             }
-            if let Ok(f) = env.fluents.get_by_name(&f) {
+            if let Some(f) = env.fluents.get_by_name(&f.canonical_str()) {
                 Expr::StateVariable(f, args)
             } else if let Some(f) = parse_function(&f) {
                 Expr::App(f, args)
@@ -306,16 +320,16 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
 }
 
 /// Parse a number number ("32", "-3", "3.14", -323.3")
-fn parse_number(decimal_str: &str) -> Option<Expr> {
+fn parse_number(decimal_str: &str) -> Option<RealValue> {
     if let Ok(i) = decimal_str.parse::<IntValue>() {
-        Some(Expr::Int(i))
+        Some(RealValue::new(i, 1))
     } else {
         let (lhs, rhs) = decimal_str.split_once(".")?;
         let denom = rhs.len() as i64;
         let lhs: i64 = lhs.parse().ok()?;
         let rhs: u64 = rhs.parse().ok()?;
         let numer = lhs * denom + (rhs as i64);
-        Some(Expr::Real(RealValue::new(numer, denom)))
+        Some(RealValue::new(numer, denom))
     }
 }
 

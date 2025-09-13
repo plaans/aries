@@ -87,7 +87,6 @@ impl<'a> Spanned for TExpr<'a> {
 }
 #[derive(Clone, Debug)]
 pub enum Expr {
-    Int(IntValue),
     Real(RealValue),
     Bool(bool),
     Object(Object),
@@ -100,7 +99,7 @@ pub enum Expr {
 impl<'a> Display for TExpr<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.expr() {
-            Expr::Int(i) => write!(f, "{i}"),
+            Expr::Real(i) if i.is_integer() => write!(f, "{}", i.numer()),
             Expr::Real(r) => write!(f, "{r}"),
             Expr::Bool(b) => write!(f, "{b}"),
             Expr::Object(o) => write!(f, "{o}"),
@@ -123,7 +122,7 @@ impl<'a> Display for TExpr<'a> {
 impl Expr {
     pub fn tpe(&self, env: &Environment) -> Result<Type, TypeError> {
         match self {
-            Expr::Int(i) => Ok(Type::Int(IntInterval::singleton(*i))),
+            Expr::Real(i) if i.is_integer() => Ok(Type::Int(IntInterval::singleton(*i.numer()))),
             Expr::Real(_) => Ok(Type::Real),
             Expr::Bool(_) => Ok(Type::Bool),
             Expr::App(fun, args) => fun.return_type(args.as_slice(), env),

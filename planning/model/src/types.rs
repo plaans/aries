@@ -161,6 +161,12 @@ pub enum Type {
     User(Sym, Arc<UserTypes>),
 }
 
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_subtype_of(other) && other.is_subtype_of(self)
+    }
+}
+
 impl Debug for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -26,9 +26,9 @@ impl Object {
 
 #[derive(Error, Debug)]
 pub enum ObjectError {
-    #[error("duplicate object")]
+    #[error("duplicate object : {0} and {1}")]
     DuplicateObjectDeclaration(Sym, Sym),
-    #[error("unknown object")]
+    #[error("unknown object {0}")]
     UnknownObject(Sym),
 }
 
@@ -54,8 +54,13 @@ impl Objects {
 
     pub fn add_object(&mut self, name: impl Into<Sym>, tpe: Type) -> Result<(), ObjectError> {
         let name = name.into();
-        if let Some((key, _)) = self.objects.get_key_value(&name) {
-            Err(ObjectError::DuplicateObjectDeclaration(name, key.clone()))
+        if let Some((previous, previous_tpe)) = self.objects.get_key_value(&name) {
+            if previous_tpe == &tpe {
+                // objects are exactly the same, ignore as some PDDL domain contain such patterns
+                Ok(())
+            } else {
+                Err(ObjectError::DuplicateObjectDeclaration(name, previous.clone()))
+            }
         } else {
             self.objects.insert(name, tpe);
             Ok(())

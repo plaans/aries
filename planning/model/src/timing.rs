@@ -1,25 +1,27 @@
 use derive_more::Display;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
+use crate::RealValue;
+
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Timestamp {
     reference: TimeRef,
-    delay: i64,
+    delay: RealValue,
 }
 
 impl Timestamp {
     /// Temporal origin of the problem (nothing changes before)
-    pub const ORIGIN: Timestamp = Timestamp::new(TimeRef::Origin, 0);
+    pub const ORIGIN: Timestamp = Timestamp::new(TimeRef::Origin, RealValue::ZERO);
     /// Temporal horizon of the problem (nothing changes after)
-    pub const HORIZON: Timestamp = Timestamp::new(TimeRef::Horizon, 0);
+    pub const HORIZON: Timestamp = Timestamp::new(TimeRef::Horizon, RealValue::ZERO);
 
-    pub const fn new(reference: TimeRef, delay: i64) -> Self {
+    pub const fn new(reference: TimeRef, delay: RealValue) -> Self {
         Self { reference, delay }
     }
 }
 
 impl Display for Timestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.delay.cmp(&0) {
+        match self.delay.cmp(&RealValue::ZERO) {
             std::cmp::Ordering::Less => write!(f, "{} - {}", self.reference, -self.delay),
             std::cmp::Ordering::Equal => write!(f, "{}", self.reference),
             std::cmp::Ordering::Greater => write!(f, "{} + {}", self.reference, self.delay),
@@ -27,7 +29,7 @@ impl Display for Timestamp {
     }
 }
 
-#[derive(Clone, Debug, Display, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Copy, Clone, Debug, Display, PartialEq, PartialOrd, Ord, Eq)]
 pub enum TimeRef {
     #[display("origin")]
     Origin,
@@ -41,12 +43,12 @@ pub enum TimeRef {
 
 impl From<TimeRef> for Timestamp {
     fn from(value: TimeRef) -> Self {
-        Timestamp::new(value, 0)
+        Timestamp::new(value, RealValue::ZERO)
     }
 }
 
 /// Represents a temporal interval, composed of a start and end timestamps
-#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct TimeInterval {
     pub start: Timestamp,
     pub end: Timestamp,
@@ -62,6 +64,9 @@ impl TimeInterval {
             start: start.into(),
             end: end.into(),
         }
+    }
+    pub fn as_timestamp(&self) -> Option<Timestamp> {
+        if self.start == self.end { Some(self.start) } else { None }
     }
 }
 
