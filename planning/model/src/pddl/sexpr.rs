@@ -273,6 +273,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     // creates a new symbol token
     let make_sym = |start, end, line, line_start| {
         let start_pos = Pos {
+            index: start as u32,
             line: line as u32,
             column: (start - line_start) as u32,
         };
@@ -312,6 +313,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                     is_in_comment = true;
                 } else if !is_in_comment {
                     let pos = Pos {
+                        index: index as u32,
                         line: line as u32,
                         column: (index - line_start) as u32,
                     };
@@ -346,6 +348,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
             let span = Span {
                 start: *start_pos,
                 end: Pos {
+                    index: *end as u32,
                     line: start_pos.line,
                     column: start_pos.column + (canonical.len() as u32) - 1,
                 },

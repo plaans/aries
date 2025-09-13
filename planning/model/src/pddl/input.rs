@@ -26,29 +26,7 @@ impl Input {
     }
 
     pub fn indices(&self, span: Span) -> Option<(usize, usize)> {
-        let mut start = None;
-        let mut end = None;
-        let mut line = 0;
-        let mut column = 0;
-        for (char, c) in self.text.chars().enumerate() {
-            let pos = Pos { line, column };
-            if pos == span.start {
-                start = Some(char);
-            }
-            if pos == span.end {
-                end = Some(char);
-            }
-
-            column += 1;
-            if c == '\n' {
-                line += 1;
-                column = 0;
-            }
-        }
-        match (start, end) {
-            (Some(start), Some(end)) => Some((start, end)),
-            _ => None,
-        }
+        Some((span.start.index as usize, span.end.index as usize))
     }
 
     /// Returns the substring corresponding to this span.
@@ -123,6 +101,7 @@ impl TryFrom<&std::path::Path> for Input {
 /// Position of a single character in an input.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Pos {
+    pub index: u32,
     pub line: u32,
     pub column: u32,
 }
@@ -325,11 +304,17 @@ impl Sym {
             Some(loc) => loc.clone(),
             None => {
                 let input = Input::from_string(&self.canonical);
+                let len = self.canonical.len() as u32;
                 let span = Span {
-                    start: Pos { line: 0, column: 0 },
-                    end: Pos {
+                    start: Pos {
+                        index: 0,
                         line: 0,
-                        column: (self.canonical.len() - 1) as u32,
+                        column: 0,
+                    },
+                    end: Pos {
+                        index: len - 1,
+                        line: 0,
+                        column: (len - 1),
                     },
                 };
                 Loc {
