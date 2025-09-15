@@ -37,7 +37,7 @@ impl AltEqTheory {
                 // Find a path from target to source with relation Neq
                 graph
                     .eq_neq()
-                    .traverse(EqNode::new(source_id), &mut Default::default())
+                    .traverse_bfs(EqNode::new(source_id), &mut Default::default())
                     .record_paths(&mut path_store)
                     .find(|&n| n == EqNode(target_id, EqRelation::Neq))
                     .map(|n| path_store.get_path(n).map(|e| e.0).collect_vec())
@@ -47,7 +47,7 @@ impl AltEqTheory {
                 // Find a path from target to source with relation Eq
                 graph
                     .eq()
-                    .traverse(source_id, &mut Default::default())
+                    .traverse_bfs(source_id, &mut Default::default())
                     .record_paths(&mut path_store)
                     .find(|&n| n == target_id)
                     .map(|n| path_store.get_path(n).collect_vec())
@@ -87,7 +87,7 @@ impl AltEqTheory {
             .incoming
             .filter(|_, e| model.entails(e.active))
             .eq()
-            .traverse(source_id, &mut Default::default())
+            .traverse_bfs(source_id, &mut Default::default())
             .record_paths(&mut path_store)
             .skip(1) // Cannot cause own propagation
             .find(|id| {
@@ -111,7 +111,7 @@ impl AltEqTheory {
             .incoming
             .filter(|_, e| model.entails(e.active))
             .eq_neq()
-            .traverse(EqNode::new(source_id), &mut Default::default())
+            .traverse_bfs(EqNode::new(source_id), &mut Default::default())
             .record_paths(&mut path_store)
             .skip(1)
             .find(|EqNode(id, r)| {

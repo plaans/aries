@@ -72,16 +72,17 @@ enum Event {
     GroupEdgeRemoved(Edge),
 }
 
+type DfsScratch = Scratch<Vec<usize>>;
 thread_local! {
     /// A reusable bit of memory to be used by graph traversal.
-    static SCRATCHES: [RefCell<Scratch>; 4] = array::from_fn(|_| Default::default());
+    static SCRATCHES: [RefCell<DfsScratch>; 4] = array::from_fn(|_| Default::default());
 }
 
 /// Run f with any number of scratches (max determined by SCRATCHES variables)
 /// Array destructuring syntax allows you to specify the number and get multiple as mut
 pub fn with_scratches<R, F, const N: usize>(f: F) -> R
 where
-    F: FnOnce([RefMut<'_, Scratch>; N]) -> R,
+    F: FnOnce([RefMut<'_, DfsScratch>; N]) -> R,
 {
     SCRATCHES.with(|cells| {
         f(cells[0..N]
@@ -274,7 +275,7 @@ impl DirEqGraph {
             let mut t = self
                 .incoming_grouped
                 .eq_neq()
-                .traverse(EqNode::new(edge.target), &mut s1);
+                .traverse_dfs(EqNode::new(edge.target), &mut s1);
             // If there is already a path from source to target, no paths are created
             if t.any(|n| n == EqNode(edge.source, EqRelation::Eq)) {
                 return Vec::new();
@@ -294,14 +295,14 @@ impl DirEqGraph {
                 .incoming_grouped
                 .eq_neq()
                 .filter(|_, e| !reachable_preds.contains(e.target()))
-                .traverse(EqNode::new(edge.source), &mut s3);
+                .traverse_dfs(EqNode::new(edge.source), &mut s3);
 
             // Traverse forward from the target excluding nodes which can be reached by the source
             let successors = self
                 .outgoing_grouped
                 .eq_neq()
                 .filter(|_, e| !reachable_succs.contains(e.target()))
-                .traverse(EqNode::new(edge.target), &mut s4)
+                .traverse_dfs(EqNode::new(edge.target), &mut s4)
                 .collect_vec();
 
             // A cartesian product between predecessors which cannot reach the target and successors which cannot be reached by source
@@ -328,7 +329,7 @@ impl DirEqGraph {
             let mut t = self
                 .incoming_grouped
                 .eq_neq()
-                .traverse(EqNode::new(edge.target), &mut s1);
+                .traverse_dfs(EqNode::new(edge.target), &mut s1);
             if t.any(|n| n == EqNode(edge.source, EqRelation::Neq)) {
                 return Vec::new();
             }
@@ -343,27 +344,27 @@ impl DirEqGraph {
                 .outgoing_grouped
                 .eq()
                 .filter(|_, e| !reachable_succs.contains(EqNode(e.target(), EqRelation::Neq)))
-                .traverse(edge.target, &mut s3)
+                .traverse_dfs(edge.target, &mut s3)
                 .collect_vec();
 
             let eq_filtered_successors = self
                 .outgoing_grouped
                 .eq()
                 .filter(|_, e| !reachable_succs.contains(EqNode(e.target(), EqRelation::Eq)))
-                .traverse(edge.target, &mut s3)
+                .traverse_dfs(edge.target, &mut s3)
                 .collect_vec();
 
             let eq_filtered_predecessors = self
                 .incoming_grouped
                 .eq()
                 .filter(|_, e| !reachable_preds.contains(EqNode(e.target(), EqRelation::Eq)))
-                .traverse(edge.source, &mut s3);
+                .traverse_dfs(edge.source, &mut s3);
 
             let neq_filtered_predecessors = self
                 .incoming_grouped
                 .eq()
                 .filter(|_, e| !reachable_preds.contains(EqNode(e.target(), EqRelation::Neq)))
-                .traverse(edge.source, &mut s4);
+                .traverse_dfs(edge.source, &mut s4);
 
             let create_path =
                 |(source, target): (NodeId, NodeId)| -> Path { Path::new(source, target, EqRelation::Neq) };
@@ -628,7 +629,7 @@ mod tests {
         let g = instance1();
 
         with_scratches(|[mut s]| {
-            let traversal = g.outgoing.eq().traverse(id(&g, 0), &mut s);
+            let traversal = g.outgoing.eq().traverse_dfs(id(&g, 0), &mut s);
             assert_eq_unordered_unique!(
                 traversal,
                 vec![id(&g, 0,), id(&g, 1,), id(&g, 3,), id(&g, 5,), id(&g, 6,)],
@@ -636,12 +637,12 @@ mod tests {
         });
 
         with_scratches(|[mut s]| {
-            let traversal = g.outgoing.eq().traverse(id(&g, 6), &mut s);
+            let traversal = g.outgoing.eq().traverse_dfs(id(&g, 6), &mut s);
             assert_eq_unordered_unique!(traversal, vec![id(&g, 6)]);
         });
 
         with_scratches(|[mut s]| {
-            let traversal = g.incoming.eq_neq().traverse(eqn(&g, 0, Eq), &mut s);
+            let traversal = g.incoming.eq_neq().traverse_dfs(eqn(&g, 0, Eq), &mut s);
             assert_eq_unordered_unique!(
                 traversal,
                 vec![
@@ -683,7 +684,7 @@ mod tests {
         let target = with_scratches(|[mut scratch]| {
             g.outgoing
                 .eq_neq()
-                .traverse(eqn(&g, 0, Eq), &mut scratch)
+                .traverse_dfs(eqn(&g, 0, Eq), &mut scratch)
                 .record_paths(&mut path_store)
                 .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                 .expect("Path exists")
@@ -692,7 +693,7 @@ mod tests {
         with_scratches(|[mut s]| {
             g.outgoing
                 .eq_neq()
-                .traverse(eqn(&g, 0, Eq), &mut s)
+                .traverse_dfs(eqn(&g, 0, Eq), &mut s)
                 .record_paths(&mut path_store)
                 .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                 .expect("Path exists");
@@ -717,7 +718,7 @@ mod tests {
                     .outgoing
                     .eq_neq()
                     .filter(|_, e| !set.contains(e.target()))
-                    .traverse(eqn(&g, 0, Eq), &mut s)
+                    .traverse_dfs(eqn(&g, 0, Eq), &mut s)
                     .record_paths(&mut path_store_2)
                     .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                     .expect("Path exists");
@@ -732,7 +733,7 @@ mod tests {
                     .outgoing
                     .eq_neq()
                     .filter(|_, e| !set.contains(e.target()))
-                    .traverse(eqn(&g, 0, Eq), &mut s)
+                    .traverse_dfs(eqn(&g, 0, Eq), &mut s)
                     .record_paths(&mut path_store_2)
                     .find(|&EqNode(n, r)| n == id(&g, 4) && r == Neq)
                     .expect("Path exists");

@@ -23,7 +23,7 @@ impl AltEqTheory {
         self.active_graph
             .outgoing
             .eq()
-            .traverse(source_id, &mut Default::default())
+            .traverse_dfs(source_id, &mut Default::default())
             .any(|n| n == target_id)
     }
 
@@ -34,7 +34,7 @@ impl AltEqTheory {
         self.active_graph
             .outgoing
             .eq_neq()
-            .traverse(EqNode::new(source_id), &mut Default::default())
+            .traverse_dfs(EqNode::new(source_id), &mut Default::default())
             .any(|n| n == EqNode(target_id, EqRelation::Neq))
     }
 

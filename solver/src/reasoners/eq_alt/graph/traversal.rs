@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::collections::{
     ref_store::{IterableRefMap, Ref},
     set::IterableRefSet,
@@ -21,7 +23,26 @@ pub trait Graph<N: Node, E: Edge<N>> {
     ///
     /// Scratch contains the large data structures used by the graph traversal algorithm. Useful to reuse memory.
     /// `&mut default::default()` can used if performance is not critical.
-    fn traverse<'a>(self, source: N, scratch: &'a mut Scratch) -> GraphTraversal<'a, N, E, Self>
+    fn traverse_dfs<'a>(
+        self,
+        source: N,
+        scratch: &'a mut Scratch<Vec<usize>>,
+    ) -> GraphTraversal<'a, N, E, Self, Vec<usize>>
+    where
+        Self: Sized,
+    {
+        GraphTraversal::new(self, source, scratch)
+    }
+
+    /// Traverse the graph (breadth first) from a given source. This method return a GraphTraversal object which implements Iterator.
+    ///
+    /// Scratch contains the large data structures used by the graph traversal algorithm. Useful to reuse memory.
+    /// `&mut default::default()` can used if performance is not critical.
+    fn traverse_bfs<'a>(
+        self,
+        source: N,
+        scratch: &'a mut Scratch<VecDeque<usize>>,
+    ) -> GraphTraversal<'a, N, E, Self, VecDeque<usize>>
     where
         Self: Sized,
     {
@@ -31,7 +52,7 @@ pub trait Graph<N: Node, E: Edge<N>> {
     /// Get the set of nodes which can be reached from the source.
     ///
     /// See traverse for details about scratch.
-    fn reachable<'a>(self, source: N, scratch: &'a mut Scratch) -> Visited<'a, N>
+    fn reachable<'a>(self, source: N, scratch: &'a mut Scratch<Vec<usize>>) -> Visited<'a, N>
     where
         Self: Sized + 'a,
         N: 'a,
@@ -40,6 +61,52 @@ pub trait Graph<N: Node, E: Edge<N>> {
         let mut t = GraphTraversal::new(self, source, scratch);
         for _ in t.by_ref() {}
         scratch.visited()
+    }
+}
+
+pub trait Frontier<N> {
+    fn push(&mut self, value: N);
+
+    fn pop(&mut self) -> Option<N>;
+
+    fn extend(&mut self, values: impl IntoIterator<Item = N>);
+
+    fn clear(&mut self);
+}
+
+impl<N> Frontier<N> for Vec<N> {
+    fn push(&mut self, value: N) {
+        self.push(value);
+    }
+
+    fn pop(&mut self) -> Option<N> {
+        self.pop()
+    }
+
+    fn extend(&mut self, values: impl IntoIterator<Item = N>) {
+        Extend::extend(self, values)
+    }
+
+    fn clear(&mut self) {
+        self.clear()
+    }
+}
+
+impl<N> Frontier<N> for VecDeque<N> {
+    fn push(&mut self, value: N) {
+        self.push_back(value);
+    }
+
+    fn pop(&mut self) -> Option<N> {
+        self.pop_front()
+    }
+
+    fn extend(&mut self, values: impl IntoIterator<Item = N>) {
+        Extend::extend(self, values);
+    }
+
+    fn clear(&mut self) {
+        self.clear()
     }
 }
 
@@ -69,16 +136,16 @@ impl<N: Node, E: Edge<N>> PathStore<N, E> {
 /// In order to avoid having to deal with generics when reusing an instance, we use usize instead of N: Into\<usize> + From\<usize>.
 /// We therefore need structs to access these data structures with N.
 #[derive(Default)]
-pub struct Scratch {
-    stack: Vec<usize>,
+pub struct Scratch<F: Frontier<usize>> {
+    frontier: F,
     visited: IterableRefSet<usize>,
 }
 
 /// Used to access Scratch.stack as if it were `Vec<N>`
-struct StackMut<'a, N: Into<usize> + From<usize>>(&'a mut Vec<usize>, std::marker::PhantomData<N>);
+struct FrontierMut<'a, N: Into<usize> + From<usize>, F: Frontier<usize>>(&'a mut F, std::marker::PhantomData<N>);
 
-impl<'a, N: Into<usize> + From<usize>> StackMut<'a, N> {
-    fn new(s: &'a mut Vec<usize>) -> Self {
+impl<'a, N: Into<usize> + From<usize>, F: Frontier<usize>> FrontierMut<'a, N, F> {
+    fn new(s: &'a mut F) -> Self {
         Self(s, std::marker::PhantomData {})
     }
 
@@ -124,9 +191,9 @@ impl<'a, N: Into<usize> + From<usize>> Visited<'a, N> {
     }
 }
 
-impl Scratch {
-    fn stack<'a, N: Into<usize> + From<usize>>(&'a mut self) -> StackMut<'a, N> {
-        StackMut::new(&mut self.stack)
+impl<F: Frontier<usize>> Scratch<F> {
+    fn stack<'a, N: Into<usize> + From<usize>>(&'a mut self) -> FrontierMut<'a, N, F> {
+        FrontierMut::new(&mut self.frontier)
     }
 
     fn visited_mut<'a, N: Into<usize> + From<usize>>(&'a mut self) -> VisitedMut<'a, N> {
@@ -138,21 +205,21 @@ impl Scratch {
     }
 
     fn clear(&mut self) {
-        self.stack.clear();
+        self.frontier.clear();
         self.visited.clear();
     }
 }
 
-/// Struct for traversing a Graph with DFS.
+/// Struct for traversing a Graph with DFS or BFS.
 /// Implements iterator.
-pub struct GraphTraversal<'a, N: Node, E: Edge<N>, G: Graph<N, E>> {
+pub struct GraphTraversal<'a, N: Node, E: Edge<N>, G: Graph<N, E>, F: Frontier<usize>> {
     graph: G,
-    scratch: &'a mut Scratch,
+    scratch: &'a mut Scratch<F>,
     parents: Option<&'a mut PathStore<N, E>>,
 }
 
-impl<'a, N: Node, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
-    fn new(graph: G, source: N, scratch: &'a mut Scratch) -> Self {
+impl<'a, N: Node, E: Edge<N>, G: Graph<N, E>, F: Frontier<usize>> GraphTraversal<'a, N, E, G, F> {
+    fn new(graph: G, source: N, scratch: &'a mut Scratch<F>) -> Self {
         scratch.clear();
         scratch.stack().push(source);
         GraphTraversal {
@@ -176,7 +243,7 @@ impl<'a, N: Node, E: Edge<N>, G: Graph<N, E>> GraphTraversal<'a, N, E, G> {
     }
 }
 
-impl<N: Node, E: Edge<N>, G: Graph<N, E>> Iterator for GraphTraversal<'_, N, E, G> {
+impl<N: Node, E: Edge<N>, G: Graph<N, E>, F: Frontier<usize>> Iterator for GraphTraversal<'_, N, E, G, F> {
     type Item = N;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -189,7 +256,7 @@ impl<N: Node, E: Edge<N>, G: Graph<N, E>> Iterator for GraphTraversal<'_, N, E, 
         // Mark as visited
         self.scratch.visited_mut().insert(node);
 
-        let mut stack = StackMut::new(&mut self.scratch.stack);
+        let mut stack = FrontierMut::new(&mut self.scratch.frontier);
         let visited = Visited::new(&self.scratch.visited);
 
         // Get all (unvisited) nodes that can be reached through an outgoing edge
