@@ -331,7 +331,15 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                 }
             }
         } else if cur_start.is_none() {
-            cur_start = Some(index);
+            // not inside a token
+            if n == '-' {
+                // '-' cannot start a token, so if we encounter it we immediately return a token
+                // note: this is a work around for badly formated domains present in the IPC
+                tokens.push(make_sym(index, index, line, line_start));
+            } else {
+                // this is the begenning of a token
+                cur_start = Some(index);
+            }
         }
     }
     if let Some(start) = cur_start {
