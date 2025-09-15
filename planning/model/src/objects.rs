@@ -7,11 +7,11 @@ use crate::*;
 #[display("{}", name)]
 pub struct Object {
     name: Sym,
-    tpe: Type,
+    tpe: UserType,
 }
 
 impl Object {
-    pub fn new(name: impl Into<Sym>, tpe: Type) -> Self {
+    pub fn new(name: impl Into<Sym>, tpe: UserType) -> Self {
         Self { name: name.into(), tpe }
     }
 
@@ -19,7 +19,7 @@ impl Object {
         &self.name
     }
 
-    pub fn tpe(&self) -> &Type {
+    pub fn tpe(&self) -> &UserType {
         &self.tpe
     }
 }
@@ -34,7 +34,7 @@ pub enum ObjectError {
 
 #[derive(Clone, Debug, Default)]
 pub struct Objects {
-    objects: hashbrown::HashMap<Sym, Type>,
+    objects: hashbrown::HashMap<Sym, UserType>,
 }
 
 impl Display for Objects {
@@ -52,7 +52,7 @@ impl Objects {
         Self::default()
     }
 
-    pub fn add_object(&mut self, name: impl Into<Sym>, tpe: Type) -> Result<(), ObjectError> {
+    pub fn add_object(&mut self, name: impl Into<Sym>, tpe: UserType) -> Result<(), ObjectError> {
         let name = name.into();
         if let Some((previous, previous_tpe)) = self.objects.get_key_value(&name) {
             if previous_tpe == &tpe {

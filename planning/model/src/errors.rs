@@ -99,6 +99,12 @@ impl Annot {
     }
 }
 
+impl Spanned for &crate::Sym {
+    fn span(&self) -> Option<&Span> {
+        self.span.as_ref()
+    }
+}
+
 #[derive(Error)]
 pub struct Message {
     level: Level,
@@ -122,6 +128,11 @@ impl Message {
     pub fn snippet(mut self, snippet: Annot) -> Self {
         self.snippets.push(snippet);
         self
+    }
+
+    pub fn info(self, s: impl Spanned, msg: &str) -> Message {
+        let annot = s.annotate(Level::Info, msg);
+        self.snippet(annot)
     }
 }
 

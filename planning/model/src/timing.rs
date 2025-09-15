@@ -47,6 +47,12 @@ impl From<TimeRef> for Timestamp {
     }
 }
 
+impl From<RealValue> for Timestamp {
+    fn from(value: RealValue) -> Self {
+        Timestamp::new(TimeRef::Origin, value)
+    }
+}
+
 /// Represents a temporal interval, composed of a start and end timestamps
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct TimeInterval {
@@ -55,6 +61,12 @@ pub struct TimeInterval {
 }
 
 impl TimeInterval {
+    pub const FULL: TimeInterval = TimeInterval::new(Timestamp::ORIGIN, Timestamp::HORIZON);
+
+    pub const fn new(start: Timestamp, end: Timestamp) -> Self {
+        Self { start, end }
+    }
+
     pub fn at(tp: impl Into<Timestamp>) -> Self {
         let tp = tp.into();
         TimeInterval::closed(tp, tp)

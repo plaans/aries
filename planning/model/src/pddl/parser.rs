@@ -1,6 +1,7 @@
 #![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
 
 use anyhow::Context;
+use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
 
 use crate::pddl::input::*;
@@ -107,6 +108,9 @@ pub enum PddlFeature {
     Fluents,
     ConditionalEffects,
     TimedInitialLiterals,
+    Adl,
+    Preferences,
+    Constraints,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -125,6 +129,9 @@ impl std::str::FromStr for PddlFeature {
             ":conditional-effects" => Ok(PddlFeature::ConditionalEffects),
             ":timed-initial-literals" => Ok(PddlFeature::TimedInitialLiterals),
             ":fluents" => Ok(PddlFeature::Fluents),
+            ":adl" => Ok(PddlFeature::Adl),
+            ":preferences" => Ok(PddlFeature::Preferences),
+            ":constraints" => Ok(PddlFeature::Constraints),
             _ => Err(format!("Unknown feature `{s}`")),
         }
     }
@@ -144,6 +151,9 @@ impl Display for PddlFeature {
             PddlFeature::ConditionalEffects => ":conditional-effects",
             PddlFeature::TimedInitialLiterals => ":timed-initial-literals",
             PddlFeature::Fluents => ":fluents",
+            PddlFeature::Adl => ":adl",
+            PddlFeature::Preferences => ":preferences",
+            PddlFeature::Constraints => ":constraints",
         };
         write!(f, "{formatted}")
     }
@@ -161,6 +171,7 @@ pub struct Domain {
     pub methods: Vec<Method>,
     pub actions: Vec<Action>,
     pub durative_actions: Vec<DurativeAction>,
+    pub constraints: Vec<SExpr>,
 }
 impl Display for Domain {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -179,6 +190,8 @@ impl Display for Domain {
         disp_slice(f, self.actions.as_slice(), "\n  ")?;
         write!(f, "\n# Durative Actions \n  ")?;
         disp_slice(f, self.durative_actions.as_slice(), "\n  ")?;
+        write!(f, "\n# Constraints \n  ")?;
+        disp_slice(f, self.constraints.as_slice(), "\n  ")?;
 
         Result::Ok(())
     }
@@ -190,25 +203,66 @@ pub struct Tpe {
     pub parent: Sym,
 }
 
+pub type TypedSymbol = Param;
+
+// #[derive(Debug, Clone)]
+// pub struct TypedSymbol {
+//     pub symbol: Sym,
+//     pub tpe: Option<Sym>,
+// }
+// impl TypedSymbol {
+//     pub fn new(symbol: impl Into<Sym>, tpe: impl Into<Sym>) -> Self {
+//         Self {
+//             symbol: symbol.into(),
+//             tpe: Some(tpe.into()),
+//         }
+//     }
+// }
+// impl Display for TypedSymbol {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+//         match &self.tpe {
+//             Some(tpe) => write!(f, "{}: {}", self.symbol, tpe),
+//             None => write!(f, "{}", self.symbol),
+//         }
+//     }
+// }
+
+pub type Types = SmallVec<[Sym; 1]>;
+
+/// Parameter to a function or action
 #[derive(Debug, Clone)]
-pub struct TypedSymbol {
+pub struct Param {
+    /// name of the parameter
     pub symbol: Sym,
-    pub tpe: Option<Sym>,
+    /// Possible types of the parameter (any if empty)
+    pub tpe: Types,
 }
-impl TypedSymbol {
-    pub fn new(symbol: impl Into<Sym>, tpe: impl Into<Sym>) -> TypedSymbol {
-        TypedSymbol {
+impl Param {
+    pub fn new(symbol: impl Into<Sym>, tpe: impl Into<Sym>) -> Self {
+        Self {
             symbol: symbol.into(),
-            tpe: Some(tpe.into()),
+            tpe: smallvec![tpe.into()],
+        }
+    }
+
+    pub fn new_union(symbol: impl Into<Sym>, tpe: Types) -> Self {
+        Self {
+            symbol: symbol.into(),
+            tpe,
         }
     }
 }
 
-impl Display for TypedSymbol {
+impl Display for Param {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        match &self.tpe {
-            Some(tpe) => write!(f, "{}: {}", self.symbol, tpe),
-            None => write!(f, "{}", self.symbol),
+        match self.tpe.as_slice() {
+            [tpe] => write!(f, "{}: {}", self.symbol, tpe),
+            [] => write!(f, "{}", self.symbol),
+            several => {
+                write!(f, "{}: {{", self.symbol)?;
+                disp_slice(f, several, ", ")?;
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -217,7 +271,7 @@ impl Display for TypedSymbol {
 #[derive(Debug, Clone)]
 pub struct Predicate {
     pub name: Sym,
-    pub args: Vec<TypedSymbol>,
+    pub args: Vec<Param>,
 }
 impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -231,7 +285,7 @@ impl Display for Predicate {
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Sym,
-    pub args: Vec<TypedSymbol>,
+    pub args: Vec<Param>,
 }
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -313,7 +367,7 @@ pub struct Ordering {
 #[derive(Clone, Debug)]
 pub struct Action {
     pub name: Sym,
-    pub args: Vec<TypedSymbol>,
+    pub args: Vec<Param>,
     pub pre: Vec<SExpr>,
     pub eff: Vec<SExpr>,
 }
@@ -329,7 +383,7 @@ impl Display for Action {
 #[derive(Clone, Debug)]
 pub struct DurativeAction {
     pub name: Sym,
-    pub args: Vec<TypedSymbol>,
+    pub args: Vec<Param>,
     pub duration: SExpr,
     pub conditions: Vec<SExpr>,
     pub effects: Vec<SExpr>,
@@ -353,10 +407,23 @@ pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<Ty
     while !input.is_empty() {
         let next = input.pop_atom()?;
         if next.canonical_str() == "-" {
-            let tpe = input.pop_atom()?;
+            let mut types = Types::with_capacity(1);
+            let tpe = input.pop()?;
+            if let Some(variants) = tpe.as_application("either") {
+                for variant in variants {
+                    types.push(
+                        variant
+                            .as_atom()
+                            .cloned()
+                            .ok_or(variant.invalid("expected type name"))?,
+                    );
+                }
+            } else {
+                types.push(tpe.as_atom().cloned().ok_or(tpe.invalid("expected type name"))?);
+            }
             untyped
                 .drain(..)
-                .map(|name| TypedSymbol::new(name, tpe))
+                .map(|name| TypedSymbol::new_union(name, types.clone()))
                 .for_each(|a| args.push(a));
         } else {
             untyped.push(next.into());
@@ -367,7 +434,7 @@ pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<Ty
         .drain(..)
         .map(|name| TypedSymbol {
             symbol: name,
-            tpe: None,
+            tpe: smallvec![],
         })
         .for_each(|a| args.push(a));
     Result::Ok(args)
@@ -403,6 +470,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
         methods: vec![],
         actions: vec![],
         durative_actions: vec![],
+        constraints: vec![],
     };
 
     for current in dom {
@@ -570,6 +638,11 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 };
                 res.methods.push(method);
             }
+            ":constraints" => {
+                for constraint in property {
+                    res.constraints.push(constraint.clone());
+                }
+            }
 
             _ => return Err(current.invalid("unsupported block")),
         }
@@ -710,6 +783,14 @@ pub struct Problem {
     pub init: Vec<SExpr>,
     pub task_network: Option<TaskNetwork>,
     pub goal: Vec<SExpr>,
+    pub metric: Option<Metric>,
+    pub constraints: Vec<SExpr>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Metric {
+    Minimize(SExpr),
+    Maximize(SExpr),
 }
 
 impl Display for Problem {
@@ -755,6 +836,8 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
         init: vec![],
         task_network: None,
         goal: vec![],
+        metric: None,
+        constraints: vec![],
     };
 
     for current in problem {
@@ -786,8 +869,17 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
                 res.task_network = Some(parse_task_network(property)?);
             }
             ":metric" => {
-                // TODO: Complete support of metrics
-                println!("WARNING: ':metrics' is not supported. Skipping for now.");
+                let qualifier = property.pop_atom()?;
+                match qualifier.canonical_str() {
+                    "minimize" => res.metric = Some(Metric::Minimize(property.pop().cloned()?)),
+                    "maximize" => res.metric = Some(Metric::Maximize(property.pop().cloned()?)),
+                    _ => return Err(qualifier.invalid("expected `maximize` or `minimize")),
+                }
+            }
+            ":constraints" => {
+                for constraint in property {
+                    res.constraints.push(constraint.clone());
+                }
             }
             _ => return Err(current.invalid("unsupported block")),
         }

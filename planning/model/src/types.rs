@@ -1,7 +1,9 @@
 use crate::errors::ToEnvMessage;
+use crate::utils::disp_slice;
 use crate::*;
 use Type::*;
 use errors::{Message, Spanned};
+use smallvec::{SmallVec, smallvec};
 use std::fmt::Debug;
 use std::{ops::RangeInclusive, sync::Arc};
 use thiserror::Error;
@@ -26,7 +28,11 @@ impl ToEnvMessage for TypeError {
                     expected
                 )))
             }
-            _ => todo!(),
+            TypeError::UnexpectedArgument(expr) => {
+                let expr = env / expr;
+                errors::Message::error("Unexepected argument").snippet(expr.error("unexpected argument"))
+            }
+            TypeError::MissingParameter(param) => errors::Message::error(format!("missing parameter: {}", param)),
         }
     }
 }
@@ -45,25 +51,119 @@ impl Types {
         }
     }
 
-    pub fn top_user_type(&self) -> Type {
-        Type::User(self.user_types.top_type.clone(), self.user_types.clone())
+    pub fn top_user_type(&self) -> UserType {
+        UserType::new(self.user_types.top_type.clone(), self.user_types.clone())
     }
 
-    pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<Type, TypeError> {
+    pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, TypeError> {
         let name = name.into();
-        if self.user_types.contains(name.clone()) {
-            Ok(Type::User(name, self.user_types.clone()))
-        } else {
-            Err(TypeError::UnknownType(name))
-        }
+        self.check_type(&name)?;
+        Ok(UserType::new(name, self.user_types.clone()))
     }
 
-    pub fn get_user_type_or_top(&self, name: Option<impl Into<Sym>>) -> Result<Type, TypeError> {
+    pub fn get_user_type_or_top(&self, name: Option<impl Into<Sym>>) -> Result<UserType, TypeError> {
         if let Some(name) = name {
             self.get_user_type(name)
         } else {
             Ok(self.top_user_type())
         }
+    }
+
+    fn check_type(&self, name: &Sym) -> Result<(), TypeError> {
+        if !self.user_types.contains(name.clone()) {
+            Err(TypeError::UnknownType(name.clone()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_union_type<'a, T>(&self, types: &'a [T]) -> Result<Type, TypeError>
+    where
+        &'a T: Into<Sym>,
+    {
+        let mut union = SmallVec::with_capacity(types.len());
+        for t in types {
+            let t = t.into();
+            self.check_type(&t)?;
+            union.push(t);
+        }
+        if types.is_empty() {
+            Ok((&self.top_user_type()).into())
+        } else {
+            Ok(Type::User(UnionUserType {
+                union,
+                hier: self.user_types.clone(),
+            }))
+        }
+    }
+}
+
+/// Represent a type as the union of possible user types.
+#[derive(Clone)]
+pub struct UnionUserType {
+    union: SmallVec<[Sym; 1]>,
+    hier: Arc<UserTypes>,
+}
+
+impl UnionUserType {
+    pub fn new(tpe: impl Into<Sym>, hier: Arc<UserTypes>) -> Self {
+        UnionUserType {
+            union: smallvec![tpe.into()],
+            hier,
+        }
+    }
+
+    pub fn is_subtype_of(&self, other: &UnionUserType) -> bool {
+        self.union
+            .iter()
+            .all(|t| other.union.iter().any(|t2| self.hier.is_subtype_of(t, t2)))
+    }
+}
+
+impl Display for UnionUserType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.union.len() == 1 {
+            write!(f, "{}", self.union[0])
+        } else {
+            write!(f, "{{")?;
+            disp_slice(f, self.union.as_slice(), ", ")?;
+            write!(f, "}}")
+        }
+    }
+}
+
+/// Represents a single user-defined type within a a type hierarchy
+#[derive(Clone)]
+pub struct UserType {
+    pub name: Sym,
+    pub hier: Arc<UserTypes>,
+}
+impl UserType {
+    fn new(name: Sym, hier: Arc<UserTypes>) -> Self {
+        Self {
+            name,
+            hier: hier.clone(),
+        }
+    }
+}
+impl From<&UserType> for Type {
+    fn from(value: &UserType) -> Self {
+        Type::User(UnionUserType::new(value.name.clone(), value.hier.clone()))
+    }
+}
+impl PartialEq for UserType {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+impl Display for UserType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+impl Debug for UserType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
@@ -105,7 +205,10 @@ impl UserTypes {
         self.types.contains_key(&name)
     }
 
-    pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) -> Result<(), UserTypeDeclarationError> {
+    /// Records a new type with the given parent.
+    /// If the parent is not recorded yet, it is created (asuming no parents)
+    /// If the type already exists, a new parent is added (multiple inheritence)
+    pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) {
         let tpe = tpe.into();
         let parent = parent.map(|p| p.into());
         if let Some(parent) = parent {
@@ -116,7 +219,6 @@ impl UserTypes {
         } else {
             self.types.entry(tpe).or_default();
         }
-        Ok(())
     }
 }
 
@@ -127,6 +229,16 @@ impl IntInterval {
     pub const FULL: IntInterval = IntInterval(None, None);
     pub fn singleton(value: IntValue) -> Self {
         Self(Some(value), Some(value))
+    }
+
+    /// Creates the interval [min, oo[
+    pub fn at_least(min: IntValue) -> Self {
+        Self(Some(min), None)
+    }
+
+    /// Creates the interval ]-oo, max]
+    pub fn at_most(max: IntValue) -> Self {
+        Self(None, Some(max))
     }
 
     pub fn is_subset_of(&self, other: &IntInterval) -> bool {
@@ -158,7 +270,7 @@ pub enum Type {
     Bool,
     Int(IntInterval),
     Real,
-    User(Sym, Arc<UserTypes>),
+    User(UnionUserType),
 }
 
 impl PartialEq for Type {
@@ -173,7 +285,7 @@ impl Debug for Type {
             Bool => write!(f, "bool"),
             Int(_) => write!(f, "int"),
             Real => write!(f, "real"),
-            User(name, _) => write!(f, "{name}"),
+            User(name) => write!(f, "{name}"),
         }
     }
 }
@@ -195,7 +307,7 @@ impl Type {
             (Bool, Bool) => true,
             (Real, Real) => true,
             (Int(bounds1), Int(bounds2)) => bounds1.is_subset_of(bounds2),
-            (User(left, types), User(right, _)) => types.is_subtype_of(left, right),
+            (User(left), User(right)) => left.is_subtype_of(right),
             (Int(_), Real) => true,
             _ => false,
         }

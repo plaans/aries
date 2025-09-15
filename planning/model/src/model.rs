@@ -9,7 +9,9 @@ pub struct Model {
     /// Set of effects in the problem definition, covering both initial effects (at ORIGIN) and
     /// timed effects (after ORIGIN)
     pub init: Vec<Effect>,
-    pub goals: Vec<Condition>,
+    pub goals: Vec<Goal>,
+    pub preferences: Preferences,
+    pub metric: Option<Metric>,
 }
 
 impl Model {
@@ -19,6 +21,8 @@ impl Model {
             actions: Default::default(),
             init: Default::default(),
             goals: Default::default(),
+            preferences: Default::default(),
+            metric: Default::default(),
         }
     }
 }

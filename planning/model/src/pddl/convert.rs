@@ -2,10 +2,10 @@ use std::rc::Rc;
 
 use errors::*;
 use itertools::Itertools;
-use pddl::parser::TypedSymbol;
 use pddl::sexpr::SExpr;
 use smallvec::SmallVec;
 
+use crate::pddl::sexpr::ListIter;
 use crate::*;
 
 use super::input::Sym;
@@ -48,10 +48,19 @@ impl Bindings {
     }
 }
 
-fn user_types(dom: &Domain) -> Result<UserTypes, UserTypeDeclarationError> {
+fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
     let mut types = UserTypes::new();
     for tpe in &dom.types {
-        types.add_type(&tpe.symbol, tpe.tpe.as_ref())?;
+        let type_name = crate::Sym::from(&tpe.symbol);
+        match tpe.tpe.as_slice() {
+            [] => types.add_type(&tpe.symbol, None),
+            [parent] => types.add_type(&tpe.symbol, Some(parent)),
+            [_, second_parent, ..] => {
+                return Err(
+                    Message::from(second_parent.invalid("unexpected second parent type")).info(&type_name, "for type")
+                );
+            }
+        }
     }
     Ok(types)
 }
@@ -82,7 +91,11 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
     let mut objects = Objects::new();
 
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
-        let tpe = model.env.types.get_user_type_or_top(obj.tpe.as_ref()).msg(&model.env)?;
+        let tpe = match obj.tpe.as_slice() {
+            [] => model.env.types.top_user_type(),
+            [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
+            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type").into()),
+        };
         objects.add_object(&obj.symbol, tpe)?;
     }
 
@@ -109,10 +122,38 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
 
     for g in &prob.goal {
         let sub_goals = conjuncts(g);
-        for sg in sub_goals {
-            let sg = parse(sg, &mut model.env, &bindings)?;
-            let sg = Condition::at(Timestamp::HORIZON, sg);
-            model.goals.push(sg);
+        for g in sub_goals {
+            if is_preference(g) {
+                let pref = parse_preference(g, true, &mut model.env, &bindings)?;
+                model.preferences.add(pref);
+            } else {
+                let g = parse_goal(g, true, &mut model.env, &bindings)?;
+                model.goals.push(g);
+            }
+        }
+    }
+
+    let all_constraints = dom.constraints.iter().chain(prob.constraints.iter());
+    for c in all_constraints {
+        let sub_goals = conjuncts(c);
+        for c in sub_goals {
+            if is_preference(c) {
+                let pref = parse_preference(c, false, &mut model.env, &bindings)?;
+                model.preferences.add(pref);
+            } else {
+                let c = parse_goal(c, false, &mut model.env, &bindings)?;
+                model.goals.push(c);
+            }
+        }
+    }
+    if let Some(metric) = &prob.metric {
+        match metric {
+            pddl::Metric::Maximize(max) => {
+                model.metric = Some(Metric::Maximize(parse(max, &mut model.env, &bindings)?))
+            }
+            pddl::Metric::Minimize(min) => {
+                model.metric = Some(Metric::Minimize(parse(min, &mut model.env, &bindings)?))
+            }
         }
     }
 
@@ -257,13 +298,22 @@ fn into_effect(
     }
 }
 
-fn parse_parameters(params: &[TypedSymbol], types: &Types) -> Result<Vec<Param>, TypeError> {
+fn parse_parameters(params: &[pddl::Param], types: &Types) -> Result<Vec<Param>, TypeError> {
     let mut parameters = Vec::with_capacity(params.len());
     for a in params {
-        let tpe = types.get_user_type_or_top(a.tpe.as_ref())?;
+        let tpe = types.get_union_type(&a.tpe)?;
         parameters.push(Param::new(&a.symbol, tpe))
     }
     Ok(parameters)
+}
+
+/// Parses a list of variables for forall/exists : (?d - depot ?x - loc)
+fn parse_var_list(vars: &SExpr, env: &Environment) -> Result<Vec<Param>, Message> {
+    let mut vars = vars
+        .as_list_iter()
+        .ok_or_else(|| vars.invalid("expected variable list"))?;
+    let vars = pddl::consume_typed_symbols(&mut vars)?;
+    parse_parameters(&vars, &env.types).msg(env)
 }
 
 fn is_empty_list(sexpr: &SExpr) -> bool {
@@ -292,7 +342,16 @@ fn conjuncts(sexpr: &SExpr) -> Vec<&SExpr> {
     }
 }
 
-pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<ExprId, Message> {
+fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<ExprId, Message> {
+    fn parse_args(l: ListIter<'_>, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<SeqExprId, Message> {
+        let mut args = SeqExprId::new();
+        for e in l {
+            let arg = parse(e, env, bindings)?;
+            args.push(arg);
+        }
+        Ok(args)
+    }
+
     let expr = match sexpr {
         SExpr::Atom(atom) if atom.canonical_str() == "?duration" => Expr::Duration,
         SExpr::Atom(atom) => match bindings.get(atom) {
@@ -302,21 +361,143 @@ pub fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> R
         SExpr::List(l) => {
             let mut l = l.iter();
             let f = l.pop_atom()?.clone();
-            let mut args = SeqExprId::new();
-            for e in l {
-                let arg = parse(e, env, bindings)?;
-                args.push(arg);
-            }
             if let Some(f) = env.fluents.get_by_name(f.canonical_str()) {
+                let args = parse_args(l, env, bindings)?;
                 Expr::StateVariable(f, args)
             } else if let Some(f) = parse_function(&f) {
+                let args = parse_args(l, env, bindings)?;
                 Expr::App(f, args)
+            } else if f.canonical_str() == "total-time" {
+                if let Some(x) = l.next() {
+                    return Err(x.invalid("Unexpected argument to total-time").into());
+                }
+                Expr::Makespan
+            } else if f.canonical_str() == "is-violated" {
+                let id = l.pop_atom()?;
+                Expr::ViolationCount(id.into())
+            } else if f.canonical_str() == "exists" || f.canonical_str() == "forall" {
+                let vars = parse_var_list(l.pop()?, env)?;
+                let expr = l.pop()?;
+                let bindings = Rc::new(Bindings::stacked(&vars, bindings));
+                let expr = parse(expr, env, &bindings)?; // TODO
+                match f.canonical_str() {
+                    "forall" => Expr::Forall(vars, expr),
+                    "exists" => Expr::Exists(vars, expr),
+                    _ => unreachable!(),
+                }
             } else {
                 return Err(f.invalid("unknown atom").into());
             }
         }
     };
-    env.intern(expr, sexpr.loc()).msg(env)
+    env.intern(expr, sexpr.loc()).msg(env).map_err(|e| {
+        e.snippet(Span::from(sexpr.loc()).annotate(annotate_snippets::Level::Info, "when parsing expression"))
+    })
+}
+
+/// Parses a goal or constraint, possibly with a forall quanifiier
+pub fn parse_goal(
+    sexpr: &SExpr,
+    at_horizon: bool,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<Goal, Message> {
+    if let Some([vars, sexpr]) = sexpr.as_application("forall")
+        && !at_horizon
+    {
+        // (forall (?x - loc ?y - obj) <constraint>)
+        let vars = parse_var_list(vars, env)?;
+        let bindings = Rc::new(Bindings::stacked(&vars, bindings));
+        parse_unquantified_goal(sexpr, at_horizon, env, &bindings).map(|g| g.forall(vars))
+    } else {
+        parse_unquantified_goal(sexpr, at_horizon, env, bindings).map(|g| g.forall(vec![]))
+    }
+}
+
+/// Parses a goal (at_horizon=true) of constraint (at_horizon=false), without a forall
+pub fn parse_unquantified_goal(
+    sexpr: &SExpr,
+    at_horizon: bool,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<SimpleGoal, Message> {
+    if at_horizon {
+        let goal = parse(sexpr, env, bindings)?;
+        Ok(SimpleGoal::at(Timestamp::HORIZON, goal))
+    } else if let Some([tp, g]) = sexpr.as_application("at") {
+        if !tp.is_atom("end") {
+            return Err(tp.invalid("expected `end`").into());
+        }
+        let g = parse(g, env, bindings)?;
+        Ok(SimpleGoal::at(Timestamp::HORIZON, g))
+    } else if let Some([tp, g]) = sexpr.as_application("within") {
+        let tp = tp
+            .as_atom()
+            .and_then(|n| parse_number(n.canonical_str()))
+            .ok_or(tp.invalid("expected number"))?;
+        let g = parse(g, env, bindings)?;
+        Ok(SimpleGoal::at(tp, g))
+    } else if let Some([g]) = sexpr.as_application("always") {
+        let g = parse(g, env, bindings)?;
+        Ok(SimpleGoal::HoldsDuring(TimeInterval::FULL, g))
+    } else if let Some([g]) = sexpr.as_application("sometime") {
+        let g = parse(g, env, bindings)?;
+        Ok(SimpleGoal::SometimeDuring(TimeInterval::FULL, g))
+    } else if let Some([g]) = sexpr.as_application("at-most-once") {
+        let g = parse(g, env, bindings)?;
+        Ok(SimpleGoal::AtMostOnceDuring(TimeInterval::FULL, g))
+    } else if let Some([when, then]) = sexpr.as_application("sometime-before") {
+        let when = parse(when, env, bindings)?;
+        let then = parse(then, env, bindings)?;
+        Ok(SimpleGoal::SometimeBefore { when, then })
+    } else if let Some([when, then]) = sexpr.as_application("sometime-after") {
+        let when = parse(when, env, bindings)?;
+        let then = parse(then, env, bindings)?;
+        Ok(SimpleGoal::SometimeAfter { when, then })
+    } else if let Some([delay, when, then]) = sexpr.as_application("always-within") {
+        let delay = parse_number_sexpr(delay)?;
+        let when = parse(when, env, bindings)?;
+        let then = parse(then, env, bindings)?;
+        Ok(SimpleGoal::AlwaysWithin { delay, when, then })
+    } else {
+        Err(sexpr.invalid("invalid goal expression").into())
+    }
+}
+
+fn is_preference(sexpr: &SExpr) -> bool {
+    if let Some([_params, expr]) = sexpr.as_application("forall") {
+        is_preference(expr)
+    } else {
+        sexpr.as_application("preference").is_some()
+    }
+}
+
+/// Parses a preference:
+///  - (preference <name> <goal-expr>)
+///  - (forall (?a - b ?x - t) preference <name> <goal-expr>)
+///
+/// If `at_horizon` is true, the goal expression is supposed to hold at the horizon,
+/// otherwise it is a PDDL constraint (within, always, ....)
+fn parse_preference(
+    sexpr: &SExpr,
+    at_horizon: bool,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<Preference, Message> {
+    if let Some([id, goal]) = sexpr.as_application("preference") {
+        let id = id
+            .as_atom()
+            .ok_or(id.invalid("expected preference identifier"))
+            .cloned()?;
+        let goal = parse_goal(goal, at_horizon, env, bindings)?;
+        Ok(Preference::new(id, goal))
+    } else if let Some([vars, pref]) = sexpr.as_application("forall") {
+        let vars = parse_var_list(vars, env)?;
+        let bindings = Rc::new(Bindings::stacked(&vars, bindings));
+        parse_preference(pref, at_horizon, env, &bindings).map(|pref| pref.forall(vars))
+    } else {
+        Err(sexpr.invalid("malformed preference").into())
+    }
 }
 
 /// Parse a number number ("32", "-3", "3.14", -323.3")
@@ -331,6 +512,12 @@ fn parse_number(decimal_str: &str) -> Option<RealValue> {
         let numer = lhs * denom + (rhs as i64);
         Some(RealValue::new(numer, denom))
     }
+}
+
+fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {
+    num.as_atom()
+        .and_then(|e| parse_number(e.canonical_str()))
+        .ok_or(num.invalid("expected number").into())
 }
 
 fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
@@ -378,6 +565,7 @@ fn parse_function(sym: &Sym) -> Option<Fun> {
         "*" => Some(Fun::Mul),
         "and" => Some(Fun::And),
         "or" => Some(Fun::Or),
+        "imply" => Some(Fun::Implies),
         "not" => Some(Fun::Not),
         "=" => Some(Fun::Eq),
         "<=" => Some(Fun::Leq),

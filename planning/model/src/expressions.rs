@@ -1,5 +1,6 @@
 use errors::Spanned;
 use idmap::IntegerId;
+use itertools::Itertools;
 use num_rational::Rational64;
 use smallvec::SmallVec;
 
@@ -93,8 +94,14 @@ pub enum Expr {
     Param(Param),
     App(Fun, SeqExprId),
     StateVariable(FluentId, SeqExprId),
+    Exists(Vars, ExprId),
+    Forall(Vars, ExprId),
     Duration,
+    Makespan,
+    ViolationCount(RefId),
 }
+
+pub type Vars = Vec<Param>;
 
 impl<'a> Display for TExpr<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -115,6 +122,14 @@ impl<'a> Display for TExpr<'a> {
                 write!(f, ")")
             }
             Expr::Duration => write!(f, "?duration"),
+            Expr::Makespan => write!(f, "?makespan"),
+            Expr::ViolationCount(ref_id) => write!(f, "violations({ref_id}"),
+            Expr::Exists(params, expr_id) => {
+                write!(f, "(exists {} {})", params.iter().join(", "), self.env / *expr_id)
+            }
+            Expr::Forall(params, expr_id) => {
+                write!(f, "(forall {} {})", params.iter().join(", "), self.env / *expr_id)
+            }
         }
     }
 }
@@ -127,14 +142,16 @@ impl Expr {
             Expr::Bool(_) => Ok(Type::Bool),
             Expr::App(fun, args) => fun.return_type(args.as_slice(), env),
             Expr::StateVariable(fluent, args) => env.fluents.get(*fluent).return_type(args.as_slice(), env),
-            Expr::Object(o) => Ok(o.tpe().clone()),
+            Expr::Object(o) => Ok(o.tpe().into()),
             Expr::Param(p) => Ok(p.tpe().clone()),
-            Expr::Duration => Ok(Type::Real),
+            Expr::Exists(_, x) | Expr::Forall(_, x) => Ok(env.node(*x).tpe().clone()),
+            Expr::Duration | Expr::Makespan => Ok(Type::Real),
+            Expr::ViolationCount(_) => Ok(Type::Int(IntInterval::at_least(0))),
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Fun {
     Plus,
     Minus,
@@ -142,6 +159,7 @@ pub enum Fun {
     Mul,
     And,
     Or,
+    Implies,
     Not,
     Eq,
     Leq,
@@ -171,7 +189,10 @@ impl Fun {
                 }
                 Ok(Type::Real)
             }
-            And | Or => {
+            And | Or | Implies => {
+                if self == &Fun::Implies && args_types.len() > 2 {
+                    return Err(TypeError::UnexpectedArgument(args_types[2]));
+                }
                 for a in args_types {
                     Type::Bool.accepts(*a, env)?;
                 }
@@ -222,6 +243,7 @@ impl Display for Fun {
                 Fun::Mul => "*",
                 Fun::And => "and",
                 Fun::Or => "or",
+                Fun::Implies => "implies",
                 Fun::Not => "not",
                 Fun::Eq => "=",
                 Fun::Leq => "<=",
