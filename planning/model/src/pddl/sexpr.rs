@@ -231,9 +231,6 @@ enum Token {
     Sym { start: usize, end: usize, start_pos: Pos },
     LParen(Pos),
     RParen(Pos),
-    Quote(Pos),
-    QuasiQuote(Pos),
-    Unquote(Pos),
 }
 
 pub fn parse<S: TryInto<Input>>(s: S) -> Result<SExpr>
@@ -290,10 +287,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                 cur_start = Some(index);
                 is_in_string = true;
             }
-        } else if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment
-            //For quote, quasiquote and unquote support
-            || n == '\'' || n == '`' || n == ','
-        {
+        } else if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment {
             // if we were parsing a symbol, we have reached its end
             if !is_in_string {
                 if let Some(start) = cur_start {
@@ -317,12 +311,6 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                         tokens.push(Token::LParen(pos));
                     } else if n == ')' {
                         tokens.push(Token::RParen(pos));
-                    } else if n == '\'' {
-                        tokens.push(Token::Quote(pos));
-                    } else if n == '`' {
-                        tokens.push(Token::QuasiQuote(pos));
-                    } else if n == ',' {
-                        tokens.push(Token::Unquote(pos));
                     }
                 }
             }
@@ -374,9 +362,6 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
             }
         }
         Some(Token::RParen(_)) => anyhow::bail!("Unexpected closing parenthesis"),
-        Some(_quoting) => {
-            panic!() // TODO: remove quoting
-        }
         None => anyhow::bail!("Unexpected end of output"),
     }
 }
@@ -399,19 +384,6 @@ mod tests {
         formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
         formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
         formats_as("(A \"b ; C\" d)", "(A \"b ; C\" d)");
-    }
-
-    #[test]
-    fn parsing_quoting() {
-        formats_as("'x", "(quote x)");
-        formats_as("`x", "(quasiquote x)");
-        formats_as(",x", "(unquote x)");
-        formats_as("'(x)", "(quote (x))");
-        formats_as("`(x)", "(quasiquote (x))");
-        formats_as(",(x)", "(unquote (x))");
-        formats_as("('x)", "((quote x))");
-        formats_as("('(x))", "((quote (x)))");
-        formats_as("('x 'y)", "((quote x) (quote y))");
     }
 
     #[test]

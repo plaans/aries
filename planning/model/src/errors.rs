@@ -28,6 +28,10 @@ impl Span {
         }
     }
 
+    pub fn str(&self) -> &str {
+        &self.input.text.as_str()[self.span.clone()]
+    }
+
     pub fn invalid(self, error: impl Into<String>) -> ErrLoc {
         ErrLoc {
             context: vec![],

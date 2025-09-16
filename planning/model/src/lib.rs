@@ -36,9 +36,12 @@ use errors::{Span, Spanned};
 
 pub type Res<T> = anyhow::Result<T>;
 
+/// Symbol in the model, possibly annotate with its origin (file/line)
 #[derive(Clone)]
 pub struct Sym {
+    /// Canonical view of the symbol (e.g. lower cased for PDDL)
     pub symbol: String,
+    /// Origin of the symbol. If non-empty, can be used to derive the Display view of the symbol (e.g. properly capitalized)
     pub span: Option<Span>,
 }
 
@@ -70,7 +73,12 @@ impl Debug for Sym {
 }
 impl Display for Sym {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.symbol)
+        let view = if let Some(span) = self.span.as_ref() {
+            span.str()
+        } else {
+            self.symbol.as_str()
+        };
+        write!(f, "{}", view)
     }
 }
 
