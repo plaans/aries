@@ -10,7 +10,7 @@ use crate::{
         graph::{
             transforms::{EqExt, EqNeqExt, EqNode, FilterExt},
             traversal::{Graph, PathStore},
-            Edge,
+            Edge, NodeId,
         },
         node::Node,
         relation::EqRelation,
@@ -90,12 +90,7 @@ impl AltEqTheory {
             .traverse_bfs(source_id, &mut Default::default())
             .record_paths(&mut path_store)
             .skip(1) // Cannot cause own propagation
-            .find(|id| {
-                let n = self.active_graph.get_node(*id);
-                let (lb, ub) = model.node_bounds(&n);
-                literal.svar().is_plus() && literal.variable().leq(ub).entails(literal)
-                    || literal.svar().is_minus() && literal.variable().geq(lb).entails(literal)
-            })
+            .find(|id| self.can_explain_eq(literal, *id, model))
             .expect("Unable to explain eq propagation");
         path_store.get_path(cause).collect()
     }
@@ -114,22 +109,29 @@ impl AltEqTheory {
             .traverse_bfs(EqNode::new(source_id), &mut Default::default())
             .record_paths(&mut path_store)
             .skip(1)
-            .find(|EqNode(id, r)| {
-                let (prev_lb, prev_ub) = model.bounds(literal.variable());
-                // If relationship between node and literal node is Neq
-                *r == EqRelation::Neq && {
-                    let n = self.active_graph.get_node(*id);
-                    // If node is bound to a value
-                    if let Some(bound) = model.node_bound(&n) {
-                        prev_ub == bound || prev_lb == bound
-                    } else {
-                        false
-                    }
-                }
-            })
+            .find(|EqNode(id, r)| *r == EqRelation::Neq && self.can_explain_neq(literal, *id, model))
             .expect("Unable to explain Neq propagation");
 
         path_store.get_path(cause).map(|e| e.0).collect()
+    }
+
+    fn can_explain_eq(&self, literal: Lit, potential_cause: NodeId, model: &DomainsSnapshot<'_>) -> bool {
+        let n = self.active_graph.get_node(potential_cause);
+
+        let node_domain = model.node_domain(&n);
+        node_domain.entails(literal)
+    }
+
+    fn can_explain_neq(&self, literal: Lit, potential_cause: NodeId, model: &DomainsSnapshot<'_>) -> bool {
+        let (prev_lb, prev_ub) = model.bounds(literal.variable());
+        // If relationship between node and literal node is Neq
+        let n = self.active_graph.get_node(potential_cause);
+        // If node is bound to a value
+        if let Some(bound) = model.node_domain(&n).as_singleton() {
+            prev_ub == bound || prev_lb == bound
+        } else {
+            false
+        }
     }
 
     /// Given a path computed from one of the functions defined above, constructs an explanation from this path

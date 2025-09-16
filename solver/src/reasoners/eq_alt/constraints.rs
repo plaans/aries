@@ -2,7 +2,6 @@ use hashbrown::HashMap;
 use std::fmt::Debug;
 
 use crate::{
-    backtrack::{Backtrack, DecLvl, Trail},
     collections::ref_store::RefVec,
     core::{literals::Watches, Lit},
     create_ref_type,
@@ -85,11 +84,11 @@ impl Constraint {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Event {
-    PropagatorAdded,
-    WatchAdded((ConstraintId, Lit)),
-}
+// #[derive(Debug, Clone, Copy)]
+// enum Event {
+//     PropagatorAdded,
+//     WatchAdded(ConstraintId, Lit),
+// }
 
 /// Data structures to store propagators.
 #[derive(Clone, Default)]
@@ -97,16 +96,17 @@ pub struct ConstraintStore {
     constraints: RefVec<ConstraintId, Constraint>,
     constraint_lookup: HashMap<(Node, Node), Vec<ConstraintId>>,
     watches: Watches<(Enabler, ConstraintId)>,
-    trail: Trail<Event>,
+    // trail: Trail<Event>,
 }
 
 impl ConstraintStore {
-    pub fn add_constraint(&mut self, prop: Constraint) -> ConstraintId {
-        self.trail.push(Event::PropagatorAdded);
+    pub fn add_constraint(&mut self, constraint: Constraint) -> ConstraintId {
+        // assert_eq!(self.current_decision_level(), DecLvl::ROOT);
+        // self.trail.push(Event::PropagatorAdded);
         let id = self.constraints.len().into();
-        self.constraints.push(prop.clone());
+        self.constraints.push(constraint.clone());
         self.constraint_lookup
-            .entry((prop.a, prop.b))
+            .entry((constraint.a, constraint.b))
             .and_modify(|e| e.push(id))
             .or_insert(vec![id]);
         id
@@ -115,11 +115,10 @@ impl ConstraintStore {
     pub fn add_watch(&mut self, id: ConstraintId, literal: Lit) {
         let enabler = self.constraints[id].enabler;
         self.watches.add_watch((enabler, id), literal);
-        self.trail.push(Event::WatchAdded((id, literal)));
+        // self.trail.push(Event::WatchAdded(id, literal));
     }
 
     pub fn get_constraint(&self, prop_id: ConstraintId) -> &Constraint {
-        // self.propagators.get(&prop_id).unwrap()
         &self.constraints[prop_id]
     }
 
@@ -134,30 +133,5 @@ impl ConstraintStore {
 
     pub fn iter(&self) -> impl Iterator<Item = (ConstraintId, &Constraint)> + use<'_> {
         self.constraints.entries()
-    }
-}
-
-impl Backtrack for ConstraintStore {
-    fn save_state(&mut self) -> DecLvl {
-        self.trail.save_state()
-    }
-
-    fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
-    }
-
-    fn restore_last(&mut self) {
-        self.trail.restore_last_with(|event| match event {
-            Event::PropagatorAdded => {
-                // let last_prop_id: PropagatorId = (self.propagators.len() - 1).into();
-                // let last_prop = self.propagators.get(&last_prop_id).unwrap().clone();
-                // self.propagators.remove(&last_prop_id);
-                self.constraints.pop();
-            }
-            Event::WatchAdded((id, l)) => {
-                let enabler = self.constraints[id].enabler;
-                self.watches.remove_watch((enabler, id), l);
-            }
-        });
     }
 }

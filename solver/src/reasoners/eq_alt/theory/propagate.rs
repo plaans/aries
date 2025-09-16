@@ -150,12 +150,12 @@ impl AltEqTheory {
     /// dom(target) := dom(target) U dom(source)
     fn propagate_eq(&self, model: &mut Domains, source: Node, target: Node) -> Result<(), InvalidUpdate> {
         let cause = self.identity.inference(ModelUpdateCause::DomEq);
-        let s_bounds = model.node_bounds(&source);
+        let s_bounds = model.node_domain(&source);
         if let Node::Var(t) = target {
-            if model.set_lb(t, s_bounds.0, cause)? {
+            if model.set_lb(t, s_bounds.lb, cause)? {
                 self.stats().eq_props += 1;
             }
-            if model.set_ub(t, s_bounds.1, cause)? {
+            if model.set_ub(t, s_bounds.ub, cause)? {
                 self.stats().eq_props += 1;
             }
         } // else reverse constraint will be active, so nothing to do
@@ -172,7 +172,7 @@ impl AltEqTheory {
         // If source domain is fixed and ub or lb of target == source lb, exclude that value
         debug_assert_ne!(s, t);
 
-        if let Some(bound) = model.node_bound(&s) {
+        if let Some(bound) = model.node_domain(&s).as_singleton() {
             if let Node::Var(t) = t {
                 if model.ub(t) == bound && model.set_ub(t, bound - 1, cause)? {
                     self.stats().neq_props += 1;

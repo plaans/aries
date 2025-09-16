@@ -9,6 +9,7 @@ use std::{
 };
 
 use cause::ModelUpdateCause;
+use itertools::Itertools;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor},
@@ -119,16 +120,14 @@ impl Default for AltEqTheory {
 impl Backtrack for AltEqTheory {
     fn save_state(&mut self) -> DecLvl {
         assert!(self.new_constraints.is_empty());
-        self.constraint_store.save_state();
         self.active_graph.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.constraint_store.num_saved()
+        self.active_graph.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.constraint_store.restore_last();
         self.active_graph.restore_last();
     }
 }
@@ -155,11 +154,7 @@ impl Theory for AltEqTheory {
             }
 
             // For each constraint which might be enabled by this event
-            for (enabler, prop_id) in self
-                .constraint_store
-                .enabled_by(event.new_literal())
-                .collect::<Vec<_>>()
-            {
+            for (enabler, prop_id) in self.constraint_store.enabled_by(event.new_literal()).collect_vec() {
                 // Skip if not enabled
                 if !model.entails(enabler.active) || !model.entails(enabler.valid) {
                     continue;

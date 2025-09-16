@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::core::{
-    state::{Domains, DomainsSnapshot, Term},
+    state::{Domains, DomainsSnapshot, IntDomain, Term},
     IntCst, VarRef,
 };
 
@@ -24,6 +24,17 @@ impl From<IntCst> for Node {
     }
 }
 
+impl TryFrom<Node> for VarRef {
+    type Error = ();
+
+    fn try_from(value: Node) -> Result<Self, Self::Error> {
+        match value {
+            Node::Var(v) => Ok(v),
+            Node::Val(_) => Err(()),
+        }
+    }
+}
+
 impl Term for Node {
     fn variable(self) -> VarRef {
         match self {
@@ -43,33 +54,19 @@ impl Display for Node {
 }
 
 impl Domains {
-    pub(super) fn node_bound(&self, n: &Node) -> Option<IntCst> {
+    pub fn node_domain(&self, n: &Node) -> IntDomain {
         match *n {
-            Node::Var(v) => self.get_bound(v),
-            Node::Val(v) => Some(v),
-        }
-    }
-
-    pub(super) fn node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
-        match *n {
-            Node::Var(v) => self.bounds(v),
-            Node::Val(v) => (v, v),
+            Node::Var(var) => self.int_domain(var),
+            Node::Val(cst) => IntDomain::new(cst, cst),
         }
     }
 }
 
 impl DomainsSnapshot<'_> {
-    pub(super) fn node_bound(&self, n: &Node) -> Option<IntCst> {
+    pub fn node_domain(&self, n: &Node) -> IntDomain {
         match *n {
-            Node::Var(v) => self.get_bound(v),
-            Node::Val(v) => Some(v),
-        }
-    }
-
-    pub(super) fn node_bounds(&self, n: &Node) -> (IntCst, IntCst) {
-        match *n {
-            Node::Var(v) => self.bounds(v),
-            Node::Val(v) => (v, v),
+            Node::Var(var) => self.int_domain(var),
+            Node::Val(cst) => IntDomain::new(cst, cst),
         }
     }
 }

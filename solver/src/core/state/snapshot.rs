@@ -2,6 +2,8 @@ use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::state::{Domains, Event, Term};
 use crate::core::{IntCst, Lit, SignedVar};
 
+use super::IntDomain;
+
 /// View of the domains at a given point in time.
 ///
 /// This is primarily intended to query the state as it was when a literal was inferred.
@@ -58,6 +60,11 @@ impl<'a> DomainsSnapshot<'a> {
     /// Returns the lower bound ob the given (signed) variable.
     pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
         -self.ub(-var.into())
+    }
+
+    pub fn int_domain(&self, var: impl Into<SignedVar>) -> IntDomain {
+        let (lb, ub) = self.bounds(var.into());
+        IntDomain::new(lb, ub)
     }
 
     pub fn bounds(&self, var: impl Into<SignedVar>) -> (IntCst, IntCst) {
