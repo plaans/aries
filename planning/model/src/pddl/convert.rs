@@ -55,9 +55,9 @@ fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
             [] => types.add_type(&tpe.symbol, None),
             [parent] => types.add_type(&tpe.symbol, Some(parent)),
             [_, second_parent, ..] => {
-                return Err(
-                    Message::from(second_parent.invalid("unexpected second parent type")).info(&tpe.symbol, "for type")
-                );
+                return Err(second_parent
+                    .invalid("unexpected second parent type")
+                    .info(&tpe.symbol, "for type"));
             }
         }
     }
@@ -87,7 +87,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
         let tpe = match obj.tpe.as_slice() {
             [] => model.env.types.top_user_type(),
             [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
-            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type").msg().into()),
+            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type").into()),
         };
         objects.add_object(&obj.symbol, tpe)?;
     }
@@ -104,7 +104,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
                 let tp = Timestamp::new(TimeRef::Origin, num);
                 (tp, init)
             } else {
-                return Err(tp.loc().invalid("expected an absolute time").msg().into());
+                return Err(tp.invalid("expected an absolute time").into());
             }
         } else {
             (Timestamp::ORIGIN, init)
@@ -152,14 +152,13 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
 
     for a in &dom.actions {
         let name: crate::Sym = a.name.clone();
-        let action = into_action(a, &mut model.env, &bindings).with_info(|| name.info("when parsing action"))?;
+        let action = into_action(a, &mut model.env, &bindings).ctx2(name, "when parsing action")?;
         model.actions.add(action)?;
     }
 
     for a in &dom.durative_actions {
         let name: crate::Sym = a.name.clone();
-        let action =
-            into_durative_action(a, &mut model.env, &bindings).with_info(|| name.info("when parsing action"))?;
+        let action = into_durative_action(a, &mut model.env, &bindings).ctx2(name, "when parsing action")?;
         model.actions.add(action)?;
     }
 
@@ -204,7 +203,7 @@ fn into_durative_action(
 
     for c in &a.conditions {
         for c in conjuncts(c) {
-            let (itv, c) = parse_timed(c, env, &bindings).with_info(|| c.loc().info("when parsing condition"))?;
+            let (itv, c) = parse_timed(c, env, &bindings).ctx2(c, "when parsing condition")?;
             action.conditions.push(Condition::over(itv, c));
         }
     }
@@ -360,7 +359,7 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
                 Expr::App(f, args)
             } else if f.canonical_str() == "total-time" {
                 if let Some(x) = l.next() {
-                    return Err(x.invalid("Unexpected argument to total-time").into());
+                    return Err(x.invalid("Unexpected argument to total-time"));
                 }
                 Expr::Makespan
             } else if f.canonical_str() == "is-violated" {
@@ -377,7 +376,7 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
                     _ => unreachable!(),
                 }
             } else {
-                return Err(f.invalid("unknown atom").into());
+                return Err(f.invalid("unknown atom"));
             }
         }
     };
@@ -421,7 +420,7 @@ pub fn parse_unquantified_goal(
         Ok(SimpleGoal::at(Timestamp::HORIZON, goal))
     } else if let Some([tp, g]) = sexpr.as_application("at") {
         if !tp.is_atom("end") {
-            return Err(tp.invalid("expected `end`").into());
+            return Err(tp.invalid("expected `end`"));
         }
         let g = parse(g, env, bindings)?;
         Ok(SimpleGoal::at(Timestamp::HORIZON, g))
@@ -455,7 +454,7 @@ pub fn parse_unquantified_goal(
         let then = parse(then, env, bindings)?;
         Ok(SimpleGoal::AlwaysWithin { delay, when, then })
     } else {
-        Err(sexpr.invalid("invalid goal expression").into())
+        Err(sexpr.invalid("invalid goal expression"))
     }
 }
 
@@ -491,7 +490,7 @@ fn parse_preference(
         let bindings = Rc::new(Bindings::stacked(&vars, bindings));
         parse_preference(pref, at_horizon, env, &bindings).map(|pref| pref.forall(vars))
     } else {
-        Err(sexpr.invalid("malformed preference").into())
+        Err(sexpr.invalid("malformed preference"))
     }
 }
 
@@ -512,7 +511,7 @@ fn parse_number(decimal_str: &str) -> Option<RealValue> {
 fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {
     num.as_atom()
         .and_then(|e| parse_number(e.canonical_str()))
-        .ok_or(num.invalid("expected number").into())
+        .ok_or(num.invalid("expected number"))
 }
 
 fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
@@ -526,18 +525,18 @@ fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
             match second.canonical_str() {
                 "start" => TimeInterval::at(TimeRef::Start),
                 "end" => TimeInterval::at(TimeRef::End),
-                _ => return Err(second.invalid("expected `start` or `end`").into()),
+                _ => return Err(second.invalid("expected `start` or `end`")),
             }
         }
         "over" => {
             items.pop_known_atom("all")?;
             TimeInterval::closed(TimeRef::Start, TimeRef::End)
         }
-        _ => return Err(first.invalid("expected `at` or `over`").into()),
+        _ => return Err(first.invalid("expected `at` or `over`")),
     };
     let expr = items.pop()?;
     if let Ok(x) = items.pop() {
-        return Err(x.invalid("unexpected expression").into());
+        return Err(x.invalid("unexpected expression"));
     }
     Ok((interval, expr))
 }
@@ -583,7 +582,7 @@ fn parse_duration(dur: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -
     let dur_expr = dur.pop()?;
     let duration = parse(dur_expr, env, bindings)?;
     if let Ok(x) = dur.pop() {
-        return Err(x.invalid("Unexpected").into());
+        return Err(x.invalid("Unexpected"));
     }
     Type::REAL.accepts(duration, env).msg(env)?;
     Ok(Duration::Fixed(duration))

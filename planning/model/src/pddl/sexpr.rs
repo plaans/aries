@@ -24,7 +24,7 @@ impl SList {
     pub fn iter(&self) -> ListIter<'_> {
         ListIter {
             elems: self.list.as_slice(),
-            span: self.span.clone(), // TODO: could just borrow
+            span: &self.span,
         }
     }
 
@@ -32,8 +32,8 @@ impl SList {
         self.span.clone()
     }
 
-    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
-        self.loc().invalid(error)
+    pub fn invalid(&self, error: impl ToString) -> ErrLoc {
+        self.span.invalid(error)
     }
 }
 
@@ -52,20 +52,6 @@ pub enum SExpr {
 }
 
 impl SExpr {
-    // pub fn source(&self) -> &std::sync::Arc<Input> {
-    //     match self {
-    //         SExpr::Atom(a) => &a.loc(),
-    //         SExpr::List(l) => &l.source,
-    //     }
-    // }
-    //
-    // pub fn span(&self) -> Span {
-    //     match self {
-    //         SExpr::Atom(a) => a.span,
-    //         SExpr::List(l) => l.span,
-    //     }
-    // }
-
     pub fn loc(&self) -> Loc {
         match self {
             SExpr::Atom(atom) => atom.loc(),
@@ -73,7 +59,7 @@ impl SExpr {
         }
     }
 
-    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+    pub fn invalid(&self, error: impl ToString) -> ErrLoc {
         self.loc().invalid(error)
     }
 
@@ -115,7 +101,7 @@ impl SExpr {
         match &self {
             SExpr::List(v) => Some(ListIter {
                 elems: v.list.as_slice(),
-                span: v.span.clone(),
+                span: &v.span,
             }),
             _ => None,
         }
@@ -128,9 +114,19 @@ impl SExpr {
         }
     }
 }
+
+impl Spanned for &SExpr {
+    fn span(&self) -> Option<&Span> {
+        match self {
+            SExpr::Atom(sym) => sym.span.as_ref(),
+            SExpr::List(slist) => Some(&slist.span),
+        }
+    }
+}
+
 pub struct ListIter<'a> {
     elems: &'a [SExpr],
-    span: Span,
+    span: &'a Span,
 }
 
 impl<'a> ListIter<'a> {
@@ -147,7 +143,7 @@ impl<'a> ListIter<'a> {
         self.span.clone()
     }
 
-    pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
+    pub fn invalid(&self, error: impl ToString) -> ErrLoc {
         self.loc().invalid(error)
     }
 

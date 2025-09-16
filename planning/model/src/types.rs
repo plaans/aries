@@ -22,15 +22,15 @@ impl ToEnvMessage for TypeError {
             TypeError::UnknownType(_) => todo!(),
             TypeError::IncompatibleType(expr, expected) => {
                 let expr = env / expr;
-                errors::Message::error("Incompatible types").snippet(expr.error(format!(
+                expr.invalid(format!(
                     "has type `{}` but type `{}` was expected",
                     expr.tpe(),
                     expected
-                )))
+                ))
             }
             TypeError::UnexpectedArgument(expr) => {
                 let expr = env / expr;
-                errors::Message::error("Unexepected argument").snippet(expr.error("unexpected argument"))
+                expr.invalid("Unexpected argument")
             }
             TypeError::MissingParameter(param) => errors::Message::error(format!("missing parameter: {}", param)),
         }

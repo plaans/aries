@@ -1,5 +1,5 @@
 #![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
-
+use crate::errors::Spanned;
 use anyhow::Context;
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
@@ -14,11 +14,11 @@ use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
     let expr = parse(pb)?;
-    read_domain(expr).ctx("Invalid domain").msg().context("Syntax error") // TODO: a lot of error conversions
+    read_domain(expr).ctx("Invalid domain").context("Syntax error") // TODO: a lot of error conversions
 }
 pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
     let expr = parse(pb)?;
-    read_problem(expr).ctx("Invalid problem").msg().context("Syntax error")
+    read_problem(expr).ctx("Invalid problem").context("Syntax error")
 }
 
 /// Attempts to find the corresponding domain file for the given PDDL/HDDL problem.

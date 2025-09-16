@@ -4,15 +4,13 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    Environment,
-    pddl::input::{ErrLoc, Input},
-};
+use crate::{Environment, pddl::input::Input};
 use annotate_snippets::*;
 use thiserror::Error;
 
 pub type SrcRange = Range<usize>;
 
+/// A substring of a file, with metadata for displaying (filename, indices, ...)
 #[derive(Clone)]
 pub struct Span {
     input: Arc<Input>,
@@ -30,14 +28,6 @@ impl Span {
 
     pub fn str(&self) -> &str {
         &self.input.text.as_str()[self.span.clone()]
-    }
-
-    pub fn invalid(self, error: impl Into<String>) -> ErrLoc {
-        ErrLoc {
-            context: vec![],
-            inline_err: Some(error.into()),
-            loc: Some(self),
-        }
     }
 
     pub fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
@@ -65,6 +55,14 @@ impl Span {
             span: last..(last + 1),
         }
     }
+    pub fn invalid(&self, msg: impl ToString) -> Message {
+        let msg = msg.to_string();
+        if self.span.len() < 40 {
+            Message::error(format!("{msg}: {}", self.str())).snippet(self.clone().error(msg))
+        } else {
+            Message::error(&msg).snippet(self.clone().error(msg))
+        }
+    }
 }
 
 impl Debug for Span {
@@ -90,6 +88,17 @@ pub trait Spanned: Display {
 
     fn loc(&self) -> Span {
         self.span_or_default()
+    }
+
+    fn invalid(&self, msg: impl ToString) -> Message {
+        let msg = msg.to_string();
+        let span = self.span_or_default();
+        if span.span.len() < 40 {
+            // symbol seems short enough write it inline in the message
+            Message::error(format!("{msg}: {}", span.str())).snippet(span.error(msg))
+        } else {
+            Message::error(&msg).snippet(span.error(msg))
+        }
     }
 
     fn error(&self, message: impl ToString) -> Annot {
@@ -143,6 +152,7 @@ pub struct Message {
     level: Level,
     title: String,
     snippets: Vec<Annot>,
+    info: Vec<String>,
 }
 
 impl Message {
@@ -151,6 +161,7 @@ impl Message {
             level,
             title: title.to_string(),
             snippets: Vec::new(),
+            info: Vec::new(),
         }
     }
 
@@ -166,6 +177,11 @@ impl Message {
     pub fn info(self, s: impl Spanned, msg: &str) -> Message {
         let annot = s.annotate(Level::Info, msg);
         self.snippet(annot)
+    }
+
+    pub fn ctx(mut self, s: impl ToString) -> Message {
+        self.info.push(s.to_string());
+        self
     }
 }
 
@@ -186,26 +202,19 @@ impl Debug for Message {
     }
 }
 
-impl From<ErrLoc> for Message {
-    fn from(value: ErrLoc) -> Self {
-        let message_string = value.inline_err.unwrap_or("error".to_string());
-        let message = Message::error(&message_string);
-        if let Some(span) = value.loc {
-            message.snippet(span.annotate(Level::Error, message_string))
-        } else {
-            message
-        }
-    }
-}
-
 impl<T> ErrorMessageExt<T> for Result<T, Message> {
     fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message> {
         self.map_err(|m| m.snippet(annot()))
+    }
+
+    fn ctx2(self, tagged: impl Spanned, tag: impl ToString) -> Result<T, Message> {
+        self.with_info(|| tagged.info(tag))
     }
 }
 
 pub trait ErrorMessageExt<T> {
     fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message>;
+    fn ctx2(self, tagged: impl Spanned, tag: impl ToString) -> Result<T, Message>;
 }
 
 pub(crate) trait ToEnvMessage {
