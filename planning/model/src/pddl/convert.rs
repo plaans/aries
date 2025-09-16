@@ -383,7 +383,7 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
         e.snippet(
             sexpr
                 .loc()
-                .annotate(annotate_snippets::Level::Info, "when parsing expression"),
+                .annotate(annotate_snippets::Level::INFO, "when parsing expression"), // TODO: simplify
         )
     })
 }

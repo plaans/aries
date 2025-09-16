@@ -20,15 +20,6 @@ impl Input {
             source: Some(file.display().to_string()),
         })
     }
-
-    pub fn snippet(&self) -> annotate_snippets::Snippet<'_> {
-        let snippet = annotate_snippets::Snippet::source(&self.text).line_start(1).fold(true);
-        if let Some(file) = &self.source {
-            snippet.origin(file)
-        } else {
-            snippet
-        }
-    }
 }
 
 impl From<&str> for Input {

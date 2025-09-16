@@ -14,7 +14,7 @@ regex = { workspace = true }
 num-rational = { workspace = true }
 derive_more = { version = "1.0", features = ["display"] }
 thiserror = "2"
-annotate-snippets = "0.11"
+annotate-snippets = "0.12.4"
 idmap = "0.2.22"
 smallvec = { version = "1.15", features = ["union"] }
 

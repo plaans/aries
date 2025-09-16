@@ -30,7 +30,7 @@ impl Span {
         &self.input.text.as_str()[self.span.clone()]
     }
 
-    pub fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
+    pub fn annotate(&self, lvl: Level<'static>, message: impl ToString) -> Annot {
         let message = message.to_string();
         // build a source from the object itself
         Annot {
@@ -41,11 +41,11 @@ impl Span {
     }
 
     pub fn error(&self, message: impl ToString) -> Annot {
-        self.annotate(Level::Error, message)
+        self.annotate(Level::ERROR, message)
     }
 
     pub fn info(&self, message: impl ToString) -> Annot {
-        self.annotate(Level::Info, message)
+        self.annotate(Level::INFO, message)
     }
 
     pub fn end(self) -> Self {
@@ -102,14 +102,14 @@ pub trait Spanned: Display {
     }
 
     fn error(&self, message: impl ToString) -> Annot {
-        self.annotate(Level::Error, message)
+        self.annotate(Level::ERROR, message)
     }
 
     fn info(&self, message: impl ToString) -> Annot {
-        self.annotate(Level::Info, message)
+        self.annotate(Level::INFO, message)
     }
 
-    fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
+    fn annotate(&self, lvl: Level<'static>, message: impl ToString) -> Annot {
         let message = message.to_string();
         // build a source from the object itself
         Annot {
@@ -121,20 +121,24 @@ pub trait Spanned: Display {
 }
 
 pub struct Annot {
-    level: Level,
+    level: Level<'static>,
     span: Span,
     message: String,
 }
 
 impl Annot {
-    pub fn build(&self) -> Snippet<'_> {
-        let annotation = self.level.span(self.span.span.clone()).label(&self.message);
+    fn build(&self) -> Snippet<'_, Annotation<'_>> {
+        let annotation_kind = match self.level {
+            Level::ERROR => AnnotationKind::Primary,
+            _ => AnnotationKind::Context,
+        };
+        let annotation = annotation_kind.span(self.span.span.clone()).label(&self.message);
         let snippet = Snippet::source(&self.span.input.text)
             .line_start(1)
             .fold(true)
             .annotation(annotation);
         if let Some(file) = self.span.input.source.as_ref() {
-            snippet.origin(file.as_str())
+            snippet.path(file.as_str())
         } else {
             snippet
         }
@@ -149,14 +153,14 @@ impl Spanned for &Sym {
 
 #[derive(Error)]
 pub struct Message {
-    level: Level,
+    level: Level<'static>,
     title: String,
     snippets: Vec<Annot>,
     info: Vec<String>,
 }
 
 impl Message {
-    pub fn new(level: Level, title: impl ToString) -> Self {
+    pub fn new(level: Level<'static>, title: impl ToString) -> Self {
         Self {
             level,
             title: title.to_string(),
@@ -166,7 +170,7 @@ impl Message {
     }
 
     pub fn error(title: impl ToString) -> Self {
-        Self::new(Level::Error, title)
+        Self::new(Level::ERROR, title)
     }
 
     pub fn snippet(mut self, snippet: Annot) -> Self {
@@ -175,7 +179,7 @@ impl Message {
     }
 
     pub fn info(self, s: impl Spanned, msg: &str) -> Message {
-        let annot = s.annotate(Level::Info, msg);
+        let annot = s.annotate(Level::INFO, msg);
         self.snippet(annot)
     }
 
@@ -203,9 +207,10 @@ impl Display for Message {
         let renderer = Renderer::styled();
         let disp = self
             .level
-            .title(&self.title)
-            .snippets(self.snippets.iter().map(|s| s.build()));
-        let disp = format!("{}", renderer.render(disp));
+            .clone()
+            .primary_title(&self.title)
+            .elements(self.snippets.iter().map(|s| s.build()));
+        let disp = renderer.render(&[disp]);
         f.write_str(&disp)
     }
 }
