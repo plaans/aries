@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{Environment, pddl::input::Input};
+use crate::{Environment, Sym, pddl::input::Input};
 use annotate_snippets::*;
 use thiserror::Error;
 
@@ -141,7 +141,7 @@ impl Annot {
     }
 }
 
-impl Spanned for &crate::Sym {
+impl Spanned for &Sym {
     fn span(&self) -> Option<&Span> {
         self.span.as_ref()
     }
@@ -182,6 +182,19 @@ impl Message {
     pub fn ctx(mut self, s: impl ToString) -> Message {
         self.info.push(s.to_string());
         self
+    }
+
+    pub fn failed<T>(self) -> std::result::Result<T, Message> {
+        Err(self)
+    }
+}
+
+pub trait Ctx<T> {
+    fn ctx(self, error_context: impl Display) -> std::result::Result<T, Message>;
+}
+impl<T> Ctx<T> for std::result::Result<T, Message> {
+    fn ctx(self, error_context: impl Display) -> Result<T, Message> {
+        self.map_err(|e| e.ctx(error_context))
     }
 }
 

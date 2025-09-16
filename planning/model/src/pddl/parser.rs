@@ -1,5 +1,6 @@
 #![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
-use crate::errors::Spanned;
+use crate::Sym;
+use crate::errors::*;
 use anyhow::Context;
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
@@ -299,7 +300,7 @@ impl Display for Function {
 pub struct TaskDef {
     pub name: Sym,
     pub args: Vec<TypedSymbol>,
-    source: Option<Loc>,
+    source: Option<Span>,
 }
 
 impl Display for TaskDef {
@@ -320,7 +321,7 @@ pub struct Task {
     pub id: Option<TaskId>,
     pub name: Sym,
     pub arguments: Vec<Sym>,
-    source: Option<Loc>,
+    source: Option<Span>,
 }
 impl std::fmt::Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -337,7 +338,7 @@ pub struct Method {
     pub task: Task,
     pub precondition: Vec<SExpr>,
     pub subtask_network: TaskNetwork,
-    source: Option<Loc>,
+    source: Option<Span>,
 }
 
 impl std::fmt::Display for Method {
@@ -361,7 +362,7 @@ pub struct TaskNetwork {
 pub struct Ordering {
     pub first_task_id: TaskId,
     pub second_task_id: TaskId,
-    source: Option<Loc>,
+    source: Option<Span>,
 }
 
 #[derive(Clone, Debug)]
@@ -401,7 +402,7 @@ impl Display for DurativeAction {
 ///  - (a - loc b - loc c - loc) : symbols a, b and c of type loc
 ///  - (a b c - loc)  : symbols a, b and c of type loc
 ///  - (a b c) : symbols a b and c of type object
-pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, ErrLoc> {
+pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<TypedSymbol>, Message> {
     let mut args = Vec::with_capacity(input.len() / 3);
     let mut untyped: Vec<Sym> = Vec::with_capacity(args.len());
     while !input.is_empty() {
@@ -441,7 +442,7 @@ pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<Ty
 }
 
 /// Returns a localized error on `expr` if the given feature is not present in the domain.
-fn check_feature_presence(feature: PddlFeature, domain: &Domain, expr: &SExpr) -> Result<(), ErrLoc> {
+fn check_feature_presence(feature: PddlFeature, domain: &Domain, expr: &SExpr) -> Result<(), Message> {
     if domain.features.contains(&feature) {
         Ok(())
     } else {
@@ -449,7 +450,7 @@ fn check_feature_presence(feature: PddlFeature, domain: &Domain, expr: &SExpr) -
     }
 }
 
-fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
+fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
     let dom = &mut dom.as_list_iter().ok_or_else(|| dom.invalid("Expected a list"))?;
 
     dom.pop_known_atom("define")?;
@@ -710,7 +711,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
     Ok(tn)
 }
 
-fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
+fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, Message> {
     let mut list = e.as_list_iter().ok_or_else(|| e.invalid("Expected a task name"))?;
     let head = list.pop_atom()?.clone();
     match list.peek() {
@@ -750,7 +751,7 @@ fn parse_task(e: &SExpr, allow_id: bool) -> std::result::Result<Task, ErrLoc> {
     }
 }
 
-type R<T> = std::result::Result<T, ErrLoc>;
+type R<T> = std::result::Result<T, Message>;
 
 /// given a term type T, parse one of `T, () or (and T T ...)
 fn parse_conjunction<T>(e: &SExpr, item_parser: impl Fn(&SExpr) -> R<T>) -> R<Vec<T>> {
@@ -809,7 +810,7 @@ impl Display for Problem {
     }
 }
 
-fn read_problem(problem: SExpr) -> std::result::Result<Problem, ErrLoc> {
+fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
     let mut problem = problem
         .as_list_iter()
         .ok_or_else(|| problem.invalid("Expected a list"))?;

@@ -8,7 +8,6 @@ use smallvec::SmallVec;
 use crate::pddl::sexpr::ListIter;
 use crate::*;
 
-use super::input::Sym;
 use super::parser::{Domain, Problem};
 
 pub struct Bindings {

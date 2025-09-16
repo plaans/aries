@@ -1,12 +1,12 @@
-use crate::errors::*;
 use crate::pddl::input::*;
 use crate::utils::disp_slice;
+use crate::{Sym, errors::*};
 use anyhow::Result;
 use itertools::Itertools;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 
-pub type SAtom = crate::pddl::input::Sym;
+pub type SAtom = crate::Sym;
 
 #[derive(Clone)]
 pub struct SList {
@@ -28,11 +28,11 @@ impl SList {
         }
     }
 
-    pub fn loc(&self) -> Loc {
+    pub fn loc(&self) -> Span {
         self.span.clone()
     }
 
-    pub fn invalid(&self, error: impl ToString) -> ErrLoc {
+    pub fn invalid(&self, error: impl ToString) -> Message {
         self.span.invalid(error)
     }
 }
@@ -52,14 +52,14 @@ pub enum SExpr {
 }
 
 impl SExpr {
-    pub fn loc(&self) -> Loc {
+    pub fn loc(&self) -> Span {
         match self {
             SExpr::Atom(atom) => atom.loc(),
             SExpr::List(list) => list.loc(),
         }
     }
 
-    pub fn invalid(&self, error: impl ToString) -> ErrLoc {
+    pub fn invalid(&self, error: impl ToString) -> Message {
         self.loc().invalid(error)
     }
 
@@ -134,16 +134,16 @@ impl<'a> ListIter<'a> {
         self.elems.first()
     }
 
-    pub fn pop(&mut self) -> std::result::Result<&'a SExpr, ErrLoc> {
+    pub fn pop(&mut self) -> std::result::Result<&'a SExpr, Message> {
         self.next()
             .ok_or_else(|| self.loc().end().invalid("Unexpected end of list"))
     }
 
-    pub fn loc(&self) -> Loc {
+    pub fn loc(&self) -> Span {
         self.span.clone()
     }
 
-    pub fn invalid(&self, error: impl ToString) -> ErrLoc {
+    pub fn invalid(&self, error: impl ToString) -> Message {
         self.loc().invalid(error)
     }
 
@@ -155,7 +155,7 @@ impl<'a> ListIter<'a> {
         self.elems.is_empty()
     }
 
-    pub fn pop_known_atom(&mut self, expected: &str) -> std::result::Result<(), ErrLoc> {
+    pub fn pop_known_atom(&mut self, expected: &str) -> std::result::Result<(), Message> {
         match self.next() {
             None => Err(self
                 .loc()
@@ -175,13 +175,13 @@ impl<'a> ListIter<'a> {
         }
     }
 
-    pub fn pop_atom(&mut self) -> std::result::Result<&'a SAtom, ErrLoc> {
+    pub fn pop_atom(&mut self) -> std::result::Result<&'a SAtom, Message> {
         match self.next() {
             None => Err(self.loc().end().invalid("Expected an atom but got end of list.")),
             Some(sexpr) => sexpr.as_atom().ok_or_else(|| sexpr.invalid("Expected an atom")),
         }
     }
-    pub fn pop_list(&mut self) -> std::result::Result<&SList, ErrLoc> {
+    pub fn pop_list(&mut self) -> std::result::Result<&SList, Message> {
         match self.next() {
             None => Err(self.loc().end().invalid("Expected a list but got end of list.")),
             Some(sexpr) => sexpr.as_list().ok_or_else(|| sexpr.invalid("Expected a list")),
@@ -333,7 +333,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
         Some(Token::Sym { start, end, start_pos }) => {
             let original = &src.text.as_str()[*start..=*end];
             let canonical = original.to_ascii_lowercase();
-            let loc = Loc::new(src.clone(), start_pos.index as usize, *end);
+            let loc = Span::new(src.clone(), start_pos.index as usize, *end);
             let atom = Sym::with_source(canonical, loc);
 
             Ok(SExpr::Atom(atom))
