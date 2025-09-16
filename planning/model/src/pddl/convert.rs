@@ -151,13 +151,13 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
     }
 
     for a in &dom.actions {
-        let name: crate::Sym = a.name.clone().into();
+        let name: crate::Sym = a.name.clone();
         let action = into_action(a, &mut model.env, &bindings).with_info(|| name.info("when parsing action"))?;
         model.actions.add(action)?;
     }
 
     for a in &dom.durative_actions {
-        let name: crate::Sym = a.name.clone().into();
+        let name: crate::Sym = a.name.clone();
         let action =
             into_durative_action(a, &mut model.env, &bindings).with_info(|| name.info("when parsing action"))?;
         model.actions.add(action)?;
@@ -382,7 +382,11 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
         }
     };
     env.intern(expr, sexpr.loc()).msg(env).map_err(|e| {
-        e.snippet(Span::from(sexpr.loc()).annotate(annotate_snippets::Level::Info, "when parsing expression"))
+        e.snippet(
+            sexpr
+                .loc()
+                .annotate(annotate_snippets::Level::Info, "when parsing expression"),
+        )
     })
 }
 

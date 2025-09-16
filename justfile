@@ -67,6 +67,8 @@ pddl-test-parser:
 pddl:
     #!/usr/bin/env bash
     set -e
-    for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v adl | grep 2004 |  grep -v derived`; do
-        cargo run --profile ci --bin pddl-parser -- $f
+    cargo build --profile ci --bin pddl-parser
+    #for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v adlXX | grep 2006 |  grep -v derived | grep -v openstacks |grep -v pathw`; do
+    for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v adlXX | grep 2002 |  grep -v derivedXX | grep -v openstacksXX |grep -v pathw`; do
+        target/ci/pddl-parser  $f
     done

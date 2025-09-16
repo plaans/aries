@@ -438,44 +438,4 @@ mod tests {
             "(a (b c) d)",
         );
     }
-
-    fn displayed_as(sexpr: &SExpr, a: &str, b: &str) {
-        let result = format!("{}", sexpr.loc().underlined());
-        let expected = format!("{a}\n{b}");
-        println!("=============\nResult:\n{result}\nExpected:\n{expected}\n=============");
-        assert_eq!(&result, &expected);
-    }
-
-    #[test]
-    #[rustfmt::skip]
-    fn contextual_display() {
-        let ex = parse("( a (b c))").unwrap();
-        displayed_as(&ex,
-                     "( a (b c))",
-                     "^^^^^^^^^^");
-        let ex = ex.as_list().unwrap();
-        displayed_as(&ex[0],
-                     "( a (b c))",
-                     "  ^");
-        displayed_as(&ex[1],
-                     "( a (b c))",
-                     "    ^^^^^");
-        displayed_as(&ex[1].as_list().unwrap()[0],
-                     "( a (b c))",
-                     "     ^");
-        displayed_as(&ex[1].as_list().unwrap()[1],
-                     "( a (b c))",
-                     "       ^");
-
-        let src = " \n
-(a (b c
-    d (e f g))\n
-)";
-        let src = parse(src).unwrap();
-        displayed_as(
-            &src,
-            "(a (b c",
-            "^^^^^^^"
-        );
-    }
 }

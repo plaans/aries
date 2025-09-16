@@ -914,7 +914,7 @@ mod tests {
                 let dom = match read_domain(e) {
                     Ok(dom) => dom,
                     Err(e) => {
-                        eprintln!("{}", &e);
+                        eprintln!("{:?}", &e);
                         anyhow::bail!("Could not parse")
                     }
                 };

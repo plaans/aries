@@ -194,7 +194,7 @@ impl Sym {
     pub fn with_source(s: impl Into<String>, source: Loc) -> Sym {
         Sym {
             symbol: s.into(),
-            span: Some(source.into()),
+            span: Some(source),
         }
     }
 
