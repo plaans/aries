@@ -1,6 +1,8 @@
+use crate::errors::*;
 use crate::pddl::input::*;
 use crate::utils::disp_slice;
 use anyhow::Result;
+use itertools::Itertools;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 
@@ -9,15 +11,12 @@ pub type SAtom = crate::pddl::input::Sym;
 #[derive(Clone)]
 pub struct SList {
     list: Vec<SExpr>,
-    source: std::sync::Arc<Input>,
     span: Span,
 }
 
 impl Display for SList {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(")?;
-        disp_slice(f, &self.list, " ")?;
-        write!(f, ")")
+        write!(f, "({})", self.list.iter().join(" "))
     }
 }
 
@@ -25,13 +24,12 @@ impl SList {
     pub fn iter(&self) -> ListIter<'_> {
         ListIter {
             elems: self.list.as_slice(),
-            source: self.source.clone(),
-            span: self.span,
+            span: self.span.clone(), // TODO: could just borrow
         }
     }
 
     pub fn loc(&self) -> Loc {
-        Loc::new(&self.source, self.span)
+        self.span.clone()
     }
 
     pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
@@ -117,8 +115,7 @@ impl SExpr {
         match &self {
             SExpr::List(v) => Some(ListIter {
                 elems: v.list.as_slice(),
-                source: v.source.clone(),
-                span: v.span,
+                span: v.span.clone(),
             }),
             _ => None,
         }
@@ -133,7 +130,6 @@ impl SExpr {
 }
 pub struct ListIter<'a> {
     elems: &'a [SExpr],
-    source: std::sync::Arc<Input>,
     span: Span,
 }
 
@@ -148,7 +144,7 @@ impl<'a> ListIter<'a> {
     }
 
     pub fn loc(&self) -> Loc {
-        Loc::new(&self.source, self.span)
+        self.span.clone()
     }
 
     pub fn invalid(&self, error: impl Into<String>) -> ErrLoc {
@@ -183,7 +179,7 @@ impl<'a> ListIter<'a> {
         }
     }
 
-    pub fn pop_atom(&mut self) -> std::result::Result<&SAtom, ErrLoc> {
+    pub fn pop_atom(&mut self) -> std::result::Result<&'a SAtom, ErrLoc> {
         match self.next() {
             None => Err(self.loc().end().invalid("Expected an atom but got end of list.")),
             Some(sexpr) => sexpr.as_atom().ok_or_else(|| sexpr.invalid("Expected an atom")),
@@ -353,16 +349,8 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
         Some(Token::Sym { start, end, start_pos }) => {
             let original = &src.text.as_str()[*start..=*end];
             let canonical = original.to_ascii_lowercase();
-            let span = Span {
-                start: *start_pos,
-                end: Pos {
-                    index: *end as u32,
-                    line: start_pos.line,
-                    column: start_pos.column + (canonical.len() as u32) - 1,
-                },
-            };
-            let loc = Loc::new(src, span);
-            let atom = Sym::with_source(canonical, Some(original.to_string()), loc);
+            let loc = Loc::new(src.clone(), start_pos.index as usize, *end);
+            let atom = Sym::with_source(canonical, loc);
 
             Ok(SExpr::Atom(atom))
         }
@@ -374,8 +362,7 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                         let _ = tokens.next(); // consume
                         let list = SList {
                             list: es,
-                            source: src.clone(),
-                            span: Span::new(*start, *end),
+                            span: Span::new(src.clone(), start.index as usize, end.index as usize),
                         };
                         break Ok(SExpr::List(list));
                     }
@@ -387,24 +374,8 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
             }
         }
         Some(Token::RParen(_)) => anyhow::bail!("Unexpected closing parenthesis"),
-        Some(quoting) => {
-            let (sym_quote, start) = match quoting {
-                Token::Quote(s) => (Sym::new("quote"), s),
-                Token::QuasiQuote(s) => (Sym::new("quasiquote"), s),
-                Token::Unquote(s) => (Sym::new("unquote"), s),
-                _ => unreachable!("Unexpected token, should be Quote, QuasiQuote or Unquote"),
-            };
-
-            let mut es = vec![SExpr::Atom(sym_quote)];
-            let e = read(tokens, src)?;
-            let end = e.loc().span().end;
-            es.push(e);
-            //Compute the span
-            Ok(SExpr::List(SList {
-                list: es,
-                source: src.clone(),
-                span: Span::new(*start, end),
-            }))
+        Some(_quoting) => {
+            panic!() // TODO: remove quoting
         }
         None => anyhow::bail!("Unexpected end of output"),
     }

@@ -11,14 +11,31 @@ use crate::{
 use annotate_snippets::*;
 use thiserror::Error;
 
+pub type SrcRange = Range<usize>;
+
 #[derive(Clone)]
 pub struct Span {
     input: Arc<Input>,
-    span: Range<usize>,
+    span: SrcRange,
 }
 pub type OSpan = Option<Span>;
 
 impl Span {
+    pub fn new(input: Arc<Input>, first: usize, last: usize) -> Self {
+        Span {
+            input,
+            span: first..(last + 1),
+        }
+    }
+
+    pub fn invalid(self, error: impl Into<String>) -> ErrLoc {
+        ErrLoc {
+            context: vec![],
+            inline_err: Some(error.into()),
+            loc: Some(self),
+        }
+    }
+
     pub fn annotate(&self, lvl: Level, message: impl ToString) -> Annot {
         let message = message.to_string();
         // build a source from the object itself
@@ -35,6 +52,14 @@ impl Span {
 
     pub fn info(&self, message: impl ToString) -> Annot {
         self.annotate(Level::Info, message)
+    }
+
+    pub fn end(self) -> Self {
+        let last = self.span.last().unwrap();
+        Self {
+            input: self.input,
+            span: last..(last + 1),
+        }
     }
 }
 
@@ -57,6 +82,10 @@ pub trait Spanned: Display {
                 span,
             }
         })
+    }
+
+    fn loc(&self) -> Span {
+        self.span_or_default()
     }
 
     fn error(&self, message: impl ToString) -> Annot {
@@ -157,8 +186,7 @@ impl From<ErrLoc> for Message {
     fn from(value: ErrLoc) -> Self {
         let message_string = value.inline_err.unwrap_or("error".to_string());
         let message = Message::error(&message_string);
-        if let Some(loc) = value.loc {
-            let span = Span::from(loc);
+        if let Some(span) = value.loc {
             message.snippet(span.annotate(Level::Error, message_string))
         } else {
             message
@@ -174,24 +202,6 @@ impl<T> ErrorMessageExt<T> for Result<T, Message> {
 
 pub trait ErrorMessageExt<T> {
     fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message>;
-}
-
-// pub struct Span(Arc<dyn SourceLoc>);
-
-impl From<crate::pddl::input::Loc> for Span {
-    fn from(value: crate::pddl::input::Loc) -> Self {
-        let (start, end) = value.source.indices(value.span()).unwrap();
-        Span {
-            input: value.source.clone(),
-            span: start..(end + 1),
-        }
-    }
-}
-
-impl From<crate::pddl::input::Loc> for OSpan {
-    fn from(value: crate::pddl::input::Loc) -> Self {
-        Some(value.into())
-    }
 }
 
 pub(crate) trait ToEnvMessage {

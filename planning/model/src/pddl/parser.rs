@@ -14,11 +14,11 @@ use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
     let expr = parse(pb)?;
-    read_domain(expr).context("Invalid domain")
+    read_domain(expr).ctx("Invalid domain").msg().context("Syntax error") // TODO: a lot of error conversions
 }
 pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
     let expr = parse(pb)?;
-    read_problem(expr).context("Invalid problem")
+    read_problem(expr).ctx("Invalid problem").msg().context("Syntax error")
 }
 
 /// Attempts to find the corresponding domain file for the given PDDL/HDDL problem.
@@ -527,13 +527,12 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let mut eff = Vec::new();
                 while !property.is_empty() {
                     let key_expr = property.pop_atom()?;
-                    let key_loc = key_expr.loc();
                     let key = key_expr.to_string();
-                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?;
+                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?; // TODO: provide key as spanned
                     match key.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
-                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed"));
+                                return Err(key_expr.invalid("Duplicated ':parameters' tag is not allowed"));
                             }
                             let mut value = value
                                 .as_list_iter()
@@ -548,7 +547,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         ":effect" => {
                             eff.push(value.clone());
                         }
-                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {key}"))),
+                        _ => return Err(key_expr.invalid(format!("unsupported key in action: {key}"))), // TODO: remove key
                     }
                 }
                 res.actions.push(Action { name, args, pre, eff })
@@ -561,13 +560,12 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let mut effects = Vec::new();
 
                 while let Ok(key_expr) = property.pop_atom() {
-                    let key_loc = key_expr.loc();
                     let key = key_expr.to_string();
-                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?;
+                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?; // TODO
                     match key.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
-                                return Err(key_loc.invalid("Duplicated ':parameters' tag is not allowed"));
+                                return Err(key_expr.invalid("Duplicated ':parameters' tag is not allowed"));
                             }
                             let mut value = value
                                 .as_list_iter()
@@ -578,7 +576,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         }
                         ":duration" => {
                             if duration.is_some() {
-                                return Err(key_loc.invalid("Duration was previously set."));
+                                return Err(key_expr.invalid("Duration was previously set."));
                             }
                             duration = Some(value.clone());
                         }
@@ -588,7 +586,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                         ":effect" => {
                             effects.push(value.clone());
                         }
-                        _ => return Err(key_loc.invalid(format!("unsupported key in action: {key}"))),
+                        _ => return Err(key_expr.invalid("unsupported key in action")),
                     }
                 }
                 let duration = duration.ok_or_else(|| current.invalid("Action has no duration field"))?;
@@ -654,25 +652,24 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
     let mut tn = TaskNetwork::default();
     while !key_values.is_empty() {
         let key = key_values.pop_atom()?;
-        let key_loc = key.loc();
         match key.canonical_str() {
             ":ordered-tasks" | ":ordered-subtasks" => {
                 if !tn.ordered_tasks.is_empty() {
-                    return Err(key_loc.invalid("More than one set of ordered tasks."));
+                    return Err(key.invalid("More than one set of ordered tasks."));
                 }
                 let value = key_values.pop()?;
                 tn.ordered_tasks = parse_conjunction(value, |e| parse_task(e, true))?;
             }
             ":tasks" | ":subtasks" => {
                 if !tn.unordered_tasks.is_empty() {
-                    return Err(key_loc.invalid("More than one set of unordered tasks."));
+                    return Err(key.invalid("More than one set of unordered tasks."));
                 }
                 let value = key_values.pop()?;
                 tn.unordered_tasks = parse_conjunction(value, |e| parse_task(e, true))?;
             }
             ":ordering" => {
                 if !tn.orderings.is_empty() {
-                    return Err(key_loc.invalid("More than one set of ordering constraints."));
+                    return Err(key.invalid("More than one set of ordering constraints."));
                 }
                 let value = key_values.pop()?;
                 // parser for a single ordering '(< ID1 ID2)'
@@ -707,7 +704,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
                 let value = key_values.pop()?;
                 tn.constraints.push(value.clone());
             }
-            _ => return Err(key_loc.invalid("Unsupported keyword in task network")),
+            _ => return Err(key.invalid("Unsupported keyword in task network")),
         }
     }
     Ok(tn)

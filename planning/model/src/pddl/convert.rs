@@ -51,13 +51,12 @@ impl Bindings {
 fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
     let mut types = UserTypes::new();
     for tpe in &dom.types {
-        let type_name = crate::Sym::from(&tpe.symbol);
         match tpe.tpe.as_slice() {
             [] => types.add_type(&tpe.symbol, None),
             [parent] => types.add_type(&tpe.symbol, Some(parent)),
             [_, second_parent, ..] => {
                 return Err(
-                    Message::from(second_parent.invalid("unexpected second parent type")).info(&type_name, "for type")
+                    Message::from(second_parent.invalid("unexpected second parent type")).info(&tpe.symbol, "for type")
                 );
             }
         }
@@ -73,19 +72,13 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
     let mut model = Model::new(types);
 
     for pred in &dom.predicates {
-        let parameters = parse_parameters(&pred.args, &model.env.types).msg(&model.env)?; // TODO: requires env !
-        model
-            .env
-            .fluents
-            .add_fluent(&pred.name, parameters, Type::Bool, pred.name.loc())?;
+        let parameters = parse_parameters(&pred.args, &model.env.types).msg(&model.env)?;
+        model.env.fluents.add_fluent(&pred.name, parameters, Type::Bool)?;
     }
 
     for func in &dom.functions {
-        let parameters = parse_parameters(&func.args, &model.env.types).msg(&model.env)?; // TODO: requires env !
-        model
-            .env
-            .fluents
-            .add_fluent(&func.name, parameters, Type::Real, func.name.loc())?; // TODO: not int
+        let parameters = parse_parameters(&func.args, &model.env.types).msg(&model.env)?;
+        model.env.fluents.add_fluent(&func.name, parameters, Type::Real)?;
     }
 
     let mut objects = Objects::new();
@@ -94,7 +87,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
         let tpe = match obj.tpe.as_slice() {
             [] => model.env.types.top_user_type(),
             [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
-            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type").into()),
+            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type").msg().into()),
         };
         objects.add_object(&obj.symbol, tpe)?;
     }
@@ -111,7 +104,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
                 let tp = Timestamp::new(TimeRef::Origin, num);
                 (tp, init)
             } else {
-                return Err(tp.loc().invalid("expected an absolute time").into());
+                return Err(tp.loc().invalid("expected an absolute time").msg().into());
             }
         } else {
             (Timestamp::ORIGIN, init)
@@ -211,15 +204,13 @@ fn into_durative_action(
 
     for c in &a.conditions {
         for c in conjuncts(c) {
-            let span = Span::from(c.loc());
-            let (itv, c) = parse_timed(c, env, &bindings).with_info(|| span.info("when parsing condition"))?;
+            let (itv, c) = parse_timed(c, env, &bindings).with_info(|| c.loc().info("when parsing condition"))?;
             action.conditions.push(Condition::over(itv, c));
         }
     }
 
     for e in &a.effects {
         for e in conjuncts(e) {
-            let span = Span::from(e.loc());
             let (itv, eff) = timed_sexpr(e)?;
             let tp = if itv == TimeInterval::at(TimeRef::Start) {
                 TimeRef::Start
@@ -227,7 +218,7 @@ fn into_durative_action(
                 TimeRef::End
             } else {
                 return Err(Message::error("Invalid temporal qualifier for effect")
-                    .snippet(span.error("Requires a timepoint `at start` or `at end`")));
+                    .snippet(e.loc().error("Requires a timepoint `at start` or `at end`")));
             };
             let e = into_effect(tp, eff, env, &bindings)?;
             action.effects.push(e);
@@ -256,7 +247,7 @@ fn into_effect(
         Ok(StateVariable::new(
             fluent,
             sv_args.iter().copied().collect(),
-            expr.loc().into(),
+            expr.loc(),
         ))
     }
     if let Some([arg]) = expr.as_application("not") {
@@ -558,7 +549,7 @@ fn parse_timed(
 }
 
 fn parse_function(sym: &Sym) -> Option<Fun> {
-    match sym.canonical.as_str() {
+    match sym.symbol.as_str() {
         "+" => Some(Fun::Plus),
         "-" => Some(Fun::Minus),
         "/" => Some(Fun::Div),

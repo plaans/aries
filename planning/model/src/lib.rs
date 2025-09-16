@@ -51,6 +51,12 @@ impl From<&str> for Sym {
     }
 }
 
+impl From<&Sym> for Sym {
+    fn from(value: &Sym) -> Self {
+        value.clone()
+    }
+}
+
 impl Spanned for Sym {
     fn span(&self) -> Option<&Span> {
         self.span.as_ref()

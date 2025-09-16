@@ -77,13 +77,11 @@ impl Fluents {
         name: impl Into<Sym>,
         parameters: Vec<Param>,
         return_type: Type,
-        origin: impl Into<Span>,
     ) -> Result<FluentId, FluentError> {
         let fluent = Fluent {
             name: name.into(),
             parameters,
             return_type,
-            origin: origin.into(),
         };
         if let Some(other) = self.get_by_name(&fluent.name().symbol) {
             let other_sym = self.fluents.get(other).unwrap().name().clone();
@@ -104,7 +102,6 @@ pub struct Fluent {
     pub name: Sym,
     pub parameters: Vec<Param>,
     pub return_type: Type,
-    pub origin: Span,
 }
 
 impl Fluent {
