@@ -2,6 +2,8 @@ use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::state::{Domains, Event, Term};
 use crate::core::{IntCst, Lit, SignedVar};
 
+use super::IntDomain;
+
 /// View of the domains at a given point in time.
 ///
 /// This is primarily intended to query the state as it was when a literal was inferred.
@@ -60,9 +62,25 @@ impl<'a> DomainsSnapshot<'a> {
         -self.ub(-var.into())
     }
 
+    pub fn int_domain(&self, var: impl Into<SignedVar>) -> IntDomain {
+        let (lb, ub) = self.bounds(var.into());
+        IntDomain::new(lb, ub)
+    }
+
     pub fn bounds(&self, var: impl Into<SignedVar>) -> (IntCst, IntCst) {
         let var = var.into();
         (self.lb(var), self.ub(var))
+    }
+
+    /// Returns Some(bound) is ub = lb
+    pub fn get_bound(&self, var: impl Into<SignedVar>) -> Option<IntCst> {
+        let var = var.into();
+        let (lb, ub) = self.bounds(var);
+        if lb == ub {
+            Some(lb)
+        } else {
+            None
+        }
     }
 
     /// Returns true if the given literal is entailed by the current state;

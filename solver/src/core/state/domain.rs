@@ -1,5 +1,5 @@
 use crate::{
-    core::{cst_int_to_long, IntCst, LongCst, INT_CST_MAX, INT_CST_MIN},
+    core::{cst_int_to_long, IntCst, Lit, LongCst, INT_CST_MAX, INT_CST_MIN},
     model::lang::Rational,
 };
 use std::fmt::{Display, Formatter};
@@ -52,6 +52,11 @@ impl IntDomain {
     /// Returns true if the two domains have no common value
     pub fn disjoint(&self, other: &IntDomain) -> bool {
         self.ub < other.lb || other.ub < self.lb
+    }
+
+    pub fn entails(&self, literal: Lit) -> bool {
+        literal.svar().is_plus() && literal.variable().leq(self.ub).entails(literal)
+            || literal.svar().is_minus() && literal.variable().geq(self.lb).entails(literal)
     }
 }
 
