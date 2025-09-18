@@ -6,6 +6,7 @@ use std::{
 
 use crate::{Environment, Sym, pddl::input::Input};
 use annotate_snippets::*;
+use itertools::Itertools;
 use thiserror::Error;
 
 pub type SrcRange = Range<usize>;
@@ -127,21 +128,12 @@ pub struct Annot {
 }
 
 impl Annot {
-    fn build(&self) -> Snippet<'_, Annotation<'_>> {
+    fn build_annot(&self) -> Annotation<'_> {
         let annotation_kind = match self.level {
             Level::ERROR => AnnotationKind::Primary,
             _ => AnnotationKind::Context,
         };
-        let annotation = annotation_kind.span(self.span.span.clone()).label(&self.message);
-        let snippet = Snippet::source(&self.span.input.text)
-            .line_start(1)
-            .fold(true)
-            .annotation(annotation);
-        if let Some(file) = self.span.input.source.as_ref() {
-            snippet.path(file.as_str())
-        } else {
-            snippet
-        }
+        annotation_kind.span(self.span.span.clone()).label(&self.message)
     }
 }
 
@@ -204,12 +196,23 @@ impl<T> Ctx<T> for std::result::Result<T, Message> {
 
 impl Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // create a snippet for each source file with all annotation
+        let snippets_by_source = self.snippets.iter().into_group_map_by(|s| s.span.input.as_ref());
+        let snippets = snippets_by_source
+            .iter()
+            .map(|(source, annots)| {
+                let snippet = Snippet::source(&source.text).line_start(1).fold(true);
+                let snippet = if let Some(file) = source.source.as_ref() {
+                    snippet.path(file)
+                } else {
+                    snippet
+                };
+                snippet.annotations(annots.iter().map(|a| a.build_annot()))
+            })
+            .collect_vec();
+
         let renderer = Renderer::styled();
-        let disp = self
-            .level
-            .clone()
-            .primary_title(&self.title)
-            .elements(self.snippets.iter().map(|s| s.build()));
+        let disp = self.level.clone().primary_title(&self.title).elements(snippets);
         let disp = renderer.render(&[disp]);
         f.write_str(&disp)
     }

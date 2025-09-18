@@ -1,8 +1,22 @@
 use std::convert::TryFrom;
 
+/// Represents an input string, typically from a file but designed to also accomate in memory strings.
+#[derive(Eq, Hash)]
 pub struct Input {
+    /// Text of the input
     pub(crate) text: String,
+    /// Identifier of the source (typically the path to the file)
+    /// This one is use to indicate the source in error outputs.
     pub(crate) source: Option<String>,
+}
+
+impl PartialEq for Input {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.source, &other.source) {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        }
+    }
 }
 
 impl Input {
