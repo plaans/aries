@@ -529,10 +529,13 @@ fn parse_number(decimal_str: &str) -> Option<RealValue> {
         Some(RealValue::new(i, 1))
     } else {
         let (lhs, rhs) = decimal_str.split_once(".")?;
-        let denom = rhs.len() as i64;
+        let num_digits = rhs.len() as u32;
+        let denom = 10i64.pow(num_digits);
         let lhs: i64 = lhs.parse().ok()?;
         let rhs: u64 = rhs.parse().ok()?;
-        let numer = lhs * denom + (rhs as i64);
+        let rhs = rhs as i64;
+        debug_assert!(rhs < denom);
+        let numer = lhs * denom + rhs;
         Some(RealValue::new(numer, denom))
     }
 }
@@ -1661,3 +1664,16 @@ fn read_sv(e: &SExpr, desc: &World) -> Result<SvId> {
     })
 }
 */
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_parse_num() {
+        assert_eq!(parse_number("919.7"), Some(RealValue::new(9197, 10)));
+        assert_eq!(parse_number("0.9197"), Some(RealValue::new(9197, 10000)));
+        assert_eq!(parse_number("919"), Some(RealValue::new(919, 1)));
+        assert_eq!(parse_number("919."), Some(RealValue::new(919, 1)));
+    }
+}
