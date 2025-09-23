@@ -1,29 +1,29 @@
 use crate::errors::{Span, Spanned};
-use std::fmt::{Debug, Display};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Display},
+};
 
 /// Symbol in the model, possibly annotate with its origin (file/line)
 #[derive(Clone)]
 pub struct Sym {
     /// Canonical view of the symbol (e.g. lower cased for PDDL)
-    symbol: String,
+    /// The underlying type uses small string optimization to avoid head allocation for short identifiers
+    symbol: compact_str::CompactString,
     /// Origin of the symbol. If non-empty, can be used to derive the Display view of the symbol (e.g. properly capitalized)
     pub span: Option<Span>,
 }
 
 impl Sym {
-    pub fn with_source(s: impl Into<String>, source: Span) -> Sym {
+    pub fn with_source<'a>(s: impl Into<Cow<'a, str>>, source: Span) -> Sym {
         Sym {
-            symbol: s.into(),
+            symbol: s.into().into(),
             span: Some(source),
         }
     }
 
     pub fn canonical_str(&self) -> &str {
         self.symbol.as_str()
-    }
-
-    pub fn canonical_string(&self) -> String {
-        self.symbol.clone()
     }
 }
 
@@ -38,16 +38,11 @@ impl std::borrow::Borrow<str> for Sym {
         &self.symbol
     }
 }
-impl std::borrow::Borrow<String> for Sym {
-    fn borrow(&self) -> &String {
-        &self.symbol
-    }
-}
 
 impl From<&str> for Sym {
     fn from(value: &str) -> Self {
         Sym {
-            symbol: value.to_string(),
+            symbol: value.into(),
             span: None,
         }
     }
