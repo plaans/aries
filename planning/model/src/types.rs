@@ -151,6 +151,11 @@ impl From<&UserType> for Type {
         Type::User(UnionUserType::new(value.name.clone(), value.hier.clone()))
     }
 }
+impl From<UserType> for Type {
+    fn from(value: UserType) -> Self {
+        Type::User(UnionUserType::new(value.name, value.hier))
+    }
+}
 impl PartialEq for UserType {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name

@@ -76,7 +76,14 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
 
     for func in &dom.functions {
         let parameters = parse_parameters(&func.args, &model.env.types).msg(&model.env)?;
-        model.env.fluents.add_fluent(&func.name, parameters, Type::Real)?;
+        let tpe = match func.tpe.as_ref().map(|t| t.canonical_str()) {
+            None | Some("number") => Type::REAL,
+            Some(name) => {
+                let user_type = model.env.types.get_user_type(name).msg(&model.env)?;
+                user_type.into()
+            }
+        };
+        model.env.fluents.add_fluent(&func.name, parameters, tpe)?;
     }
 
     let mut objects = Objects::new();

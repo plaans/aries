@@ -103,16 +103,21 @@ pub enum PddlFeature {
     NegativePreconditions,
     UniversalPreconditions,
     ExistentialPreconditions,
+    QuantifiedPreconditions,
     Hierarchy,
     MethodPreconditions,
     DurativeAction,
     DurationInequalities,
     Fluents,
+    NumericFluent,
+    ObjectFluent,
     ConditionalEffects,
     TimedInitialLiterals,
     Adl,
     Preferences,
     Constraints,
+    ActionCosts,
+    GoalUtilities,
 }
 impl std::str::FromStr for PddlFeature {
     type Err = String;
@@ -125,6 +130,7 @@ impl std::str::FromStr for PddlFeature {
             ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
             ":universal-preconditions" => Ok(PddlFeature::UniversalPreconditions),
             ":existential-preconditions" => Ok(PddlFeature::ExistentialPreconditions),
+            ":quantified-preconditions" => Ok(PddlFeature::QuantifiedPreconditions),
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             ":durative-actions" => Ok(PddlFeature::DurativeAction),
@@ -132,9 +138,13 @@ impl std::str::FromStr for PddlFeature {
             ":conditional-effects" => Ok(PddlFeature::ConditionalEffects),
             ":timed-initial-literals" => Ok(PddlFeature::TimedInitialLiterals),
             ":fluents" => Ok(PddlFeature::Fluents),
+            ":numeric-fluents" => Ok(PddlFeature::NumericFluent),
+            ":object-fluents" => Ok(PddlFeature::ObjectFluent),
             ":adl" => Ok(PddlFeature::Adl),
             ":preferences" => Ok(PddlFeature::Preferences),
             ":constraints" => Ok(PddlFeature::Constraints),
+            ":action-costs" => Ok(PddlFeature::ActionCosts),
+            ":goal-utilities" => Ok(PddlFeature::GoalUtilities),
             _ => Err(format!("Unknown feature `{s}`")),
         }
     }
@@ -148,6 +158,7 @@ impl Display for PddlFeature {
             PddlFeature::NegativePreconditions => ":negative-preconditions",
             PddlFeature::UniversalPreconditions => ":universal-preconditions",
             PddlFeature::ExistentialPreconditions => ":existential-preconditions",
+            PddlFeature::QuantifiedPreconditions => ":quantified-preconditions",
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
             PddlFeature::DurativeAction => ":durative-action",
@@ -155,9 +166,13 @@ impl Display for PddlFeature {
             PddlFeature::ConditionalEffects => ":conditional-effects",
             PddlFeature::TimedInitialLiterals => ":timed-initial-literals",
             PddlFeature::Fluents => ":fluents",
+            PddlFeature::NumericFluent => ":numeric-fluents",
+            PddlFeature::ObjectFluent => ":object-fluents",
             PddlFeature::Adl => ":adl",
             PddlFeature::Preferences => ":preferences",
             PddlFeature::Constraints => ":constraints",
+            PddlFeature::ActionCosts => ":action-costs",
+            PddlFeature::GoalUtilities => ":goal-utilities",
         };
         write!(f, "{formatted}")
     }
@@ -268,7 +283,15 @@ impl Display for Predicate {
 pub struct Function {
     pub name: Sym,
     pub args: Vec<Param>,
+    pub tpe: Option<Sym>,
 }
+
+impl Function {
+    fn new(name: Sym, args: Vec<Param>, tpe: Option<Sym>) -> Self {
+        Self { name, args, tpe }
+    }
+}
+
 impl Display for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.name)?;
@@ -495,11 +518,21 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                 res.constants = constants;
             }
             ":functions" => {
-                for func in property {
+                while let Ok(func) = property.pop() {
+                    // element is necessarily a function name and parameters, e.g., (battery ?r)
                     let mut func = func.as_list_iter().ok_or_else(|| func.invalid("Expected a list"))?;
                     let name = func.pop_atom()?.clone();
                     let args = consume_typed_symbols(&mut func)?;
-                    res.functions.push(Function { name, args });
+
+                    // from PDDL 3.1, it can have a type annotation, e.g., (battery ?r) - number
+                    // whici allows distinguishing numeric and object fluents
+                    let tpe = if property.peek().is_some_and(|a| a.is_atom("-")) {
+                        property.pop_known_atom("-")?;
+                        Some(property.pop_atom().ctx("expected a type").cloned()?)
+                    } else {
+                        None
+                    };
+                    res.functions.push(Function::new(name, args, tpe));
                 }
             }
             ":action" => {
