@@ -268,7 +268,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
         Token::Sym { start, end, start_pos }
     };
 
-    for (index, n) in s.chars().enumerate() {
+    for (index, n) in s.char_indices() {
         if n == '"' && !is_in_comment {
             if is_in_string {
                 is_in_string = false;
