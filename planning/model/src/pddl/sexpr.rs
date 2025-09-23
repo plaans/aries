@@ -359,9 +359,9 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
         Some(Token::RParen(start)) => {
             let msg = Span::new(src.clone(), start.index as usize, start.index as usize)
                 .invalid("Unexpected closing parenthesis");
-            return Err(msg);
+            Err(msg)
         }
-        None => return Err(Message::error("Unexpected end of output")),
+        None => Err(Message::error("Unexpected end of output")),
     }
 }
 

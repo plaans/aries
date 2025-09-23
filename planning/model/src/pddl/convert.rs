@@ -86,30 +86,16 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         let tpe = match obj.tpe.as_slice() {
             [] => model.env.types.top_user_type(),
             [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
-            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type").into()),
+            [_, tpe, ..] => return Err(tpe.invalid("object with more than one type")),
         };
         objects.add_object(&obj.symbol, tpe)?;
     }
 
     let bindings = Rc::new(Bindings::objects(&objects));
 
-    let has_at_fluent = model.env.fluents.get_by_name("at").is_some();
     for init in &prob.init {
-        let (timestamp, expr) = if !has_at_fluent && let Some([tp, init]) = init.as_application("at") {
-            // (at 54 (loc r1 l2))
-            if let Some(tp) = tp.as_atom()
-                && let Some(num) = parse_number(tp.canonical_str())
-            {
-                let tp = Timestamp::new(TimeRef::Origin, num);
-                (tp, init)
-            } else {
-                return Err(tp.invalid("expected an absolute time").into());
-            }
-        } else {
-            (Timestamp::ORIGIN, init)
-        };
-        let e = into_effect(timestamp, expr, &mut model.env, &bindings)?;
-        model.init.push(e);
+        let effs = into_effects(Some(Timestamp::ORIGIN), init, &mut model.env, &bindings)?;
+        model.init.extend(effs);
     }
 
     for g in &prob.goal {
@@ -181,10 +167,8 @@ fn into_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>)
     }
 
     for e in &a.eff {
-        for e in conjuncts(e) {
-            let e = into_effect(action.end(), e, env, &bindings)?;
-            action.effects.push(e);
-        }
+        let effs = into_effects(Some(action.end().into()), e, env, &bindings)?;
+        action.effects.extend_from_slice(&effs);
     }
     Ok(action)
 }
@@ -208,21 +192,47 @@ fn into_durative_action(
     }
 
     for e in &a.effects {
-        for e in conjuncts(e) {
-            let (itv, eff) = timed_sexpr(e)?;
-            let tp = if itv == TimeInterval::at(TimeRef::Start) {
-                TimeRef::Start
-            } else if itv == TimeInterval::at(TimeRef::End) {
-                TimeRef::End
-            } else {
-                return Err(Message::error("Invalid temporal qualifier for effect")
-                    .snippet(e.loc().error("Requires a timepoint `at start` or `at end`")));
-            };
-            let e = into_effect(tp, eff, env, &bindings)?;
-            action.effects.push(e);
-        }
+        let effs = into_effects(None, e, env, &bindings)?;
+        action.effects.extend(effs);
     }
     Ok(action)
+}
+
+fn into_effects(
+    default_timestamp: Option<Timestamp>,
+    expr: &SExpr,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<Vec<Effect>, Message> {
+    let mut all_effs = Vec::new();
+
+    let has_at_fluent = env.fluents.get_by_name("at").is_some();
+
+    for expr in conjuncts(expr) {
+        if let Some([vars, quantified_expr]) = expr.as_application("forall") {
+            let vars = parse_var_list(vars, env)?;
+            // stack bindings so that downstream expression know the declared variables
+            let bindings = Rc::new(Bindings::stacked(&vars, bindings));
+            let effs = into_effects(default_timestamp, quantified_expr, env, &bindings)?;
+            // TODO: tag effects with forall
+            all_effs.extend(effs.into_iter().map(|e| e.with_quantification(&vars)))
+        } else if (!has_at_fluent || default_timestamp.is_none())
+            && let Some([tp, expr]) = expr.as_application("at")
+        {
+            // (at end (not (loc r1 l1)))   or   (at 12.3 (loc r1 l2))
+            let time = parse_timestamp(tp)?;
+            let effs = into_effects(Some(time), expr, env, bindings)?;
+            all_effs.extend(effs);
+        } else {
+            let Some(time) = default_timestamp else {
+                return Err(expr.invalid("expected temporal qualifier, e.g., (at end ...)"));
+            };
+            let eff = into_effect(time, expr, env, bindings)?;
+            all_effs.push(eff.not_quantified());
+        }
+    }
+
+    Ok(all_effs)
 }
 
 fn into_effect(
@@ -230,7 +240,7 @@ fn into_effect(
     expr: &SExpr,
     env: &mut Environment,
     bindings: &Rc<Bindings>,
-) -> Result<Effect, Message> {
+) -> Result<SimpleEffect, Message> {
     fn parse_sv(
         expr: &SExpr,
         expected_type: Option<Type>,
@@ -251,23 +261,23 @@ fn into_effect(
     if let Some([arg]) = expr.as_application("not") {
         let contradiction = env.intern(Expr::Bool(false), None).msg(env)?;
         let sv = parse_sv(arg, Some(Type::Bool), env, bindings)?;
-        Ok(Effect::assignement(time.into(), sv, contradiction))
+        Ok(SimpleEffect::assignement(time.into(), sv, contradiction))
     } else if let Some([sv, val]) = expr.as_application("=") {
         let sv = parse_sv(sv, None, env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(Effect::assignement(time.into(), sv, val))
+        Ok(SimpleEffect::assignement(time.into(), sv, val))
     } else if let Some([sv, val]) = expr.as_application("assign") {
         let sv = parse_sv(sv, None, env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(Effect::assignement(time.into(), sv, val))
+        Ok(SimpleEffect::assignement(time.into(), sv, val))
     } else if let Some([sv, val]) = expr.as_application("increase") {
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(Effect::increase(time.into(), sv, val))
+        Ok(SimpleEffect::increase(time.into(), sv, val))
     } else if let Some([sv, val]) = expr.as_application("decrease") {
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
@@ -279,11 +289,11 @@ fn into_effect(
             )
             .msg(env)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(Effect::increase(time.into(), sv, neg_val))
+        Ok(SimpleEffect::increase(time.into(), sv, neg_val))
     } else {
         let tautology = env.intern(Expr::Bool(true), None).msg(env)?;
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
-        Ok(Effect::assignement(time.into(), sv, tautology))
+        Ok(SimpleEffect::assignement(time.into(), sv, tautology))
     }
 }
 
@@ -511,6 +521,17 @@ fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {
     num.as_atom()
         .and_then(|e| parse_number(e.canonical_str()))
         .ok_or(num.invalid("expected number"))
+}
+
+/// Parses a timestamp as one of start, end or absolute time (2, 32.3, ...)
+fn parse_timestamp(tp: &SExpr) -> Result<Timestamp, Message> {
+    let timestamp = match tp.as_atom().map(|a| a.canonical_str()) {
+        Some("start") => Some(Timestamp::from(TimeRef::Start)),
+        Some("end") => Some(Timestamp::from(TimeRef::End)),
+        Some(other) => parse_number(other).map(|number| Timestamp::new(TimeRef::Origin, number)),
+        _ => None,
+    };
+    timestamp.ok_or_else(|| tp.invalid("expected a timestamp (start, end, 12.3, ...)"))
 }
 
 fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {

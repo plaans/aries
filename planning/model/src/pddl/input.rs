@@ -1,7 +1,7 @@
-use std::convert::TryFrom;
+use std::{convert::TryFrom, hash::Hash};
 
 /// Represents an input string, typically from a file but designed to also accomate in memory strings.
-#[derive(Eq, Hash)]
+#[derive(Eq)]
 pub struct Input {
     /// Text of the input
     pub(crate) text: String,
@@ -16,6 +16,12 @@ impl PartialEq for Input {
             (Some(x), Some(y)) => x == y,
             _ => false,
         }
+    }
+}
+
+impl Hash for Input {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
     }
 }
 

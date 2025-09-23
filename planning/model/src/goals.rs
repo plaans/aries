@@ -12,10 +12,15 @@ pub struct Goal {
 
 impl<'a> Display for Env<'a, &Goal> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.env / &self.elem.goal_expression)?;
         if !self.elem.universal_quantification.is_empty() {
-            write!(f, "forall ({}) ", self.elem.universal_quantification.iter().join(", "))?;
+            write!(
+                f,
+                " | forall ({}) ",
+                self.elem.universal_quantification.iter().join(", ")
+            )?;
         }
-        write!(f, "{}", self.env / &self.elem.goal_expression)
+        Ok(())
     }
 }
 

@@ -89,10 +89,10 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> Res<PathBuf> {
             }
         }
     }
-    return Err(Message::error(format!(
+    Err(Message::error(format!(
         "Could not find find a corresponding file in same or parent directory as the problem file. Candidates: {:?}",
         candidate_domain_files
-    )));
+    )))
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -903,7 +903,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_hddl() -> Result<()> {
+    fn parsing_hddl() -> Res<()> {
         let source = "../problems/hddl/tests/nothing.dom.hddl";
         let source = PathBuf::from_str(source)?;
         let source = Input::from_file(&source)?;
@@ -916,7 +916,7 @@ mod tests {
                     Ok(dom) => dom,
                     Err(e) => {
                         eprintln!("{:?}", &e);
-                        anyhow::bail!("Could not parse")
+                        panic!("Could not parse")
                     }
                 };
 
