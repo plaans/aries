@@ -212,8 +212,6 @@ fn into_effects(
 ) -> Result<Vec<Effect>, Message> {
     let mut all_effs = Vec::new();
 
-    let has_at_fluent = env.fluents.get_by_name("at").is_some();
-
     for expr in conjuncts(expr) {
         if let Some([vars, quantified_expr]) = expr.as_application("forall") {
             let vars = parse_var_list(vars, env)?;
@@ -222,11 +220,11 @@ fn into_effects(
             let effs = into_effects(default_timestamp, quantified_expr, env, &bindings)?;
             // TODO: tag effects with forall
             all_effs.extend(effs.into_iter().map(|e| e.with_quantification(&vars)))
-        } else if (!has_at_fluent || default_timestamp.is_none())
-            && let Some([tp, expr]) = expr.as_application("at")
+        } else if let Some([tp, expr]) = expr.as_application("at")
+            && let Ok(time) = parse_timestamp(tp)
         {
             // (at end (not (loc r1 l1)))   or   (at 12.3 (loc r1 l2))
-            let time = parse_timestamp(tp)?;
+            // in the condition we check that we indeed have a valid timepoint because it is common to have also an `at` fluent
             let effs = into_effects(Some(time), expr, env, bindings)?;
             all_effs.extend(effs);
         } else if let Some([cond, expr]) = expr.as_application("when") {
