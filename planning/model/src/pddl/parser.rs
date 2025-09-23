@@ -102,6 +102,7 @@ pub enum PddlFeature {
     Equality,
     NegativePreconditions,
     UniversalPreconditions,
+    ExistentialPreconditions,
     Hierarchy,
     MethodPreconditions,
     DurativeAction,
@@ -123,6 +124,7 @@ impl std::str::FromStr for PddlFeature {
             ":equality" => Ok(PddlFeature::Equality),
             ":negative-preconditions" => Ok(PddlFeature::NegativePreconditions),
             ":universal-preconditions" => Ok(PddlFeature::UniversalPreconditions),
+            ":existential-preconditions" => Ok(PddlFeature::ExistentialPreconditions),
             ":hierarchy" => Ok(PddlFeature::Hierarchy),
             ":method-preconditions" => Ok(PddlFeature::MethodPreconditions),
             ":durative-actions" => Ok(PddlFeature::DurativeAction),
@@ -145,6 +147,7 @@ impl Display for PddlFeature {
             PddlFeature::Equality => ":equality",
             PddlFeature::NegativePreconditions => ":negative-preconditions",
             PddlFeature::UniversalPreconditions => ":universal-preconditions",
+            PddlFeature::ExistentialPreconditions => ":existential-preconditions",
             PddlFeature::Hierarchy => ":hierarchy",
             PddlFeature::MethodPreconditions => ":method-preconditions",
             PddlFeature::DurativeAction => ":durative-action",
@@ -205,28 +208,6 @@ pub struct Tpe {
 }
 
 pub type TypedSymbol = Param;
-
-// #[derive(Debug, Clone)]
-// pub struct TypedSymbol {
-//     pub symbol: Sym,
-//     pub tpe: Option<Sym>,
-// }
-// impl TypedSymbol {
-//     pub fn new(symbol: impl Into<Sym>, tpe: impl Into<Sym>) -> Self {
-//         Self {
-//             symbol: symbol.into(),
-//             tpe: Some(tpe.into()),
-//         }
-//     }
-// }
-// impl Display for TypedSymbol {
-//     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-//         match &self.tpe {
-//             Some(tpe) => write!(f, "{}: {}", self.symbol, tpe),
-//             None => write!(f, "{}", self.symbol),
-//         }
-//     }
-// }
 
 pub type Types = SmallVec<[Sym; 1]>;
 
@@ -844,6 +825,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
             .as_list_iter()
             .ok_or_else(|| current.invalid("Expected a list"))?;
         match property.pop_atom()?.canonical_str() {
+            ":requirements" => {} // HACK: ignore requirements in problem (umtranslog, IPC 2002)
             ":objects" => {
                 let objects = consume_typed_symbols(&mut property)?;
                 for o in objects {
