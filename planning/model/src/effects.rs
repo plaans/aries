@@ -34,6 +34,7 @@ impl StateVariable {
 pub enum EffectOp {
     Assign(ExprId),
     Increase(ExprId),
+    Decrease(ExprId),
 }
 
 impl<'env> Display for Env<'env, &EffectOp> {
@@ -41,6 +42,7 @@ impl<'env> Display for Env<'env, &EffectOp> {
         match self.elem {
             EffectOp::Assign(expr_id) => write!(f, ":= {}", self.env / *expr_id),
             EffectOp::Increase(delta) => write!(f, "+= {}", self.env / *delta),
+            EffectOp::Decrease(delta) => write!(f, "-= {}", self.env / *delta),
         }
     }
 }
@@ -48,6 +50,9 @@ impl<'env> Display for Env<'env, &EffectOp> {
 #[derive(Debug, Clone)]
 pub struct SimpleEffect {
     pub timing: Timestamp,
+    /// If set, corresponds to a conditional effect that is only true if the
+    /// conditions holds at `timing`
+    pub condition: Option<ExprId>,
     pub state_variable: StateVariable,
     pub operation: EffectOp,
 }
@@ -56,6 +61,7 @@ impl SimpleEffect {
     pub fn assignement(timing: Timestamp, state_variable: StateVariable, value: ExprId) -> Self {
         SimpleEffect {
             timing,
+            condition: None,
             state_variable,
             operation: EffectOp::Assign(value),
         }
@@ -63,9 +69,24 @@ impl SimpleEffect {
     pub fn increase(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
         SimpleEffect {
             timing,
+            condition: None,
             state_variable,
             operation: EffectOp::Increase(delta),
         }
+    }
+    pub fn decrease(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
+        SimpleEffect {
+            timing,
+            condition: None,
+            state_variable,
+            operation: EffectOp::Decrease(delta),
+        }
+    }
+
+    pub fn with_condition(mut self, cond: ExprId) -> Self {
+        assert!(self.condition.is_none());
+        self.condition = Some(cond);
+        self
     }
 
     /// Universally qualify this effect expression over the given variables.
@@ -95,7 +116,11 @@ impl<'env> Display for Env<'env, &SimpleEffect> {
             self.elem.timing,
             self.env / &self.elem.state_variable,
             self.env / &self.elem.operation
-        )
+        )?;
+        if let Some(cond) = self.elem.condition {
+            write!(f, " | when {}", self.env / cond)?;
+        }
+        Ok(())
     }
 }
 
@@ -103,14 +128,24 @@ impl<'env> Display for Env<'env, &SimpleEffect> {
 #[derive(Debug, Clone)]
 pub struct Effect {
     /// Universally quantified variables in the effect expression
-    universal_quantification: Vec<Param>,
-    effect_expression: SimpleEffect,
+    pub universal_quantification: Vec<Param>,
+    pub effect_expression: SimpleEffect,
 }
 
 impl Effect {
     pub fn with_quantification(mut self, additional_params: &[Param]) -> Self {
         self.universal_quantification.extend_from_slice(additional_params);
         self
+    }
+
+    /// Make the underlying effet conditional
+    ///
+    /// Note: panics if the effect was already conditional
+    pub fn with_condition(self, cond: ExprId) -> Self {
+        Self {
+            universal_quantification: self.universal_quantification,
+            effect_expression: self.effect_expression.with_condition(cond),
+        }
     }
 }
 

@@ -3,7 +3,6 @@ use std::rc::Rc;
 use errors::*;
 use itertools::Itertools;
 use pddl::sexpr::SExpr;
-use smallvec::SmallVec;
 
 use crate::pddl::sexpr::ListIter;
 use crate::*;
@@ -223,6 +222,15 @@ fn into_effects(
             let time = parse_timestamp(tp)?;
             let effs = into_effects(Some(time), expr, env, bindings)?;
             all_effs.extend(effs);
+        } else if let Some([cond, expr]) = expr.as_application("when") {
+            let cond = parse(cond, env, bindings)?;
+            let effs = into_effects(default_timestamp, expr, env, bindings)?;
+            for eff in effs {
+                if let Some(other_cond) = eff.effect_expression.condition {
+                    return Err(env.node(other_cond).invalid("expected second condition"));
+                }
+                all_effs.push(eff.with_condition(cond));
+            }
         } else {
             let Some(time) = default_timestamp else {
                 return Err(expr.invalid("expected temporal qualifier, e.g., (at end ...)"));
@@ -282,14 +290,8 @@ fn into_effect(
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
         let val = parse(val, env, bindings)?;
-        let neg_val = env
-            .intern(
-                Expr::App(Fun::Minus, SmallVec::from_slice(&[val])),
-                env.node(val).span().cloned(),
-            )
-            .msg(env)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::increase(time.into(), sv, neg_val))
+        Ok(SimpleEffect::decrease(time.into(), sv, val))
     } else {
         let tautology = env.intern(Expr::Bool(true), None).msg(env)?;
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
