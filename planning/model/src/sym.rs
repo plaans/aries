@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display};
 #[derive(Clone)]
 pub struct Sym {
     /// Canonical view of the symbol (e.g. lower cased for PDDL)
-    pub symbol: String,
+    symbol: String,
     /// Origin of the symbol. If non-empty, can be used to derive the Display view of the symbol (e.g. properly capitalized)
     pub span: Option<Span>,
 }
@@ -84,6 +84,17 @@ impl Display for Sym {
 impl PartialEq for Sym {
     fn eq(&self, other: &Self) -> bool {
         self.symbol == other.symbol
+    }
+}
+
+impl PartialEq<str> for Sym {
+    fn eq(&self, other: &str) -> bool {
+        self.canonical_str() == other
+    }
+}
+impl PartialEq<Sym> for str {
+    fn eq(&self, other: &Sym) -> bool {
+        self == other.canonical_str()
     }
 }
 

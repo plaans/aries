@@ -551,7 +551,7 @@ fn parse_timed(
 }
 
 fn parse_function(sym: &Sym) -> Option<Fun> {
-    match sym.symbol.as_str() {
+    match sym.canonical_str() {
         "+" => Some(Fun::Plus),
         "-" => Some(Fun::Minus),
         "/" => Some(Fun::Div),

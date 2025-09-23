@@ -182,10 +182,7 @@ impl Default for UserTypes {
 impl UserTypes {
     pub fn new() -> Self {
         Self {
-            top_type: Sym {
-                symbol: "★object★".to_string(),
-                span: None,
-            },
+            top_type: Sym::from("★object★"),
             types: Default::default(),
         }
     }
