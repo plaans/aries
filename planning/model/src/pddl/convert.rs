@@ -357,7 +357,18 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
         SExpr::Atom(atom) if atom.canonical_str() == "?duration" => Expr::Duration,
         SExpr::Atom(atom) => match bindings.get(atom) {
             Ok(x) => x,
-            Err(err) => parse_number(atom.canonical_str()).map(Expr::Real).ok_or(err)?,
+            Err(err) => {
+                if let Some(number) = parse_number(atom.canonical_str()) {
+                    Expr::Real(number)
+                } else if let Some(fluent_id) = env.fluents.get_by_name(atom.canonical_str()) {
+                    // this occurs case when a state variable is called without a parameter list
+                    // for instance   (increase total-fuel 1)
+                    // we emit the state variable without checking the args as any error should be caught when type checking anyway
+                    Expr::StateVariable(fluent_id, SeqExprId::new())
+                } else {
+                    return Err(err);
+                }
+            }
         },
         SExpr::List(l) => {
             let mut l = l.iter();
