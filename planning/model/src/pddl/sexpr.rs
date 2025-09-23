@@ -1,7 +1,6 @@
 use crate::pddl::input::*;
 use crate::utils::disp_slice;
-use crate::{Sym, errors::*};
-use anyhow::Result;
+use crate::{Res, Sym, errors::*};
 use itertools::Itertools;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
@@ -229,7 +228,7 @@ enum Token {
     RParen(Pos),
 }
 
-pub fn parse<S: TryInto<Input>>(s: S) -> Result<SExpr>
+pub fn parse<S: TryInto<Input>>(s: S) -> Res<SExpr>
 where
     <S as TryInto<Input>>::Error: std::error::Error + Send + Sync + 'static,
 {
@@ -328,7 +327,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     tokens
 }
 
-fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Result<SExpr> {
+fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Res<SExpr> {
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
             let original = &src.text.as_str()[*start..=*end];
@@ -357,8 +356,12 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 }
             }
         }
-        Some(Token::RParen(_)) => anyhow::bail!("Unexpected closing parenthesis"),
-        None => anyhow::bail!("Unexpected end of output"),
+        Some(Token::RParen(start)) => {
+            let msg = Span::new(src.clone(), start.index as usize, start.index as usize)
+                .invalid("Unexpected closing parenthesis");
+            return Err(msg);
+        }
+        None => return Err(Message::error("Unexpected end of output")),
     }
 }
 

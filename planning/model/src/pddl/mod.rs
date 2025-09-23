@@ -11,16 +11,18 @@ mod test {
 
     use std::path::{Path, PathBuf};
 
+    use crate::Res;
+
     use super::*;
 
     #[test]
-    fn test_parsing_simple() -> anyhow::Result<()> {
+    fn test_parsing_simple() -> Res<()> {
         let domain_file = PathBuf::from("/home/abitmonnot/work/aries/planning/problems/pddl/tests/gripper.dom.pddl");
         let problem_file = PathBuf::from("/home/abitmonnot/work/aries/planning/problems/pddl/tests/gripper.pb.pddl");
         test_parsing(&domain_file, &problem_file)
     }
 
-    fn test_parsing(domain_file: &Path, problem_file: &Path) -> anyhow::Result<()> {
+    fn test_parsing(domain_file: &Path, problem_file: &Path) -> Res<()> {
         let domain_file = input::Input::from_file(domain_file)?;
 
         let problem_file = input::Input::from_file(problem_file)?;

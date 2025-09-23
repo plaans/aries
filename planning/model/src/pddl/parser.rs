@@ -1,31 +1,31 @@
 #![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
+use crate::Res;
 use crate::Sym;
 use crate::errors::*;
-use anyhow::Context;
+
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
 
 use crate::pddl::input::*;
 use crate::pddl::sexpr::*;
 use crate::utils::disp_slice;
-use anyhow::Result;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-pub fn parse_pddl_domain(pb: Input) -> Result<Domain> {
+pub fn parse_pddl_domain(pb: Input) -> Res<Domain> {
     let expr = parse(pb)?;
-    read_domain(expr).ctx("Invalid domain").context("Syntax error") // TODO: a lot of error conversions
+    read_domain(expr).ctx("Invalid domain: Syntax error")
 }
-pub fn parse_pddl_problem(pb: Input) -> Result<Problem> {
+pub fn parse_pddl_problem(pb: Input) -> Res<Problem> {
     let expr = parse(pb)?;
-    read_problem(expr).ctx("Invalid problem").context("Syntax error")
+    read_problem(expr).ctx("Invalid problem: Syntax error")
 }
 
 /// Attempts to find the corresponding domain file for the given PDDL/HDDL problem.
 /// This method will look for a file named `domain.pddl` (resp. `domain.hddl`) in the
 /// current and parent folders.
-pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf> {
+pub fn find_domain_of(problem_file: &std::path::Path) -> Res<PathBuf> {
     // these are the domain file names that we will look for in the current and parent directory
     let mut candidate_domain_files = Vec::with_capacity(2);
 
@@ -37,9 +37,9 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
 
     let problem_filename = problem_file
         .file_name()
-        .context("Invalid file")?
+        .ctx("Invalid file")?
         .to_str()
-        .context("Could not convert file name to utf8")?;
+        .ctx("Could not convert file name to utf8")?;
 
     // if the problem file is of the form XXXXX.YY.pb.Zddl
     // then add XXXXX.dom.Zddl to the candidate filenames
@@ -89,10 +89,10 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
             }
         }
     }
-    anyhow::bail!(
+    return Err(Message::error(format!(
         "Could not find find a corresponding file in same or parent directory as the problem file. Candidates: {:?}",
         candidate_domain_files
-    );
+    )));
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

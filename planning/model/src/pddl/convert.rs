@@ -63,7 +63,7 @@ fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
     Ok(types)
 }
 
-pub fn build_model(dom: &Domain, prob: &Problem) -> anyhow::Result<Model> {
+pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
     // top types in pddl
 
     let types = user_types(dom)?;

@@ -34,6 +34,5 @@ pub use sym::*;
 pub use timing::*;
 pub use types::*;
 
+pub use errors::{Message, Res};
 use errors::{Span, Spanned};
-
-pub type Res<T> = anyhow::Result<T>;

@@ -4,10 +4,11 @@ use std::{
     sync::Arc,
 };
 
+pub type Res<T> = Result<T, Message>;
+
 use crate::{Environment, Sym, pddl::input::Input};
 use annotate_snippets::*;
 use itertools::Itertools;
-use thiserror::Error;
 
 pub type SrcRange = Range<usize>;
 
@@ -143,7 +144,6 @@ impl Spanned for &Sym {
     }
 }
 
-#[derive(Error)]
 pub struct Message {
     level: Level<'static>,
     title: String,
@@ -152,6 +152,7 @@ pub struct Message {
 }
 
 impl Message {
+    #[cold]
     pub fn new(level: Level<'static>, title: impl ToString) -> Self {
         Self {
             level,
@@ -161,25 +162,30 @@ impl Message {
         }
     }
 
+    #[cold]
     pub fn error(title: impl ToString) -> Self {
         Self::new(Level::ERROR, title)
     }
 
+    #[cold]
     pub fn snippet(mut self, snippet: Annot) -> Self {
         self.snippets.push(snippet);
         self
     }
 
+    #[cold]
     pub fn info(self, s: impl Spanned, msg: &str) -> Message {
         let annot = s.annotate(Level::INFO, msg);
         self.snippet(annot)
     }
 
+    #[cold]
     pub fn ctx(mut self, s: impl ToString) -> Message {
         self.info.push(s.to_string());
         self
     }
 
+    #[cold]
     pub fn failed<T>(self) -> std::result::Result<T, Message> {
         Err(self)
     }
@@ -191,6 +197,11 @@ pub trait Ctx<T> {
 impl<T> Ctx<T> for std::result::Result<T, Message> {
     fn ctx(self, error_context: impl Display) -> Result<T, Message> {
         self.map_err(|e| e.ctx(error_context))
+    }
+}
+impl<T> Ctx<T> for Option<T> {
+    fn ctx(self, msg: impl Display) -> Result<T, Message> {
+        self.ok_or_else(|| Message::error(msg))
     }
 }
 
@@ -220,6 +231,16 @@ impl Display for Message {
 impl Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
+    }
+}
+
+impl<E> From<E> for Message
+where
+    E: core::error::Error,
+{
+    #[cold]
+    fn from(error: E) -> Self {
+        Message::error(error)
     }
 }
 
