@@ -743,7 +743,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///   in a solution
     /// - MCS (Minimal Correction Set): a subset of `assumtions` of which at least one must be false
     ///   for the problem to have a solution
-    pub fn mus_and_mcs_enumerator(&mut self, assumptions: &[Lit]) -> MusMcsEnumerator<Lbl> {
+    pub fn mus_and_mcs_enumerator(&mut self, assumptions: &[Lit]) -> MusMcsEnumerator<'_, Lbl> {
         Marco::with(
             assumptions.iter().copied(),
             self,

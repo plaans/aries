@@ -23,7 +23,7 @@ struct Task<'a> {
     details: &'a SubTask,
 }
 
-fn all_tasks(pb: &FiniteProblem) -> impl Iterator<Item = Task> + '_ {
+fn all_tasks(pb: &FiniteProblem) -> impl Iterator<Item = Task<'_>> + '_ {
     pb.chronicles.iter().enumerate().flat_map(|(instance_id, ch)| {
         ch.chronicle
             .subtasks

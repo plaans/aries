@@ -393,7 +393,7 @@ impl ClauseDb {
     }
 
     pub fn num_removable(&self) -> usize {
-        if self.num_clauses % 128 == 0 {
+        if self.num_clauses.is_multiple_of(128) {
             // this is costly check so only do it once in a while, even in debug mode
             debug_assert_eq!(
                 self.all_clauses()
