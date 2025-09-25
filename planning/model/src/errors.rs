@@ -148,6 +148,8 @@ pub struct Message {
     level: Level<'static>,
     title: String,
     snippets: Vec<Annot>,
+    /// Subsets of the input that should be displayed (without any annotation)
+    visible: Vec<Span>,
     info: Vec<String>,
 }
 
@@ -158,6 +160,7 @@ impl Message {
             level,
             title: title.to_string(),
             snippets: Vec::new(),
+            visible: Vec::new(),
             info: Vec::new(),
         }
     }
@@ -170,6 +173,13 @@ impl Message {
     #[cold]
     pub fn snippet(mut self, snippet: Annot) -> Self {
         self.snippets.push(snippet);
+        self
+    }
+
+    /// Marks a given span as visible.
+    /// This is mostly interpreted as a hint and will only be considered if there are annoations on the same source file.
+    pub fn show(mut self, span: &Span) -> Self {
+        self.visible.push(span.clone());
         self
     }
 
@@ -218,7 +228,14 @@ impl Display for Message {
                 } else {
                     snippet
                 };
-                snippet.annotations(annots.iter().map(|a| a.build_annot()))
+                let snippet = snippet.annotations(annots.iter().map(|a| a.build_annot()));
+                // for each visiblity requirement in this source, add it to the snippet
+                // note that if a visible span is not linked to ay annotated source, it will not be picked up (which is the desired be)
+                let visibles_in_source = self
+                    .visible
+                    .iter()
+                    .filter_map(|s| (&s.input.as_ref() == source).then_some(s.span.clone()));
+                snippet.annotations(visibles_in_source.map(|range| AnnotationKind::Visible.span(range)))
             })
             .collect_vec();
 
@@ -249,14 +266,19 @@ impl<T> ErrorMessageExt<T> for Result<T, Message> {
         self.map_err(|m| m.snippet(annot()))
     }
 
-    fn ctx2(self, tagged: impl Spanned, tag: impl ToString) -> Result<T, Message> {
-        self.with_info(|| tagged.info(tag))
+    fn tag(self, tagged: impl Spanned, tag: impl ToString, visible: Option<&Span>) -> Result<T, Message> {
+        let res = self.with_info(|| tagged.info(tag));
+        if let Some(visible) = visible {
+            res.map_err(|m| m.show(visible))
+        } else {
+            res
+        }
     }
 }
 
 pub trait ErrorMessageExt<T> {
     fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message>;
-    fn ctx2(self, tagged: impl Spanned, tag: impl ToString) -> Result<T, Message>;
+    fn tag(self, tagged: impl Spanned, tag: impl ToString, visible: Option<&Span>) -> Result<T, Message>;
 }
 
 pub(crate) trait ToEnvMessage {

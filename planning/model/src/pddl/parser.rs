@@ -375,6 +375,8 @@ pub struct Action {
     pub args: Vec<Param>,
     pub pre: Vec<SExpr>,
     pub eff: Vec<SExpr>,
+    /// Span covering the entire action definition
+    pub span: Span,
 }
 
 impl Display for Action {
@@ -392,6 +394,8 @@ pub struct DurativeAction {
     pub duration: SExpr,
     pub conditions: Vec<SExpr>,
     pub effects: Vec<SExpr>,
+    /// Span covering the entire action definition
+    pub span: Span,
 }
 
 impl Display for DurativeAction {
@@ -565,7 +569,13 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                         _ => return Err(key_expr.invalid(format!("unsupported key in action: {key}"))), // TODO: remove key
                     }
                 }
-                res.actions.push(Action { name, args, pre, eff })
+                res.actions.push(Action {
+                    name,
+                    args,
+                    pre,
+                    eff,
+                    span: current.loc(),
+                })
             }
             ":durative-action" => {
                 let name = property.pop_atom()?.clone();
@@ -611,6 +621,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                     duration,
                     conditions,
                     effects,
+                    span: current.loc(),
                 };
                 res.durative_actions.push(durative_action)
             }

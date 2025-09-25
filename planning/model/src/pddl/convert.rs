@@ -143,13 +143,14 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
 
     for a in &dom.actions {
         let name: crate::Sym = a.name.clone();
-        let action = into_action(a, &mut model.env, &bindings).ctx2(name, "when parsing action")?;
+        let action = into_action(a, &mut model.env, &bindings).tag(name, "when parsing action", Some(&a.span))?;
         model.actions.add(action)?;
     }
 
     for a in &dom.durative_actions {
         let name: crate::Sym = a.name.clone();
-        let action = into_durative_action(a, &mut model.env, &bindings).ctx2(name, "when parsing action")?;
+        let action =
+            into_durative_action(a, &mut model.env, &bindings).tag(name, "when parsing action", Some(&a.span))?;
         model.actions.add(action)?;
     }
 
@@ -192,7 +193,7 @@ fn into_durative_action(
 
     for c in &a.conditions {
         for c in conjuncts(c) {
-            let (itv, c) = parse_timed(c, env, &bindings).ctx2(c, "when parsing condition")?;
+            let (itv, c) = parse_timed(c, env, &bindings)?;
             action.conditions.push(Condition::over(itv, c));
         }
     }
