@@ -400,7 +400,7 @@ impl<K: Ref, V> RefMap<K, V> {
     pub fn insert(&mut self, k: K, v: V) {
         let index = k.into();
         if index > self.entries.len() {
-            self.entries.reserve_exact(index - self.entries.len());
+            self.entries.reserve(index - self.entries.len());
         }
         while self.entries.len() <= index {
             self.entries.push(None);
@@ -445,8 +445,7 @@ impl<K: Ref, V> RefMap<K, V> {
         if index >= self.entries.len() {
             None
         } else {
-            let res: &Option<V> = &self.entries[index];
-            res.as_ref()
+            self.entries[index].as_ref()
         }
     }
 
@@ -455,12 +454,9 @@ impl<K: Ref, V> RefMap<K, V> {
         if index >= self.entries.len() {
             None
         } else {
-            let res: &mut Option<V> = &mut self.entries[index];
-            res.as_mut()
+            self.entries[index].as_mut()
         }
     }
-
-    // pub fn get_many_mut_or_insert<const N: usize>(&mut self, ks: [K; N], default: impl Fn() -> V) -> [&mut V; N] {}
 
     pub fn get_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &V {
         if !self.contains(k) {

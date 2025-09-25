@@ -187,15 +187,6 @@ impl Domains {
         self.lb(var) >= self.ub(var)
     }
 
-    pub fn get_bound(&self, var: VarRef) -> Option<IntCst> {
-        let (lb, ub) = self.bounds(var);
-        if lb == ub {
-            Some(lb)
-        } else {
-            None
-        }
-    }
-
     pub fn entails(&self, lit: Lit) -> bool {
         debug_assert!(!self.doms.entails(lit) || !self.doms.entails(!lit));
         self.doms.entails(lit)
