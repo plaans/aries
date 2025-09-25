@@ -179,9 +179,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::Eq(a, b) => {
+                // We currently need to post Eq constraints to STN due to incomplete propagation in eq reasoner.
+                // See eq_alt module level documentation for more information.
+                // Note that this will only be reached if ARIES_USE_EQ_LOGIC=true
                 self.reasoners
                     .eq
                     .add_half_reified_eq_edge(value, *a, *b, &self.model.state);
+                // a = b <=> a >= b & a <= b
                 self.reasoners
                     .diff
                     .add_half_reified_edge(value, *a, *b, 0, &self.model.state);
@@ -191,9 +195,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::Neq(a, b) => {
+                // We currently need to post Neq constraints to STN due to incomplete propagation in eq reasoner.
+                // See eq_alt module level documentation for more information.
+                // Note that this will only be reached if ARIES_USE_EQ_LOGIC=true
                 self.reasoners
                     .eq
                     .add_half_reified_neq_edge(value, *a, *b, &self.model.state);
+                // a != b <=> => a < b or a > b
                 let a_lt_b = self
                     .model
                     .state
