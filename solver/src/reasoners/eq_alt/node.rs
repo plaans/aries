@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::core::{
     state::{Domains, DomainsSnapshot, IntDomain, Term},
-    IntCst, VarRef,
+    IntCst, Lit, VarRef,
 };
 
 /// A variable or a constant used as a node in the eq graph
@@ -10,6 +10,37 @@ use crate::core::{
 pub enum Node {
     Var(VarRef),
     Val(IntCst),
+}
+
+impl Node {
+    /// Returns false is self == other is impossible according to the model
+    pub fn can_be_eq(&self, other: &Node, model: &impl NodeDomains) -> bool {
+        !model.node_domain(self).disjoint(&model.node_domain(other))
+    }
+
+    /// Returns false is self != other is impossible according to the model
+    pub fn can_be_neq(&self, other: &Node, model: &impl NodeDomains) -> bool {
+        !model
+            .node_domain(self)
+            .as_singleton()
+            .is_some_and(|bound| model.node_domain(other).is_bound_to(bound))
+    }
+
+    pub fn ub_literal(&self, model: &DomainsSnapshot) -> Option<Lit> {
+        if let Node::Var(v) = self {
+            Some(v.leq(model.ub(*v)))
+        } else {
+            None
+        }
+    }
+
+    pub fn lb_literal(&self, model: &DomainsSnapshot) -> Option<Lit> {
+        if let Node::Var(v) = self {
+            Some(v.geq(model.lb(*v)))
+        } else {
+            None
+        }
+    }
 }
 
 impl From<VarRef> for Node {
@@ -53,8 +84,12 @@ impl Display for Node {
     }
 }
 
-impl Domains {
-    pub fn node_domain(&self, n: &Node) -> IntDomain {
+pub trait NodeDomains {
+    fn node_domain(&self, n: &Node) -> IntDomain;
+}
+
+impl NodeDomains for Domains {
+    fn node_domain(&self, n: &Node) -> IntDomain {
         match *n {
             Node::Var(var) => self.int_domain(var),
             Node::Val(cst) => IntDomain::new(cst, cst),
@@ -62,8 +97,8 @@ impl Domains {
     }
 }
 
-impl DomainsSnapshot<'_> {
-    pub fn node_domain(&self, n: &Node) -> IntDomain {
+impl NodeDomains for DomainsSnapshot<'_> {
+    fn node_domain(&self, n: &Node) -> IntDomain {
         match *n {
             Node::Var(var) => self.int_domain(var),
             Node::Val(cst) => IntDomain::new(cst, cst),

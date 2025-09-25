@@ -19,10 +19,10 @@ pub trait Graph<N: Node, E: Edge<N>> {
     /// Get outgoing edges from the node.
     fn outgoing(&self, node: N) -> impl Iterator<Item = E>;
 
-    /// Traverse the graph (depth first) from a given source. This method return a GraphTraversal object which implements Iterator.
+    /// Traverse the graph (depth first) from a given `source`. This method return a GraphTraversal object which implements Iterator.
     ///
     /// Scratch contains the large data structures used by the graph traversal algorithm. Useful to reuse memory.
-    /// `&mut default::default()` can used if performance is not critical.
+    /// `&mut Default::default()` can be used if performance is not critical.
     fn traverse_dfs<'a>(
         self,
         source: N,

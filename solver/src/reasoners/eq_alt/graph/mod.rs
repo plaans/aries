@@ -107,7 +107,7 @@ where
 /// It is also possible to transform and traverse the graph with
 /// `graph.outgoing_grouped.eq_neq().filter(...).traverse(source, Default::default()).find(...)` for example.
 #[derive(Clone, Default)]
-pub(super) struct DirEqGraph {
+pub(super) struct DirectedEqualityGraph {
     pub node_store: NodeStore,
     // These are pub to allow graph traversal API at theory level
     pub outgoing: EqAdjList,
@@ -117,7 +117,7 @@ pub(super) struct DirEqGraph {
     trail: Trail<Event>,
 }
 
-impl DirEqGraph {
+impl DirectedEqualityGraph {
     pub fn new() -> Self {
         Default::default()
     }
@@ -210,13 +210,6 @@ impl DirEqGraph {
                 self.trail.push(Event::GroupEdgeAdded(new_edge));
             }
         }
-    }
-
-    /// Cartesian product between source group nodes and target group nodes, useful for propagation
-    pub fn group_product(&self, source_id: GroupId, target_id: GroupId) -> impl Iterator<Item = (Node, Node)> {
-        let sources = self.get_group_nodes(source_id);
-        let targets = self.get_group_nodes(target_id);
-        sources.into_iter().cartesian_product(targets)
     }
 
     /// Returns an edge from a propagator without adding it to the graph.
@@ -439,7 +432,7 @@ impl DirEqGraph {
     }
 }
 
-impl Backtrack for DirEqGraph {
+impl Backtrack for DirectedEqualityGraph {
     fn save_state(&mut self) -> DecLvl {
         self.node_store.save_state();
         self.trail.save_state()
@@ -495,6 +488,16 @@ impl Path {
             relation,
         }
     }
+
+    /// Returns true if the path is source -==-> source
+    pub fn redundant(&self) -> bool {
+        self.source_id == self.target_id && self.relation == EqRelation::Eq
+    }
+
+    /// Returns true if the path is source -!=-> source
+    pub fn contradictory(&self) -> bool {
+        self.source_id == self.target_id && self.relation == EqRelation::Neq
+    }
 }
 
 #[cfg(test)]
@@ -535,15 +538,15 @@ mod tests {
         Constraint::new(Node::Val(src), Node::Val(tgt), relation, Lit::TRUE, Lit::TRUE)
     }
 
-    fn id(g: &DirEqGraph, node: IntCst) -> NodeId {
+    fn id(g: &DirectedEqualityGraph, node: IntCst) -> NodeId {
         g.get_id(&Node::Val(node)).unwrap()
     }
 
-    fn eqn(g: &DirEqGraph, node: IntCst, r: EqRelation) -> EqNode {
+    fn eqn(g: &DirectedEqualityGraph, node: IntCst, r: EqRelation) -> EqNode {
         EqNode(id(g, node), r)
     }
 
-    fn edge(g: &DirEqGraph, src: IntCst, tgt: IntCst, relation: EqRelation) -> Edge {
+    fn edge(g: &DirectedEqualityGraph, src: IntCst, tgt: IntCst, relation: EqRelation) -> Edge {
         Edge::new(
             g.get_id(&Node::Val(src)).unwrap(),
             g.get_id(&Node::Val(tgt)).unwrap(),
@@ -552,7 +555,7 @@ mod tests {
         )
     }
 
-    fn path(g: &DirEqGraph, src: IntCst, tgt: IntCst, relation: EqRelation) -> Path {
+    fn path(g: &DirectedEqualityGraph, src: IntCst, tgt: IntCst, relation: EqRelation) -> Path {
         Path::new(
             g.get_id(&Node::Val(src)).unwrap(),
             g.get_id(&Node::Val(tgt)).unwrap(),
@@ -572,8 +575,8 @@ mod tests {
        5 -> 0 [label=" ="]
     }
     */
-    fn instance1() -> DirEqGraph {
-        let mut g = DirEqGraph::new();
+    fn instance1() -> DirectedEqualityGraph {
+        let mut g = DirectedEqualityGraph::new();
         for prop in [
             prop(0, 1, Eq),
             prop(1, 2, Neq),
@@ -604,8 +607,8 @@ mod tests {
         4 -> 1 [label=" ="]
     }
     */
-    fn instance2() -> DirEqGraph {
-        let mut g = DirEqGraph::new();
+    fn instance2() -> DirectedEqualityGraph {
+        let mut g = DirectedEqualityGraph::new();
         for prop in [
             prop(0, 1, Eq),
             prop(1, 0, Eq),
@@ -744,7 +747,7 @@ mod tests {
 
     #[test]
     fn test_paths_requiring_cycles() {
-        let mut g = DirEqGraph::new();
+        let mut g = DirectedEqualityGraph::new();
         for i in -3..=3 {
             g.insert_node(Node::Val(i));
         }

@@ -18,9 +18,9 @@ use super::AltEqTheory;
 impl AltEqTheory {
     /// Check if source -=-> target in active graph
     fn eq_path_exists(&self, source: &Node, target: &Node) -> bool {
-        let source_id = self.active_graph.get_id(source).unwrap();
-        let target_id = self.active_graph.get_id(target).unwrap();
-        self.active_graph
+        let source_id = self.enabled_graph.get_id(source).unwrap();
+        let target_id = self.enabled_graph.get_id(target).unwrap();
+        self.enabled_graph
             .outgoing
             .eq()
             .traverse_dfs(source_id, &mut Default::default())
@@ -29,9 +29,9 @@ impl AltEqTheory {
 
     /// Check if source -!=-> target in active graph
     fn neq_path_exists(&self, source: &Node, target: &Node) -> bool {
-        let source_id = self.active_graph.get_id(source).unwrap();
-        let target_id = self.active_graph.get_id(target).unwrap();
-        self.active_graph
+        let source_id = self.enabled_graph.get_id(source).unwrap();
+        let target_id = self.enabled_graph.get_id(target).unwrap();
+        self.enabled_graph
             .outgoing
             .eq_neq()
             .traverse_dfs(EqNode::new(source_id), &mut Default::default())
@@ -41,8 +41,8 @@ impl AltEqTheory {
     /// Check for paths which exist but don't propagate correctly on constraint literals
     fn check_path_propagation(&self, model: &Domains) -> Vec<&Constraint> {
         let mut problems = vec![];
-        for source in self.active_graph.iter_nodes().collect_vec() {
-            for target in self.active_graph.iter_nodes().collect_vec() {
+        for source in self.enabled_graph.iter_nodes().collect_vec() {
+            for target in self.enabled_graph.iter_nodes().collect_vec() {
                 if self.eq_path_exists(&source, &target) {
                     self.constraint_store
                         .iter()
@@ -102,7 +102,7 @@ impl AltEqTheory {
             0,
             "Path propagation problems: {:#?}\nGraph:\n{}\nDebug: {:?}",
             path_prop_problems,
-            self.active_graph.clone().to_graphviz(),
+            self.enabled_graph.clone().to_graphviz(),
             self.constraint_store
                 .iter()
                 .find(|(_, prop)| prop == path_prop_problems.first().unwrap()) // model.entails(!path_prop_problems.first().unwrap().enabler.active) // self.undecided_graph
@@ -115,7 +115,7 @@ impl AltEqTheory {
             0,
             "{} constraint problems\nGraph:\n{}",
             constraint_problems,
-            self.active_graph.to_graphviz(),
+            self.enabled_graph.to_graphviz(),
         );
     }
 }

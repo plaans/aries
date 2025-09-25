@@ -94,7 +94,9 @@ impl Constraint {
 #[derive(Clone, Default)]
 pub struct ConstraintStore {
     constraints: RefVec<ConstraintId, Constraint>,
-    constraint_lookup: HashMap<(Node, Node), Vec<ConstraintId>>,
+    // constraint_lookup: HashMap<(Node, Node), Vec<ConstraintId>>,
+    in_constraints: HashMap<Node, Vec<ConstraintId>>,
+    out_constraints: HashMap<Node, Vec<ConstraintId>>,
     watches: Watches<(Enabler, ConstraintId)>,
     // trail: Trail<Event>,
 }
@@ -105,9 +107,13 @@ impl ConstraintStore {
         // self.trail.push(Event::PropagatorAdded);
         let id = self.constraints.len().into();
         self.constraints.push(constraint.clone());
-        self.constraint_lookup
-            .entry((constraint.a, constraint.b))
-            .and_modify(|e| e.push(id))
+        self.out_constraints
+            .entry(constraint.a)
+            .and_modify(|v| v.push(id))
+            .or_insert(vec![id]);
+        self.in_constraints
+            .entry(constraint.b)
+            .and_modify(|v| v.push(id))
             .or_insert(vec![id]);
         id
     }
@@ -118,13 +124,21 @@ impl ConstraintStore {
         // self.trail.push(Event::WatchAdded(id, literal));
     }
 
-    pub fn get_constraint(&self, prop_id: ConstraintId) -> &Constraint {
-        &self.constraints[prop_id]
+    pub fn get_constraint(&self, constraint_id: ConstraintId) -> &Constraint {
+        &self.constraints[constraint_id]
     }
 
-    /// Get valid propagators by source and target
-    pub fn get_from_nodes(&self, source: Node, target: Node) -> Vec<ConstraintId> {
-        self.constraint_lookup.get(&(source, target)).cloned().unwrap_or(vec![])
+    // Get valid propagators by source and target
+    // pub fn get_constraints_between(&self, source: Node, target: Node) -> Vec<ConstraintId> {
+    //     self.constraint_lookup.get(&(source, target)).cloned().unwrap_or(vec![])
+    // }
+
+    pub fn get_out_constraints(&self, source: Node) -> Vec<ConstraintId> {
+        self.out_constraints.get(&source).cloned().unwrap_or_default()
+    }
+
+    pub fn get_in_constraints(&self, source: Node) -> Vec<ConstraintId> {
+        self.in_constraints.get(&source).cloned().unwrap_or_default()
     }
 
     pub fn enabled_by(&self, literal: Lit) -> impl Iterator<Item = (Enabler, ConstraintId)> + '_ {
