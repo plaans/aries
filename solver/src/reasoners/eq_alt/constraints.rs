@@ -9,7 +9,7 @@ use crate::{
 
 use super::{node::Node, relation::EqRelation};
 
-// TODO: Identical to STN, maybe identify some other common logic and bump up to reasoner module
+// TODO: Identical to STN, maybe identify some other common logic (such as identity) and bump up to reasoner module
 
 /// Enabling information for a propagator.
 /// A propagator should be enabled iff both literals `active` and `valid` are true.
@@ -37,12 +37,12 @@ impl Enabler {
 #[derive(Debug, Clone, Copy)]
 pub struct ActivationEvent {
     /// the edge to enable
-    pub prop_id: ConstraintId,
+    pub constraint_id: ConstraintId,
 }
 
 impl ActivationEvent {
-    pub(crate) fn new(prop_id: ConstraintId) -> Self {
-        Self { prop_id }
+    pub fn new(constraint_id: ConstraintId) -> Self {
+        Self { constraint_id }
     }
 }
 

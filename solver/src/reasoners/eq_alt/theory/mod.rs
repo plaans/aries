@@ -9,7 +9,6 @@ use std::{
 };
 
 use cause::ModelUpdateCause;
-use itertools::Itertools;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor},
@@ -39,8 +38,8 @@ pub struct AltEqTheory {
     enabled_graph: DirectedEqualityGraph,
     /// A cursor that lets us track new events since last propagation
     model_events: ObsTrailCursor<ModelEvent>,
-    /// A temporary vec of newly created, unpropagated constraints
-    new_constraints: VecDeque<ActivationEvent>,
+    /// A temporary vec of unpropagated constraints
+    activation_events: VecDeque<ActivationEvent>,
     identity: Identity<ModelUpdateCause>,
     stats: RefCell<Stats>,
 }
@@ -51,7 +50,7 @@ impl AltEqTheory {
             constraint_store: Default::default(),
             enabled_graph: DirectedEqualityGraph::new(),
             model_events: Default::default(),
-            new_constraints: Default::default(),
+            activation_events: Default::default(),
             identity: Identity::new(ReasonerId::Eq(0)),
             stats: Default::default(),
         }
@@ -100,7 +99,7 @@ impl AltEqTheory {
             if model.entails(prop.enabler.valid) && model.entails(prop.enabler.active) {
                 // Propagator always active and valid, only need to propagate once
                 // So don't add watches
-                self.new_constraints.push_back(ActivationEvent::new(id));
+                self.activation_events.push_back(ActivationEvent::new(id));
             }
         }
     }
@@ -118,7 +117,7 @@ impl Default for AltEqTheory {
 
 impl Backtrack for AltEqTheory {
     fn save_state(&mut self) -> DecLvl {
-        assert!(self.new_constraints.is_empty());
+        assert!(self.activation_events.is_empty());
         self.enabled_graph.save_state()
     }
 
@@ -127,6 +126,7 @@ impl Backtrack for AltEqTheory {
     }
 
     fn restore_last(&mut self) {
+        self.activation_events.clear();
         self.enabled_graph.restore_last();
     }
 }
@@ -137,11 +137,6 @@ impl Theory for AltEqTheory {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        // Propagate newly created constraints
-        while let Some(event) = self.new_constraints.pop_front() {
-            self.propagate_edge(model, event.prop_id)?;
-        }
-
         while let Some(&event) = self.model_events.pop(model.trail()) {
             // Optimisation: If we deactivated an edge with literal l due to a neq cycle, the propagator with literal !l (from reification) is redundant
             if let Some(cause) = event.cause.as_external_inference() {
@@ -152,13 +147,22 @@ impl Theory for AltEqTheory {
             }
 
             // For each constraint which might be enabled by this event
-            for (enabler, prop_id) in self.constraint_store.enabled_by(event.new_literal()).collect_vec() {
+            for (enabler, constraint_id) in self.constraint_store.enabled_by(event.new_literal()) {
                 // Skip if not enabled
                 if !model.entails(enabler.active) || !model.entails(enabler.valid) {
                     continue;
                 }
-                self.stats().propagations += 1;
-                self.propagate_edge(model, prop_id)?;
+                self.activation_events.push_back(ActivationEvent::new(constraint_id));
+            }
+        }
+
+        // Propagate all new constraints
+        while let Some(event) = self.activation_events.pop_front() {
+            self.stats().propagations += 1;
+            let prop_res = self.propagate_edge(model, event.constraint_id);
+            if prop_res.is_err() {
+                self.activation_events.clear();
+                return prop_res;
             }
         }
         Ok(())
@@ -229,7 +233,7 @@ mod tests {
         F: FnMut(&mut AltEqTheory, &mut Domains) -> T,
     {
         assert!(
-            eq.new_constraints.is_empty(),
+            eq.activation_events.is_empty(),
             "Cannot test backtrack when activations pending"
         );
         eq.save_state();
