@@ -29,7 +29,9 @@ fn main() -> Res<()> {
     let problem_file = problem_file.canonicalize().unwrap();
     let domain_file = match opt.domain {
         Some(name) => name,
-        None => find_domain_of(&problem_file).ctx("Consider specifying the domain with the option -d/--domain")?,
+        None => find_domain_of(&problem_file).title(
+            "Unable to automatically find the domain file. Consider specifying the domain with the option -d/--domain",
+        )?, // TODO: this erases the previous error message
     };
     let domain_file = input::Input::from_file(&domain_file)?;
 

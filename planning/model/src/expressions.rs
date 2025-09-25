@@ -123,7 +123,7 @@ impl<'a> Display for TExpr<'a> {
             }
             Expr::Duration => write!(f, "?duration"),
             Expr::Makespan => write!(f, "?makespan"),
-            Expr::ViolationCount(ref_id) => write!(f, "violations({ref_id}"),
+            Expr::ViolationCount(ref_id) => write!(f, "violations({ref_id})"),
             Expr::Exists(params, expr_id) => {
                 write!(f, "(exists {} {})", params.iter().join(", "), self.env / *expr_id)
             }

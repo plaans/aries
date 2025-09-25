@@ -1,7 +1,7 @@
 use derive_more::derive::Display;
 use thiserror::Error;
 
-use crate::*;
+use crate::{errors::ToEnvMessage, *};
 
 #[derive(Clone, Display, Debug)]
 #[display("{}", name)]
@@ -30,6 +30,17 @@ pub enum ObjectError {
     DuplicateObjectDeclaration(Sym, Sym),
     #[error("unknown object {0}")]
     UnknownObject(Sym),
+}
+
+impl ToEnvMessage for ObjectError {
+    fn to_message(self, _env: &Environment) -> Message {
+        match self {
+            ObjectError::DuplicateObjectDeclaration(declared, previous) => declared
+                .invalid("duplicated object declaration")
+                .info(&previous, "previous declaration"),
+            ObjectError::UnknownObject(sym) => sym.invalid("Unknown object"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]

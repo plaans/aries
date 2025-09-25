@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use itertools::Itertools;
 
-use crate::{Env, ExprId, Param, RealValue, Sym, TimeInterval, Timestamp};
+use crate::{Condition, Env, ExprId, Param, RealValue, Sym, TimeInterval, Timestamp};
 
 #[derive(Debug, Clone)]
 pub struct Goal {
@@ -105,7 +105,7 @@ pub type RefId = Sym;
 
 /// A preference expressed with an identifier (not necessarily) and a goal statement.
 #[derive(Clone, Debug)]
-pub struct Preference {
+pub struct Preference<T> {
     /// Universal quantification (forall (?x - object ?y - loc))
     /// May be left empty which should be interpreted as the absence of quantification.
     /// Note that a non-empty universal quantification will yield several preferences with the same identifier.
@@ -115,11 +115,11 @@ pub struct Preference {
     /// greater than one.
     pub name: RefId,
     /// Goal expression associated to the preference.
-    pub goal: Goal,
+    pub goal: T,
 }
 
-impl Preference {
-    pub fn new(name: impl Into<RefId>, goal: Goal) -> Self {
+impl<T> Preference<T> {
+    pub fn new(name: impl Into<RefId>, goal: T) -> Self {
         Preference {
             universal_quantification: Vec::new(),
             name: name.into(),
@@ -137,22 +137,49 @@ impl Preference {
     }
 }
 
-#[derive(Default, Clone, Debug)]
-pub struct Preferences {
-    prefs: Vec<Preference>,
+#[derive(Clone, Debug)]
+pub struct Preferences<T> {
+    prefs: Vec<Preference<T>>,
 }
 
-impl Preferences {
-    pub fn add(&mut self, pref: Preference) {
-        self.prefs.push(pref);
+impl<T> Default for Preferences<T> {
+    fn default() -> Self {
+        Self {
+            prefs: Default::default(),
+        }
     }
 }
 
-impl Display for Env<'_, Preference> {
+impl<T> Preferences<T> {
+    pub fn add(&mut self, pref: Preference<T>) {
+        self.prefs.push(pref);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.prefs.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Preference<T>> + '_ {
+        self.prefs.iter()
+    }
+}
+
+impl Display for Env<'_, &Preference<Goal>> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !self.elem.universal_quantification.is_empty() {
             write!(f, "forall ({}) ", self.elem.universal_quantification.iter().join(", "))?;
         }
+        write!(f, "{}: ", self.elem.name)?;
+        write!(f, "{}", self.env / &self.elem.goal)
+    }
+}
+
+impl Display for Env<'_, &Preference<Condition>> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.elem.universal_quantification.is_empty() {
+            write!(f, "forall ({}) ", self.elem.universal_quantification.iter().join(", "))?;
+        }
+        write!(f, "{}: ", self.elem.name)?;
         write!(f, "{}", self.env / &self.elem.goal)
     }
 }

@@ -86,18 +86,16 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         model.env.fluents.add_fluent(&func.name, parameters, tpe)?;
     }
 
-    let mut objects = Objects::new();
-
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
         let tpe = match obj.tpe.as_slice() {
             [] => model.env.types.top_user_type(),
             [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
             [_, tpe, ..] => return Err(tpe.invalid("object with more than one type")),
         };
-        objects.add_object(&obj.symbol, tpe)?;
+        model.env.objects.add_object(&obj.symbol, tpe).msg(&model.env)?;
     }
 
-    let bindings = Rc::new(Bindings::objects(&objects));
+    let bindings = Rc::new(Bindings::objects(&model.env.objects));
 
     for init in &prob.init {
         let effs = into_effects(Some(Timestamp::ORIGIN), init, &mut model.env, &bindings)?;
@@ -108,7 +106,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         let sub_goals = conjuncts(g);
         for g in sub_goals {
             if is_preference(g) {
-                let pref = parse_preference(g, true, &mut model.env, &bindings)?;
+                let pref = parse_goal_preference(g, true, &mut model.env, &bindings)?;
                 model.preferences.add(pref);
             } else {
                 let g = parse_goal(g, true, &mut model.env, &bindings)?;
@@ -122,7 +120,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         let sub_goals = conjuncts(c);
         for c in sub_goals {
             if is_preference(c) {
-                let pref = parse_preference(c, false, &mut model.env, &bindings)?;
+                let pref = parse_goal_preference(c, false, &mut model.env, &bindings)?;
                 model.preferences.add(pref);
             } else {
                 let c = parse_goal(c, false, &mut model.env, &bindings)?;
@@ -166,10 +164,20 @@ fn into_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>)
 
     let mut action = Action::instantaneous(&a.name, parameters);
 
+    let action_start = action.start();
+    let condition_parser: &ExprParser<Condition> = &move |c, env, bindings| {
+        let c = parse(c, env, bindings)?;
+        Ok(Condition::at(action_start, c))
+    };
     for c in &a.pre {
         for c in conjuncts(c) {
-            let c = parse(c, env, &bindings)?;
-            action.conditions.push(Condition::at(action.start(), c));
+            if is_preference(c) {
+                let pref = parse_preference_gen(c, condition_parser, env, &bindings)?;
+                action.preferences.add(pref);
+            } else {
+                let cond = condition_parser(c, env, &bindings)?;
+                action.conditions.push(cond);
+            }
         }
     }
 
@@ -191,10 +199,19 @@ fn into_durative_action(
 
     let mut action = Action::new(&a.name, parameters, duration);
 
+    let condition_parser: &ExprParser<Condition> = &move |c, env, bindings| {
+        let (itv, c) = parse_timed(c, env, bindings)?;
+        Ok(Condition::over(itv, c))
+    };
     for c in &a.conditions {
         for c in conjuncts(c) {
-            let (itv, c) = parse_timed(c, env, &bindings)?;
-            action.conditions.push(Condition::over(itv, c));
+            if is_preference(c) {
+                let pref = parse_preference_gen(c, condition_parser, env, &bindings)?;
+                action.preferences.add(pref);
+            } else {
+                let cond = condition_parser(c, env, &bindings)?;
+                action.conditions.push(cond);
+            }
         }
     }
 
@@ -500,23 +517,45 @@ fn is_preference(sexpr: &SExpr) -> bool {
 ///
 /// If `at_horizon` is true, the goal expression is supposed to hold at the horizon,
 /// otherwise it is a PDDL constraint (within, always, ....)
-fn parse_preference(
+fn parse_goal_preference(
     sexpr: &SExpr,
     at_horizon: bool,
     env: &mut Environment,
     bindings: &Rc<Bindings>,
-) -> Result<Preference, Message> {
+) -> Result<Preference<Goal>, Message> {
+    parse_preference_gen(
+        sexpr,
+        &move |e, env, bindings| parse_goal(e, at_horizon, env, bindings),
+        env,
+        bindings,
+    )
+}
+
+type ExprParser<T> = dyn Fn(&SExpr, &mut Environment, &Rc<Bindings>) -> Res<T>;
+
+/// Parses a preference of the form
+///   (forall (?x - loc ?y -obj) (preference pref-name <T>))
+///   (preference pref-name <T>)
+/// Given a parser for T
+fn parse_preference_gen<T>(
+    sexpr: &SExpr,
+    sub_parser: &ExprParser<T>,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Result<Preference<T>, Message> {
     if let Some([id, goal]) = sexpr.as_application("preference") {
         let id = id
             .as_atom()
             .ok_or(id.invalid("expected preference identifier"))
             .cloned()?;
-        let goal = parse_goal(goal, at_horizon, env, bindings)?;
+        let goal = sub_parser(goal, env, bindings)?;
         Ok(Preference::new(id, goal))
     } else if let Some([vars, pref]) = sexpr.as_application("forall") {
+        // we have a forall, first identify the variables and add them to the bindings
         let vars = parse_var_list(vars, env)?;
         let bindings = Rc::new(Bindings::stacked(&vars, bindings));
-        parse_preference(pref, at_horizon, env, &bindings).map(|pref| pref.forall(vars))
+        // parse the preference (with the additional bindings) and then append the variables
+        parse_preference_gen(pref, sub_parser, env, &bindings).map(|pref| pref.forall(vars))
     } else {
         Err(sexpr.invalid("malformed preference"))
     }

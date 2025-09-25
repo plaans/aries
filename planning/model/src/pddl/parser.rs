@@ -15,11 +15,11 @@ use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Res<Domain> {
     let expr = parse(pb)?;
-    read_domain(expr).ctx("Invalid domain: Syntax error")
+    read_domain(expr).title("Invalid domain: Syntax error")
 }
 pub fn parse_pddl_problem(pb: Input) -> Res<Problem> {
     let expr = parse(pb)?;
-    read_problem(expr).ctx("Invalid problem: Syntax error")
+    read_problem(expr).title("Invalid problem: Syntax error")
 }
 
 /// Attempts to find the corresponding domain file for the given PDDL/HDDL problem.
@@ -37,9 +37,9 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> Res<PathBuf> {
 
     let problem_filename = problem_file
         .file_name()
-        .ctx("Invalid file")?
+        .title("Invalid file")?
         .to_str()
-        .ctx("Could not convert file name to utf8")?;
+        .title("Could not convert file name to utf8")?;
 
     // if the problem file is of the form XXXXX.YY.pb.Zddl
     // then add XXXXX.dom.Zddl to the candidate filenames
@@ -466,7 +466,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
     // extract the name of the domain, of the form `(domain XXX)`
     let mut domain_name_decl = dom.pop_list()?.iter();
     domain_name_decl.pop_known_atom("domain")?;
-    let name = domain_name_decl.pop_atom().ctx("missing name of domain")?.clone();
+    let name = domain_name_decl.pop_atom().title("missing name of domain")?.clone();
 
     let mut res = Domain {
         name,
@@ -532,7 +532,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                     // whici allows distinguishing numeric and object fluents
                     let tpe = if property.peek().is_some_and(|a| a.is_atom("-")) {
                         property.pop_known_atom("-")?;
-                        Some(property.pop_atom().ctx("expected a type").cloned()?)
+                        Some(property.pop_atom().title("expected a type").cloned()?)
                     } else {
                         None
                     };
@@ -546,9 +546,8 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                 let mut eff = Vec::new();
                 while !property.is_empty() {
                     let key_expr = property.pop_atom()?;
-                    let key = key_expr.to_string();
-                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?; // TODO: provide key as spanned
-                    match key.as_str() {
+                    let value = property.pop().tag(key_expr, "No value associated to arg", None)?;
+                    match key_expr.canonical_str() {
                         ":parameters" => {
                             if !args.is_empty() {
                                 return Err(key_expr.invalid("Duplicated ':parameters' tag is not allowed"));
@@ -566,7 +565,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                         ":effect" => {
                             eff.push(value.clone());
                         }
-                        _ => return Err(key_expr.invalid(format!("unsupported key in action: {key}"))), // TODO: remove key
+                        _ => return Err(key_expr.invalid("unsupported key in action")),
                     }
                 }
                 res.actions.push(Action {
@@ -586,7 +585,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
 
                 while let Ok(key_expr) = property.pop_atom() {
                     let key = key_expr.to_string();
-                    let value = property.pop().ctx(format!("No value associated to arg: {key}"))?; // TODO
+                    let value = property.pop().title(format!("No value associated to arg: {key}"))?; // TODO
                     match key.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
@@ -627,9 +626,9 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
             }
             ":task" => {
                 check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
-                let name = property.pop_atom().ctx("Missing task name")?.clone();
+                let name = property.pop_atom().title("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
-                let params = property.pop_list().ctx("Expected a parameter list")?;
+                let params = property.pop_list().title("Expected a parameter list")?;
                 let params = consume_typed_symbols(&mut params.iter())?;
                 let task = TaskDef {
                     name,
@@ -640,9 +639,9 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
             }
             ":method" => {
                 check_feature_presence(PddlFeature::Hierarchy, &res, current)?;
-                let name = property.pop_atom().ctx("Missing task name")?.clone();
+                let name = property.pop_atom().title("Missing task name")?.clone();
                 property.pop_known_atom(":parameters")?;
-                let params = property.pop_list().ctx("Expected a parameter list")?;
+                let params = property.pop_list().title("Expected a parameter list")?;
                 let parameters = consume_typed_symbols(&mut params.iter())?;
                 property.pop_known_atom(":task")?;
                 let task = parse_task(property.pop()?, false)?;
@@ -843,7 +842,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
 
     let mut problem_name = problem
         .pop_list()
-        .ctx("Expected problem name definition of the form '(problem XXXXXX)'")?
+        .title("Expected problem name definition of the form '(problem XXXXXX)'")?
         .iter();
     problem_name.pop_known_atom("problem")?;
     let problem_name = problem_name.pop_atom()?.clone();

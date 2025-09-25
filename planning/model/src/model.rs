@@ -10,7 +10,7 @@ pub struct Model {
     /// timed effects (after ORIGIN)
     pub init: Vec<Effect>,
     pub goals: Vec<Goal>,
-    pub preferences: Preferences,
+    pub preferences: Preferences<Goal>,
     pub metric: Option<Metric>,
 }
 
@@ -43,6 +43,13 @@ impl Display for Model {
         write!(f, "\n\nGoals:")?;
         for g in &self.goals {
             write!(f, "\n  {}", &self.env / g)?;
+        }
+        write!(f, "\n\nPreferences:")?;
+        for g in self.preferences.iter() {
+            write!(f, "\n  {}", &self.env / g)?;
+        }
+        if let Some(metric) = &self.metric {
+            write!(f, "\n\nMetric:\n  {}", &self.env / metric)?;
         }
         Ok(())
     }

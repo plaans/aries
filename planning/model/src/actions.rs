@@ -38,6 +38,8 @@ pub enum Duration {
     Bounded(ExprId, ExprId),
 }
 
+pub type ActionPreferences = Preferences<Condition>;
+
 #[derive(Debug)]
 pub struct Action {
     pub name: Sym,
@@ -45,6 +47,7 @@ pub struct Action {
     pub duration: Duration,
     pub conditions: Vec<Condition>,
     pub effects: Vec<Effect>,
+    pub preferences: ActionPreferences,
 }
 
 impl Action {
@@ -55,6 +58,7 @@ impl Action {
             duration,
             conditions: Default::default(),
             effects: Default::default(),
+            preferences: Default::default(),
         }
     }
     pub fn instantaneous(name: impl Into<Sym>, parameters: Vec<Param>) -> Self {
@@ -94,6 +98,12 @@ impl<'env> Display for Env<'env, &Action> {
         write!(f, "\n    effects:")?;
         for eff in &self.elem.effects {
             write!(f, "\n      {}", self.env / eff)?;
+        }
+        if !self.elem.preferences.is_empty() {
+            write!(f, "\n    preferences:")?;
+            for pref in self.elem.preferences.iter() {
+                write!(f, "\n      {}", self.env / pref)?;
+            }
         }
         Ok(())
     }

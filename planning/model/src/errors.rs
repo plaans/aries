@@ -59,11 +59,13 @@ impl Span {
     }
     pub fn invalid(&self, msg: impl ToString) -> Message {
         let msg = msg.to_string();
-        if self.span.len() < 40 {
-            Message::error(format!("{msg}: {}", self.str())).snippet(self.clone().error(msg))
+        // we have no explicit title, derive it from the message, including `self` in it if it is short
+        let title = if self.span.len() < 60 {
+            format!("{msg}: {}", self.str())
         } else {
-            Message::error(&msg).snippet(self.clone().error(msg))
-        }
+            msg.to_string()
+        };
+        Message::error(title).snippet(self.clone().error(msg))
     }
 }
 
@@ -150,7 +152,6 @@ pub struct Message {
     snippets: Vec<Annot>,
     /// Subsets of the input that should be displayed (without any annotation)
     visible: Vec<Span>,
-    info: Vec<String>,
 }
 
 impl Message {
@@ -161,7 +162,6 @@ impl Message {
             title: title.to_string(),
             snippets: Vec::new(),
             visible: Vec::new(),
-            info: Vec::new(),
         }
     }
 
@@ -190,8 +190,8 @@ impl Message {
     }
 
     #[cold]
-    pub fn ctx(mut self, s: impl ToString) -> Message {
-        self.info.push(s.to_string());
+    pub fn title(mut self, s: impl ToString) -> Message {
+        self.title = s.to_string();
         self
     }
 
@@ -202,15 +202,15 @@ impl Message {
 }
 
 pub trait Ctx<T> {
-    fn ctx(self, error_context: impl Display) -> std::result::Result<T, Message>;
+    fn title(self, error_context: impl Display) -> std::result::Result<T, Message>;
 }
 impl<T> Ctx<T> for std::result::Result<T, Message> {
-    fn ctx(self, error_context: impl Display) -> Result<T, Message> {
-        self.map_err(|e| e.ctx(error_context))
+    fn title(self, error_context: impl Display) -> Result<T, Message> {
+        self.map_err(|e| e.title(error_context))
     }
 }
 impl<T> Ctx<T> for Option<T> {
-    fn ctx(self, msg: impl Display) -> Result<T, Message> {
+    fn title(self, msg: impl Display) -> Result<T, Message> {
         self.ok_or_else(|| Message::error(msg))
     }
 }
