@@ -25,12 +25,12 @@ mod tests {
     use std::fmt::Display;
 
     use itertools::Itertools;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{rngs::SmallRng, seq::IteratorRandom, Rng, SeedableRng};
 
     use crate::{
         core::{
             state::{Cause, Domains},
-            VarRef,
+            IntCst, Lit, VarRef,
         },
         model::{
             lang::{
@@ -49,28 +49,43 @@ mod tests {
         constraints: Vec<(VarRef, VarRef, EqRelation, bool, bool)>,
     }
 
-    const VARS_PER_PROBLEM: u32 = 20;
+    const VARS_PER_PROBLEM: usize = 20;
 
     fn generate_problem(rng: &mut SmallRng) -> Problem {
         // Calibrated for approximately equal number of solvable and unsolvable problems
-        let sparsity = 0.4;
+        let sparsity = 0.5;
         let neq_probability = 0.5;
         let full_reif_probability = 0.5;
-        let enforce_probability = 0.25;
+        let enforce_probability = 0.5;
+        let max_scopes = 5;
 
         let mut domains = Domains::new();
-        for i in 2..=VARS_PER_PROBLEM + 1 {
-            assert!(VarRef::from_u32(i) == domains.new_var(0, VARS_PER_PROBLEM as i32 - 1));
+
+        let num_scopes = rng.gen_range(1..max_scopes);
+
+        let mut scopes = vec![Lit::TRUE];
+        for i in 1..num_scopes {
+            scopes.push(domains.new_presence_literal(scopes[i - 1]));
+        }
+
+        // Lit::TRUE, Lit::FALSE, and scopes other than TRUE
+        let var_offset = num_scopes - 1 + 2;
+
+        for i in var_offset..VARS_PER_PROBLEM + var_offset {
+            assert_eq!(
+                VarRef::from(i),
+                domains.new_optional_var(0, VARS_PER_PROBLEM as IntCst - 1, *scopes.iter().choose(rng).unwrap())
+            );
         }
 
         #[allow(clippy::filter_map_bool_then)] // Avoids double borrowing rng
-        let constraints = (2..=VARS_PER_PROBLEM + 1)
+        let constraints = (var_offset..VARS_PER_PROBLEM + var_offset)
             .tuple_combinations()
             .filter_map(|(a, b)| {
                 rng.gen_bool(sparsity).then(|| {
                     (
-                        VarRef::from_u32(a),
-                        VarRef::from_u32(b),
+                        a.into(),
+                        b.into(),
                         if rng.gen_bool(neq_probability) {
                             EqRelation::Neq
                         } else {
@@ -169,11 +184,7 @@ mod tests {
                 let mut solver = Solver::new(model.clone());
                 solver.set_brancher(RandomChoice::new(i));
                 let new_solution = solver.solve().unwrap();
-                if new_solution.is_some() {
-                    println!("Solution");
-                } else {
-                    println!("No solution");
-                }
+
                 assert_eq!(new_solution.is_some(), solution.is_some());
             }
         }
@@ -192,11 +203,7 @@ mod tests {
             let mut stn_solver = Solver::new(stn_model.clone());
             stn_solver.set_brancher(RandomChoice::new(0));
             let stn_solution = stn_solver.solve().unwrap();
-            if eq_solution.is_some() {
-                println!("Solution");
-            } else {
-                println!("No solution");
-            }
+
             assert_eq!(eq_solution.is_some(), stn_solution.is_some())
         }
     }
