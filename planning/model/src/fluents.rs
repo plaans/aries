@@ -1,7 +1,7 @@
 use derive_more::derive::Display;
 use thiserror::Error;
 
-use crate::{env::Environment, utils::disp_iter, *};
+use crate::{env::Environment, errors::ToEnvMessage, utils::disp_iter, *};
 
 #[derive(Error, Debug)]
 pub enum FluentError {
@@ -9,6 +9,17 @@ pub enum FluentError {
     DuplicateFluent(Sym, Sym),
     #[error("Unknown fluent")]
     UnkonwnFluent(Sym),
+}
+
+impl ToEnvMessage for FluentError {
+    fn to_message(self, _env: &Environment) -> Message {
+        match self {
+            FluentError::DuplicateFluent(declared, previous) => declared
+                .invalid("duplicated fluent declaration")
+                .info(&previous, "previous declaration"),
+            FluentError::UnkonwnFluent(sym) => sym.invalid("Unknown object"),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy)]
@@ -74,11 +85,13 @@ impl Fluents {
         name: impl Into<Sym>,
         parameters: Vec<Param>,
         return_type: Type,
+        source: Option<Span>,
     ) -> Result<FluentId, FluentError> {
         let fluent = Fluent {
             name: name.into(),
             parameters,
             return_type,
+            source,
         };
         if let Some(other) = self.get_by_name(fluent.name().canonical_str()) {
             let other_sym = self.fluents.get(other).unwrap().name().clone();
@@ -99,6 +112,8 @@ pub struct Fluent {
     pub name: Sym,
     pub parameters: Vec<Param>,
     pub return_type: Type,
+    // source of the declaration of the fluent
+    pub source: Option<Span>,
 }
 
 impl Fluent {
@@ -116,5 +131,11 @@ impl Fluent {
             self.parameters[i].tpe.accepts(*arg, env)?;
         }
         Ok(self.return_type.clone())
+    }
+}
+
+impl Spanned for &Fluent {
+    fn span(&self) -> Option<&Span> {
+        self.source.as_ref()
     }
 }

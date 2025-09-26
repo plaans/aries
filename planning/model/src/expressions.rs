@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 
 use crate::{
     env::{Env, Environment},
-    errors::Message,
+    errors::{EnvError, ErrorMessageExt, Message},
     utils::disp_iter,
     *,
 };
@@ -135,13 +135,19 @@ impl<'a> Display for TExpr<'a> {
 }
 
 impl Expr {
-    pub fn tpe(&self, env: &Environment) -> Result<Type, TypeError> {
+    pub fn tpe(&self, env: &Environment) -> Result<Type, Message> {
         match self {
             Expr::Real(i) if i.is_integer() => Ok(Type::Int(IntInterval::singleton(*i.numer()))),
             Expr::Real(_) => Ok(Type::Real),
             Expr::Bool(_) => Ok(Type::Bool),
-            Expr::App(fun, args) => fun.return_type(args.as_slice(), env),
-            Expr::StateVariable(fluent, args) => env.fluents.get(*fluent).return_type(args.as_slice(), env),
+            Expr::App(fun, args) => fun.return_type(args.as_slice(), env).msg(env),
+            Expr::StateVariable(fluent, args) => {
+                let fluent = env.fluents.get(*fluent);
+                fluent
+                    .return_type(args.as_slice(), env)
+                    .msg(env)
+                    .tag(fluent, "fluent declaration", None)
+            }
             Expr::Object(o) => Ok(o.tpe().into()),
             Expr::Param(p) => Ok(p.tpe().clone()),
             Expr::Exists(_, x) | Expr::Forall(_, x) => Ok(env.node(*x).tpe().clone()),

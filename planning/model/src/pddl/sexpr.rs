@@ -310,7 +310,9 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                 }
             }
         } else if cur_start.is_none() {
-            // returns true if the next char (after `n`) is nimeric
+            // we are not inside a token
+
+            // helper: returns true if the next char (after `n`) is nimeric
             let next_is_numeric = || {
                 let mut chars_from_index = s[index..].chars();
                 // remove the current char (note that it may span multiple bytes so we do not know the start of the next)

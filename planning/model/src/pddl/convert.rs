@@ -71,7 +71,10 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
 
     for pred in &dom.predicates {
         let parameters = parse_parameters(&pred.args, &model.env.types).msg(&model.env)?;
-        model.env.fluents.add_fluent(&pred.name, parameters, Type::Bool)?;
+        model
+            .env
+            .fluents
+            .add_fluent(&pred.name, parameters, Type::Bool, pred.source.clone())?;
     }
 
     for func in &dom.functions {
@@ -83,7 +86,11 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
                 user_type.into()
             }
         };
-        model.env.fluents.add_fluent(&func.name, parameters, tpe)?;
+        model
+            .env
+            .fluents
+            .add_fluent(&func.name, parameters, tpe, func.source.clone())
+            .msg(&model.env)?;
     }
 
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
@@ -290,7 +297,7 @@ fn into_effect(
         ))
     }
     if let Some([arg]) = expr.as_application("not") {
-        let contradiction = env.intern(Expr::Bool(false), None).msg(env)?;
+        let contradiction = env.intern(Expr::Bool(false), None)?;
         let sv = parse_sv(arg, Some(Type::Bool), env, bindings)?;
         Ok(SimpleEffect::assignement(time.into(), sv, contradiction))
     } else if let Some([sv, val]) = expr.as_application("=") {
@@ -316,7 +323,7 @@ fn into_effect(
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
         Ok(SimpleEffect::decrease(time.into(), sv, val))
     } else {
-        let tautology = env.intern(Expr::Bool(true), None).msg(env)?;
+        let tautology = env.intern(Expr::Bool(true), None)?;
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
         Ok(SimpleEffect::assignement(time.into(), sv, tautology))
     }
@@ -425,7 +432,7 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
             }
         }
     };
-    env.intern(expr, sexpr.loc()).msg(env).map_err(|e| {
+    env.intern(expr, sexpr.loc()).map_err(|e| {
         e.snippet(
             sexpr
                 .loc()

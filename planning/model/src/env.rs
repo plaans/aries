@@ -1,6 +1,6 @@
 use idmap::DirectIdMap;
 
-use crate::{Expr, ExprId, ExprNode, Fluents, Objects, TypeError, Types, errors::Span};
+use crate::{Expr, ExprId, ExprNode, Fluents, Message, Objects, Types, errors::Span};
 
 pub struct Environment {
     pub types: Types,
@@ -34,7 +34,7 @@ impl Environment {
         self / id
     }
 
-    pub fn intern(&mut self, expr: Expr, span: impl Into<Option<Span>>) -> Result<ExprId, TypeError> {
+    pub fn intern(&mut self, expr: Expr, span: impl Into<Option<Span>>) -> Result<ExprId, Message> {
         let tpe = expr.tpe(self)?;
         let id = ExprId(self.next_expr_id);
         self.next_expr_id += 1;

@@ -269,6 +269,7 @@ impl Display for Param {
 pub struct Predicate {
     pub name: Sym,
     pub args: Vec<Param>,
+    pub source: Option<Span>,
 }
 impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
@@ -284,11 +285,17 @@ pub struct Function {
     pub name: Sym,
     pub args: Vec<Param>,
     pub tpe: Option<Sym>,
+    pub source: Option<Span>,
 }
 
 impl Function {
-    fn new(name: Sym, args: Vec<Param>, tpe: Option<Sym>) -> Self {
-        Self { name, args, tpe }
+    fn new(name: Sym, args: Vec<Param>, tpe: Option<Sym>, source: Option<Span>) -> Self {
+        Self {
+            name,
+            args,
+            tpe,
+            source,
+        }
     }
 }
 
@@ -504,7 +511,11 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                     let mut pred = pred.as_list_iter().ok_or_else(|| pred.invalid("Expected a list"))?;
                     let name = pred.pop_atom()?.clone();
                     let args = consume_typed_symbols(&mut pred)?;
-                    res.predicates.push(Predicate { name, args });
+                    res.predicates.push(Predicate {
+                        name,
+                        args,
+                        source: Some(pred.loc()),
+                    });
                 }
             }
             ":types" => {
@@ -536,7 +547,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                     } else {
                         None
                     };
-                    res.functions.push(Function::new(name, args, tpe));
+                    res.functions.push(Function::new(name, args, tpe, Some(func.loc())));
                 }
             }
             ":action" => {
