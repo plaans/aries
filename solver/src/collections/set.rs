@@ -61,6 +61,16 @@ impl<K: Ref> Default for RefSet<K> {
     }
 }
 
+impl<K: Ref> FromIterator<K> for IterableRefSet<K> {
+    fn from_iter<T: IntoIterator<Item = K>>(iter: T) -> Self {
+        let mut set = Self::new();
+        for i in iter {
+            set.insert(i);
+        }
+        set
+    }
+}
+
 /// A set of values that can be converted into small unsigned integers.
 /// This extends `RefSet` with a vector of all elements of the set, allowing for fast iteration
 /// and clearing.
@@ -87,6 +97,10 @@ impl<K: Ref> IterableRefSet<K> {
 
     pub fn insert(&mut self, k: K) {
         self.set.insert(k, ());
+    }
+
+    pub fn remove(&mut self, k: K) {
+        self.set.remove(k);
     }
 
     pub fn clear(&mut self) {

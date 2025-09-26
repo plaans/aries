@@ -399,6 +399,9 @@ impl<K, V> Default for RefMap<K, V> {
 impl<K: Ref, V> RefMap<K, V> {
     pub fn insert(&mut self, k: K, v: V) {
         let index = k.into();
+        if index > self.entries.len() {
+            self.entries.reserve(index - self.entries.len());
+        }
         while self.entries.len() <= index {
             self.entries.push(None);
         }
@@ -454,6 +457,7 @@ impl<K: Ref, V> RefMap<K, V> {
             self.entries[index].as_mut()
         }
     }
+
     pub fn get_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &V {
         if !self.contains(k) {
             self.insert(k, default())
@@ -560,6 +564,11 @@ impl<K: Ref, V> IterableRefMap<K, V> {
             self.keys.push(k)
         }
         self.map.insert(k, v)
+    }
+
+    pub fn remove(&mut self, k: K) {
+        self.map.remove(k);
+        self.keys.retain(|e| *e != k);
     }
 
     /// Removes all elements from the Map.
