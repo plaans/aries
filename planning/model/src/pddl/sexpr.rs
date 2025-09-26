@@ -310,10 +310,22 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
                 }
             }
         } else if cur_start.is_none() {
+            // returns true if the next char (after `n`) is nimeric
+            let next_is_numeric = || {
+                let mut chars_from_index = s[index..].chars();
+                // remove the current char (note that it may span multiple bytes so we do not know the start of the next)
+                let cur = chars_from_index.next().unwrap();
+                debug_assert_eq!(cur, n);
+                chars_from_index.next().is_some_and(|next| next.is_numeric())
+            };
             // not inside a token
-            if n == '-' {
+            if n == '-' && !next_is_numeric() {
                 // '-' cannot start a token, so if we encounter it we immediately return a token
-                // note: this is a work around for badly formated domains present in the IPC
+                // note: this is a work around for badly formated domains present in the IPC where a type annotation does not spearate the `-` and the type
+                // e.g. (:params ?m -machine)  which should be (:params ?m - machine)
+                //
+                // Hence we split `-machine` in to two tokens `-` and `machine` unless the the `-` is immediately followed by a numeric digit
+                // in which case it should be considered as a numeric literal, e.g., `-32.4`
                 tokens.push(make_sym(index, index, line, line_start));
             } else {
                 // this is the begenning of a token
