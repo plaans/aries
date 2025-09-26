@@ -57,18 +57,18 @@ samply bin +args:
 
 
 
-pddl-test-parser:
-    #!/usr/bin/env bash
-    set -e
-    for f in `fd pb.pddl planning/problems/pddl/`; do
-        cargo run --bin pddl-parser -- $f
-    done
 
-pddl:
+
+# Parses all instance-1.pddl PDDL files in planning/ext/pddl except for the few known to be unsupported.
+pddl-parse-all filter="d":
     #!/usr/bin/env bash
-    set -e
+    set -e  # stop on first error
     cargo build --profile ci --bin pddl-parser
-    #for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v adlXX | grep 2006 |  grep -v derived | grep -v openstacks |grep -v pathw`; do
-    for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v adlXX | grep 2002 |  grep -v derivedXX | grep -v openstacksXX |grep -v pathw`; do
-        target/ci/pddl-parser  $f
+    # ignore the following domains
+    #  - from 1998 IPC (non stabilized syntax)
+    #  - with derived predicates
+    #  - temporal machine shop (TMS, IPC 2011 and 2014) that contains an object declared twice with two distinct type (valid PDDL but unsupported)
+    for f in `fd instance-1.pddl planning/ext/pddl/ | grep -v "1998" | grep {{filter}} |  grep -v derived | grep -v temporal-machine-shop `; do
+        echo $f
+        target/ci/pddl-parser  $f > /dev/null
     done
