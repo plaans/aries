@@ -576,8 +576,8 @@ fn parse_number(decimal_str: &str) -> Option<RealValue> {
         let (lhs, rhs) = decimal_str.split_once(".")?;
         let num_digits = rhs.len() as u32;
         let denom = 10i64.pow(num_digits);
-        let lhs: i64 = lhs.parse().ok()?;
-        let rhs: u64 = rhs.parse().ok()?;
+        let lhs: i64 = if lhs.is_empty() { 0 } else { lhs.parse().ok()? };
+        let rhs: u64 = if rhs.is_empty() { 0 } else { rhs.parse().ok()? };
         let rhs = rhs as i64;
         debug_assert!(rhs < denom);
         let numer = lhs * denom + rhs;
