@@ -2,8 +2,8 @@ use crate::pddl::input::*;
 use crate::utils::disp_slice;
 use crate::{Res, Sym, errors::*};
 use itertools::Itertools;
-use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
+use std::sync::Arc;
 
 pub type SAtom = crate::Sym;
 
@@ -228,12 +228,7 @@ enum Token {
     RParen(Pos),
 }
 
-pub fn parse<S: TryInto<Input>>(s: S) -> Res<SExpr>
-where
-    <S as TryInto<Input>>::Error: std::error::Error + Send + Sync + 'static,
-{
-    let s = s.try_into()?;
-    let s = std::sync::Arc::new(s);
+pub fn parse(s: Arc<Input>) -> Res<SExpr> {
     let tokenized = tokenize(s.clone());
     let mut tokens = tokenized.iter().peekable();
     read(&mut tokens, &s)
@@ -375,7 +370,18 @@ fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::s
                 .invalid("Unexpected closing parenthesis");
             Err(msg)
         }
-        None => Err(Message::error("Unexpected end of output")),
+        None => {
+            let src = src.clone();
+            let err = match src.text.char_indices().last() {
+                Some((last_index, _)) => Span::new(src, last_index, last_index)
+                    .invalid("Unexpected end of input, typically to unclosed parenthesis."),
+                None => Message::error(format!(
+                    "Empty input: {}",
+                    if let Some(src) = &src.source { src } else { "??" }
+                )),
+            };
+            Err(err)
+        }
     }
 }
 
@@ -384,6 +390,7 @@ mod tests {
     use super::*;
 
     fn formats_as(input: &str, output: &str) {
+        let input = Arc::new(Input::from_string(input));
         let res = parse(input).unwrap();
         let formatted = format!("{res}");
         assert_eq!(&formatted, output);

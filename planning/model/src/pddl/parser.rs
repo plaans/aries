@@ -5,6 +5,7 @@ use crate::errors::*;
 
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
+use std::sync::Arc;
 
 use crate::pddl::input::*;
 use crate::pddl::sexpr::*;
@@ -14,11 +15,13 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Res<Domain> {
-    let expr = parse(pb)?;
+    let pb = Arc::new(pb);
+    let expr = parse(pb.clone())?;
     read_domain(expr).title("Invalid domain: Syntax error")
 }
 pub fn parse_pddl_problem(pb: Input) -> Res<Problem> {
-    let expr = parse(pb)?;
+    let pb = Arc::new(pb);
+    let expr = parse(pb.clone())?;
     read_problem(expr).title("Invalid problem: Syntax error")
 }
 
@@ -927,6 +930,11 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    fn parse(s: &str) -> Res<SExpr> {
+        let s = Input::from_string(s);
+        super::parse(Arc::new(s))
+    }
+
     #[test]
     fn parsing() -> Result<(), String> {
         let prog = "(begin (define r 10) (* pi (* r r)))";
@@ -942,9 +950,9 @@ mod tests {
     fn parsing_hddl() -> Res<()> {
         let source = "../problems/hddl/tests/nothing.dom.hddl";
         let source = PathBuf::from_str(source)?;
-        let source = Input::from_file(&source)?;
+        let source = Arc::new(Input::from_file(&source)?);
 
-        match parse(source) {
+        match super::parse(source) {
             Result::Ok(e) => {
                 println!("{e}");
 
@@ -963,36 +971,4 @@ mod tests {
 
         Result::Ok(())
     }
-    //
-    // #[test]
-    // fn parsing_pddl_domain() -> Result<(), String> {
-    //     let prog = std::fs::read_to_string("../problems/pddl/gripper/domain.pddl").expect("Could not read file");
-    //     match parse(prog.as_str()) {
-    //         Result::Ok(e) => {
-    //             println!("{}", e);
-    //
-    //             let dom = read_xddl_domain(e, Language::PDDL).unwrap();
-    //
-    //             println!("{}", dom);
-    //         }
-    //         Result::Err(s) => eprintln!("{}", s),
-    //     }
-    //
-    //     Result::Ok(())
-    // }
-    //
-    // #[test]
-    // fn parsing_pddl_problem() -> Result<()> {
-    //     let prog = std::fs::read_to_string("../problems/pddl/gripper/problem.pddl").expect("Could not read file");
-    //     match parse(prog.as_str()) {
-    //         Result::Ok(e) => {
-    //             println!("{}", e);
-    //
-    //             let _pb = read_xddl_problem(e, Language::PDDL)?;
-    //         }
-    //         Result::Err(s) => eprintln!("{}", s),
-    //     }
-    //
-    //     Result::Ok(())
-    // }
 }
