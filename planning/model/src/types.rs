@@ -19,7 +19,7 @@ pub enum TypeError {
 impl ToEnvMessage for TypeError {
     fn to_message(self, env: &Environment) -> Message {
         match self {
-            TypeError::UnknownType(_) => todo!(),
+            TypeError::UnknownType(tpe) => tpe.invalid("unknown type"),
             TypeError::IncompatibleType(expr, expected) => {
                 let expr = env / expr;
                 expr.invalid(format!(
