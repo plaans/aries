@@ -124,7 +124,7 @@ impl IntDomains {
 
     /// Returns the number of variables declared.
     pub fn num_variables(&self) -> usize {
-        debug_assert!(self.bounds.len() % 2 == 0);
+        debug_assert!(self.bounds.len().is_multiple_of(2));
         self.bounds.len() / 2
     }
 

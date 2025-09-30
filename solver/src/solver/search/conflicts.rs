@@ -284,43 +284,44 @@ impl ConflictBasedBrancher {
         // returns true if this variable is available for decision
         let decidable = |var: VarRef| !model.state.is_bound(var) && model.state.present(var) == Some(true);
 
-        let next_unset =
-            if self.params.random_var_period != 0 && _stats.num_decisions % self.params.random_var_period == 0 {
-                // select an unset variable randomly
-                let vars = self
-                    .heap
-                    .heap
-                    .enqueued_variables()
-                    .filter(|&v| decidable(v))
-                    .collect_vec();
-                if vars.is_empty() {
-                    None
-                } else {
-                    let idx = self.rng.gen_range(0..vars.len());
-                    Some(vars[idx])
-                }
+        let next_unset = if self.params.random_var_period != 0
+            && _stats.num_decisions.is_multiple_of(self.params.random_var_period)
+        {
+            // select an unset variable randomly
+            let vars = self
+                .heap
+                .heap
+                .enqueued_variables()
+                .filter(|&v| decidable(v))
+                .collect_vec();
+            if vars.is_empty() {
+                None
             } else {
-                // extract the highest priority variable that is not set yet.
-                loop {
-                    // we are only allowed to remove from the queue variables that are bound/absent.
-                    // so peek at the next one an only remove it if it was
-                    match self.heap.peek() {
-                        Some(v) => {
-                            if !decidable(v) {
-                                // already bound or not present yet, drop the peeked variable before proceeding to next
-                                self.heap.pop().unwrap();
-                            } else {
-                                // not set, select for decision
-                                break Some(v);
-                            }
-                        }
-                        None => {
-                            // no variables left in queue
-                            break None;
+                let idx = self.rng.gen_range(0..vars.len());
+                Some(vars[idx])
+            }
+        } else {
+            // extract the highest priority variable that is not set yet.
+            loop {
+                // we are only allowed to remove from the queue variables that are bound/absent.
+                // so peek at the next one an only remove it if it was
+                match self.heap.peek() {
+                    Some(v) => {
+                        if !decidable(v) {
+                            // already bound or not present yet, drop the peeked variable before proceeding to next
+                            self.heap.pop().unwrap();
+                        } else {
+                            // not set, select for decision
+                            break Some(v);
                         }
                     }
+                    None => {
+                        // no variables left in queue
+                        break None;
+                    }
                 }
-            };
+            }
+        };
         if let Some(v) = next_unset {
             // determine value for literal:
             // - first from per-variable preferred assignments

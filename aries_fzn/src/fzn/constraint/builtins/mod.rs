@@ -1,3 +1,6 @@
+// Generated files may contain useless parenthesis
+#![allow(unused_parens)]
+
 //! Flatzinc builtins.
 
 mod array_bool_and;

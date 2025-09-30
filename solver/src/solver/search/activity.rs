@@ -348,7 +348,7 @@ impl VarSelect {
 
     /// Provides an iterator over variables in the heap.
     /// Variables are provided by increasing priority.
-    pub fn extractor(&mut self) -> Popper {
+    pub fn extractor(&mut self) -> Popper<'_> {
         let mut heaps = self.heaps.iter_mut();
         let current_heap = heaps.next();
         Popper {
