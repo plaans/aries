@@ -234,7 +234,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         self.heap.len()
     }
 
-    unsafe fn make_hole(&mut self, pos: PlaceInHeap) -> Hole<K, P> {
+    unsafe fn make_hole(&mut self, pos: PlaceInHeap) -> Hole<'_, K, P> {
         Hole::new(&mut self.heap, &mut self.index.entries, pos)
     }
 

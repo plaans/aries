@@ -316,7 +316,7 @@ impl<V> ObsTrail<V> {
         &self,
         pred: impl Fn(&V) -> bool,
         keep_going: impl Fn(DecLvl, EventIndex) -> bool,
-    ) -> Option<TrailEvent<V>>
+    ) -> Option<TrailEvent<'_, V>>
     where
         V: Debug,
     {

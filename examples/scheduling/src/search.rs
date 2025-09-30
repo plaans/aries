@@ -54,6 +54,7 @@ impl FromStr for SearchStrategy {
     }
 }
 
+#[allow(unused)]
 pub struct ResourceOrderingFirst;
 impl Heuristic<Var> for ResourceOrderingFirst {
     fn decision_stage(&self, _var: VarRef, label: Option<&Var>, _model: &aries::model::Model<Var>) -> u8 {

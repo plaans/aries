@@ -12,3 +12,5 @@ aries_fzn/share/aries_fzn
 __pycache__/
 *.profraw
 lcov.info
+profile.json.gz
+out.perf
