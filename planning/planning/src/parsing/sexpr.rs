@@ -492,8 +492,8 @@ mod tests {
         let src = parse(src).unwrap();
         displayed_as(
             &src,
-            "(a (b c ",
-            "^^^^^^^^"
+            "(a (b c",
+            "^^^^^^^"
         );
     }
 }
