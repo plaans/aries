@@ -146,17 +146,27 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         }
     }
 
+    for t in &dom.tasks {
+        let params = parse_parameters(&t.args, &model.env.types).msg(&model.env)?;
+        model.actions.add_task(t.name.clone(), params)?;
+    }
+
     for a in &dom.actions {
-        let name: crate::Sym = a.name.clone();
-        let action = into_action(a, &mut model.env, &bindings).tag(name, "when parsing action", Some(&a.span))?;
-        model.actions.add(action)?;
+        parse_action(a, &mut model.env, &bindings)
+            .and_then(|action| model.actions.add(action, &model.env))
+            .tag(&a.name, "when parsing action", Some(&a.span))?;
     }
 
     for a in &dom.durative_actions {
-        let name: crate::Sym = a.name.clone();
-        let action =
-            into_durative_action(a, &mut model.env, &bindings).tag(name, "when parsing action", Some(&a.span))?;
-        model.actions.add(action)?;
+        parse_durative_action(a, &mut model.env, &bindings)
+            .and_then(|action| model.actions.add(action, &model.env))
+            .tag(&a.name, "when parsing action", Some(&a.span))?;
+    }
+
+    for m in &dom.methods {
+        parse_method(m, &mut model.env, &bindings, &model.actions)
+            .and_then(|action| model.actions.add(action, &model.env))
+            .tag(&m.name, "when parsing method", m.source.as_ref())?;
     }
 
     println!("{model}");
@@ -164,12 +174,12 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
     Ok(model)
 }
 
-fn into_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<Action, Message> {
+fn parse_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<Action, Message> {
     let parameters = parse_parameters(&a.args, &env.types).msg(env)?;
 
     let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
 
-    let mut action = Action::instantaneous(&a.name, parameters);
+    let mut action = Action::instantaneous(&a.name, parameters, env)?;
 
     let action_start = action.start();
     let condition_parser: &ExprParser<Condition> = &move |c, env, bindings| {
@@ -194,7 +204,8 @@ fn into_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>)
     }
     Ok(action)
 }
-fn into_durative_action(
+
+fn parse_durative_action(
     a: &pddl::DurativeAction,
     env: &mut Environment,
     bindings: &Rc<Bindings>,
@@ -204,7 +215,7 @@ fn into_durative_action(
     let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
     let duration = parse_duration(&a.duration, env, &bindings)?;
 
-    let mut action = Action::new(&a.name, parameters, duration);
+    let mut action = Action::new(&a.name, parameters, duration, env)?;
 
     let condition_parser: &ExprParser<Condition> = &move |c, env, bindings| {
         let (itv, c) = parse_timed(c, env, bindings)?;
@@ -226,6 +237,73 @@ fn into_durative_action(
         let effs = into_effects(None, e, env, &bindings)?;
         action.effects.extend(effs);
     }
+    Ok(action)
+}
+
+fn parse_method(
+    a: &pddl::Method,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+    actions: &Actions,
+) -> Result<Action, Message> {
+    let parameters = parse_parameters(&a.parameters, &env.types).msg(env)?;
+
+    let bindings = Rc::new(Bindings::stacked(&parameters, bindings));
+
+    let achieved = {
+        let name = a.task.name.clone();
+        let args: Vec<ExprId> = a
+            .task
+            .arguments
+            .iter()
+            .cloned()
+            .map(|a| parse(&SExpr::Atom(a), env, &bindings))
+            .try_collect()?;
+        AchievedTask { name, args }
+    };
+
+    let mut action = Action::method(a.name.clone(), parameters, achieved);
+
+    let action_start = action.start();
+    let condition_parser: &ExprParser<Condition> = &move |c, env, bindings| {
+        let c = parse(c, env, bindings)?;
+        Ok(Condition::at(action_start, c))
+    };
+    for c in &a.precondition {
+        for c in conjuncts(c) {
+            if is_preference(c) {
+                let pref = parse_preference_gen(c, condition_parser, env, &bindings)?;
+                action.preferences.add(pref);
+            } else {
+                let cond = condition_parser(c, env, &bindings)?;
+                action.conditions.push(cond);
+            }
+        }
+    }
+
+    // TODO: add variables and constraints parsing
+
+    for s in &a.subtask_network.unordered_tasks {
+        let subtask = parse_subtask(s, env, actions, &bindings)?;
+        action.subtasks.add(subtask, env)?;
+    }
+    {
+        let mut last_task_id: Option<SubtaskId> = None;
+        for s in &a.subtask_network.ordered_tasks {
+            let subtask = parse_subtask(s, env, actions, &bindings)?;
+            let id = action.subtasks.add(subtask, env)?;
+            if let Some(prev) = last_task_id {
+                // add precedence constraint with the previously parsed task
+                let end_prev = env.intern(Expr::Instant(prev.end().into()), None)?;
+                let start_curr = env.intern(Expr::Instant(id.start().into()), None)?;
+                let precedes = env.intern(Expr::App(Fun::Lt, smallvec::smallvec![end_prev, start_curr]), None)?;
+                action.conditions.push(Condition::over(TimeInterval::FULL, precedes));
+            }
+
+            last_task_id = Some(id);
+        }
+    }
+
     Ok(action)
 }
 
@@ -326,6 +404,26 @@ fn into_effect(
         let tautology = env.intern(Expr::Bool(true), None)?;
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
         Ok(SimpleEffect::assignement(time.into(), sv, tautology))
+    }
+}
+
+fn parse_subtask(t: &pddl::Task, env: &mut Environment, actions: &Actions, bindings: &Rc<Bindings>) -> Res<Subtask> {
+    let name = &t.name;
+    if let Some(declared_task) = actions.get_task(name) {
+        let args: Vec<ExprId> = t
+            .arguments
+            .iter()
+            .map(|p| parse(&SExpr::Atom(p.clone()), env, bindings))
+            .try_collect()?;
+        declared_task.check_application(name, &args, env)?;
+        Ok(Subtask {
+            ref_name: t.id.clone(),
+            task_name: name.clone(),
+            args,
+            source: t.source.clone(),
+        })
+    } else {
+        Err(name.invalid("expected a task name"))
     }
 }
 
@@ -594,8 +692,8 @@ fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {
 /// Parses a timestamp as one of start, end or absolute time (2, 32.3, ...)
 fn parse_timestamp(tp: &SExpr) -> Result<Timestamp, Message> {
     let timestamp = match tp.as_atom().map(|a| a.canonical_str()) {
-        Some("start") => Some(Timestamp::from(TimeRef::Start)),
-        Some("end") => Some(Timestamp::from(TimeRef::End)),
+        Some("start") => Some(Timestamp::from(TimeRef::ActionStart)),
+        Some("end") => Some(Timestamp::from(TimeRef::ActionEnd)),
         Some(other) => parse_number(other).map(|number| Timestamp::new(TimeRef::Origin, number)),
         _ => None,
     };
@@ -611,14 +709,14 @@ fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
         "at" => {
             let second = items.pop_atom()?;
             match second.canonical_str() {
-                "start" => TimeInterval::at(TimeRef::Start),
-                "end" => TimeInterval::at(TimeRef::End),
+                "start" => TimeInterval::at(TimeRef::ActionStart),
+                "end" => TimeInterval::at(TimeRef::ActionEnd),
                 _ => return Err(second.invalid("expected `start` or `end`")),
             }
         }
         "over" => {
             items.pop_known_atom("all")?;
-            TimeInterval::closed(TimeRef::Start, TimeRef::End)
+            TimeInterval::closed(TimeRef::ActionStart, TimeRef::ActionEnd)
         }
         _ => return Err(first.invalid("expected `at` or `over`")),
     };

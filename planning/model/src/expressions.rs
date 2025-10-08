@@ -96,6 +96,7 @@ pub enum Expr {
     StateVariable(FluentId, SeqExprId),
     Exists(Vars, ExprId),
     Forall(Vars, ExprId),
+    Instant(Timestamp),
     Duration,
     Makespan,
     ViolationCount(RefId),
@@ -130,6 +131,7 @@ impl<'a> Display for TExpr<'a> {
             Expr::Forall(params, expr_id) => {
                 write!(f, "(forall {} {})", params.iter().join(", "), self.env / *expr_id)
             }
+            Expr::Instant(tp) => write!(f, "{tp}"),
         }
     }
 }
@@ -153,6 +155,7 @@ impl Expr {
             Expr::Exists(_, x) | Expr::Forall(_, x) => Ok(env.node(*x).tpe().clone()),
             Expr::Duration | Expr::Makespan => Ok(Type::Real),
             Expr::ViolationCount(_) => Ok(Type::Int(IntInterval::at_least(0))),
+            Expr::Instant(_) => Ok(Type::Real),
         }
     }
 }

@@ -11,6 +11,7 @@ mod objects;
 mod params;
 pub mod pddl;
 mod sym;
+mod tasks;
 mod timing;
 mod types;
 pub(crate) mod utils;
@@ -31,6 +32,7 @@ pub use model::*;
 pub use objects::*;
 pub use params::*;
 pub use sym::*;
+pub use tasks::*;
 pub use timing::*;
 pub use types::*;
 

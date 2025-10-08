@@ -1,6 +1,6 @@
 use derive_more::Display;
 
-use crate::RealValue;
+use crate::{RealValue, SubtaskId};
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Timestamp {
@@ -36,9 +36,13 @@ pub enum TimeRef {
     #[display("horizon")]
     Horizon,
     #[display("start")]
-    Start,
+    ActionStart,
     #[display("end")]
-    End,
+    ActionEnd,
+    #[display("start({_0}")]
+    TaskStart(SubtaskId),
+    #[display("end({_0}")]
+    TaskEnd(SubtaskId),
 }
 
 impl From<TimeRef> for Timestamp {

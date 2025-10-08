@@ -314,7 +314,7 @@ impl Display for Function {
 pub struct TaskDef {
     pub name: Sym,
     pub args: Vec<TypedSymbol>,
-    source: Option<Span>,
+    pub source: Option<Span>,
 }
 
 impl Display for TaskDef {
@@ -335,7 +335,7 @@ pub struct Task {
     pub id: Option<TaskId>,
     pub name: Sym,
     pub arguments: Vec<Sym>,
-    source: Option<Span>,
+    pub source: Option<Span>,
 }
 impl std::fmt::Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -352,7 +352,7 @@ pub struct Method {
     pub task: Task,
     pub precondition: Vec<SExpr>,
     pub subtask_network: TaskNetwork,
-    source: Option<Span>,
+    pub source: Option<Span>,
 }
 
 impl std::fmt::Display for Method {
