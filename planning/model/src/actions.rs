@@ -124,7 +124,7 @@ pub struct Action {
     /// Set of named preferences in the action (typically appearing in a metric)
     pub preferences: ActionPreferences,
     /// Set of subtasks of this action (typically for actions representing HTN methods).
-    pub subtasks: TaskSet,
+    pub subtasks: TaskNet,
 }
 
 impl Action {
@@ -197,27 +197,19 @@ impl<'env> Display for Env<'env, &Action> {
                 .map(|p| format!("{}: {}", p.name(), p.tpe()))
                 .format(", ")
         )?;
-        write!(f, "\n    duration: {:?}", self.elem.duration)?;
-        write!(f, "\n    conditions:")?;
-        for c in &self.elem.conditions {
-            write!(f, "\n      {}", self.env / c)?;
-        }
-        write!(f, "\n    effects:")?;
-        for eff in &self.elem.effects {
-            write!(f, "\n      {}", self.env / eff)?;
-        }
-        if !self.elem.preferences.is_empty() {
-            write!(f, "\n    preferences:")?;
-            for pref in self.elem.preferences.iter() {
-                write!(f, "\n      {}", self.env / pref)?;
-            }
-        }
-        if !self.elem.subtasks.is_empty() {
-            write!(f, "\n    subtasks:")?;
-            for (id, st) in self.elem.subtasks.iter() {
-                write!(f, "\n      [{}] {}", id, self.env / st)?;
-            }
-        }
+        write!(f, "\n        duration: {:?}", self.elem.duration)?;
+
+        fs(f, "conditions:", &self.elem.conditions, self.env)?;
+        fs(f, "effects:", &self.elem.effects, self.env)?;
+        fs(f, "preferences:", self.elem.preferences.iter(), self.env)?;
+        fs(f, "vars:", self.elem.subtasks.variables.iter(), self.env)?;
+        fs(f, "subtasks:", self.elem.subtasks.iter(), self.env)?;
+        fs(
+            f,
+            "constraints:",
+            self.elem.subtasks.constraints.iter().copied(),
+            self.env,
+        )?;
         Ok(())
     }
 }

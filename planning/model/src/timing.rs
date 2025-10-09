@@ -39,9 +39,9 @@ pub enum TimeRef {
     ActionStart,
     #[display("end")]
     ActionEnd,
-    #[display("start({_0}")]
+    #[display("start({_0})")]
     TaskStart(SubtaskId),
-    #[display("end({_0}")]
+    #[display("end({_0})")]
     TaskEnd(SubtaskId),
 }
 

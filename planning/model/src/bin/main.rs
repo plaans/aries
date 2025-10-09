@@ -39,7 +39,9 @@ fn main() -> Res<()> {
     let domain = parser::parse_pddl_domain(domain_file)?;
     let problem = parser::parse_pddl_problem(problem_file)?;
 
-    let _model = convert::build_model(&domain, &problem)?;
+    let model = convert::build_model(&domain, &problem)?;
+
+    println!("{model}");
 
     Ok(())
 }

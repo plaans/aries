@@ -59,3 +59,71 @@ impl<'a, T> std::ops::Div<T> for &'a mut Environment {
         Env { elem: rhs, env: self }
     }
 }
+
+/// Specialization of [`format_section`] for top level elements
+pub(crate) fn fstop<'a, T: 'a>(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &str,
+    free_line_between: bool,
+    xs: impl IntoIterator<Item = T>,
+    env: &'a Environment,
+) -> std::fmt::Result
+where
+    Env<'a, T>: std::fmt::Display,
+{
+    format_section(f, name, 0, true, free_line_between, xs, env)
+}
+
+/// Specialization of [`format_section`] for nested elements
+pub(crate) fn fs<'a, T: 'a>(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &str,
+    xs: impl IntoIterator<Item = T>,
+    env: &'a Environment,
+) -> std::fmt::Result
+where
+    Env<'a, T>: std::fmt::Display,
+{
+    format_section(f, name, 2, false, false, xs, env)
+}
+
+pub(crate) const INDENT: &str = "    ";
+
+/// Helper function to format a section with a list of elements.
+/// Each of the elements must be displayed when wrapper in [`Env`].
+/// If there is no element the section is ommited
+///
+/// ```
+///    name:
+///      elem1
+///      elem2
+/// ```
+pub(crate) fn format_section<'a, T: 'a>(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &str,
+    indent: usize,
+    free_line_before: bool,
+    free_line_between: bool,
+    xs: impl IntoIterator<Item = T>,
+    env: &'a Environment,
+) -> std::fmt::Result
+where
+    Env<'a, T>: std::fmt::Display,
+{
+    let xs = xs.into_iter();
+    let mut is_first = true;
+    for x in xs {
+        if is_first {
+            if free_line_before {
+                writeln!(f)?;
+            }
+            write!(f, "\n{}{name}", INDENT.repeat(indent))?;
+            is_first = false;
+        } else if free_line_between {
+            writeln!(f)?;
+        }
+        let x = env / x;
+        write!(f, "\n{}{}", INDENT.repeat(indent + 1), x)?;
+    }
+    Ok(())
+}

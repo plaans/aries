@@ -12,6 +12,7 @@ pub struct Model {
     pub goals: Vec<Goal>,
     pub preferences: Preferences<Goal>,
     pub metric: Option<Metric>,
+    pub task_network: Option<TaskNet>,
 }
 
 impl Model {
@@ -23,6 +24,7 @@ impl Model {
             goals: Default::default(),
             preferences: Default::default(),
             metric: Default::default(),
+            task_network: None,
         }
     }
 }
@@ -31,25 +33,16 @@ impl Display for Model {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}\n{}\n", self.env.objects, self.env.fluents)?;
 
-        write!(f, "\nActions:")?;
-        for a in self.actions.iter() {
-            write!(f, "\n\n  {}", &self.env / a)?;
-        }
-        write!(f, "\n\nInit:")?;
-        for ini in &self.init {
-            write!(f, "\n  {}", &self.env / ini)?;
-        }
+        fstop(f, "Actions:", true, self.actions.iter(), &self.env)?;
+        fstop(f, "Init:", false, &self.init, &self.env)?;
+        fstop(f, "Goals:", false, &self.goals, &self.env)?;
+        fstop(f, "Preferences:", false, self.preferences.iter(), &self.env)?;
+        fstop(f, "Metric:", false, self.metric.iter(), &self.env)?;
 
-        write!(f, "\n\nGoals:")?;
-        for g in &self.goals {
-            write!(f, "\n  {}", &self.env / g)?;
-        }
-        write!(f, "\n\nPreferences:")?;
-        for g in self.preferences.iter() {
-            write!(f, "\n  {}", &self.env / g)?;
-        }
-        if let Some(metric) = &self.metric {
-            write!(f, "\n\nMetric:\n  {}", &self.env / metric)?;
+        if let Some(tn) = &self.task_network {
+            fstop(f, "Variables:", false, &tn.variables, &self.env)?;
+            fstop(f, "Tasks:", false, tn.iter(), &self.env)?;
+            fstop(f, "Constraints:", false, tn.constraints.iter().copied(), &self.env)?;
         }
         Ok(())
     }

@@ -70,7 +70,7 @@ impl SubtaskId {
 
 impl Display for SubtaskId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "_st_{}", self.0)
+        write!(f, "τ{}", self.0)
     }
 }
 
@@ -98,6 +98,12 @@ impl Display for Env<'_, &Subtask> {
     }
 }
 
+impl Display for Env<'_, (SubtaskId, &Subtask)> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.elem.0, self.env / self.elem.1)
+    }
+}
+
 impl Spanned for Env<'_, &Subtask> {
     fn span(&self) -> Option<&Span> {
         self.elem.source.as_ref()
@@ -105,13 +111,15 @@ impl Spanned for Env<'_, &Subtask> {
 }
 
 #[derive(Default, Debug)]
-pub struct TaskSet {
+pub struct TaskNet {
     next_id: usize,
+    pub variables: Vec<Param>,
+    pub constraints: Vec<ExprId>,
     tasks: BTreeMap<SubtaskId, Subtask>,
     name_to_id: BTreeMap<Sym, SubtaskId>,
 }
 
-impl TaskSet {
+impl TaskNet {
     pub fn add(&mut self, task: Subtask, env: &Environment) -> Res<SubtaskId> {
         let id = SubtaskId(self.next_id);
         if let Some(ref_new) = &task.ref_name {
@@ -128,6 +136,13 @@ impl TaskSet {
         self.tasks.insert(id, task);
 
         Ok(id)
+    }
+
+    pub fn get_id_by_ref(&self, name: &Sym) -> Res<SubtaskId> {
+        self.name_to_id
+            .get(name.canonical_str())
+            .copied()
+            .ok_or_else(|| name.invalid("unknown task name"))
     }
 
     pub fn get_by_ref(&self, name: &str) -> Option<&Subtask> {

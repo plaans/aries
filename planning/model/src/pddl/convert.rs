@@ -169,7 +169,10 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
             .tag(&m.name, "when parsing method", m.source.as_ref())?;
     }
 
-    println!("{model}");
+    if let Some(tn) = &prob.task_network {
+        let tn = parse_task_net(tn, &model.actions, &mut model.env, &bindings)?;
+        model.task_network = Some(tn);
+    }
 
     Ok(model)
 }
@@ -281,30 +284,58 @@ fn parse_method(
         }
     }
 
-    // TODO: add variables and constraints parsing
+    action.subtasks = parse_task_net(&a.subtask_network, actions, env, &bindings)?;
 
-    for s in &a.subtask_network.unordered_tasks {
-        let subtask = parse_subtask(s, env, actions, &bindings)?;
-        action.subtasks.add(subtask, env)?;
+    Ok(action)
+}
+
+fn parse_task_net(
+    task_net: &pddl::TaskNetwork,
+    actions: &Actions,
+    env: &mut Environment,
+    bindings: &Rc<Bindings>,
+) -> Res<TaskNet> {
+    /// helper function that creates a precedence expression (< first second)
+    fn prec(first: SubtaskId, second: SubtaskId, env: &mut Environment) -> Res<ExprId> {
+        let end_first = env.intern(Expr::Instant(first.end().into()), None)?;
+        let start_second = env.intern(Expr::Instant(second.start().into()), None)?;
+        let precedes = env.intern(Expr::App(Fun::Lt, smallvec::smallvec![end_first, start_second]), None)?;
+        Ok(precedes)
+    }
+
+    let mut tn = TaskNet::default();
+
+    // extract variables in the task ntework, they will be add to the bindings of the current scope
+    // to allow their usage to be recognized
+    let params = parse_parameters(&task_net.parameters, &env.types).msg(env)?;
+    let bindings = &Rc::new(Bindings::stacked(&params, bindings));
+    tn.variables = params;
+
+    for s in &task_net.unordered_tasks {
+        let subtask = parse_subtask(s, env, actions, bindings)?;
+        tn.add(subtask, env)?;
     }
     {
         let mut last_task_id: Option<SubtaskId> = None;
-        for s in &a.subtask_network.ordered_tasks {
-            let subtask = parse_subtask(s, env, actions, &bindings)?;
-            let id = action.subtasks.add(subtask, env)?;
+        for s in &task_net.ordered_tasks {
+            let subtask = parse_subtask(s, env, actions, bindings)?;
+            let id = tn.add(subtask, env)?;
             if let Some(prev) = last_task_id {
                 // add precedence constraint with the previously parsed task
-                let end_prev = env.intern(Expr::Instant(prev.end().into()), None)?;
-                let start_curr = env.intern(Expr::Instant(id.start().into()), None)?;
-                let precedes = env.intern(Expr::App(Fun::Lt, smallvec::smallvec![end_prev, start_curr]), None)?;
-                action.conditions.push(Condition::over(TimeInterval::FULL, precedes));
+                tn.constraints.push(prec(prev, id, env)?);
             }
 
             last_task_id = Some(id);
         }
     }
 
-    Ok(action)
+    for ord in &task_net.orderings {
+        let first = tn.get_id_by_ref(&ord.first_task_id)?;
+        let second = tn.get_id_by_ref(&ord.second_task_id)?;
+        tn.constraints.push(prec(first, second, env)?);
+    }
+
+    Ok(tn)
 }
 
 fn into_effects(
@@ -321,7 +352,6 @@ fn into_effects(
             // stack bindings so that downstream expression know the declared variables
             let bindings = Rc::new(Bindings::stacked(&vars, bindings));
             let effs = into_effects(default_timestamp, quantified_expr, env, &bindings)?;
-            // TODO: tag effects with forall
             all_effs.extend(effs.into_iter().map(|e| e.with_quantification(&vars)))
         } else if let Some([tp, expr]) = expr.as_application("at")
             && let Ok(time) = parse_timestamp(tp)
