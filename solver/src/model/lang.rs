@@ -4,6 +4,7 @@ mod boolean;
 mod cst;
 pub mod expr;
 mod fixed;
+pub mod hreif;
 mod int;
 pub mod linear;
 pub mod max;

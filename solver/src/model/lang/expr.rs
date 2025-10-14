@@ -1,6 +1,7 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
 use crate::model::lang::alternative::Alternative;
+use crate::model::lang::hreif::{exclu_choice, HReif};
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -80,6 +81,7 @@ pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl Into
     Alternative::new(main, alternatives)
 }
 
+#[derive(Clone)]
 pub struct Or(Box<[Lit]>);
 
 impl From<Or> for ReifExpr {
@@ -88,7 +90,28 @@ impl From<Or> for ReifExpr {
     }
 }
 
+impl Not for Or {
+    type Output = And;
+
+    fn not(self) -> Self::Output {
+        let mut lits = self.0;
+        lits.iter_mut().for_each(|l| *l = !*l);
+        And(lits)
+    }
+}
+
+#[derive(Clone)]
 pub struct And(Box<[Lit]>);
+
+impl Not for And {
+    type Output = Or;
+
+    fn not(self) -> Self::Output {
+        let mut lits = self.0;
+        lits.iter_mut().for_each(|l| *l = !*l);
+        Or(lits)
+    }
+}
 
 impl From<And> for ReifExpr {
     fn from(value: And) -> Self {
@@ -195,6 +218,70 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
     }
 }
 
+impl HReif for Eq {
+    fn enforce_if(&self, l: Lit, store: &mut dyn super::hreif::Store) {
+        //fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
+        let a = self.0;
+        let b = self.1;
+        if a == b {
+            Lit::TRUE.enforce_if(l, store);
+        } else if a.kind() != b.kind() {
+            panic!("Attempting to build an equality between expression with incompatible types.");
+        } else {
+            use Atom::*;
+            match (a, b) {
+                (Bool(a), Bool(b)) => {
+                    implies(a, b).enforce_if(l, store);
+                    implies(b, a).enforce_if(l, store);
+                }
+                (Int(a), Int(b)) => {
+                    leq(a, b).enforce_if(l, store);
+                    leq(b, a).enforce_if(l, store);
+                }
+                (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
+                    let a = a.int_view().unwrap();
+                    let b = b.int_view().unwrap();
+                    leq(a, b).enforce_if(l, store);
+                    leq(b, a).enforce_if(l, store);
+                }
+                (Sym(va), Sym(vb)) => match (va, vb) {
+                    (SAtom::Var(a), SAtom::Var(b)) => {
+                        if a.var <= b.var {
+                            ReifExpr::Eq(a.var, b.var).enforce_if(l, store);
+                        } else {
+                            ReifExpr::Eq(b.var, a.var).enforce_if(l, store);
+                        }
+                    }
+                    (SAtom::Cst(a), SAtom::Cst(b)) => {
+                        let l2 = if a == b { Lit::TRUE } else { Lit::FALSE };
+                        ReifExpr::Lit(l2).enforce_if(l, store);
+                    }
+                    (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
+                        let var = x.var;
+                        let value = v.sym.int_value();
+                        let (lb, ub) = store.bounds(var);
+                        if (lb..=ub).contains(&value) {
+                            ReifExpr::EqVal(x.var, v.sym.int_value()).enforce_if(l, store);
+                        } else {
+                            ReifExpr::Lit(Lit::FALSE).enforce_if(l, store);
+                        }
+                    }
+                },
+                (Fixed(a), Fixed(b)) => {
+                    debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
+                    leq(a.num, b.num).enforce_if(l, store);
+                    leq(b.num, a.num).enforce_if(l, store);
+                }
+                _ => unreachable!(), // guarded by kind comparison
+            }
+        }
+    }
+
+    fn conj_scope(&self, prez: &dyn Fn(VarRef) -> Lit) -> super::hreif::Lits {
+        smallvec::smallvec![prez(self.0.variable()), prez(self.1.variable())]
+    }
+}
+
 fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> ReifExpr {
     let lr = model.reify(leq(a, b));
     let rl = model.reify(leq(b, a));
@@ -206,5 +293,66 @@ pub struct Neq(Atom, Atom);
 impl<Lbl: Label> Reifiable<Lbl> for Neq {
     fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
         !eq(self.0, self.1).decompose(model)
+    }
+}
+
+impl HReif for Neq {
+    fn enforce_if(&self, l: Lit, store: &mut dyn super::hreif::Store) {
+        let a = self.0;
+        let b = self.1;
+        if a == b {
+            Lit::FALSE.enforce_if(l, store);
+        } else if a.kind() != b.kind() {
+            panic!("Attempting to build an equality between expression with incompatible types.");
+        } else {
+            use Atom::*;
+            match (a, b) {
+                (Bool(a), Bool(b)) => {
+                    // ![(a => b) /\ (b => a)]
+                    // !(a => b) \/ !(b => a)
+                    // (!a & b) \/ (!b & a) // TODO strange that we cannot have a conjunction
+                    exclu_choice(and([a, !b]), and([!a, b])).enforce_if(l, store);
+                }
+                (Int(a), Int(b)) => {
+                    exclu_choice(lt(a, b), lt(b, a)).opt_enforce_if(l, store);
+                }
+                (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
+                    let a = a.int_view().unwrap();
+                    let b = b.int_view().unwrap();
+                    exclu_choice(lt(a, b), lt(b, a)).opt_enforce_if(l, store);
+                }
+                (Sym(va), Sym(vb)) => match (va, vb) {
+                    (SAtom::Var(a), SAtom::Var(b)) => {
+                        if a.var <= b.var {
+                            ReifExpr::Neq(a.var, b.var).enforce_if(l, store);
+                        } else {
+                            ReifExpr::Neq(b.var, a.var).enforce_if(l, store);
+                        }
+                    }
+                    (SAtom::Cst(a), SAtom::Cst(b)) => {
+                        let l2 = if a != b { Lit::TRUE } else { Lit::FALSE };
+                        ReifExpr::Lit(l2).enforce_if(l, store);
+                    }
+                    (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
+                        let var = x.var;
+                        let value = v.sym.int_value();
+                        let (lb, ub) = store.bounds(var);
+                        if (lb..=ub).contains(&value) {
+                            ReifExpr::NeqVal(x.var, v.sym.int_value()).enforce_if(l, store);
+                        } else {
+                            ReifExpr::Lit(Lit::TRUE).enforce_if(l, store);
+                        }
+                    }
+                },
+                (Fixed(a), Fixed(b)) => {
+                    debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
+                    exclu_choice(lt(a.num, b.num), gt(a.num, b.num)).opt_enforce_if(l, store);
+                }
+                _ => unreachable!(), // guarded by kind comparison
+            }
+        }
+    }
+    fn conj_scope(&self, prez: &dyn Fn(VarRef) -> Lit) -> super::hreif::Lits {
+        smallvec::smallvec![prez(self.0.variable()), prez(self.1.variable())]
     }
 }
