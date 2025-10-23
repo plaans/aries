@@ -279,14 +279,11 @@ dependencies = [
 name = "aries_sched"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "aries",
  "env_param",
- "fixedbitset 0.5.7",
+ "idmap",
  "itertools 0.14.0",
- "pathfinding",
- "regex",
- "streaming-iterator",
+ "smallvec",
  "tracing",
 ]
 
@@ -923,11 +920,12 @@ dependencies = [
 
 [[package]]
 name = "idmap"
-version = "0.2.22"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f92530a7d4564864380ca6747ef14312d264a342d1e6ada9e754debb2c789d4"
+checksum = "9b64b8cd45c218d58213a8e63a8ed35336ad9cf1fd3d2b3df3d724841d3b0df2"
 dependencies = [
  "fixedbitset 0.5.7",
+ "intid-core",
 ]
 
 [[package]]
@@ -972,6 +970,12 @@ checksum = "276ec31bcb4a9ee45f58bec6f9ec700ae4cf4f4f8f2fa7e06cb406bd5ffdd770"
 dependencies = [
  "num-traits",
 ]
+
+[[package]]
+name = "intid-core"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58e7dbb2bdb94a1207bbbf70dcc538041500836ee28d35e3d0101a2ea9673671"
 
 [[package]]
 name = "io-uring"

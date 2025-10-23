@@ -39,19 +39,8 @@ impl<'a> Env<'a, FluentId> {
     }
 }
 
-impl idmap::IntegerId for FluentId {
-    fn from_id(id: u64) -> Self {
-        assert!(id <= (u32::MAX as u64));
-        Self(id as u32)
-    }
-
-    fn id(&self) -> u64 {
-        self.0 as u64
-    }
-
-    fn id32(&self) -> u32 {
-        self.0
-    }
+impl idmap::intid::IntegerId for FluentId {
+    idmap::intid::impl_newtype_id_body!(for FluentId(u32));
 }
 
 #[derive(Clone, Debug, Default)]
@@ -63,7 +52,7 @@ pub struct Fluents {
 impl Display for Fluents {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Fluents:\n  ")?;
-        disp_iter(f, self.fluents.values(), "\n  ")
+        disp_iter(f, self.iter(), "\n  ")
     }
 }
 
@@ -77,7 +66,7 @@ impl Fluents {
     }
 
     pub fn get_by_name(&self, name: &str) -> Option<FluentId> {
-        self.fluents.iter().find(|&(_id, f)| name == &f.name).map(|(id, _)| *id)
+        self.fluents.iter().find(|&(_id, f)| name == &f.name).map(|(id, _)| id)
     }
 
     pub fn add_fluent(
@@ -103,6 +92,10 @@ impl Fluents {
             debug_assert!(prev.is_none());
             Ok(id)
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Fluent> + '_ {
+        self.fluents.iter().map(|(_k, v)| v)
     }
 }
 

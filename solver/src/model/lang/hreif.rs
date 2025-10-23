@@ -36,7 +36,7 @@ pub trait Store {
     }
 }
 
-trait ModelWrapper {
+pub trait ModelWrapper {
     type Lbl: Label;
     fn get_model(&self) -> &Model<Self::Lbl>;
     fn get_model_mut(&mut self) -> &mut Model<Self::Lbl>;
@@ -67,7 +67,7 @@ where
     }
 
     fn add_implies(&mut self, l: Lit, e: ReifExpr) {
-        println!("{l:?} -> {e:?}"); // TODO: remove
+        println!("[{:?}] {l:?} -> {e:?}", self.presence(l)); // TODO: remove
         self.get_model_mut().enforce_if(l, e);
     }
     fn bounds(&self, var: VarRef) -> (IntCst, IntCst) {
@@ -139,6 +139,10 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
 }
 
 pub type Lits = SmallVec<[Lit; 2]>;
+#[macro_export]
+macro_rules! lits {
+    ($($x:tt)*) => {smallvec::smallvec![$($x)*]}
+    }
 
 impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
@@ -250,7 +254,7 @@ mod test {
         }
 
         fn conj_scope(&self, _ctx: &Ctx) -> Lits {
-            smallvec::smallvec![]
+            lits![]
         }
     }
 
@@ -260,7 +264,7 @@ mod test {
         }
 
         fn conj_scope(&self, ctx: &Ctx) -> Lits {
-            smallvec::smallvec![ctx.presence(self.0), ctx.presence(self.1)]
+            lits![ctx.presence(self.0), ctx.presence(self.1)]
         }
     }
 

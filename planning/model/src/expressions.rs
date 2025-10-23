@@ -1,5 +1,4 @@
 use errors::Spanned;
-use idmap::IntegerId;
 use itertools::Itertools;
 use num_rational::Rational64;
 use smallvec::SmallVec;
@@ -19,19 +18,8 @@ pub struct ExprId(pub(crate) u32);
 
 pub type SeqExprId = SmallVec<[ExprId; 3]>;
 
-impl IntegerId for ExprId {
-    fn from_id(id: u64) -> Self {
-        assert!(id <= (u32::MAX as u64));
-        ExprId(id as u32)
-    }
-
-    fn id(&self) -> u64 {
-        self.0 as u64
-    }
-
-    fn id32(&self) -> u32 {
-        self.0
-    }
+impl idmap::intid::IntegerId for ExprId {
+    idmap::intid::impl_newtype_id_body!(for ExprId(u32));
 }
 
 pub(crate) struct ExprNode {

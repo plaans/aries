@@ -37,7 +37,6 @@ pathfinding = "4.9.1"
 prost = { version = "0.12" }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = { version = "1" }
-smallvec = "1.4.2"
 structopt = "0.3"
 streaming-iterator = "0.1.5"
 test_each_file = "0.3.4"
@@ -54,6 +53,12 @@ transitive = "1.1.0"
 vec_map = "0.8"
 walkdir = "2.3"
 zip = { default-features = false, features = ["deflate"], version = "2.1.3" }
+derive_more = { version = "1.0", features = ["display"] }
+thiserror = "2"
+annotate-snippets = "0.12.4"
+idmap = "0.3.0"
+smallvec = { version = "1.15", features = ["union"] }
+compact_str = "0.9.0"
 
 [profile.dev]
 opt-level = 0

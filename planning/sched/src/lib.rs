@@ -1,8 +1,20 @@
+pub mod constraints;
+pub mod encoder;
+pub mod tasks;
+
 use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use aries::core::INT_CST_MAX;
+pub use aries::core::IntCst;
+use aries::model::lang::hreif::ModelWrapper;
 use aries::model::lang::*;
+use idmap::DirectIdMap;
+
+pub type Model = aries::model::Model<Sym>;
+pub use crate::tasks::*;
 
 pub type Sym = String;
 pub type Time = FAtom;
@@ -120,44 +132,69 @@ impl Effect {
         &self.state_var
     }
 }
-/// A condition stating that the state variable `state_var` should have the value `value`
-/// over the `[start,end]` temporal interval.
-///
-/// in ANML: `[start,end] state_var == value`
-#[derive(Clone)]
-pub struct Condition {
-    pub start: Time,
-    pub end: Time,
-    pub state_var: StateVar,
-    pub value: Atom,
+
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
+pub enum Tag {
+    TaskStart(TaskId),
+    TaskEnd(TaskId),
 }
 
-/// Task
-#[derive(Clone)]
-pub struct Task {
-    /// An optional identifier for the task that allows referring to it unambiguously.
-    pub name: Sym,
-    /// Time reference at which the task must start
-    pub start: Time,
-    /// Time reference at which the task must end
-    pub end: Time,
-    /// Arguments of the task
-    pub args: Vec<Atom>,
-    /// Presence of the task, true iff it appears in the solution
-    pub presence: Lit,
-}
-impl Debug for Task {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{:?},{:?}] {:?}{:?}", self.start, self.end, self.name, self.args)?;
-        Ok(())
-    }
-}
-
-pub struct Model {
+pub struct Sched {
+    pub model: Model,
+    time_scale: IntCst,
     origin: Time,
     horizon: Time,
     makespan: Time,
-    tasks: Vec<Task>,
-    conditions: Vec<Condition>,
+    tasks: Tasks,
     effects: Vec<Effect>,
+    tags: HashMap<Atom, Vec<Tag>>,
+}
+
+impl Sched {
+    pub fn new(time_scale: IntCst) -> Self {
+        let mut model = Model::new();
+        let origin = Time::new(0.into(), time_scale);
+        let horizon = model.new_fvar(0, INT_CST_MAX, time_scale, "horizon").into();
+        let makespan = model.new_fvar(0, INT_CST_MAX, time_scale, "makespan").into();
+        Sched {
+            model,
+            time_scale,
+            origin,
+            horizon,
+            makespan,
+            tasks: Default::default(),
+            effects: Default::default(),
+            tags: Default::default(),
+        }
+    }
+
+    pub fn tag(&mut self, atom: impl Into<Atom>, tag: Tag) {
+        let atom = atom.into();
+        self.tags.entry(atom).or_default().push(tag);
+    }
+
+    pub fn add_task(&mut self, task: Task) -> TaskId {
+        self.tasks.insert(task)
+    }
+
+    pub fn new_timepoint(&mut self) -> Time {
+        self.model.new_fvar(0, INT_CST_MAX, self.time_scale, "_").into()
+    }
+    pub fn new_opt_timepoint(&mut self, scope: Lit) -> Time {
+        self.model
+            .new_optional_fvar(0, INT_CST_MAX, self.time_scale, scope, "_")
+            .into()
+    }
+}
+
+impl ModelWrapper for Sched {
+    type Lbl = Sym;
+
+    fn get_model(&self) -> &aries::model::Model<Self::Lbl> {
+        &self.model
+    }
+
+    fn get_model_mut(&mut self) -> &mut aries::model::Model<Self::Lbl> {
+        &mut self.model
+    }
 }

@@ -8,7 +8,7 @@ use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
 use crate::core::*;
-use crate::model::lang::IAtom;
+use crate::model::lang::{Atom, IAtom};
 use std::fmt::{Debug, Formatter};
 
 use super::IntDomain;
@@ -864,6 +864,11 @@ impl<T: Into<VarRef>> Term for T {
 impl Term for IAtom {
     fn variable(self) -> VarRef {
         self.var.variable()
+    }
+}
+impl Term for Atom {
+    fn variable(self) -> VarRef {
+        self.variable()
     }
 }
 
