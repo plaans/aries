@@ -89,4 +89,8 @@ impl Objects {
     pub fn iter(&self) -> impl Iterator<Item = Object> + '_ {
         self.objects.iter().map(|(k, v)| Object::new(k.clone(), v.clone()))
     }
+
+    pub fn of_type<'a>(&'a self, tpe: &'a str) -> impl Iterator<Item = Object> + 'a {
+        self.iter().filter(move |o| o.tpe.name.canonical_str() == tpe)
+    }
 }

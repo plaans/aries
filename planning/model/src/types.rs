@@ -55,6 +55,14 @@ impl Types {
         UserType::new(self.user_types.top_type.clone(), self.user_types.clone())
     }
 
+    pub fn all_non_top_types(&self) -> impl Iterator<Item = (&Sym, &[Sym])> + '_ {
+        self.user_types.types.iter().map(|(k, v)| (k, v.as_slice()))
+    }
+
+    pub fn subtypes(&self, tpe: impl Into<Sym>) -> impl Iterator<Item = &Sym> {
+        self.user_types.subtypes.get(&tpe.into()).unwrap().iter()
+    }
+
     pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, TypeError> {
         let name = name.into();
         self.check_type(&name)?;
@@ -175,7 +183,10 @@ impl Debug for UserType {
 #[derive(Clone)]
 pub struct UserTypes {
     top_type: Sym,
+    /// All types with their parents.
     types: hashbrown::HashMap<Sym, Vec<Sym>>,
+    /// All types with theiir subtypes
+    subtypes: hashbrown::HashMap<Sym, Vec<Sym>>,
 }
 
 impl Default for UserTypes {
@@ -186,10 +197,15 @@ impl Default for UserTypes {
 
 impl UserTypes {
     pub fn new() -> Self {
-        Self {
-            top_type: Sym::from("★object★"),
+        let tt = Sym::from("★object★");
+        let mut types = Self {
+            top_type: tt.clone(),
             types: Default::default(),
-        }
+            subtypes: Default::default(),
+        };
+        types.types.insert(tt.clone(), vec![]);
+        types.subtypes.insert(tt, vec![]);
+        types
     }
 
     pub fn is_subtype_of(&self, a: &Sym, b: &Sym) -> bool {
@@ -213,14 +229,12 @@ impl UserTypes {
     pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) {
         let tpe = tpe.into();
         let parent = parent.map(|p| p.into());
-        if let Some(parent) = parent {
-            if !self.types.contains_key(&parent) {
-                self.types.insert(parent.clone(), Vec::new());
-            }
-            self.types.entry(tpe).or_default().push(parent);
-        } else {
-            self.types.entry(tpe).or_default();
+        let parent = parent.unwrap_or(self.top_type.clone());
+        if !self.types.contains_key(&parent) {
+            self.types.insert(parent.clone(), Vec::new());
         }
+        self.types.entry(tpe.clone()).or_default().push(parent.clone());
+        self.subtypes.entry(parent).or_default().push(tpe);
     }
 }
 

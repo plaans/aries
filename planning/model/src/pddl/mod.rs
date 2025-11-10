@@ -1,8 +1,11 @@
-pub mod convert;
+mod convert;
+mod find_file;
 pub mod input;
 pub mod parser;
 pub mod sexpr;
 
+pub use convert::{build_model, build_plan};
+pub use find_file::*;
 pub use parser::*;
 pub use sexpr::{SAtom, SExpr, SList};
 

@@ -47,3 +47,15 @@ impl Display for Model {
         Ok(())
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum Plan {
+    Sequential(Vec<Operator>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Operator {
+    pub action_ref: ActionRef,
+    pub arguments: Vec<Object>,
+    pub span: Option<Span>,
+}

@@ -177,6 +177,45 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
     Ok(model)
 }
 
+pub fn build_plan(plan: &pddl::Plan, model: &Model) -> Res<Plan> {
+    match plan {
+        pddl::Plan::ActionSequence(action_instances) => {
+            let mut operators = Vec::with_capacity(action_instances.len());
+            for a in action_instances {
+                let action = model
+                    .actions
+                    .get_action(&a.name)
+                    .ok_or_else(|| a.name.invalid("Unknown action"))?;
+                if a.arguments.len() != action.parameters.len() {
+                    return Err(a.invalid(format!(
+                        "Wrong number of parameters. Expected {}, provided: {}",
+                        action.parameters.len(),
+                        a.arguments.len()
+                    )));
+                }
+                let mut arguments = Vec::with_capacity(a.arguments.len());
+                for (arg, param) in a.arguments.iter().zip(action.parameters.iter()) {
+                    let obj = model.env.objects.get(arg).msg(&model.env)?;
+                    if !Type::from(obj.tpe()).is_subtype_of(param.tpe()) {
+                        return Err(arg.invalid(format!(
+                            "Object has type `{} ` that is incompatible with the expected type for parameter`{}`",
+                            obj.tpe(),
+                            param
+                        )));
+                    }
+                    arguments.push(obj);
+                }
+                operators.push(Operator {
+                    action_ref: action.name.clone(),
+                    arguments,
+                    span: Some(a.span.clone()),
+                });
+            }
+            Ok(Plan::Sequential(operators))
+        }
+    }
+}
+
 fn parse_action(a: &pddl::Action, env: &mut Environment, bindings: &Rc<Bindings>) -> Result<Action, Message> {
     let parameters = parse_parameters(&a.args, &env.types).msg(env)?;
 

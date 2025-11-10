@@ -1,19 +1,24 @@
+pub mod assignment;
 pub mod constraints;
-pub mod encoder;
+pub mod symbols;
 pub mod tasks;
 
+use constraints::*;
 use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
-use aries::model::lang::hreif::ModelWrapper;
+use aries::model::lang::hreif::BoolExpr;
 use aries::model::lang::*;
+use aries::solver::Solver;
 use idmap::DirectIdMap;
+use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
+use crate::assignment::Assignment;
+use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
 pub type Sym = String;
@@ -54,24 +59,13 @@ impl Hash for Fluent {
         self.sym.hash(state);
     }
 }
-/// A state variable e.g. `(location-of robot1)` where:
-///  - the fluent is the name of the state variable (e.g. `location-of`) and defines its type.
-///  - the remaining elements are its parameters (e.g. `robot1`).
-#[derive(Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
+
+pub type SymAtom = IAtom;
+
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct StateVar {
-    pub fluent: Arc<Fluent>,
-    pub args: Vec<SAtom>,
-}
-impl StateVar {
-    pub fn new(fluent: Arc<Fluent>, args: Vec<SAtom>) -> Self {
-        StateVar { fluent, args }
-    }
-}
-impl Debug for StateVar {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.fluent)?;
-        f.debug_list().entries(self.args.iter()).finish()
-    }
+    pub fluent: Sym,
+    pub args: Vec<SymAtom>,
 }
 
 /// Represents an effect on a state variable.
@@ -87,19 +81,21 @@ pub struct Effect {
     /// Time at which the transition will end
     pub transition_end: Time,
     /// If specified, the assign effect is required to persist at least until all of these timepoints.
-    pub min_mutex_end: Vec<Time>,
+    pub mutex_end: Time,
     /// State variable affected by the effect
     pub state_var: StateVar,
     /// Operation carried out by the effect (value assignment, increase)
     pub operation: EffectOp,
+    /// Presence literal indicating whether the effect is present
+    pub prez: Lit,
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
-    Assign(Atom),
+    Assign(bool),
 }
 impl EffectOp {
-    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
-    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::FALSE);
+    // pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
+    // pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::FALSE);
 }
 impl Debug for EffectOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -139,25 +135,30 @@ pub enum Tag {
     TaskEnd(TaskId),
 }
 
+type Constraint = Box<dyn BoolExpr<Sched>>;
+
 pub struct Sched {
     pub model: Model,
+    pub objects: ObjectEncoding,
     time_scale: IntCst,
-    origin: Time,
-    horizon: Time,
-    makespan: Time,
-    tasks: Tasks,
-    effects: Vec<Effect>,
+    pub origin: Time,
+    pub horizon: Time,
+    pub makespan: Time,
+    pub tasks: Tasks,
+    pub effects: Vec<Effect>,
     tags: HashMap<Atom, Vec<Tag>>,
+    constraints: Vec<Constraint>,
 }
 
 impl Sched {
-    pub fn new(time_scale: IntCst) -> Self {
+    pub fn new(time_scale: IntCst, objects: ObjectEncoding) -> Self {
         let mut model = Model::new();
         let origin = Time::new(0.into(), time_scale);
         let horizon = model.new_fvar(0, INT_CST_MAX, time_scale, "horizon").into();
         let makespan = model.new_fvar(0, INT_CST_MAX, time_scale, "makespan").into();
         Sched {
             model,
+            objects,
             time_scale,
             origin,
             horizon,
@@ -165,6 +166,7 @@ impl Sched {
             tasks: Default::default(),
             effects: Default::default(),
             tags: Default::default(),
+            constraints: vec![Box::new(EffectCoherence)], // TODO: add default constraints (consitency, makespan), ...
         }
     }
 
@@ -185,16 +187,34 @@ impl Sched {
             .new_optional_fvar(0, INT_CST_MAX, self.time_scale, scope, "_")
             .into()
     }
-}
-
-impl ModelWrapper for Sched {
-    type Lbl = Sym;
-
-    fn get_model(&self) -> &aries::model::Model<Self::Lbl> {
-        &self.model
+    pub fn add_constraint<C: BoolExpr<Sched> + 'static>(&mut self, c: C) {
+        self.add_boxed_constraint(Box::new(c));
+    }
+    pub fn add_boxed_constraint(&mut self, c: Box<dyn BoolExpr<Sched> + 'static>) {
+        self.constraints.push(c);
+    }
+    pub fn encode(&self) -> Model {
+        let mut encoding = self.model.clone();
+        for c in &self.constraints {
+            c.enforce(self, &mut encoding);
+        }
+        encoding
     }
 
-    fn get_model_mut(&mut self) -> &mut aries::model::Model<Self::Lbl> {
-        &mut self.model
+    pub fn solve(&self) -> Option<Assignment<'static>> {
+        let encoding = self.encode();
+        let mut solver = Solver::new(encoding);
+        solver.solve().unwrap().map(Assignment::shared)
+    }
+
+    pub fn print(&self, sol: &Assignment<'_>) {
+        let sorted_tasks = self
+            .tasks
+            .iter()
+            .filter(|t| sol.eval(t.presence) == Some(true))
+            .sorted_by_cached_key(|t| sol.eval(t.start.num).unwrap());
+        for t in sorted_tasks {
+            println!("{}: {}", t.name, sol.eval(t.start.num).unwrap())
+        }
     }
 }

@@ -149,6 +149,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-plan"
+version = "0.1.0"
+dependencies = [
+ "aries",
+ "aries_planning_model",
+ "aries_sched",
+ "clap 4.5.47",
+ "im",
+ "itertools 0.14.0",
+]
+
+[[package]]
 name = "aries_fzn"
 version = "0.1.0"
 dependencies = [

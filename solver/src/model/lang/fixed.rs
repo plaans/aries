@@ -100,6 +100,12 @@ impl From<Rational> for FAtom {
         FAtom::new(num, *value.denom())
     }
 }
+impl From<IntCst> for FAtom {
+    fn from(value: IntCst) -> Self {
+        let num = IAtom::from(value);
+        FAtom::new(num, 1)
+    }
+}
 impl TryFrom<FAtom> for Rational {
     type Error = ConversionError;
 

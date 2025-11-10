@@ -3,6 +3,7 @@ use crate::Res;
 use crate::Sym;
 use crate::errors::*;
 
+use itertools::Itertools;
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
 use std::sync::Arc;
@@ -10,8 +11,6 @@ use std::sync::Arc;
 use crate::pddl::input::*;
 use crate::pddl::sexpr::*;
 use crate::utils::disp_slice;
-use regex::Regex;
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Res<Domain> {
@@ -24,78 +23,27 @@ pub fn parse_pddl_problem(pb: Input) -> Res<Problem> {
     let expr = parse(pb.clone())?;
     read_problem(expr).title("Invalid problem: Syntax error")
 }
-
-/// Attempts to find the corresponding domain file for the given PDDL/HDDL problem.
-/// This method will look for a file named `domain.pddl` (resp. `domain.hddl`) in the
-/// current and parent folders.
-pub fn find_domain_of(problem_file: &std::path::Path) -> Res<PathBuf> {
-    // these are the domain file names that we will look for in the current and parent directory
-    let mut candidate_domain_files = Vec::with_capacity(2);
-
-    // add domain.pddl or domain.hddl
-    candidate_domain_files.push(match problem_file.extension() {
-        Some(ext) => Path::new("domain").with_extension(ext),
-        None => Path::new("domain.pddl").to_path_buf(),
-    });
-
-    let problem_filename = problem_file
-        .file_name()
-        .title("Invalid file")?
-        .to_str()
-        .title("Could not convert file name to utf8")?;
-
-    // if the problem file is of the form XXXXX.YY.pb.Zddl
-    // then add XXXXX.dom.Zddl to the candidate filenames
-    let re = Regex::new("^(.+)(\\.[^\\.]+)\\.pb\\.([hp]ddl)$").unwrap();
-    for m in re.captures_iter(problem_filename) {
-        let name = format!("{}.dom.{}", &m[1], &m[3]);
-        candidate_domain_files.push(name.into());
-    }
-    // if the problem file is of the form XXXXX.pb.Zddl,
-    // then add XXXXX.dom.Zddl to the candidate filenames
-    let re = Regex::new("^(.+)\\.pb\\.([hp]ddl)$").unwrap();
-    for m in re.captures_iter(problem_filename) {
-        let name = format!("{}.dom.{}", &m[1], &m[2]);
-        candidate_domain_files.push(name.into());
-    }
-    // if the problem file is of the form XXXXX.Zddl
-    // then add XXXXX-domain.Zddl to the candidate filenames
-    let re = Regex::new("^(.+)\\.([hp]ddl)$").unwrap();
-    for m in re.captures_iter(problem_filename) {
-        let name = format!("{}-domain.{}", &m[1], &m[2]);
-        candidate_domain_files.push(name.into());
-    }
-
-    // if the problem if of the form instance-NN.Zddl
-    // the add domain-NN.Zddl to the candidates filenames
-    let re = Regex::new("^instance-([1-9]+)\\.([hp]ddl)$").unwrap();
-    for m in re.captures_iter(problem_filename) {
-        let name = format!("domain-{}.{}", &m[1], &m[2]);
-        candidate_domain_files.push(name.into());
-    }
-
-    // directories where to look for the domain
-    let mut candidate_directories = Vec::with_capacity(2);
-    if let Some(curr) = problem_file.parent() {
-        candidate_directories.push(curr.to_owned());
-        if let Some(parent) = curr.parent() {
-            candidate_directories.push(parent.to_owned());
-            candidate_directories.push(parent.join("domains"));
+pub fn parse_plan(plan: Input) -> Res<Plan> {
+    let pb = Arc::new(plan);
+    let expr = parse_many(pb.clone())?;
+    let mut actions = Vec::with_capacity(expr.len());
+    for e in expr {
+        let mut elems = e
+            .as_list_iter()
+            .ok_or_else(|| e.invalid("expected a list with action name and parameters"))?;
+        let name = elems.pop_atom()?.clone();
+        let mut params = Vec::new();
+        while !elems.is_empty() {
+            let param = elems.pop_atom()?;
+            params.push(param.clone());
         }
+        actions.push(ActionInstance {
+            name,
+            arguments: params,
+            span: e.loc(),
+        });
     }
-
-    for f in &candidate_domain_files {
-        for dir in &candidate_directories {
-            let candidate = dir.join(f);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-        }
-    }
-    Err(Message::error(format!(
-        "Could not find find a corresponding file in same or parent directory as the problem file. Candidates: {:?}",
-        candidate_domain_files
-    )))
+    Ok(Plan::ActionSequence(actions))
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -413,6 +361,29 @@ impl Display for DurativeAction {
         write!(f, "{}(", self.name)?;
         disp_slice(f, self.args.as_slice(), ", ")?;
         write!(f, ")")
+    }
+}
+
+#[derive(Debug)]
+pub enum Plan {
+    ActionSequence(Vec<ActionInstance>),
+}
+
+#[derive(Debug)]
+pub struct ActionInstance {
+    pub name: Sym,
+    pub arguments: Vec<Sym>,
+    pub span: Span,
+}
+
+impl Spanned for ActionInstance {
+    fn span(&self) -> Option<&Span> {
+        Some(&self.span)
+    }
+}
+impl Display for ActionInstance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({} {})", self.name, self.arguments.iter().format(" "))
     }
 }
 
@@ -970,5 +941,14 @@ mod tests {
         }
 
         Result::Ok(())
+    }
+
+    #[test]
+    fn parse_gripper_plan() -> Res<()> {
+        let source = "../problems/pddl/tests/gripper.plan";
+        let source = PathBuf::from_str(source)?;
+        let source = Input::from_file(&source)?;
+        super::parse_plan(source)?;
+        Ok(())
     }
 }

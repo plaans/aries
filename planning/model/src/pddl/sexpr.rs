@@ -233,6 +233,16 @@ pub fn parse(s: Arc<Input>) -> Res<SExpr> {
     let mut tokens = tokenized.iter().peekable();
     read(&mut tokens, &s)
 }
+pub fn parse_many(s: Arc<Input>) -> Res<Vec<SExpr>> {
+    let tokenized = tokenize(s.clone());
+    let mut tokens = tokenized.iter().peekable();
+    let mut expressions = Vec::new();
+    while tokens.peek().is_some() {
+        let e = read(&mut tokens, &s)?;
+        expressions.push(e);
+    }
+    Ok(expressions)
+}
 
 /// Parse the input into a sequence of tokens.
 fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {

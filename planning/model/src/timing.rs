@@ -4,8 +4,8 @@ use crate::{RealValue, SubtaskId};
 
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Timestamp {
-    reference: TimeRef,
-    delay: RealValue,
+    pub reference: TimeRef,
+    pub delay: RealValue,
 }
 
 impl Timestamp {

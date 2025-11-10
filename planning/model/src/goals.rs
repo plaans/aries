@@ -6,8 +6,8 @@ use crate::{Condition, Env, ExprId, Param, RealValue, Sym, TimeInterval, Timesta
 
 #[derive(Debug, Clone)]
 pub struct Goal {
-    universal_quantification: Vec<Param>,
-    goal_expression: SimpleGoal,
+    pub universal_quantification: Vec<Param>,
+    pub goal_expression: SimpleGoal,
 }
 
 impl<'a> Display for Env<'a, &Goal> {

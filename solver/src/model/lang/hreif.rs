@@ -12,6 +12,7 @@ use crate::{
 
 pub trait Store {
     fn new_literal(&mut self, presence: Lit) -> Lit;
+    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef;
     fn get_implicant(&mut self, e: ReifExpr) -> Lit;
     fn add_implies(&mut self, l: Lit, e: ReifExpr);
     fn bounds(&self, var: VarRef) -> (IntCst, IntCst);
@@ -60,6 +61,9 @@ where
     fn new_literal(&mut self, presence: Lit) -> Lit {
         self.get_model_mut().state.new_optional_var(0, 1, presence).geq(1)
     }
+    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
+        self.get_model_mut().state.new_optional_var(lb, ub, presence)
+    }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
         let l = self.get_model_mut().half_reify(e.clone());
         println!("{l:?} -> {e:?}"); // TODO: remove
@@ -88,8 +92,8 @@ where
     }
 }
 
-pub trait BoolExpr<Ctx: Store> {
-    fn enforce_if(&self, l: Lit, ctx: &mut Ctx);
+pub trait BoolExpr<Ctx> {
+    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store);
 
     /// Returns a set of literals that must all be true for the expression to be valid.
     /// The list is interpreted as a set: order and redundant elements are ignored.
@@ -97,42 +101,42 @@ pub trait BoolExpr<Ctx: Store> {
     /// Examples:
     ///   - (a < b) would have a conjunctive scope `[prez(a), prez(b)]` as it is only valid when both
     ///     a and b are present. The conjunctive scope is thus the list their presence variable.
-    fn conj_scope(&self, ctx: &Ctx) -> Lits;
-    fn scope(&self, ctx: &mut Ctx) -> Lit {
-        let conj_scope = self.conj_scope(ctx);
-        ctx.conjunctive_scope(&conj_scope)
+    fn conj_scope(&self, ctx: &Ctx, store: &dyn Store) -> Lits;
+    fn scope(&self, ctx: &Ctx, store: &mut dyn Store) -> Lit {
+        let conj_scope = self.conj_scope(ctx, store);
+        store.conjunctive_scope(&conj_scope)
     }
-    fn opt_enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        let scope = self.scope(ctx);
-        let implicant = if scope == ctx.presence(l.variable()) {
+    fn opt_enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+        let scope = self.scope(ctx, store);
+        let implicant = if scope == store.presence_of_var(l.variable()) {
             l // TODO: here we should instead test that scope => prez(l)
-        } else if ctx.entails(l) {
-            ctx.tautology_of_scope(scope)
+        } else if store.entails(l) {
+            store.tautology_of_scope(scope)
         } else {
-            let imp = ctx.new_literal(scope);
-            or([imp, !scope]).enforce_if(l, ctx);
+            let imp = store.new_literal(scope);
+            or([imp, !scope]).enforce_if(l, ctx, store);
             imp
         };
-        self.enforce_if(implicant, ctx);
+        self.enforce_if(implicant, ctx, store);
     }
-    fn implicant(&self, ctx: &mut Ctx) -> Lit {
-        let scope = self.scope(ctx);
-        let implicant = ctx.new_literal(scope);
-        self.enforce_if(implicant, ctx);
+    fn implicant(&self, ctx: &Ctx, store: &mut dyn Store) -> Lit {
+        let scope = self.scope(ctx, store);
+        let implicant = store.new_literal(scope);
+        self.enforce_if(implicant, ctx, store);
         implicant
     }
-    fn enforce(&self, ctx: &mut Ctx) {
-        self.opt_enforce_if(Lit::TRUE, ctx);
+    fn enforce(&self, ctx: &Ctx, store: &mut dyn Store) {
+        self.opt_enforce_if(Lit::TRUE, ctx, store);
     }
 }
 
-impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
-    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        (*self).enforce_if(l, ctx);
+impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
+    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+        (*self).enforce_if(l, ctx, store);
     }
 
-    fn conj_scope(&self, ctx: &Ctx) -> Lits {
-        (*self).conj_scope(ctx)
+    fn conj_scope(&self, ctx: &Ctx, store: &dyn Store) -> Lits {
+        (*self).conj_scope(ctx, store)
     }
     //TODO: - check that we call the right one
     //      - implement all other methods to make sure we use the most specific implementation
@@ -142,15 +146,15 @@ pub type Lits = SmallVec<[Lit; 2]>;
 #[macro_export]
 macro_rules! lits {
     ($($x:tt)*) => {smallvec::smallvec![$($x)*]}
+}
+
+impl<Ctx> BoolExpr<Ctx> for ReifExpr {
+    fn enforce_if(&self, l: Lit, _ctx: &Ctx, store: &mut dyn Store) {
+        store.add_implies(l, self.clone());
     }
 
-impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
-    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        ctx.add_implies(l, self.clone());
-    }
-
-    fn conj_scope(&self, ctx: &Ctx) -> Lits {
-        let vs = self.scope(|v| ctx.presence(v));
+    fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> Lits {
+        let vs = self.scope(|v| store.presence_of_var(v));
         // TODO: give flattening context
         let conj_scope = vs.to_conjunction(|_| Option::<[Lit; 0]>::None, |l| l == Lit::TRUE);
         SmallVec::from_iter(conj_scope.literals())
@@ -166,16 +170,16 @@ crate::impl_reif!(Leq);
 #[macro_export]
 macro_rules! impl_reif {
     ($A: ty) => {
-        impl<Ctx: Store> BoolExpr<Ctx> for $A
+        impl<Ctx> BoolExpr<Ctx> for $A
         where
             $A: Clone,
             ReifExpr: From<$A>,
         {
-            fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-                ReifExpr::from(self.clone()).enforce_if(l, ctx);
+            fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+                ReifExpr::from(self.clone()).enforce_if(l, ctx, store);
             }
-            fn conj_scope(&self, ctx: &Ctx) -> Lits {
-                ReifExpr::from(self.clone()).conj_scope(ctx)
+            fn conj_scope(&self, ctx: &Ctx, store: &dyn Store) -> Lits {
+                ReifExpr::from(self.clone()).conj_scope(ctx, store)
             }
         }
     };
@@ -200,23 +204,23 @@ pub struct ExclusiveChoice<T> {
     alt2: T,
 }
 
-impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
-    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        if ctx.entails(l) {
+impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
+    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+        if store.entails(l) {
             // a tautolgy, create a single variable representing both options
-            let choice_var = ctx.new_literal(ctx.presence(l.variable()));
-            self.alt1.opt_enforce_if(choice_var, ctx);
-            self.alt2.opt_enforce_if(!choice_var, ctx);
+            let choice_var = store.new_literal(store.presence_of_var(l.variable()));
+            self.alt1.opt_enforce_if(choice_var, ctx, store);
+            self.alt2.opt_enforce_if(!choice_var, ctx, store);
         } else {
             // no optimisation possible, resort to general formulation
-            let a = self.alt1.implicant(ctx);
-            let b = self.alt2.implicant(ctx);
-            or([a, b]).opt_enforce_if(l, ctx);
+            let a = self.alt1.implicant(ctx, store);
+            let b = self.alt2.implicant(ctx, store);
+            or([a, b]).opt_enforce_if(l, ctx, store);
         }
     }
-    fn conj_scope(&self, ctx: &Ctx) -> Lits {
-        let mut sa = self.alt1.conj_scope(ctx);
-        let sb = self.alt2.conj_scope(ctx);
+    fn conj_scope(&self, ctx: &Ctx, store: &dyn Store) -> Lits {
+        let mut sa = self.alt1.conj_scope(ctx, store);
+        let sb = self.alt2.conj_scope(ctx, store);
         sa.extend_from_slice(&sb);
         sa
     }
@@ -244,27 +248,31 @@ mod test {
     /// True if the the two atoms are different, and undefined if at least one is absent
     struct Different(IAtom, IAtom);
 
-    impl<Ctx: Store> BoolExpr<Ctx> for AllDifferent {
-        fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+    fn prez(v: impl Term, store: &dyn Store) -> Lit {
+        store.presence_of_var(v.variable())
+    }
+
+    impl<Ctx> BoolExpr<Ctx> for AllDifferent {
+        fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
             for (i, t1) in self.0.iter().copied().enumerate() {
                 for t2 in self.0[i + 1..].iter().copied() {
-                    Different(t1, t2).opt_enforce_if(l, ctx);
+                    Different(t1, t2).opt_enforce_if(l, ctx, store);
                 }
             }
         }
 
-        fn conj_scope(&self, _ctx: &Ctx) -> Lits {
+        fn conj_scope(&self, _ctx: &Ctx, _store: &dyn Store) -> Lits {
             lits![]
         }
     }
 
-    impl<Ctx: Store> BoolExpr<Ctx> for Different {
-        fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-            neq(self.0, self.1).opt_enforce_if(l, ctx);
+    impl<Ctx> BoolExpr<Ctx> for Different {
+        fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+            neq(self.0, self.1).opt_enforce_if(l, ctx, store);
         }
 
-        fn conj_scope(&self, ctx: &Ctx) -> Lits {
-            lits![ctx.presence(self.0), ctx.presence(self.1)]
+        fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> Lits {
+            lits![prez(self.0, store), prez(self.1, store)]
         }
     }
 
@@ -281,7 +289,7 @@ mod test {
 
         let _activator = m.new_bvar("activator").true_lit();
         let no = AllDifferent(tasks.clone());
-        no.opt_enforce_if(Lit::TRUE, &mut m);
+        no.opt_enforce_if(Lit::TRUE, &(), &mut m);
         //no.opt_enforce_if(_activator, &mut m);
         m.print_state();
 
@@ -319,31 +327,15 @@ mod test {
 
     struct Ordered(TaskId, TaskId);
 
-    impl BoolExpr<Sched> for Ordered {
-        fn enforce_if(&self, l: Lit, ctx: &mut Sched) {
-            let c = lt(ctx.starts.0[self.0], ctx.starts.0[self.1]);
-            c.opt_enforce_if(l, ctx);
+    impl BoolExpr<Starts> for Ordered {
+        fn enforce_if(&self, l: Lit, ctx: &Starts, store: &mut dyn Store) {
+            let c = lt(ctx.0[self.0], ctx.0[self.1]);
+            c.opt_enforce_if(l, ctx, store);
         }
 
-        fn conj_scope(&self, ctx: &Sched) -> Lits {
-            let c = lt(ctx.starts.0[self.0], ctx.starts.0[self.1]);
-            c.conj_scope(ctx)
-        }
-    }
-
-    struct Sched {
-        model: Model<String>,
-        starts: Starts,
-    }
-    impl ModelWrapper for Sched {
-        type Lbl = String;
-
-        fn get_model(&self) -> &Model<Self::Lbl> {
-            &self.model
-        }
-
-        fn get_model_mut(&mut self) -> &mut Model<Self::Lbl> {
-            &mut self.model
+        fn conj_scope(&self, ctx: &Starts, store: &dyn Store) -> Lits {
+            let c = lt(ctx.0[self.0], ctx.0[self.1]);
+            c.conj_scope(ctx, store)
         }
     }
 
@@ -357,11 +349,9 @@ mod test {
         let x = Ordered(1, 2);
         let y: &dyn BoolExpr<_> = &x;
 
-        let mut sched = Sched { model: store, starts };
-
-        y.opt_enforce_if(Lit::FALSE, &mut sched);
+        y.opt_enforce_if(Lit::FALSE, &starts, &mut store);
 
         let e = ReifExpr::And(vec![]);
-        e.opt_enforce_if(Lit::TRUE, &mut sched);
+        e.opt_enforce_if(Lit::TRUE, &starts, &mut store);
     }
 }

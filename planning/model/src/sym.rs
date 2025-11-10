@@ -38,6 +38,11 @@ impl std::borrow::Borrow<str> for Sym {
         &self.symbol
     }
 }
+impl std::borrow::Borrow<str> for &Sym {
+    fn borrow(&self) -> &str {
+        &self.symbol
+    }
+}
 
 impl From<&str> for Sym {
     fn from(value: &str) -> Self {
