@@ -1,23 +1,40 @@
+use std::collections::BTreeMap;
+
 use aries::{
     core::Lit,
     model::lang::{FAtom, hreif::BoolExpr},
 };
-use aries_planning_model::{ExprId, Model, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned};
-use aries_sched::{EffectOp, IntCst, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding};
+use aries_planning_model::{ExprId, Message, Model, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use aries_sched::{
+    ConstraintID, EffectOp, IntCst, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+};
 use itertools::Itertools;
 
+use crate::ctags::{ActionCondition, CTag};
+
 fn types(model: &Model) -> ObjectEncoding {
-    let t = &model.env.types;
+    let t = dbg!(&model.env.types);
     let o = &model.env.objects;
     ObjectEncoding::build(
-        t.top_user_type().name.to_string(),
-        |c| t.subtypes(Sym::from(c.as_str())).map(|st| st.to_string()).collect_vec(),
-        |c| o.of_type(c.as_str()).map(|o| o.name().to_string()).collect_vec(),
+        t.top_user_type().name.canonical_str().to_string(),
+        |c| {
+            t.subtypes(Sym::from(c.as_str()))
+                .map(|st| st.canonical_str().to_string())
+                .collect_vec()
+        },
+        |c| {
+            o.of_type(c.as_str())
+                .map(|o| o.name().canonical_str().to_string())
+                .collect_vec()
+        },
     )
 }
 
 pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
+    let mut constraints_tags: BTreeMap<ConstraintID, CTag> = Default::default();
+
     let objs = types(model);
+    dbg!(&objs);
     let mut sched = aries_sched::Sched::new(1, objs);
     let global_scope = Scope::global(&sched);
 
@@ -54,23 +71,34 @@ pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
                     let eff = convert_effect(x, true, model, &mut sched, &bindings)?;
                     sched.effects.push(eff);
                 }
-                for c in &a.conditions {
+                for (cond_id, c) in a.conditions.iter().enumerate() {
                     if let Some(tp) = c.interval.as_timestamp() {
                         let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
-                        sched.add_boxed_constraint(c);
+                        let cid = sched.add_boxed_constraint(c);
+                        constraints_tags.insert(
+                            cid,
+                            CTag::Support {
+                                operator_id: t,
+                                cond: ActionCondition {
+                                    action: a.name.clone(),
+                                    condition_id: cond_id,
+                                },
+                            },
+                        );
                     }
                 }
             }
         }
     }
 
-    for x in &model.goals {
+    for (gid, x) in model.goals.iter().enumerate() {
         assert!(x.universal_quantification.is_empty());
         match x.goal_expression {
             aries_planning_model::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
                     let c = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
-                    sched.add_boxed_constraint(c);
+                    let cid = sched.add_boxed_constraint(c);
+                    constraints_tags.insert(cid, CTag::EnforceGoal(gid));
                 } else {
                     todo!()
                 }
@@ -86,7 +114,55 @@ pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
             sched.print(&sol);
             Ok(true)
         }
-        None => panic!("INVALID PLAN"),
+        None => {
+            println!("INVALID PLAN");
+
+            let act_cond = |cid: ConstraintID| match constraints_tags.get(&cid) {
+                Some(CTag::Support { cond, .. }) => Some(cond),
+                _ => None,
+            };
+            let mut exp = sched.explainable_solver(act_cond);
+            for musmcs in exp.explain_unsat() {
+                let (kind, culprits) = match musmcs {
+                    aries::solver::musmcs::MusMcs::Mus(elems) => ("MUS", elems),
+                    aries::solver::musmcs::MusMcs::Mcs(elems) => ("MCS", elems),
+                };
+                println!("{}:", kind);
+                let mut msg = Message::error(kind);
+                for cond in culprits {
+                    println!("   cond: {}/{}", cond.action, cond.condition_id);
+
+                    let annot = model
+                        .env
+                        .node(model.actions.get_action(&cond.action).unwrap().conditions[cond.condition_id].cond)
+                        .info("to remove");
+                    msg = msg.snippet(annot);
+                }
+                println!("{msg}")
+            }
+
+            // let mut exp = sched.explainable_solver();
+            // for musmcs in exp.explain_unsat(&|cid| constraints_tags.get(&cid)) {
+            //     let (kind, culprits) = match musmcs {
+            //         aries::solver::musmcs::MusMcs::Mus(elems) => ("MUS", elems),
+            //         aries::solver::musmcs::MusMcs::Mcs(elems) => ("MCS", elems),
+            //     };
+            //     println!("{}:", kind);
+            //     for ctag in culprits {
+            //         match ctag {
+            //             CTag::EnforceGoal(i) => {
+            //                 let g = &model.goals[*i];
+            //                 println!("  {}", model.env.node(g))
+            //             }
+            //             CTag::Support { operator_id, cond } => {
+            //                 println!("  op: {operator_id}, cond: {}/{}", cond.action, cond.condition_id)
+            //             }
+            //         }
+            //     }
+            // }
+
+            Ok(false)
+        }
     }
 }
 

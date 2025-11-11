@@ -89,26 +89,24 @@ pub struct HasValueAt {
 
 impl BoolExpr<Sched> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
-        dbg!(&self);
         let mut options = Vec::with_capacity(4);
         for eff in &ctx.effects {
             let EffectOp::Assign(value) = eff.operation;
             if self.state_var.fluent != eff.state_var.fluent {
                 continue;
             }
-            dbg!(eff);
             assert_eq!(self.state_var.args.len(), eff.state_var.args.len());
             let mut conjuncts = vec![
-                dbg!(eff.prez),
-                dbg!(f_geq(self.timepoint, eff.effective_start()).implicant(ctx, store)),
-                dbg!(f_leq(self.timepoint, eff.mutex_end).implicant(ctx, store)),
+                eff.prez,
+                f_geq(self.timepoint, eff.effective_start()).implicant(ctx, store),
+                f_leq(self.timepoint, eff.mutex_end).implicant(ctx, store),
             ];
             conjuncts.extend(
                 self.state_var
                     .args
                     .iter()
                     .zip(eff.state_var.args.iter())
-                    .map(|(x, y)| dbg!(eq(*x, *y).implicant(ctx, store))),
+                    .map(|(x, y)| eq(*x, *y).implicant(ctx, store)),
             );
             conjuncts.push(eq(self.value, Atom::from(value)).implicant(ctx, store));
 

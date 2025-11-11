@@ -1,16 +1,18 @@
 pub mod assignment;
 pub mod constraints;
+pub mod explain;
 pub mod symbols;
 pub mod tasks;
 
+use aries::solver::musmcs::MusMcs;
 use constraints::*;
 use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
-use aries::model::lang::hreif::BoolExpr;
+use aries::model::lang::hreif::{BoolExpr, Store};
 use aries::model::lang::*;
 use aries::solver::Solver;
 use idmap::DirectIdMap;
@@ -18,6 +20,7 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 use crate::assignment::Assignment;
+use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
@@ -136,6 +139,7 @@ pub enum Tag {
 }
 
 type Constraint = Box<dyn BoolExpr<Sched>>;
+pub type ConstraintID = usize;
 
 pub struct Sched {
     pub model: Model,
@@ -187,11 +191,12 @@ impl Sched {
             .new_optional_fvar(0, INT_CST_MAX, self.time_scale, scope, "_")
             .into()
     }
-    pub fn add_constraint<C: BoolExpr<Sched> + 'static>(&mut self, c: C) {
-        self.add_boxed_constraint(Box::new(c));
+    pub fn add_constraint<C: BoolExpr<Sched> + 'static>(&mut self, c: C) -> ConstraintID {
+        self.add_boxed_constraint(Box::new(c))
     }
-    pub fn add_boxed_constraint(&mut self, c: Box<dyn BoolExpr<Sched> + 'static>) {
+    pub fn add_boxed_constraint(&mut self, c: Box<dyn BoolExpr<Sched> + 'static>) -> ConstraintID {
         self.constraints.push(c);
+        self.constraints.len() - 1
     }
     pub fn encode(&self) -> Model {
         let mut encoding = self.model.clone();
@@ -205,6 +210,13 @@ impl Sched {
         let encoding = self.encode();
         let mut solver = Solver::new(encoding);
         solver.solve().unwrap().map(Assignment::shared)
+    }
+
+    pub fn explainable_solver<'a, T: Ord + Clone>(
+        &'a self,
+        project: impl Fn(ConstraintID) -> Option<T>,
+    ) -> ExplainableSolver<'a, T> {
+        ExplainableSolver::new(self, project)
     }
 
     pub fn print(&self, sol: &Assignment<'_>) {

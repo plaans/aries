@@ -1,3 +1,4 @@
+pub(crate) mod ctags;
 mod val;
 
 use std::path::PathBuf;
