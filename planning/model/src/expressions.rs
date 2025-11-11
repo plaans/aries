@@ -37,7 +37,7 @@ impl ExprNode {
 pub type TExpr<'env> = Env<'env, ExprId>;
 
 impl<'a> TExpr<'a> {
-    pub fn get(&self) -> &'a ExprNode {
+    fn get(&self) -> &'a ExprNode {
         self.env.get(self.elem)
     }
     pub fn bool(&self) -> Result<bool, Message> {
