@@ -47,8 +47,11 @@ impl Bindings {
 }
 
 fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
-    let mut types = UserTypes::new();
+    let mut types = UserTypes::with_top_type("object");
     for tpe in &dom.types {
+        if tpe.symbol.canonical_str() == "object" {
+            continue; // already added as the top type
+        }
         match tpe.tpe.as_slice() {
             [] => types.add_type(&tpe.symbol, None),
             [parent] => types.add_type(&tpe.symbol, Some(parent)),

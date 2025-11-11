@@ -40,6 +40,7 @@ impl ToEnvMessage for TypeError {
 #[derive(Error, Debug)]
 pub enum UserTypeDeclarationError {}
 
+#[derive(Debug)]
 pub struct Types {
     user_types: Arc<UserTypes>,
 }
@@ -180,7 +181,7 @@ impl Debug for UserType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct UserTypes {
     top_type: Sym,
     /// All types with their parents.
@@ -197,7 +198,11 @@ impl Default for UserTypes {
 
 impl UserTypes {
     pub fn new() -> Self {
-        let tt = Sym::from("★object★");
+        Self::with_top_type("★object★")
+    }
+
+    pub fn with_top_type(top_type: impl Into<Sym>) -> Self {
+        let tt = top_type.into();
         let mut types = Self {
             top_type: tt.clone(),
             types: Default::default(),
@@ -228,12 +233,13 @@ impl UserTypes {
     /// If the type already exists, a new parent is added (multiple inheritence)
     pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) {
         let tpe = tpe.into();
-        let parent = parent.map(|p| p.into());
+        let parent = parent.map(|p| p.into()).filter(|parent| parent != &tpe); // TODO: ugly work around for doamins that declare object as subtype of itself
         let parent = parent.unwrap_or(self.top_type.clone());
         if !self.types.contains_key(&parent) {
             self.types.insert(parent.clone(), Vec::new());
         }
         self.types.entry(tpe.clone()).or_default().push(parent.clone());
+        self.subtypes.entry(tpe.clone()).or_default();
         self.subtypes.entry(parent).or_default().push(tpe);
     }
 }
