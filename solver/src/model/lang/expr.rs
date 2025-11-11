@@ -1,11 +1,13 @@
 use crate::core::literals::Disjunction;
 use crate::core::*;
 use crate::model::lang::alternative::Alternative;
-use crate::model::lang::hreif::{exclu_choice, BoolExpr, Store};
+use crate::model::lang::hreif::{BoolExpr, Store};
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use env_param::EnvParam;
+use itertools::Itertools;
+use smallvec::{smallvec, SmallVec};
 use std::ops::Not;
 
 use super::mul::EqMul;
@@ -218,63 +220,77 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
     }
 }
 
-impl<Ctx> BoolExpr<Ctx> for Eq {
-    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
-        //fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
+impl Eq {
+    /// Returns an equivalent *conjunction* of `ReifExpr`
+    fn as_elementary_constraints(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
-        if a == b {
-            Lit::TRUE.enforce_if(l, ctx, store);
+        let subs: SmallVec<[ReifExpr; 2]> = if a == b {
+            smallvec![]
         } else if a.kind() != b.kind() {
             panic!("Attempting to build an equality between expression with incompatible types.");
         } else {
             use Atom::*;
             match (a, b) {
                 (Bool(a), Bool(b)) => {
-                    implies(a, b).enforce_if(l, ctx, store);
-                    implies(b, a).enforce_if(l, ctx, store);
+                    smallvec![implies(a, b).into(), implies(b, a).into()]
                 }
                 (Int(a), Int(b)) => {
-                    leq(a, b).enforce_if(l, ctx, store);
-                    leq(b, a).enforce_if(l, ctx, store);
+                    smallvec![leq(a, b).into(), leq(b, a).into()]
                 }
                 (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
                     let a = a.int_view().unwrap();
                     let b = b.int_view().unwrap();
-                    leq(a, b).enforce_if(l, ctx, store);
-                    leq(b, a).enforce_if(l, ctx, store);
+                    smallvec![leq(a, b).into(), leq(b, a).into()]
                 }
                 (Sym(va), Sym(vb)) => match (va, vb) {
                     (SAtom::Var(a), SAtom::Var(b)) => {
                         if a.var <= b.var {
-                            ReifExpr::Eq(a.var, b.var).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::Eq(a.var, b.var)]
                         } else {
-                            ReifExpr::Eq(b.var, a.var).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::Eq(b.var, a.var)]
                         }
                     }
                     (SAtom::Cst(a), SAtom::Cst(b)) => {
                         let l2 = if a == b { Lit::TRUE } else { Lit::FALSE };
-                        ReifExpr::Lit(l2).enforce_if(l, ctx, store);
+                        smallvec![l2.into()]
                     }
                     (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
                         let var = x.var;
                         let value = v.sym.int_value();
                         let (lb, ub) = store.bounds(var);
                         if (lb..=ub).contains(&value) {
-                            ReifExpr::EqVal(x.var, v.sym.int_value()).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::EqVal(x.var, v.sym.int_value())]
                         } else {
-                            ReifExpr::Lit(Lit::FALSE).enforce_if(l, ctx, store);
+                            smallvec![Lit::FALSE.into()]
                         }
                     }
                 },
                 (Fixed(a), Fixed(b)) => {
                     debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
-                    leq(a.num, b.num).enforce_if(l, ctx, store);
-                    leq(b.num, a.num).enforce_if(l, ctx, store);
+                    smallvec![leq(a.num, b.num).into(), leq(b.num, a.num).into()]
                 }
                 _ => unreachable!(), // guarded by kind comparison
             }
+        };
+        subs
+    }
+}
+
+impl<Ctx> BoolExpr<Ctx> for Eq {
+    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+        let elems = self.as_elementary_constraints(store);
+        for elem in elems {
+            elem.enforce_if(l, ctx, store);
         }
+    }
+    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
+        let elems = self.as_elementary_constraints(store);
+        if elems.contains(&ReifExpr::Lit(Lit::FALSE)) {
+            return Lit::FALSE;
+        }
+        let conjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
+        store.get_implicant(and(conjuncts).into())
     }
 
     fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
@@ -299,12 +315,13 @@ impl<Lbl: Label> Reifiable<Lbl> for Neq {
     }
 }
 
-impl<Ctx> BoolExpr<Ctx> for Neq {
-    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+impl Neq {
+    /// Returns an equivalent *disjunction* of `ReifExpr`
+    fn as_elementary_disjuncts(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
-        if a == b {
-            Lit::FALSE.enforce_if(l, ctx, store);
+        let subs: SmallVec<[ReifExpr; 2]> = if a == b {
+            smallvec![Lit::FALSE.into()]
         } else if a.kind() != b.kind() {
             panic!("Attempting to build an equality between expression with incompatible types.");
         } else {
@@ -313,47 +330,64 @@ impl<Ctx> BoolExpr<Ctx> for Neq {
                 (Bool(a), Bool(b)) => {
                     // ![(a => b) /\ (b => a)]
                     // !(a => b) \/ !(b => a)
-                    // (!a & b) \/ (!b & a) // TODO strange that we cannot have a conjunction
-                    exclu_choice(and([a, !b]), and([!a, b])).enforce_if(l, ctx, store);
+                    // (!a & b) \/ (!b & a)
+                    smallvec![and([a, !b]).into(), and([!a, b]).into()] // note: exclusive
                 }
                 (Int(a), Int(b)) => {
-                    exclu_choice(lt(a, b), lt(b, a)).opt_enforce_if(l, ctx, store);
+                    smallvec![lt(a, b).into(), lt(b, a).into()] // note: exclusive
                 }
                 (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
                     let a = a.int_view().unwrap();
                     let b = b.int_view().unwrap();
-                    exclu_choice(lt(a, b), lt(b, a)).opt_enforce_if(l, ctx, store);
+                    smallvec![lt(a, b).into(), lt(b, a).into()] // note: exclusive
                 }
                 (Sym(va), Sym(vb)) => match (va, vb) {
                     (SAtom::Var(a), SAtom::Var(b)) => {
                         if a.var <= b.var {
-                            ReifExpr::Neq(a.var, b.var).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::Neq(a.var, b.var)]
                         } else {
-                            ReifExpr::Neq(b.var, a.var).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::Neq(b.var, a.var)]
                         }
                     }
                     (SAtom::Cst(a), SAtom::Cst(b)) => {
                         let l2 = if a != b { Lit::TRUE } else { Lit::FALSE };
-                        ReifExpr::Lit(l2).enforce_if(l, ctx, store);
+                        smallvec![ReifExpr::Lit(l2)]
                     }
                     (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
                         let var = x.var;
                         let value = v.sym.int_value();
                         let (lb, ub) = store.bounds(var);
                         if (lb..=ub).contains(&value) {
-                            ReifExpr::NeqVal(x.var, v.sym.int_value()).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::NeqVal(x.var, v.sym.int_value())]
                         } else {
-                            ReifExpr::Lit(Lit::TRUE).enforce_if(l, ctx, store);
+                            smallvec![ReifExpr::Lit(Lit::TRUE)]
                         }
                     }
                 },
                 (Fixed(a), Fixed(b)) => {
                     debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
-                    exclu_choice(lt(a.num, b.num), gt(a.num, b.num)).opt_enforce_if(l, ctx, store);
+                    smallvec![lt(a.num, b.num).into(), gt(a.num, b.num).into()]
                 }
                 _ => unreachable!(), // guarded by kind comparison
             }
+        };
+        subs
+    }
+}
+
+impl<Ctx> BoolExpr<Ctx> for Neq {
+    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
+        let elems = self.as_elementary_disjuncts(store);
+        let disjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
+        or(disjuncts).enforce_if(l, ctx, store);
+    }
+    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
+        let elems = self.as_elementary_disjuncts(store);
+        if elems.contains(&ReifExpr::Lit(Lit::TRUE)) {
+            return Lit::TRUE;
         }
+        let disjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
+        store.get_implicant(or(disjuncts).into())
     }
     fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
         smallvec::smallvec![

@@ -66,12 +66,11 @@ where
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
         let l = self.get_model_mut().half_reify(e.clone());
-        println!("{l:?} -> {e:?}"); // TODO: remove
         l
     }
 
     fn add_implies(&mut self, l: Lit, e: ReifExpr) {
-        println!("[{:?}] {l:?} -> {e:?}", self.presence(l)); // TODO: remove
+        //println!("[{:?}] {l:?} -> {e:?}", self.presence(l)); // TODO: remove
         self.get_model_mut().enforce_if(l, e);
     }
     fn bounds(&self, var: VarRef) -> (IntCst, IntCst) {
@@ -138,6 +137,10 @@ impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     fn conj_scope(&self, ctx: &Ctx, store: &dyn Store) -> Lits {
         (*self).conj_scope(ctx, store)
     }
+    fn implicant(&self, ctx: &Ctx, store: &mut dyn Store) -> Lit {
+        (*self).implicant(ctx, store)
+    }
+
     //TODO: - check that we call the right one
     //      - implement all other methods to make sure we use the most specific implementation
 }
@@ -158,6 +161,9 @@ impl<Ctx> BoolExpr<Ctx> for ReifExpr {
         // TODO: give flattening context
         let conj_scope = vs.to_conjunction(|_| Option::<[Lit; 0]>::None, |l| l == Lit::TRUE);
         SmallVec::from_iter(conj_scope.literals())
+    }
+    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
+        store.get_implicant(self.clone())
     }
 }
 
@@ -180,6 +186,9 @@ macro_rules! impl_reif {
             }
             fn conj_scope(&self, ctx: &Ctx, store: &dyn Store) -> Lits {
                 ReifExpr::from(self.clone()).conj_scope(ctx, store)
+            }
+            fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
+                store.get_implicant(ReifExpr::from(self.clone()))
             }
         }
     };
