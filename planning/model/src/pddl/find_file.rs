@@ -45,6 +45,8 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> Res<PathBuf> {
     for m in re.captures_iter(problem_filename) {
         let name = format!("{}-domain.{}", &m[1], &m[2]);
         candidate_domain_files.push(name.into());
+        let name = format!("domain-{}.{}", &m[1], &m[2]);
+        candidate_domain_files.push(name.into());
     }
 
     // if the problem if of the form instance-NN.Zddl
