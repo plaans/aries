@@ -41,7 +41,7 @@ pub struct Marco<'a, Lbl: Label> {
 }
 
 impl<'a, Lbl: Label> Iterator for Marco<'a, Lbl> {
-    type Item = MusMcs;
+    type Item = MusMcs<Lit>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self._next().map_or(None, |musmcs| musmcs)
@@ -83,7 +83,7 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         self.mus_only().next()
     }
 
-    fn _next(&mut self) -> Result<Option<MusMcs>, Exit> {
+    fn _next(&mut self) -> Result<Option<MusMcs<Lit>>, Exit> {
         if let Some(seed) = self.map_solver.find_unexplored_seed()? {
             match self.check_subset(&seed)? {
                 Ok(sat_subset) => {
