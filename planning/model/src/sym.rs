@@ -1,3 +1,5 @@
+use compact_str::CompactString;
+
 use crate::errors::{Span, Spanned};
 use std::{
     borrow::Cow,
@@ -16,8 +18,10 @@ pub struct Sym {
 
 impl Sym {
     pub fn with_source<'a>(s: impl Into<Cow<'a, str>>, source: Span) -> Sym {
+        let x: Cow<'a, str> = s.into();
+
         Sym {
-            symbol: s.into().into(),
+            symbol: compact_str::CompactString::from_str_to_lowercase(&x),
             span: Some(source),
         }
     }
@@ -47,7 +51,7 @@ impl std::borrow::Borrow<str> for &Sym {
 impl From<&str> for Sym {
     fn from(value: &str) -> Self {
         Sym {
-            symbol: value.into(),
+            symbol: CompactString::from_str_to_lowercase(value),
             span: None,
         }
     }
