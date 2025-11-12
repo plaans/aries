@@ -97,6 +97,9 @@ impl Fluents {
     pub fn iter(&self) -> impl Iterator<Item = &Fluent> + '_ {
         self.fluents.iter().map(|(_k, v)| v)
     }
+    pub fn iter_with_id(&self) -> impl Iterator<Item = (FluentId, &Fluent)> + '_ {
+        self.fluents.iter()
+    }
 }
 
 #[derive(Clone, Debug, Display)]

@@ -169,6 +169,10 @@ impl Message {
     pub fn error(title: impl ToString) -> Self {
         Self::new(Level::ERROR, title)
     }
+    #[cold]
+    pub fn warning(title: impl ToString) -> Self {
+        Self::new(Level::WARNING, title)
+    }
 
     #[cold]
     pub fn snippet(mut self, snippet: Annot) -> Self {

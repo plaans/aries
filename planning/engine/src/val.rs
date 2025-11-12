@@ -1,16 +1,22 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Debug};
 
 use aries::{
     core::Lit,
-    model::lang::{FAtom, hreif::BoolExpr},
+    model::lang::{
+        FAtom,
+        hreif::{BoolExpr, Store},
+    },
+    utils::StreamingIterator,
 };
-use aries_planning_model::{ExprId, Message, Model, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use aries_planning_model::{
+    ActionRef, ExprId, FluentId, Message, Model, Param, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned,
+};
 use aries_sched::{
     ConstraintID, EffectOp, IntCst, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 use itertools::Itertools;
 
-use crate::ctags::{ActionCondition, CTag};
+use crate::ctags::{ActionCondition, CTag, PotentialEffect, Repair};
 
 fn types(model: &Model) -> ObjectEncoding {
     let t = dbg!(&model.env.types);
@@ -30,6 +36,46 @@ fn types(model: &Model) -> ObjectEncoding {
     )
 }
 
+#[derive(Debug)]
+pub(crate) struct PotentialEffects {
+    effs: BTreeMap<ActionRef, Vec<(FluentId, Vec<Param>, Lit)>>,
+}
+
+impl PotentialEffects {
+    pub fn compute(model: &Model, mut create_lit: impl FnMut() -> Lit) -> PotentialEffects {
+        let mut effs: BTreeMap<ActionRef, Vec<(FluentId, Vec<Param>, Lit)>> = BTreeMap::new();
+        for a in model.actions.iter() {
+            println!("{:?}", a.name);
+            for (fluent_id, fluent) in model.env.fluents.iter_with_id() {
+                println!("  {:?}", fluent.name);
+                let mut candidate_params = Vec::with_capacity(fluent.parameters.len());
+                for param in &fluent.parameters {
+                    candidate_params.push(
+                        a.parameters
+                            .iter()
+                            .filter(|act_param| act_param.tpe().is_subtype_of(param.tpe()))
+                            .collect_vec()
+                            .into_iter(),
+                    );
+                }
+                let mut instanciations = aries::utils::enumerate(candidate_params);
+                while let Some(instanciation) = instanciations.next() {
+                    let params: Vec<Param> = instanciation.iter().cloned().cloned().collect();
+                    println!("    {instanciation:?}");
+                    effs.entry(a.name.clone())
+                        .or_default()
+                        .push((fluent_id, params, create_lit()));
+                }
+            }
+        }
+        PotentialEffects { effs }
+    }
+
+    pub fn for_action(&self, act_name: &aries_planning_model::Sym) -> &[(FluentId, Vec<Param>, Lit)] {
+        self.effs.get(act_name).map(|x| x.as_slice()).unwrap_or(&[])
+    }
+}
+
 pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
     let mut constraints_tags: BTreeMap<ConstraintID, CTag> = Default::default();
 
@@ -37,6 +83,23 @@ pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
     dbg!(&objs);
     let mut sched = aries_sched::Sched::new(1, objs);
     let global_scope = Scope::global(&sched);
+
+    let potential_effects = PotentialEffects::compute(model, || sched.model.new_literal(Lit::TRUE));
+
+    // for each potential effect, add a (soft constraint) that it is absent
+    for (a, pot_effs) in &potential_effects.effs {
+        for (eff_id, pot_eff) in pot_effs.iter().enumerate() {
+            // create a constraint disabling the effect, and tag so that we can mark it as soft
+            let cid = sched.add_constraint(!pot_eff.2);
+            constraints_tags.insert(
+                cid,
+                CTag::DisablePotentialEffect(PotentialEffect {
+                    action_id: a.clone(),
+                    effect_id: eff_id,
+                }),
+            );
+        }
+    }
 
     for x in &model.init {
         let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
@@ -71,6 +134,11 @@ pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
                     let eff = convert_effect(x, true, model, &mut sched, &bindings)?;
                     sched.effects.push(eff);
                 }
+                for (fid, params, enabler) in potential_effects.for_action(&a.name) {
+                    let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, &bindings)?;
+                    sched.effects.push(eff);
+                }
+
                 for (cond_id, c) in a.conditions.iter().enumerate() {
                     if let Some(tp) = c.interval.as_timestamp() {
                         let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
@@ -118,48 +186,42 @@ pub fn validate(model: &Model, plan: &Plan) -> Res<bool> {
             println!("INVALID PLAN");
 
             let act_cond = |cid: ConstraintID| match constraints_tags.get(&cid) {
-                Some(CTag::Support { cond, .. }) => Some(cond),
+                Some(ctag) => ctag.to_repair(),
                 _ => None,
             };
             let mut exp = sched.explainable_solver(act_cond);
             for musmcs in exp.explain_unsat() {
-                let (kind, culprits) = match musmcs {
-                    aries::solver::musmcs::MusMcs::Mus(elems) => ("MUS", elems),
-                    aries::solver::musmcs::MusMcs::Mcs(elems) => ("MCS", elems),
+                let (mut msg, culprits) = match musmcs {
+                    aries::solver::musmcs::MusMcs::Mus(elems) => (Message::error("MUS"), elems),
+                    aries::solver::musmcs::MusMcs::Mcs(elems) => (Message::warning("MCS"), elems),
                 };
-                println!("{}:", kind);
-                let mut msg = Message::error(kind);
-                for cond in culprits {
-                    println!("   cond: {}/{}", cond.action, cond.condition_id);
-
-                    let annot = model
-                        .env
-                        .node(model.actions.get_action(&cond.action).unwrap().conditions[cond.condition_id].cond)
-                        .info("to remove");
-                    msg = msg.snippet(annot);
+                for repair in culprits {
+                    match repair {
+                        Repair::RmCond(cond) => {
+                            println!("   cond: {}/{}", cond.action, cond.condition_id);
+                            let annot = model
+                                .env
+                                .node(
+                                    model.actions.get_action(&cond.action).unwrap().conditions[cond.condition_id].cond,
+                                )
+                                .info(format!("to remove (action: {})", cond.action));
+                            msg = msg.snippet(annot).show(cond.action.span.as_ref().unwrap());
+                        }
+                        Repair::AddEff(potential_effect) => {
+                            let (fluent_id, params, _) =
+                                &potential_effects.for_action(&potential_effect.action_id)[potential_effect.effect_id];
+                            let fluent = model.env.fluents.get(*fluent_id);
+                            let fluent = format!("({} {})", fluent.name(), params.iter().map(|p| p.name()).format(" "));
+                            println!("{} => {}", &potential_effect.action_id, fluent);
+                            let annot = potential_effect.action_id.info(format!("Add effect: {fluent}"));
+                            msg = msg
+                                .snippet(annot)
+                                .show(potential_effect.action_id.span.as_ref().unwrap());
+                        }
+                    }
                 }
-                println!("{msg}")
+                println!("\n{msg}\n")
             }
-
-            // let mut exp = sched.explainable_solver();
-            // for musmcs in exp.explain_unsat(&|cid| constraints_tags.get(&cid)) {
-            //     let (kind, culprits) = match musmcs {
-            //         aries::solver::musmcs::MusMcs::Mus(elems) => ("MUS", elems),
-            //         aries::solver::musmcs::MusMcs::Mcs(elems) => ("MCS", elems),
-            //     };
-            //     println!("{}:", kind);
-            //     for ctag in culprits {
-            //         match ctag {
-            //             CTag::EnforceGoal(i) => {
-            //                 let g = &model.goals[*i];
-            //                 println!("  {}", model.env.node(g))
-            //             }
-            //             CTag::Support { operator_id, cond } => {
-            //                 println!("  op: {operator_id}, cond: {}/{}", cond.action, cond.condition_id)
-            //             }
-            //         }
-            //     }
-            // }
 
             Ok(false)
         }
@@ -218,6 +280,32 @@ fn convert_effect(
         state_var: sv,
         operation: op,
         prez: bindings.presence,
+    };
+    Ok(eff)
+}
+
+fn create_potential_effect(
+    fid: FluentId,
+    params: &[Param],
+    enalber: Lit,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+) -> Res<aries_sched::Effect> {
+    let t = bindings.start;
+    let args: Vec<SymAtom> = params.iter().map(|p| bindings.args[p.name()]).collect_vec();
+    let sv = aries_sched::StateVar {
+        fluent: model.env.fluents.get(fid).name().to_string(),
+        args,
+    };
+    let op = EffectOp::Assign(true);
+    let eff = aries_sched::Effect {
+        transition_start: t,
+        transition_end: t + FAtom::EPSILON,
+        mutex_end: sched.new_timepoint(),
+        state_var: sv,
+        operation: op,
+        prez: enalber,
     };
     Ok(eff)
 }
