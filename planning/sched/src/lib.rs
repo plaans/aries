@@ -4,15 +4,14 @@ pub mod explain;
 pub mod symbols;
 pub mod tasks;
 
-use aries::solver::musmcs::MusMcs;
 use constraints::*;
 use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
-use aries::model::lang::hreif::{BoolExpr, Store};
+use aries::model::lang::hreif::BoolExpr;
 use aries::model::lang::*;
 use aries::solver::Solver;
 use idmap::DirectIdMap;
@@ -212,10 +211,10 @@ impl Sched {
         solver.solve().unwrap().map(Assignment::shared)
     }
 
-    pub fn explainable_solver<'a, T: Ord + Clone>(
-        &'a self,
+    pub fn explainable_solver<T: Ord + Clone>(
+        &self,
         project: impl Fn(ConstraintID) -> Option<T>,
-    ) -> ExplainableSolver<'a, T> {
+    ) -> ExplainableSolver<T> {
         ExplainableSolver::new(self, project)
     }
 

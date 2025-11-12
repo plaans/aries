@@ -149,7 +149,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries-plan"
+name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
  "aries",

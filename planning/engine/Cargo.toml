@@ -1,5 +1,5 @@
 [package]
-name = "aries-plan"
+name = "aries-plan-engine"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2024"

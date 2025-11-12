@@ -1,5 +1,5 @@
 pub(crate) mod ctags;
-mod val;
+mod repair;
 
 use std::path::PathBuf;
 
@@ -19,14 +19,19 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    Val(Validate),
+    DomRepair(DomRepair),
 }
 
 #[derive(Parser, Debug)]
-pub struct Validate {
+pub struct DomRepair {
+    /// Path the valid plan, for which the domain may be flawed.
     plan: PathBuf,
+    /// Path to the valid PDDL problem file.
+    /// If not specified, we will attempt to automaticall infer it based on the plan file.
     #[arg(short, long)]
     problem: Option<PathBuf>,
+    /// Path to the PDDL domain file that is supposedly incorrect.
+    /// If not specified, we will attempt to automaticall infer it based on the plan file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
 }
@@ -35,13 +40,13 @@ fn main() -> Res<()> {
     let args = Args::parse();
 
     match &args.command {
-        Commands::Val(command) => validate(command)?,
+        Commands::DomRepair(command) => validate(command)?,
     }
 
     Ok(())
 }
 
-fn validate(command: &Validate) -> Res<()> {
+fn validate(command: &DomRepair) -> Res<()> {
     let plan = &command.plan;
     let pb = if let Some(pb) = &command.problem {
         pb
@@ -63,7 +68,7 @@ fn validate(command: &Validate) -> Res<()> {
     println!("{model}");
     println!("{plan:?}");
 
-    if val::validate(&model, &plan)? {
+    if repair::domain_repair(&model, &plan)? {
         println!("VALID")
     } else {
         println!("INVALID")

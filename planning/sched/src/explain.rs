@@ -9,19 +9,18 @@ use itertools::Itertools;
 
 use crate::{ConstraintID, Sched};
 
-pub struct ExplainableSolver<'a, T> {
-    sched: &'a Sched,
+pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
     enablers: BTreeMap<Lit, T>,
 }
 
-impl<'a, T: Ord + Clone> ExplainableSolver<'a, T> {
+impl<T: Ord + Clone> ExplainableSolver<T> {
     /// Creates a new explainability oriented solver where constraints are partitioned into:
     ///
     ///  - background constraints (strong), for which the projection returns `None`
     ///  - foreground constraints (soft), enabled by assumptions. Two foregrounds constriants with the
     ///    same projection will be enabled together by the same assumption.
-    pub fn new(sched: &'a Sched, project: impl Fn(ConstraintID) -> Option<T>) -> Self {
+    pub fn new(sched: &Sched, project: impl Fn(ConstraintID) -> Option<T>) -> Self {
         let mut encoding = sched.model.clone();
 
         let mut assumptions_map = BTreeMap::new();
@@ -44,7 +43,6 @@ impl<'a, T: Ord + Clone> ExplainableSolver<'a, T> {
         }
         let solver = Solver::new(encoding);
         Self {
-            sched,
             solver,
             enablers: assumptions_map,
         }
