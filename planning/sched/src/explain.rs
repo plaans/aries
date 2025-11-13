@@ -50,13 +50,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
 
     pub fn explain_unsat<'x>(&'x mut self) -> impl Iterator<Item = MusMcs<T>> + 'x {
         let assumptions = self.enablers.keys().copied().collect_vec();
-        let projection = |l: &Lit| {
-            if let Some(cid) = self.enablers.get(l) {
-                Some(cid.clone())
-            } else {
-                None
-            }
-        };
+        let projection = |l: &Lit| self.enablers.get(l).cloned();
         self.solver
             .mus_and_mcs_enumerator(&assumptions)
             .map(move |mm| mm.project(projection))
