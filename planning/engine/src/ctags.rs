@@ -1,4 +1,4 @@
-use aries_planning_model::ActionRef;
+use planx::ActionRef;
 
 /// Tag for a cosntraint imposed in the scheduling model
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]

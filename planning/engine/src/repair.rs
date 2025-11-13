@@ -8,13 +8,11 @@ use aries::{
     },
     utils::StreamingIterator,
 };
-use aries_planning_model::{
-    ActionRef, ExprId, FluentId, Message, Model, Param, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned,
-};
 use aries_sched::{
     ConstraintID, EffectOp, IntCst, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 use itertools::Itertools;
+use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 
 use crate::ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair};
 
@@ -71,7 +69,7 @@ impl PotentialEffects {
         PotentialEffects { effs }
     }
 
-    pub fn for_action(&self, act_name: &aries_planning_model::Sym) -> &[(FluentId, Vec<Param>, Lit)] {
+    pub fn for_action(&self, act_name: &planx::Sym) -> &[(FluentId, Vec<Param>, Lit)] {
         self.effs.get(act_name).map(|x| x.as_slice()).unwrap_or(&[])
     }
 }
@@ -114,7 +112,7 @@ pub fn domain_repair(model: &Model, plan: &Plan) -> Res<bool> {
                 effect_id: eff_id,
             };
             let enabler = match &eff.effect_expression.operation {
-                aries_planning_model::EffectOp::Assign(expr_id) => {
+                planx::EffectOp::Assign(expr_id) => {
                     // hacky way to determine if the effect is positive (will only work for classical planning)
                     let positive_effect = reify_bool(*expr_id, model, &mut sched)?;
                     if positive_effect {
@@ -212,7 +210,7 @@ pub fn domain_repair(model: &Model, plan: &Plan) -> Res<bool> {
     for (gid, x) in model.goals.iter().enumerate() {
         assert!(x.universal_quantification.is_empty());
         match x.goal_expression {
-            aries_planning_model::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
+            planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
                     let c = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
                     let cid = sched.add_boxed_constraint(c);
@@ -305,7 +303,7 @@ impl<'a> Scope<'a> {
 }
 
 fn convert_effect(
-    x: &aries_planning_model::Effect,
+    x: &planx::Effect,
     transition_time: bool,
     model: &Model,
     sched: &mut Sched,
@@ -326,7 +324,7 @@ fn convert_effect(
         args,
     };
     let op = match x.operation {
-        aries_planning_model::EffectOp::Assign(e) => {
+        planx::EffectOp::Assign(e) => {
             let val = reify_bool(e, model, sched)?;
             EffectOp::Assign(val)
         }
@@ -386,14 +384,14 @@ fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> 
 fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
     let e = model.env.node(e);
     match e.expr() {
-        aries_planning_model::Expr::Object(object) => {
+        planx::Expr::Object(object) => {
             let id = sched
                 .objects
                 .object_id(object.name().canonical_str())
                 .ok_or_else(|| e.invalid("Object has no associated value"))?;
             Ok(SymAtom::from(id))
         }
-        aries_planning_model::Expr::Param(param) => binding
+        planx::Expr::Param(param) => binding
             .args
             .get(param.name().canonical_str())
             .copied()
@@ -405,7 +403,7 @@ fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Re
 fn reify_bool(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<bool> {
     let e = model.env.node(e);
     match e.expr() {
-        aries_planning_model::Expr::Bool(b) => Ok(*b),
+        planx::Expr::Bool(b) => Ok(*b),
         _ => todo!(),
     }
 }
@@ -419,7 +417,7 @@ fn condition_to_constraint(
 ) -> Res<Box<dyn BoolExpr<Sched>>> {
     let expr = model.env.node(expr);
     match expr.expr() {
-        aries_planning_model::Expr::StateVariable(fluent_id, args) => {
+        planx::Expr::StateVariable(fluent_id, args) => {
             let fluent = model.env.fluents.get(*fluent_id);
             let mut reif_args = Vec::with_capacity(args.len());
             for a in args {

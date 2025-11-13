@@ -1,10 +1,11 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-use aries_planning_model::{errors::*, pddl::*};
+use planx::{errors::*, pddl::*};
 
 /// A simple parser for PDDL and its extension HDDL.
-/// Its main intended usage is to facilitate automated testing of the parser in a CI environment.
+///
+/// The parser just prints the parsed model (doamin & problem), reporting any error encountered.
 #[derive(Debug, Parser)]
 #[command(name = "aries-pddl", rename_all = "kebab-case")]
 struct Args {
@@ -12,6 +13,7 @@ struct Args {
     /// problem file or in the parent directory.
     #[arg(long, short)]
     domain: Option<PathBuf>,
+    /// Path to the problem file to parse.
     problem: PathBuf,
 }
 
@@ -31,7 +33,7 @@ fn main() -> Res<()> {
         Some(name) => name,
         None => find_domain_of(&problem_file).title(
             "Unable to automatically find the domain file. Consider specifying the domain with the option -d/--domain",
-        )?, // TODO: this erases the previous error message
+        )?, // TODO: this erases the previous, possibly more informative, error message
     };
     let domain_file = input::Input::from_file(&domain_file)?;
 

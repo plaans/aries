@@ -153,11 +153,11 @@ name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
  "aries",
- "aries_planning_model",
  "aries_sched",
  "clap 4.5.47",
  "im",
  "itertools 0.14.0",
+ "planx",
 ]
 
 [[package]]
@@ -256,23 +256,6 @@ dependencies = [
  "regex",
  "streaming-iterator",
  "tracing",
-]
-
-[[package]]
-name = "aries_planning_model"
-version = "0.1.0"
-dependencies = [
- "annotate-snippets",
- "clap 4.5.47",
- "compact_str",
- "derive_more",
- "hashbrown 0.15.5",
- "idmap",
- "itertools 0.14.0",
- "num-rational",
- "regex",
- "smallvec",
- "thiserror 2.0.16",
 ]
 
 [[package]]
@@ -1303,6 +1286,23 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "planx"
+version = "0.1.0"
+dependencies = [
+ "annotate-snippets",
+ "clap 4.5.47",
+ "compact_str",
+ "derive_more",
+ "hashbrown 0.15.5",
+ "idmap",
+ "itertools 0.14.0",
+ "num-rational",
+ "regex",
+ "smallvec",
+ "thiserror 2.0.16",
+]
 
 [[package]]
 name = "ppv-lite86"

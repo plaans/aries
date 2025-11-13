@@ -3,11 +3,11 @@ mod repair;
 
 use std::path::PathBuf;
 
-use aries_planning_model::{
+use clap::*;
+use planx::{
     Res,
     pddl::{self, input::Input},
 };
-use clap::*;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]

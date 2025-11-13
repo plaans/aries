@@ -10,7 +10,7 @@ edition = "2024"
 clap = { workspace = true }
 itertools = { workspace = true }
 # tracing = { workspace = true }
-aries_planning_model = { path = "../model" }
+planx = { path = "../model" }
 aries_sched = { path = "../sched" }
 aries = { path = "../../solver" }
 im = { workspace = true }
