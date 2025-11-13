@@ -90,9 +90,9 @@ pub fn find_problem_of(plan_file: &std::path::Path) -> Res<PathBuf> {
         .to_str()
         .title("Could not convert file name to utf8")?;
 
-    // if the problem file is of the form XXXXX.YY.pb.Zddl
-    // then add XXXXX.dom.Zddl to the candidate filenames
-    let re = Regex::new("^(.+)\\.plan[0-9]*$").unwrap();
+    // if the plan file is of the form XXXXX.planYYYYYYYYY
+    // then add XXXXX(.pb).Zddl to the candidate filenames
+    let re = Regex::new("^(.+)\\.plan[^\\.]*$").unwrap();
     for m in re.captures_iter(plan_filename) {
         let base_name = &m[1];
         candidate_problem_files.push(format!("{base_name}.pb.pddl").into());
