@@ -129,6 +129,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcstr"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03918c3dbd7701a85c6b9887732e2921175f26c350b4563841d0958c21d57e6d"
+
+[[package]]
 name = "aries"
 version = "0.0.6"
 dependencies = [
@@ -1292,6 +1298,7 @@ name = "planx"
 version = "0.1.0"
 dependencies = [
  "annotate-snippets",
+ "arcstr",
  "clap 4.5.47",
  "compact_str",
  "derive_more",

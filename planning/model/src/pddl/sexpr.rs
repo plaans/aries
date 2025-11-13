@@ -3,7 +3,6 @@ use crate::utils::disp_slice;
 use crate::{Res, Sym, errors::*};
 use itertools::Itertools;
 use std::fmt::{Debug, Display, Formatter};
-use std::sync::Arc;
 
 pub type SAtom = crate::Sym;
 
@@ -72,8 +71,8 @@ impl SExpr {
     /// the arguments of the application.
     ///
     /// ```
-    /// use aries_planning_model::pddl::sexpr::parse;
-    /// let sexpr = parse("(add 1 2)").unwrap();
+    /// use planx::pddl::{input::Input, sexpr::parse};
+    /// let sexpr = parse(Input::from_string("(add 1 2)")).unwrap();
     /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
     /// assert_eq!(args[0].as_atom().unwrap().canonical_str(), "1");
     /// assert_eq!(args[1].as_atom().unwrap().canonical_str(), "2");
@@ -228,13 +227,13 @@ enum Token {
     RParen(Pos),
 }
 
-pub fn parse(s: Arc<Input>) -> Res<SExpr> {
-    let tokenized = tokenize(s.clone());
+pub fn parse(s: Input) -> Res<SExpr> {
+    let tokenized = tokenize(&s);
     let mut tokens = tokenized.iter().peekable();
     read(&mut tokens, &s)
 }
-pub fn parse_many(s: Arc<Input>) -> Res<Vec<SExpr>> {
-    let tokenized = tokenize(s.clone());
+pub fn parse_many(s: Input) -> Res<Vec<SExpr>> {
+    let tokenized = tokenize(&s);
     let mut tokens = tokenized.iter().peekable();
     let mut expressions = Vec::new();
     while tokens.peek().is_some() {
@@ -245,7 +244,7 @@ pub fn parse_many(s: Arc<Input>) -> Res<Vec<SExpr>> {
 }
 
 /// Parse the input into a sequence of tokens.
-fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
+fn tokenize(source: &Input) -> Vec<Token> {
     let s = source.text.as_str();
     let mut tokens = Vec::new();
 
@@ -346,7 +345,7 @@ fn tokenize(source: std::sync::Arc<Input>) -> Vec<Token> {
     tokens
 }
 
-fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &std::sync::Arc<Input>) -> Res<SExpr> {
+fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &Input) -> Res<SExpr> {
     match tokens.next() {
         Some(Token::Sym { start, end, start_pos }) => {
             let original = &src.text.as_str()[*start..=*end];
@@ -400,7 +399,7 @@ mod tests {
     use super::*;
 
     fn formats_as(input: &str, output: &str) {
-        let input = Arc::new(Input::from_string(input));
+        let input = Input::from_string(input);
         let res = parse(input).unwrap();
         let formatted = format!("{res}");
         assert_eq!(&formatted, output);

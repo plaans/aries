@@ -17,6 +17,7 @@ annotate-snippets = { workspace = true }
 idmap = { workspace = true }
 smallvec = { workspace = true }
 compact_str = { workspace = true }
+arcstr = { workspace = true }
 
 
 [[bin]]

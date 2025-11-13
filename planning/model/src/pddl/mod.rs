@@ -20,8 +20,8 @@ mod test {
 
     #[test]
     fn test_parsing_simple() -> Res<()> {
-        let domain_file = PathBuf::from("/home/abitmonnot/work/aries/planning/problems/pddl/tests/gripper.dom.pddl");
-        let problem_file = PathBuf::from("/home/abitmonnot/work/aries/planning/problems/pddl/tests/gripper.pb.pddl");
+        let domain_file = PathBuf::from("../problems/pddl/tests/gripper.dom.pddl");
+        let problem_file = PathBuf::from("../problems/pddl/tests/gripper.pb.pddl");
         test_parsing(&domain_file, &problem_file)
     }
 

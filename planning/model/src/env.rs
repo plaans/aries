@@ -93,7 +93,7 @@ pub(crate) const INDENT: &str = "    ";
 /// Each of the elements must be displayed when wrapper in [`Env`].
 /// If there is no element the section is ommited
 ///
-/// ```
+/// ```txt
 ///    name:
 ///      elem1
 ///      elem2

@@ -1,7 +1,6 @@
 use std::{
     fmt::{Debug, Display},
     ops::Range,
-    sync::Arc,
 };
 
 pub type Res<T> = Result<T, Message>;
@@ -15,13 +14,13 @@ pub type SrcRange = Range<usize>;
 /// A substring of a file, with metadata for displaying (filename, indices, ...)
 #[derive(Clone)]
 pub struct Span {
-    input: Arc<Input>,
+    input: Input,
     span: SrcRange,
 }
 pub type OSpan = Option<Span>;
 
 impl Span {
-    pub fn new(input: Arc<Input>, first: usize, last: usize) -> Self {
+    pub fn new(input: Input, first: usize, last: usize) -> Self {
         Span {
             input,
             span: first..(last + 1),
@@ -81,10 +80,9 @@ pub trait Spanned: Display {
     fn span_or_default(&self) -> Span {
         self.span().cloned().unwrap_or_else(|| {
             let text = self.to_string();
-            Input::from_string(self);
             let span = 0..text.chars().count();
             Span {
-                input: Arc::new(Input::from_string(text)),
+                input: Input::from_string(text),
                 span,
             }
         })
@@ -222,13 +220,13 @@ impl<T> Ctx<T> for Option<T> {
 impl Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // create a snippet for each source file with all annotation
-        let snippets_by_source = self.snippets.iter().into_group_map_by(|s| s.span.input.as_ref());
+        let snippets_by_source = self.snippets.iter().into_group_map_by(|s| &s.span.input);
         let snippets = snippets_by_source
             .iter()
             .map(|(source, annots)| {
                 let snippet = Snippet::source(&source.text).line_start(1).fold(true);
                 let snippet = if let Some(file) = source.source.as_ref() {
-                    snippet.path(file)
+                    snippet.path(file.as_str())
                 } else {
                     snippet
                 };
@@ -238,7 +236,7 @@ impl Display for Message {
                 let visibles_in_source = self
                     .visible
                     .iter()
-                    .filter_map(|s| (&s.input.as_ref() == source).then_some(s.span.clone()));
+                    .filter_map(|s| (&s.input == *source).then_some(s.span.clone()));
                 snippet.annotations(visibles_in_source.map(|range| AnnotationKind::Visible.span(range)))
             })
             .collect_vec();

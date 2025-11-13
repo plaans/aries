@@ -6,7 +6,6 @@ use crate::errors::*;
 use itertools::Itertools;
 use smallvec::{SmallVec, smallvec};
 use std::fmt::{Display, Error, Formatter};
-use std::sync::Arc;
 
 use crate::pddl::input::*;
 use crate::pddl::sexpr::*;
@@ -14,18 +13,15 @@ use crate::utils::disp_slice;
 use std::str::FromStr;
 
 pub fn parse_pddl_domain(pb: Input) -> Res<Domain> {
-    let pb = Arc::new(pb);
     let expr = parse(pb.clone())?;
     read_domain(expr).title("Invalid domain: Syntax error")
 }
 pub fn parse_pddl_problem(pb: Input) -> Res<Problem> {
-    let pb = Arc::new(pb);
     let expr = parse(pb.clone())?;
     read_problem(expr).title("Invalid problem: Syntax error")
 }
 pub fn parse_plan(plan: Input) -> Res<Plan> {
-    let pb = Arc::new(plan);
-    let expr = parse_many(pb.clone())?;
+    let expr = parse_many(plan)?;
     let mut actions = Vec::with_capacity(expr.len());
     for e in expr {
         let mut elems = e
@@ -903,7 +899,7 @@ mod tests {
 
     fn parse(s: &str) -> Res<SExpr> {
         let s = Input::from_string(s);
-        super::parse(Arc::new(s))
+        super::parse(s)
     }
 
     #[test]
@@ -921,7 +917,7 @@ mod tests {
     fn parsing_hddl() -> Res<()> {
         let source = "../problems/hddl/tests/nothing.dom.hddl";
         let source = PathBuf::from_str(source)?;
-        let source = Arc::new(Input::from_file(&source)?);
+        let source = Input::from_file(&source)?;
 
         match super::parse(source) {
             Result::Ok(e) => {
