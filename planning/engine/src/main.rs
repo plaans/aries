@@ -59,12 +59,15 @@ fn validate(command: &DomRepair) -> Res<()> {
         &pddl::find_domain_of(pb)?
     };
 
+    // raw PDDL model
     let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;
     let pb = pddl::parse_pddl_problem(Input::from_file(pb)?)?;
     let plan = pddl::parse_plan(Input::from_file(plan)?)?;
 
+    // processed model (from planx)
     let model = pddl::build_model(&dom, &pb)?;
-    let plan = pddl::build_plan(&plan, &model)?;
+
+    let plan = repair::lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
     println!("{plan:?}");
 

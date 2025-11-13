@@ -127,6 +127,15 @@ impl UnionUserType {
             .iter()
             .all(|t| other.union.iter().any(|t2| self.hier.is_subtype_of(t, t2)))
     }
+
+    /// Attemps to cast the type as single user type, failing if the union does not contains exactly one element.
+    pub fn to_single_type(&self) -> Option<UserType> {
+        if self.union.len() == 1 {
+            Some(UserType::new(self.union[0].clone(), self.hier.clone()))
+        } else {
+            None
+        }
+    }
 }
 
 impl Display for UnionUserType {
@@ -153,6 +162,10 @@ impl UserType {
             name,
             hier: hier.clone(),
         }
+    }
+
+    pub fn is_subtype_of(&self, other: &UserType) -> bool {
+        self.hier.is_subtype_of(&self.name, &other.name)
     }
 }
 impl From<&UserType> for Type {

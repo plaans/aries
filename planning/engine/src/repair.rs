@@ -1,3 +1,5 @@
+pub mod lifted_plan;
+
 use std::{collections::BTreeMap, fmt::Debug};
 
 use aries::{
@@ -9,12 +11,15 @@ use aries::{
     utils::StreamingIterator,
 };
 use aries_sched::{
-    ConstraintID, EffectOp, IntCst, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+    ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 use itertools::Itertools;
-use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Plan, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 
-use crate::ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair};
+use crate::{
+    ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
+    repair::lifted_plan::LiftedPlan,
+};
 
 fn types(model: &Model) -> ObjectEncoding {
     let t = dbg!(&model.env.types);
@@ -74,14 +79,31 @@ impl PotentialEffects {
     }
 }
 
-pub fn domain_repair(model: &Model, plan: &Plan) -> Res<bool> {
+pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
     // for each constraint we may which to relax, stores a CTag (constraint tag) so that we can later decide if it should be relaxed.
     let mut constraints_tags: BTreeMap<ConstraintID, CTag> = Default::default();
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
     let objs = types(model);
     let mut sched = aries_sched::Sched::new(1, objs);
+
     let global_scope = Scope::global(&sched);
+
+    let plan_variables: BTreeMap<&Sym, SymAtom> = plan
+        .variables
+        .iter()
+        .map(|(var_name, var_type)| {
+            let type_bounds = sched
+                .objects
+                .domain_of_type(var_type.name.canonical_str())
+                .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
+            let var: SymAtom = sched
+                .model
+                .new_ivar(type_bounds.first, type_bounds.last, var_name.canonical_str())
+                .into();
+            Ok::<_, Message>((var_name, var))
+        })
+        .try_collect()?;
 
     // compute the set of all effects that may be added to each action template
     let potential_effects = PotentialEffects::compute(model, || sched.model.new_literal(Lit::TRUE));
@@ -139,69 +161,70 @@ pub fn domain_repair(model: &Model, plan: &Plan) -> Res<bool> {
         sched.effects.push(eff);
     }
 
-    match plan {
-        Plan::Sequential(operators) => {
-            // associate each operator to its position in the sequence `t`, use as a timestamp
-            for (t, op) in operators.iter().enumerate() {
-                let a = model
-                    .actions
-                    .get_action(&op.action_ref)
-                    .ok_or_else(|| op.action_ref.invalid("cannot find corresponding action"))?;
+    for (op_id, op) in plan.operations.iter().enumerate() {
+        // correspinding action in the model
+        let a = model
+            .actions
+            .get_action(&op.action_ref)
+            .ok_or_else(|| op.action_ref.invalid("cannot find corresponding action"))?;
 
-                // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
-                let mut args = im::OrdMap::new();
-                for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
-                    let arg = sched
-                        .objects
-                        .object_atom(arg.name().canonical_str())
-                        .ok_or_else(|| arg.name().invalid("unknown object"))?;
-                    args.insert(&param.name, arg);
-                }
+        // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
+        let mut args = im::OrdMap::new();
+        for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
+            let arg = match arg {
+                // ground parameter, get the corresponding object constant
+                lifted_plan::OperationArg::Ground(object) => sched
+                    .objects
+                    .object_atom(object.name().canonical_str())
+                    .ok_or_else(|| object.name().invalid("unknown object"))?,
+                // variable parameter, retrieve the variable we created for it
+                lifted_plan::OperationArg::Variable { name } => plan_variables[name],
+            };
+            args.insert(&param.name, arg);
+        }
 
-                let bindings = Scope {
-                    start: Time::from(t as IntCst), // start time is the index of the action in the plan
-                    end: Time::from(t as IntCst),
-                    presence: Lit::TRUE, // action is necessarily present
-                    args,
-                };
+        let bindings = Scope {
+            start: Time::from(op.start), // start time is the index of the action in the plan
+            end: Time::from(op.start + op.duration),
+            presence: Lit::TRUE, // action is necessarily present
+            args,
+        };
 
-                // add an effect to the scheduling problem for each effect in the action template
-                // the presence of the effect is controlled by the global enabler of the effect in the template
-                for (eff_id, x) in a.effects.iter().enumerate() {
-                    let aeff = ActionEffect {
-                        action: a.name.clone(),
-                        effect_id: eff_id,
-                    };
-                    let mut eff = convert_effect(x, true, model, &mut sched, &bindings)?;
-                    // replace the effect presence by its enabler
-                    assert_eq!(eff.prez, Lit::TRUE);
-                    eff.prez = effect_enablers[&aeff];
-                    sched.effects.push(eff);
-                }
+        // add an effect to the scheduling problem for each effect in the action template
+        // the presence of the effect is controlled by the global enabler of the effect in the template
+        for (eff_id, x) in a.effects.iter().enumerate() {
+            let aeff = ActionEffect {
+                action: a.name.clone(),
+                effect_id: eff_id,
+            };
+            let mut eff = convert_effect(x, true, model, &mut sched, &bindings)?;
+            // replace the effect presence by its enabler
+            assert_eq!(eff.prez, Lit::TRUE);
+            eff.prez = effect_enablers[&aeff];
+            sched.effects.push(eff);
+        }
 
-                // for each potential effect, add it as well (it will be assumed absent by default due to the global constraint)
-                for (fid, params, enabler) in potential_effects.for_action(&a.name) {
-                    let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, &bindings)?;
-                    sched.effects.push(eff);
-                }
+        // for each potential effect, add it as well (it will be assumed absent by default due to the global constraint)
+        for (fid, params, enabler) in potential_effects.for_action(&a.name) {
+            let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, &bindings)?;
+            sched.effects.push(eff);
+        }
 
-                // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate
-                for (cond_id, c) in a.conditions.iter().enumerate() {
-                    if let Some(tp) = c.interval.as_timestamp() {
-                        let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
-                        let cid = sched.add_boxed_constraint(c);
-                        constraints_tags.insert(
-                            cid,
-                            CTag::Support {
-                                operator_id: t,
-                                cond: ActionCondition {
-                                    action: a.name.clone(),
-                                    condition_id: cond_id,
-                                },
-                            },
-                        );
-                    }
-                }
+        // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate
+        for (cond_id, c) in a.conditions.iter().enumerate() {
+            if let Some(tp) = c.interval.as_timestamp() {
+                let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
+                let cid = sched.add_boxed_constraint(c);
+                constraints_tags.insert(
+                    cid,
+                    CTag::Support {
+                        operator_id: op_id,
+                        cond: ActionCondition {
+                            action: a.name.clone(),
+                            condition_id: cond_id,
+                        },
+                    },
+                );
             }
         }
     }
@@ -236,11 +259,22 @@ pub fn domain_repair(model: &Model, plan: &Plan) -> Res<bool> {
                 Some(ctag) => ctag.to_repair(),
                 _ => None,
             };
+
+            let mut mus_count = 0;
+            let mut mcs_count = 0;
+            let mut mcs_smallest = usize::MAX;
             let mut exp = sched.explainable_solver(act_cond);
             for musmcs in exp.explain_unsat() {
                 let (mut msg, culprits) = match musmcs {
-                    aries::solver::musmcs::MusMcs::Mus(elems) => (Message::error("MUS"), elems),
-                    aries::solver::musmcs::MusMcs::Mcs(elems) => (Message::warning("MCS"), elems),
+                    aries::solver::musmcs::MusMcs::Mus(elems) => {
+                        mus_count += 1;
+                        (Message::error("MUS"), elems)
+                    }
+                    aries::solver::musmcs::MusMcs::Mcs(elems) => {
+                        mcs_count += 1;
+                        mcs_smallest = mcs_smallest.min(elems.len());
+                        (Message::warning("MCS"), elems)
+                    }
                 };
                 for repair in culprits {
                     match repair {
@@ -276,7 +310,8 @@ pub fn domain_repair(model: &Model, plan: &Plan) -> Res<bool> {
                         }
                     }
                 }
-                println!("\n{msg}\n")
+                println!("\n{msg}\n");
+                println!("#MUS: {mus_count}\n#MCS: {mcs_count}\nSmallest: {mcs_smallest}");
             }
 
             Ok(false)

@@ -5,7 +5,7 @@ use aries::core::IntCst;
 use crate::SymAtom;
 
 #[derive(Clone)]
-struct Range {
+pub struct Range {
     pub first: IntCst,
     pub last: IntCst,
 }
@@ -24,6 +24,14 @@ pub struct ObjectEncoding {
 }
 
 impl ObjectEncoding {
+    pub fn domain_of_type<Q>(&self, key: &Q) -> Option<Range>
+    where
+        Sym: Borrow<Q> + Ord,
+        Q: Ord + ?Sized,
+    {
+        self.types.get(key).cloned()
+    }
+
     pub fn object_id<Q>(&self, key: &Q) -> Option<IntCst>
     where
         Sym: Borrow<Q> + Ord,
