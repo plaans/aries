@@ -1,6 +1,9 @@
 pub mod lifted_plan;
 
-use std::{collections::BTreeMap, fmt::Debug};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Debug,
+};
 
 use aries::{
     core::Lit,
@@ -11,7 +14,7 @@ use aries::{
     utils::StreamingIterator,
 };
 use aries_sched::{
-    ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+    constraints::HasValueAt, explain::ExplainableSolver, symbols::ObjectEncoding, ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time
 };
 use itertools::Itertools;
 use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
@@ -264,18 +267,8 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
             let mut mcs_count = 0;
             let mut mcs_smallest = usize::MAX;
             let mut exp = sched.explainable_solver(act_cond);
-            for musmcs in exp.explain_unsat() {
-                let (mut msg, culprits) = match musmcs {
-                    aries::solver::musmcs::MusMcs::Mus(elems) => {
-                        mus_count += 1;
-                        (Message::error("MUS"), elems)
-                    }
-                    aries::solver::musmcs::MusMcs::Mcs(elems) => {
-                        mcs_count += 1;
-                        mcs_smallest = mcs_smallest.min(elems.len());
-                        (Message::warning("MCS"), elems)
-                    }
-                };
+
+            let format_set = |mut msg: Message, culprits: BTreeSet<Repair>| {
                 for repair in culprits {
                     match repair {
                         Repair::RmCond(cond) => {
@@ -310,6 +303,26 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
                         }
                     }
                 }
+                msg
+            };
+
+            let repair_set = exp.find_smallest_mcs();
+            let msg = format_set(Message::error("Smallest MCS"), repair_set);
+            println!("\n\n{msg}");
+            std::process::exit(0);
+
+            for musmcs in exp.explain_unsat() {
+                let (mut msg, culprits) = match musmcs {
+                    aries::solver::musmcs::MusMcs::Mus(elems) => {
+                        mus_count += 1;
+                        (Message::error("MUS"), elems)
+                    }
+                    aries::solver::musmcs::MusMcs::Mcs(elems) => {
+                        mcs_count += 1;
+                        mcs_smallest = mcs_smallest.min(elems.len());
+                        (Message::warning("MCS"), elems)
+                    }
+                };
                 println!("\n{msg}\n");
                 println!("#MUS: {mus_count}\n#MCS: {mcs_count}\nSmallest: {mcs_smallest}");
             }

@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use aries::{
-    core::Lit,
-    model::lang::hreif::Store,
+    core::{IntCst, Lit},
+    model::lang::{IVar, hreif::Store, linear::LinearSum},
     solver::{Solver, musmcs::MusMcs},
 };
 use itertools::Itertools;
@@ -54,5 +54,34 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         self.solver
             .mus_and_mcs_enumerator(&assumptions)
             .map(move |mm| mm.project(projection))
+    }
+
+    pub fn find_smallest_mcs(&mut self) -> BTreeSet<T> {
+        let assumptions = self.enablers.keys().copied().collect_vec();
+        let num_assumptions = assumptions.len() as IntCst;
+        let bound = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
+        let sum = assumptions
+            .iter()
+            .fold(LinearSum::zero(), |sum, l| sum + IVar::new(l.variable()));
+        self.solver.enforce(sum.geq(bound), []);
+        if let Some((obj, sol)) = self
+            .solver
+            .maximize_with_callback(bound, |new_boj, _| println!("new CS: {}", num_assumptions - new_boj))
+            .unwrap()
+        {
+            self.solver.print_stats();
+            println!(
+                "OPTIMAL: {obj} / {}   :   {}",
+                assumptions.len(),
+                (assumptions.len() as IntCst) - obj
+            );
+            assumptions
+                .into_iter()
+                .filter(|l| sol.entails(!*l))
+                .map(|l| self.enablers[&l].clone())
+                .collect()
+        } else {
+            panic!("UNSAT!")
+        }
     }
 }
