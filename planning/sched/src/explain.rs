@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aries::{
+    backtrack::Backtrack,
     core::{IntCst, Lit},
     model::lang::{IVar, hreif::Store, linear::LinearSum},
     solver::{Solver, musmcs::MusMcs},
@@ -48,6 +49,15 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
     }
 
+    /// Returns true if the model is satisfiable with all assumptions
+    pub fn check_satisfiability(&mut self) -> bool {
+        let assumptions = self.enablers.keys().copied().collect_vec();
+        let res = self.solver.solve_with_assumptions(&assumptions).unwrap().is_ok();
+        self.solver.reset(); // TODO: this should not be needed
+        res
+    }
+
+    /// Returns an iterator over all MUS and MCS in the model.
     pub fn explain_unsat<'x>(&'x mut self) -> impl Iterator<Item = MusMcs<T>> + 'x {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let projection = |l: &Lit| self.enablers.get(l).cloned();
@@ -56,32 +66,43 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .map(move |mm| mm.project(projection))
     }
 
-    pub fn find_smallest_mcs(&mut self) -> BTreeSet<T> {
+    /// Returns the smallest MCS over all assumptions
+    pub fn find_smallest_mcs(&mut self) -> Option<BTreeSet<T>> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let num_assumptions = assumptions.len() as IntCst;
-        let bound = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
-        let sum = assumptions
+
+        // create a variable that requires a minimal number of assumptions to hold
+        // `bound <= |{ass | holds(ass), for ass in assumptions}|
+        let min_holding_assumptions = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
+        let num_holding_assumptions = assumptions
             .iter()
             .fold(LinearSum::zero(), |sum, l| sum + IVar::new(l.variable()));
-        self.solver.enforce(sum.geq(bound), []);
+        self.solver
+            .enforce(num_holding_assumptions.geq(min_holding_assumptions), []);
+
+        // maximize the lower bound, the solution will have a globally minimal set of assumptions violated
+        // these assumptions are a smallest MCS
         if let Some((obj, sol)) = self
             .solver
-            .maximize_with_callback(bound, |new_boj, _| println!("new CS: {}", num_assumptions - new_boj))
+            .maximize_with_callback(min_holding_assumptions, |new_objective, _| {
+                println!("new CS: {}", num_assumptions - new_objective)
+            })
             .unwrap()
         {
             self.solver.print_stats();
-            println!(
-                "OPTIMAL: {obj} / {}   :   {}",
-                assumptions.len(),
-                (assumptions.len() as IntCst) - obj
-            );
-            assumptions
-                .into_iter()
-                .filter(|l| sol.entails(!*l))
-                .map(|l| self.enablers[&l].clone())
-                .collect()
+            println!("OPTIMAL: {obj} / {}   :   {}", num_assumptions, (num_assumptions) - obj);
+
+            // identify the assumptions that do not hold in the solution
+            Some(
+                assumptions
+                    .into_iter()
+                    .filter(|l| sol.entails(!*l))
+                    .map(|l| self.enablers[&l].clone())
+                    .collect(),
+            )
         } else {
-            panic!("UNSAT!")
+            // problem is unsat (even when relaxing all assumptions)
+            None
         }
     }
 }

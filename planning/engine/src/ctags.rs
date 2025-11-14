@@ -1,4 +1,9 @@
+use std::sync::Arc;
+
+use derivative::Derivative;
 use planx::ActionRef;
+
+use crate::repair::potential_effects::PotentialEffects;
 
 /// Tag for a cosntraint imposed in the scheduling model
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -37,11 +42,20 @@ pub struct ActionEffect {
     pub effect_id: usize,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct PotentialEffect {
     pub action_id: ActionRef,
     /// Index of the effect in the list of potential effects
     pub effect_id: usize,
+    #[derivative(Debug = "ignore", PartialEq = "ignore", PartialOrd = "ignore", Ord = "ignore")]
+    pub all_effects: Arc<PotentialEffects>,
+}
+
+impl PotentialEffect {
+    pub fn get(&self) -> &(planx::FluentId, Vec<planx::Param>, aries::core::Lit) {
+        &self.all_effects.for_action(&self.action_id)[self.effect_id]
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]

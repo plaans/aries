@@ -9,6 +9,8 @@ use planx::{
     pddl::{self, input::Input},
 };
 
+use crate::repair::RepairOptions;
+
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -34,19 +36,21 @@ pub struct DomRepair {
     /// If not specified, we will attempt to automaticall infer it based on the plan file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
+    #[command(flatten)]
+    options: RepairOptions,
 }
 
 fn main() -> Res<()> {
     let args = Args::parse();
 
     match &args.command {
-        Commands::DomRepair(command) => validate(command)?,
+        Commands::DomRepair(command) => repair(command)?,
     }
 
     Ok(())
 }
 
-fn validate(command: &DomRepair) -> Res<()> {
+fn repair(command: &DomRepair) -> Res<()> {
     let plan = &command.plan;
     let pb = if let Some(pb) = &command.problem {
         pb
@@ -71,7 +75,7 @@ fn validate(command: &DomRepair) -> Res<()> {
     println!("{model}");
     println!("{plan:?}");
 
-    if repair::domain_repair(&model, &plan)? {
+    if repair::domain_repair(&model, &plan, &command.options)? {
         println!("VALID")
     } else {
         println!("INVALID")

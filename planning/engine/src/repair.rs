@@ -1,8 +1,10 @@
 pub mod lifted_plan;
+pub mod potential_effects;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
+    sync::Arc,
 };
 
 use aries::{
@@ -11,17 +13,17 @@ use aries::{
         FAtom,
         hreif::{BoolExpr, Store},
     },
-    utils::StreamingIterator,
 };
 use aries_sched::{
-    constraints::HasValueAt, explain::ExplainableSolver, symbols::ObjectEncoding, ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time
+    ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, explain::ExplainableSolver,
+    symbols::ObjectEncoding,
 };
 use itertools::Itertools;
-use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use planx::{ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 
 use crate::{
     ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
-    repair::lifted_plan::LiftedPlan,
+    repair::{lifted_plan::LiftedPlan, potential_effects::PotentialEffects},
 };
 
 fn types(model: &Model) -> ObjectEncoding {
@@ -42,47 +44,61 @@ fn types(model: &Model) -> ObjectEncoding {
     )
 }
 
-#[derive(Debug)]
-pub(crate) struct PotentialEffects {
-    effs: BTreeMap<ActionRef, Vec<(FluentId, Vec<Param>, Lit)>>,
+#[derive(clap::Args, Debug, Clone)]
+pub struct RepairOptions {
+    #[arg(long, default_value = "smallest")]
+    mode: RepairMode,
 }
 
-impl PotentialEffects {
-    pub fn compute(model: &Model, mut create_lit: impl FnMut() -> Lit) -> PotentialEffects {
-        let mut effs: BTreeMap<ActionRef, Vec<(FluentId, Vec<Param>, Lit)>> = BTreeMap::new();
-        for a in model.actions.iter() {
-            println!("{:?}", a.name);
-            for (fluent_id, fluent) in model.env.fluents.iter_with_id() {
-                println!("  {:?}", fluent.name);
-                let mut candidate_params = Vec::with_capacity(fluent.parameters.len());
-                for param in &fluent.parameters {
-                    candidate_params.push(
-                        a.parameters
-                            .iter()
-                            .filter(|act_param| act_param.tpe().is_subtype_of(param.tpe()))
-                            .collect_vec()
-                            .into_iter(),
-                    );
-                }
-                let mut instanciations = aries::utils::enumerate(candidate_params);
-                while let Some(instanciation) = instanciations.next() {
-                    let params: Vec<Param> = instanciation.iter().cloned().cloned().collect();
-                    println!("    {instanciation:?}");
-                    effs.entry(a.name.clone())
-                        .or_default()
-                        .push((fluent_id, params, create_lit()));
-                }
+#[derive(clap::ValueEnum, Debug, Clone)]
+pub enum RepairMode {
+    Smallest,
+    All,
+}
+
+pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) -> Res<bool> {
+    let mut solver = encode_dom_repair(model, plan)?;
+
+    if solver.check_satisfiability() {
+        println!("Plan is valid.");
+        return Ok(true);
+    }
+    // TODO: quick SAT check
+    println!("INVALID PLAN !");
+
+    match options.mode {
+        RepairMode::Smallest => {
+            let repair_set = solver.find_smallest_mcs().expect("problem detected as unrepairable");
+            let msg = format_culprit_set(Message::error("Smallest MCS"), &repair_set, model);
+            println!("\n\n{msg}");
+        }
+        RepairMode::All => {
+            let mut mus_count = 0;
+            let mut mcs_count = 0;
+            let mut mcs_smallest = usize::MAX;
+            for musmcs in solver.explain_unsat() {
+                let (mut msg, culprits) = match musmcs {
+                    aries::solver::musmcs::MusMcs::Mus(elems) => {
+                        mus_count += 1;
+                        (Message::error("MUS"), elems)
+                    }
+                    aries::solver::musmcs::MusMcs::Mcs(elems) => {
+                        mcs_count += 1;
+                        mcs_smallest = mcs_smallest.min(elems.len());
+                        (Message::warning("MCS"), elems)
+                    }
+                };
+                msg = format_culprit_set(msg, &culprits, model);
+                println!("\n{msg}\n");
+                println!("#MUS: {mus_count}\n#MCS: {mcs_count}\nSmallest: {mcs_smallest}");
             }
         }
-        PotentialEffects { effs }
     }
 
-    pub fn for_action(&self, act_name: &planx::Sym) -> &[(FluentId, Vec<Param>, Lit)] {
-        self.effs.get(act_name).map(|x| x.as_slice()).unwrap_or(&[])
-    }
+    Ok(false)
 }
 
-pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
+fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<Repair>> {
     // for each constraint we may which to relax, stores a CTag (constraint tag) so that we can later decide if it should be relaxed.
     let mut constraints_tags: BTreeMap<ConstraintID, CTag> = Default::default();
 
@@ -109,7 +125,7 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
         .try_collect()?;
 
     // compute the set of all effects that may be added to each action template
-    let potential_effects = PotentialEffects::compute(model, || sched.model.new_literal(Lit::TRUE));
+    let potential_effects = Arc::new(PotentialEffects::compute(model, || sched.model.new_literal(Lit::TRUE)));
 
     // for each potential effect, add a (soft constraint) that it is absent
     for (a, pot_effs) in &potential_effects.effs {
@@ -121,6 +137,7 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
                 CTag::DisablePotentialEffect(PotentialEffect {
                     action_id: a.clone(),
                     effect_id: eff_id,
+                    all_effects: potential_effects.clone(),
                 }),
             );
         }
@@ -248,88 +265,47 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan) -> Res<bool> {
             _ => todo!(),
         }
     }
+    let constraint_to_repair = |cid: ConstraintID| match constraints_tags.get(&cid) {
+        Some(ctag) => ctag.to_repair(),
+        _ => None,
+    };
+    Ok(sched.explainable_solver(constraint_to_repair))
+}
 
-    // NOTE: this solve is redundant and requires encoding/solving the problem twicee in the case of an invalid plan
-    match sched.solve() {
-        Some(sol) => {
-            sched.print(&sol);
-            Ok(true)
-        }
-        None => {
-            println!("INVALID PLAN");
-
-            let act_cond = |cid: ConstraintID| match constraints_tags.get(&cid) {
-                Some(ctag) => ctag.to_repair(),
-                _ => None,
-            };
-
-            let mut mus_count = 0;
-            let mut mcs_count = 0;
-            let mut mcs_smallest = usize::MAX;
-            let mut exp = sched.explainable_solver(act_cond);
-
-            let format_set = |mut msg: Message, culprits: BTreeSet<Repair>| {
-                for repair in culprits {
-                    match repair {
-                        Repair::RmCond(cond) => {
-                            println!("   cond: {}/{}", cond.action, cond.condition_id);
-                            let annot = model
-                                .env
-                                .node(
-                                    model.actions.get_action(&cond.action).unwrap().conditions[cond.condition_id].cond,
-                                )
-                                .info(format!("to remove (action: {})", cond.action));
-                            msg = msg.snippet(annot).show(cond.action.span.as_ref().unwrap());
-                        }
-                        Repair::AddEff(potential_effect) => {
-                            let (fluent_id, params, _) =
-                                &potential_effects.for_action(&potential_effect.action_id)[potential_effect.effect_id];
-                            let fluent = model.env.fluents.get(*fluent_id);
-                            let fluent = format!("({} {})", fluent.name(), params.iter().map(|p| p.name()).format(" "));
-                            println!("{} => {}", &potential_effect.action_id, fluent);
-                            let annot = potential_effect.action_id.info(format!("Add effect: {fluent}"));
-                            msg = msg
-                                .snippet(annot)
-                                .show(potential_effect.action_id.span.as_ref().unwrap());
-                        }
-                        Repair::RmEff(effect) => {
-                            println!("   eff: {}/{}", effect.action, effect.effect_id);
-                            let act = model.actions.get_action(&effect.action).unwrap();
-                            // format effect for display (will tag the action name)
-                            // TODO: add span information of effect so we can properly display it inline
-                            let fmt_eff = model.env.node(&act.effects[effect.effect_id]).to_string();
-                            let annot = act.name.info(format!("rm effect: {fmt_eff})"));
-                            msg = msg.snippet(annot).show(effect.action.span.as_ref().unwrap());
-                        }
-                    }
-                }
-                msg
-            };
-
-            let repair_set = exp.find_smallest_mcs();
-            let msg = format_set(Message::error("Smallest MCS"), repair_set);
-            println!("\n\n{msg}");
-            std::process::exit(0);
-
-            for musmcs in exp.explain_unsat() {
-                let (mut msg, culprits) = match musmcs {
-                    aries::solver::musmcs::MusMcs::Mus(elems) => {
-                        mus_count += 1;
-                        (Message::error("MUS"), elems)
-                    }
-                    aries::solver::musmcs::MusMcs::Mcs(elems) => {
-                        mcs_count += 1;
-                        mcs_smallest = mcs_smallest.min(elems.len());
-                        (Message::warning("MCS"), elems)
-                    }
-                };
-                println!("\n{msg}\n");
-                println!("#MUS: {mus_count}\n#MCS: {mcs_count}\nSmallest: {mcs_smallest}");
+/// Extends a base bessage to display all culprits in it.
+fn format_culprit_set(mut msg: Message, culprits: &BTreeSet<Repair>, model: &Model) -> Message {
+    for repair in culprits {
+        match repair {
+            Repair::RmCond(cond) => {
+                println!("   cond: {}/{}", cond.action, cond.condition_id);
+                let annot = model
+                    .env
+                    .node(model.actions.get_action(&cond.action).unwrap().conditions[cond.condition_id].cond)
+                    .info(format!("to remove (action: {})", cond.action));
+                msg = msg.snippet(annot).show(cond.action.span.as_ref().unwrap());
             }
-
-            Ok(false)
+            Repair::AddEff(potential_effect) => {
+                let (fluent_id, params, _) = potential_effect.get();
+                let fluent = model.env.fluents.get(*fluent_id);
+                let fluent = format!("({} {})", fluent.name(), params.iter().map(|p| p.name()).format(" "));
+                println!("{} => {}", &potential_effect.action_id, fluent);
+                let annot = potential_effect.action_id.info(format!("Add effect: {fluent}"));
+                msg = msg
+                    .snippet(annot)
+                    .show(potential_effect.action_id.span.as_ref().unwrap());
+            }
+            Repair::RmEff(effect) => {
+                println!("   eff: {}/{}", effect.action, effect.effect_id);
+                let act = model.actions.get_action(&effect.action).unwrap();
+                // format effect for display (will tag the action name)
+                // TODO: add span information of effect so we can properly display it inline
+                let fmt_eff = model.env.node(&act.effects[effect.effect_id]).to_string();
+                let annot = act.name.info(format!("rm effect: {fmt_eff})"));
+                msg = msg.snippet(annot).show(effect.action.span.as_ref().unwrap());
+            }
         }
     }
+    msg
 }
 
 /// Scope from convertion function can find the values binded in their environments, (action sart, end, presence, parameters, ...)
