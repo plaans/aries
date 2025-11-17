@@ -53,6 +53,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
     pub fn check_satisfiability(&mut self) -> bool {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let res = self.solver.solve_with_assumptions(&assumptions).unwrap().is_ok();
+        self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res
     }

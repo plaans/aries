@@ -162,6 +162,7 @@ dependencies = [
  "aries_sched",
  "clap 4.5.47",
  "derivative",
+ "derive_more",
  "im",
  "itertools 0.14.0",
  "planx",

@@ -126,11 +126,14 @@ impl Display for Stats {
         }
         fn val_throughput(f: &mut Formatter<'_>, value: u64, time: &Duration) -> Result<(), Error> {
             number(f, "<12,.3d", value)?;
-            write!(
-                f,
-                " ({} /sec)",
-                format_num::format_num!(".3s", (value as f64) / time.as_secs_f64())
-            )
+            if time.as_millis() > 0 && value != 0 {
+                write!(
+                    f,
+                    " ({} /sec)",
+                    format_num::format_num!(".3s", (value as f64) / time.as_secs_f64())
+                )?;
+            }
+            Ok(())
         }
         fn new_line(f: &mut Formatter<'_>) -> Result<(), Error> {
             f.write_str("\n")

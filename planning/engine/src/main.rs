@@ -75,11 +75,13 @@ fn repair(command: &DomRepair) -> Res<()> {
     println!("{model}");
     println!("{plan:?}");
 
-    if repair::domain_repair(&model, &plan, &command.options)? {
-        println!("VALID")
-    } else {
-        println!("INVALID")
-    }
+    let report = repair::domain_repair(&model, &plan, &command.options)?;
+    println!(
+        "REPORT {:<90} {}    {:>4} (#actions)",
+        &command.plan.display(),
+        report,
+        plan.operations.len()
+    );
 
     Ok(())
 }

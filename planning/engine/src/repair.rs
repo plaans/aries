@@ -5,6 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Debug,
     sync::Arc,
+    time::Instant,
 };
 
 use aries::{
@@ -18,6 +19,7 @@ use aries_sched::{
     ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, explain::ExplainableSolver,
     symbols::ObjectEncoding,
 };
+use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 
@@ -26,51 +28,62 @@ use crate::{
     repair::{lifted_plan::LiftedPlan, potential_effects::PotentialEffects},
 };
 
-fn types(model: &Model) -> ObjectEncoding {
-    let t = dbg!(&model.env.types);
-    let o = &model.env.objects;
-    ObjectEncoding::build(
-        t.top_user_type().name.canonical_str().to_string(),
-        |c| {
-            t.subtypes(Sym::from(c.as_str()))
-                .map(|st| st.canonical_str().to_string())
-                .collect_vec()
-        },
-        |c| {
-            o.of_type(c.as_str())
-                .map(|o| o.name().canonical_str().to_string())
-                .collect_vec()
-        },
-    )
-}
-
 #[derive(clap::Args, Debug, Clone)]
 pub struct RepairOptions {
     #[arg(long, default_value = "smallest")]
     mode: RepairMode,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, Display)]
 pub enum RepairMode {
     Smallest,
     All,
 }
 
-pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) -> Res<bool> {
+#[derive(Display)]
+#[display("{mode} {status:>12} {runtime:>10?} (runtime ms)  {encoding_time:>8?} (enctime ms)")]
+pub struct RepairReport {
+    status: RepairStatus,
+    mode: RepairMode,
+    runtime: u128,
+    encoding_time: u128,
+}
+#[derive(Display)]
+pub enum RepairStatus {
+    #[display("VALID  ")]
+    ValidPlan,
+    #[display("SMCS({_0})")]
+    SmallestFound(usize),
+}
+
+pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) -> Res<RepairReport> {
+    let start = Instant::now();
     let mut solver = encode_dom_repair(model, plan)?;
+    let encoding_time = start.elapsed().as_millis();
 
     if solver.check_satisfiability() {
         println!("Plan is valid.");
-        return Ok(true);
+        return Ok(RepairReport {
+            status: RepairStatus::ValidPlan,
+            mode: options.mode,
+            runtime: start.elapsed().as_millis(),
+            encoding_time,
+        });
     }
     // TODO: quick SAT check
     println!("INVALID PLAN !");
 
-    match options.mode {
+    let report = match options.mode {
         RepairMode::Smallest => {
             let repair_set = solver.find_smallest_mcs().expect("problem detected as unrepairable");
             let msg = format_culprit_set(Message::error("Smallest MCS"), &repair_set, model);
             println!("\n\n{msg}");
+            RepairReport {
+                status: RepairStatus::SmallestFound(repair_set.len()),
+                mode: options.mode,
+                runtime: start.elapsed().as_millis(),
+                encoding_time,
+            }
         }
         RepairMode::All => {
             let mut mus_count = 0;
@@ -92,10 +105,15 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) 
                 println!("\n{msg}\n");
                 println!("#MUS: {mus_count}\n#MCS: {mcs_count}\nSmallest: {mcs_smallest}");
             }
+            RepairReport {
+                status: RepairStatus::SmallestFound(mcs_smallest),
+                mode: options.mode,
+                runtime: start.elapsed().as_millis(),
+                encoding_time,
+            }
         }
-    }
-
-    Ok(false)
+    };
+    Ok(report)
 }
 
 fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<Repair>> {
@@ -270,6 +288,25 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         _ => None,
     };
     Ok(sched.explainable_solver(constraint_to_repair))
+}
+
+/// Encode the types and objects in the model
+fn types(model: &Model) -> ObjectEncoding {
+    let t = &model.env.types;
+    let o = &model.env.objects;
+    ObjectEncoding::build(
+        t.top_user_type().name.canonical_str().to_string(),
+        |c| {
+            t.subtypes(Sym::from(c.as_str()))
+                .map(|st| st.canonical_str().to_string())
+                .collect_vec()
+        },
+        |c| {
+            o.of_type(c.as_str())
+                .map(|o| o.name().canonical_str().to_string())
+                .collect_vec()
+        },
+    )
 }
 
 /// Extends a base bessage to display all culprits in it.
