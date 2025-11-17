@@ -24,6 +24,7 @@ use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -131,6 +132,7 @@ pub fn reproduce(
     warm_up_plan: Option<Vec<ActionInstance>>,
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
+    analyse_unsat: bool,
 ) -> Result<Option<WarmingResult>> {
     if warm_up_plan.is_none() {
         return Ok(None);
@@ -167,6 +169,7 @@ pub fn reproduce(
         None,
         deadline,
         INT_CST_MAX,
+        analyse_unsat,
     );
     println!("  [{:.3}s] Warm Up Solved", start.elapsed().as_secs_f32());
     println!("=======================");
@@ -202,8 +205,13 @@ pub fn solve(
     warm_up_plan: Option<Vec<ActionInstance>>,
     on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
     deadline: Option<Instant>,
+    cost_upper_bound: Option<IntCst>,
+    analyse_unsat: bool,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
-    let default_best_cost = INT_CST_MAX + 1;
+    let default_best_cost = match cost_upper_bound {
+        Some(cost_upper_bound) => cost_upper_bound,
+        None => INT_CST_MAX + 1,
+    };
     let metadata = preprocess(&mut base_problem);
     let init_pb = FiniteProblem {
         model: base_problem.context.model.clone(),
@@ -223,6 +231,7 @@ pub fn solve(
         warm_up_plan.clone(),
         on_new_sol.clone(),
         deadline,
+        analyse_unsat,
     )?;
 
     let warmed_pb = warming_result.as_ref().and_then(|res| match res {
@@ -310,6 +319,7 @@ pub fn solve(
             if depth != 0 { None } else { initial_solution.clone() },
             deadline,
             best_cost(&best) - 1,
+            analyse_unsat,
         );
         println!("  [{:.3}s] Solved", start.elapsed().as_secs_f32());
 
@@ -538,6 +548,7 @@ fn solve_finite_problem(
     initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
+    analyse_unsat: bool,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
     if let Some(deadline) = deadline {
         if deadline <= Instant::now() {
@@ -560,7 +571,7 @@ fn solve_finite_problem(
             model.enforce(metric.le_lit(cost_upper_bound), []);
         }
     }
-    let solver = init_solver(model);
+    let solver_base = init_solver(model);
     let encoding = Arc::new(encoding);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
@@ -574,6 +585,20 @@ fn solve_finite_problem(
     } else {
         &GEN_DEFAULT_STRATEGIES
     };
+
+    let mut assumptions = vec![];
+
+    let mut solver = solver_base.clone();
+    for var in solver.model.state.variables() {
+        match solver.model.shape.labels.get(var) {
+            Some(lbl) if lbl.to_string().contains("assumption") => {
+                solver.enforce(var.geq(1), []);
+                assumptions.push(var.geq(1));
+            }
+            _ => {}
+        }
+    }
+
     let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
         strats[id].adapt_solver(s, pb.clone(), encoding.clone())
     });
@@ -594,8 +619,29 @@ fn solve_finite_problem(
         (s, cost)
     });
 
-    if let SolverResult::Sol(_) = result {
-        solver.print_stats()
+    if analyse_unsat {
+        if let SolverResult::Sol(_) = result {
+            solver.print_stats()
+        } else if let aries::solver::parallel::SolverResult::Unsat(_) = result {
+            let mut solver = solver_base.clone();
+            strats[0].adapt_solver(&mut solver, pb.clone(), encoding.clone());
+
+            let assumptions_lbls = assumptions
+                .iter()
+                .map(|l| (l, solver.model.shape.labels.get(l.variable()).unwrap()))
+                .collect::<BTreeMap<_, _>>();
+            let assumptions_len = assumptions.len();
+
+            println!("\n");
+            println!("assumptions: {assumptions_lbls:?} \n");
+            println!("assumptions_len: {assumptions_len:?} \n");
+
+            println!("tasks / goals MUSes and MCSes: \n");
+            for musmcs in solver.mus_and_mcs_enumerator(&assumptions) {
+                println!("{musmcs:?}");
+            }
+        }
     }
+
     result
 }

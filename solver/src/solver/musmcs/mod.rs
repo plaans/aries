@@ -12,6 +12,7 @@ pub type Mus = BTreeSet<Lit>;
 /// Type alias for representing a Minimal Correction Set (MCS)
 pub type Mcs = BTreeSet<Lit>;
 
+#[derive(Debug)]
 pub enum MusMcs {
     Mus(Mus),
     Mcs(Mcs),

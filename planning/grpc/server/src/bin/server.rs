@@ -214,6 +214,8 @@ fn solve_blocking(
         warm_up_plan.clone(),
         on_new_solution,
         deadline,
+        None,
+        false,
     )?;
     match result {
         SolverResult::Sol((finite_problem, plan)) => {

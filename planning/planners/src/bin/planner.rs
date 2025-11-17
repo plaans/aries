@@ -146,6 +146,8 @@ fn main() -> Result<()> {
         warm_up_plan,
         |pb, sol| print_plan(pb, &sol, anytime_out_file.as_ref()),
         None,
+        None,
+        false,
     )?;
 
     match result {
