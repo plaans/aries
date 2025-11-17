@@ -34,5 +34,9 @@ name = "aries-plan"
 path = "src/bin/planner.rs"
 
 [[bin]]
+name = "aries-plan-osp"
+path = "src/bin/plannerosp.rs"
+
+[[bin]]
 name = "aries-pddl-parser"
 path = "src/bin/parser.rs"
