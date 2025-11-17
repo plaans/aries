@@ -160,6 +160,13 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         cost: None,
     };
 
+    let goal_presence_lits = prob.goal
+        .iter()
+        .map(|g| g.as_application("and").unwrap())
+        .flatten()
+        .map(|g| context.model.new_presence_variable(init_ch.presence, init_container / VarType::Parameter(["assumption", g.to_string().as_str()].join("_"))).true_lit())
+        .collect::<Vec<_>>();
+
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
     let as_model_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
         let atom = context
@@ -171,17 +178,31 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         Ok(atom.into())
     };
     let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
+
     for goal in &prob.goal {
         // goal is expected to be a conjunction of the form:
         //  - `(and (= sv1 v1) (= sv2 = v2))`
         //  - `(= sv1 v1)`
         //  - `()`
         let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table(), &context)?;
-        for TermLoc(goal, loc) in goals {
+        for (ii, TermLoc(goal, loc)) in goals.into_iter().enumerate() {
+            let mut ch = Chronicle {
+                kind: ChronicleKind::Problem,
+                presence: goal_presence_lits[ii],
+                start: context.origin(),
+                end: context.horizon(),
+                name: vec![],
+                task: None,
+                conditions: vec![],
+                effects: vec![],
+                constraints: vec![],
+                subtasks: vec![],
+                cost: None,
+            };
             match goal {
-                Term::Binding(sv, value) => init_ch.conditions.push(Condition {
-                    start: init_ch.end,
-                    end: init_ch.end,
+                Term::Binding(sv, value) => ch.conditions.push(Condition {
+                    start: ch.end,
+                    end: ch.end,
                     state_var: sv,
                     value,
                 }),
@@ -202,22 +223,35 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         });
     }
 
+    let mut chs = vec![];
+
     if let Some(ref task_network) = &prob.task_network {
-        read_task_network(
+        chs = read_task_network(
             init_container,
             task_network,
             &as_model_atom_no_borrow,
             &mut init_ch,
+            true,
             None,
             &mut context,
         )?;
     }
 
-    let init_ch = ChronicleInstance {
-        parameters: vec![],
-        origin: ChronicleOrigin::Original,
-        chronicle: init_ch,
-    };
+    // let init_ch = ChronicleInstance {
+    //     parameters: vec![],
+    //     origin: ChronicleOrigin::Original,
+    //     chronicle: init_ch,
+    // };
+    let chs = [init_ch].iter().chain(&chs)
+        .map(|ch| ChronicleInstance {
+            parameters: vec![],
+            origin: ChronicleOrigin::Original,
+            chronicle: ch.clone(),
+        })
+        .collect::<Vec<_>>();
+    // for ch in &chs {
+    //     context.model.enforce(ch.chronicle.presence, []);
+    // }
 
     let mut templates = Vec::new();
     for a in &dom.actions {
@@ -239,7 +273,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     let problem = Problem {
         context,
         templates,
-        chronicles: vec![init_ch],
+        chronicles: chs, //vec![init_ch],
     };
 
     Ok(problem)
@@ -563,7 +597,7 @@ fn read_chronicle_template(
     }
 
     if let Some(tn) = pddl.task_network() {
-        read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, Some(&mut params), context)?
+        let _ = read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, false, Some(&mut params), context)?;
     }
 
     let template = ChronicleTemplate {
@@ -691,13 +725,13 @@ fn read_task_network(
     tn: &pddl::TaskNetwork,
     as_chronicle_atom: &impl Fn(&sexpr::SAtom, &Ctx) -> Result<SAtom>,
     chronicle: &mut Chronicle,
+    make_new_chronicles_for_subtasks: bool,
     mut new_variables: Option<&mut Vec<Variable>>,
     context: &mut Ctx,
-) -> Result<()> {
+) -> Result<Vec<Chronicle>> {
     // stores the start/end timepoints of each named task
     let mut named_task: HashMap<String, (FAtom, FAtom)> = HashMap::new();
     let top_type: Sym = OBJECT_TYPE.into();
-    let presence = chronicle.presence;
     let mut local_params = Vec::new();
     for arg in &tn.parameters {
         let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
@@ -709,11 +743,50 @@ fn read_task_network(
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
         let arg = context
             .model
-            .new_optional_sym_var(tpe, presence, c / VarType::Parameter(arg.symbol.to_string()));
+            .new_optional_sym_var(tpe, chronicle.presence, c / VarType::Parameter(arg.symbol.to_string()));
         if let Some(new_variables) = &mut new_variables {
             new_variables.push(arg.into());
         }
         local_params.push(arg);
+    }
+
+    let mut new_chronicles = vec![];
+
+    let mut unordered_tasks_presences = vec![];
+    let mut ordered_tasks_presences = vec![];
+    if make_new_chronicles_for_subtasks {
+        for t in &tn.unordered_tasks {
+            unordered_tasks_presences.push(
+                context.model.new_presence_variable(
+                    chronicle.presence,
+                    c / VarType::Parameter(
+                        [
+                            vec!["assumption"],
+                            vec![t.name.canonical_str()],
+                            t.arguments.iter().map(|s| s.canonical_str()).collect::<Vec<_>>(),
+                        ]
+                        .concat()
+                        .join("_")
+                    )
+                ).true_lit()
+            );
+        }
+        for t in &tn.ordered_tasks {
+            ordered_tasks_presences.push(
+                context.model.new_presence_variable(
+                    chronicle.presence,
+                    c / VarType::Parameter(
+                        [
+                            vec!["assumption"],
+                            vec![t.name.canonical_str()],
+                            t.arguments.iter().map(|s| s.canonical_str()).collect::<Vec<_>>(),
+                        ]
+                        .concat()
+                        .join("_")
+                    )
+                ).true_lit()
+            );
+        }
     }
 
     // consider task network parameters in following expressions.
@@ -730,7 +803,7 @@ fn read_task_network(
 
     // creates a new subtask. This will create new variables for the start and end
     // timepoints of the task and push the `new_variables` vector, if any.
-    let mut make_subtask = |t: &pddl::Task, task_id: u32| -> Result<SubTask> {
+    let mut make_subtask = |t: &pddl::Task, task_id: u32, chr: &Chronicle| -> Result<SubTask> {
         let id = t.id.as_ref().map(|id| id.canonical_string());
         // get the name + parameters of the task
         let mut task_name = Vec::with_capacity(t.arguments.len() + 1);
@@ -745,14 +818,14 @@ fn read_task_network(
             0,
             INT_CST_MAX,
             TIME_SCALE.get(),
-            presence,
+            chr.presence,
             c / VarType::TaskStart(task_id),
         );
         let end = context.model.new_optional_fvar(
             0,
             INT_CST_MAX,
             TIME_SCALE.get(),
-            presence,
+            chr.presence,
             c / VarType::TaskEnd(task_id),
         );
         if let Some(ref mut params) = new_variables {
@@ -772,22 +845,70 @@ fn read_task_network(
         })
     };
     let mut task_id = 0;
-    for t in &tn.unordered_tasks {
-        let t = make_subtask(t, task_id)?;
-        chronicle.subtasks.push(t);
+    for (ii, t) in tn.unordered_tasks.iter().enumerate() {
+        match make_new_chronicles_for_subtasks {
+            false => {
+                let t = make_subtask(t, task_id, &chronicle)?;
+                chronicle.subtasks.push(t);
+            },
+            true => {
+                let mut new_chronicle = Chronicle {
+                    kind: chronicle.kind,
+                    presence: unordered_tasks_presences[ii],
+                    start: chronicle.start,
+                    end: chronicle.end,
+                    name: vec![],
+                    task: None,
+                    conditions: vec![],
+                    effects: vec![],
+                    constraints: vec![],
+                    subtasks: vec![],
+                    cost: None,
+                };
+                let t = make_subtask(t, task_id, &new_chronicle)?;
+                new_chronicle.subtasks.push(t);
+                new_chronicles.push(new_chronicle);
+            }
+        }
         task_id += 1;
     }
 
     // parse all ordered tasks, adding precedence constraints between subsequent ones
     let mut previous_end = None;
-    for t in &tn.ordered_tasks {
-        let t = make_subtask(t, task_id)?;
-
-        if let Some(previous_end) = previous_end {
-            chronicle.constraints.push(Constraint::lt(previous_end, t.start))
+    for (ii, t) in tn.ordered_tasks.iter().enumerate() {
+        match make_new_chronicles_for_subtasks {
+            false => {
+                let t = make_subtask(t, task_id, &chronicle)?;
+                if let Some(previous_end) = previous_end {
+                    chronicle.constraints.push(Constraint::lt(previous_end, t.start))
+                }
+                previous_end = Some(t.end);
+                chronicle.subtasks.push(t);
+            },
+            true => {
+                let mut new_chronicle = Chronicle {
+                    kind: chronicle.kind,
+                    presence: ordered_tasks_presences[ii],
+                    start: chronicle.start,
+                    end: chronicle.end,
+                    name: vec![],
+                    task: None,
+                    conditions: vec![],
+                    effects: vec![],
+                    constraints: vec![],
+                    subtasks: vec![],
+                    cost: None,
+                };
+                let t = make_subtask(t, task_id, &new_chronicle)?;
+                if let Some(previous_end) = previous_end {
+                    chronicle.constraints.push(Constraint::lt(previous_end, t.start))
+                    // ??? // new_chronicle.constraints.push(Constraint::lt(previous_end, t.start))
+                }
+                previous_end = Some(t.end);
+                new_chronicle.subtasks.push(t);
+                new_chronicles.push(new_chronicle);
+            }
         }
-        previous_end = Some(t.end);
-        chronicle.subtasks.push(t);
         task_id += 1;
     }
     for ord in &tn.orderings {
@@ -821,9 +942,10 @@ fn read_task_network(
         }
     }
 
-    Ok(())
+    Ok(new_chronicles)
 }
 
+#[derive(Debug)]
 enum Term {
     Binding(StateVar, Atom),
     Eq(Atom, Atom),
