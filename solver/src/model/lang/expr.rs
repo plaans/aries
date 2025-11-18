@@ -84,7 +84,7 @@ pub struct Or(Box<[Lit]>);
 
 impl From<Or> for ReifExpr {
     fn from(value: Or) -> Self {
-        Disjunction::new(value.0.to_vec()).into()
+        Disjunction::new(Vec::from(value.0)).into()
     }
 }
 
