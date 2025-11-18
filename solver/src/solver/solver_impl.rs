@@ -538,8 +538,20 @@ impl<Lbl: Label> Solver<Lbl> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         while self.next_unposted_constraint < self.model.shape.constraints.len() {
-            let c = &self.model.shape.constraints[self.next_unposted_constraint].clone();
+            let c = &self.model.shape.constraints[self.next_unposted_constraint];
+            let size_before = self.model.shape.constraints.len();
+            let c = unsafe {
+                // SAFETY: we erase the lifetime of the constraint to please the borrow checker
+                // This is safe, because post constraint should not modify the constraints aray (`self.mode.shape.constraints`)
+                // in any way: nor overwrite nor append. The latter is problematic as it may cause the vec to relocate and invalidate the reference
+                std::mem::transmute::<&Constraint, &'static Constraint>(c)
+            };
             self.post_constraint(c)?;
+            debug_assert_eq!(
+                self.model.shape.constraints.len(),
+                size_before,
+                "SAFETY invariant broken"
+            );
             self.next_unposted_constraint += 1;
         }
         self.stats.init_time += start_time.elapsed();
