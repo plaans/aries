@@ -22,6 +22,14 @@ impl Disjunction {
         if literals.len() <= 1 {
             return Disjunction { literals };
         }
+        Self::simplify(&mut literals);
+
+        Disjunction { literals }
+    }
+
+    /// Simplify the clause, removing redundant literals.
+    /// Note: The literals may be reordered by the operation.
+    pub(crate) fn simplify(literals: &mut Vec<Lit>) {
         // sort literals, so that they are grouped by (1) variable and (2) affected bound
         literals.sort();
         // remove duplicated literals
@@ -34,8 +42,11 @@ impl Disjunction {
                 i += 1;
             }
         }
+    }
 
-        Disjunction { literals }
+    /// Returns true if the clause is simplified (no redundant literals.)
+    pub(crate) fn is_simplified(literals: &[Lit]) -> bool {
+        literals.is_sorted() && literals.windows(2).all(|k| !(k[0].entails(k[1])))
     }
 
     pub fn new_non_tautological(literals: Vec<Lit>) -> Option<Disjunction> {

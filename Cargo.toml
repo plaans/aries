@@ -20,6 +20,7 @@ resolver = "2"
 [workspace.dependencies]
 anyhow = { version = "1.0" }
 async-trait = "0.1"
+bumpalo = { version = "3.19" }
 clap = { version = "4.4", features = ["derive"] }
 crossbeam-channel = "0.5"
 itertools = { version = "0.14" }

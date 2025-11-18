@@ -156,7 +156,7 @@ impl SatSolver {
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
     pub fn add_clause(&mut self, clause: impl Into<Disjunction>) -> ClauseId {
-        self.add_clause_impl(Clause::new(clause.into()), false)
+        self.add_clause_impl(clause, None, false)
     }
 
     /// Adds a new clause that only needs to be active when the scope literal is true.
@@ -164,7 +164,7 @@ impl SatSolver {
     /// Invariant: All literals in scoped clauses must only be present if the scope literal is true.
     /// This invariant allows scoped clauses to be eagerly propagated even when the scope literal is unknown.
     pub fn add_clause_scoped(&mut self, clause: impl Into<Disjunction>, scope: Lit) -> ClauseId {
-        self.add_clause_impl(Clause::new_scoped(clause.into(), scope), false)
+        self.add_clause_impl(clause, Some(scope), false)
     }
 
     /// Adds a new clause representing `from => to`.
@@ -175,7 +175,7 @@ impl SatSolver {
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
     pub fn add_forgettable_clause(&mut self, clause: impl Into<Disjunction>) {
-        self.add_clause_impl(Clause::new(clause.into()), true);
+        self.add_clause_impl(clause, None, true);
     }
 
     /// Adds an asserting clause that was learnt as a result of a conflict
@@ -183,14 +183,13 @@ impl SatSolver {
     /// We set it to the front of the propagation queue as we know it will be triggered.
     pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>) {
         self.stats.conflicts += 1;
-        let clause = clause.into();
-        let cl_id = self.clauses.add_clause(Clause::new(clause), true);
+        let cl_id = self.clauses.add_clause(clause, None, true);
 
         self.pending_clauses.push_front(PendingClause { clause: cl_id });
     }
 
-    fn add_clause_impl(&mut self, clause: Clause, learnt: bool) -> ClauseId {
-        let cl_id = self.clauses.add_clause(clause, learnt);
+    fn add_clause_impl(&mut self, clause: impl Into<Disjunction>, scope: Option<Lit>, learnt: bool) -> ClauseId {
+        let cl_id = self.clauses.add_clause(clause, scope, learnt);
         self.pending_clauses.push_back(PendingClause { clause: cl_id });
         cl_id
     }
@@ -467,8 +466,8 @@ impl SatSolver {
         }
 
         let mut replacement = Replacement::None;
-        for i in 0..clause.unwatched.len() {
-            let lit = clause.unwatched[i];
+        for i in 0..clause.unwatched_lits().len() {
+            let lit = clause.unwatched(i);
             if !model.entails(!lit) {
                 // this is a candidate, distinguish the case where it is fusable with watch1
                 if model.fusable(clause.watch1, lit) {
@@ -477,8 +476,8 @@ impl SatSolver {
                         // this might occur for a clause `!p v a v b`   where `p` is the presence of both `a` and `b`
                         // here, !p might be fused with both a and b
                         // the clause is not unit so we should set up a regular watch
-                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched[prev_i]));
-                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched[i]));
+                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched(prev_i)));
+                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched(i)));
                         replacement = Replacement::Regular(prev_i);
                         break;
                     } else {
@@ -498,20 +497,20 @@ impl SatSolver {
         match replacement {
             Replacement::Regular(i) => {
                 // clause is not unit, we have a replacement, set the watch and exit
-                let lit = clause.unwatched[i];
+                let lit = clause.unwatched(i);
                 clause.set_watch2(i);
                 self.watches.add_watch(clause_id, !lit);
                 true
             }
             Replacement::FusableUnit(i) => {
                 // clause is unit because the two only unset literals can be fused
-                let lit = clause.unwatched[i];
+                let lit = clause.unwatched(i);
                 clause.set_watch2(i);
                 self.watches.add_watch(clause_id, !lit);
 
                 debug_assert!(model.fusable(clause.watch1, clause.watch2));
                 // all other literals should be false
-                debug_assert!(clause.unwatched.iter().all(|&l| model.entails(!l)));
+                debug_assert!(clause.unwatched_lits().iter().all(|&l| model.entails(!l)));
 
                 // distinguish between the optional literal and its absent literal
                 let (opt, absent) = if clause.watch1 == !model.presence(clause.watch2) {
@@ -628,7 +627,7 @@ impl SatSolver {
             }
         }
         if state.fusable(l0, l1) {
-            assert!(cl.unwatched.iter().all(|&l| state.entails(!l)));
+            assert!(cl.unwatched_lits().iter().all(|&l| state.entails(!l)));
         }
         true
     }
