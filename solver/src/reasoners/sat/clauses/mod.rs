@@ -1,6 +1,5 @@
 mod clause_storage;
 use crate::collections::ref_store::RefMap;
-use crate::core::literals::Disjunction;
 use crate::core::Lit;
 use crate::create_ref_type;
 use env_param::EnvParam;
@@ -87,7 +86,7 @@ impl ClauseDb {
             && clause.unwatched_lits().is_empty()
     }
 
-    pub fn add_clause(&mut self, cl: impl Into<Disjunction>, scope: Option<Lit>, learnt: bool) -> ClauseId {
+    pub fn add_clause(&mut self, cl: &[Lit], scope: Option<Lit>, learnt: bool) -> ClauseId {
         self.num_clauses += 1;
         if !learnt {
             self.num_fixed += 1;
@@ -113,7 +112,7 @@ impl ClauseDb {
                 // we have a free spot, fill it in with the new clause
                 debug_assert!(!self.metadata.contains(id));
                 debug_assert!(self.is_the_tautological_clause(&self.clauses[id]));
-                self.clauses.set(id, cl.into(), scope);
+                self.clauses.set(id, cl, scope);
                 self.metadata.insert(id, meta);
                 id
             }
@@ -121,7 +120,7 @@ impl ClauseDb {
                 // no free spot, add the clause at the end of the database
                 debug_assert_eq!(self.num_clauses - 1, self.clauses.len()); // note: we have already incremented the clause counts
                                                                             // no free spaces push at the end
-                let id = self.clauses.push(cl.into(), scope);
+                let id = self.clauses.push(cl, scope);
                 self.metadata.insert(id, meta);
                 id
             }

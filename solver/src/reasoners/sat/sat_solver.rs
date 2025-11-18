@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::set::{IterableRefSet, RefSet};
-use crate::core::literals::{Disjunction, WatchSet, Watches};
+use crate::core::literals::{WatchSet, Watches};
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
@@ -155,7 +155,7 @@ impl SatSolver {
 
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
-    pub fn add_clause(&mut self, clause: impl Into<Disjunction>) -> ClauseId {
+    pub fn add_clause(&mut self, clause: &[Lit]) -> ClauseId {
         self.add_clause_impl(clause, None, false)
     }
 
@@ -163,32 +163,32 @@ impl SatSolver {
     ///
     /// Invariant: All literals in scoped clauses must only be present if the scope literal is true.
     /// This invariant allows scoped clauses to be eagerly propagated even when the scope literal is unknown.
-    pub fn add_clause_scoped(&mut self, clause: impl Into<Disjunction>, scope: Lit) -> ClauseId {
+    pub fn add_clause_scoped(&mut self, clause: &[Lit], scope: Lit) -> ClauseId {
         self.add_clause_impl(clause, Some(scope), false)
     }
 
     /// Adds a new clause representing `from => to`.
     pub fn add_implication(&mut self, from: Lit, to: Lit) -> ClauseId {
-        self.add_clause([!from, to])
+        self.add_clause(&[!from, to])
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
-    pub fn add_forgettable_clause(&mut self, clause: impl Into<Disjunction>) {
+    pub fn add_forgettable_clause(&mut self, clause: &[Lit]) {
         self.add_clause_impl(clause, None, true);
     }
 
     /// Adds an asserting clause that was learnt as a result of a conflict
     /// On the next propagation, the clause will be propagated should assert a new literal.
     /// We set it to the front of the propagation queue as we know it will be triggered.
-    pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>) {
+    pub fn add_learnt_clause(&mut self, clause: &[Lit]) {
         self.stats.conflicts += 1;
         let cl_id = self.clauses.add_clause(clause, None, true);
 
         self.pending_clauses.push_front(PendingClause { clause: cl_id });
     }
 
-    fn add_clause_impl(&mut self, clause: impl Into<Disjunction>, scope: Option<Lit>, learnt: bool) -> ClauseId {
+    fn add_clause_impl(&mut self, clause: &[Lit], scope: Option<Lit>, learnt: bool) -> ClauseId {
         let cl_id = self.clauses.add_clause(clause, scope, learnt);
         self.pending_clauses.push_back(PendingClause { clause: cl_id });
         cl_id
@@ -767,7 +767,7 @@ mod tests {
         let mut sat = SatSolver::new(writer);
         let a_or_b = vec![a.true_lit(), b.true_lit()];
 
-        sat.add_clause(a_or_b);
+        sat.add_clause(&a_or_b);
         sat.propagate(&mut model.state).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
@@ -799,7 +799,7 @@ mod tests {
         let mut sat = SatSolver::new(writer);
         let clause = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
 
-        sat.add_clause(clause);
+        sat.add_clause(&clause);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [None, None, None, None]);
 
@@ -853,7 +853,7 @@ mod tests {
         let mut sat = SatSolver::new(writer);
         let a_or_b = vec![a.true_lit(), b.true_lit()];
 
-        sat.add_clause(a_or_b);
+        sat.add_clause(&a_or_b);
         sat.propagate(&mut model.state).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
@@ -888,27 +888,27 @@ mod tests {
         model.state.set(b.false_lit(), Cause::Decision).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let abcd = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
+        let abcd = &[a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
         sat.add_clause(abcd);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let nota_notb = vec![a.false_lit(), b.false_lit()];
+        let nota_notb = &[a.false_lit(), b.false_lit()];
         sat.add_clause(nota_notb);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let nota_b = vec![a.false_lit(), b.true_lit()];
+        let nota_b = &[a.false_lit(), b.true_lit()];
         sat.add_clause(nota_b);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let a_b_notc = vec![a.true_lit(), b.true_lit(), c.false_lit()];
+        let a_b_notc = &[a.true_lit(), b.true_lit(), c.false_lit()];
         sat.add_clause(a_b_notc);
         sat.propagate(&mut model.state).unwrap(); // should trigger and in turn trigger the first clause
         check_values(model, [Some(false), Some(false), Some(false), Some(true)]);
 
-        let violated = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
+        let violated = &[a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
         sat.add_clause(violated);
         assert!(sat.propagate(&mut model.state).is_err());
     }
@@ -931,9 +931,9 @@ mod tests {
         check_values(model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         let mut sat = SatSolver::new(writer);
-        let clause = vec![Lit::leq(a, 5), Lit::leq(b, 5)];
+        let clause = &[Lit::leq(a, 5), Lit::leq(b, 5)];
         sat.add_clause(clause);
-        let clause = vec![Lit::geq(c, 5), Lit::geq(d, 5)];
+        let clause = &[Lit::geq(c, 5), Lit::geq(d, 5)];
         sat.add_clause(clause);
 
         sat.propagate(&mut model.state).unwrap();
@@ -1037,7 +1037,7 @@ mod tests {
         m.save_state();
         sat.save_state();
 
-        sat.add_clause_scoped([x1, x2], px);
+        sat.add_clause_scoped(&[x1, x2], px);
 
         m.state.decide(!x1).unwrap();
         sat.propagate(&mut m.state).unwrap();
@@ -1046,8 +1046,8 @@ mod tests {
         check_explanation(m, sat, x2, [!x1]);
 
         assert!(!m.entails(!py));
-        sat.add_clause_scoped([!y2, y1], py);
-        sat.add_clause_scoped([!y2, !y1], py);
+        sat.add_clause_scoped(&[!y2, y1], py);
+        sat.add_clause_scoped(&[!y2, !y1], py);
         m.state.decide(y2).unwrap();
         sat.propagate(&mut m.state).unwrap();
         assert!(m.entails(!py));
@@ -1059,7 +1059,7 @@ mod tests {
         sat.save_state();
 
         assert!(!m.entails(!py));
-        sat.add_clause_scoped([y1, y2], py);
+        sat.add_clause_scoped(&[y1, y2], py);
         m.state.decide(!y1).unwrap();
         m.state.decide(!y2).unwrap();
         sat.propagate(&mut m.state).unwrap();
@@ -1072,7 +1072,7 @@ mod tests {
         sat.save_state();
 
         assert!(!m.entails(!pz));
-        sat.add_clause_scoped([z1, z2], pz);
+        sat.add_clause_scoped(&[z1, z2], pz);
         m.state.decide(pz).unwrap();
         m.state.decide(!z1).unwrap();
         m.state.decide(!z2).unwrap();

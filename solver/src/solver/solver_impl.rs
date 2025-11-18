@@ -483,27 +483,27 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Adds a disjunctive constraint within the given scope.
     fn add_clause(&mut self, clause: impl Into<Disjunction>, scope: Lit) -> Result<(), InvalidUpdate> {
+        // TODO: this is hotspot in the case where the input clause is borrowed (notably when processing an `Or` constraint)
         assert_eq!(self.current_decision_level(), DecLvl::ROOT);
-        let clause = clause.into();
+        let mut clause: Disjunction = clause.into();
         // only keep literals that may become true
-        let clause: Vec<Lit> = clause.into_iter().filter(|&l| !self.model.entails(!l)).collect();
+        clause.literals.retain(|&l| !self.model.entails(!l));
         let (propagatable, scope) = self.scoped_disjunction(clause, scope);
         if propagatable.is_empty() {
             return self.model.state.set(!scope, Cause::Encoding).map(|_| ());
         }
-        self.reasoners.sat.add_clause_scoped(propagatable, scope);
+        self.reasoners.sat.add_clause_scoped(propagatable.literals(), scope);
         Ok(())
     }
 
     /// From a disjunction with optional elements, creates a scoped clause that can be safely unit propagated
-    /// TODO: generalize to also look at literals in the clause as potential scopes
+    /// TODO: this should be unnecessary with the optional-aware propagation of the SAT solver
     pub(in crate::solver) fn scoped_disjunction(
         &self,
         disjuncts: impl Into<Disjunction>,
         scope: Lit,
     ) -> (Disjunction, Lit) {
         let prez = |l: Lit| self.model.presence_literal(l.variable());
-        // let optional = |l: Lit| prez(l) == Lit::TRUE;
         let disjuncts = disjuncts.into();
         if scope == Lit::TRUE {
             return (disjuncts, scope);
@@ -517,7 +517,7 @@ impl<Lbl: Label> Solver<Lbl> {
             .iter()
             .all(|&l| self.model.state.implies(prez(l), scope))
         {
-            return (disjuncts, scope);
+            return (disjuncts, scope); // TODO: couldn't the scope be ommited here?
         }
         let mut disjuncts = Vec::from(disjuncts);
         disjuncts.push(!scope);
@@ -647,7 +647,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
                     if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
-                        self.reasoners.sat.add_clause(clause);
+                        self.reasoners.sat.add_clause(&clause);
                     } else {
                         return Ok(sat);
                     }
@@ -810,7 +810,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         return Err(Exit::Interrupted);
                     }
                     InputSignal::LearnedClause(cl) => {
-                        self.reasoners.sat.add_forgettable_clause(cl.as_ref());
+                        self.reasoners.sat.add_forgettable_clause(cl.literals());
                         requires_new_propagation = true;
                     }
                     InputSignal::SolutionFound(assignment) => {
@@ -1138,7 +1138,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.reasoners.tautologies.add_tautology(expl.clause.literals()[0])
             } else {
                 // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(&expl.clause);
+                self.reasoners.sat.add_learnt_clause(expl.clause.literals());
             }
 
             true

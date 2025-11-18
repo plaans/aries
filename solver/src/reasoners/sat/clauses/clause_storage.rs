@@ -89,17 +89,17 @@ impl Clauses {
         Clause::new(&self.buffer, &self.arena)
     }
 
-    pub fn push(&mut self, clause: Disjunction, scope: Option<Lit>) -> ClauseId {
+    pub fn push(&mut self, clause: &[Lit], scope: Option<Lit>) -> ClauseId {
         unsafe {
             // safe because the clause is immediately stored inside the array, whose lifetime is tied to the one of the arena
-            let clause = self.create_clause(clause.literals(), scope);
+            let clause = self.create_clause(clause, scope);
             self.clauses.push(clause)
         }
     }
-    pub fn set(&mut self, clause_id: ClauseId, clause: Disjunction, scope: Option<Lit>) {
+    pub fn set(&mut self, clause_id: ClauseId, clause: &[Lit], scope: Option<Lit>) {
         unsafe {
             // safe because the clause is immediately stored inside the array, whose lifetime is tied to the one of the arena
-            let clause = self.create_clause(clause.literals(), scope);
+            let clause = self.create_clause(clause, scope);
             self.clauses[clause_id] = clause;
         }
     }
