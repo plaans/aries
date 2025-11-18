@@ -187,6 +187,9 @@ impl<Lbl: Label> Model<Lbl> {
     /// with domain `[1,1]` with `presence=scope` but will ensure that only one such
     /// variable is created in this scope.
     pub fn get_tautology_of_scope(&mut self, scope: Lit) -> Lit {
+        if scope == Lit::TRUE {
+            return Lit::TRUE;
+        }
         self.shape
             .conjunctive_scopes
             .get_tautology_of_scope(scope)
@@ -201,6 +204,9 @@ impl<Lbl: Label> Model<Lbl> {
 
     fn new_conjunctive_presence_variable(&mut self, set: impl Into<StableLitSet>) -> Lit {
         let set = set.into();
+        if set.is_empty() {
+            return Lit::TRUE;
+        }
         if let Some(l) = self.shape.conjunctive_scopes.get(&set) {
             // scope already exists, return it immediately
             return l;

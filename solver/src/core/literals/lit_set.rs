@@ -134,6 +134,12 @@ impl StableLitSet {
         Self { elements }
     }
 
+    pub fn from_literals(iter: impl Iterator<Item = Lit>) -> Self {
+        let mut elements: Vec<Lit> = iter.collect();
+        simplify_conjunction(&mut elements);
+        Self { elements }
+    }
+
     pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
         self.elements.iter().copied()
     }
@@ -147,9 +153,25 @@ impl StableLitSet {
     }
 }
 
+/// Helper method to remove redundant Lit from a conjunctive Set
+fn simplify_conjunction(conjuncts: &mut Vec<Lit>) {
+    conjuncts.sort();
+    // remove all entailed literals.
+    // given that the array is ordered, if a literal can only be entailed by the preceding one
+    let mut prev = Lit::TRUE;
+    conjuncts.retain(|&x| {
+        if prev.entails(x) || Lit::TRUE.entails(x) {
+            false
+        } else {
+            prev = x;
+            true
+        }
+    });
+}
+
 impl<T: IntoIterator<Item = Lit>> From<T> for StableLitSet {
     fn from(lits: T) -> Self {
-        Self::new(lits.into())
+        Self::from_literals(lits.into_iter())
     }
 }
 
@@ -163,6 +185,8 @@ impl<const N: usize> TryFrom<&StableLitSet> for [Lit; N] {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     const A: VarRef = VarRef::from_u32(1);
@@ -241,5 +265,21 @@ mod test {
 
         set.remove(A.leq(3), tauto);
         assert_eq!(set.elements.len(), 0);
+    }
+
+    #[test]
+    fn test_simplify_conjunction() {
+        fn test_equi(input: &[Lit], expected: &[Lit]) {
+            let mut buf: Vec<Lit> = Vec::from(input);
+            simplify_conjunction(&mut buf);
+            assert_eq!(
+                BTreeSet::from_iter(buf.iter().copied()),
+                BTreeSet::from_iter(expected.iter().copied())
+            )
+        }
+        test_equi(&[A.leq(4), A.leq(5)], &[A.leq(4)]);
+        test_equi(&[A.leq(5), A.leq(4)], &[A.leq(4)]);
+        test_equi(&[Lit::TRUE, A.leq(5), A.leq(4)], &[A.leq(4)]);
+        test_equi(&[Lit::FALSE, Lit::TRUE, A.leq(5), A.leq(4)], &[Lit::FALSE, A.leq(4)]);
     }
 }
