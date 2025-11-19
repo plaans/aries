@@ -345,7 +345,7 @@ pub mod test {
             let implied = ev.new_literal();
             // generate explanation
             let implicants = s.implying_literals(implied, &mut explainer).unwrap();
-            let clause = Disjunction::new(implicants.iter().map(|l| !*l).collect_vec());
+            let clause = Disjunction::new(implicants.iter().map(|l| !*l).collect());
             // check minimality
             check_explanation_minimality(s, implied, clause, prop, check_minimality);
         }

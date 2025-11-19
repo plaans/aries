@@ -405,18 +405,18 @@ impl<Lbl: Label> Model<Lbl> {
         };
         let negated = |lit: Lit| entailed(!lit);
         match expr {
-            ReifExpr::Or(disjuncts) if disjuncts.iter().any(|&l| entailed(l)) => *expr = ReifExpr::Lit(Lit::TRUE),
+            ReifExpr::Or(disjuncts) if disjuncts.iter().any(entailed) => *expr = ReifExpr::Lit(Lit::TRUE),
             ReifExpr::Or(disjuncts) => {
-                disjuncts.retain(|&l| !negated(l));
+                disjuncts.retain(|l| !negated(l));
                 match disjuncts.len() {
                     0 => *expr = ReifExpr::Lit(Lit::FALSE),
                     1 => *expr = ReifExpr::Lit(disjuncts[0]),
                     _ => {}
                 }
             }
-            ReifExpr::And(conjuncts) if conjuncts.iter().any(|&l| negated(l)) => *expr = ReifExpr::Lit(Lit::FALSE),
+            ReifExpr::And(conjuncts) if conjuncts.iter().any(negated) => *expr = ReifExpr::Lit(Lit::FALSE),
             ReifExpr::And(conjuncts) => {
-                conjuncts.retain(|l| !entailed(*l));
+                conjuncts.retain(|l| !entailed(l));
                 match conjuncts.len() {
                     0 => *expr = ReifExpr::Lit(Lit::TRUE),
                     1 => *expr = ReifExpr::Lit(conjuncts[0]),

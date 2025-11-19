@@ -1,4 +1,4 @@
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, Lits};
 use crate::core::*;
 use crate::model::lang::alternative::Alternative;
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
@@ -84,7 +84,7 @@ pub struct Or(Box<[Lit]>);
 
 impl From<Or> for ReifExpr {
     fn from(value: Or) -> Self {
-        Disjunction::new(Vec::from(value.0)).into()
+        Disjunction::from_vec(Vec::from(value.0)).into()
     }
 }
 
@@ -93,7 +93,7 @@ pub struct And(Box<[Lit]>);
 impl From<And> for ReifExpr {
     fn from(value: And) -> Self {
         // (and a b c) <=> (not (or !a !b !c))
-        let negated_literals = value.0.iter().copied().map(|l| !l).collect();
+        let negated_literals: Lits = value.0.iter().copied().map(|l| !l).collect();
         let not_reified = ReifExpr::from(Disjunction::new(negated_literals));
         !not_reified
     }

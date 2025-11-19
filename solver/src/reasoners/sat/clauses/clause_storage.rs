@@ -12,7 +12,10 @@ use itertools::Itertools;
 use crate::{
     backtrack::EventIndex,
     collections::ref_store::RefVec,
-    core::{literals::Disjunction, Lit},
+    core::{
+        literals::{Disjunction, Lits},
+        Lit,
+    },
     reasoners::sat::clauses::ClauseId,
 };
 
@@ -39,7 +42,7 @@ pub struct Clauses {
     /// The litetime of the clauses in the array is tied to the allocation arena present in the same struct.
     /// Hence neither the array nor an individual clause should ever be leaked without a lifetime that encompasses the arena's lifetime as well.
     clauses: RefVec<ClauseId, Clause>,
-    buffer: Vec<Lit>,
+    buffer: Lits,
 
     /// Arena allocator, from which the clause borrow memory
     ///
@@ -54,7 +57,7 @@ impl Clauses {
     pub fn new() -> Self {
         Self {
             clauses: Default::default(),
-            buffer: Vec::with_capacity(64),
+            buffer: Lits::with_capacity(64),
             arena: Arena::with_min_align(),
         }
     }
@@ -84,7 +87,7 @@ impl Clauses {
             // merge it in the clause
             self.buffer.push(!scope);
         }
-        Disjunction::simplify(&mut self.buffer);
+        self.buffer.simplify_disjunctive();
         // create and return the new clause from the pre-processed literals
         Clause::new(&self.buffer, &self.arena)
     }

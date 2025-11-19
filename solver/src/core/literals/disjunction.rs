@@ -1,15 +1,15 @@
+use crate::core::literals::Lits;
 use crate::core::*;
-use itertools::Itertools;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::ops::Deref;
 
-/// A set of literals representing a disjunction.
-/// A `Disjunction` maintains the invariant that there are not duplicated literals (a literal that entails another one).
-/// Implementation maintains the literals sorted.
+/// A set of literals representing a disjunction in a normalized form.
+/// A `Disjunction` maintains the invariant that there are not duplicated literals (a literal that entails another one) and that its elements are ordered.
 #[derive(PartialEq, Clone, Eq, Hash)]
 pub struct Disjunction {
-    pub(crate) literals: Vec<Lit>,
+    literals: Lits,
 }
 impl Debug for Disjunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -18,30 +18,25 @@ impl Debug for Disjunction {
 }
 
 impl Disjunction {
-    pub fn new(mut literals: Vec<Lit>) -> Self {
-        if literals.len() <= 1 {
-            return Disjunction { literals };
-        }
-        Self::simplify(&mut literals);
-
-        Disjunction { literals }
+    pub fn contradiction() -> Self {
+        Self { literals: Lits::new() }
     }
 
-    /// Simplify the clause, removing redundant literals.
-    /// Note: The literals may be reordered by the operation.
-    pub(crate) fn simplify(literals: &mut Vec<Lit>) {
-        // sort literals, so that they are grouped by (1) variable and (2) affected bound
-        literals.sort();
-        // remove duplicated literals
-        let mut i = 0;
-        while i < literals.len() - 1 {
-            // because of the ordering properties, we can only check entailment for the immediately following element
-            if literals[i].entails(literals[i + 1]) {
-                literals.remove(i);
-            } else {
-                i += 1;
-            }
-        }
+    pub fn new(mut literals: Lits) -> Self {
+        literals.simplify_disjunctive();
+        Self { literals }
+    }
+
+    pub fn from_vec(literals: Vec<Lit>) -> Self {
+        Self::new(Lits::from_vec(literals))
+    }
+
+    pub fn from_slice(literals: impl Borrow<[Lit]>) -> Self {
+        Self::new(Lits::from_slice(literals))
+    }
+
+    pub fn into_lits(self) -> Lits {
+        self.literals
     }
 
     /// Returns true if the clause is simplified (no redundant literals.)
@@ -49,7 +44,7 @@ impl Disjunction {
         literals.is_sorted() && literals.windows(2).all(|k| !(k[0].entails(k[1])))
     }
 
-    pub fn new_non_tautological(literals: Vec<Lit>) -> Option<Disjunction> {
+    pub fn new_non_tautological(literals: Lits) -> Option<Disjunction> {
         let disj = Disjunction::new(literals);
         if disj.is_tautology() {
             None
@@ -79,8 +74,15 @@ impl Disjunction {
         false
     }
 
+    pub fn retain<F: FnMut(Lit) -> bool>(&mut self, f: F) {
+        self.literals.retain(f);
+    }
+
     pub fn literals(&self) -> &[Lit] {
         &self.literals
+    }
+    pub fn iter(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.literals.iter()
     }
 
     pub fn len(&self) -> usize {
@@ -95,51 +97,53 @@ impl Disjunction {
         self.literals.contains(&lit)
     }
 }
-
 impl<'a> IntoIterator for &'a Disjunction {
     type Item = Lit;
-    type IntoIter = std::iter::Copied<std::slice::Iter<'a, Lit>>;
+    type IntoIter = <&'a Lits as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.literals.iter().copied()
+        self.literals.as_ref().iter().copied()
     }
 }
 impl IntoIterator for Disjunction {
     type Item = Lit;
-    type IntoIter = std::vec::IntoIter<Lit>;
+    type IntoIter = <Lits as IntoIterator>::IntoIter; //    std::iter::Copied<std::slice::Iter<'a, Lit>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.literals.into_iter()
     }
 }
 
+impl From<Lits> for Disjunction {
+    fn from(value: Lits) -> Self {
+        Self::new(value)
+    }
+}
+impl From<&Lits> for Disjunction {
+    fn from(value: &Lits) -> Self {
+        Self::from_slice(value.as_slice())
+    }
+}
 impl From<Vec<Lit>> for Disjunction {
     fn from(literals: Vec<Lit>) -> Self {
-        Disjunction::new(literals)
+        Self::from_vec(literals)
     }
 }
 impl<'a> From<&'a Vec<Lit>> for Disjunction {
     fn from(literals: &'a Vec<Lit>) -> Self {
-        Disjunction::new(literals.clone())
-    }
-}
-impl From<Disjunction> for Vec<Lit> {
-    fn from(cl: Disjunction) -> Self {
-        cl.literals
+        Self::from_slice(literals.as_slice())
     }
 }
 
 impl<const N: usize> From<[Lit; N]> for Disjunction {
     fn from(lits: [Lit; N]) -> Self {
-        Disjunction::new(lits.into())
+        Disjunction::from_slice(lits.as_slice())
     }
 }
 
 impl From<&Disjunction> for Disjunction {
     fn from(dis: &Disjunction) -> Self {
-        Disjunction {
-            literals: dis.literals.clone(),
-        }
+        dis.clone()
     }
 }
 
@@ -151,6 +155,13 @@ impl Borrow<[Lit]> for Disjunction {
 
 impl AsRef<[Lit]> for Disjunction {
     fn as_ref(&self) -> &[Lit] {
+        &self.literals
+    }
+}
+impl Deref for Disjunction {
+    type Target = [Lit];
+
+    fn deref(&self) -> &Self::Target {
         &self.literals
     }
 }
@@ -195,7 +206,7 @@ impl DisjunctionBuilder {
 
 impl From<DisjunctionBuilder> for Disjunction {
     fn from(value: DisjunctionBuilder) -> Self {
-        Disjunction::new(value.literals().collect_vec())
+        Self::new(Lits::from_iter(value.literals()))
     }
 }
 
@@ -204,6 +215,9 @@ mod tests {
     use super::*;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
+
+    const A: VarRef = VarRef::from_u32(1u32);
+    const B: VarRef = VarRef::from_u32(2u32);
 
     fn leq(var: VarRef, val: IntCst) -> Lit {
         Lit::leq(var, val)
@@ -214,60 +228,53 @@ mod tests {
 
     #[test]
     fn test_clause_construction() {
-        let a = VarRef::from(0usize);
-        let b = VarRef::from(1usize);
-
         fn check(input: Vec<Lit>, mut output: Vec<Lit>) {
-            let clause = Disjunction::new(input);
-            let simplified = Vec::from(clause);
+            let clause = Disjunction::from_vec(input);
             output.sort_unstable();
-            assert_eq!(simplified, output);
+            assert_eq!(clause.literals(), output.as_slice());
         }
         // (a >= 0) || (a >= 1)   <=>   (a >= 0)
-        check(vec![geq(a, 0), geq(a, 1)], vec![geq(a, 0)]);
+        check(vec![geq(A, 0), geq(A, 1)], vec![geq(A, 0)]);
 
         // (a <= 0) || (a <= 1)   <=>   (a <= 1)
-        check(vec![leq(a, 0), leq(a, 1)], vec![leq(a, 1)]);
-        check(vec![leq(a, 1), leq(a, 0)], vec![leq(a, 1)]);
-        check(vec![leq(a, 0), leq(a, 0)], vec![leq(a, 0)]);
-        check(vec![leq(a, 0), leq(a, 1), leq(a, 1), leq(a, 0)], vec![leq(a, 1)]);
+        check(vec![leq(A, 0), leq(A, 1)], vec![leq(A, 1)]);
+        check(vec![leq(A, 1), leq(A, 0)], vec![leq(A, 1)]);
+        check(vec![leq(A, 0), leq(A, 0)], vec![leq(A, 0)]);
+        check(vec![leq(A, 0), leq(A, 1), leq(A, 1), leq(A, 0)], vec![leq(A, 1)]);
 
-        check(vec![leq(a, 0), !leq(a, 0)], vec![leq(a, 0), !leq(a, 0)]);
+        check(vec![leq(A, 0), !leq(A, 0)], vec![leq(A, 0), !leq(A, 0)]);
 
         check(
-            vec![leq(a, 0), leq(b, 1), leq(a, 1), leq(b, 0)],
-            vec![leq(a, 1), leq(b, 1)],
+            vec![leq(A, 0), leq(B, 1), leq(A, 1), leq(B, 0)],
+            vec![leq(A, 1), leq(B, 1)],
         );
         check(
-            vec![geq(a, 0), geq(b, 1), geq(a, 1), geq(b, 0)],
-            vec![geq(a, 0), geq(b, 0)],
+            vec![geq(A, 0), geq(B, 1), geq(A, 1), geq(B, 0)],
+            vec![geq(A, 0), geq(B, 0)],
         );
         check(
             vec![
-                leq(a, 0),
-                leq(b, 1),
-                leq(a, 1),
-                leq(b, 0),
-                geq(a, 0),
-                geq(b, 1),
-                geq(a, 1),
-                geq(b, 0),
+                leq(A, 0),
+                leq(B, 1),
+                leq(A, 1),
+                leq(B, 0),
+                geq(A, 0),
+                geq(B, 1),
+                geq(A, 1),
+                geq(B, 0),
             ],
-            vec![leq(a, 1), geq(a, 0), leq(b, 1), geq(b, 0)],
+            vec![leq(A, 1), geq(A, 0), leq(B, 1), geq(B, 0)],
         );
     }
 
     #[test]
     fn test_tautology() {
-        let a = VarRef::from(0usize);
-        let b = VarRef::from(1usize);
-
-        assert!(Disjunction::new(vec![leq(a, 0), !leq(a, 0)]).is_tautology());
+        assert!(Disjunction::from_vec(vec![leq(A, 0), !leq(A, 0)]).is_tautology());
         // a <= 0 || a > -1
         //           a <= -1
-        assert!(Disjunction::new(vec![leq(a, 0), geq(a, 0)]).is_tautology());
-        assert!(Disjunction::new(vec![leq(a, 0), geq(a, 1)]).is_tautology());
-        assert!(Disjunction::new(vec![leq(a, 0), leq(b, 0), geq(b, 2), !leq(a, 0)]).is_tautology());
+        assert!(Disjunction::from([leq(A, 0), geq(A, 0)]).is_tautology());
+        assert!(Disjunction::from([leq(A, 0), geq(A, 1)]).is_tautology());
+        assert!(Disjunction::from([leq(A, 0), leq(B, 0), geq(B, 2), !leq(A, 0)]).is_tautology());
     }
 
     #[test]
@@ -289,7 +296,7 @@ mod tests {
         for _ in 0..100 {
             lits.shuffle(&mut thread_rng());
             let subset = &lits[0..30];
-            let disj = Disjunction::new(subset.to_vec());
+            let disj = Disjunction::from_slice(subset);
             let mut builder = DisjunctionBuilder::new();
             for l in subset {
                 builder.push(*l);

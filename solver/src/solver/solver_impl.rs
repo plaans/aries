@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::*;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
@@ -216,10 +216,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.add_clause(disjuncts, scope)
                 } else {
                     // l  <=>  (or a b ...)
-                    let mut clause = Vec::with_capacity(disjuncts.len() + 1);
+                    let mut clause = Lits::with_capacity(disjuncts.len() + 1);
                     //  l => (or a b ...)    <=>   (or (not l) a b ...)
                     clause.push(!value);
-                    disjuncts.iter().for_each(|l| clause.push(*l));
+                    clause.extend_from_slice(disjuncts);
                     if let Some(clause) = Disjunction::new_non_tautological(clause) {
                         self.add_clause(clause, scope)?;
                     }
@@ -229,13 +229,13 @@ impl<Lbl: Label> Solver<Lbl> {
             ReifExpr::And(conjuncts) => {
                 if self.model.entails(!value) {
                     // (and a b ...)
-                    for &lit in conjuncts {
+                    for lit in conjuncts {
                         self.add_clause([lit], scope)?;
                     }
                 } else {
                     // (l => (and a b ...))
                     // (l => a) and (l => b) ...
-                    for &lit in conjuncts {
+                    for lit in conjuncts {
                         self.add_clause([!value, lit], scope)?;
                     }
                 }
@@ -487,7 +487,7 @@ impl<Lbl: Label> Solver<Lbl> {
         assert_eq!(self.current_decision_level(), DecLvl::ROOT);
         let mut clause: Disjunction = clause.into();
         // only keep literals that may become true
-        clause.literals.retain(|&l| !self.model.entails(!l));
+        clause.retain(|l| !self.model.entails(!l));
         let (propagatable, scope) = self.scoped_disjunction(clause, scope);
         if propagatable.is_empty() {
             return self.model.state.set(!scope, Cause::Encoding).map(|_| ());
@@ -519,7 +519,7 @@ impl<Lbl: Label> Solver<Lbl> {
         {
             return (disjuncts, scope); // TODO: couldn't the scope be ommited here?
         }
-        let mut disjuncts = Vec::from(disjuncts);
+        let mut disjuncts = disjuncts.into_lits();
         disjuncts.push(!scope);
 
         (disjuncts.into(), Lit::TRUE)
