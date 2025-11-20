@@ -1,6 +1,6 @@
 //! Various datastructures specialized for the handling of literals (watchlists, sets, clauses, implication graph, ...)
 
-use std::{borrow::Borrow, ops::Deref};
+use std::{borrow::Borrow, cmp::Reverse, ops::Deref};
 
 pub use disjunction::*;
 pub use implication_graph::*;
@@ -26,6 +26,9 @@ pub struct Lits {
 }
 
 impl Lits {
+    fn new() -> Self {
+        Self { elems: SmallVec::new() }
+    }
     pub fn with_capacity(n: usize) -> Self {
         Self {
             elems: SmallVec::with_capacity(n),
@@ -84,31 +87,50 @@ impl Lits {
     }
 
     /// Simplify a *disjunction*, removing redundant literals if the literals are to be interpreted in a disjunctive form.
-    /// At the end of this operations, the literals will be sorted.
+    /// At the end of this operations, the literals will be sorted (according to some stable but unspecified order).
+    ///
+    /// TODO: we are missing an opportunity to detect and simplify the clause in the presence of mutually exclusive literals.
+    /// This step could be fused in the deduplication phase to keep a single traversal.
     pub(crate) fn simplify_disjunctive(&mut self) {
+        if self.len() <= 1 {
+            return;
+        }
         // sort literals, so that they are grouped by (1) variable and (2) affected bound
         // We can use an unstable sort (potentially faster) as to equal elements are undistinguishable.
-        self.elems.sort_unstable();
-        // remove duplicated literals
-        let mut i = 0;
-        while i + 1 < self.elems.len() {
-            let elem = self.elems[i];
-            let next = self.elems[i + 1];
-            // because of the ordering properties, we can only check entailment for the immediately following element
-            if elem.entails(next) || elem == Lit::FALSE {
-                self.elems.remove(i);
-            } else {
-                i += 1;
+        // we use a reverse order to ensure allow using the dedup function
+        self.elems.sort_unstable_by_key(|k| Reverse(*k));
+
+        // remove redudant literals
+        // we go in the list and keep only those literals that are do not entail another one.
+        // For instance if we have (a <= 4) || (a <= 3) we would only keep the first one.
+        // The reverse ordering ensures that we have the stronger item is immediately preceded by the weaker one
+        // We use `dedup_by` for this (doc for it can be found in [`std::vec::Vec::dedub_by`] (doc in smallvec is missing).
+        // In particular, it should be noted that the order in the arguments is reversed, with the earliest one passed as the second argument
+        //
+        // In the same passe, we also remove any trivially unsatisfiable literal (this could be simplified as it would always be the last of the sequence)
+        self.elems.dedup_by(|curr, prev| (*curr).entails(*prev));
+
+        // the last two elements may be on `VarRef::ZERO` and thus either tautological or absurd.
+        // we remove any absurd one and simplify the clause if we find any tautological one
+        if self.elems.last().is_some_and(|l| l.absurd()) {
+            self.elems.pop();
+        }
+        if let Some(last) = self.elems.last() {
+            if last.tautological() {
+                self.elems.truncate(1);
+                self.elems[0] = Lit::TRUE;
+                return;
+            }
+            if last.absurd() {
+                self.elems.pop();
             }
         }
+
+        debug_assert!(Disjunction::is_simplified(self), "{self:?}");
     }
 
     fn as_slice(&self) -> &[Lit] {
         &self.elems
-    }
-
-    fn new() -> Self {
-        Self { elems: SmallVec::new() }
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::core::literals::Lits;
 use crate::core::*;
 use std::borrow::Borrow;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
@@ -39,9 +40,13 @@ impl Disjunction {
         self.literals
     }
 
-    /// Returns true if the clause is simplified (no redundant literals.)
+    /// Returns true if the clause is in simplified normal form
     pub(crate) fn is_simplified(literals: &[Lit]) -> bool {
-        literals.is_sorted() && literals.windows(2).all(|k| !(k[0].entails(k[1])))
+        literals.is_sorted_by_key(|l| Reverse(*l))
+            && literals.windows(2).all(|k| !(k[1].entails(k[0])))
+            && literals
+                .iter()
+                .all(|&l| !l.absurd() && (!l.tautological() || literals.len() == 1))
     }
 
     pub fn new_non_tautological(literals: Lits) -> Option<Disjunction> {
@@ -58,9 +63,15 @@ impl Disjunction {
         if self.is_empty() {
             return false;
         }
+        if self.literals[0].tautological() {
+            return true;
+        }
+        // The bollowing checks if there is an instance of (l || !l) which is trivially tautological
+        // This check is currently not done when constructing the disjunction but would be fused in the main deduplication phase (but would requiring inline the `dedup_by` implementation)
+        // the following check is more thorough t
         for i in 0..(self.literals.len() - 1) {
-            let l1 = self.literals[i];
-            let l2 = self.literals[i + 1];
+            let l1 = self.literals[i + 1];
+            let l2 = self.literals[i];
             debug_assert!(l1 < l2, "clause is not sorted");
             if l1.variable() == l2.variable() {
                 debug_assert!(l1.svar().is_minus());
@@ -212,6 +223,8 @@ impl From<DisjunctionBuilder> for Disjunction {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use rand::seq::SliceRandom;
     use rand::thread_rng;
@@ -226,12 +239,15 @@ mod tests {
         Lit::geq(var, val)
     }
 
+    fn unordered(lits: &[Lit]) -> BTreeSet<Lit> {
+        lits.iter().copied().collect()
+    }
+
     #[test]
     fn test_clause_construction() {
-        fn check(input: Vec<Lit>, mut output: Vec<Lit>) {
+        fn check(input: Vec<Lit>, output: Vec<Lit>) {
             let clause = Disjunction::from_vec(input);
-            output.sort_unstable();
-            assert_eq!(clause.literals(), output.as_slice());
+            assert_eq!(unordered(&clause), unordered(&output));
         }
         // (a >= 0) || (a >= 1)   <=>   (a >= 0)
         check(vec![geq(A, 0), geq(A, 1)], vec![geq(A, 0)]);
@@ -265,6 +281,10 @@ mod tests {
             ],
             vec![leq(A, 1), geq(A, 0), leq(B, 1), geq(B, 0)],
         );
+
+        check(vec![Lit::FALSE, geq(A, 0), geq(A, 1)], vec![geq(A, 0)]);
+        check(vec![Lit::TRUE, geq(A, 0), geq(A, 1)], vec![Lit::TRUE]);
+        check(vec![Lit::FALSE, Lit::TRUE, geq(A, 0), geq(A, 1)], vec![Lit::TRUE]);
     }
 
     #[test]
@@ -278,8 +298,32 @@ mod tests {
     }
 
     #[test]
+    fn test_minimality_coherence() {
+        let vars = (0..=100).map(VarRef::from_u32);
+
+        let vals = -5..5;
+
+        // create a large set of literals from which to generate disjunction
+        let mut lits = Vec::new();
+        for var in vars {
+            for val in vals.clone() {
+                lits.push(Lit::geq(var, val));
+                lits.push(Lit::leq(var, val));
+            }
+        }
+
+        // select many subsets of the literals and test if going through the builder yields the correct output
+        for _ in 0..10000 {
+            lits.shuffle(&mut thread_rng());
+            let subset = &lits[0..30];
+            let disj = Disjunction::from_slice(subset);
+            assert!(Disjunction::is_simplified(&disj));
+        }
+    }
+
+    #[test]
     fn test_builder() {
-        let vars = (0..10).map(VarRef::from_u32);
+        let vars = (1..=10).map(VarRef::from_u32);
 
         let vals = 0..10;
 
