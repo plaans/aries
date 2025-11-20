@@ -310,7 +310,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Neq {
 
 impl Neq {
     /// Returns an equivalent *disjunction* of `ReifExpr`
-    fn as_elementary_disjuncts(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
+    pub fn as_elementary_disjuncts(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {

@@ -1,4 +1,5 @@
 use aries::{
+    core::literals::DisjunctionBuilder,
     lits,
     model::lang::{
         expr::{and, eq, f_geq, f_leq, neq, or},
@@ -54,21 +55,27 @@ impl BoolExpr<Sched> for EffectCoherence {
             // WARN: this is not guarded by the effect presence (assumption is that that the mutex end has the same scope as the effect)
             f_leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx, store);
 
-            for e2 in &ctx.effects[i + 1..] {
+            'eff: for e2 in &ctx.effects[i + 1..] {
                 if e.state_var.fluent != e2.state_var.fluent {
                     continue;
                 }
-                let mut disjuncts = vec![
-                    !e.prez,
-                    !e2.prez,
-                    f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store),
-                    f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store),
-                ];
+                let mut disjuncts = DisjunctionBuilder::new();
                 for (x1, x2) in e.state_var.args.iter().zip(e2.state_var.args.iter()) {
-                    disjuncts.push(neq(*x1, *x2).implicant(ctx, store));
+                    for opt in neq(*x1, *x2).as_elementary_disjuncts(store) {
+                        disjuncts.push(opt.implicant(ctx, store));
+                        if disjuncts.tautological() {
+                            continue 'eff;
+                        }
+                    }
                 }
-
-                or(disjuncts).opt_enforce_if(l, ctx, store);
+                // put last as we are more likely to be able to short circuit on the parameters
+                disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
+                disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
+                disjuncts.push(!e.prez);
+                disjuncts.push(!e2.prez);
+                if !disjuncts.tautological() {
+                    or(disjuncts).opt_enforce_if(l, ctx, store);
+                }
             }
         }
     }

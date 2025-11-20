@@ -163,7 +163,11 @@ impl<Ctx> BoolExpr<Ctx> for ReifExpr {
         SmallVec::from_iter(conj_scope.literals())
     }
     fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
-        store.get_implicant(self.clone())
+        if let ReifExpr::Lit(l) = self {
+            *l // short circuit happy case
+        } else {
+            store.get_implicant(self.clone())
+        }
     }
 }
 
