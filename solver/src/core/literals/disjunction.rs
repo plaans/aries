@@ -2,7 +2,6 @@ use crate::core::literals::Lits;
 use crate::core::*;
 use std::borrow::Borrow;
 use std::cmp::Reverse;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
@@ -177,47 +176,63 @@ impl Deref for Disjunction {
     }
 }
 
-/// A builder for a disjunction that avoids duplicated literals
-#[derive(Default, Clone)]
+/// A builder for a disjunction. The benefit over a [`Lits`] vector, is that this one will
+/// eagerly simplify when submitting tautological or absurd literals.
+///
+/// Other redundancies will only be eliminated when building the disjunction.
+#[derive(Clone)]
 pub struct DisjunctionBuilder {
-    upper_bounds: HashMap<SignedVar, IntCst>,
+    lits: Lits,
 }
 
 impl DisjunctionBuilder {
     pub fn new() -> Self {
-        Default::default()
+        Self { lits: Lits::new() }
     }
 
     pub fn with_capacity(n: usize) -> Self {
         Self {
-            upper_bounds: HashMap::with_capacity(n),
+            lits: Lits::with_capacity(n),
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.upper_bounds.is_empty()
+        self.lits.is_empty()
     }
 
+    /// Adds an element to the disjunction, appropriately simplifying when submitting absurd or tautological literals.
     pub fn push(&mut self, lit: Lit) {
-        let sv = lit.svar();
-        let ub = lit.ub_value();
-        let new_ub = if let Some(prev) = self.upper_bounds.get(&sv) {
-            // (sv <= ub) || (sv <= prev)  <=> (sv <= max(ub, prev))
-            ub.max(*prev)
+        if self.lits.first().is_some_and(|l| l.tautological()) {
+            // clause is always true no need to consider any new submitted literal
+            return;
+        }
+        if lit.absurd() {
+            return;
+        }
+        if lit.tautological() {
+            // maintain the invariant that if we had any tautological literal, there is only one and it is the first
+            self.lits.elems.resize(1, Lit::TRUE);
+            self.lits[0] = Lit::TRUE;
         } else {
-            ub
-        };
-        self.upper_bounds.insert(sv, new_ub);
+            self.lits.push(lit);
+        }
     }
 
-    pub fn literals(&self) -> impl Iterator<Item = Lit> + '_ {
-        self.upper_bounds.iter().map(|(k, v)| Lit::leq(*k, *v))
+    /// Build the disjunction, reusing any allocation that the builder had.
+    pub fn build(self) -> Disjunction {
+        Disjunction::new(self.lits)
+    }
+}
+
+impl Default for DisjunctionBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl From<DisjunctionBuilder> for Disjunction {
     fn from(value: DisjunctionBuilder) -> Self {
-        Self::new(Lits::from_iter(value.literals()))
+        value.build()
     }
 }
 

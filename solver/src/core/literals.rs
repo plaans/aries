@@ -1,6 +1,10 @@
 //! Various datastructures specialized for the handling of literals (watchlists, sets, clauses, implication graph, ...)
 
-use std::{borrow::Borrow, cmp::Reverse, ops::Deref};
+use std::{
+    borrow::Borrow,
+    cmp::Reverse,
+    ops::{Deref, DerefMut},
+};
 
 pub use disjunction::*;
 pub use implication_graph::*;
@@ -148,6 +152,11 @@ impl Deref for Lits {
 }
 impl AsMut<[Lit]> for Lits {
     fn as_mut(&mut self) -> &mut [Lit] {
+        &mut self.elems
+    }
+}
+impl DerefMut for Lits {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.elems
     }
 }
