@@ -117,7 +117,7 @@ impl<'a> IntoIterator for &'a Disjunction {
 }
 impl IntoIterator for Disjunction {
     type Item = Lit;
-    type IntoIter = <Lits as IntoIterator>::IntoIter; //    std::iter::Copied<std::slice::Iter<'a, Lit>>;
+    type IntoIter = <Lits as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.literals.into_iter()
@@ -148,6 +148,11 @@ impl<'a> From<&'a Vec<Lit>> for Disjunction {
 impl<const N: usize> From<[Lit; N]> for Disjunction {
     fn from(lits: [Lit; N]) -> Self {
         Disjunction::from_slice(lits.as_slice())
+    }
+}
+impl From<&[Lit]> for Disjunction {
+    fn from(value: &[Lit]) -> Self {
+        Self::from_slice(value)
     }
 }
 

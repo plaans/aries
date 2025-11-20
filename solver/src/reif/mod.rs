@@ -28,8 +28,8 @@ pub enum ReifExpr {
     Neq(VarRef, VarRef),
     EqVal(VarRef, IntCst),
     NeqVal(VarRef, IntCst),
-    Or(Lits), // TODO: Make it a Disjunction
-    And(Lits),
+    Or(Disjunction),
+    And(Lits), // TODO: do similar for conjunction
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
     EqMax(NFEqMax),
@@ -265,7 +265,7 @@ impl From<Disjunction> for ReifExpr {
         } else if value.literals().len() == 1 {
             ReifExpr::Lit(*value.literals().first().unwrap())
         } else {
-            ReifExpr::Or(value.into_lits())
+            ReifExpr::Or(value)
         }
     }
 }
@@ -281,13 +281,14 @@ impl Not for ReifExpr {
             ReifExpr::Neq(a, b) => ReifExpr::Eq(a, b),
             ReifExpr::EqVal(a, b) => ReifExpr::NeqVal(a, b),
             ReifExpr::NeqVal(a, b) => ReifExpr::EqVal(a, b),
-            ReifExpr::Or(mut lits) => {
+            ReifExpr::Or(lits) => {
+                let mut lits = lits.into_lits();
                 lits.iter_mut().for_each(|l| *l = !*l);
                 ReifExpr::And(lits)
             }
             ReifExpr::And(mut lits) => {
                 lits.iter_mut().for_each(|l| *l = !*l);
-                ReifExpr::Or(lits)
+                ReifExpr::Or(Disjunction::new(lits))
             }
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),

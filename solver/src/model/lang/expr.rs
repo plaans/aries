@@ -61,8 +61,8 @@ pub fn neq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Neq {
     Neq(lhs, rhs)
 }
 
-pub fn or(disjuncts: impl Into<Box<[Lit]>>) -> Or {
-    Or(disjuncts.into())
+pub fn or(disjuncts: impl Into<Disjunction>) -> Or {
+    disjuncts.into()
 }
 pub fn and(disjuncts: impl Into<Box<[Lit]>>) -> And {
     And(disjuncts.into())
@@ -80,13 +80,7 @@ pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl Into
     Alternative::new(main, alternatives)
 }
 
-pub struct Or(Box<[Lit]>);
-
-impl From<Or> for ReifExpr {
-    fn from(value: Or) -> Self {
-        Disjunction::from_vec(Vec::from(value.0)).into()
-    }
-}
+pub type Or = Disjunction;
 
 pub struct And(Box<[Lit]>);
 
