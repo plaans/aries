@@ -74,7 +74,7 @@ pub fn minimize_clause(clause: Disjunction, doms: &Domains, explainer: &mut impl
         next = last_on_level + 1;
     }
 
-    Disjunction::new(res.clause)
+    Disjunction::from_vec(res.clause)
 }
 
 #[derive(Clone, Copy)]

@@ -3,6 +3,7 @@
 use anyhow::*;
 use aries::core::Lit;
 use aries::model::lang::expr::or;
+use aries::model::lang::BVar;
 use aries::solver::parallel::{ParSolver, SolverResult};
 use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
@@ -249,22 +250,21 @@ fn solve_multi_threads(model: Model, opt: &SolveOpt, deadline: Option<Instant>) 
 
 /// Load a CNF formula into a model and a set of constraints
 pub fn load(cnf: varisat_formula::CnfFormula) -> Result<Model> {
-    let mut var_bindings = HashMap::new();
     let mut model = Model::new();
+
+    // vars: first element of the vec is variabe `1`
+    let vars: Vec<BVar> = (0..cnf.var_count()).map(|_| model.new_bvar("")).collect();
 
     let mut lits: Vec<Lit> = Vec::new();
     for clause in cnf.iter() {
         lits.clear();
         for &lit in clause {
-            let var = lit.var();
-            let var = if let Some(var) = var_bindings.get(&var) {
-                *var
+            let aries_var = vars[lit.var().index()];
+            let lit: Lit = if lit.is_positive() {
+                aries_var.true_lit()
             } else {
-                let model_var = model.new_bvar(var.to_dimacs().to_string());
-                var_bindings.insert(var, model_var);
-                model_var
+                aries_var.false_lit()
             };
-            let lit: Lit = if lit.is_positive() { var.into() } else { !var };
             lits.push(lit);
         }
         model.enforce(or(lits.as_slice()), []);

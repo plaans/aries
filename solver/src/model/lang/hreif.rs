@@ -360,7 +360,7 @@ mod test {
 
         y.opt_enforce_if(Lit::FALSE, &starts, &mut store);
 
-        let e = ReifExpr::And(vec![]);
+        let e = ReifExpr::And(crate::core::literals::Lits::new());
         e.opt_enforce_if(Lit::TRUE, &starts, &mut store);
     }
 }

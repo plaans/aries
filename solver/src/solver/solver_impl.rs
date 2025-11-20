@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::*;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
@@ -216,10 +216,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.add_clause(disjuncts, scope)
                 } else {
                     // l  <=>  (or a b ...)
-                    let mut clause = Vec::with_capacity(disjuncts.len() + 1);
+                    let mut clause = Lits::with_capacity(disjuncts.len() + 1);
                     //  l => (or a b ...)    <=>   (or (not l) a b ...)
                     clause.push(!value);
-                    disjuncts.iter().for_each(|l| clause.push(*l));
+                    clause.extend_from_slice(disjuncts);
                     if let Some(clause) = Disjunction::new_non_tautological(clause) {
                         self.add_clause(clause, scope)?;
                     }
@@ -229,13 +229,13 @@ impl<Lbl: Label> Solver<Lbl> {
             ReifExpr::And(conjuncts) => {
                 if self.model.entails(!value) {
                     // (and a b ...)
-                    for &lit in conjuncts {
+                    for lit in conjuncts {
                         self.add_clause([lit], scope)?;
                     }
                 } else {
                     // (l => (and a b ...))
                     // (l => a) and (l => b) ...
-                    for &lit in conjuncts {
+                    for lit in conjuncts {
                         self.add_clause([!value, lit], scope)?;
                     }
                 }
@@ -483,27 +483,27 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Adds a disjunctive constraint within the given scope.
     fn add_clause(&mut self, clause: impl Into<Disjunction>, scope: Lit) -> Result<(), InvalidUpdate> {
+        // TODO: this is hotspot in the case where the input clause is borrowed (notably when processing an `Or` constraint)
         assert_eq!(self.current_decision_level(), DecLvl::ROOT);
-        let clause = clause.into();
+        let mut clause: Disjunction = clause.into();
         // only keep literals that may become true
-        let clause: Vec<Lit> = clause.into_iter().filter(|&l| !self.model.entails(!l)).collect();
+        clause.retain(|l| !self.model.entails(!l));
         let (propagatable, scope) = self.scoped_disjunction(clause, scope);
         if propagatable.is_empty() {
             return self.model.state.set(!scope, Cause::Encoding).map(|_| ());
         }
-        self.reasoners.sat.add_clause_scoped(propagatable, scope);
+        self.reasoners.sat.add_clause_scoped(propagatable.literals(), scope);
         Ok(())
     }
 
     /// From a disjunction with optional elements, creates a scoped clause that can be safely unit propagated
-    /// TODO: generalize to also look at literals in the clause as potential scopes
+    /// TODO: this should be unnecessary with the optional-aware propagation of the SAT solver
     pub(in crate::solver) fn scoped_disjunction(
         &self,
         disjuncts: impl Into<Disjunction>,
         scope: Lit,
     ) -> (Disjunction, Lit) {
         let prez = |l: Lit| self.model.presence_literal(l.variable());
-        // let optional = |l: Lit| prez(l) == Lit::TRUE;
         let disjuncts = disjuncts.into();
         if scope == Lit::TRUE {
             return (disjuncts, scope);
@@ -517,9 +517,9 @@ impl<Lbl: Label> Solver<Lbl> {
             .iter()
             .all(|&l| self.model.state.implies(prez(l), scope))
         {
-            return (disjuncts, scope);
+            return (disjuncts, scope); // TODO: couldn't the scope be ommited here?
         }
-        let mut disjuncts = Vec::from(disjuncts);
+        let mut disjuncts = disjuncts.into_lits();
         disjuncts.push(!scope);
 
         (disjuncts.into(), Lit::TRUE)
@@ -538,8 +538,20 @@ impl<Lbl: Label> Solver<Lbl> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         while self.next_unposted_constraint < self.model.shape.constraints.len() {
-            let c = &self.model.shape.constraints[self.next_unposted_constraint].clone();
+            let c = &self.model.shape.constraints[self.next_unposted_constraint];
+            let size_before = self.model.shape.constraints.len();
+            let c = unsafe {
+                // SAFETY: we erase the lifetime of the constraint to please the borrow checker
+                // This is safe, because post constraint should not modify the constraints aray (`self.mode.shape.constraints`)
+                // in any way: nor overwrite nor append. The latter is problematic as it may cause the vec to relocate and invalidate the reference
+                std::mem::transmute::<&Constraint, &'static Constraint>(c)
+            };
             self.post_constraint(c)?;
+            debug_assert_eq!(
+                self.model.shape.constraints.len(),
+                size_before,
+                "SAFETY invariant broken"
+            );
             self.next_unposted_constraint += 1;
         }
         self.stats.init_time += start_time.elapsed();
@@ -640,7 +652,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
                     if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
-                        self.reasoners.sat.add_clause(clause);
+                        self.reasoners.sat.add_clause(&clause);
                     } else {
                         return Ok(sat);
                     }
@@ -803,7 +815,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         return Err(Exit::Interrupted);
                     }
                     InputSignal::LearnedClause(cl) => {
-                        self.reasoners.sat.add_forgettable_clause(cl.as_ref());
+                        self.reasoners.sat.add_forgettable_clause(cl.literals());
                         requires_new_propagation = true;
                     }
                     InputSignal::SolutionFound(assignment) => {
@@ -1131,7 +1143,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.reasoners.tautologies.add_tautology(expl.clause.literals()[0])
             } else {
                 // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(&expl.clause);
+                self.reasoners.sat.add_learnt_clause(expl.clause.literals());
             }
 
             true

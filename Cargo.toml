@@ -24,6 +24,7 @@ resolver = "2"
 anyhow = { version = "1.0" }
 arcstr = { version = "1.2" }
 async-trait = "0.1"
+bumpalo = { version = "3.19" }
 clap = { version = "4.4", features = ["derive"] }
 crossbeam-channel = "0.5"
 derivative = "2.2"
@@ -40,6 +41,7 @@ pathfinding = "4.9.1"
 prost = { version = "0.12" }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = { version = "1" }
+smallvec = { version = "1.15", features = ["union"] }
 structopt = "0.3"
 streaming-iterator = "0.1.5"
 test_each_file = "0.3.4"
@@ -60,7 +62,6 @@ derive_more = { version = "1.0", features = ["display"] }
 thiserror = "2"
 annotate-snippets = "0.12.4"
 idmap = "0.3.0"
-smallvec = { version = "1.15", features = ["union"] }
 compact_str = "0.9.0"
 
 [profile.dev]

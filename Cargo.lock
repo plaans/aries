@@ -139,6 +139,7 @@ name = "aries"
 version = "0.0.6"
 dependencies = [
  "anyhow",
+ "bumpalo",
  "crossbeam-channel",
  "env_param",
  "format_num",

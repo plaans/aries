@@ -1,8 +1,8 @@
 use crate::core::IntCst;
 use crate::core::Lit;
-use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::extensions::{AssignmentExt, SavedAssignment};
 use crate::model::lang::IAtom;
-use crate::model::{Label, ModelShape};
+use crate::model::Label;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver, UnsatCore};
 use crossbeam_channel::{select, Receiver, Sender};
@@ -12,7 +12,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 pub struct ParSolver<Lbl> {
-    base_model: ModelShape<Lbl>,
     solvers: Vec<Worker<Lbl>>,
 }
 
@@ -89,7 +88,6 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// will be called to allow its customisation.
     pub fn new(mut base_solver: Box<Solver<Lbl>>, num_workers: usize, adapt: impl Fn(usize, &mut Solver<Lbl>)) -> Self {
         let mut solver = ParSolver {
-            base_model: base_solver.model.shape.clone(),
             solvers: Vec::with_capacity(num_workers),
         };
         for i in 0..(num_workers - 1) {
@@ -370,12 +368,6 @@ impl<Lbl: Label> ParSolver<Lbl> {
                 println!("Solver is running");
             }
         }
-    }
-}
-
-impl<Lbl: Label> Shaped<Lbl> for ParSolver<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        &self.base_model
     }
 }
 
