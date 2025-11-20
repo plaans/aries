@@ -205,9 +205,13 @@ impl DisjunctionBuilder {
         self.lits.is_empty()
     }
 
+    pub fn tautological(&self) -> bool {
+        self.lits.first().is_some_and(|l| l.tautological())
+    }
+
     /// Adds an element to the disjunction, appropriately simplifying when submitting absurd or tautological literals.
     pub fn push(&mut self, lit: Lit) {
-        if self.lits.first().is_some_and(|l| l.tautological()) {
+        if self.tautological() {
             // clause is always true no need to consider any new submitted literal
             return;
         }
