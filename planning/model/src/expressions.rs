@@ -166,7 +166,7 @@ pub enum Fun {
 }
 
 impl Fun {
-    pub fn return_type(&self, args_types: &[ExprId], env: &Environment) -> Result<Type, TypeError> {
+    pub fn return_type(&self, args_types: &[ExprId], env: &Environment) -> Result<Type, Box<TypeError>> {
         // TODO: specialize for parameters
         use Fun::*;
         match self {
@@ -188,7 +188,7 @@ impl Fun {
             }
             And | Or | Implies => {
                 if self == &Fun::Implies && args_types.len() > 2 {
-                    return Err(TypeError::UnexpectedArgument(args_types[2]));
+                    return Err(Box::new(TypeError::UnexpectedArgument(args_types[2])));
                 }
                 for a in args_types {
                     Type::Bool.accepts(*a, env)?;
@@ -197,20 +197,26 @@ impl Fun {
             }
             Not => {
                 match args_types {
-                    [] => Err(TypeError::MissingParameter(Param::new("<negated-term>", Type::Bool))),
+                    [] => Err(Box::new(TypeError::MissingParameter(Param::new(
+                        "<negated-term>",
+                        Type::Bool,
+                    )))),
                     [single] => {
                         Type::Bool.accepts(*single, env)?;
                         Ok(Type::Bool)
                     }
-                    [_, second, ..] => Err(TypeError::UnexpectedArgument(*second)),
+                    [_, second, ..] => Err(Box::new(TypeError::UnexpectedArgument(*second))),
                 }
                 // if args_types.is_empty() {
-                //     Err(TypeError::MissingParameter(Param::new("<negated-term>", Type::Bool)))
+                //     Err(Box::new(TypeError::MissingParameter(Param::new("<negated-term>", Type::Bool))))
                 // } else if args_types.len() >
             }
             // binary operator
             Eq | Leq | Geq | Lt | Gt => match args_types {
-                &[] | &[_] => Err(TypeError::MissingParameter(Param::new("<compared-term>", Type::Bool))),
+                &[] | &[_] => Err(Box::new(TypeError::MissingParameter(Param::new(
+                    "<compared-term>",
+                    Type::Bool,
+                )))),
                 &[first, second] => {
                     match self {
                         Eq => Ok(Type::Bool), // do not enforce coherent typing for equality
@@ -222,7 +228,7 @@ impl Fun {
                         _ => unreachable!(),
                     }
                 }
-                &[_, _, third, ..] => Err(TypeError::UnexpectedArgument(third)),
+                &[_, _, third, ..] => Err(Box::new(TypeError::UnexpectedArgument(third))),
             },
         }
     }

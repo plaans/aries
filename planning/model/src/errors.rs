@@ -287,6 +287,12 @@ pub(crate) trait ToEnvMessage {
     fn to_message(self, env: &Environment) -> Message;
 }
 
+impl<E: ToEnvMessage> ToEnvMessage for Box<E> {
+    fn to_message(self, env: &Environment) -> Message {
+        (*self).to_message(env)
+    }
+}
+
 pub(crate) trait EnvError<T> {
     fn msg(self, env: &Environment) -> Result<T, Message>;
 }

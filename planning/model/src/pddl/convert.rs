@@ -499,7 +499,7 @@ fn parse_subtask(t: &pddl::Task, env: &mut Environment, actions: &Actions, bindi
     }
 }
 
-fn parse_parameters(params: &[pddl::Param], types: &Types) -> Result<Vec<Param>, TypeError> {
+fn parse_parameters(params: &[pddl::Param], types: &Types) -> Result<Vec<Param>, Box<TypeError>> {
     let mut parameters = Vec::with_capacity(params.len());
     for a in params {
         let tpe = types.get_union_type(&a.tpe)?;

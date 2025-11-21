@@ -117,11 +117,13 @@ impl Fluent {
         &self.name
     }
 
-    pub fn return_type(&self, args: &[ExprId], env: &Environment) -> Result<Type, TypeError> {
+    pub fn return_type(&self, args: &[ExprId], env: &Environment) -> Result<Type, Box<TypeError>> {
         if args.len() < self.parameters.len() {
-            return Err(TypeError::MissingParameter(self.parameters[args.len()].clone()));
+            return Err(Box::new(TypeError::MissingParameter(
+                self.parameters[args.len()].clone(),
+            )));
         } else if args.len() > self.parameters.len() {
-            return Err(TypeError::UnexpectedArgument(args[self.parameters.len()]));
+            return Err(Box::new(TypeError::UnexpectedArgument(args[self.parameters.len()])));
         }
         for (i, arg) in args.iter().enumerate() {
             self.parameters[i].tpe.accepts(*arg, env)?;

@@ -64,13 +64,13 @@ impl Types {
         self.user_types.subtypes.get(&tpe.into()).unwrap().iter()
     }
 
-    pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, TypeError> {
+    pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, Box<TypeError>> {
         let name = name.into();
         self.check_type(&name)?;
         Ok(UserType::new(name, self.user_types.clone()))
     }
 
-    pub fn get_user_type_or_top(&self, name: Option<impl Into<Sym>>) -> Result<UserType, TypeError> {
+    pub fn get_user_type_or_top(&self, name: Option<impl Into<Sym>>) -> Result<UserType, Box<TypeError>> {
         if let Some(name) = name {
             self.get_user_type(name)
         } else {
@@ -78,15 +78,15 @@ impl Types {
         }
     }
 
-    fn check_type(&self, name: &Sym) -> Result<(), TypeError> {
+    fn check_type(&self, name: &Sym) -> Result<(), Box<TypeError>> {
         if !self.user_types.contains(name.clone()) {
-            Err(TypeError::UnknownType(name.clone()))
+            Err(Box::new(TypeError::UnknownType(name.clone())))
         } else {
             Ok(())
         }
     }
 
-    pub fn get_union_type<'a, T>(&self, types: &'a [T]) -> Result<Type, TypeError>
+    pub fn get_union_type<'a, T>(&self, types: &'a [T]) -> Result<Type, Box<TypeError>>
     where
         &'a T: Into<Sym>,
     {
@@ -348,11 +348,11 @@ impl Type {
         }
     }
 
-    pub fn accepts(&self, expr: ExprId, env: &Environment) -> Result<(), TypeError> {
+    pub fn accepts(&self, expr: ExprId, env: &Environment) -> Result<(), Box<TypeError>> {
         if env.node(expr).tpe().is_subtype_of(self) {
             Ok(())
         } else {
-            Err(TypeError::IncompatibleType(expr, self.clone()))
+            Err(Box::new(TypeError::IncompatibleType(expr, self.clone())))
         }
     }
 
