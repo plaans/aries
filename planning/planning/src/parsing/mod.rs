@@ -179,6 +179,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     };
     let as_model_atom = |atom: &sexpr::SAtom| as_model_atom_no_borrow(atom, &context);
 
+    let mut chs = vec![];
+
     for goal in &prob.goal {
         // goal is expected to be a conjunction of the form:
         //  - `(and (= sv1 v1) (= sv2 = v2))`
@@ -208,6 +210,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
                 }),
                 _ => return Err(loc.invalid("Unsupported in goal expression").into()),
             }
+            chs.push(ch);
         }
     }
     // If we have negative preconditions, we need to assume a closed world assumption.
@@ -223,10 +226,8 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         });
     }
 
-    let mut chs = vec![];
-
     if let Some(ref task_network) = &prob.task_network {
-        chs = read_task_network(
+        chs.extend(read_task_network(
             init_container,
             task_network,
             &as_model_atom_no_borrow,
@@ -234,15 +235,18 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             true,
             None,
             &mut context,
-        )?;
+        )?);
     }
+
+    chs.push(init_ch);
 
     // let init_ch = ChronicleInstance {
     //     parameters: vec![],
     //     origin: ChronicleOrigin::Original,
     //     chronicle: init_ch,
     // };
-    let chs = [init_ch].iter().chain(&chs)
+    let chs = chs
+        .iter()
         .map(|ch| ChronicleInstance {
             parameters: vec![],
             origin: ChronicleOrigin::Original,
