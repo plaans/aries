@@ -592,56 +592,85 @@ fn solve_finite_problem(
     for var in solver.model.state.variables() {
         match solver.model.shape.labels.get(var) {
             Some(lbl) if lbl.to_string().contains("assumption") => {
-                solver.enforce(var.geq(1), []);
                 assumptions.push(var.geq(1));
             }
             _ => {}
         }
     }
 
-    let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
-        strats[id].adapt_solver(s, pb.clone(), encoding.clone())
-    });
+    if !analyse_unsat {
+        for lit in assumptions {
+            solver.enforce(lit, []);
+        }
 
-    let result = if let Some(metric) = metric {
-        if minimize_metric {
-            solver.minimize_with(metric, on_new_solution, initial_solution, deadline)
+        let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
+            strats[id].adapt_solver(s, pb.clone(), encoding.clone())
+        });
+
+        let result = if let Some(metric) = metric {
+            if minimize_metric {
+                solver.minimize_with(metric, on_new_solution, initial_solution, deadline)
+            } else {
+                solver.solve(deadline)
+            }
         } else {
             solver.solve(deadline)
-        }
-    } else {
-        solver.solve(deadline)
-    };
+        };
 
-    // tag result with cost
-    let result = result.map(|s| {
-        let cost = metric.map(|metric| s.domain_of(metric).0);
-        (s, cost)
-    });
+        // tag result with cost
+        let result = result.map(|s| {
+            let cost = metric.map(|metric| s.domain_of(metric).0);
+            (s, cost)
+        });
 
-    if analyse_unsat {
         if let SolverResult::Sol(_) = result {
             solver.print_stats()
-        } else if let aries::solver::parallel::SolverResult::Unsat(_) = result {
-            let mut solver = solver_base.clone();
-            strats[0].adapt_solver(&mut solver, pb.clone(), encoding.clone());
+        }
+        result
+    } else {
+        strats[0].adapt_solver(&mut solver, pb.clone(), encoding.clone());
 
-            let assumptions_lbls = assumptions
-                .iter()
-                .map(|l| (l, solver.model.shape.labels.get(l.variable()).unwrap()))
-                .collect::<BTreeMap<_, _>>();
-            let assumptions_len = assumptions.len();
+        let assumptions_lbls = assumptions
+            .iter()
+            .map(|l| (l, solver.model.shape.labels.get(l.variable()).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        let assumptions_len = assumptions.len();
 
-            println!("\n");
-            println!("assumptions: {assumptions_lbls:?} \n");
-            println!("assumptions_len: {assumptions_len:?} \n");
+        println!("assumptions: {assumptions_lbls:?} \n");
+        println!("assumptions_len: {assumptions_len:?} \n");
 
-            println!("tasks / goals MUSes and MCSes: \n");
-            for musmcs in solver.mus_and_mcs_enumerator(&assumptions) {
-                println!("{musmcs:?}");
+        println!("Enumeration of MUSes / MCSes of goals / tasks:");
+
+        let mut is_sat = true;
+        let time = Instant::now();
+        for musmcs in solver.mus_and_mcs_enumerator(&assumptions) {
+            is_sat = false;
+
+            let duration = (Instant::now() - time).as_secs_f32();
+            println!("{musmcs:?} | duration: {duration}");
+        }
+        let duration = (Instant::now() - time).as_secs_f32();
+        println!("Enumeration all over, runtime: {duration}");
+
+        if !is_sat {
+            SolverResult::Unsat(None)
+        } else {
+            for lit in assumptions {
+                solver.enforce(lit, []);
             }
+            let result = if let Some(metric) = metric {
+                if minimize_metric {
+                    solver.minimize(metric).map(|s| s.map(|(cost, s)| (s, Some(cost))))
+                } else {
+                    solver.solve().map(|s| s.map(|s| (s, None)))
+                }
+            } else {
+                solver.solve().map(|s| s.map(|s| (s, None)))
+            }
+            .unwrap()
+            .unwrap();
+
+            SolverResult::Sol(result)
         }
     }
-
-    result
 }
