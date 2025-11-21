@@ -77,15 +77,17 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let min_holding_assumptions = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
         let num_holding_assumptions = assumptions
             .iter()
-            .fold(LinearSum::zero(), |sum, l| sum + IVar::new(l.variable()));
+            .fold(LinearSum::constant_int(num_assumptions), |sum, l| {
+                sum - IVar::new(l.variable())
+            });
         self.solver
-            .enforce(num_holding_assumptions.geq(min_holding_assumptions), []);
+            .enforce(num_holding_assumptions.leq(min_holding_assumptions), []);
 
         // maximize the lower bound, the solution will have a globally minimal set of assumptions violated
         // these assumptions are a smallest MCS
         if let Some((obj, sol)) = self
             .solver
-            .maximize_with_callback(min_holding_assumptions, |new_objective, _| {
+            .minimize_with_callback(min_holding_assumptions, |new_objective, _| {
                 println!("new CS: {}", num_assumptions - new_objective)
             })
             .unwrap()
