@@ -160,11 +160,19 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         cost: None,
     };
 
-    let goal_presence_lits = prob.goal
+    let goal_presence_lits = prob
+        .goal
         .iter()
-        .map(|g| g.as_application("and").unwrap())
-        .flatten()
-        .map(|g| context.model.new_presence_variable(init_ch.presence, init_container / VarType::Parameter(["assumption", g.to_string().as_str()].join("_"))).true_lit())
+        .flat_map(|g| g.as_application("and").unwrap())
+        .map(|g| {
+            context
+                .model
+                .new_presence_variable(
+                    init_ch.presence,
+                    init_container / VarType::Parameter(["assumption", g.to_string().as_str()].join("_")),
+                )
+                .true_lit()
+        })
         .collect::<Vec<_>>();
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
@@ -601,7 +609,15 @@ fn read_chronicle_template(
     }
 
     if let Some(tn) = pddl.task_network() {
-        let _ = read_task_network(c, tn, &as_chronicle_atom_no_borrow, &mut ch, false, Some(&mut params), context)?;
+        let _ = read_task_network(
+            c,
+            tn,
+            &as_chronicle_atom_no_borrow,
+            &mut ch,
+            false,
+            Some(&mut params),
+            context,
+        )?;
     }
 
     let template = ChronicleTemplate {
@@ -745,9 +761,10 @@ fn read_task_network(
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
-        let arg = context
-            .model
-            .new_optional_sym_var(tpe, chronicle.presence, c / VarType::Parameter(arg.symbol.to_string()));
+        let arg =
+            context
+                .model
+                .new_optional_sym_var(tpe, chronicle.presence, c / VarType::Parameter(arg.symbol.to_string()));
         if let Some(new_variables) = &mut new_variables {
             new_variables.push(arg.into());
         }
@@ -761,34 +778,40 @@ fn read_task_network(
     if make_new_chronicles_for_subtasks {
         for t in &tn.unordered_tasks {
             unordered_tasks_presences.push(
-                context.model.new_presence_variable(
-                    chronicle.presence,
-                    c / VarType::Parameter(
-                        [
-                            vec!["assumption"],
-                            vec![t.name.canonical_str()],
-                            t.arguments.iter().map(|s| s.canonical_str()).collect::<Vec<_>>(),
-                        ]
-                        .concat()
-                        .join("_")
+                context
+                    .model
+                    .new_presence_variable(
+                        chronicle.presence,
+                        c / VarType::Parameter(
+                            [
+                                vec!["assumption"],
+                                vec![t.name.canonical_str()],
+                                t.arguments.iter().map(|s| s.canonical_str()).collect::<Vec<_>>(),
+                            ]
+                            .concat()
+                            .join("_"),
+                        ),
                     )
-                ).true_lit()
+                    .true_lit(),
             );
         }
         for t in &tn.ordered_tasks {
             ordered_tasks_presences.push(
-                context.model.new_presence_variable(
-                    chronicle.presence,
-                    c / VarType::Parameter(
-                        [
-                            vec!["assumption"],
-                            vec![t.name.canonical_str()],
-                            t.arguments.iter().map(|s| s.canonical_str()).collect::<Vec<_>>(),
-                        ]
-                        .concat()
-                        .join("_")
+                context
+                    .model
+                    .new_presence_variable(
+                        chronicle.presence,
+                        c / VarType::Parameter(
+                            [
+                                vec!["assumption"],
+                                vec![t.name.canonical_str()],
+                                t.arguments.iter().map(|s| s.canonical_str()).collect::<Vec<_>>(),
+                            ]
+                            .concat()
+                            .join("_"),
+                        ),
                     )
-                ).true_lit()
+                    .true_lit(),
             );
         }
     }
@@ -852,9 +875,9 @@ fn read_task_network(
     for (ii, t) in tn.unordered_tasks.iter().enumerate() {
         match make_new_chronicles_for_subtasks {
             false => {
-                let t = make_subtask(t, task_id, &chronicle)?;
+                let t = make_subtask(t, task_id, chronicle)?;
                 chronicle.subtasks.push(t);
-            },
+            }
             true => {
                 let mut new_chronicle = Chronicle {
                     kind: chronicle.kind,
@@ -882,13 +905,13 @@ fn read_task_network(
     for (ii, t) in tn.ordered_tasks.iter().enumerate() {
         match make_new_chronicles_for_subtasks {
             false => {
-                let t = make_subtask(t, task_id, &chronicle)?;
+                let t = make_subtask(t, task_id, chronicle)?;
                 if let Some(previous_end) = previous_end {
                     chronicle.constraints.push(Constraint::lt(previous_end, t.start))
                 }
                 previous_end = Some(t.end);
                 chronicle.subtasks.push(t);
-            },
+            }
             true => {
                 let mut new_chronicle = Chronicle {
                     kind: chronicle.kind,

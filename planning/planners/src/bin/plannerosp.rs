@@ -159,7 +159,7 @@ fn main() -> Result<()> {
             anyhow::ensure!(!opt.unsat, "Solution found to an unsat problem.");
         }
         SolverResult::Unsat(_) => {
-            // println!("\nNo plan found");
+            println!("\nNo plan found");
             anyhow::ensure!(!opt.sat, "No solution found to a solvable pproblem.");
         }
         SolverResult::Timeout(_) => println!("\nTimeout"),
