@@ -33,7 +33,7 @@ static FUNCTION_TYPE: &str = "★function★";
 
 type Pb = Problem;
 
-pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb> {
+pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem, use_assumptions: bool) -> Result<Pb> {
     // top types in pddl
     let mut types: Vec<(Sym, Option<Sym>)> = vec![
         (TASK_TYPE.into(), None),
@@ -160,20 +160,23 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         cost: None,
     };
 
-    let goal_presence_lits = prob
-        .goal
-        .iter()
-        .flat_map(|g| g.as_application("and").unwrap())
-        .map(|g| {
-            context
-                .model
-                .new_presence_variable(
-                    init_ch.presence,
-                    init_container / VarType::Parameter(["assumption", g.to_string().as_str()].join("_")),
-                )
-                .true_lit()
-        })
-        .collect::<Vec<_>>();
+    let goal_presence_lits = if use_assumptions {
+        prob.goal
+            .iter()
+            .flat_map(|g| g.as_application("and").unwrap())
+            .map(|g| {
+                context
+                    .model
+                    .new_presence_variable(
+                        init_ch.presence,
+                        init_container / VarType::Parameter(["assumption", g.to_string().as_str()].join("_")),
+                    )
+                    .true_lit()
+            })
+            .collect::<Vec<_>>()
+    } else {
+        vec![]
+    };
 
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
     let as_model_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
@@ -196,29 +199,41 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         //  - `()`
         let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table(), &context)?;
         for (ii, TermLoc(goal, loc)) in goals.into_iter().enumerate() {
-            let mut ch = Chronicle {
-                kind: ChronicleKind::Problem,
-                presence: goal_presence_lits[ii],
-                start: context.origin(),
-                end: context.horizon(),
-                name: vec![],
-                task: None,
-                conditions: vec![],
-                effects: vec![],
-                constraints: vec![],
-                subtasks: vec![],
-                cost: None,
-            };
-            match goal {
-                Term::Binding(sv, value) => ch.conditions.push(Condition {
-                    start: ch.end,
-                    end: ch.end,
-                    state_var: sv,
-                    value,
-                }),
-                _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+            if use_assumptions {
+                let mut ch = Chronicle {
+                    kind: ChronicleKind::Problem,
+                    presence: goal_presence_lits[ii],
+                    start: context.origin(),
+                    end: context.horizon(),
+                    name: vec![],
+                    task: None,
+                    conditions: vec![],
+                    effects: vec![],
+                    constraints: vec![],
+                    subtasks: vec![],
+                    cost: None,
+                };
+                match goal {
+                    Term::Binding(sv, value) => ch.conditions.push(Condition {
+                        start: ch.end,
+                        end: ch.end,
+                        state_var: sv,
+                        value,
+                    }),
+                    _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+                }
+                chs.push(ch);
+            } else {
+                match goal {
+                    Term::Binding(sv, value) => init_ch.conditions.push(Condition {
+                        start: init_ch.end,
+                        end: init_ch.end,
+                        state_var: sv,
+                        value,
+                    }),
+                    _ => return Err(loc.invalid("Unsupported in goal expression").into()),
+                }
             }
-            chs.push(ch);
         }
     }
     // If we have negative preconditions, we need to assume a closed world assumption.
@@ -240,7 +255,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
             task_network,
             &as_model_atom_no_borrow,
             &mut init_ch,
-            true,
+            use_assumptions,
             None,
             &mut context,
         )?);

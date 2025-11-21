@@ -66,7 +66,7 @@ fn main() -> Result<()> {
 
     let dom = parse_pddl_domain(dom)?;
     let prob = parse_pddl_problem(prob)?;
-    let spec = pddl_to_chronicles(&dom, &prob)?;
+    let spec = pddl_to_chronicles(&dom, &prob, false)?;
 
     let lifted = from_chronicles(&spec)?;
 

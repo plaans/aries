@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     let prob = parse_pddl_problem(prob)?;
     println!("==== Problem ====\n{}", &prob);
 
-    let _chronicles = pddl_to_chronicles(&dom, &prob)?;
+    let _chronicles = pddl_to_chronicles(&dom, &prob, false)?;
 
     Ok(())
 }

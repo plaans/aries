@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use aries::core::state::Domains;
+use aries::core::IntCst;
 use aries::utils::input::Input;
 use aries_planners::solver::{format_plan, solve, SolverResult};
 use aries_planners::solver::{Metric, Strat};
@@ -40,7 +41,7 @@ pub struct Opt {
     optimize: Option<Metric>,
     /// Indicates the optimization value to "beat" (be better than)
     #[structopt(long)]
-    metric_bound: Option<i32>,
+    metric_bound: Option<IntCst>,
 
     /// When used in conjunction with `--output`, each plan found will be written to the output file.
     /// The previous plan, if any will be overwritten.
@@ -108,7 +109,7 @@ fn main() -> Result<()> {
     let prob = parse_pddl_problem(prob)?;
     let warm_up_plan = None;
 
-    let spec = pddl_to_chronicles(&dom, &prob)?;
+    let spec = pddl_to_chronicles(&dom, &prob, true)?;
 
     // true if we are doing HTN planning, false otherwise
     let htn_mode = dom.features.contains(&PddlFeature::Hierarchy);

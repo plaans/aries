@@ -105,7 +105,7 @@ fn main() -> Result<()> {
     let prob = parse_pddl_problem(prob)?;
     let warm_up_plan = None;
 
-    let spec = pddl_to_chronicles(&dom, &prob)?;
+    let spec = pddl_to_chronicles(&dom, &prob, false)?;
 
     // true if we are doing HTN planning, false otherwise
     let htn_mode = dom.features.contains(&PddlFeature::Hierarchy);
