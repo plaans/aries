@@ -16,6 +16,7 @@ use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
 use aries::model::lang::{expr::*, IVar};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
+use aries::solver::Solver;
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -446,7 +447,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 }
 
 pub struct EncodedProblem {
-    pub model: Model,
+    pub solver: Solver<VarLabel>,
     pub objective: Option<IAtom>,
     /// Metadata associated to variables and literals in the encoded problem.
     pub encoding: Encoding,
@@ -755,7 +756,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     tracing::debug!("Done.");
     Ok(EncodedProblem {
-        model: solver.model,
+        solver: *solver,
         objective: metric,
         encoding,
     })

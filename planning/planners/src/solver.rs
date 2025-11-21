@@ -349,11 +349,11 @@ pub fn solve(
 ///
 /// Returns true if the propagation succeeded.
 fn propagate_and_print(pb: &FiniteProblem) -> bool {
-    let Ok(EncodedProblem { model, .. }) = encode(pb, None) else {
+    let Ok(EncodedProblem { solver, .. }) = encode(pb, None) else {
         println!("==> Invalid model");
         return false;
     };
-    let mut solver = init_solver(model);
+    let mut solver = Box::new(solver);
 
     println!("\n======== AFTER INITIAL PROPAGATION ======\n");
     let _tmp = if solver.propagate().is_ok() {
@@ -559,7 +559,7 @@ fn solve_finite_problem(
         propagate_and_print(&pb);
     }
     let Ok(EncodedProblem {
-        mut model,
+        solver: mut solver_base,
         objective: metric,
         encoding,
     }) = encode(&pb, metric)
@@ -568,10 +568,10 @@ fn solve_finite_problem(
     };
     if let Some(metric) = metric {
         if minimize_metric {
-            model.enforce(metric.le_lit(cost_upper_bound), []);
+            solver_base.enforce(metric.le_lit(cost_upper_bound), []);
         }
     }
-    let solver_base = init_solver(model);
+    let solver_base = Box::new(solver_base);
     let encoding = Arc::new(encoding);
 
     // select the set of strategies, based on user-input or hard-coded defaults.
@@ -588,7 +588,7 @@ fn solve_finite_problem(
 
     let mut assumptions = vec![];
 
-    let mut solver = solver_base.clone();
+    let mut solver = solver_base;
     for var in solver.model.state.variables() {
         match solver.model.shape.labels.get(var) {
             Some(lbl) if lbl.to_string().contains("assumption") => {
