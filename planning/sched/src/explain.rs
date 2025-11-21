@@ -72,40 +72,36 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let num_assumptions = assumptions.len() as IntCst;
 
-        // create a variable that requires a minimal number of assumptions to hold
-        // `bound <= |{ass | holds(ass), for ass in assumptions}|
-        let min_holding_assumptions = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
-        let num_holding_assumptions = assumptions
+        // create a variable that requires a maximal number of assumptions to hold
+        // ` |{ass | holds(ass), for ass in assumptions}| <= bound`
+        let max_relaxed_assumptions = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
+        let num_relaxed_assumptions = assumptions
             .iter()
             .fold(LinearSum::constant_int(num_assumptions), |sum, l| {
                 sum - IVar::new(l.variable())
             });
         self.solver
-            .enforce(num_holding_assumptions.leq(min_holding_assumptions), []);
+            .enforce(num_relaxed_assumptions.leq(max_relaxed_assumptions), []);
 
-        // maximize the lower bound, the solution will have a globally minimal set of assumptions violated
-        // these assumptions are a smallest MCS
-        if let Some((obj, sol)) = self
-            .solver
-            .minimize_with_callback(min_holding_assumptions, |new_objective, _| {
-                println!("new CS: {}", num_assumptions - new_objective)
-            })
-            .unwrap()
-        {
-            self.solver.print_stats();
-            println!("OPTIMAL: {obj} / {}   :   {}", num_assumptions, (num_assumptions) - obj);
-
-            // identify the assumptions that do not hold in the solution
-            Some(
-                assumptions
-                    .into_iter()
-                    .filter(|l| sol.entails(!*l))
-                    .map(|l| self.enablers[&l].clone())
-                    .collect(),
-            )
-        } else {
-            // problem is unsat (even when relaxing all assumptions)
-            None
+        for allowed_relaxations in 0..num_assumptions {
+            println!("Current lower bound: {}", allowed_relaxations);
+            let result = self
+                .solver
+                .solve_with_assumptions(&[max_relaxed_assumptions.leq(allowed_relaxations)])
+                .unwrap();
+            if let Ok(sol) = result {
+                self.solver.print_stats();
+                println!("OPTIMAL: {allowed_relaxations} / {} ", num_assumptions);
+                return Some(
+                    assumptions
+                        .into_iter()
+                        .filter(|l| sol.entails(!*l))
+                        .map(|l| self.enablers[&l].clone())
+                        .collect(),
+                );
+            }
+            self.solver.reset();
         }
+        None
     }
 }
