@@ -47,36 +47,46 @@ impl BoolExpr<Sched> for Mutex {
 
 pub(crate) struct EffectCoherence;
 
+impl EffectCoherence {
+    /// Adds the constraint that if `l` is true, then the two effects should be non-overlapping.
+    fn enforce_non_overlapping_if(l: Lit, e: &Effect, e2: &Effect, ctx: &Sched, store: &mut dyn Store) {
+        debug_assert_eq!(e.state_var.fluent, e2.state_var.fluent);
+        let mut disjuncts = DisjunctionBuilder::new();
+        for (x1, x2) in e.state_var.args.iter().zip(e2.state_var.args.iter()) {
+            for opt in neq(*x1, *x2).as_elementary_disjuncts(store) {
+                disjuncts.push(opt.implicant(ctx, store));
+                if disjuncts.tautological() {
+                    return;
+                }
+            }
+        }
+        // put last as we are more likely to be able to short circuit on the parameters
+        disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
+        disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
+        disjuncts.push(!e.prez);
+        disjuncts.push(!e2.prez);
+        if !disjuncts.tautological() {
+            or(disjuncts).opt_enforce_if(l, ctx, store);
+        }
+    }
+}
+
 impl BoolExpr<Sched> for EffectCoherence {
     fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
-        for (i, e) in ctx.effects.iter().enumerate() {
+        for e in ctx.effects.iter() {
             // WARN: this is not guarded by the effect presence (assumption is that this is always true in an effect)
             f_leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx, store);
             // WARN: this is not guarded by the effect presence (assumption is that that the mutex end has the same scope as the effect)
             f_leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx, store);
+        }
 
-            'eff: for e2 in &ctx.effects[i + 1..] {
-                if e.state_var.fluent != e2.state_var.fluent {
-                    continue;
-                }
-                let mut disjuncts = DisjunctionBuilder::new();
-                for (x1, x2) in e.state_var.args.iter().zip(e2.state_var.args.iter()) {
-                    for opt in neq(*x1, *x2).as_elementary_disjuncts(store) {
-                        disjuncts.push(opt.implicant(ctx, store));
-                        if disjuncts.tautological() {
-                            continue 'eff;
-                        }
-                    }
-                }
-                // put last as we are more likely to be able to short circuit on the parameters
-                disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
-                disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
-                disjuncts.push(!e.prez);
-                disjuncts.push(!e2.prez);
-                if !disjuncts.tautological() {
-                    or(disjuncts).opt_enforce_if(l, ctx, store);
-                }
-            }
+        // two phases coherence enforcement:
+        //  - broad phase: computing a bounding box of the space potentially affected by the effect and gather all overlapping boxes
+        //  - for any pair of effects with overlapping bounding boxes, add coherence constraints
+        let effs = ctx.effects.as_slice();
+        let uni = crate::boxes::from_effects_coherence(effs, &ctx.model);
+        for (eff_id1, eff_id2) in uni.overlapping_boxes() {
+            Self::enforce_non_overlapping_if(l, &effs[*eff_id1], &effs[*eff_id2], ctx, store);
         }
     }
 

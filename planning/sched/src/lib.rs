@@ -1,4 +1,5 @@
 pub mod assignment;
+pub(crate) mod boxes;
 pub mod constraints;
 pub mod explain;
 pub mod symbols;
