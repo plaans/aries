@@ -7,7 +7,10 @@ use aries::{
     },
 };
 
-use crate::*;
+use crate::{
+    effects::{Effect, EffectOp},
+    *,
+};
 
 pub struct NoOverlap(Vec<TaskId>);
 impl NoOverlap {
@@ -83,10 +86,8 @@ impl BoolExpr<Sched> for EffectCoherence {
         // two phases coherence enforcement:
         //  - broad phase: computing a bounding box of the space potentially affected by the effect and gather all overlapping boxes
         //  - for any pair of effects with overlapping bounding boxes, add coherence constraints
-        let effs = ctx.effects.as_slice();
-        let uni = crate::boxes::from_effects_coherence(effs, &ctx.model);
-        for (eff_id1, eff_id2) in uni.overlapping_boxes() {
-            Self::enforce_non_overlapping_if(l, &effs[*eff_id1], &effs[*eff_id2], ctx, store);
+        for (eff_id1, eff_id2) in ctx.effects.potentially_interacting_effects() {
+            Self::enforce_non_overlapping_if(l, &ctx.effects[eff_id1], &ctx.effects[eff_id2], ctx, store);
         }
     }
 
@@ -107,7 +108,12 @@ pub struct HasValueAt {
 impl BoolExpr<Sched> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
         let mut options = Vec::with_capacity(4);
-        for eff in &ctx.effects {
+
+        for eff_id in ctx
+            .effects
+            .potentially_supporting_effects(self.timepoint, &self.state_var, self.value, |v| ctx.model.int_bounds(v))
+        {
+            let eff = &ctx.effects[eff_id];
             let EffectOp::Assign(value) = eff.operation;
             if self.state_var.fluent != eff.state_var.fluent {
                 continue;

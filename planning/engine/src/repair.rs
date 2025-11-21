@@ -196,7 +196,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     // NOTE: we assume no negative preconditions and do not add a the negative effect for the closed world assumption.
     for x in &model.init {
         let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
-        sched.effects.push(eff);
+        sched.add_effect(eff);
     }
 
     for (op_id, op) in plan.operations.iter().enumerate() {
@@ -239,13 +239,13 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             // replace the effect presence by its enabler
             assert_eq!(eff.prez, Lit::TRUE);
             eff.prez = effect_enablers[&aeff];
-            sched.effects.push(eff);
+            sched.add_effect(eff);
         }
 
         // for each potential effect, add it as well (it will be assumed absent by default due to the global constraint)
         for (fid, params, enabler) in potential_effects.for_action(&a.name) {
             let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, &bindings)?;
-            sched.effects.push(eff);
+            sched.add_effect(eff);
         }
 
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate

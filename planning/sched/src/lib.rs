@@ -1,12 +1,13 @@
 pub mod assignment;
-pub(crate) mod boxes;
 pub mod constraints;
+mod effects;
 pub mod explain;
 pub mod symbols;
 pub mod tasks;
 
+use aries::model::extensions::AssignmentExt;
 use constraints::*;
-use core::fmt::{Debug, Formatter};
+use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
@@ -20,6 +21,7 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 use crate::assignment::Assignment;
+pub use crate::effects::*;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
@@ -71,67 +73,6 @@ pub struct StateVar {
     pub args: Vec<SymAtom>,
 }
 
-/// Represents an effect on a state variable.
-/// The effect has a first transition phase `]transition_start, transition_end[` during which the
-/// value of the state variable is unknown.
-/// Exactly at time `transition_end`, the state variable `state_var` is update with `value`
-/// (assignment or increase based on `operation`).
-/// For assignment effects, this value will persist until another assignment effect starts its own transition.
-#[derive(Clone, Eq, PartialEq)]
-pub struct Effect {
-    /// Time at which the transition to the new value will start
-    pub transition_start: Time,
-    /// Time at which the transition will end
-    pub transition_end: Time,
-    /// If specified, the assign effect is required to persist at least until all of these timepoints.
-    pub mutex_end: Time,
-    /// State variable affected by the effect
-    pub state_var: StateVar,
-    /// Operation carried out by the effect (value assignment, increase)
-    pub operation: EffectOp,
-    /// Presence literal indicating whether the effect is present
-    pub prez: Lit,
-}
-#[derive(Clone, Eq, PartialEq)]
-pub enum EffectOp {
-    Assign(bool),
-}
-impl EffectOp {
-    // pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
-    // pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::FALSE);
-}
-impl Debug for EffectOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EffectOp::Assign(val) => {
-                write!(f, ":= {val:?}")
-            }
-        }
-    }
-}
-
-impl Debug for Effect {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{:?}, {:?}] {:?} {:?}",
-            self.transition_start, self.transition_end, self.state_var, self.operation
-        )
-    }
-}
-
-impl Effect {
-    pub fn effective_start(&self) -> Time {
-        self.transition_end
-    }
-    pub fn transition_start(&self) -> Time {
-        self.transition_start
-    }
-    pub fn variable(&self) -> &StateVar {
-        &self.state_var
-    }
-}
-
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Tag {
     TaskStart(TaskId),
@@ -149,7 +90,7 @@ pub struct Sched {
     pub horizon: Time,
     pub makespan: Time,
     pub tasks: Tasks,
-    pub effects: Vec<Effect>,
+    pub effects: Effects,
     tags: HashMap<Atom, Vec<Tag>>,
     constraints: Vec<Constraint>,
 }
@@ -181,6 +122,10 @@ impl Sched {
 
     pub fn add_task(&mut self, task: Task) -> TaskId {
         self.tasks.insert(task)
+    }
+
+    pub fn add_effect(&mut self, eff: Effect) -> EffectId {
+        self.effects.add_effect(eff, |var| self.model.int_bounds(var))
     }
 
     pub fn new_timepoint(&mut self) -> Time {

@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
-use aries::{core::IntCst, model::extensions::AssignmentExt};
+use aries::core::IntCst;
 use itertools::Itertools;
-
-use crate::{Effect, Model};
 
 /// A segment with a first and last elements
 #[derive(Copy, Clone)]
@@ -31,6 +29,10 @@ pub struct Box<'a> {
 }
 
 impl<'a> Box<'a> {
+    pub fn new(dimensions: &'a [Segment]) -> Self {
+        Self { dimensions }
+    }
+
     /// returns true iff the two boxes overlap.
     ///
     /// Panics the boxes have different dimensions.
@@ -43,6 +45,7 @@ impl<'a> Box<'a> {
 }
 
 /// A set of homoneous tagged boxes (all of same dimension) each with a particular tag.
+#[derive(Clone)]
 pub struct BoxWorld<Tag> {
     segments: Vec<Segment>,
     tags: Vec<Tag>,
@@ -87,11 +90,17 @@ impl<Tag> BoxWorld<Tag> {
             .flat_map(|(i, tb1)| self.tagged_boxes_from(i + 1).map(move |tb2| (tb1, tb2)))
             .filter_map(|((t1, b1), (t2, b2))| if b1.overlaps(b2) { Some((t1, t2)) } else { None })
     }
+
+    pub fn find_overlapping_with<'a>(&'a self, bx: Vec<Segment>) -> impl Iterator<Item = &'a Tag> {
+        self.tagged_boxes()
+            .filter_map(move |(t, b)| if Box::new(&bx).overlaps(b) { Some(t) } else { None })
+    }
 }
 
 /// A set of tagged boxes, partitioned into worlds.
 ///
 /// This provides fairly efficient ways to find the collision between any pair of boxes of a unique world.
+#[derive(Clone)]
 pub struct BoxUniverse<World, Tag> {
     worlds: BTreeMap<World, BoxWorld<Tag>>,
 }
@@ -115,37 +124,13 @@ impl<World: Ord + Clone, Tag> BoxUniverse<World, Tag> {
     pub fn overlapping_boxes(&self) -> impl Iterator<Item = (&Tag, &Tag)> + '_ {
         self.worlds.values().flat_map(|world| world.overlapping_boxes())
     }
-}
 
-/// Associates every effect to a `Box` in a universe.
-/// The box denotes a particular region of the state space that *may* be affected by the effect.
-/// The intuition if that
-///
-/// Boxes are partitioned based on their state variables (one world per state variable).
-/// The box of each effect captures the space-time region it affects with dimesions:
-///
-///  - time: `[lb(transition_start), ub(mutex_end)]`
-///  - for each parameter p:
-///    - `[lb(p), ub(p)]`
-///
-/// If the boxes of two effects to not overlap, they can be safely determined to never overlap (and thus do not require coherence enforcement constraints).
-pub fn from_effects_coherence<'a>(effs: &'a [Effect], dom: &Model) -> BoxUniverse<&'a str, usize> {
-    let mut segments = Vec::with_capacity(32);
-    let mut uni = BoxUniverse::new();
-    for (eff_id, eff) in effs.iter().enumerate() {
-        segments.clear();
-        segments.push(Segment::new(
-            dom.int_bounds(eff.transition_start.num).0,
-            dom.int_bounds(eff.mutex_end).1,
-        ));
-        for arg in &eff.state_var.args {
-            let (lb, ub) = dom.int_bounds(*arg);
-            segments.push(Segment::new(lb, ub));
-        }
-
-        uni.add_box(&eff.state_var.fluent.as_str(), &segments, eff_id);
+    pub fn find_overlapping_with<'a>(&'a self, world: &World, bx: Vec<Segment>) -> impl Iterator<Item = &'a Tag> {
+        self.worlds
+            .get(world)
+            .into_iter()
+            .flat_map(move |w| w.find_overlapping_with(bx.clone()))
     }
-    uni
 }
 
 #[cfg(test)]
