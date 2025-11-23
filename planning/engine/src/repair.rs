@@ -1,5 +1,6 @@
 pub mod lifted_plan;
 pub mod potential_effects;
+pub mod required_values;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -10,22 +11,22 @@ use std::{
 
 use aries::{
     core::Lit,
-    model::lang::{
-        FAtom,
-        hreif::{BoolExpr, Store},
+    model::{
+        extensions::AssignmentExt,
+        lang::{FAtom, hreif::Store},
     },
 };
 use aries_sched::{
-    ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, explain::ExplainableSolver,
-    symbols::ObjectEncoding,
+    ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, boxes::Segment, constraints::HasValueAt,
+    explain::ExplainableSolver, symbols::ObjectEncoding,
 };
 use derive_more::derive::Display;
 use itertools::Itertools;
-use planx::{ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 
 use crate::{
     ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
-    repair::{lifted_plan::LiftedPlan, potential_effects::PotentialEffects},
+    repair::{lifted_plan::LiftedPlan, potential_effects::PotentialEffects, required_values::RequiredValues},
 };
 
 #[derive(clap::Args, Debug, Clone)]
@@ -126,6 +127,11 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
     let global_scope = Scope::global(&sched);
 
+    // overapproximation of values required at some point in the problem.
+    // Will be populated as we encounter new conditions, goals, ...
+    let mut required_values = RequiredValues::new();
+
+    // associates each variable in the plan to a fresh variable.
     let plan_variables: BTreeMap<&Sym, SymAtom> = plan
         .variables
         .iter()
@@ -142,8 +148,114 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         })
         .try_collect()?;
 
+    // associates each operation of the plan to its scope (binding of parameters, start/end, ...)
+    let mut operations_scopes = Vec::with_capacity(plan.operations.len());
+
+    // associates each action in the model with an overapproximation of the values taken by its parameters.
+    let mut actions_instanciations: BTreeMap<(ActionRef, Param), Segment> = Default::default();
+
+    // initial processing of all operations
+    // we create its scope (binding of timepoints, params, ...) and process its conditions
+    // Effects are defered to a later point
+    for (op_id, op) in plan.operations.iter().enumerate() {
+        // corresponding action in the model
+        let a = model
+            .actions
+            .get_action(&op.action_ref)
+            .ok_or_else(|| op.action_ref.invalid("cannot find corresponding action"))?;
+
+        // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
+        let mut args = im::OrdMap::new();
+        for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
+            let arg = match arg {
+                // ground parameter, get the corresponding object constant
+                lifted_plan::OperationArg::Ground(object) => sched
+                    .objects
+                    .object_atom(object.name().canonical_str())
+                    .ok_or_else(|| object.name().invalid("unknown object"))?,
+                // variable parameter, retrieve the variable we created for it
+                lifted_plan::OperationArg::Variable { name } => plan_variables[name],
+            };
+
+            // incorpare the potential values taken by this operation param into the one of the action
+            let seg = Segment::from(sched.model.int_bounds(arg));
+            actions_instanciations
+                .entry((a.name.clone(), param.clone()))
+                .or_insert(seg)
+                .union(&seg);
+
+            // add argument to the bindings
+            args.insert(&param.name, arg);
+        }
+
+        let bindings = Scope {
+            start: Time::from(op.start), // start time is the index of the action in the plan
+            end: Time::from(op.start + op.duration),
+            presence: Lit::TRUE, // action is necessarily present
+            args,
+        };
+
+        // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
+        for (cond_id, c) in a.conditions.iter().enumerate() {
+            if let Some(tp) = c.interval.as_timestamp() {
+                let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
+
+                // incorporate the value required by this condition into the global tracker
+                required_values.add(&c.state_var.fluent, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+
+                let cid = sched.add_constraint(c);
+                constraints_tags.insert(
+                    cid,
+                    CTag::Support {
+                        operator_id: op_id,
+                        cond: ActionCondition {
+                            action: a.name.clone(),
+                            condition_id: cond_id,
+                        },
+                    },
+                );
+            }
+        }
+
+        // store the scopes, we will need them when processing the effects
+        operations_scopes.push((a, bindings));
+    }
+    // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
+    for (gid, x) in model.goals.iter().enumerate() {
+        assert!(x.universal_quantification.is_empty());
+        match x.goal_expression {
+            planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
+                if let Some(tp) = time_interval.as_timestamp() {
+                    let c = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
+                    //
+                    // incorporate the value required by this condition into the global tracker
+                    required_values.add(&c.state_var.fluent, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+
+                    let cid = sched.add_constraint(c);
+                    constraints_tags.insert(cid, CTag::EnforceGoal(gid));
+                } else {
+                    todo!()
+                }
+            }
+            _ => todo!(),
+        }
+    }
+
+    // make it immutable, we will start exploiting and want to guard against any addition
+    let required_values = required_values;
+    let param_bounds = |action_ref: &Sym, param: &Param| {
+        actions_instanciations
+            .get(&(action_ref.clone(), param.clone()))
+            .copied()
+            .unwrap_or(Segment::empty())
+    };
+
     // compute the set of all effects that may be added to each action template
-    let potential_effects = Arc::new(PotentialEffects::compute(model, || sched.model.new_literal(Lit::TRUE)));
+    // be give it the overapproximations of the value potentially required and of the values each action parameter may take to allow
+    // eager discarding of useless potential effects.
+    let potential_effects = Arc::new(PotentialEffects::compute(model, &required_values, param_bounds, || {
+        sched.model.new_literal(Lit::TRUE)
+    }));
 
     // for each potential effect, add a (soft constraint) that it is absent
     for (a, pot_effs) in &potential_effects.effs {
@@ -199,35 +311,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         sched.add_effect(eff);
     }
 
-    for (op_id, op) in plan.operations.iter().enumerate() {
-        // correspinding action in the model
-        let a = model
-            .actions
-            .get_action(&op.action_ref)
-            .ok_or_else(|| op.action_ref.invalid("cannot find corresponding action"))?;
-
-        // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
-        let mut args = im::OrdMap::new();
-        for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
-            let arg = match arg {
-                // ground parameter, get the corresponding object constant
-                lifted_plan::OperationArg::Ground(object) => sched
-                    .objects
-                    .object_atom(object.name().canonical_str())
-                    .ok_or_else(|| object.name().invalid("unknown object"))?,
-                // variable parameter, retrieve the variable we created for it
-                lifted_plan::OperationArg::Variable { name } => plan_variables[name],
-            };
-            args.insert(&param.name, arg);
-        }
-
-        let bindings = Scope {
-            start: Time::from(op.start), // start time is the index of the action in the plan
-            end: Time::from(op.start + op.duration),
-            presence: Lit::TRUE, // action is necessarily present
-            args,
-        };
-
+    for (op_id, _op) in plan.operations.iter().enumerate() {
+        let (a, bindings) = &operations_scopes[op_id];
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for (eff_id, x) in a.effects.iter().enumerate() {
@@ -235,7 +320,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 action: a.name.clone(),
                 effect_id: eff_id,
             };
-            let mut eff = convert_effect(x, true, model, &mut sched, &bindings)?;
+            let mut eff = convert_effect(x, true, model, &mut sched, bindings)?;
             // replace the effect presence by its enabler
             assert_eq!(eff.prez, Lit::TRUE);
             eff.prez = effect_enablers[&aeff];
@@ -244,49 +329,16 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
         // for each potential effect, add it as well (it will be assumed absent by default due to the global constraint)
         for (fid, params, enabler) in potential_effects.for_action(&a.name) {
-            let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, &bindings)?;
+            let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, bindings)?;
             sched.add_effect(eff);
         }
-
-        // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate
-        for (cond_id, c) in a.conditions.iter().enumerate() {
-            if let Some(tp) = c.interval.as_timestamp() {
-                let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
-                let cid = sched.add_boxed_constraint(c);
-                constraints_tags.insert(
-                    cid,
-                    CTag::Support {
-                        operator_id: op_id,
-                        cond: ActionCondition {
-                            action: a.name.clone(),
-                            condition_id: cond_id,
-                        },
-                    },
-                );
-            }
-        }
     }
 
-    // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
-    for (gid, x) in model.goals.iter().enumerate() {
-        assert!(x.universal_quantification.is_empty());
-        match x.goal_expression {
-            planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
-                if let Some(tp) = time_interval.as_timestamp() {
-                    let c = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
-                    let cid = sched.add_boxed_constraint(c);
-                    constraints_tags.insert(cid, CTag::EnforceGoal(gid));
-                } else {
-                    todo!()
-                }
-            }
-            _ => todo!(),
-        }
-    }
     let constraint_to_repair = |cid: ConstraintID| match constraints_tags.get(&cid) {
         Some(ctag) => ctag.to_repair(),
         _ => None,
     };
+
     Ok(sched.explainable_solver(constraint_to_repair))
 }
 
@@ -304,6 +356,7 @@ fn types(model: &Model) -> ObjectEncoding {
         |c| {
             o.of_type(c.as_str())
                 .map(|o| o.name().canonical_str().to_string())
+                .sorted() // sorting is unecessary but may be useful to group together similar objects in the absence of typing
                 .collect_vec()
         },
     )
@@ -475,7 +528,7 @@ fn condition_to_constraint(
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
-) -> Res<Box<dyn BoolExpr<Sched>>> {
+) -> Res<HasValueAt> {
     let expr = model.env.node(expr);
     match expr.expr() {
         planx::Expr::StateVariable(fluent_id, args) => {
@@ -495,7 +548,7 @@ fn condition_to_constraint(
                 timepoint: reify_timing(tp, model, sched, bindings)?,
                 prez: bindings.presence,
             };
-            Ok(Box::new(c))
+            Ok(c)
         }
         e => todo!("{e:?}"),
     }

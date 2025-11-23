@@ -1,7 +1,8 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Debug};
 
 use aries::core::IntCst;
 use itertools::Itertools;
+use smallvec::SmallVec;
 
 /// A segment with a first and last elements
 #[derive(Copy, Clone)]
@@ -9,10 +10,33 @@ pub struct Segment {
     pub first: IntCst,
     pub last: IntCst,
 }
+impl Debug for Segment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}, {}]", self.first, self.last)
+    }
+}
 
 impl Segment {
     pub fn new(first: IntCst, last: IntCst) -> Self {
         Segment { first, last }
+    }
+
+    pub fn all() -> Self {
+        Self {
+            first: IntCst::MIN,
+            last: IntCst::MAX,
+        }
+    }
+
+    pub fn point(val: IntCst) -> Self {
+        Self { first: val, last: val }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            first: IntCst::MAX,
+            last: IntCst::MIN,
+        }
     }
 
     /// Returns `true` iff two segments overlap.
@@ -20,15 +44,50 @@ impl Segment {
     pub fn overlaps(&self, other: &Segment) -> bool {
         !(self.last < other.first || other.last < self.first)
     }
+
+    pub fn union(&mut self, other: &Segment) {
+        self.first = self.first.min(other.first);
+        self.last = self.last.max(other.last);
+    }
 }
 
+impl From<(IntCst, IntCst)> for Segment {
+    fn from((lb, ub): (IntCst, IntCst)) -> Self {
+        Self::new(lb, ub)
+    }
+}
+
+type Segments = SmallVec<[Segment; 5]>;
+
+#[derive(Clone, Debug)]
+pub struct BBox {
+    dimensions: Segments,
+}
+impl BBox {
+    pub fn new(dims: impl Into<Segments>) -> Self {
+        Self {
+            dimensions: dims.into(),
+        }
+    }
+
+    pub fn union(&mut self, other: BoxRef<'_>) {
+        self.dimensions
+            .iter_mut()
+            .zip_eq(other.dimensions.iter())
+            .for_each(|(s, o)| s.union(o));
+    }
+
+    pub fn as_ref<'a>(&'a self) -> BoxRef<'a> {
+        BoxRef::new(&self.dimensions)
+    }
+}
 /// An axis-aligned box, defined by its projection on all dimensions.
 #[derive(Copy, Clone)]
-pub struct Box<'a> {
+pub struct BoxRef<'a> {
     dimensions: &'a [Segment],
 }
 
-impl<'a> Box<'a> {
+impl<'a> BoxRef<'a> {
     pub fn new(dimensions: &'a [Segment]) -> Self {
         Self { dimensions }
     }
@@ -36,11 +95,15 @@ impl<'a> Box<'a> {
     /// returns true iff the two boxes overlap.
     ///
     /// Panics the boxes have different dimensions.
-    pub fn overlaps(&self, other: Box<'a>) -> bool {
+    pub fn overlaps(&self, other: BoxRef<'a>) -> bool {
         self.dimensions
             .iter()
             .zip_eq(other.dimensions.iter())
             .all(|(a, b)| a.overlaps(b))
+    }
+
+    pub fn to_owned(&self) -> BBox {
+        BBox::new(self.dimensions)
     }
 }
 
@@ -68,19 +131,19 @@ impl<Tag> BoxWorld<Tag> {
         self.tags.push(tag);
     }
 
-    pub fn boxes_from<'a>(&'a self, first_box: usize) -> impl Iterator<Item = Box<'a>> {
+    pub fn boxes_from<'a>(&'a self, first_box: usize) -> impl Iterator<Item = BoxRef<'a>> {
         self.segments[(first_box * self.num_dimensions)..]
             .chunks(self.num_dimensions)
-            .map(|chunk| Box { dimensions: chunk })
+            .map(|chunk| BoxRef { dimensions: chunk })
     }
     pub fn tags_from(&self, first_box: usize) -> impl Iterator<Item = &Tag> + '_ {
         self.tags[first_box..].iter()
     }
 
-    pub fn tagged_boxes<'a>(&'a self) -> impl Iterator<Item = (&'a Tag, Box<'a>)> {
+    pub fn tagged_boxes<'a>(&'a self) -> impl Iterator<Item = (&'a Tag, BoxRef<'a>)> {
         self.tagged_boxes_from(0)
     }
-    pub fn tagged_boxes_from<'a>(&'a self, first_box: usize) -> impl Iterator<Item = (&'a Tag, Box<'a>)> {
+    pub fn tagged_boxes_from<'a>(&'a self, first_box: usize) -> impl Iterator<Item = (&'a Tag, BoxRef<'a>)> {
         self.tags_from(first_box).zip_eq(self.boxes_from(first_box))
     }
 
@@ -91,9 +154,9 @@ impl<Tag> BoxWorld<Tag> {
             .filter_map(|((t1, b1), (t2, b2))| if b1.overlaps(b2) { Some((t1, t2)) } else { None })
     }
 
-    pub fn find_overlapping_with<'a>(&'a self, bx: Vec<Segment>) -> impl Iterator<Item = &'a Tag> {
+    pub fn find_overlapping_with<'a>(&'a self, bx: BoxRef<'a>) -> impl Iterator<Item = &'a Tag> {
         self.tagged_boxes()
-            .filter_map(move |(t, b)| if Box::new(&bx).overlaps(b) { Some(t) } else { None })
+            .filter_map(move |(t, b)| if bx.overlaps(b) { Some(t) } else { None })
     }
 }
 
@@ -125,11 +188,11 @@ impl<World: Ord + Clone, Tag> BoxUniverse<World, Tag> {
         self.worlds.values().flat_map(|world| world.overlapping_boxes())
     }
 
-    pub fn find_overlapping_with<'a>(&'a self, world: &World, bx: Vec<Segment>) -> impl Iterator<Item = &'a Tag> {
+    pub fn find_overlapping_with<'a>(&'a self, world: &World, bx: BoxRef<'a>) -> impl Iterator<Item = &'a Tag> {
         self.worlds
             .get(world)
             .into_iter()
-            .flat_map(move |w| w.find_overlapping_with(bx.clone()))
+            .flat_map(move |w| w.find_overlapping_with(bx))
     }
 }
 

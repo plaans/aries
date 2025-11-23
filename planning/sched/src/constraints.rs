@@ -8,6 +8,7 @@ use aries::{
 };
 
 use crate::{
+    boxes::Segment,
     effects::{Effect, EffectOp},
     *,
 };
@@ -105,13 +106,36 @@ pub struct HasValueAt {
     pub prez: Lit,
 }
 
+impl HasValueAt {
+    /// Returns a box capturing when and what may be the value required by this condition.
+    pub fn value_box(&self, dom: impl Fn(IAtom) -> (IntCst, IntCst)) -> crate::boxes::BBox {
+        let mut buff = Vec::with_capacity(self.state_var.args.len() + 2);
+        let (earliest, latest) = dom(self.timepoint.num); // TODO: careful with denom
+        buff.push(Segment::new(earliest, latest));
+        for arg in &self.state_var.args {
+            let (lb, ub) = dom(*arg);
+            buff.push(Segment::new(lb, ub));
+        }
+        let value_segment = match self.value {
+            Atom::Bool(lit) if lit.tautological() => Segment::new(1, 1),
+            Atom::Bool(lit) if lit.absurd() => Segment::new(0, 0),
+            Atom::Bool(_) => Segment::new(0, 1),
+            _ => todo!(),
+        };
+        buff.push(value_segment);
+        crate::boxes::BBox::new(buff)
+    }
+}
+
 impl BoolExpr<Sched> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
         let mut options = Vec::with_capacity(4);
 
+        let value_box = self.value_box(|v| ctx.model.int_bounds(v));
+
         for eff_id in ctx
             .effects
-            .potentially_supporting_effects(self.timepoint, &self.state_var, self.value, |v| ctx.model.int_bounds(v))
+            .potentially_supporting_effects(&self.state_var.fluent, value_box.as_ref())
         {
             let eff = &ctx.effects[eff_id];
             let EffectOp::Assign(value) = eff.operation;

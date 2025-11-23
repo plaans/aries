@@ -1,4 +1,5 @@
 pub mod assignment;
+pub mod boxes;
 pub mod constraints;
 mod effects;
 pub mod explain;

@@ -1,9 +1,8 @@
 use aries::{
     core::{IntCst, Lit},
-    model::lang::{Atom, IAtom},
+    model::lang::IAtom,
 };
 use smallvec::SmallVec;
-mod boxes;
 use std::{
     fmt::{Debug, Formatter},
     ops::Index,
@@ -11,7 +10,7 @@ use std::{
 
 use crate::{
     StateVar, Time,
-    effects::boxes::{BoxUniverse, Segment},
+    boxes::{BoxRef, BoxUniverse, Segment},
 };
 
 /// Represents an effect on a state variable.
@@ -167,29 +166,13 @@ impl Effects {
 
     pub fn potentially_supporting_effects<'a>(
         &'a self,
-        timepoint: Time,
-        sv: &'a StateVar,
-        value: Atom,
-        dom: impl Fn(IAtom) -> (IntCst, IntCst),
+        fluent: &'a String,
+        value_box: BoxRef<'a>,
     ) -> impl Iterator<Item = EffectId> + 'a {
         // compute the value bounding box
-        let mut buff = Vec::with_capacity(sv.args.len() + 2);
-        let (earliest, latest) = dom(timepoint.num);
-        buff.push(Segment::new(earliest, latest)); // TODO: careful with denom
-        for arg in &sv.args {
-            let (lb, ub) = dom(*arg);
-            buff.push(Segment::new(lb, ub));
-        }
-        let value_segment = match value {
-            Atom::Bool(lit) if lit.tautological() => Segment::new(1, 1),
-            Atom::Bool(lit) if lit.absurd() => Segment::new(0, 0),
-            Atom::Bool(_) => Segment::new(0, 1),
-            _ => todo!(),
-        };
-        buff.push(value_segment);
 
         self.achieved_bounding_boxes
-            .find_overlapping_with(&sv.fluent, buff)
+            .find_overlapping_with(fluent, value_box)
             .copied()
     }
 }
