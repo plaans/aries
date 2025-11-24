@@ -51,10 +51,16 @@ pub struct RepairReport {
 }
 #[derive(Display)]
 pub enum RepairStatus {
+    /// The plan is valid without any modification
     #[display("VALID  ")]
     ValidPlan,
+    /// A smallest MCS was found.
     #[display("SMCS({_0})")]
     SmallestFound(usize),
+    /// The domain cannot be repaired automatically.
+    /// There may be several reasons for this, a common one being that the plan is not valid in the first place.
+    #[display("BROKEN ")]
+    Unrepairable,
 }
 
 pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) -> Res<RepairReport> {
@@ -76,14 +82,22 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) 
 
     let report = match options.mode {
         RepairMode::Smallest => {
-            let repair_set = solver.find_smallest_mcs().expect("problem detected as unrepairable");
-            let msg = format_culprit_set(Message::error("Smallest MCS"), &repair_set, model);
-            println!("\n\n{msg}");
-            RepairReport {
-                status: RepairStatus::SmallestFound(repair_set.len()),
-                mode: options.mode,
-                runtime: start.elapsed().as_millis(),
-                encoding_time,
+            if let Some(repair_set) = solver.find_smallest_mcs() {
+                let msg = format_culprit_set(Message::error("Smallest MCS"), &repair_set, model);
+                println!("\n\n{msg}");
+                RepairReport {
+                    status: RepairStatus::SmallestFound(repair_set.len()),
+                    mode: options.mode,
+                    runtime: start.elapsed().as_millis(),
+                    encoding_time,
+                }
+            } else {
+                RepairReport {
+                    status: RepairStatus::Unrepairable,
+                    mode: options.mode,
+                    runtime: start.elapsed().as_millis(),
+                    encoding_time,
+                }
             }
         }
         RepairMode::All => {

@@ -73,7 +73,7 @@ fn repair(command: &DomRepair) -> Res<()> {
 
     let plan = repair::lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
-    println!("{plan:?}");
+    //println!("{plan:?}");
 
     let report = repair::domain_repair(&model, &plan, &command.options)?;
     println!(
