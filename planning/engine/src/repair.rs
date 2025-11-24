@@ -118,6 +118,12 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) 
 }
 
 fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<Repair>> {
+    // ignore all non boolean fluents. The only one we are expecting in classical planning are those for the action costs, which are irrelevant for this use case.
+    let ignored = |eff: &planx::Effect| {
+        let fluent_id = eff.effect_expression.state_variable.fluent;
+        model.env.fluents.get(fluent_id).return_type != planx::Type::Bool
+    };
+
     // for each constraint we may which to relax, stores a CTag (constraint tag) so that we can later decide if it should be relaxed.
     let mut constraints_tags: BTreeMap<ConstraintID, CTag> = Default::default();
 
@@ -279,6 +285,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     let mut effect_enablers: BTreeMap<ActionEffect, Lit> = BTreeMap::new();
     for a in model.actions.iter() {
         for (eff_id, eff) in a.effects.iter().enumerate() {
+            if ignored(eff) {
+                continue;
+            }
             let aeff = ActionEffect {
                 action: a.name.clone(),
                 effect_id: eff_id,
@@ -295,7 +304,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                         sched.model.new_literal(Lit::TRUE)
                     }
                 }
-                _ => todo!(), // numeric effects
+                _ => todo!(), // numeric fluents, but those a ignored because the presence of numeric fluents for action costs)
             };
             // record the enabler and place a (soft) constraint forcing it to true
             effect_enablers.insert(aeff.clone(), enabler);
@@ -307,6 +316,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     // enforce all elemts of the initial state as effects
     // NOTE: we assume no negative preconditions and do not add a the negative effect for the closed world assumption.
     for x in &model.init {
+        if ignored(x) {
+            continue;
+        }
         let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
         sched.add_effect(eff);
     }
@@ -316,6 +328,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for (eff_id, x) in a.effects.iter().enumerate() {
+            if ignored(x) {
+                continue;
+            }
             let aeff = ActionEffect {
                 action: a.name.clone(),
                 effect_id: eff_id,
