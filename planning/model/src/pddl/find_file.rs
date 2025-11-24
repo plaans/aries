@@ -106,6 +106,10 @@ pub fn find_problem_of(plan_file: &std::path::Path) -> Res<PathBuf> {
         candidate_directories.push(curr.to_owned());
         if let Some(parent) = curr.parent() {
             candidate_directories.push(parent.to_owned());
+            // for plans we allow looking two folders up as they may be hidden a bit deaper (e.g. folr `plans/ff/pb01.plan`)
+            if let Some(grand_parent) = parent.parent() {
+                candidate_directories.push(grand_parent.to_owned());
+            }
         }
     }
     for f in &candidate_problem_files {
