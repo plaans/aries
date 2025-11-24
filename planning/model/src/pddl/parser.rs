@@ -393,24 +393,31 @@ pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<Ty
     while !input.is_empty() {
         let next = input.pop_atom()?;
         if next.canonical_str() == "-" {
-            let mut types = Types::with_capacity(1);
-            let tpe = input.pop()?;
-            if let Some(variants) = tpe.as_application("either") {
-                for variant in variants {
-                    types.push(
-                        variant
-                            .as_atom()
-                            .cloned()
-                            .ok_or(variant.invalid("expected type name"))?,
-                    );
-                }
+            if untyped.is_empty() {
+                // ingore a dash `-` if there is no variables to type.
+                // This is a work-around for non-standard PDDL syntax like belox (absent from IPC but present in FD benchmarks)
+                // (process-cost ?sc - script - ?s - server)
+                //                            ^
             } else {
-                types.push(tpe.as_atom().cloned().ok_or(tpe.invalid("expected type name"))?);
+                let mut types = Types::with_capacity(1);
+                let tpe = input.pop()?;
+                if let Some(variants) = tpe.as_application("either") {
+                    for variant in variants {
+                        types.push(
+                            variant
+                                .as_atom()
+                                .cloned()
+                                .ok_or(variant.invalid("expected type name"))?,
+                        );
+                    }
+                } else {
+                    types.push(tpe.as_atom().cloned().ok_or(tpe.invalid("expected type name"))?);
+                }
+                untyped
+                    .drain(..)
+                    .map(|name| TypedSymbol::new_union(name, types.clone()))
+                    .for_each(|a| args.push(a));
             }
-            untyped
-                .drain(..)
-                .map(|name| TypedSymbol::new_union(name, types.clone()))
-                .for_each(|a| args.push(a));
         } else {
             untyped.push(next.into());
         }
