@@ -196,6 +196,12 @@ impl<World: Ord + Clone, Tag> BoxUniverse<World, Tag> {
     }
 }
 
+impl<World: Ord + Clone, Tag> Default for BoxUniverse<World, Tag> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod test {
 
