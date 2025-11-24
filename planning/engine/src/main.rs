@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::*;
 use planx::{
-    Res,
+    Message, Res,
     pddl::{self, input::Input},
 };
 
@@ -52,6 +52,9 @@ fn main() -> Res<()> {
 
 fn repair(command: &DomRepair) -> Res<()> {
     let plan = &command.plan;
+    if !plan.exists() {
+        return Err(Message::error(format!("Plan file does not exist: {}", plan.display())));
+    }
     let pb = if let Some(pb) = &command.problem {
         pb
     } else {
@@ -62,6 +65,12 @@ fn repair(command: &DomRepair) -> Res<()> {
     } else {
         &pddl::find_domain_of(pb)?
     };
+    println!(
+        "# Starting domain repair:\n - Domain:  {}\n - Problem: {}\n - Plan:    {}\n",
+        dom.display(),
+        pb.display(),
+        plan.display()
+    );
 
     // raw PDDL model
     let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;
