@@ -32,7 +32,7 @@ use crate::{
 #[derive(clap::Args, Debug, Clone)]
 pub struct RepairOptions {
     #[arg(long, default_value = "smallest")]
-    mode: RepairMode,
+    pub mode: RepairMode,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display)]

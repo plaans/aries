@@ -89,17 +89,26 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 .solver
                 .solve_with_assumptions(&[max_relaxed_assumptions.leq(allowed_relaxations)])
                 .unwrap();
-            if let Ok(sol) = result {
-                self.solver.print_stats();
-                println!("OPTIMAL: {allowed_relaxations} / {} ", num_assumptions);
-                return Some(
-                    assumptions
-                        .into_iter()
-                        .filter(|l| sol.entails(!*l))
-                        .map(|l| self.enablers[&l].clone())
-                        .collect(),
-                );
-            }
+            match result {
+                Ok(sol) => {
+                    self.solver.print_stats();
+                    println!("OPTIMAL: {allowed_relaxations} / {} ", num_assumptions);
+                    return Some(
+                        assumptions
+                            .into_iter()
+                            .filter(|l| sol.entails(!*l))
+                            .map(|l| self.enablers[&l].clone())
+                            .collect(),
+                    );
+                }
+                Err(core) if core.literals().is_empty() => {
+                    // UNSAT with no assumptions to relax
+                    return None;
+                }
+                Err(_core) => {
+                    // assumption makes problem unsat, relax in next round
+                }
+            };
             self.solver.reset();
         }
         None
