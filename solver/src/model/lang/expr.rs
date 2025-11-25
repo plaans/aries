@@ -1,4 +1,4 @@
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, Lits};
 use crate::core::*;
 use crate::model::lang::alternative::Alternative;
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
@@ -61,8 +61,8 @@ pub fn neq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Neq {
     Neq(lhs, rhs)
 }
 
-pub fn or(disjuncts: impl Into<Box<[Lit]>>) -> Or {
-    Or(disjuncts.into())
+pub fn or(disjuncts: impl Into<Disjunction>) -> Or {
+    disjuncts.into()
 }
 pub fn and(disjuncts: impl Into<Box<[Lit]>>) -> And {
     And(disjuncts.into())
@@ -80,20 +80,14 @@ pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl Into
     Alternative::new(main, alternatives)
 }
 
-pub struct Or(Box<[Lit]>);
-
-impl From<Or> for ReifExpr {
-    fn from(value: Or) -> Self {
-        Disjunction::new(value.0.to_vec()).into()
-    }
-}
+pub type Or = Disjunction;
 
 pub struct And(Box<[Lit]>);
 
 impl From<And> for ReifExpr {
     fn from(value: And) -> Self {
         // (and a b c) <=> (not (or !a !b !c))
-        let negated_literals = value.0.iter().copied().map(|l| !l).collect();
+        let negated_literals: Lits = value.0.iter().copied().map(|l| !l).collect();
         let not_reified = ReifExpr::from(Disjunction::new(negated_literals));
         !not_reified
     }

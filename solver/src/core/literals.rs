@@ -1,11 +1,199 @@
 //! Various datastructures specialized for the handling of literals (watchlists, sets, clauses, implication graph, ...)
 
+use std::{
+    borrow::Borrow,
+    cmp::Reverse,
+    ops::{Deref, DerefMut},
+};
+
 pub use disjunction::*;
 pub use implication_graph::*;
 pub use lit_set::*;
+use smallvec::SmallVec;
 pub use watches::*;
+
+use crate::core::Lit;
 
 mod disjunction;
 mod implication_graph;
 mod lit_set;
 mod watches;
+
+const INLINE_SIZE: usize = 3;
+
+/// A sequence of literals, optimized to represent at least 3 elements inline.
+///
+/// In the base case (when [`IntCst`] is 32 bits), it should only occupy 4 machine words (one more that a `Vec<Lit>`).
+#[derive(PartialEq, PartialOrd, Ord, Eq, Clone, Debug, Hash)]
+pub struct Lits {
+    elems: SmallVec<[Lit; INLINE_SIZE]>,
+}
+
+impl Lits {
+    fn new() -> Self {
+        Self { elems: SmallVec::new() }
+    }
+    pub fn with_capacity(n: usize) -> Self {
+        Self {
+            elems: SmallVec::with_capacity(n),
+        }
+    }
+
+    pub fn from_slice(lits: impl Borrow<[Lit]>) -> Self {
+        Self {
+            elems: SmallVec::from_slice(lits.borrow()),
+        }
+    }
+
+    /// Creates a new `Lits` from a vector, reusing the allocation from the vector
+    pub fn from_vec(lits: Vec<Lit>) -> Lits {
+        let elems = if lits.len() <= INLINE_SIZE {
+            // can be represented inline, the Vec and its allocation will be dropped.
+            // we do this because SmallVec would always reuse the allocation may thus fail to place the elements inline.
+            SmallVec::from_slice(&lits)
+        } else {
+            // use specialized method that will reuse the allocation from the vector
+            SmallVec::from_vec(lits)
+        };
+        Self { elems }
+    }
+
+    pub fn into_vec(self) -> Vec<Lit> {
+        self.elems.into_vec()
+    }
+
+    pub fn into_boxed_slice(self) -> Box<[Lit]> {
+        self.elems.into_boxed_slice()
+    }
+
+    pub fn push(&mut self, item: Lit) {
+        self.elems.push(item);
+    }
+
+    pub fn extend_from_slice(&mut self, items: &[Lit]) {
+        self.elems.extend_from_slice(items);
+    }
+
+    pub fn clear(&mut self) {
+        self.elems.clear();
+    }
+
+    /// Keep only those literals that match the predicate.
+    pub fn retain<F: FnMut(Lit) -> bool>(&mut self, mut f: F) {
+        self.elems.retain(move |l| f(*l));
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Lit> + '_ {
+        self.elems.iter().copied()
+    }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Lit> + '_ {
+        self.elems.iter_mut()
+    }
+
+    /// Simplify a *disjunction*, removing redundant literals if the literals are to be interpreted in a disjunctive form.
+    /// At the end of this operations, the literals will be sorted (according to some stable but unspecified order).
+    ///
+    /// TODO: we are missing an opportunity to detect and simplify the clause in the presence of mutually exclusive literals.
+    /// This step could be fused in the deduplication phase to keep a single traversal.
+    pub(crate) fn simplify_disjunctive(&mut self) {
+        if self.len() <= 1 {
+            return;
+        }
+        // sort literals, so that they are grouped by (1) variable and (2) affected bound
+        // We can use an unstable sort (potentially faster) as to equal elements are undistinguishable.
+        // we use a reverse order to ensure allow using the dedup function
+        self.elems.sort_unstable_by_key(|k| Reverse(*k));
+
+        // remove redudant literals
+        // we go in the list and keep only those literals that are do not entail another one.
+        // For instance if we have (a <= 4) || (a <= 3) we would only keep the first one.
+        // The reverse ordering ensures that we have the stronger item is immediately preceded by the weaker one
+        // We use `dedup_by` for this (doc for it can be found in [`std::vec::Vec::dedub_by`] (doc in smallvec is missing).
+        // In particular, it should be noted that the order in the arguments is reversed, with the earliest one passed as the second argument
+        //
+        // In the same passe, we also remove any trivially unsatisfiable literal (this could be simplified as it would always be the last of the sequence)
+        self.elems.dedup_by(|curr, prev| (*curr).entails(*prev));
+
+        // the last two elements may be on `VarRef::ZERO` and thus either tautological or absurd.
+        // we remove any absurd one and simplify the clause if we find any tautological one
+        if self.elems.last().is_some_and(|l| l.absurd()) {
+            self.elems.pop();
+        }
+        if let Some(last) = self.elems.last() {
+            if last.tautological() {
+                self.elems.truncate(1);
+                self.elems[0] = Lit::TRUE;
+                return;
+            }
+            if last.absurd() {
+                self.elems.pop();
+            }
+        }
+
+        debug_assert!(Disjunction::is_simplified(self), "{self:?}");
+    }
+
+    fn as_slice(&self) -> &[Lit] {
+        &self.elems
+    }
+}
+
+impl AsRef<[Lit]> for Lits {
+    fn as_ref(&self) -> &[Lit] {
+        &self.elems
+    }
+}
+impl Deref for Lits {
+    type Target = [Lit];
+
+    fn deref(&self) -> &Self::Target {
+        &self.elems
+    }
+}
+impl AsMut<[Lit]> for Lits {
+    fn as_mut(&mut self) -> &mut [Lit] {
+        &mut self.elems
+    }
+}
+impl DerefMut for Lits {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.elems
+    }
+}
+impl FromIterator<Lit> for Lits {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        Self {
+            elems: SmallVec::from_iter(iter),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Lits {
+    type Item = Lit;
+
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, Lit>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elems.as_slice().iter().copied()
+    }
+}
+impl IntoIterator for Lits {
+    type Item = Lit;
+    type IntoIter = smallvec::IntoIter<[Lit; INLINE_SIZE]>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elems.into_iter()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::core::{literals::Lits, Lit};
+
+    #[test]
+    fn test_lits_size() {
+        if std::mem::size_of::<Lit>() == 8 {
+            assert_eq!(std::mem::size_of::<Lits>(), 32);
+        }
+    }
+}

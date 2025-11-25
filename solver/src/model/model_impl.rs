@@ -187,6 +187,9 @@ impl<Lbl: Label> Model<Lbl> {
     /// with domain `[1,1]` with `presence=scope` but will ensure that only one such
     /// variable is created in this scope.
     pub fn get_tautology_of_scope(&mut self, scope: Lit) -> Lit {
+        if scope == Lit::TRUE {
+            return Lit::TRUE;
+        }
         self.shape
             .conjunctive_scopes
             .get_tautology_of_scope(scope)
@@ -201,6 +204,9 @@ impl<Lbl: Label> Model<Lbl> {
 
     fn new_conjunctive_presence_variable(&mut self, set: impl Into<StableLitSet>) -> Lit {
         let set = set.into();
+        if set.is_empty() {
+            return Lit::TRUE;
+        }
         if let Some(l) = self.shape.conjunctive_scopes.get(&set) {
             // scope already exists, return it immediately
             return l;
@@ -399,18 +405,18 @@ impl<Lbl: Label> Model<Lbl> {
         };
         let negated = |lit: Lit| entailed(!lit);
         match expr {
-            ReifExpr::Or(disjuncts) if disjuncts.iter().any(|&l| entailed(l)) => *expr = ReifExpr::Lit(Lit::TRUE),
+            ReifExpr::Or(disjuncts) if disjuncts.iter().any(entailed) => *expr = ReifExpr::Lit(Lit::TRUE),
             ReifExpr::Or(disjuncts) => {
-                disjuncts.retain(|&l| !negated(l));
+                disjuncts.retain(|l| !negated(l));
                 match disjuncts.len() {
                     0 => *expr = ReifExpr::Lit(Lit::FALSE),
                     1 => *expr = ReifExpr::Lit(disjuncts[0]),
                     _ => {}
                 }
             }
-            ReifExpr::And(conjuncts) if conjuncts.iter().any(|&l| negated(l)) => *expr = ReifExpr::Lit(Lit::FALSE),
+            ReifExpr::And(conjuncts) if conjuncts.iter().any(negated) => *expr = ReifExpr::Lit(Lit::FALSE),
             ReifExpr::And(conjuncts) => {
-                conjuncts.retain(|l| !entailed(*l));
+                conjuncts.retain(|l| !entailed(l));
                 match conjuncts.len() {
                     0 => *expr = ReifExpr::Lit(Lit::TRUE),
                     1 => *expr = ReifExpr::Lit(conjuncts[0]),

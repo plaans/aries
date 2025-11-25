@@ -20,6 +20,7 @@ resolver = "2"
 [workspace.dependencies]
 anyhow = { version = "1.0" }
 async-trait = "0.1"
+bumpalo = { version = "3.19" }
 clap = { version = "4.4", features = ["derive"] }
 crossbeam-channel = "0.5"
 itertools = { version = "0.14" }
@@ -35,7 +36,7 @@ pathfinding = "4.9.1"
 prost = { version = "0.12" }
 rand = { version = "0.8", features = ["small_rng"] }
 regex = { version = "1" }
-smallvec = "1.4.2"
+smallvec = { version = "1.4.2", features = ["union"] }
 structopt = "0.3"
 streaming-iterator = "0.1.5"
 test_each_file = "0.3.4"

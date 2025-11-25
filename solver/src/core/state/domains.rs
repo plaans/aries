@@ -529,7 +529,7 @@ impl Domains {
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
                 result.push(!l);
-                break result.into();
+                break result.build();
             }
 
             debug_assert!(l_cause < self.trail().next_slot());
@@ -827,7 +827,7 @@ impl Conflict {
     /// Here, a conflict with an empty clause.
     pub fn contradiction() -> Self {
         Conflict {
-            clause: Disjunction::new(Vec::new()),
+            clause: Disjunction::contradiction(),
             resolved: Default::default(),
         }
     }

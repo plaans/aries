@@ -193,6 +193,36 @@ impl Lit {
     pub fn lexical_cmp(&self, other: &Lit) -> Ordering {
         self.cmp(other)
     }
+
+    /// Returns true if the literal will always be true in any model.
+    ///
+    /// ```
+    /// use aries::core::{Lit,VarRef};
+    /// assert!(Lit::TRUE.tautological());
+    /// assert!(!Lit::FALSE.tautological());
+    /// assert!(VarRef::ZERO.leq(10).tautological());
+    /// assert!(!VarRef::ZERO.geq(10).tautological());
+    /// assert!(VarRef::ZERO.geq(0).tautological());
+    /// assert!(!VarRef::ZERO.lt(0).tautological());
+    /// ```
+    pub fn tautological(self) -> bool {
+        // +/- ZERO <= ub  where ub positive
+        self.variable() == VarRef::ZERO && self.upper_bound >= 0
+    }
+
+    /// Returns true if the literal can never be made true in any model.
+    ///
+    /// ```
+    /// use aries::core::{Lit,VarRef};
+    /// assert!(Lit::FALSE.absurd());
+    /// assert!(VarRef::ZERO.geq(10).absurd());
+    /// assert!(VarRef::ZERO.lt(0).absurd());
+    /// ```
+    #[inline]
+    pub fn absurd(self) -> bool {
+        // +/- ZERO <= ub  where ub < 0
+        self.variable() == VarRef::ZERO && self.upper_bound < 0
+    }
 }
 
 impl std::ops::Not for Lit {

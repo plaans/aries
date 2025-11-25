@@ -1,4 +1,4 @@
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::{Domains, OptDomain};
 use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::alternative::NFAlternative;
@@ -28,8 +28,8 @@ pub enum ReifExpr {
     Neq(VarRef, VarRef),
     EqVal(VarRef, IntCst),
     NeqVal(VarRef, IntCst),
-    Or(Vec<Lit>),
-    And(Vec<Lit>),
+    Or(Disjunction),
+    And(Lits), // TODO: do similar for conjunction
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
     EqMax(NFEqMax),
@@ -68,13 +68,13 @@ impl ReifExpr {
             ReifExpr::NeqVal(a, _) => ValidityScope::new([presence(*a)], []),
             ReifExpr::Or(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
-                literals.iter().copied().filter(|l| presence(l.variable()) == Lit::TRUE),
+                literals.iter().filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
             ReifExpr::And(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals
                     .iter()
-                    .map(|&l| !l)
+                    .map(|l| !l)
                     .filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
             ReifExpr::Linear(lin) => lin.validity_scope(presence),
@@ -155,11 +155,11 @@ impl ReifExpr {
             }
             ReifExpr::Or(lits) => {
                 for l in lits {
-                    if prez(l.variable()) && assignment.entails(*l) {
+                    if prez(l.variable()) && assignment.entails(l) {
                         return Some(true);
                     }
                 }
-                if lits.iter().all(|l| prez(l.variable()) && assignment.entails(!*l)) {
+                if lits.iter().all(|l| prez(l.variable()) && assignment.entails(!l)) {
                     return Some(false);
                 }
                 assert!(lits.iter().any(|l| !prez(l.variable())));
@@ -265,7 +265,7 @@ impl From<Disjunction> for ReifExpr {
         } else if value.literals().len() == 1 {
             ReifExpr::Lit(*value.literals().first().unwrap())
         } else {
-            ReifExpr::Or(value.into())
+            ReifExpr::Or(value)
         }
     }
 }
@@ -281,13 +281,14 @@ impl Not for ReifExpr {
             ReifExpr::Neq(a, b) => ReifExpr::Eq(a, b),
             ReifExpr::EqVal(a, b) => ReifExpr::NeqVal(a, b),
             ReifExpr::NeqVal(a, b) => ReifExpr::EqVal(a, b),
-            ReifExpr::Or(mut lits) => {
+            ReifExpr::Or(lits) => {
+                let mut lits = lits.into_lits();
                 lits.iter_mut().for_each(|l| *l = !*l);
                 ReifExpr::And(lits)
             }
             ReifExpr::And(mut lits) => {
                 lits.iter_mut().for_each(|l| *l = !*l);
-                ReifExpr::Or(lits)
+                ReifExpr::Or(Disjunction::new(lits))
             }
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
@@ -325,5 +326,17 @@ impl Not for DifferenceExpression {
 
     fn not(self) -> Self::Output {
         DifferenceExpression::new(self.a, self.b, -self.ub - 1)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{core::Lit, reif::ReifExpr};
+
+    #[test]
+    fn test_reif_expr_size() {
+        if std::mem::size_of::<Lit>() == 8 {
+            assert_eq!(std::mem::size_of::<ReifExpr>(), 40)
+        }
     }
 }
