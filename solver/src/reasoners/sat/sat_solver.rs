@@ -347,6 +347,9 @@ impl SatSolver {
         // process all clauses that have been added since last propagation
         while let Some(PendingClause { clause }) = self.pending_clauses.pop_front() {
             if let Some(conflict) = self.process_arbitrary_clause(clause, model) {
+                // the clause returned is violated before being properly set up.
+                // Add it back to the queue so that it is not forgotten if one is calling the solver again
+                self.pending_clauses.push_front(PendingClause { clause });
                 return Err(conflict);
             }
         }
