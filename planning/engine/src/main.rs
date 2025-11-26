@@ -44,7 +44,15 @@ fn main() -> Res<()> {
     let args = Args::parse();
 
     match &args.command {
-        Commands::DomRepair(command) => repair(command)?,
+        Commands::DomRepair(command) => match repair(command) {
+            Ok(()) => {}
+            Err(e) => {
+                // We report the error here and exit normally to ease the integration with external tooling
+                // but this is typically not something we would like to keep in a released version
+                println!("{e}");
+                println!("REPORT {}   ERROR", command.plan.display());
+            }
+        },
     }
 
     Ok(())
