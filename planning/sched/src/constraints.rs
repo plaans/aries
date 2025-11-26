@@ -56,7 +56,7 @@ impl EffectCoherence {
     fn enforce_non_overlapping_if(l: Lit, e: &Effect, e2: &Effect, ctx: &Sched, store: &mut dyn Store) {
         debug_assert_eq!(e.state_var.fluent, e2.state_var.fluent);
         let mut disjuncts = DisjunctionBuilder::new();
-        for (x1, x2) in e.state_var.args.iter().zip(e2.state_var.args.iter()) {
+        for (x1, x2) in e.state_var.args.iter().zip_eq(e2.state_var.args.iter()) {
             for opt in neq(*x1, *x2).as_elementary_disjuncts(store) {
                 disjuncts.push(opt.implicant(ctx, store));
                 if disjuncts.tautological() {

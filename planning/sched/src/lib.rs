@@ -86,7 +86,7 @@ pub type ConstraintID = usize;
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
-    time_scale: IntCst,
+    pub time_scale: IntCst,
     pub origin: Time,
     pub horizon: Time,
     pub makespan: Time,

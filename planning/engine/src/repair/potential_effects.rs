@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use crate::repair::required_values::RequiredValues;
 
-type PotentialEffect = (FluentId, Vec<Param>, Lit);
+pub(crate) type PotentialEffect = (FluentId, Vec<Param>, bool, Lit);
 
 #[derive(Debug)]
 pub(crate) struct PotentialEffects {
@@ -36,7 +36,8 @@ impl PotentialEffects {
             segments.push(if value { Segment::point(1) } else { Segment::point(0) });
             BBox::new(segments)
         };
-        let mut effs: BTreeMap<ActionRef, Vec<(FluentId, Vec<Param>, Lit)>> = BTreeMap::new();
+        let mut effs: BTreeMap<ActionRef, Vec<PotentialEffect>> = BTreeMap::new();
+        println!("\n=== Potential effects ===\n");
         for a in model.actions.iter() {
             println!("{:?}", a.name);
             for (fluent_id, fluent) in model.env.fluents.iter_with_id() {
@@ -59,25 +60,31 @@ impl PotentialEffects {
                 while let Some(instanciation) = instanciations.next() {
                     let params: Vec<Param> = instanciation.iter().cloned().cloned().collect();
 
-                    // compute the value box, i.e., the bounding box the values it may establish
-                    let vbox = eff_val_box(&a.name, &params, true);
-                    if reqs.overlaps(fluent.name.canonical_str(), vbox.as_ref()) {
-                        // may actual achieve a condition/goal, add it to the set
-                        println!("    {instanciation:?}");
-                        effs.entry(a.name.clone())
-                            .or_default()
-                            .push((fluent_id, params, create_lit()));
-                    } else {
-                        // this instanciation can never be used, skip it
-                        println!("    {instanciation:?}    --- skipped ");
+                    for value in [true, false] {
+                        // compute the value box, i.e., the bounding box the values it may establish
+                        let vbox = eff_val_box(&a.name, &params, value);
+                        if reqs.overlaps(fluent_id, vbox.as_ref()) {
+                            // may actual achieve a condition/goal, add it to the set
+                            println!("    {instanciation:?}");
+                            effs.entry(a.name.clone()).or_default().push((
+                                fluent_id,
+                                params.clone(),
+                                value,
+                                create_lit(),
+                            ));
+                        } else {
+                            // this instanciation can never be used, skip it
+                            // println!("    {instanciation:?}    --- skipped ");
+                        }
                     }
                 }
             }
         }
+        println!("\n");
         PotentialEffects { effs }
     }
 
-    pub fn for_action(&self, act_name: &planx::Sym) -> &[(FluentId, Vec<Param>, Lit)] {
+    pub fn for_action(&self, act_name: &planx::Sym) -> &[PotentialEffect] {
         self.effs.get(act_name).map(|x| x.as_slice()).unwrap_or(&[])
     }
 }

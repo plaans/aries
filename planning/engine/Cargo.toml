@@ -11,9 +11,9 @@ clap = { workspace = true }
 derivative = { workspace = true }
 derive_more = { workspace = true }
 itertools = { workspace = true }
-# tracing = { workspace = true }
+im = { workspace = true }
+smallvec = { workspace = true }
+
 planx = { path = "../model" }
 aries_sched = { path = "../sched" }
 aries = { path = "../../solver" }
-im = { workspace = true }
-# env_param = { path = "../../env_param" }

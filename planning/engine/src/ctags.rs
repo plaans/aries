@@ -53,7 +53,7 @@ pub struct PotentialEffect {
 }
 
 impl PotentialEffect {
-    pub fn get(&self) -> &(planx::FluentId, Vec<planx::Param>, aries::core::Lit) {
+    pub fn get(&self) -> &crate::repair::potential_effects::PotentialEffect {
         &self.all_effects.for_action(&self.action_id)[self.effect_id]
     }
 }

@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, fmt::Debug};
+use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive};
 
-use aries::core::IntCst;
+use aries::{core::IntCst, utils::StreamingIterator};
 use itertools::Itertools;
 use smallvec::SmallVec;
 
@@ -48,6 +48,10 @@ impl Segment {
     pub fn union(&mut self, other: &Segment) {
         self.first = self.first.min(other.first);
         self.last = self.last.max(other.last);
+    }
+
+    pub fn points(&self) -> RangeInclusive<IntCst> {
+        self.first..=self.last
     }
 }
 
@@ -104,6 +108,26 @@ impl<'a> BoxRef<'a> {
 
     pub fn to_owned(&self) -> BBox {
         BBox::new(self.dimensions)
+    }
+
+    pub fn last(&self) -> Option<Segment> {
+        self.dimensions.last().copied()
+    }
+
+    pub fn drop_head(&self, n: usize) -> Self {
+        Self {
+            dimensions: &self.dimensions[n..],
+        }
+    }
+    pub fn drop_tail(&self, n: usize) -> Self {
+        Self {
+            dimensions: &self.dimensions[..(self.dimensions.iter().len() - n)],
+        }
+    }
+
+    pub fn points(self) -> impl StreamingIterator<Item = [IntCst]> {
+        let generators = self.dimensions.iter().map(|seg| seg.points()).collect_vec();
+        aries::utils::enumerate(generators)
     }
 }
 

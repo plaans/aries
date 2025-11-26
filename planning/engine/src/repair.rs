@@ -10,7 +10,7 @@ use std::{
 };
 
 use aries::{
-    core::Lit,
+    core::{INT_CST_MAX, Lit},
     model::{
         extensions::AssignmentExt,
         lang::{FAtom, hreif::Store},
@@ -135,7 +135,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     // ignore all non boolean fluents. The only one we are expecting in classical planning are those for the action costs, which are irrelevant for this use case.
     let ignored = |eff: &planx::Effect| {
         let fluent_id = eff.effect_expression.state_variable.fluent;
-        model.env.fluents.get(fluent_id).return_type != planx::Type::Bool
+        let fluent = model.env.fluents.get(fluent_id);
+        fluent.return_type != planx::Type::Bool
     };
 
     // for each constraint we may which to relax, stores a CTag (constraint tag) so that we can later decide if it should be relaxed.
@@ -218,12 +219,17 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let c = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
+                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
 
+                let fluent_id = model
+                    .env
+                    .fluents
+                    .get_by_name(&constraint.state_var.fluent)
+                    .expect("no such fluent");
                 // incorporate the value required by this condition into the global tracker
-                required_values.add(&c.state_var.fluent, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+                required_values.add(fluent_id, constraint.value_box(|v| sched.model.int_bounds(v)).as_ref());
 
-                let cid = sched.add_constraint(c);
+                let cid = sched.add_constraint(constraint);
                 constraints_tags.insert(
                     cid,
                     CTag::Support {
@@ -246,12 +252,16 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         match x.goal_expression {
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
-                    let c = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
-                    //
+                    let constraint = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
+                    let fluent_id = model
+                        .env
+                        .fluents
+                        .get_by_name(&constraint.state_var.fluent)
+                        .expect("no such fluent");
                     // incorporate the value required by this condition into the global tracker
-                    required_values.add(&c.state_var.fluent, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+                    required_values.add(fluent_id, constraint.value_box(|v| sched.model.int_bounds(v)).as_ref());
 
-                    let cid = sched.add_constraint(c);
+                    let cid = sched.add_constraint(constraint);
                     constraints_tags.insert(cid, CTag::EnforceGoal(gid));
                 } else {
                     todo!()
@@ -281,7 +291,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     for (a, pot_effs) in &potential_effects.effs {
         for (eff_id, pot_eff) in pot_effs.iter().enumerate() {
             // create a constraint disabling the effect, and tag so that we can mark it as soft
-            let cid = sched.add_constraint(!pot_eff.2);
+            let cid = sched.add_constraint(!pot_eff.3);
             constraints_tags.insert(
                 cid,
                 CTag::DisablePotentialEffect(PotentialEffect {
@@ -309,13 +319,15 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             let enabler = match &eff.effect_expression.operation {
                 planx::EffectOp::Assign(expr_id) => {
                     // hacky way to determine if the effect is positive (will only work for classical planning)
-                    let positive_effect = reify_bool(*expr_id, model, &mut sched)?;
-                    if positive_effect {
-                        // positive effect cannot be removed
-                        Lit::TRUE
-                    } else {
-                        // negative effect create a new literal as enabler
+                    let imposed_value = reify_bool(*expr_id, model, &mut sched)?;
+                    let possibly_detrimental =
+                        required_values.may_require_value(eff.effect_expression.state_variable.fluent, !imposed_value);
+                    if possibly_detrimental {
+                        // effect may delete a precondition, it must be relaxable and we tie its presence to a new literal
                         sched.model.new_literal(Lit::TRUE)
+                    } else {
+                        // effect can never be detrimental and we thus always force its presence
+                        Lit::TRUE
                     }
                 }
                 _ => todo!(), // numeric fluents, but those a ignored because the presence of numeric fluents for action costs)
@@ -328,7 +340,6 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     }
 
     // enforce all elemts of the initial state as effects
-    // NOTE: we assume no negative preconditions and do not add a the negative effect for the closed world assumption.
     for x in &model.init {
         if ignored(x) {
             continue;
@@ -336,6 +347,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
         sched.add_effect(eff);
     }
+    // set all default negative value (the call attempts to only put that may be useful)
+    add_closed_world_negative_effects(&required_values, model, &mut sched);
 
     for (op_id, _op) in plan.operations.iter().enumerate() {
         let (a, bindings) = &operations_scopes[op_id];
@@ -357,8 +370,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         }
 
         // for each potential effect, add it as well (it will be assumed absent by default due to the global constraint)
-        for (fid, params, enabler) in potential_effects.for_action(&a.name) {
-            let eff = create_potential_effect(*fid, params.as_slice(), *enabler, model, &mut sched, bindings)?;
+        for (fid, params, value, enabler) in potential_effects.for_action(&a.name) {
+            let eff = create_potential_effect(*fid, params.as_slice(), *value, *enabler, model, &mut sched, bindings)?;
             sched.add_effect(eff);
         }
     }
@@ -404,9 +417,13 @@ fn format_culprit_set(mut msg: Message, culprits: &BTreeSet<Repair>, model: &Mod
                 msg = msg.snippet(annot).show(cond.action.span.as_ref().unwrap());
             }
             Repair::AddEff(potential_effect) => {
-                let (fluent_id, params, _) = potential_effect.get();
+                let (fluent_id, params, value, _) = potential_effect.get();
                 let fluent = model.env.fluents.get(*fluent_id);
-                let fluent = format!("({} {})", fluent.name(), params.iter().map(|p| p.name()).format(" "));
+                let fluent = format!(
+                    "({} {}) := {value}",
+                    fluent.name(),
+                    params.iter().map(|p| p.name()).format(" ")
+                );
                 println!("{} => {}", &potential_effect.action_id, fluent);
                 let annot = potential_effect.action_id.info(format!("Add effect: {fluent}"));
                 msg = msg
@@ -484,9 +501,39 @@ fn convert_effect(
     Ok(eff)
 }
 
+/// Add all required default negative values as effects just before the origin.
+fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, sched: &mut Sched) {
+    // time at which to place the negative effects. This is -1 so that it can be overrided by an initial effect (at 0).
+    let t = Time::from(-1);
+
+    // all state variables that may require a `false` value
+    // we will only place a negative effect for those state variables.
+    let req_state_vars = reqs.state_variables(|v| v == 0);
+
+    for sv in req_state_vars {
+        let args: Vec<SymAtom> = sv.params.0.into_iter().map(SymAtom::from).collect_vec();
+        let sv = aries_sched::StateVar {
+            fluent: model.env.fluents.get(sv.fluent).name().to_string(),
+            args,
+        };
+        // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
+        let mutex_end: Time = sched.model.new_fvar(-1, INT_CST_MAX, sched.time_scale, "_").into();
+        let eff = aries_sched::Effect {
+            transition_start: t,
+            transition_end: t,
+            mutex_end,
+            state_var: sv,
+            operation: EffectOp::Assign(false),
+            prez: Lit::TRUE,
+        };
+        sched.add_effect(eff);
+    }
+}
+
 fn create_potential_effect(
     fid: FluentId,
     params: &[Param],
+    value: bool,
     enalber: Lit,
     model: &Model,
     sched: &mut Sched,
@@ -498,7 +545,7 @@ fn create_potential_effect(
         fluent: model.env.fluents.get(fid).name().to_string(),
         args,
     };
-    let op = EffectOp::Assign(true);
+    let op = EffectOp::Assign(value);
     let eff = aries_sched::Effect {
         transition_start: t,
         transition_end: t + FAtom::EPSILON,
@@ -577,6 +624,14 @@ fn condition_to_constraint(
                 timepoint: reify_timing(tp, model, sched, bindings)?,
                 prez: bindings.presence,
             };
+            Ok(c)
+        }
+        planx::Expr::App(planx::Fun::Not, exprs) if exprs.len() == 1 => {
+            let mut c = condition_to_constraint(tp, exprs[0], model, sched, bindings)?;
+            let Ok(x) = Lit::try_from(c.value) else {
+                panic!();
+            };
+            c.value = x.not().into();
             Ok(c)
         }
         e => todo!("{e:?}"),
