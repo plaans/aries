@@ -1,0 +1,59 @@
+use std::{env, path::Path};
+
+use aries::{
+    model::Model,
+    solver::{
+        Solver,
+        search::activity::{ActivityBrancher, BranchingParams, Heuristic},
+    },
+};
+use encode::Encoding;
+use env_param::EnvParam;
+use parse::Problem;
+
+mod encode;
+mod parse;
+
+pub static SPECIAL_BRANCHER: EnvParam<bool> = EnvParam::new("ARIES_COLORING_SPECIAL_BRANCHER", "true");
+pub static REIFY_EQ: EnvParam<bool> = EnvParam::new("ARIES_COLORING_REIFY_EQ", "true");
+
+/// A heuristic to be used by the ActivityBrancher which favours decisions on "boolean" variables
+pub struct BooleanFavoringHeuristic;
+
+impl<L> Heuristic<L> for BooleanFavoringHeuristic {
+    fn decision_stage(&self, var: aries::core::VarRef, _: Option<&L>, model: &Model<L>) -> u8 {
+        if model.state.bounds(var) == (0, 1) { 0 } else { 1 }
+    }
+}
+
+fn main() {
+    let mut args = env::args();
+    args.next().expect("Provide a file path as an argument.");
+    let path = args.next().unwrap();
+
+    let problem = Problem::from_file(Path::new(&path));
+    let mut model = Model::new();
+    let encoding = Encoding::new(&problem, &mut model);
+    let mut solver = Solver::new(model);
+
+    if SPECIAL_BRANCHER.get() {
+        solver.set_brancher(ActivityBrancher::new_with(
+            BranchingParams {
+                prefer_min_value: false,
+                ..Default::default()
+            },
+            BooleanFavoringHeuristic {},
+        ));
+    }
+
+    let res = solver.minimize_with_callback(encoding.n_colors, |n, _| println!("Found solution {n}"));
+
+    if let Ok(Some((n_cols, _))) = res {
+        solver.print_stats();
+        println!("=========================");
+        println!("Found solution: {} colors", n_cols);
+        println!("=========================");
+    } else {
+        panic!();
+    }
+}
