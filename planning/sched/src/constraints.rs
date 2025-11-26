@@ -66,7 +66,7 @@ impl EffectCoherence {
         }
         // put last as we are more likely to be able to short circuit on the parameters
         disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
-        disjuncts.push(f_leq(e.mutex_end, e2.transition_start).implicant(ctx, store));
+        disjuncts.push(f_leq(e2.mutex_end, e.transition_start).implicant(ctx, store));
         disjuncts.push(!e.prez);
         disjuncts.push(!e2.prez);
         if !disjuncts.tautological() {
