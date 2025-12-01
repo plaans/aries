@@ -487,6 +487,14 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                 for pred in property {
                     let mut pred = pred.as_list_iter().ok_or_else(|| pred.invalid("Expected a list"))?;
                     let name = pred.pop_atom()?.clone();
+                    if name.canonical_str() == "=" && res.features.contains(&PddlFeature::Equality) {
+                        println!(
+                            "{}",
+                            name.invalid("Ignoring predicate declaration that is redundant with `:equality` feature.")
+                                .to_warning()
+                        );
+                        continue;
+                    }
                     let args = consume_typed_symbols(&mut pred)?;
                     res.predicates.push(Predicate {
                         name,
