@@ -14,9 +14,9 @@ use aries::{
     model::{
         extensions::AssignmentExt,
         lang::{
-            FAtom,
-            expr::{and, eq},
-            hreif::Store,
+            FAtom, IAtom,
+            expr::{and, eq, neq},
+            hreif::{BoolExpr, Store},
         },
     },
     reif::ReifExpr,
@@ -224,15 +224,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings)?;
-
-                let fluent_id = model
-                    .env
-                    .fluents
-                    .get_by_name(&constraint.state_var.fluent)
-                    .expect("no such fluent");
-                // incorporate the value required by this condition into the global tracker
-                required_values.add(fluent_id, constraint.value_box(|v| sched.model.int_bounds(v)).as_ref());
+                let constraint =
+                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
 
                 let cid = sched.add_constraint(constraint);
                 constraints_tags.insert(
@@ -257,14 +250,14 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         match x.goal_expression {
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
-                    let constraint = condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope)?;
-                    let fluent_id = model
-                        .env
-                        .fluents
-                        .get_by_name(&constraint.state_var.fluent)
-                        .expect("no such fluent");
-                    // incorporate the value required by this condition into the global tracker
-                    required_values.add(fluent_id, constraint.value_box(|v| sched.model.int_bounds(v)).as_ref());
+                    let constraint = condition_to_constraint(
+                        tp,
+                        expr_id,
+                        model,
+                        &mut sched,
+                        &global_scope,
+                        Some(&mut required_values),
+                    )?;
 
                     let cid = sched.add_constraint(constraint);
                     constraints_tags.insert(cid, CTag::EnforceGoal(gid));
@@ -701,15 +694,43 @@ fn reify_bool(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<bool> {
     }
 }
 
+/// Constraint representing a condition
+enum ConditionConstraint {
+    HasValue(HasValueAt),
+    Eq(IAtom, IAtom),
+    Neq(IAtom, IAtom),
+}
+impl BoolExpr<Sched> for ConditionConstraint {
+    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
+        match self {
+            ConditionConstraint::HasValue(has_value_at) => has_value_at.enforce_if(l, ctx, store),
+            ConditionConstraint::Eq(a, b) => eq(*a, *b).enforce_if(l, ctx, store),
+            ConditionConstraint::Neq(a, b) => neq(*a, *b).enforce_if(l, ctx, store),
+        }
+    }
+
+    fn conj_scope(&self, ctx: &Sched, store: &dyn Store) -> aries::model::lang::hreif::Lits {
+        match self {
+            ConditionConstraint::HasValue(has_value_at) => has_value_at.conj_scope(ctx, store),
+            ConditionConstraint::Eq(a, b) => eq(*a, *b).conj_scope(ctx, store),
+            ConditionConstraint::Neq(a, b) => neq(*a, *b).conj_scope(ctx, store),
+        }
+    }
+}
+
+/// Converts the condition `[tp] expr` to a constraint.
+///
+/// If the `required_values` parameters is non empty, then the function will update it to reflect the state variable values possibly required by this expresion.
 fn condition_to_constraint(
     tp: Timestamp,
     expr: ExprId,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
-) -> Res<HasValueAt> {
+    required_values: Option<&mut RequiredValues>,
+) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
-    match expr.expr() {
+    let constraint = match expr.expr() {
         planx::Expr::StateVariable(fluent_id, args) => {
             let fluent = model.env.fluents.get(*fluent_id);
             let mut reif_args = Vec::with_capacity(args.len());
@@ -727,16 +748,43 @@ fn condition_to_constraint(
                 timepoint: reify_timing(tp, model, sched, bindings)?,
                 prez: bindings.presence,
             };
-            Ok(c)
+            ConditionConstraint::HasValue(c)
         }
         planx::Expr::App(planx::Fun::Not, exprs) if exprs.len() == 1 => {
-            let mut c = condition_to_constraint(tp, exprs[0], model, sched, bindings)?;
-            let Ok(x) = Lit::try_from(c.value) else {
-                panic!();
-            };
-            c.value = x.not().into();
-            Ok(c)
+            // call recursively to obtain a an expression to negate, we pass None for the required_values has the one that will be parsed is not required
+            let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, None)?;
+            match c {
+                ConditionConstraint::HasValue(mut c) => {
+                    let Ok(x) = Lit::try_from(c.value) else {
+                        panic!();
+                    };
+                    c.value = x.not().into();
+                    ConditionConstraint::HasValue(c)
+                }
+                ConditionConstraint::Eq(a, b) => ConditionConstraint::Neq(a, b),
+                ConditionConstraint::Neq(a, b) => ConditionConstraint::Eq(a, b),
+            }
+        }
+        planx::Expr::App(planx::Fun::Eq, exprs) if exprs.len() == 2 => {
+            let e1 = reify_sym(exprs[0], model, sched, bindings)?;
+            let e2 = reify_sym(exprs[1], model, sched, bindings)?;
+            ConditionConstraint::Eq(e1, e2)
         }
         e => todo!("{e:?}"),
+    };
+
+    // update the required values if requested by caller
+    if let Some(reqs) = required_values {
+        match &constraint {
+            ConditionConstraint::HasValue(c) => {
+                // record that someone required such a value
+                let fluent_id = model.env.fluents.get_by_name(&c.state_var.fluent).unwrap();
+                reqs.add(fluent_id, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+            }
+            // not on a fluent and thus no need to update the required_values
+            ConditionConstraint::Eq(_, _) => {}
+            ConditionConstraint::Neq(_, _) => {}
+        }
     }
+    Ok(constraint)
 }
