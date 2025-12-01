@@ -10,14 +10,19 @@ use std::{
 };
 
 use aries::{
-    core::{INT_CST_MAX, Lit},
+    core::{INT_CST_MAX, Lit, literals::ConjunctionBuilder},
     model::{
         extensions::AssignmentExt,
-        lang::{FAtom, hreif::Store},
+        lang::{
+            FAtom,
+            expr::{and, eq},
+            hreif::Store,
+        },
     },
+    reif::ReifExpr,
 };
 use aries_sched::{
-    ConstraintID, EffectOp, Sched, StateVar, SymAtom, Time, boxes::Segment, constraints::HasValueAt,
+    ConstraintID, Effect, EffectOp, Sched, StateVar, SymAtom, Time, boxes::Segment, constraints::HasValueAt,
     explain::ExplainableSolver, symbols::ObjectEncoding,
 };
 use derive_more::derive::Display;
@@ -352,6 +357,11 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
     for (op_id, _op) in plan.operations.iter().enumerate() {
         let (a, bindings) = &operations_scopes[op_id];
+
+        // vec to accumulate all effects of the action.
+        // this will then be post-processed to match the set-based semantics of PDDL (add-after-delete, ...)
+        let mut action_effects = Vec::with_capacity(64);
+
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for (eff_id, x) in a.effects.iter().enumerate() {
@@ -366,12 +376,18 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             // replace the effect presence by its enabler
             assert_eq!(eff.prez, Lit::TRUE);
             eff.prez = effect_enablers[&aeff];
-            sched.add_effect(eff);
+            action_effects.push(eff);
         }
 
         // for each potential effect, add it as well (it will be assumed absent by default due to the global constraint)
         for (fid, params, value, enabler) in potential_effects.for_action(&a.name) {
             let eff = create_potential_effect(*fid, params.as_slice(), *value, *enabler, model, &mut sched, bindings)?;
+            action_effects.push(eff);
+        }
+
+        // post process the effect to align them with PDDL semantics
+        let action_effects = convert_to_pddl_set_semantics(action_effects, &mut sched);
+        for eff in action_effects {
             sched.add_effect(eff);
         }
     }
@@ -382,6 +398,93 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     };
 
     Ok(sched.explainable_solver(constraint_to_repair))
+}
+
+/// Converts a set of effects *from the same action* into an equivalent set compatible with PDDL set semantics.
+///
+/// In classical planning and PDDL, action effects are split into a *set* of positive (add) effects and a *set* of negative (delete) effects.
+/// The formula to compute the new state is `S \ del_effs U add_effs`.
+///
+/// This has a few consequences that make it differ from our own semantics of effects, namely:
+///  - it is allowed to have the same add/del effect multiple times (they would be unified in the set)
+///  - if there is both an add and a delete effect of the same fact, the delete effect is cancelleted on (add-after-delete)
+///
+/// This methods modifies the set of effects passed to adhere to this semantic. In particular, it will weaken the presence of some of the effects
+/// to make it absent if there is another effect overriding it.
+fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Vec<Effect> {
+    let mut with_set_semantics = Vec::with_capacity(effs.len());
+    for (eid, e) in effs.iter().enumerate() {
+        // helper function to check whether `e` can be overriden by another effect `o` (with index `oid` in the effect list)
+        let possible_overriden_by = |oid: usize, o: &Effect| -> bool {
+            let cancellable = match (&e.operation, &o.operation) {
+                // the delete can be overriden by the add (add-after-delete semantics)
+                (EffectOp::Assign(false), EffectOp::Assign(true)) => true,
+                // the two effects are of the same kind, the currend (eid) can be overriden by one appearing earlier in the effect list
+                (EffectOp::Assign(true), EffectOp::Assign(true)) => eid > oid,
+                (EffectOp::Assign(false), EffectOp::Assign(false)) => eid > oid,
+                // an add cannot be overriden by a delete
+                (EffectOp::Assign(true), EffectOp::Assign(false)) => false,
+            };
+
+            cancellable
+                // they are on the same fluent
+                && e.state_var.fluent == o.state_var.fluent
+                // they can be placed at the same timepoit
+                && sched
+                    .model
+                    .var_domain(e.transition_end.num)
+                    .overlaps(&sched.model.var_domain(o.transition_end.num)) // TODO: we ignore the denominator here, which may not be correct in temporal planning
+                // they arguments are compatible
+                && e.state_var
+                    .args
+                    .iter()
+                    .map(|a1| sched.model.var_domain(*a1))
+                    .zip_eq(o.state_var.args.iter().map(|a2| sched.model.var_domain(*a2)))
+                    .all(|(d1, d2)| d1.overlaps(&d2))
+        };
+
+        // Required condition for the current effect to be active
+        // initially containing only its presence, but we will had a literal for each other effect that may override it
+        let mut active = ConjunctionBuilder::new();
+        active.push(e.prez);
+
+        // build a set of effects that *may* override this one (this is supposed to be reasonably fast and avoid modifying the model)
+        let possible_overriders = effs
+            .iter()
+            .enumerate()
+            .filter(|(oid, o)| possible_overriden_by(*oid, o))
+            .map(|(_, o)| o)
+            .collect_vec();
+
+        for overrider in possible_overriders {
+            // conjunction of literals that, when all true, means the effect is overriden
+            // not that we only iterate on effects that are one the same fluent already
+            let mut override_conditions = ConjunctionBuilder::new();
+
+            // overrider must be present
+            override_conditions.push(overrider.prez);
+            // overrider must be placed at the same time
+            override_conditions.push(sched.model.reify(eq(e.transition_start, overrider.transition_start)));
+            // overrider must have the same state variable arguments
+            for (a1, a2) in e.state_var.args.iter().zip_eq(overrider.state_var.args.iter()) {
+                override_conditions.push(sched.model.reify(eq(*a1, *a2)));
+            }
+            let lits = override_conditions.build();
+            let cancelled_by = sched.model.reify(ReifExpr::And(lits.into_lits()));
+
+            // record the overriden possibility into the conditions for the effect activity
+            active.push(!cancelled_by);
+        }
+        let active = active.build();
+        let active = sched.model.reify(and(active.to_vec())); // TODO: this is innefficient
+
+        if !active.absurd() {
+            let mut eff = e.clone();
+            eff.prez = active;
+            with_set_semantics.push(eff);
+        }
+    }
+    with_set_semantics
 }
 
 /// Encode the types and objects in the model
