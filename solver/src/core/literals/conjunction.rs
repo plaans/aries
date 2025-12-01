@@ -125,6 +125,22 @@ impl From<&Conjunction> for Conjunction {
     }
 }
 
+impl FromIterator<Lit> for Conjunction {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        ConjunctionBuilder::from_iter(iter).build()
+    }
+}
+
+impl FromIterator<Lit> for ConjunctionBuilder {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        let mut builder = ConjunctionBuilder::new();
+        for l in iter {
+            builder.push(l);
+        }
+        builder
+    }
+}
+
 impl Borrow<[Lit]> for Conjunction {
     fn borrow(&self) -> &[Lit] {
         &self.literals

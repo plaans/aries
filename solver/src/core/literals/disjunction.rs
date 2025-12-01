@@ -144,6 +144,21 @@ impl<'a> From<&'a Vec<Lit>> for Disjunction {
         Self::from_slice(literals.as_slice())
     }
 }
+impl FromIterator<Lit> for Disjunction {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        DisjunctionBuilder::from_iter(iter).build()
+    }
+}
+
+impl FromIterator<Lit> for DisjunctionBuilder {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        let mut builder = DisjunctionBuilder::new();
+        for l in iter {
+            builder.push(l);
+        }
+        builder
+    }
+}
 
 impl<const N: usize> From<[Lit; N]> for Disjunction {
     fn from(lits: [Lit; N]) -> Self {
