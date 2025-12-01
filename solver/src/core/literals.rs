@@ -6,6 +6,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+pub use conjunction::*;
 pub use disjunction::*;
 pub use implication_graph::*;
 pub use lit_set::*;
@@ -14,6 +15,7 @@ pub use watches::*;
 
 use crate::core::Lit;
 
+mod conjunction;
 mod disjunction;
 mod implication_graph;
 mod lit_set;
@@ -100,7 +102,7 @@ impl Lits {
             return;
         }
         // sort literals, so that they are grouped by (1) variable and (2) affected bound
-        // We can use an unstable sort (potentially faster) as to equal elements are undistinguishable.
+        // We can use an unstable sort (potentially faster) as equal elements are undistinguishable.
         // we use a reverse order to ensure allow using the dedup function
         self.elems.sort_unstable_by_key(|k| Reverse(*k));
 
@@ -131,6 +133,15 @@ impl Lits {
         }
 
         debug_assert!(Disjunction::is_simplified(self), "{self:?}");
+    }
+
+    // TODO: this currently delegates to simplify disjunctive (but this is clearly inefficient)
+    pub(crate) fn simplify_conjunctive(&mut self) {
+        self.iter_mut().for_each(|l| *l = !*l);
+        self.simplify_disjunctive();
+        self.iter_mut().for_each(|l| *l = !*l);
+        self.elems.sort();
+        debug_assert!(Conjunction::is_simplified(&self.elems))
     }
 
     fn as_slice(&self) -> &[Lit] {
