@@ -38,6 +38,11 @@ pub struct DomRepair {
     domain: Option<PathBuf>,
     #[command(flatten)]
     options: RepairOptions,
+    /// If provided, we will check that the number of repairs found is the one given here.
+    /// If not, we will terminate the process with an error.
+    /// (mainly intended for automated verifications and integration tests)
+    #[arg(short, long)]
+    expected_repairs: Option<usize>,
 }
 
 fn main() -> Res<()> {
@@ -99,6 +104,16 @@ fn repair(command: &DomRepair) -> Res<()> {
         report,
         plan.operations.len()
     );
+    if let Some(expected) = command.expected_repairs {
+        match report.status {
+            repair::RepairStatus::ValidPlan => assert_eq!(expected, 0, "Expected a valid plan (no repairs)"),
+            repair::RepairStatus::SmallestFound(num_repairs) => assert_eq!(
+                num_repairs, expected,
+                "Got {num_repairs} instead of the expected {expected}"
+            ),
+            repair::RepairStatus::Unrepairable => panic!(),
+        }
+    }
 
     Ok(())
 }

@@ -44,10 +44,10 @@ pub enum RepairMode {
 #[derive(Display)]
 #[display("{mode} {status:>12} {runtime:>10?} (runtime ms)  {encoding_time:>8?} (enctime ms)")]
 pub struct RepairReport {
-    status: RepairStatus,
-    mode: RepairMode,
-    runtime: u128,
-    encoding_time: u128,
+    pub status: RepairStatus,
+    pub mode: RepairMode,
+    pub runtime: u128,
+    pub encoding_time: u128,
 }
 #[derive(Display)]
 pub enum RepairStatus {
