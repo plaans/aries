@@ -53,6 +53,11 @@ impl IntDomain {
     pub fn disjoint(&self, other: &IntDomain) -> bool {
         self.ub < other.lb || other.ub < self.lb
     }
+
+    /// Returns true if two domains have a non-empty intersection.
+    pub fn overlaps(&self, other: &IntDomain) -> bool {
+        !self.disjoint(other)
+    }
 }
 
 impl std::ops::Mul for IntDomain {
