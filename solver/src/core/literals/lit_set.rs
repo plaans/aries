@@ -1,6 +1,6 @@
 use crate::core::*;
+use hashbrown::HashMap;
 use std::array::TryFromSliceError;
-use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Formatter};
 

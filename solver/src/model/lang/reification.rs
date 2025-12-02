@@ -1,6 +1,6 @@
 use crate::core::*;
 use crate::reif::ReifExpr;
-use std::collections::HashMap;
+use hashbrown::HashMap;
 
 /// A structure to keep track of all reification of expressions.
 ///
