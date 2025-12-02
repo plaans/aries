@@ -6,7 +6,7 @@ use arcstr::ArcStr;
 /// When available, store the source file path which is used to print in-situ error messages.
 ///
 /// Internally uses shared reference an thus cheaply cloneable.
-/// 
+///
 /// Input are only considered equals
 ///
 /// TODO: make the text inside a shared reference so we do not have to wrap the `Input` in Arc.

@@ -9,7 +9,7 @@
 
    (:action move
        :parameters  (?from ?to)
-       :precondition (and  (room ?from) (room ?to) (at-robby ?to))
+       :precondition (and  (room ?from) (room ?to) (at-robby ?from))
        :effect (and  (at-robby ?to)
 		     (not (at-robby ?from))))
 
@@ -26,7 +26,7 @@
 
    (:action drop
        :parameters  (?obj  ?room ?gripper)
-       :precondition  (and  (ball ?room) (room ?room) (gripper ?gripper)
+       :precondition  (and  (ball ?obj) (room ?room) (gripper ?gripper)
 			    (carry ?obj ?gripper) (at-robby ?room))
        :effect (and (at ?obj ?room)
 		    (free ?gripper)
