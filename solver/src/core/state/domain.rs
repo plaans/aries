@@ -16,7 +16,7 @@ impl IntDomain {
 
     /// Returns the number of elements in the domain.
     pub fn size(&self) -> LongCst {
-        cst_int_to_long(self.ub) + cst_int_to_long(self.lb) + 1
+        cst_int_to_long(self.ub) - cst_int_to_long(self.lb) + 1
     }
 
     /// Returns true if the domain contains exactly one value.
