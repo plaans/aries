@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
-use crate::collections::ref_store::RefMap;
+use crate::collections::ref_store::RefVec;
 use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
@@ -39,7 +39,7 @@ pub struct Domains {
     pub(super) doms: IntDomains,
     /// If a variable is optional, associates it with a literal that
     /// is true if and only if the variable is present.
-    presence: RefMap<VarRef, Lit>,
+    presence: RefVec<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
     implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
@@ -48,12 +48,15 @@ pub struct Domains {
 
 impl Domains {
     pub fn new() -> Self {
-        let domains = Domains {
+        let mut domains = Domains {
             doms: IntDomains::new(),
             presence: Default::default(),
             implications: Default::default(),
             queue: Default::default(),
         };
+        for _ in domains.doms.variables() {
+            domains.presence.push(Lit::TRUE);
+        }
         debug_assert!(domains.entails(Lit::TRUE));
         debug_assert!(!domains.entails(Lit::FALSE));
         domains
@@ -67,7 +70,10 @@ impl Domains {
     /// These value are dependent on the representation of domain values ([`IntCst`]) which defaults to 32 bits.
     /// Larger domain values can be used (with a small runtime cost) with the `i64` and `i128` features.
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        self.doms.new_var(lb, ub)
+        let var = self.doms.new_var(lb, ub);
+        let var2 = self.presence.push(Lit::TRUE);
+        debug_assert_eq!(var, var2);
+        var
     }
 
     /// Records a direct implication `from => to`
@@ -103,16 +109,16 @@ impl Domains {
 
     pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
         assert!(
-            !self.presence.contains(presence.variable()),
+            self.presence[presence.variable()].tautological(),
             "The presence literal of an optional variable should not be based on an optional variable"
         );
         let var = self.new_var(lb, ub);
-        self.presence.insert(var, presence);
+        self.presence[var] = presence;
         var
     }
 
     pub fn presence(&self, term: impl Term) -> Lit {
-        self.presence.get(term.variable()).copied().unwrap_or(Lit::TRUE)
+        self.presence[term.variable()]
     }
 
     /// Returns `true` if `presence(a) => presence(b)`
