@@ -1,5 +1,5 @@
 
-# PlanX: Aries Plan Exchange library
+# PlanX: Aries' Plan Exchange library
 
 A rust library for manipulating planning problems.
 
@@ -9,7 +9,7 @@ WARNING: this library is still in early stages and while we already find is usef
 The library has two main components:
 
  - a generic model for planning problem, notably aiming for good support for temporal and numeric domain and complex metrics.
- - an extensive PDDL parser: while the planning model is agnostic of PDDL or any other input language, we waim to provide first class support for importing existing model
+ - an extensive PDDL parser: while the planning model is agnostic of PDDL or any other input language, we aim to provide first class support for importing existing model
 
 
  PDDL features supported:

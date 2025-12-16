@@ -14,6 +14,11 @@ itertools = { workspace = true }
 im = { workspace = true }
 smallvec = { workspace = true }
 
-planx = { path = "../model" }
-aries_sched = { path = "../sched" }
+planx = { path = "../planx" }
+timelines = { package = "aries-timelines", path = "../timelines" }
 aries = { path = "../../solver" }
+
+
+[[bin]]
+name = "ape"
+path = "src/main.rs"

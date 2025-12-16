@@ -21,13 +21,13 @@ use aries::{
     },
     reif::ReifExpr,
 };
-use aries_sched::{
-    ConstraintID, Effect, EffectOp, Sched, StateVar, SymAtom, Time, boxes::Segment, constraints::HasValueAt,
-    explain::ExplainableSolver, symbols::ObjectEncoding,
-};
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, ExprId, FluentId, Message, Model, Param, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use timelines::{
+    ConstraintID, Effect, EffectOp, Sched, StateVar, SymAtom, Time, boxes::Segment, constraints::HasValueAt,
+    explain::ExplainableSolver, symbols::ObjectEncoding,
+};
 
 use crate::{
     ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
@@ -149,7 +149,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
     let objs = types(model);
-    let mut sched = aries_sched::Sched::new(1, objs);
+    let mut sched = timelines::Sched::new(1, objs);
 
     let global_scope = Scope::global(&sched);
 
@@ -564,7 +564,7 @@ fn convert_effect(
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
-) -> Res<aries_sched::Effect> {
+) -> Res<timelines::Effect> {
     assert!(x.universal_quantification.is_empty());
     let x = &x.effect_expression;
     assert!(x.condition.is_none());
@@ -575,7 +575,7 @@ fn convert_effect(
         .iter()
         .map(|&arg| reify_sym(arg, model, sched, bindings))
         .try_collect()?;
-    let sv = aries_sched::StateVar {
+    let sv = timelines::StateVar {
         fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
         args,
     };
@@ -586,7 +586,7 @@ fn convert_effect(
         }
         _ => todo!(),
     };
-    let eff = aries_sched::Effect {
+    let eff = timelines::Effect {
         transition_start: t,
         transition_end: if transition_time { t + FAtom::EPSILON } else { t },
         mutex_end: sched.new_timepoint(),
@@ -608,13 +608,13 @@ fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, sched
 
     for sv in req_state_vars {
         let args: Vec<SymAtom> = sv.params.0.into_iter().map(SymAtom::from).collect_vec();
-        let sv = aries_sched::StateVar {
+        let sv = timelines::StateVar {
             fluent: model.env.fluents.get(sv.fluent).name().to_string(),
             args,
         };
         // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
         let mutex_end: Time = sched.model.new_fvar(-1, INT_CST_MAX, sched.time_scale, "_").into();
-        let eff = aries_sched::Effect {
+        let eff = timelines::Effect {
             transition_start: t,
             transition_end: t,
             mutex_end,
@@ -634,15 +634,15 @@ fn create_potential_effect(
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
-) -> Res<aries_sched::Effect> {
+) -> Res<timelines::Effect> {
     let t = bindings.start;
     let args: Vec<SymAtom> = params.iter().map(|p| bindings.args[p.name()]).collect_vec();
-    let sv = aries_sched::StateVar {
+    let sv = timelines::StateVar {
         fluent: model.env.fluents.get(fid).name().to_string(),
         args,
     };
     let op = EffectOp::Assign(value);
-    let eff = aries_sched::Effect {
+    let eff = timelines::Effect {
         transition_start: t,
         transition_end: t + FAtom::EPSILON,
         mutex_end: sched.new_timepoint(),

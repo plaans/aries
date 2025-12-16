@@ -160,7 +160,7 @@ name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
  "aries",
- "aries_sched",
+ "aries-timelines",
  "clap 4.5.47",
  "derivative",
  "derive_more",
@@ -168,6 +168,18 @@ dependencies = [
  "itertools 0.14.0",
  "planx",
  "smallvec",
+]
+
+[[package]]
+name = "aries-timelines"
+version = "0.1.0"
+dependencies = [
+ "aries",
+ "env_param",
+ "idmap",
+ "itertools 0.14.0",
+ "smallvec",
+ "tracing",
 ]
 
 [[package]]
@@ -278,18 +290,6 @@ dependencies = [
  "varisat-dimacs",
  "varisat-formula",
  "zip",
-]
-
-[[package]]
-name = "aries_sched"
-version = "0.1.0"
-dependencies = [
- "aries",
- "env_param",
- "idmap",
- "itertools 0.14.0",
- "smallvec",
- "tracing",
 ]
 
 [[package]]

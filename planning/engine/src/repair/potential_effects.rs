@@ -1,8 +1,8 @@
 use aries::{core::Lit, utils::StreamingIterator};
-use aries_sched::boxes::{BBox, Segment};
 use itertools::Itertools;
 use planx::*;
 use std::collections::BTreeMap;
+use timelines::boxes::{BBox, Segment};
 
 use crate::repair::required_values::RequiredValues;
 

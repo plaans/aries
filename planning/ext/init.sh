@@ -5,6 +5,6 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 
-git clone --depth 1 https://github.com/potassco/pddl-instances.git pddl
+git clone --depth 1 https://github.com/plaans/tyr-ipc-domains.git pddl
 
 git clone --depth 1 https://github.com/panda-planner-dev/ipc2020-domains.git hddl

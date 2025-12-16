@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aries::utils::StreamingIterator;
-use aries_sched::{
+use planx::FluentId;
+use smallvec::SmallVec;
+use timelines::{
     IntCst,
     boxes::{BBox, BoxRef},
 };
-use planx::FluentId;
-use smallvec::SmallVec;
 
 /// An overapproximation of all the values (time, state-variable, value) that may be required in any part of the problem.
 #[derive(Debug)]

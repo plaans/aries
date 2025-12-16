@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use aries_sched::IntCst;
 use planx::{ActionRef, Model, Res, Sym, errors::Span};
+use timelines::IntCst;
 
 #[derive(Debug, Clone)]
 pub struct LiftedPlan {

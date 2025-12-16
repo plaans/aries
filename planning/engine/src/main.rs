@@ -11,7 +11,7 @@ use planx::{
 
 use crate::repair::RepairOptions;
 
-/// Simple program to greet a person
+/// Aries Planning Engine (APE)
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -21,6 +21,7 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
 }
 

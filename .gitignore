@@ -2,6 +2,9 @@
 .idea/
 .venv/
 .vscode/
+.zed/
+.ropeproject/
+.cargo/
 *~
 target/
 flamegraph.svg
