@@ -62,7 +62,13 @@ pub struct IAtom {
 // Implement Debug for IAtom
 impl Debug for IAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} + {:?}", self.var, self.shift)
+        if self.var == IVar::ZERO {
+            write!(f, "{}", self.shift)
+        } else if self.shift == 0 {
+            write!(f, "{:?}", self.var)
+        } else {
+            write!(f, "{:?} + {:?}", self.var, self.shift)
+        }
     }
 }
 

@@ -50,8 +50,12 @@ pub trait Heuristic<Lbl>: Send + Sync + 'static {
 pub struct DefaultHeuristic;
 
 impl<L> Heuristic<L> for DefaultHeuristic {
-    fn decision_stage(&self, _: VarRef, _: Option<&L>, _: &Model<L>) -> u8 {
-        0
+    fn decision_stage(&self, v: VarRef, _: Option<&L>, m: &Model<L>) -> u8 {
+        if m.var_domain(v).size() <= 2 {
+            0
+        } else {
+            1
+        }
     }
 }
 

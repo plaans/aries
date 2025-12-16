@@ -637,10 +637,15 @@ impl<Lbl: Label> Solver<Lbl> {
 
                     // Add a clause forbidding it in future solutions
                     let mut clause = Vec::with_capacity(variables.len() * 2);
-                    for v in variables {
-                        let (val, _) = solution.bounds(*v);
-                        clause.push(Lit::lt(*v, val));
-                        clause.push(Lit::gt(*v, val));
+                    for &v in variables {
+                        // forbid any variable present in the solution to all take the same valud
+                        // absent variable are ignored (but their presence variable will be considered)
+                        if solution.present(v) == Some(true) {
+                            let (val, ub) = solution.bounds(v);
+                            debug_assert_eq!(val, ub, "The variable is not bound");
+                            clause.push(Lit::lt(v, val));
+                            clause.push(Lit::gt(v, val));
+                        }
                     }
 
                     on_new_solution(&solution);

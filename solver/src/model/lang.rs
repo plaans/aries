@@ -4,6 +4,7 @@ mod boolean;
 mod cst;
 pub mod expr;
 mod fixed;
+pub mod hreif;
 mod int;
 pub mod linear;
 pub mod max;
@@ -13,6 +14,7 @@ mod sym;
 mod validity_scope;
 mod variables;
 
+pub use crate::core::Lit;
 pub use atom::Atom;
 pub use boolean::BVar;
 pub use cst::Cst;

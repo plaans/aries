@@ -144,6 +144,21 @@ impl<'a> From<&'a Vec<Lit>> for Disjunction {
         Self::from_slice(literals.as_slice())
     }
 }
+impl FromIterator<Lit> for Disjunction {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        DisjunctionBuilder::from_iter(iter).build()
+    }
+}
+
+impl FromIterator<Lit> for DisjunctionBuilder {
+    fn from_iter<T: IntoIterator<Item = Lit>>(iter: T) -> Self {
+        let mut builder = DisjunctionBuilder::new();
+        for l in iter {
+            builder.push(l);
+        }
+        builder
+    }
+}
 
 impl<const N: usize> From<[Lit; N]> for Disjunction {
     fn from(lits: [Lit; N]) -> Self {
@@ -205,9 +220,13 @@ impl DisjunctionBuilder {
         self.lits.is_empty()
     }
 
+    pub fn tautological(&self) -> bool {
+        self.lits.first().is_some_and(|l| l.tautological())
+    }
+
     /// Adds an element to the disjunction, appropriately simplifying when submitting absurd or tautological literals.
     pub fn push(&mut self, lit: Lit) {
-        if self.lits.first().is_some_and(|l| l.tautological()) {
+        if self.tautological() {
             // clause is always true no need to consider any new submitted literal
             return;
         }

@@ -9,8 +9,7 @@ use crate::model::Model;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
-use crate::collections::set::IterableRefSet;
-use hashbrown::HashSet;
+use crate::collections::set::{IterableRefSet, RefSet};
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -402,7 +401,7 @@ struct VarSelect {
     /// Heap where pending variables are present and allows extracting the highest-priority variable.
     heap: Heap,
     /// Decision variables among which we must select.
-    vars: HashSet<VarRef>,
+    vars: RefSet<VarRef>,
     /// Trail that record events and allows repopulating the heap when backtracking.
     trail: Trail<HeapEvent>,
 }
@@ -418,7 +417,7 @@ impl VarSelect {
     }
 
     pub fn is_declared(&self, v: VarRef) -> bool {
-        self.vars.contains(&v)
+        self.vars.contains(v)
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
@@ -461,7 +460,7 @@ impl VarSelect {
 
     fn lit_increase_activity(&mut self, lit: Lit, factor: f64) {
         let var = lit.variable();
-        if self.vars.contains(&var) {
+        if self.vars.contains(var) {
             let var_inc = self.params.var_inc * factor;
 
             self.heap.change_priority(var, |p| *p += var_inc);
@@ -476,7 +475,7 @@ impl VarSelect {
         debug_assert!(!new_value.is_nan());
         debug_assert!(!factor.is_nan());
         let var = lit.variable();
-        if self.vars.contains(&var) {
+        if self.vars.contains(var) {
             // assert!(self.params.var_inc == 1.0_f32);
 
             let new_priority = loop {

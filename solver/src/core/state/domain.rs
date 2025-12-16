@@ -16,7 +16,7 @@ impl IntDomain {
 
     /// Returns the number of elements in the domain.
     pub fn size(&self) -> LongCst {
-        cst_int_to_long(self.ub) + cst_int_to_long(self.lb) + 1
+        cst_int_to_long(self.ub) - cst_int_to_long(self.lb) + 1
     }
 
     /// Returns true if the domain contains exactly one value.
@@ -52,6 +52,11 @@ impl IntDomain {
     /// Returns true if the two domains have no common value
     pub fn disjoint(&self, other: &IntDomain) -> bool {
         self.ub < other.lb || other.ub < self.lb
+    }
+
+    /// Returns true if two domains have a non-empty intersection.
+    pub fn overlaps(&self, other: &IntDomain) -> bool {
+        !self.disjoint(other)
     }
 }
 

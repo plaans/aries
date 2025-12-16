@@ -59,6 +59,16 @@ impl SignedVar {
         VarRef::from(self.0 >> 1)
     }
 
+    /// Returns `1` if the variable is a positive view and `-1` otherwise
+    #[inline]
+    pub fn sign(self) -> IntCst {
+        if self.is_plus() {
+            1
+        } else {
+            -1
+        }
+    }
+
     #[inline]
     pub fn leq(self, ub: IntCst) -> Lit {
         Lit::leq(self, ub)
