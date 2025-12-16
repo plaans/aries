@@ -150,7 +150,7 @@ jobs:
 
   warm-up-tests:
     name: Warm-up tests
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
@@ -161,6 +161,18 @@ jobs:
         run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2"
       - name: Resolution
         run: just ci-warm-up
+
+  pddl-tests:
+    name: PDDL tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: extractions/setup-just@v3
+      - name: Download PDDL problems
+        run: ./planning/ext/init.sh
+      - name: PDDL Parsing all IPC problems
+        run: just ci-pddl-parse-all
 
   tests: # Meta-job that only requires all test-jobs to pass
     needs:
@@ -173,6 +185,7 @@ jobs:
         unified-planning-integration,
         ipc-tests,
         warm-up-tests,
+        pddl-tests,
       ]
     runs-on: ubuntu-latest
     steps:

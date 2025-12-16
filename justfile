@@ -60,7 +60,7 @@ ci-pddl-parse-all filter="d":
     #  - from 1998 IPC (non stabilized syntax)
     #  - with derived predicates
     #  - temporal machine shop (TMS, IPC 2011 and 2014) that contains an object declared twice with two distinct type (valid PDDL but unsupported)
-    for f in `fd instance-1.[hp]ddl planning/ext/pddl/ | grep -v "1998" | grep {{ filter }} |  grep -v derived | grep -v temporal-machine-shop `; do
+    for f in `find planning/ext/pddl/ -name instance-1.[hp]ddl | sort | grep -v "1998" | grep {{ filter }} |  grep -v derived | grep -v temporal-machine-shop `; do
         echo $f
         target/ci/pddl-parser  $f > /dev/null
     done
