@@ -33,7 +33,7 @@ fixedbitset = { version = "0.5.7", default-features = false }
 format_num = "0.1.0"
 hashbrown = "0.15"
 im = "15.1"
-lru = "0.14"
+lru = "0.16"
 malachite = "0.4.14"
 num-rational = { version = "0.4.1" }
 num-integer = { default-features = false, version = "0.1.44" }
