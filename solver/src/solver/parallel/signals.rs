@@ -3,8 +3,8 @@ use crate::model::extensions::SavedAssignment;
 use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The maximum size of a clause that can be shared with other threads.
 static MAX_CLAUSE_SHARING_SIZE: EnvParam<usize> = EnvParam::new("ARIES_MAX_CLAUSE_SHARING_SIZE", "3");

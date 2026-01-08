@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use crate::backtrack::DecLvl;
+use crate::core::VarRef;
 use crate::core::state::Conflict;
 use crate::core::state::Explainer;
-use crate::core::VarRef;
 use crate::model::Label;
 use crate::model::Model;
 use crate::solver::search::beta::var_order::VarOrder;

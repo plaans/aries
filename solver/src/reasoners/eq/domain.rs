@@ -1,5 +1,5 @@
 use crate::core::literals::Watches;
-use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, VarRef, cst_int_to_long};
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
@@ -95,11 +95,7 @@ impl Domains {
 
     pub fn signed_value(&self, v: SignedVar, value: IntCst) -> Option<Lit> {
         let dom = &self.domains[&v.variable()];
-        if v.is_plus() {
-            dom.get(value)
-        } else {
-            dom.get(-value)
-        }
+        if v.is_plus() { dom.get(value) } else { dom.get(-value) }
     }
     pub fn value(&self, v: VarRef, value: IntCst) -> Option<Lit> {
         let dom = &self.domains[&v];

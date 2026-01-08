@@ -6,8 +6,9 @@ use crate::fzn::var::BasicVar;
 /// ```flatzinc
 /// solve satisfy;
 /// ```
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 pub enum SolveItem {
+    #[default]
     Satisfy,
     Optimize(Objective),
 }
@@ -29,12 +30,6 @@ impl SolveItem {
     /// Returns `true` if the solve item is an `Optimize` value.
     pub fn is_optimize(&self) -> bool {
         matches!(self, SolveItem::Optimize(_))
-    }
-}
-
-impl Default for SolveItem {
-    fn default() -> Self {
-        Self::Satisfy
     }
 }
 

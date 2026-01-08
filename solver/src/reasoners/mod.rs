@@ -1,7 +1,7 @@
 use crate::backtrack::Backtrack;
+use crate::core::Lit;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
-use crate::core::Lit;
 use crate::reasoners::cp::Cp;
 use crate::reasoners::eq::SplitEqTheory;
 use crate::reasoners::sat::SatSolver;

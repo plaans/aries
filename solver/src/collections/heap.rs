@@ -235,7 +235,7 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
     }
 
     unsafe fn make_hole(&mut self, pos: PlaceInHeap) -> Hole<'_, K, P> {
-        Hole::new(&mut self.heap, &mut self.index.entries, pos)
+        unsafe { Hole::new(&mut self.heap, &mut self.index.entries, pos) }
     }
 
     fn sift_down(&mut self, i: PlaceInHeap) {
@@ -410,7 +410,7 @@ mod test {
         }
 
         for i in 0..N {
-            let prio = rng.gen_range(-100..100) as f64;
+            let prio = rng.random_range(-100..100) as f64;
             priorities.push(prio);
             heap.declare_element(i, prio);
             assert!(eq(heap.priority(i), prio));

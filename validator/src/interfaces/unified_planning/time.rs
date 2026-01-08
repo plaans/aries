@@ -74,10 +74,10 @@ mod tests {
             denominator: 2,
         };
         let d = Rational::from_signeds(5, 2);
-        let gs = timing(TimepointKind::GlobalStart, delay.clone());
-        let ge = timing(TimepointKind::GlobalEnd, delay.clone());
-        let s = timing(TimepointKind::Start, delay.clone());
-        let e = timing(TimepointKind::End, delay.clone());
+        let gs = timing(TimepointKind::GlobalStart, delay);
+        let ge = timing(TimepointKind::GlobalEnd, delay);
+        let s = timing(TimepointKind::Start, delay);
+        let e = timing(TimepointKind::End, delay);
         let mut nk = gs.clone();
         nk.timepoint = None;
         let mut nd = gs.clone();

@@ -20,11 +20,7 @@ where
                 None => found_undef = true,
             }
         }
-        if found_undef {
-            None
-        } else {
-            Some(false)
-        }
+        if found_undef { None } else { Some(false) }
     }
 
     // =========== Clauses ============

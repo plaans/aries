@@ -2,8 +2,8 @@ use std::cmp::{max, min};
 
 use crate::{
     core::{
-        state::{Explanation, Term},
         Lit, Relation, VarRef,
+        state::{Explanation, Term},
     },
     model::extensions::AssignmentExt,
     reasoners::Contradiction,
@@ -91,9 +91,11 @@ impl Propagator for VarEqVarMulLit {
         out_explanation: &mut crate::core::state::Explanation,
     ) {
         // At least one element of the constraint must be the subject of the explanation
-        debug_assert!([self.reified, self.original, self.lit.variable()]
-            .iter()
-            .any(|&v| v == literal.variable()));
+        debug_assert!(
+            [self.reified, self.original, self.lit.variable()]
+                .iter()
+                .any(|&v| v == literal.variable())
+        );
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);
@@ -294,13 +296,13 @@ mod tests {
             let prez = d.new_presence_literal(Lit::TRUE);
             let lit = d.new_presence_literal(prez);
 
-            let reif_lb = rng.gen_range(-20..=20);
-            let reif_ub = rng.gen_range(-20..=20).max(reif_lb);
+            let reif_lb = rng.random_range(-20..=20);
+            let reif_ub = rng.random_range(-20..=20).max(reif_lb);
             let reified = d.new_var(reif_lb, reif_ub);
 
             let orig_prez = d.new_presence_literal(prez);
-            let orig_lb = rng.gen_range(-20..=20);
-            let orig_ub = rng.gen_range(-20..=20).max(orig_lb);
+            let orig_lb = rng.random_range(-20..=20);
+            let orig_ub = rng.random_range(-20..=20).max(orig_lb);
             let original = d.new_optional_var(orig_lb, orig_ub, orig_prez);
             d.add_implication(lit, orig_prez);
 

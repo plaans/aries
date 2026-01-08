@@ -1,11 +1,11 @@
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::{Domains, OptDomain};
-use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, VarRef, cst_int_to_long};
+use crate::model::lang::ValidityScope;
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
-use crate::model::lang::ValidityScope;
 use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
 use std::ops::Not;

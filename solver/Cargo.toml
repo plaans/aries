@@ -2,8 +2,7 @@
 name = "aries"
 version = "0.0.6"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
-edition = "2021"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2024"
 
 [features]
 # If enabled, will instruct the the solver to count cpu cycles at various point of its execution.

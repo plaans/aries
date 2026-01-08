@@ -1,6 +1,6 @@
 use crate::backtrack::EventIndex;
-use crate::core::state::{DomainsSnapshot, InferenceCause};
 use crate::core::Lit;
+use crate::core::state::{DomainsSnapshot, InferenceCause};
 use std::collections::BinaryHeap;
 
 /// Builder for a conjunction of literals that make the explained literal true

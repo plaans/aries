@@ -51,11 +51,7 @@ pub struct DefaultHeuristic;
 
 impl<L> Heuristic<L> for DefaultHeuristic {
     fn decision_stage(&self, v: VarRef, _: Option<&L>, m: &Model<L>) -> u8 {
-        if m.var_domain(v).size() <= 2 {
-            0
-        } else {
-            1
-        }
+        if m.var_domain(v).size() <= 2 { 0 } else { 1 }
     }
 }
 

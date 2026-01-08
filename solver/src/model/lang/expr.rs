@@ -7,11 +7,11 @@ use crate::model::{Label, Model};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use env_param::EnvParam;
 use itertools::Itertools;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use std::ops::Not;
 
-use super::mul::EqMul;
 use super::IVar;
+use super::mul::EqMul;
 
 static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");
 

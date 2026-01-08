@@ -1,8 +1,8 @@
 use crate::backtrack::{Backtrack, BacktrackWith, DecLvl, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefVec;
+use crate::core::state::InvalidUpdate;
 use crate::core::state::cause::Origin;
 use crate::core::state::event::{ChangeIndex, Event};
-use crate::core::state::InvalidUpdate;
 use crate::core::*;
 
 /// Represents a the value of an upper/lower bound of a particular variable.
@@ -138,11 +138,7 @@ impl IntDomains {
         self.variables().filter_map(move |v| {
             let lb = self.lb(v);
             let ub = self.ub(v);
-            if lb == ub {
-                Some((v, lb))
-            } else {
-                None
-            }
+            if lb == ub { Some((v, lb)) } else { None }
         })
     }
 

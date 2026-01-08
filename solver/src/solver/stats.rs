@@ -1,7 +1,7 @@
 use crate::backtrack::DecLvl;
 use crate::core::{IntCst, Lit};
-use crate::reasoners::ReasonerId;
 use crate::reasoners::REASONERS;
+use crate::reasoners::ReasonerId;
 use crate::utils::cpu_time::*;
 use env_param::EnvParam;
 use std::collections::BTreeMap;

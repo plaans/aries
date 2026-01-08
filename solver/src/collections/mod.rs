@@ -61,10 +61,6 @@ impl<A: Next + Copy + PartialOrd> Iterator for Range<A> {
         let prev = self.first;
         self.first = prev.next();
 
-        if prev < self.after_last {
-            Some(prev)
-        } else {
-            None
-        }
+        if prev < self.after_last { Some(prev) } else { None }
     }
 }

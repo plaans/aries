@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::backtrack::Backtrack;
-use crate::core::{Lit, INT_CST_MAX};
-use crate::model::extensions::SavedAssignment;
-use crate::model::lang::{expr::or, linear::LinearSum, IAtom};
+use crate::core::{INT_CST_MAX, Lit};
 use crate::model::Model;
-use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
+use crate::model::extensions::SavedAssignment;
+use crate::model::lang::{IAtom, expr::or, linear::LinearSum};
 use crate::solver::Exit;
+use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
 
 use itertools::Itertools;
 

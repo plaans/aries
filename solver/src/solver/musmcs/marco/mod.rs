@@ -254,11 +254,12 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         // Test mcs being minimal (i.e. mss + any element of mcs being infeasible)
         for &lit in &mcs {
             self.main_solver.reset();
-            debug_assert!(self
-                .main_solver
-                .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec())
-                .unwrap()
-                .is_err())
+            debug_assert!(
+                self.main_solver
+                    .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec())
+                    .unwrap()
+                    .is_err()
+            )
         }
         self.main_solver.reset();
     }
@@ -276,11 +277,12 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         // Test mus being minimal
         for &lit in &mus {
             self.main_solver.reset();
-            debug_assert!(self
-                .main_solver
-                .solve_with_assumptions(&mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec())
-                .unwrap()
-                .is_ok());
+            debug_assert!(
+                self.main_solver
+                    .solve_with_assumptions(&mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec())
+                    .unwrap()
+                    .is_ok()
+            );
         }
         self.main_solver.reset();
     }

@@ -3,12 +3,12 @@
 use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, InvalidUpdate};
 use crate::core::{
-    cst_int_to_long, cst_long_to_int, IntCst, Lit, LongCst, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN,
+    INT_CST_MAX, INT_CST_MIN, IntCst, Lit, LongCst, SignedVar, VarRef, cst_int_to_long, cst_long_to_int,
 };
-use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use crate::reasoners::Contradiction;
+use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use itertools::Itertools;
-use num_integer::{div_ceil, div_floor, Integer};
+use num_integer::{Integer, div_ceil, div_floor};
 use std::cmp::{Ordering, PartialEq};
 use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter};
@@ -373,9 +373,9 @@ impl Propagator for LinearSumLeq {
 mod tests {
     use super::*;
     use crate::backtrack::Backtrack;
+    use crate::core::SignedVar;
     use crate::core::literals::Disjunction;
     use crate::core::state::{Explainer, InferenceCause, Origin};
-    use crate::core::SignedVar;
     use crate::reasoners::ReasonerId;
     use rand::prelude::SmallRng;
     use rand::seq::SliceRandom;

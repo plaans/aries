@@ -234,8 +234,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use rand::rng;
     use rand::seq::SliceRandom;
-    use rand::thread_rng;
 
     const A: VarRef = VarRef::from_u32(1u32);
     const B: VarRef = VarRef::from_u32(2u32);
@@ -310,7 +310,7 @@ mod tests {
 
         // select many subsets of the literals and test if going through the builder yields the correct output
         for _ in 0..10000 {
-            lits.shuffle(&mut thread_rng());
+            lits.shuffle(&mut rng());
             let subset = &lits[0..30];
             let disj = Conjunction::from_slice(subset);
             assert!(Conjunction::is_simplified(&disj));
@@ -334,7 +334,7 @@ mod tests {
 
         // select many subsets of the literals and test if going through the builder yields the correct output
         for _ in 0..100 {
-            lits.shuffle(&mut thread_rng());
+            lits.shuffle(&mut rng());
             let subset = &lits[0..30];
             let disj = Conjunction::from_slice(subset);
             let mut builder = ConjunctionBuilder::new();

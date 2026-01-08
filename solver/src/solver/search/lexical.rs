@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use crate::core::VarRef;
-use crate::model::extensions::AssignmentExt;
 use crate::model::Model;
+use crate::model::extensions::AssignmentExt;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 

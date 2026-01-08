@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MIN};
+use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
 use crate::model::{Label, Model};
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -923,11 +923,7 @@ impl<L: Label> ReifyEq for Model<L> {
     fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit {
         let pa = self.state.presence(a);
         let pb = self.state.presence(b);
-        if self.state.implies(pa, pb) {
-            Lit::TRUE
-        } else {
-            pb
-        }
+        if self.state.implies(pa, pb) { Lit::TRUE } else { pb }
     }
 }
 
@@ -943,8 +939,8 @@ mod tests {
     use crate::reasoners::eq::dense::InferenceCause;
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
-    use crate::solver::search::random::RandomChoice;
     use crate::solver::Solver;
+    use crate::solver::search::random::RandomChoice;
     use crate::utils::input::Sym;
     use itertools::Itertools;
     use rand::prelude::SmallRng;
@@ -961,11 +957,7 @@ mod tests {
         pub fn new(a: impl Into<Node>, b: impl Into<Node>) -> Pair {
             let a = a.into();
             let b = b.into();
-            if a <= b {
-                Pair { a, b }
-            } else {
-                Pair { a: b, b: a }
-            }
+            if a <= b { Pair { a, b } } else { Pair { a: b, b: a } }
         }
     }
 
@@ -1210,7 +1202,7 @@ mod tests {
     fn random_model(seed: u64) -> Model<String> {
         let mut rng = SmallRng::seed_from_u64(seed);
         let objects = ["alice", "bob", "chloe", "donald", "elon"];
-        let num_objects = rng.gen_range(1..5);
+        let num_objects = rng.random_range(1..5);
         let objects = objects[0..num_objects].to_vec();
         let symbols = SymbolTable::from(vec![("obj", objects.clone())]);
         let symbols = Arc::new(symbols);
@@ -1219,7 +1211,7 @@ mod tests {
 
         let mut model: Model<String> = Model::new_with_symbols(symbols.clone());
 
-        let num_scopes = rng.gen_range(0..3);
+        let num_scopes = rng.random_range(0..3);
         let scopes = (0..=num_scopes)
             .map(|i| {
                 if i == 0 {
@@ -1230,12 +1222,12 @@ mod tests {
             })
             .collect_vec();
 
-        let num_vars = rng.gen_range(0..10);
+        let num_vars = rng.random_range(0..10);
         println!("Problem num_scopes: {num_scopes}, num_vars:  {num_vars}  num_values: {num_objects}");
 
         let mut vars = Vec::with_capacity(num_vars);
         for i in 0..num_vars {
-            let scope_id = rng.gen_range(0..scopes.len());
+            let scope_id = rng.random_range(0..scopes.len());
             let scope = scopes[scope_id];
             let var_name = format!("x{i}");
             println!("  {var_name} [{scope_id}]  in {:?}", &objects);

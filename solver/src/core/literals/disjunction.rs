@@ -50,11 +50,7 @@ impl Disjunction {
 
     pub fn new_non_tautological(literals: Lits) -> Option<Disjunction> {
         let disj = Disjunction::new(literals);
-        if disj.is_tautology() {
-            None
-        } else {
-            Some(disj)
-        }
+        if disj.is_tautology() { None } else { Some(disj) }
     }
 
     /// Returns true if the clause is always true
@@ -265,8 +261,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+    use rand::rng;
     use rand::seq::SliceRandom;
-    use rand::thread_rng;
 
     const A: VarRef = VarRef::from_u32(1u32);
     const B: VarRef = VarRef::from_u32(2u32);
@@ -353,7 +349,7 @@ mod tests {
 
         // select many subsets of the literals and test if going through the builder yields the correct output
         for _ in 0..10000 {
-            lits.shuffle(&mut thread_rng());
+            lits.shuffle(&mut rng());
             let subset = &lits[0..30];
             let disj = Disjunction::from_slice(subset);
             assert!(Disjunction::is_simplified(&disj));
@@ -377,7 +373,7 @@ mod tests {
 
         // select many subsets of the literals and test if going through the builder yields the correct output
         for _ in 0..100 {
-            lits.shuffle(&mut thread_rng());
+            lits.shuffle(&mut rng());
             let subset = &lits[0..30];
             let disj = Disjunction::from_slice(subset);
             let mut builder = DisjunctionBuilder::new();

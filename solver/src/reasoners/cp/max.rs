@@ -1,7 +1,7 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
-use crate::core::{IntCst, Lit, SignedVar, INT_CST_MIN};
-use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
+use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar};
 use crate::reasoners::Contradiction;
+use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct MaxElem {
@@ -178,8 +178,8 @@ impl Propagator for AtLeastOneGeq {
 mod test {
     use crate::core::state::{Cause, Domains};
     use crate::core::{IntCst, Lit, SignedVar, VarRef};
-    use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
     use crate::reasoners::cp::Propagator;
+    use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 
     fn check_bounds(d: &Domains, v: VarRef, lb: IntCst, ub: IntCst) {
         assert_eq!(d.lb(v), lb);

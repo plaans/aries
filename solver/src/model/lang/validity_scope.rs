@@ -1,5 +1,5 @@
-use crate::core::literals::{LitSet, StableLitSet};
 use crate::core::Lit;
+use crate::core::literals::{LitSet, StableLitSet};
 
 /// Represents the scope in which a given expression is valid.
 ///

@@ -5,15 +5,15 @@ use crate::core::state::Conflict;
 use crate::core::state::Explainer;
 use crate::model::Label;
 use crate::model::Model;
+use crate::solver::search::Brancher;
+use crate::solver::search::Decision;
+use crate::solver::search::SearchControl;
 use crate::solver::search::beta::restart::Restart;
 use crate::solver::search::beta::restart::RestartKind;
 use crate::solver::search::beta::value_order::ValueOrder;
 use crate::solver::search::beta::value_order::ValueOrderKind;
 use crate::solver::search::beta::var_order::VarOrder;
 use crate::solver::search::beta::var_order::VarOrderKind;
-use crate::solver::search::Brancher;
-use crate::solver::search::Decision;
-use crate::solver::search::SearchControl;
 use crate::solver::stats::Stats;
 
 /// Brancher for benchamrk, it is designed to be modular.

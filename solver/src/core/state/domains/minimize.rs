@@ -1,9 +1,9 @@
 use itertools::Itertools;
 
 use crate::backtrack::{DecLvl, EventIndex};
+use crate::core::Lit;
 use crate::core::literals::LitSet;
 use crate::core::state::{Domains, Explainer, Explanation, Origin};
-use crate::core::Lit;
 use std::collections::HashSet;
 
 use super::literals::Disjunction;
