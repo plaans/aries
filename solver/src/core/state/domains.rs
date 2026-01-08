@@ -6,13 +6,13 @@ use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, L
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
-use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
+use crate::core::state::{
+    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain,
+};
 use crate::core::views::{Boundable, Dom, VarView};
 use crate::core::*;
 use crate::model::lang::{Atom, IAtom};
 use std::fmt::{Debug, Formatter};
-
-use super::IntDomain;
 
 #[cfg(debug_assertions)]
 pub mod witness;
@@ -176,9 +176,9 @@ impl Domains {
     }
 
     /// Returns the domain of an integer variable (ignoring its presence status)
-    pub fn int_domain(&self, var: impl Into<VarRef>) -> IntDomain {
-        let (lb, ub) = self.bounds(var.into());
-        IntDomain::new(lb, ub)
+    pub fn concrete_domain<Var: VarView + Copy>(&self, var: Var) -> RangeDomain<Var::Value> {
+        let (lb, ub) = self.bounds(var);
+        RangeDomain::new(lb, ub)
     }
 
     // ============== Integer domain accessors =====================
@@ -896,6 +896,10 @@ impl Term for Atom {
 impl Dom for &Domains {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::upper_bound(self, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        Domains::presence(self, var)
     }
 }
 

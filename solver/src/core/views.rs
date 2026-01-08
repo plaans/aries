@@ -1,7 +1,10 @@
-use crate::core::{IntCst, Lit, SignedVar};
+use crate::core::{IntCst, Lit, SignedVar, VarRef};
 
 pub trait Dom {
     fn upper_bound(&self, svar: SignedVar) -> IntCst;
+
+    fn presence(&self, var: VarRef) -> Lit;
+
     fn lower_bound(&self, svar: SignedVar) -> IntCst {
         -self.upper_bound(-svar)
     }

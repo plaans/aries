@@ -5,18 +5,16 @@ use crate::{
 use std::fmt::{Display, Formatter};
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct IntDomain {
-    pub lb: IntCst,
-    pub ub: IntCst,
+pub struct RangeDomain<Value: Ord> {
+    pub lb: Value,
+    pub ub: Value,
 }
-impl IntDomain {
-    pub fn new(lb: IntCst, ub: IntCst) -> IntDomain {
-        IntDomain { lb, ub }
-    }
 
-    /// Returns the number of elements in the domain.
-    pub fn size(&self) -> LongCst {
-        cst_int_to_long(self.ub) - cst_int_to_long(self.lb) + 1
+pub type IntDomain = RangeDomain<IntCst>;
+
+impl<Value: Ord> RangeDomain<Value> {
+    pub fn new(lb: Value, ub: Value) -> Self {
+        RangeDomain { lb, ub }
     }
 
     /// Returns true if the domain contains exactly one value.
@@ -25,18 +23,21 @@ impl IntDomain {
     }
 
     /// Returns true if the domain *only* contains `value`
-    pub fn is_bound_to(&self, value: IntCst) -> bool {
+    pub fn is_bound_to(&self, value: Value) -> bool {
         self.lb == value && self.ub == value
     }
 
     /// Returns true if the domain contains `value`
-    pub fn contains(&self, value: IntCst) -> bool {
+    pub fn contains(&self, value: Value) -> bool {
         self.lb <= value && value <= self.ub
     }
 
     /// If the domain contains a single value, return it.
     /// Returns `None` otherwise.
-    pub fn as_singleton(&self) -> Option<IntCst> {
+    pub fn as_singleton(&self) -> Option<Value>
+    where
+        Value: Copy,
+    {
         if self.is_bound() { Some(self.lb) } else { None }
     }
 
@@ -46,13 +47,18 @@ impl IntDomain {
     }
 
     /// Returns true if the two domains have no common value
-    pub fn disjoint(&self, other: &IntDomain) -> bool {
+    pub fn disjoint(&self, other: &Self) -> bool {
         self.ub < other.lb || other.ub < self.lb
     }
 
     /// Returns true if two domains have a non-empty intersection.
-    pub fn overlaps(&self, other: &IntDomain) -> bool {
+    pub fn overlaps(&self, other: &Self) -> bool {
         !self.disjoint(other)
+    }
+}
+impl IntDomain {
+    pub fn size(&self) -> LongCst {
+        cst_int_to_long(self.ub) - cst_int_to_long(self.lb) + 1
     }
 }
 

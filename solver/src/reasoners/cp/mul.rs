@@ -113,8 +113,8 @@ impl Mul {
     /// Propagates bounds on product, returns true if bounds updated
     fn propagate_forward(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
         // Product bounds are max/min of all combinations of factor bounds
-        let f1_dom = domains.int_domain(self.fact1);
-        let f2_dom = domains.int_domain(self.fact2);
+        let f1_dom = domains.concrete_domain(self.fact1);
+        let f2_dom = domains.concrete_domain(self.fact2);
         let prod = f1_dom * f2_dom;
 
         domains.set_bounds(self.prod, (prod.lb, prod.ub), cause)
@@ -128,8 +128,8 @@ impl Mul {
         fact: VarRef,
         other_fact: VarRef,
     ) -> Result<bool, Contradiction> {
-        let p = domains.int_domain(self.prod);
-        let of = domains.int_domain(other_fact);
+        let p = domains.concrete_domain(self.prod);
+        let of = domains.concrete_domain(other_fact);
         if p.contains(0) && of.contains(0) {
             // Both upper and lower bounds of fact can be anything since other_fact can be 0
             Ok(false)
@@ -174,9 +174,9 @@ impl Mul {
         //     (5, 10),
         // );
         // Where -8 * -3 < 36 => f1 >= 0 && f2 >= 0
-        let p = domains.int_domain(self.prod);
-        let f1 = domains.int_domain(self.fact1);
-        let f2 = domains.int_domain(self.fact2);
+        let p = domains.concrete_domain(self.prod);
+        let f1 = domains.concrete_domain(self.fact1);
+        let f2 = domains.concrete_domain(self.fact2);
 
         if p.contains(0) || !f1.contains(0) || !f2.contains(0) {
             return Ok(false);
@@ -208,8 +208,8 @@ impl Mul {
         // Case 1: y spans 1 => x can be anything
         // Case 2: y doesn't span 1 => prod is 0
         let fact = self.xyx_fact().unwrap();
-        let prod_dom = domains.int_domain(self.prod);
-        let fact_dom = domains.int_domain(fact);
+        let prod_dom = domains.concrete_domain(self.prod);
+        let fact_dom = domains.concrete_domain(fact);
         if !fact_dom.contains(1) {
             domains.set_bounds(self.prod, (0, 0), cause)?;
         }
@@ -226,9 +226,9 @@ impl Mul {
 
     /// Check for simple inconsistencies that can quickly be verified without modifying bounds
     fn trivially_inconsistent(&self, domains: &Domains) -> bool {
-        let prod = domains.int_domain(self.prod);
-        let f1 = domains.int_domain(self.fact1);
-        let f2 = domains.int_domain(self.fact2);
+        let prod = domains.concrete_domain(self.prod);
+        let f1 = domains.concrete_domain(self.fact1);
+        let f2 = domains.concrete_domain(self.fact2);
         let rhs = f1 * f2;
         prod.disjoint(&rhs)
     }
