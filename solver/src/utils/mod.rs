@@ -53,7 +53,7 @@ pub fn enumerate<Item, Iter: Iterator<Item = Item> + Clone>(
 }
 
 struct Combination<Item, Iterable> {
-    gen: Vec<Iterable>,
+    generators: Vec<Iterable>,
     cur: Vec<Iterable>,
     sol: Vec<Item>,
     is_first: bool,
@@ -64,7 +64,7 @@ impl<Item, Iterable: Iterator<Item = Item> + Clone> Combination<Item, Iterable> 
     pub fn new(instances: Vec<Iterable>) -> Self {
         let size = instances.len();
         Combination {
-            gen: instances.clone(),
+            generators: instances.clone(),
             cur: instances,
             sol: Vec::with_capacity(size),
             is_first: true,
@@ -79,7 +79,7 @@ impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator fo
     fn advance(&mut self) {
         if self.finished {
             return;
-        } else if self.is_first && self.gen.is_empty() {
+        } else if self.is_first && self.generators.is_empty() {
             // empty generator, we should only generate the unit result : []
             self.is_first = false;
             return;
@@ -88,7 +88,7 @@ impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator fo
                 self.finished = true;
                 return;
             }
-            debug_assert!(self.sol.len() == self.gen.len());
+            debug_assert!(self.sol.len() == self.generators.len());
             self.sol.pop();
         }
         self.is_first = false;
@@ -102,9 +102,9 @@ impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator fo
                     return;
                 }
                 self.sol.pop();
-                self.cur[lvl] = self.gen[lvl].clone();
+                self.cur[lvl] = self.generators[lvl].clone();
             }
-            if self.sol.len() == self.gen.len() {
+            if self.sol.len() == self.generators.len() {
                 return; // solution remaining
             }
         }
@@ -114,7 +114,7 @@ impl<I, It: Iterator<Item = I> + Clone> streaming_iterator::StreamingIterator fo
         if self.finished {
             None
         } else {
-            debug_assert_eq!(self.sol.len(), self.gen.len());
+            debug_assert_eq!(self.sol.len(), self.generators.len());
             Some(self.sol.as_slice())
         }
     }

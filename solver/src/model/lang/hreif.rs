@@ -1,11 +1,11 @@
 use smallvec::SmallVec;
 
 use crate::{
-    core::{state::Term, IntCst, Lit, VarRef},
+    core::{IntCst, Lit, VarRef, state::Term},
     model::{
-        extensions::PartialBoolAssignment,
-        lang::expr::{or, And, Leq, Or},
         Label, Model,
+        extensions::PartialBoolAssignment,
+        lang::expr::{And, Leq, Or, or},
     },
     reif::ReifExpr,
 };
@@ -65,8 +65,8 @@ where
         self.get_model_mut().state.new_optional_var(lb, ub, presence)
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
-        let l = self.get_model_mut().half_reify(e.clone());
-        l
+         self.get_model_mut().half_reify(e.clone())
+
     }
 
     fn add_implies(&mut self, l: Lit, e: ReifExpr) {
@@ -245,8 +245,8 @@ mod test {
         model::{
             extensions::AssignmentExt,
             lang::{
-                expr::{lt, neq},
                 Atom, IAtom,
+                expr::{lt, neq},
             },
         },
         solver::Solver,

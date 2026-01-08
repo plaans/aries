@@ -348,7 +348,7 @@ impl Operators {
     }
 
     /// An iterator on all Operators in this data structure.
-    pub fn iter(&self) -> impl Iterator<Item = Op> {
+    pub fn iter(&self) -> impl Iterator<Item = Op> + '_ {
         self.all.keys()
     }
 

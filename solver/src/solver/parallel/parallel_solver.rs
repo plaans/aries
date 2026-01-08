@@ -1,11 +1,11 @@
 use crate::core::IntCst;
 use crate::core::Lit;
+use crate::model::Label;
 use crate::model::extensions::{AssignmentExt, SavedAssignment};
 use crate::model::lang::IAtom;
-use crate::model::Label;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver, UnsatCore};
-use crossbeam_channel::{select, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, select};
 use itertools::Itertools;
 use std::sync::Arc;
 use std::thread;
@@ -304,12 +304,11 @@ impl<Lbl: Label> ParSolver<Lbl> {
                 recv(solvers_output) -> msg => { // solver intermediate result
                     if let Ok(msg) = msg {
                         self.share_among_solvers(&msg);
-                        if !matches!(status, SolverStatus::Final(_)) {
-                            if let OutputSignal::SolutionFound(assignment) = msg.msg {
+                        if !matches!(status, SolverStatus::Final(_)) && let OutputSignal::SolutionFound(assignment) = msg.msg {
                                 on_new_sol(assignment.clone());
                                 status = SolverStatus::Intermediate(assignment);
                             }
-                        }
+
                     }
                 }
                 default(time_left) => { // timeout

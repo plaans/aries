@@ -13,8 +13,8 @@ use crate::{
     backtrack::EventIndex,
     collections::ref_store::RefVec,
     core::{
-        literals::{Disjunction, Lits},
         Lit,
+        literals::{Disjunction, Lits},
     },
     reasoners::sat::clauses::ClauseId,
 };
@@ -89,7 +89,7 @@ impl Clauses {
         }
         self.buffer.simplify_disjunctive();
         // create and return the new clause from the pre-processed literals
-        Clause::new(&self.buffer, &self.arena)
+        unsafe { Clause::new(&self.buffer, &self.arena) }
     }
 
     pub fn push(&mut self, clause: &[Lit], scope: Option<Lit>) -> ClauseId {
