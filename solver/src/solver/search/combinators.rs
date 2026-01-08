@@ -1,8 +1,8 @@
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::core::state::{Conflict, Explainer};
 use crate::core::IntCst;
-use crate::model::extensions::SavedAssignment;
+use crate::core::state::{Conflict, Explainer};
 use crate::model::Model;
+use crate::model::extensions::SavedAssignment;
 use crate::solver::search::{Brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use itertools::Itertools;

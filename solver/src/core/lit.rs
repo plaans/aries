@@ -236,11 +236,7 @@ impl std::ops::Not for Lit {
 
 impl From<bool> for Lit {
     fn from(b: bool) -> Self {
-        if b {
-            Lit::TRUE
-        } else {
-            Lit::FALSE
-        }
+        if b { Lit::TRUE } else { Lit::FALSE }
     }
 }
 

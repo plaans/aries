@@ -289,11 +289,12 @@ impl Domains {
         // variable must be optional
         debug_assert_ne!(prez, Lit::TRUE);
         // invariant: optional variable cannot be involved in implications
-        debug_assert!(self
-            .implications
-            .direct_implications_of(affected.leq(new_ub))
-            .next()
-            .is_none());
+        debug_assert!(
+            self.implications
+                .direct_implications_of(affected.leq(new_ub))
+                .next()
+                .is_none()
+        );
 
         let new_bound = affected.leq(new_ub);
 

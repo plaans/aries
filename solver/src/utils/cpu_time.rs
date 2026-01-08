@@ -85,7 +85,7 @@ mod cycles {
     /// Returns the value of the processor's time-stamp counter.
     /// This does not wait for any other instruction to finish. (see rdtscp for this).
     unsafe fn now() -> u64 {
-        unsafe { arch::_rdtsc()}
+        unsafe { arch::_rdtsc() }
     }
 
     #[derive(Copy, Clone)]

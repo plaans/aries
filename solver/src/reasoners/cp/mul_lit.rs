@@ -2,8 +2,8 @@ use std::cmp::{max, min};
 
 use crate::{
     core::{
-        state::{Explanation, Term},
         Lit, Relation, VarRef,
+        state::{Explanation, Term},
     },
     model::extensions::AssignmentExt,
     reasoners::Contradiction,
@@ -91,9 +91,11 @@ impl Propagator for VarEqVarMulLit {
         out_explanation: &mut crate::core::state::Explanation,
     ) {
         // At least one element of the constraint must be the subject of the explanation
-        debug_assert!([self.reified, self.original, self.lit.variable()]
-            .iter()
-            .any(|&v| v == literal.variable()));
+        debug_assert!(
+            [self.reified, self.original, self.lit.variable()]
+                .iter()
+                .any(|&v| v == literal.variable())
+        );
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);

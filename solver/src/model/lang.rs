@@ -22,7 +22,7 @@ pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
 pub use validity_scope::*;
 
-use crate::core::{IntCst, INT_CST_MAX, INT_CST_MIN};
+use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};
 use crate::model::types::TypeId;
 pub use sym::{SAtom, SVar};
 pub use variables::Variable;

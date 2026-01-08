@@ -205,7 +205,7 @@ impl IntoIterator for Lits {
 
 #[cfg(test)]
 mod test {
-    use crate::core::{literals::Lits, Lit};
+    use crate::core::{Lit, literals::Lits};
 
     #[test]
     fn test_lits_size() {

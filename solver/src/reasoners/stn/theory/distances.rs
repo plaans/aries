@@ -17,8 +17,8 @@ thread_local! {
     ))
 }
 
-use super::contraint_db::Enabler;
 use super::StnTheory;
+use super::contraint_db::Enabler;
 
 struct Reversed<'a, V: Copy, E: Copy, G: Graph<V, E>>(&'a G, PhantomData<V>, PhantomData<E>);
 
@@ -612,9 +612,9 @@ mod test {
     use super::*;
     use crate::core::IntCst;
     use itertools::Itertools;
+    use rand::Rng;
     use rand::prelude::SeedableRng;
     use rand::prelude::SmallRng;
-    use rand::Rng;
     use std::collections::HashMap;
     use std::iter::once;
 

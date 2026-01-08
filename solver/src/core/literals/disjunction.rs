@@ -50,11 +50,7 @@ impl Disjunction {
 
     pub fn new_non_tautological(literals: Lits) -> Option<Disjunction> {
         let disj = Disjunction::new(literals);
-        if disj.is_tautology() {
-            None
-        } else {
-            Some(disj)
-        }
+        if disj.is_tautology() { None } else { Some(disj) }
     }
 
     /// Returns true if the clause is always true

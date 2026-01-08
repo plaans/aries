@@ -1,14 +1,14 @@
 use hashbrown::HashMap;
 
-use crate::core::state::Conflict;
-use crate::core::state::Explainer;
 use crate::core::Lit;
 use crate::core::Relation;
 use crate::core::VarRef;
+use crate::core::state::Conflict;
+use crate::core::state::Explainer;
 use crate::model::Label;
 use crate::model::Model;
-use crate::solver::search::beta::value_order::ValueOrder;
 use crate::solver::search::DecLvl;
+use crate::solver::search::beta::value_order::ValueOrder;
 
 #[derive(Clone, Debug)]
 pub struct Dynamic {
@@ -81,11 +81,7 @@ impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
         let score = self.get(&var);
         let (lb, ub) = model.state.bounds(var);
         let positive = score > 0 || (score == 0 && self.zero_is_pos());
-        if positive {
-            var.geq(ub)
-        } else {
-            var.leq(lb)
-        }
+        if positive { var.geq(ub) } else { var.leq(lb) }
     }
 
     fn conflict(

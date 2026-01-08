@@ -1,11 +1,11 @@
 use crate::{
     core::{
-        state::{Cause, Domains, DomainsSnapshot, Explanation, IntDomain},
         IntCst, Lit, VarRef,
+        state::{Cause, Domains, DomainsSnapshot, Explanation, IntDomain},
     },
     reasoners::{
-        cp::{Propagator, PropagatorId, Watches},
         Contradiction,
+        cp::{Propagator, PropagatorId, Watches},
     },
 };
 
@@ -293,7 +293,7 @@ fn div_floor_ceil(x: IntCst, y: IntCst) -> (IntCst, IntCst) {
 mod test {
     use std::collections::HashSet;
 
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     use super::*;
     use crate::{core::*, reasoners::cp::test::utils::test_explanations};

@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::{
+    INT_CST_MAX, IntCst, PropagatorId, SignedVar, StnTheory,
     state::{Domains, InvalidUpdate},
-    IntCst, PropagatorId, SignedVar, StnTheory, INT_CST_MAX,
 };
 
 thread_local! {
@@ -172,8 +172,10 @@ impl Dij {
                 let cause = Identity::new(crate::reasoners::ReasonerId::Diff)
                     .inference(ModelUpdateCause::EdgePropagation(pred));
                 let changed_something = doms.set_ub(v, new_source_ub, cause)?;
-                debug_assert!(changed_something || doms.ub(v) != self.potential[v],
-                    "We should always change the bound except in the corner case where the literal was set as part of an edge deactivation");
+                debug_assert!(
+                    changed_something || doms.ub(v) != self.potential[v],
+                    "We should always change the bound except in the corner case where the literal was set as part of an edge deactivation"
+                );
                 stn.stats.bound_updates += 1;
                 // there are two possibilities:
                 //  - we successfully performed the update on the ub (in which case it must comply we the update of the predecessor)

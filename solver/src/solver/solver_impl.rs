@@ -9,10 +9,10 @@ use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
-use crate::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
 use crate::solver::musmcs::MusMcsEnumerator;
+use crate::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
-use crate::solver::search::{default_brancher, Decision, SearchControl};
+use crate::solver::search::{Decision, SearchControl, default_brancher};
 use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
 use crossbeam_channel::Sender;
@@ -1364,8 +1364,8 @@ impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
 
 #[cfg(test)]
 mod test {
-    use crate::core::literals::Disjunction;
     use crate::core::Lit;
+    use crate::core::literals::Disjunction;
 
     type Model = crate::model::Model<&'static str>;
     type Solver = crate::solver::Solver<&'static str>;

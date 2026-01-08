@@ -15,7 +15,7 @@ use crate::collections::*;
 use crate::core::state::{
     Cause, Domains, DomainsSnapshot, Event, Explainer, Explanation, InferenceCause, InvalidUpdate,
 };
-use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MAX, INT_CST_MIN};
+use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
 use crate::create_ref_type;
 use crate::model::extensions::{AssignmentExt, DisjunctionExt};
 use crate::model::lang::linear::NFLinearLeq;
@@ -137,9 +137,11 @@ impl Cp {
     pub fn add_half_reified_mul_constraint(&mut self, mul: &EqMul, active: Lit, doms: &Domains) {
         // TODO: this is correct but may miss opportunities for eager propagation of optional variables
         let valid = doms.presence(active);
-        debug_assert!([mul.lhs, mul.rhs1, mul.rhs2]
-            .iter()
-            .all(|e| doms.implies(valid, doms.presence(*e))));
+        debug_assert!(
+            [mul.lhs, mul.rhs1, mul.rhs2]
+                .iter()
+                .all(|e| doms.implies(valid, doms.presence(*e)))
+        );
         let propagator = mul::Mul {
             prod: mul.lhs,
             fact1: mul.rhs1,

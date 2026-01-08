@@ -119,7 +119,7 @@ impl ClauseDb {
             None => {
                 // no free spot, add the clause at the end of the database
                 debug_assert_eq!(self.num_clauses - 1, self.clauses.len()); // note: we have already incremented the clause counts
-                                                                            // no free spaces push at the end
+                // no free spaces push at the end
                 let id = self.clauses.push(cl, scope);
                 self.metadata.insert(id, meta);
                 id
@@ -188,11 +188,7 @@ impl ClauseDb {
     /// Returns the current LBD value from the clause (updated in unit propagation)
     pub fn get_lbd(&self, clause: ClauseId) -> Option<u32> {
         let lbd = self.metadata[clause].lbd;
-        if lbd == 0 {
-            None
-        } else {
-            Some(lbd)
-        }
+        if lbd == 0 { None } else { Some(lbd) }
     }
 
     pub fn bump_activity(&mut self, cl: ClauseId) {

@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MIN};
+use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
 use crate::model::{Label, Model};
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -923,11 +923,7 @@ impl<L: Label> ReifyEq for Model<L> {
     fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit {
         let pa = self.state.presence(a);
         let pb = self.state.presence(b);
-        if self.state.implies(pa, pb) {
-            Lit::TRUE
-        } else {
-            pb
-        }
+        if self.state.implies(pa, pb) { Lit::TRUE } else { pb }
     }
 }
 
@@ -943,8 +939,8 @@ mod tests {
     use crate::reasoners::eq::dense::InferenceCause;
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
-    use crate::solver::search::random::RandomChoice;
     use crate::solver::Solver;
+    use crate::solver::search::random::RandomChoice;
     use crate::utils::input::Sym;
     use itertools::Itertools;
     use rand::prelude::SmallRng;
@@ -961,11 +957,7 @@ mod tests {
         pub fn new(a: impl Into<Node>, b: impl Into<Node>) -> Pair {
             let a = a.into();
             let b = b.into();
-            if a <= b {
-                Pair { a, b }
-            } else {
-                Pair { a: b, b: a }
-            }
+            if a <= b { Pair { a, b } } else { Pair { a: b, b: a } }
         }
     }
 

@@ -169,9 +169,11 @@ impl<Lbl: Label> Model<Lbl> {
 
     /// Returns a presence literal that is true iff all given presence literal are true.
     pub fn get_conjunctive_scope(&mut self, presence_variables: &[Lit]) -> Lit {
-        assert!(presence_variables
-            .iter()
-            .all(|l| self.state.presence(l.variable()) == Lit::TRUE));
+        assert!(
+            presence_variables
+                .iter()
+                .all(|l| self.state.presence(l.variable()) == Lit::TRUE)
+        );
         let empty: &[Lit] = &[];
         let scope = ValidityScope::new(presence_variables.iter().copied(), empty.iter().copied());
         let scope = scope.to_conjunction(

@@ -1,5 +1,5 @@
 use crate::{
-    core::{cst_int_to_long, IntCst, LongCst, INT_CST_MAX, INT_CST_MIN},
+    core::{INT_CST_MAX, INT_CST_MIN, IntCst, LongCst, cst_int_to_long},
     model::lang::Rational,
 };
 use std::fmt::{Display, Formatter};
@@ -37,11 +37,7 @@ impl IntDomain {
     /// If the domain contains a single value, return it.
     /// Returns `None` otherwise.
     pub fn as_singleton(&self) -> Option<IntCst> {
-        if self.is_bound() {
-            Some(self.lb)
-        } else {
-            None
-        }
+        if self.is_bound() { Some(self.lb) } else { None }
     }
 
     /// Returns true if the domain is empty.

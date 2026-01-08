@@ -65,8 +65,7 @@ where
         self.get_model_mut().state.new_optional_var(lb, ub, presence)
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
-         self.get_model_mut().half_reify(e.clone())
-
+        self.get_model_mut().half_reify(e.clone())
     }
 
     fn add_implies(&mut self, l: Lit, e: ReifExpr) {

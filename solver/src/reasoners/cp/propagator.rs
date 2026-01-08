@@ -180,19 +180,19 @@ pub mod test {
         //! Utility funcitons for testing propagators
 
         use itertools::Itertools;
-        use rand::{rngs::SmallRng, seq::SliceRandom, Rng, SeedableRng};
+        use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
 
         use crate::{
             backtrack::Backtrack,
             core::{
+                Lit,
                 literals::Disjunction,
                 state::{
                     Cause, Domains, DomainsSnapshot, Event, Explainer, Explanation, InferenceCause, InvalidUpdate,
                     Origin,
                 },
-                Lit,
             },
-            reasoners::{cp::Propagator, Contradiction, ReasonerId},
+            reasoners::{Contradiction, ReasonerId, cp::Propagator},
         };
 
         struct PropExplainer<'a> {

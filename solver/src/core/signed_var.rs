@@ -62,11 +62,7 @@ impl SignedVar {
     /// Returns `1` if the variable is a positive view and `-1` otherwise
     #[inline]
     pub fn sign(self) -> IntCst {
-        if self.is_plus() {
-            1
-        } else {
-            -1
-        }
+        if self.is_plus() { 1 } else { -1 }
     }
 
     #[inline]
