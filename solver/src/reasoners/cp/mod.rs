@@ -34,7 +34,6 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Default)]
 pub struct Watches {
     propagations: RefMap<SignedVar, Vec<PropagatorId>>,
-    empty: [PropagatorId; 0],
 }
 
 impl Watches {
@@ -71,7 +70,7 @@ impl Watches {
     /// Returns all propagators
     fn get_ub_watches(&self, var: impl Into<SignedVar>) -> &[PropagatorId] {
         let var = var.into();
-        self.propagations.get(var).map(|v| v.as_slice()).unwrap_or(&self.empty)
+        self.propagations.get(var).map(|v| v.as_slice()).unwrap_or(&[])
     }
 }
 
