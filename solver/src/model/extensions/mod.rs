@@ -53,7 +53,7 @@ impl AssignmentExt for SavedAssignment {
 
     fn var_domain(&self, int: impl Into<IAtom>) -> IntDomain {
         let int = int.into();
-        let (lb, ub) = self.bounds(int.var.into());
+        let (lb, ub) = self.bounds(int.var);
         IntDomain {
             lb: lb + int.shift,
             ub: ub + int.shift,

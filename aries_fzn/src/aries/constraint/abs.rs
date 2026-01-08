@@ -32,7 +32,7 @@ impl Abs {
 
 impl<Lbl: Label> Post<Lbl> for Abs {
     fn post(&self, model: &mut Model<Lbl>) {
-        let (lb, ub) = model.state.bounds(self.a.into());
+        let (lb, ub) = model.state.bounds(self.a);
 
         let minus_a = model.state.new_var(-ub, -lb);
         let minus_a = IVar::new(minus_a);

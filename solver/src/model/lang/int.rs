@@ -1,3 +1,5 @@
+use crate::core::state::Term;
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::lang::ConversionError;
 use crate::model::lang::linear::LinearTerm;
@@ -48,6 +50,30 @@ impl From<IVar> for VarRef {
 impl From<IVar> for SignedVar {
     fn from(value: IVar) -> Self {
         SignedVar::plus(value.0)
+    }
+}
+
+impl VarView for IVar {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.variable().upper_bound(dom)
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.variable().lower_bound(dom)
+    }
+}
+
+impl Boundable for IVar {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        self.variable().leq(ub)
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        self.variable().geq(lb)
     }
 }
 

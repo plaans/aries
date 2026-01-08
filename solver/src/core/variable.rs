@@ -1,4 +1,10 @@
-use crate::{core::IntCst, core::Lit, create_ref_type};
+use crate::{
+    core::{
+        IntCst, Lit, SignedVar,
+        views::{Boundable, VarView},
+    },
+    create_ref_type,
+};
 use std::{fmt::Debug, hash::Hash};
 
 create_ref_type!(VarRef);
@@ -35,5 +41,29 @@ impl VarRef {
     }
     pub fn gt(self, i: IntCst) -> Lit {
         Lit::gt(self, i)
+    }
+}
+
+impl VarView for VarRef {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl super::views::Dom) -> Self::Value {
+        dom.upper_bound(SignedVar::plus(*self))
+    }
+
+    fn lower_bound(&self, dom: impl super::views::Dom) -> Self::Value {
+        dom.lower_bound(SignedVar::plus(*self))
+    }
+}
+
+impl Boundable for VarRef {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        (*self).leq(ub)
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        (*self).geq(lb)
     }
 }
