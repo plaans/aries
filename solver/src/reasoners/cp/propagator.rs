@@ -142,6 +142,7 @@ pub mod test {
         //  ===== Tests ======
 
         use itertools::Itertools;
+        use rand::prelude::IndexedRandom;
         use rand::rngs::SmallRng;
         use rand::seq::SliceRandom;
         use rand::{Rng, SeedableRng};
@@ -153,12 +154,12 @@ pub mod test {
 
             for _ in 0..n {
                 let mut d = Domains::new();
-                let num_vars = rng.gen_range(2..=10);
+                let num_vars = rng.random_range(2..=10);
                 let vars = (0..num_vars).map(|_| d.new_var(0, 10)).collect_vec();
-                let a = vars.choose(&mut rng).unwrap().leq(rng.gen_range(0..=10));
-                let b = vars.choose(&mut rng).unwrap().leq(rng.gen_range(0..=10));
-                let a = if rng.gen_bool(0.5) { a } else { !a };
-                let b = if rng.gen_bool(0.5) { b } else { !b };
+                let a = vars.choose(&mut rng).unwrap().leq(rng.random_range(0..=10));
+                let b = vars.choose(&mut rng).unwrap().leq(rng.random_range(0..=10));
+                let a = if rng.random_bool(0.5) { a } else { !a };
+                let b = if rng.random_bool(0.5) { b } else { !b };
                 problems.push((d, ImpliesProp { a, b }));
             }
 
@@ -302,19 +303,19 @@ pub mod test {
         ///
         /// Note: some decisions may be redundant or contradictory
         fn pick_decisions(d: &Domains, min: usize, max: usize, rng: &mut SmallRng) -> Vec<Lit> {
-            let num_decisions = rng.gen_range(min..=max);
+            let num_decisions = rng.random_range(min..=max);
             let vars = d.variables().filter(|v| !d.is_bound(*v)).collect_vec();
             let mut lits = Vec::with_capacity(num_decisions);
             for _ in 0..num_decisions {
-                let var_id = rng.gen_range(0..vars.len());
+                let var_id = rng.random_range(0..vars.len());
                 let var = vars[var_id];
                 let (lb, ub) = d.bounds(var);
-                let below: bool = rng.gen();
+                let below: bool = rng.random();
                 let lit = if below {
-                    let ub = rng.gen_range(lb..ub);
+                    let ub = rng.random_range(lb..ub);
                     Lit::leq(var, ub)
                 } else {
-                    let lb = rng.gen_range((lb + 1)..=ub);
+                    let lb = rng.random_range((lb + 1)..=ub);
                     Lit::geq(var, lb)
                 };
                 lits.push(lit);

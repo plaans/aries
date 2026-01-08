@@ -532,7 +532,7 @@ mod tests {
         let efb = e(&[false], "b", 2);
         let ei1 = i("c", 1);
         let ei2 = i("c", 2);
-        let effects = vec![
+        let effects = [
             eta.clone(),
             etb.clone(),
             efa.clone(),
@@ -568,7 +568,7 @@ mod tests {
         let efa = e(&[false], "a", 5);
         let etb = e(&[true], "b", 2);
         let efb = e(&[false], "b", 2);
-        let effects = vec![eta.clone(), etb.clone(), efa.clone(), efb.clone()];
+        let effects = [eta.clone(), etb.clone(), efa.clone(), efb.clone()];
 
         for &condition in &[true, false] {
             for e1 in effects.iter() {

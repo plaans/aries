@@ -294,13 +294,13 @@ mod tests {
             let prez = d.new_presence_literal(Lit::TRUE);
             let lit = d.new_presence_literal(prez);
 
-            let reif_lb = rng.gen_range(-20..=20);
-            let reif_ub = rng.gen_range(-20..=20).max(reif_lb);
+            let reif_lb = rng.random_range(-20..=20);
+            let reif_ub = rng.random_range(-20..=20).max(reif_lb);
             let reified = d.new_var(reif_lb, reif_ub);
 
             let orig_prez = d.new_presence_literal(prez);
-            let orig_lb = rng.gen_range(-20..=20);
-            let orig_ub = rng.gen_range(-20..=20).max(orig_lb);
+            let orig_lb = rng.random_range(-20..=20);
+            let orig_ub = rng.random_range(-20..=20).max(orig_lb);
             let original = d.new_optional_var(orig_lb, orig_ub, orig_prez);
             d.add_implication(lit, orig_prez);
 

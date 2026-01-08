@@ -737,13 +737,13 @@ mod test {
     fn gen_graph(seed: u64) -> EdgeList {
         let mut graph = Vec::new();
         let mut rng = SmallRng::seed_from_u64(seed);
-        let num_vertices = rng.gen_range(4..10);
-        let num_edges = rng.gen_range(2..=15);
+        let num_vertices = rng.random_range(4..10);
+        let num_edges = rng.random_range(2..=15);
 
         while graph.len() < num_edges {
-            let src = rng.gen_range(0..num_vertices);
-            let tgt = rng.gen_range(0..num_vertices);
-            let weight = rng.gen_range(-10..=10);
+            let src = rng.random_range(0..num_vertices);
+            let tgt = rng.random_range(0..num_vertices);
+            let weight = rng.random_range(-10..=10);
             let edge = TestEdge { src, tgt, weight };
             graph.push(edge);
             if has_negative_cycle(&graph) {

@@ -322,7 +322,7 @@ mod tests {
         test_err!(equals, env);
         test_err!(equals, env, t);
         test_err!(equals, env, t, t, t);
-        let values = vec![t, f, i1, i2, s1, s2];
+        let values = [t, f, i1, i2, s1, s2];
         for i in 0..values.len() {
             for j in 0..values.len() {
                 let e = i == j;
@@ -659,7 +659,7 @@ mod tests {
         test_err!(iff, env);
         test_err!(iff, env, t);
         test_err!(iff, env, t, t, t);
-        let values = vec![t, f, i1, i2, s1, s2];
+        let values = [t, f, i1, i2, s1, s2];
         for i in 0..values.len() {
             for j in 0..values.len() {
                 let (v1, v2) = (values[i].clone(), values[j].clone());

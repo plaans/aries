@@ -339,16 +339,16 @@ mod test {
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
         for _ in 0..n {
-            let fact1_val = rng.gen_range(-max..max);
-            let fact2_val = rng.gen_range(-max..max);
+            let fact1_val = rng.random_range(-max..max);
+            let fact2_val = rng.random_range(-max..max);
             let prod_val = fact1_val * fact2_val;
             let mut d = Domains::new();
             let prod_bounds = (
-                rng.gen_range(-max * max..=prod_val),
-                rng.gen_range(prod_val..=max * max),
+                rng.random_range(-max * max..=prod_val),
+                rng.random_range(prod_val..=max * max),
             );
-            let fact1_bounds = (rng.gen_range(-max..=fact1_val), rng.gen_range(fact1_val..=max));
-            let fact2_bounds = (rng.gen_range(-max..=fact2_val), rng.gen_range(fact2_val..=max));
+            let fact1_bounds = (rng.random_range(-max..=fact1_val), rng.random_range(fact1_val..=max));
+            let fact2_bounds = (rng.random_range(-max..=fact2_val), rng.random_range(fact2_val..=max));
             let prod = d.new_var(prod_bounds.0, prod_bounds.1);
             let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
             let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
@@ -373,14 +373,14 @@ mod test {
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
         for _ in 0..n {
-            let fact_val = rng.gen_range(-max..max);
+            let fact_val = rng.random_range(-max..max);
             let prod_val = fact_val.pow(2);
             let mut d = Domains::new();
             let prod = d.new_var(
-                rng.gen_range(-max * max..=prod_val),
-                rng.gen_range(prod_val..=max * max),
+                rng.random_range(-max * max..=prod_val),
+                rng.random_range(prod_val..=max * max),
             );
-            let fact = d.new_var(rng.gen_range(-max..=fact_val), rng.gen_range(fact_val..=max));
+            let fact = d.new_var(rng.random_range(-max..=fact_val), rng.random_range(fact_val..=max));
             let prop = Mul {
                 prod,
                 fact1: fact,

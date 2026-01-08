@@ -296,7 +296,7 @@ impl ConflictBasedBrancher {
             if vars.is_empty() {
                 None
             } else {
-                let idx = self.rng.gen_range(0..vars.len());
+                let idx = self.rng.random_range(0..vars.len());
                 Some(vars[idx])
             }
         } else {

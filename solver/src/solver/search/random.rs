@@ -57,15 +57,15 @@ impl<L> SearchControl<L> for RandomChoice {
         if variables.is_empty() {
             return None;
         }
-        let var_id = self.rng.gen_range(0..variables.len());
+        let var_id = self.rng.random_range(0..variables.len());
         let var = variables[var_id];
         let (lb, ub) = model.state.bounds(var);
-        let upper: bool = self.rng.gen();
+        let upper: bool = self.rng.random();
         if upper {
-            let val = self.rng.gen_range(lb..ub);
+            let val = self.rng.random_range(lb..ub);
             Some(Decision::SetLiteral(Lit::leq(var, val)))
         } else {
-            let val = self.rng.gen_range((lb + 1)..=ub);
+            let val = self.rng.random_range((lb + 1)..=ub);
             Some(Decision::SetLiteral(Lit::geq(var, val)))
         }
     }

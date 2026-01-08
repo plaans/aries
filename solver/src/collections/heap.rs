@@ -410,7 +410,7 @@ mod test {
         }
 
         for i in 0..N {
-            let prio = rng.gen_range(-100..100) as f64;
+            let prio = rng.random_range(-100..100) as f64;
             priorities.push(prio);
             heap.declare_element(i, prio);
             assert!(eq(heap.priority(i), prio));

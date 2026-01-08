@@ -35,12 +35,10 @@ pub fn action_from_upf(action: &up::ActionInstance, idx: usize, problem: &Proble
     let eps = Rational::new(1, TIME_SCALE.get());
     let start = action
         .start_time
-        .clone()
         .map(real_to_rational)
         .unwrap_or_else(|| Ok(Rational::from_integer(idx as IntCst) * eps))?;
     let end = action
         .end_time
-        .clone()
         .map(real_to_rational)
         .unwrap_or_else(|| Ok(Rational::from_integer(idx as IntCst) * eps))?;
     let duration = end - start;

@@ -1210,7 +1210,7 @@ mod tests {
     fn random_model(seed: u64) -> Model<String> {
         let mut rng = SmallRng::seed_from_u64(seed);
         let objects = ["alice", "bob", "chloe", "donald", "elon"];
-        let num_objects = rng.gen_range(1..5);
+        let num_objects = rng.random_range(1..5);
         let objects = objects[0..num_objects].to_vec();
         let symbols = SymbolTable::from(vec![("obj", objects.clone())]);
         let symbols = Arc::new(symbols);
@@ -1219,7 +1219,7 @@ mod tests {
 
         let mut model: Model<String> = Model::new_with_symbols(symbols.clone());
 
-        let num_scopes = rng.gen_range(0..3);
+        let num_scopes = rng.random_range(0..3);
         let scopes = (0..=num_scopes)
             .map(|i| {
                 if i == 0 {
@@ -1230,12 +1230,12 @@ mod tests {
             })
             .collect_vec();
 
-        let num_vars = rng.gen_range(0..10);
+        let num_vars = rng.random_range(0..10);
         println!("Problem num_scopes: {num_scopes}, num_vars:  {num_vars}  num_values: {num_objects}");
 
         let mut vars = Vec::with_capacity(num_vars);
         for i in 0..num_vars {
-            let scope_id = rng.gen_range(0..scopes.len());
+            let scope_id = rng.random_range(0..scopes.len());
             let scope = scopes[scope_id];
             let var_name = format!("x{i}");
             println!("  {var_name} [{scope_id}]  in {:?}", &objects);
