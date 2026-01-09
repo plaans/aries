@@ -4,7 +4,7 @@ use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
 use crate::core::state::{Conflict, Event, Explainer, IntDomain};
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DomainsExt, SavedAssignment, Shaped};
 use crate::model::{Label, Model};
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;

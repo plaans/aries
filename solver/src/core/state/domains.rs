@@ -893,7 +893,7 @@ impl Term for Atom {
     }
 }
 
-impl Dom for &Domains {
+impl Dom for Domains {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::upper_bound(self, svar)
     }

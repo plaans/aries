@@ -12,7 +12,7 @@ use std::{
 use aries::{
     core::{INT_CST_MAX, Lit, literals::ConjunctionBuilder},
     model::{
-        extensions::AssignmentExt,
+        extensions::DomainsExt,
         lang::{
             FAtom, IAtom,
             expr::{and, eq, neq},

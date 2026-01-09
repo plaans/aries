@@ -18,7 +18,7 @@ impl<Value: Ord> RangeDomain<Value> {
     }
 
     /// Returns true if the domain contains exactly one value.
-    pub fn is_bound(&self) -> bool {
+    pub fn is_singleton(&self) -> bool {
         self.lb == self.ub
     }
 
@@ -38,7 +38,7 @@ impl<Value: Ord> RangeDomain<Value> {
     where
         Value: Copy,
     {
-        if self.is_bound() { Some(self.lb) } else { None }
+        if self.is_singleton() { Some(self.lb) } else { None }
     }
 
     /// Returns true if the domain is empty.
@@ -88,7 +88,7 @@ impl std::ops::Mul for IntDomain {
 
 impl std::fmt::Display for IntDomain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_bound() {
+        if self.is_singleton() {
             write!(f, "{}", self.lb)
         } else if self.is_empty() {
             write!(f, "∅")
@@ -133,7 +133,7 @@ impl FixedDomain {
     }
 
     pub fn is_bound(&self) -> bool {
-        self.num.is_bound()
+        self.num.is_singleton()
     }
 
     pub fn is_empty(&self) -> bool {

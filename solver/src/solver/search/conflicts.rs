@@ -5,7 +5,7 @@ use crate::core::literals::{LitSet, Watches};
 use crate::core::state::{Conflict, Domains, Event, Explainer, IntDomain, Origin};
 use crate::core::{IntCst, Lit, VarRef};
 use crate::model::Model;
-use crate::model::extensions::{AssignmentExt, SavedAssignment};
+use crate::model::extensions::{DomainsExt, SavedAssignment};
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 

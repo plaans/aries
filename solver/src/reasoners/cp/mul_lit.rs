@@ -5,7 +5,7 @@ use crate::{
         Lit, Relation, VarRef,
         state::{Explanation, Term},
     },
-    model::extensions::AssignmentExt,
+    model::extensions::DomainsExt,
     reasoners::Contradiction,
     reif,
 };

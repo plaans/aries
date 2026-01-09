@@ -1,11 +1,12 @@
 //! Functions related to printing and formatting (partial) plans.
 
 use anyhow::*;
+use aries::model::symbols::ContiguousSymbols;
 use itertools::Itertools;
 use std::fmt::Write;
 
 use crate::Model;
-use aries::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use aries::model::extensions::{DomainsExt, SavedAssignment, Shaped};
 use aries::model::lang::{Atom, Cst, Rational};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::{
@@ -24,7 +25,8 @@ pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
     };
     match x {
         Atom::Sym(x) => {
-            let dom = ass.sym_domain_of(x);
+            let (lb, ub) = ass.bounds(x);
+            let dom = ContiguousSymbols::new(lb, ub);
             let singleton = dom.size() == 1;
             match dom.into_singleton() {
                 Some(sym) => {
@@ -48,7 +50,7 @@ pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
             write!(
                 out,
                 "{}",
-                match ass.value_of_literal(l) {
+                match ass.value_of(l) {
                     Some(true) => "true",
                     Some(false) => "false",
                     None => "{true, false}",
@@ -94,10 +96,10 @@ pub fn format_partial_name(name: &[impl Into<Atom> + Copy], ass: &Model) -> Resu
 pub fn format_atom(atom: &Atom, model: &Model, ass: &SavedAssignment) -> String {
     match atom {
         Atom::Sym(s) => {
-            let sym = ass.sym_domain_of(*s).into_singleton().unwrap();
+            let sym = ass.var_domain(*s).as_singleton().unwrap();
             model.shape.symbols.symbol(sym).to_string()
         }
-        Atom::Bool(l) => ass.value_of_literal(*l).unwrap().to_string(),
+        Atom::Bool(l) => ass.value_of(*l).unwrap().to_string(),
         Atom::Int(i) => ass.var_domain(*i).as_singleton().unwrap().to_string(),
         Atom::Fixed(f) => ass.f_domain(*f).to_string(),
     }

@@ -2,7 +2,7 @@
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use aries::core::{Lit, Relation, VarRef};
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries::model::symbols::SymId;

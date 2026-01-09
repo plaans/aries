@@ -1,6 +1,6 @@
 use super::*;
 use aries::core::Lit;
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::expr::*;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::{Cst, Type};

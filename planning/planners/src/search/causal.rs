@@ -2,7 +2,7 @@ use crate::encoding::{CondID, EffID, Encoding, Tag};
 use crate::fmt::format_partial_name;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::{SAtom, Type};
 use aries::model::symbols::TypedSym;
 use aries::solver::search::{Decision, SearchControl};

@@ -7,7 +7,7 @@ use aries::backtrack::Backtrack;
 use aries::backtrack::DecLvl;
 use aries::core::state::Conflict;
 use aries::core::*;
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::FAtom;
 use aries::model::lang::{expr::*, Atom, Type};
 use aries_planning::chronicles::*;
@@ -100,7 +100,7 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
         IVar::ONE
     } else if model.entails(!lit) {
         IVar::ZERO
-    } else if model.domain_of(lit.variable()) == (0, 1) {
+    } else if model.bounds(lit.variable()) == (0, 1) {
         IVar::new(lit.variable())
     } else {
         let lbl = model
@@ -130,8 +130,8 @@ pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
         }
     } else {
         // Real variable
-        let lb = model.lower_bound(atom.var);
-        let ub = model.upper_bound(atom.var);
+        let lb = model.lb(atom.var);
+        let ub = model.ub(atom.var);
         let lbl = model
             .get_label(atom.var)
             .unwrap_or(&(Container::Base / VarType::Reification))

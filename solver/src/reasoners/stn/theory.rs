@@ -1120,7 +1120,7 @@ impl Backtrack for StnTheory {
 #[allow(clippy::let_unit_value)]
 #[cfg(test)]
 mod tests {
-    use crate::model::extensions::AssignmentExt;
+    use crate::model::extensions::DomainsExt;
     use crate::model::lang::IVar;
 
     use crate::reasoners::stn::stn_impl::Stn;
@@ -1248,20 +1248,20 @@ mod tests {
         stn.model.state.set_ub(b, 9, Cause::Decision)?;
 
         stn.propagate_all()?;
-        assert_eq!(stn.model.domain_of(a), (0, 10));
-        assert_eq!(stn.model.domain_of(b), (1, 9));
+        assert_eq!(stn.model.bounds(a), (0, 10));
+        assert_eq!(stn.model.bounds(b), (1, 9));
 
         stn.model.state.set_lb(a, 2, Cause::Decision)?;
 
         stn.propagate_all()?;
-        assert_eq!(stn.model.domain_of(a), (2, 10));
-        assert_eq!(stn.model.domain_of(b), (2, 9));
+        assert_eq!(stn.model.bounds(a), (2, 10));
+        assert_eq!(stn.model.bounds(b), (2, 9));
 
         stn.model.state.set(prez_b, Cause::Decision)?;
 
         stn.propagate_all()?;
-        assert_eq!(stn.model.domain_of(a), (2, 9));
-        assert_eq!(stn.model.domain_of(b), (2, 9));
+        assert_eq!(stn.model.bounds(a), (2, 9));
+        assert_eq!(stn.model.bounds(b), (2, 9));
 
         Ok(())
     }
@@ -1536,9 +1536,9 @@ mod tests {
         stn.propagate_all()?;
         stn.stn.print_stats();
         let print = |stn: &Stn| {
-            println!("a:  {:?} {a:?}", stn.model.domain_of(a));
-            println!("b:  {:?} {b:?}", stn.model.domain_of(b));
-            println!("ub: {:?} {ub:?}", stn.model.domain_of(ub));
+            println!("a:  {:?} {a:?}", stn.model.bounds(a));
+            println!("b:  {:?} {b:?}", stn.model.bounds(b));
+            println!("ub: {:?} {ub:?}", stn.model.bounds(ub));
             println!("dl: {:?}", stn.model.current_decision_level());
         };
 
@@ -1560,7 +1560,7 @@ mod tests {
             stn.stn.print_stats();
             let b_ub = (max - i) * 2;
             // check that propagation is correct
-            debug_assert_eq!(stn.model.domain_of(b), (0, b_ub));
+            debug_assert_eq!(stn.model.bounds(b), (0, b_ub));
             //print(stn);
 
             assert_eq!(cause_b_ub(stn, b_ub), Lit::leq(ub, max - i));

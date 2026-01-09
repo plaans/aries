@@ -3,7 +3,7 @@ use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DisjunctionExt, DomainsExt, SavedAssignment, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
@@ -995,7 +995,7 @@ impl<Lbl: Label> Solver<Lbl> {
             "decision: {:?} -- {}     dom:{:?}",
             self.decision_level,
             self.model.fmt(decision),
-            self.model.domain_of(decision.variable())
+            self.model.bounds(decision.variable())
         );
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");

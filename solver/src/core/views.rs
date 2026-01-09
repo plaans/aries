@@ -10,6 +10,19 @@ pub trait Dom {
     }
 }
 
+impl<X> Dom for &X
+where
+    X: Dom,
+{
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        (*self).upper_bound(svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        (*self).presence(var)
+    }
+}
+
 pub trait VarView {
     type Value: Ord;
 
@@ -28,6 +41,22 @@ impl VarView for SignedVar {
     #[inline]
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
         dom.lower_bound(*self)
+    }
+}
+
+impl VarView for Lit {
+    type Value = bool;
+
+    fn upper_bound(&self, dom: impl Dom) -> Self::Value {
+        // the upper bound is `false` if the Lit is not satisfiable anymore
+        // i.e.,  given the lit `(var <= val)`  it is incompatible with the lower bound var >= val +1
+        self.svar().lower_bound(dom) <= self.ub_value()
+    }
+
+    fn lower_bound(&self, dom: impl Dom) -> Self::Value {
+        // the lower bound is `true` if the Lit is always satified
+        // i.e.,  given the lit `(var <= val)`  it is satisfied if ub(var) <= val
+        self.svar().upper_bound(dom) <= self.ub_value()
     }
 }
 

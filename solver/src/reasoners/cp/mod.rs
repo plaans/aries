@@ -17,7 +17,7 @@ use crate::core::state::{
 };
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
 use crate::create_ref_type;
-use crate::model::extensions::{AssignmentExt, DisjunctionExt};
+use crate::model::extensions::{DomainsExt, DisjunctionExt};
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};

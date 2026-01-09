@@ -85,6 +85,18 @@ pub struct IAtom {
     pub shift: IntCst,
 }
 
+impl VarView for IAtom {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.var.upper_bound(dom) + self.shift
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.var.lower_bound(dom) + self.shift
+    }
+}
+
 // Implement Debug for IAtom
 impl Debug for IAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

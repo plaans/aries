@@ -6,8 +6,9 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::StableLitSet;
 use crate::core::state::*;
+use crate::core::views::Dom;
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DomainsExt, Shaped};
 use crate::model::label::{Label, VariableLabels};
 use crate::model::lang::expr::or;
 use crate::model::lang::reification::Reification;
@@ -637,6 +638,16 @@ impl<Lbl: Label> Model<Lbl> {
     }
 }
 
+impl<Lbl> Dom for Model<Lbl> {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Domains::ub(&self.state, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.state.presence(var)
+    }
+}
+
 impl<Lbl: Label> Default for Model<Lbl> {
     fn default() -> Self {
         Self::new()
@@ -658,24 +669,6 @@ impl<Lbl> Backtrack for Model<Lbl> {
 
     fn restore(&mut self, saved_id: DecLvl) {
         self.state.restore(saved_id);
-    }
-}
-
-impl<Lbl> AssignmentExt for Model<Lbl> {
-    fn entails(&self, literal: Lit) -> bool {
-        self.state.entails(literal)
-    }
-
-    fn var_domain(&self, var: impl Into<IAtom>) -> IntDomain {
-        self.state.var_domain(var)
-    }
-
-    fn presence_literal(&self, variable: impl Term) -> Lit {
-        self.state.presence(variable)
-    }
-
-    fn to_owned_assignment(&self) -> SavedAssignment {
-        self.state.clone()
     }
 }
 

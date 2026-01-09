@@ -9,7 +9,7 @@ use crate::Solver;
 use anyhow::Result;
 use aries::core::state::Domains;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
-use aries::model::extensions::{AssignmentExt, SavedAssignment};
+use aries::model::extensions::{DomainsExt, SavedAssignment};
 use aries::model::lang::IAtom;
 use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
@@ -417,7 +417,7 @@ pub enum Strat {
 struct ActivityBoolFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
     fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
-        let (lb, ub) = _model.domain_of(_var);
+        let (lb, ub) = _model.bounds(_var);
         if ub - lb == 1 {
             return 0;
         }
@@ -590,7 +590,7 @@ fn solve_finite_problem(
 
     // tag result with cost
     let result = result.map(|s| {
-        let cost = metric.map(|metric| s.domain_of(metric).0);
+        let cost = metric.map(|metric| s.bounds(metric).0);
         (s, cost)
     });
 

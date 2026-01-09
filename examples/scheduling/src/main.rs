@@ -5,7 +5,7 @@ mod search;
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
 use crate::search::{SearchStrategy, Solver, Var};
 use anyhow::*;
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::IVar;
 use aries::solver::parallel::{Solution, SolverResult};
 use std::fmt::Write;
@@ -92,7 +92,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
 
     let result = solver.minimize_with(
         makespan,
-        |s| println!("New solution with makespan: {}", s.domain_of(makespan).0),
+        |s| println!("New solution with makespan: {}", s.bounds(makespan).0),
         None,
         deadline,
     );

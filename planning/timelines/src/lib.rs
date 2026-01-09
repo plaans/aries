@@ -6,7 +6,7 @@ pub mod explain;
 pub mod symbols;
 pub mod tasks;
 
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};

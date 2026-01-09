@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use crate::core::VarRef;
 use crate::model::Model;
-use crate::model::extensions::AssignmentExt;
+use crate::model::extensions::DomainsExt;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
@@ -83,7 +83,7 @@ impl<L> SearchControl<L> for Lexical {
 
                 if cond {
                     let dom = model.var_domain(v);
-                    if dom.is_bound() {
+                    if dom.is_singleton() {
                         None
                     } else {
                         match self.pref {

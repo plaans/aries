@@ -242,7 +242,7 @@ impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
 mod test {
     use crate::{
         model::{
-            extensions::AssignmentExt,
+            extensions::DomainsExt,
             lang::{
                 Atom, IAtom,
                 expr::{lt, neq},

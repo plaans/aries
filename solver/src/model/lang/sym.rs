@@ -1,3 +1,4 @@
+use crate::core::views::VarView;
 use crate::core::*;
 use crate::model::lang::{ConversionError, IAtom, IVar};
 use crate::model::symbols::{SymId, TypedSym};
@@ -30,6 +31,24 @@ impl SVar {
 pub enum SAtom {
     Var(SVar),
     Cst(TypedSym),
+}
+
+impl VarView for SAtom {
+    type Value = SymId;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        match self {
+            SAtom::Var(svar) => SymId::from(svar.var.upper_bound(dom) as usize),
+            SAtom::Cst(typed_sym) => typed_sym.sym,
+        }
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        match self {
+            SAtom::Var(svar) => SymId::from(svar.var.upper_bound(dom) as usize),
+            SAtom::Cst(typed_sym) => typed_sym.sym,
+        }
+    }
 }
 
 impl Debug for SAtom {

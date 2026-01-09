@@ -753,7 +753,7 @@ mod tests {
     use crate::backtrack::Backtrack;
     use crate::collections::seq::Seq;
     use crate::core::state::{Cause, Explainer, InferenceCause};
-    use crate::model::extensions::AssignmentExt;
+    use crate::model::extensions::DomainsExt;
 
     type Model = crate::model::Model<&'static str>;
 
@@ -923,10 +923,10 @@ mod tests {
         let d = model.new_ivar(0, 10, "d");
 
         let check_values = |model: &Model, values: [(IntCst, IntCst); 4]| {
-            assert_eq!(model.domain_of(a), values[0]);
-            assert_eq!(model.domain_of(b), values[1]);
-            assert_eq!(model.domain_of(c), values[2]);
-            assert_eq!(model.domain_of(d), values[3]);
+            assert_eq!(model.bounds(a), values[0]);
+            assert_eq!(model.bounds(b), values[1]);
+            assert_eq!(model.bounds(c), values[2]);
+            assert_eq!(model.bounds(d), values[3]);
         };
         check_values(model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
@@ -1042,7 +1042,7 @@ mod tests {
         m.state.decide(!x1).unwrap();
         sat.propagate(&mut m.state).unwrap();
         assert!(m.entails(x2));
-        assert!(m.value_of_literal(px).is_none());
+        assert!(m.value_of(px).is_none());
         check_explanation(m, sat, x2, [!x1]);
 
         assert!(!m.entails(!py));
