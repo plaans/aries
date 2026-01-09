@@ -15,7 +15,7 @@ pub fn is_static(target_fluent: &Fluent, pb: &Problem) -> bool {
             .state_var
             .args
             .iter()
-            .all(|y| context.model.var_domain(*y).is_singleton())
+            .any(|y| !context.model.var_domain(*y).is_singleton())
         {
             return false;
         }
