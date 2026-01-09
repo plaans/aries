@@ -37,17 +37,11 @@ impl VarView for SAtom {
     type Value = SymId;
 
     fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
-        match self {
-            SAtom::Var(svar) => SymId::from(svar.var.upper_bound(dom) as usize),
-            SAtom::Cst(typed_sym) => typed_sym.sym,
-        }
+        SymId::from(self.int_view().upper_bound(dom) as usize)
     }
 
     fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
-        match self {
-            SAtom::Var(svar) => SymId::from(svar.var.upper_bound(dom) as usize),
-            SAtom::Cst(typed_sym) => typed_sym.sym,
-        }
+        SymId::from(self.int_view().lower_bound(dom) as usize)
     }
 }
 
