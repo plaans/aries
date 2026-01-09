@@ -4,9 +4,9 @@ use crate::{
     core::{IntCst, Lit, VarRef, state::Term},
     model::{
         Label, Model,
-        extensions::PartialBoolAssignment,
         lang::expr::{And, Leq, Or, or},
     },
+    prelude::DomainsExt,
     reif::ReifExpr,
 };
 

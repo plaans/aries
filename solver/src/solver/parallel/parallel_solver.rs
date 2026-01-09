@@ -1,7 +1,8 @@
 use crate::core::IntCst;
 use crate::core::Lit;
+use crate::core::state::Domains;
 use crate::model::Label;
-use crate::model::extensions::{DomainsExt, SavedAssignment};
+use crate::model::extensions::DomainsExt;
 use crate::model::lang::IAtom;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, Solver, UnsatCore};
@@ -15,7 +16,7 @@ pub struct ParSolver<Lbl> {
     solvers: Vec<Worker<Lbl>>,
 }
 
-pub type Solution = Arc<SavedAssignment>;
+pub type Solution = Arc<Domains>;
 
 #[derive(Clone)]
 pub enum SolverResult<Solution> {

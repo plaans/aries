@@ -5,7 +5,7 @@ use crate::core::literals::{LitSet, Watches};
 use crate::core::state::{Conflict, Domains, Event, Explainer, IntDomain, Origin};
 use crate::core::{IntCst, Lit, VarRef};
 use crate::model::Model;
-use crate::model::extensions::{DomainsExt, SavedAssignment};
+use crate::model::extensions::DomainsExt;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
@@ -586,7 +586,7 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
         self.import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<Domains>) {
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.
         let is_improvement = if let Some(prev) = self.default_assignment.objective_found {

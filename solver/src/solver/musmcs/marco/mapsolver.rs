@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use crate::backtrack::Backtrack;
+use crate::core::state::Domains;
 use crate::core::{INT_CST_MAX, Lit};
 use crate::model::Model;
-use crate::model::extensions::SavedAssignment;
 use crate::model::lang::{IAtom, expr::or, linear::LinearSum};
 use crate::solver::Exit;
 use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
@@ -12,7 +12,7 @@ use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
 use itertools::Itertools;
 
 type Solver = crate::solver::Solver<u8>;
-type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<SavedAssignment>>, Exit>;
+type SolveFn = dyn Fn(&mut Solver) -> Result<Option<Arc<Domains>>, Exit>;
 
 /// - "High" bias approaches are more likely to discover
 ///   UNSAT seeds early (since they will be larger), thus favoring finding MUSes early.

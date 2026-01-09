@@ -1,5 +1,6 @@
 use crate::core::literals::Disjunction;
-use crate::model::extensions::SavedAssignment;
+use crate::core::state::Domains;
+
 use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;
 use std::fmt::{Debug, Formatter};
@@ -22,7 +23,7 @@ pub enum InputSignal {
     /// A clause was learned in another solver.
     LearnedClause(Arc<Disjunction>),
     /// A solution was found in another solver.
-    SolutionFound(Arc<SavedAssignment>),
+    SolutionFound(Arc<Domains>),
 }
 
 pub struct InputStream {
@@ -53,7 +54,7 @@ pub enum OutputSignal {
     /// Represents a clause that has been inferred by the solver
     LearntClause(Arc<Disjunction>),
     /// An intermediate solution was found, typically a solution that is valid but was not proven optimal yet.
-    SolutionFound(Arc<SavedAssignment>),
+    SolutionFound(Arc<Domains>),
 }
 
 /// A structure that holds the various components to communicate to a solver.
@@ -105,7 +106,7 @@ impl Synchro {
     }
 
     /// Notify listeners that a new solution was found.
-    pub fn notify_solution_found(&self, assignment: Arc<SavedAssignment>) {
+    pub fn notify_solution_found(&self, assignment: Arc<Domains>) {
         if let Some(output) = &self.output {
             let msg = OutputSignal::SolutionFound(assignment);
             // ignore errors as the thread might just be running alone in the ether
