@@ -4,8 +4,10 @@ use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
-/// A set of literals representing a disjunction in a normalized form.
-/// A `Disjunction` maintains the invariant that there are not duplicated literals (a literal that entails another one) and that its elements are ordered.
+/// A set of literals representing a conjunction in a normalized form.
+///
+/// A `Conjunction` maintains the invariant that there are not duplicated literals
+/// (a literal that entails another one) and that its elements are ordered.
 #[derive(PartialEq, Clone, Eq, Hash)]
 pub struct Conjunction {
     literals: Lits,
@@ -160,10 +162,10 @@ impl Deref for Conjunction {
     }
 }
 
-/// A builder for a disjunction. The benefit over a [`Lits`] vector, is that this one will
+/// A builder for a conjunction. The benefit over a [`Lits`] vector, is that this one will
 /// eagerly simplify when submitting tautological or absurd literals.
 ///
-/// Other redundancies will only be eliminated when building the disjunction.
+/// Other redundancies will only be eliminated when building the conjunction.
 #[derive(Clone)]
 pub struct ConjunctionBuilder {
     lits: Lits,
@@ -211,7 +213,7 @@ impl ConjunctionBuilder {
         }
     }
 
-    /// Build the disjunction, reusing any allocation that the builder had.
+    /// Build the conjunction, reusing any allocation that the builder had.
     pub fn build(self) -> Conjunction {
         Conjunction::new(self.lits)
     }
