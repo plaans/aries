@@ -25,6 +25,23 @@ predicate bool_lt_reif(var bool: a, var bool: b, var bool: r) =
 predicate bool_or(var bool: a, var bool: b, var bool: r) =
     bool_clause_reif([a,b], [], r);
 
+% set_in_reif with constant set
+% https://github.com/MiniZinc/libminizinc/issues/939
+predicate set_in_reif(var int: x, set of int: s, var bool: r) = 
+  let {
+    array [int] of int: ranges_ = set_to_ranges(s);
+    array [int, 1..2] of int: ranges = array2d(1..length(ranges_) div 2, 1..2, ranges_);
+  } in r <-> exists (i in index_set_1of2(ranges)) (
+    if ranges[i, 1] = -infinity then
+      x <= ranges[i, 2]
+    elseif ranges[i, 2] = infinity then
+      x >= ranges[i, 1]
+    elseif ranges[i, 1] = ranges[i, 2] then
+      x = ranges[i, 1]
+    else
+      x >= ranges[i, 1] /\ x <=ranges[i, 2]
+    endif
+  );
 
 % --------------------------------------------------
 % Predicates not supported
