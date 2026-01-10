@@ -1,7 +1,6 @@
 pub mod heap;
 pub mod id_map;
 pub mod ref_store;
-pub mod seq;
 pub mod set;
 
 pub struct Range<A> {
