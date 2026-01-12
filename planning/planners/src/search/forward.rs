@@ -4,7 +4,7 @@ use crate::encoding::refinements_of;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::{Lit, VarRef};
-use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::extensions::{DomainsExt, Shaped};
 use aries::model::lang::IVar;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;

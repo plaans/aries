@@ -1,6 +1,6 @@
 use anyhow::{ensure, Context, Result};
 use aries::core::state::Domains;
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::{Atom, FAtom};
 use aries_planners::encoding::ChronicleId;
 use aries_planners::fmt::{extract_plan_actions, format_atom};

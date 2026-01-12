@@ -9,7 +9,7 @@ use crate::Solver;
 use anyhow::Result;
 use aries::core::state::Domains;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
-use aries::model::extensions::{AssignmentExt, SavedAssignment};
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::IAtom;
 use aries::model::Model;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
@@ -129,7 +129,7 @@ pub fn reproduce(
     metric: Option<Metric>,
     htn_mode: bool,
     warm_up_plan: Option<Vec<ActionInstance>>,
-    on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
+    on_new_sol: impl Fn(&FiniteProblem, Arc<Domains>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<Option<WarmingResult>> {
     if warm_up_plan.is_none() {
@@ -153,7 +153,7 @@ pub fn reproduce(
     let on_new_valid_assignment = {
         let constrained_pb = constrained_pb.clone();
         let on_new_sol = on_new_sol.clone();
-        move |ass: Arc<SavedAssignment>| on_new_sol(&constrained_pb, ass)
+        move |ass: Arc<Domains>| on_new_sol(&constrained_pb, ass)
     };
 
     println!("  [{:.3}s] Warm Up Populated", start.elapsed().as_secs_f32());
@@ -200,7 +200,7 @@ pub fn solve(
     metric: Option<Metric>,
     htn_mode: bool,
     warm_up_plan: Option<Vec<ActionInstance>>,
-    on_new_sol: impl Fn(&FiniteProblem, Arc<SavedAssignment>) + Clone,
+    on_new_sol: impl Fn(&FiniteProblem, Arc<Domains>) + Clone,
     deadline: Option<Instant>,
 ) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
     let default_best_cost = INT_CST_MAX + 1;
@@ -295,7 +295,7 @@ pub fn solve(
         let on_new_valid_assignment = {
             let pb = pb.clone();
             let on_new_sol = on_new_sol.clone();
-            move |ass: Arc<SavedAssignment>| on_new_sol(&pb, ass)
+            move |ass: Arc<Domains>| on_new_sol(&pb, ass)
         };
 
         // Solve the initial problem with the warming assignment if any.
@@ -417,7 +417,7 @@ pub enum Strat {
 struct ActivityBoolFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
     fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
-        let (lb, ub) = _model.domain_of(_var);
+        let (lb, ub) = _model.bounds(_var);
         if ub - lb == 1 {
             return 0;
         }
@@ -534,8 +534,8 @@ fn solve_finite_problem(
     metric: Option<Metric>,
     minimize_metric: bool,
     htn_mode: bool,
-    on_new_solution: impl Fn(Arc<SavedAssignment>),
-    initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
+    on_new_solution: impl Fn(Arc<Domains>),
+    initial_solution: Option<(IntCst, Arc<Domains>)>,
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
@@ -590,7 +590,7 @@ fn solve_finite_problem(
 
     // tag result with cost
     let result = result.map(|s| {
-        let cost = metric.map(|metric| s.domain_of(metric).0);
+        let cost = metric.map(|metric| s.bounds(metric).0);
         (s, cost)
     });
 

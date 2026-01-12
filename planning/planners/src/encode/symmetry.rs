@@ -2,7 +2,7 @@ use crate::encode::analysis;
 use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
 use analysis::CausalSupport;
 use aries::core::Lit;
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::expr::{and, f_leq, implies, or};
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};

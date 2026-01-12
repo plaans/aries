@@ -6,12 +6,13 @@ use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, L
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
-use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
+use crate::core::state::{
+    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain,
+};
+use crate::core::views::{Boundable, Dom, VarView};
 use crate::core::*;
 use crate::model::lang::{Atom, IAtom};
 use std::fmt::{Debug, Formatter};
-
-use super::IntDomain;
 
 #[cfg(debug_assertions)]
 pub mod witness;
@@ -37,8 +38,9 @@ mod minimize;
 pub struct Domains {
     /// Integer part of the domains.
     pub(super) doms: IntDomains,
-    /// If a variable is optional, associates it with a literal that
-    /// is true if and only if the variable is present.
+    /// Associates it with a literal that is true if and only if the variable is present.
+    ///
+    /// A non-optional variable is associated with [`Lit::TRUE`]
     presence: RefVec<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
     implications: ImplicationGraph,
@@ -174,23 +176,30 @@ impl Domains {
     }
 
     /// Returns the domain of an integer variable (ignoring its presence status)
-    pub fn int_domain(&self, var: impl Into<VarRef>) -> IntDomain {
-        let (lb, ub) = self.bounds(var.into());
-        IntDomain::new(lb, ub)
+    pub fn concrete_domain<Var: VarView + Copy>(&self, var: Var) -> RangeDomain<Var::Value> {
+        let (lb, ub) = self.bounds(var);
+        RangeDomain::new(lb, ub)
     }
 
     // ============== Integer domain accessors =====================
 
-    pub fn bounds(&self, v: VarRef) -> (IntCst, IntCst) {
+    pub fn bounds<Var: VarView + Copy>(&self, v: Var) -> (Var::Value, Var::Value) {
         (self.lb(v), self.ub(v))
     }
 
-    pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
-        self.doms.ub(var)
+    /// Returns the upper bound of the variable.
+    pub fn ub<Var: VarView>(&self, var: Var) -> Var::Value {
+        var.upper_bound(self)
     }
 
-    pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
-        self.doms.lb(var)
+    /// Returns the lower bound of the variable.
+    pub fn lb<Var: VarView>(&self, var: Var) -> Var::Value {
+        var.lower_bound(self)
+    }
+
+    /// Non-generic implementation that returns the upper bound of the signed var.
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.doms.ub(svar)
     }
 
     /// Returns true if the integer domain of the variable is a singleton or an empty set.
@@ -238,9 +247,13 @@ impl Domains {
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_lb(&mut self, var: impl Into<SignedVar>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        // var >= lb   <=>    -var <= -lb
-        self.set_ub(-var.into(), -new_lb, cause)
+    pub fn set_lb<Var: Boundable>(
+        &mut self,
+        var: Var,
+        new_lb: Var::Value,
+        cause: Cause,
+    ) -> Result<bool, InvalidUpdate> {
+        self.set(var.geq(new_lb), cause)
     }
 
     /// Modifies the upper bound of a variable.
@@ -254,22 +267,23 @@ impl Domains {
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
     ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_upper_bound(var.into(), new_ub, cause)
+    pub fn set_ub<Var: Boundable>(
+        &mut self,
+        var: Var,
+        new_ub: Var::Value,
+        cause: Cause,
+    ) -> Result<bool, InvalidUpdate> {
+        self.set(var.leq(new_ub), cause)
     }
 
     #[inline]
     pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_upper_bound(literal.svar(), literal.ub_value(), cause)
+        self.set_upper_bound_impl(literal.svar(), literal.ub_value(), cause.into())
     }
 
     #[inline]
     fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
         self.set_upper_bound_impl(literal.svar(), literal.ub_value(), Origin::Direct(cause))
-    }
-
-    pub fn set_upper_bound(&mut self, affected: SignedVar, ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_upper_bound_impl(affected, ub, cause.into())
     }
 
     fn set_upper_bound_impl(&mut self, affected: SignedVar, ub: IntCst, cause: Origin) -> Result<bool, InvalidUpdate> {
@@ -376,7 +390,7 @@ impl Domains {
 
     pub fn set_bound_unchecked(&mut self, affected: SignedVar, new_ub: IntCst, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.set_upper_bound(affected, new_ub, cause);
+        let res = self.set_upper_bound_impl(affected, new_ub, cause.into());
         debug_assert!(res.is_ok());
     }
 
@@ -876,6 +890,16 @@ impl Term for IAtom {
 impl Term for Atom {
     fn variable(self) -> VarRef {
         self.variable()
+    }
+}
+
+impl Dom for Domains {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Domains::upper_bound(self, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        Domains::presence(self, var)
     }
 }
 

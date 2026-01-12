@@ -4,9 +4,9 @@ use crate::{
     core::{IntCst, Lit, VarRef, state::Term},
     model::{
         Label, Model,
-        extensions::PartialBoolAssignment,
         lang::expr::{And, Leq, Or, or},
     },
+    prelude::DomainsExt,
     reif::ReifExpr,
 };
 
@@ -242,7 +242,7 @@ impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
 mod test {
     use crate::{
         model::{
-            extensions::AssignmentExt,
+            extensions::DomainsExt,
             lang::{
                 Atom, IAtom,
                 expr::{lt, neq},

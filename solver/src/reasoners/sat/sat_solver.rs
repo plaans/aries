@@ -749,11 +749,12 @@ impl Theory for SatSolver {
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::backtrack::Backtrack;
-    use crate::collections::seq::Seq;
     use crate::core::state::{Cause, Explainer, InferenceCause};
-    use crate::model::extensions::AssignmentExt;
+    use crate::model::extensions::DomainsExt;
 
     type Model = crate::model::Model<&'static str>;
 
@@ -923,10 +924,10 @@ mod tests {
         let d = model.new_ivar(0, 10, "d");
 
         let check_values = |model: &Model, values: [(IntCst, IntCst); 4]| {
-            assert_eq!(model.domain_of(a), values[0]);
-            assert_eq!(model.domain_of(b), values[1]);
-            assert_eq!(model.domain_of(c), values[2]);
-            assert_eq!(model.domain_of(d), values[3]);
+            assert_eq!(model.bounds(a), values[0]);
+            assert_eq!(model.bounds(b), values[1]);
+            assert_eq!(model.bounds(c), values[2]);
+            assert_eq!(model.bounds(d), values[3]);
         };
         check_values(model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
@@ -998,6 +999,11 @@ mod tests {
         check_values(model, [(8, 10), (0, 5), (0, 2), (5, 10)]);
     }
 
+    /// Converts a sequence into a Set
+    fn set(items: impl AsRef<[Lit]>) -> HashSet<Lit> {
+        items.as_ref().iter().copied().collect()
+    }
+
     #[test]
     fn test_clauses_with_optionals() {
         let m = &mut Model::new();
@@ -1015,9 +1021,9 @@ mod tests {
                 self.sat.explain(literal, cause.payload, model, explanation);
             }
         }
-        fn check_explanation(m: &Model, sat: &mut SatSolver, lit: Lit, expected: impl Seq<Lit>) {
+        fn check_explanation(m: &Model, sat: &mut SatSolver, lit: Lit, expected: impl AsRef<[Lit]>) {
             let result = m.state.implying_literals(lit, &mut Exp { sat }).unwrap();
-            assert_eq!(result.to_set(), expected.to_set());
+            assert_eq!(set(result), set(expected));
         }
 
         let px = m.new_presence_variable(Lit::TRUE, "px").true_lit();
@@ -1042,7 +1048,7 @@ mod tests {
         m.state.decide(!x1).unwrap();
         sat.propagate(&mut m.state).unwrap();
         assert!(m.entails(x2));
-        assert!(m.value_of_literal(px).is_none());
+        assert!(m.value_of(px).is_none());
         check_explanation(m, sat, x2, [!x1]);
 
         assert!(!m.entails(!py));

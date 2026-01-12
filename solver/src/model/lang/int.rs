@@ -1,3 +1,5 @@
+use crate::core::state::Term;
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::lang::ConversionError;
 use crate::model::lang::linear::LinearTerm;
@@ -51,12 +53,48 @@ impl From<IVar> for SignedVar {
     }
 }
 
+impl VarView for IVar {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.variable().upper_bound(dom)
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.variable().lower_bound(dom)
+    }
+}
+
+impl Boundable for IVar {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        self.variable().leq(ub)
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        self.variable().geq(lb)
+    }
+}
+
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct IAtom {
     pub var: IVar,
     pub shift: IntCst,
+}
+
+impl VarView for IAtom {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.var.upper_bound(dom) + self.shift
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.var.lower_bound(dom) + self.shift
+    }
 }
 
 // Implement Debug for IAtom

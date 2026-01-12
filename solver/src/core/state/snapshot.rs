@@ -43,11 +43,12 @@ impl<'a> DomainsSnapshot<'a> {
 
     /// Returns the upper bound ob the given (signed) variable.
     pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
+        let var = var.into();
         match self {
             DomainsSnapshot::Current { doms } => doms.ub(var),
             DomainsSnapshot::Past { doms, next_event } => doms
                 .doms
-                .upper_bounds_history(var.into())
+                .upper_bounds_history(var)
                 .filter(|(_ub, ev)| if let Some(idx) = ev { idx < next_event } else { true })
                 .map(|(ub, _)| ub)
                 .next()

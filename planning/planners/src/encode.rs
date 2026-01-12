@@ -11,7 +11,7 @@ use crate::Model;
 use anyhow::{Context, Result};
 use aries::core::state::Conflict;
 use aries::core::*;
-use aries::model::extensions::{AssignmentExt, Shaped};
+use aries::model::extensions::{DomainsExt, Shaped};
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
 use aries::model::lang::{expr::*, IVar};

@@ -3,7 +3,7 @@ use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, DisjunctionExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
 use crate::model::lang::IAtom;
 use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
@@ -51,7 +51,7 @@ enum SearchResult {
     /// A solution was found through search and the solver's assignment is on this solution
     AtSolution,
     /// The solver was made aware of a solution from its input channel.
-    ExternalSolution(Arc<SavedAssignment>),
+    ExternalSolution(Arc<Domains>),
     /// The solver has exhausted its search space.
     Unsat(Conflict),
 }
@@ -561,7 +561,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
-    pub fn solve(&mut self) -> Result<Option<Arc<SavedAssignment>>, Exit> {
+    pub fn solve(&mut self) -> Result<Option<Arc<Domains>>, Exit> {
         if self.post_constraints().is_err() {
             return Ok(None);
         }
@@ -587,7 +587,7 @@ impl<Lbl: Label> Solver<Lbl> {
             return Ok(valid_assignments);
         }
 
-        let on_new_solution = |domains: &SavedAssignment| {
+        let on_new_solution = |domains: &Domains| {
             let assignment = variables.iter().map(|var| domains.lb(*var)).collect();
             valid_assignments.push(assignment);
         };
@@ -606,7 +606,7 @@ impl<Lbl: Label> Solver<Lbl> {
     pub fn enumerate_with(
         &mut self,
         variables: &[VarRef],
-        mut on_new_solution: impl FnMut(&SavedAssignment),
+        mut on_new_solution: impl FnMut(&Domains),
     ) -> Result<bool, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         debug_assert!(
@@ -701,7 +701,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Incremental solving: Solves the problem with the assumptions that were pushed.
     /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
-    pub fn incremental_solve(&mut self) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
+    pub fn incremental_solve(&mut self) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
         match self.search()? {
             SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
             SearchResult::ExternalSolution(s) => Ok(Ok(s)),
@@ -719,10 +719,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
     ///
     /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions on the stack)
-    pub fn solve_with_assumptions(
-        &mut self,
-        assumptions: &[Lit],
-    ) -> Result<Result<Arc<SavedAssignment>, UnsatCore>, Exit> {
+    pub fn solve_with_assumptions(&mut self, assumptions: &[Lit]) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
@@ -854,59 +851,59 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.minimize_with_callback(objective, |_, _| ())
     }
 
     pub fn minimize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
-        on_new_solution: impl FnMut(IntCst, &SavedAssignment),
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        on_new_solution: impl FnMut(IntCst, &Domains),
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.optimize_with(objective.into(), true, on_new_solution, None)
     }
 
     pub fn minimize_with_optional_initial_solution(
         &mut self,
         objective: impl Into<IAtom>,
-        initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        initial_solution: Option<(IntCst, Arc<Domains>)>,
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.optimize_with(objective.into(), true, |_, _| (), initial_solution)
     }
 
     pub fn minimize_with_initial_solution(
         &mut self,
         objective: impl Into<IAtom>,
-        initial_solution: (IntCst, Arc<SavedAssignment>),
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        initial_solution: (IntCst, Arc<Domains>),
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.minimize_with_optional_initial_solution(objective.into(), Some(initial_solution))
     }
 
-    pub fn maximize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+    pub fn maximize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.maximize_with_callback(objective, |_, _| ())
     }
 
     pub fn maximize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
-        on_new_solution: impl FnMut(IntCst, &SavedAssignment),
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        on_new_solution: impl FnMut(IntCst, &Domains),
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.optimize_with(objective.into(), false, on_new_solution, None)
     }
 
     pub fn maximize_with_optional_initial_solution(
         &mut self,
         objective: impl Into<IAtom>,
-        initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        initial_solution: Option<(IntCst, Arc<Domains>)>,
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.optimize_with(objective.into(), false, |_, _| (), initial_solution)
     }
 
     pub fn maximize_with_initial_solution(
         &mut self,
         objective: impl Into<IAtom>,
-        initial_solution: (IntCst, Arc<SavedAssignment>),
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        initial_solution: (IntCst, Arc<Domains>),
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         self.maximize_with_optional_initial_solution(objective.into(), Some(initial_solution))
     }
 
@@ -914,9 +911,9 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         objective: IAtom,
         minimize: bool,
-        mut on_new_solution: impl FnMut(IntCst, &SavedAssignment),
-        initial_solution: Option<(IntCst, Arc<SavedAssignment>)>,
-    ) -> Result<Option<(IntCst, Arc<SavedAssignment>)>, Exit> {
+        mut on_new_solution: impl FnMut(IntCst, &Domains),
+        initial_solution: Option<(IntCst, Arc<Domains>)>,
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
@@ -995,7 +992,7 @@ impl<Lbl: Label> Solver<Lbl> {
             "decision: {:?} -- {}     dom:{:?}",
             self.decision_level,
             self.model.fmt(decision),
-            self.model.domain_of(decision.variable())
+            self.model.bounds(decision.variable())
         );
         let res = self.model.state.decide(decision);
         assert_eq!(res, Ok(true), "Decision did not result in a valid modification.");

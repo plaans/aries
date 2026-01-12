@@ -6,8 +6,9 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::StableLitSet;
 use crate::core::state::*;
+use crate::core::views::Dom;
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DomainsExt, Shaped};
 use crate::model::label::{Label, VariableLabels};
 use crate::model::lang::expr::or;
 use crate::model::lang::reification::Reification;
@@ -21,7 +22,7 @@ mod scopes;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Constraint {
-    /// Constraint enforcing that the left and right terms evaluate to the same value.
+    /// Constraint enforcing that if the literal is true, then the expression evaluates to true.
     HalfReified(ReifExpr, Lit),
 }
 
@@ -348,6 +349,7 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    #[doc(hidden)]
     pub fn unifiable(&self, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
         let a = a.into();
         let b = b.into();
@@ -361,6 +363,7 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    #[doc(hidden)]
     pub fn unifiable_seq<A: Into<Atom> + Copy, B: Into<Atom> + Copy>(&self, a: &[A], b: &[B]) -> bool {
         if a.len() != b.len() {
             false
@@ -500,31 +503,6 @@ impl<Lbl: Label> Model<Lbl> {
         self.new_conjunctive_presence_variable(scope)
     }
 
-    /// Checks if the expression is fully reified, and if so, returns that reification literal.
-    pub fn check_reified_full<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
-        let decomposed = &mut expr.decompose(self);
-        self.simplify(decomposed);
-        self.shape.expressions.interned_full(decomposed)
-    }
-
-    /// Checks if the expression is half-reified, and if so, returns that reification literal.
-    pub fn check_reified_half<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
-        let decomposed = &mut expr.decompose(self); // TODO: we do not need full decomposition
-        self.simplify(decomposed);
-        self.shape.expressions.interned_half(decomposed)
-    }
-
-    /// Checks if the expression is half-reified, and if so, returns that reification literal.
-    /// If not, checks if it is fully reified and if so returns that reification literal.
-    pub fn check_reified_any<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Option<Lit> {
-        let decomposed = &mut expr.decompose(self);
-        self.simplify(decomposed);
-        self.shape
-            .expressions
-            .interned_half(decomposed)
-            .or_else(|| self.shape.expressions.interned_full(decomposed))
-    }
-
     /// Enforce the given expression to be true whenever all literals of the scope are true.
     /// Similar to posting a constraint in CP solvers.
     ///
@@ -637,6 +615,16 @@ impl<Lbl: Label> Model<Lbl> {
     }
 }
 
+impl<Lbl> Dom for Model<Lbl> {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Domains::ub(&self.state, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.state.presence(var)
+    }
+}
+
 impl<Lbl: Label> Default for Model<Lbl> {
     fn default() -> Self {
         Self::new()
@@ -658,24 +646,6 @@ impl<Lbl> Backtrack for Model<Lbl> {
 
     fn restore(&mut self, saved_id: DecLvl) {
         self.state.restore(saved_id);
-    }
-}
-
-impl<Lbl> AssignmentExt for Model<Lbl> {
-    fn entails(&self, literal: Lit) -> bool {
-        self.state.entails(literal)
-    }
-
-    fn var_domain(&self, var: impl Into<IAtom>) -> IntDomain {
-        self.state.var_domain(var)
-    }
-
-    fn presence_literal(&self, variable: impl Term) -> Lit {
-        self.state.presence(variable)
-    }
-
-    fn to_owned_assignment(&self) -> SavedAssignment {
-        self.state.clone()
     }
 }
 

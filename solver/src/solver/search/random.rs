@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use crate::core::Lit;
 use crate::model::Model;
-use crate::model::extensions::AssignmentExt;
+use crate::model::extensions::DomainsExt;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 use itertools::Itertools;
@@ -48,7 +48,7 @@ impl<L> SearchControl<L> for RandomChoice {
             .filter(|v| {
                 if model.state.present(*v) == Some(true) {
                     let dom = model.var_domain(*v);
-                    !dom.is_bound()
+                    !dom.is_singleton()
                 } else {
                     false
                 }

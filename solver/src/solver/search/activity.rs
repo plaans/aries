@@ -2,9 +2,9 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
-use crate::core::state::{Conflict, Event, Explainer, IntDomain};
+use crate::core::state::{Conflict, Domains, Event, Explainer, IntDomain};
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DomainsExt, Shaped};
 use crate::model::{Label, Model};
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
@@ -467,7 +467,7 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
         self.import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective: IntCst, assignment: Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective: IntCst, assignment: Arc<Domains>) {
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.
         let is_improvement = self

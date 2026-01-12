@@ -1,5 +1,5 @@
 use crate::chronicles::{concrete, EffectOp, Fluent, Problem, StateVar};
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 fn is_on_fluent(target_fluent: &Fluent, state_var: &StateVar) -> bool {
     target_fluent == state_var.fluent.as_ref()
 }
@@ -15,7 +15,7 @@ pub fn is_static(target_fluent: &Fluent, pb: &Problem) -> bool {
             .state_var
             .args
             .iter()
-            .any(|y| context.model.sym_domain_of(*y).size() != 1)
+            .any(|y| !context.model.var_domain(*y).is_singleton())
         {
             return false;
         }
