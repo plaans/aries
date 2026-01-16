@@ -7,7 +7,6 @@ use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
 use aries::model::symbols::SymId;
 use aries::model::Model;
-use itertools::Itertools;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,
@@ -107,7 +106,7 @@ impl<'a> Printer<'a> {
     }
 
     pub fn print_reif_constraints(constraints: &[aries::model::Constraint], model: &Model<VarLabel>) {
-        for c in constraints.iter().unique() {
+        for c in constraints.iter() {
             Self::print_reif_constraint(c, model);
         }
     }

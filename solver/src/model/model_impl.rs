@@ -1,5 +1,5 @@
 use std::convert::TryFrom;
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::backtrack::{Backtrack, DecLvl};
@@ -16,14 +16,18 @@ use crate::model::lang::*;
 use crate::model::model_impl::scopes::Scopes;
 use crate::model::symbols::SymbolTable;
 use crate::model::types::TypeId;
+use crate::reasoners::cp::UserPropagator;
 use crate::reif::{ReifExpr, Reifiable};
 
 mod scopes;
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+/// Constraint in the CP model.
+#[derive(Debug, Clone)]
 pub enum Constraint {
     /// Constraint enforcing that if the literal is true, then the expression evaluates to true.
     HalfReified(ReifExpr, Lit),
+    /// A custom propagator provided by a user. Implementation is a black-box for aries.
+    Propagator(Arc<dyn UserPropagator>),
 }
 
 impl std::fmt::Display for Constraint {
@@ -32,6 +36,7 @@ impl std::fmt::Display for Constraint {
             Constraint::HalfReified(r, l) => {
                 write!(f, "{l:?} => {r}")
             }
+            Constraint::Propagator(user_propagator) => write!(f, "{user_propagator:?}"),
         }
     }
 }
@@ -93,24 +98,28 @@ impl<Lbl: Label> ModelShape<Lbl> {
         }
     }
 
-    /// Given a TOTAL assignment, check that the all constraints are satisfied.
+    /// Given a TOTAL assignment, check that all constraints are satisfied.
     /// NOTE: Currently not really polished and intended for internal use.
     pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
         for c in &self.constraints {
-            let Constraint::HalfReified(expr, enabler) = c;
-            if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
-                let actual_value = expr.eval(assignment);
-                anyhow::ensure!(
-                    actual_value == Some(true),
-                    "{} : {:?}  [but enabled by {:?}]",
-                    expr,
-                    actual_value,
-                    enabler
-                );
-            } else {
-                // Underspecified: we may be able to determine a value on the
-                // expression side (e.g. with short-circuiting "or") even though we are not in the
-                // validity scope of the literal.
+            match c {
+                Constraint::HalfReified(expr, enabler) => {
+                    if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
+                        let actual_value = expr.eval(assignment);
+                        anyhow::ensure!(
+                            actual_value == Some(true),
+                            "{} : {:?}  [but enabled by {:?}]",
+                            expr,
+                            actual_value,
+                            enabler
+                        );
+                    } else {
+                        // Underspecified: we may be able to determine a value on the
+                        // expression side (e.g. with short-circuiting "or") even though we are not in the
+                        // validity scope of the literal.
+                    }
+                }
+                Constraint::Propagator(user_propagator) => anyhow::ensure!(user_propagator.satisfied(assignment)),
             }
         }
         Ok(())
@@ -585,6 +594,15 @@ impl<Lbl: Label> Model<Lbl> {
             let reified = self.reify_core(expr, use_tautology);
             self.bind_literals(value, reified);
         }
+    }
+
+    /// Adds a custom propagator with external implementation.
+    ///
+    /// The propagator will be posted to the CP reasoner for propagation.
+    pub fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static) {
+        self.shape
+            .constraints
+            .push(Constraint::Propagator(Arc::new(propagator)));
     }
 
     /// Record that `b <=> literal`

@@ -1,5 +1,7 @@
 // ========== Constraint ===========
 
+use std::fmt::Debug;
+
 use crate::core::state::*;
 use crate::core::*;
 use crate::create_ref_type;
@@ -44,7 +46,13 @@ pub trait Propagator: Send {
 }
 
 impl<T: Propagator> Explainer for T {
-    fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
+    fn explain(
+        &mut self,
+        _cause: InferenceCause,
+        literal: Lit,
+        model: &DomainsSnapshot,
+        explanation: &mut Explanation,
+    ) {
         Propagator::explain(self, literal, model, explanation)
     }
 }
@@ -70,16 +78,22 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
     }
 }
 
+/// Trait describing the minimal functionnality a custom propagator needs in order to be added to a [`Model`].
+pub trait UserPropagator: Debug + Sync + Send {
+    /// Instantiate a new propagator to be integrated into the CP engine.
+    fn get_propagator(&self) -> DynPropagator;
+
+    /// Returns true iff, the propagator is entailed by the current domains.
+    fn satisfied(&self, dom: &Domains) -> bool;
+}
+
 #[cfg(test)]
 pub mod test {
-    use super::*;
-    use crate::core::*;
 
     mod implies {
         //! Example propagator for an implication
 
         use crate::core::state::*;
-        use crate::core::*;
         use crate::reasoners::cp::propagator::*;
 
         /// An example propagator for an implication constraint (a => b)
@@ -144,7 +158,6 @@ pub mod test {
         use itertools::Itertools;
         use rand::prelude::IndexedRandom;
         use rand::rngs::SmallRng;
-        use rand::seq::SliceRandom;
         use rand::{Rng, SeedableRng};
 
         /// Generates `n` random problems, each with a domain with a few variables and a propagator
@@ -201,7 +214,7 @@ pub mod test {
         impl<'a> Explainer for PropExplainer<'a> {
             fn explain(
                 &mut self,
-                cause: InferenceCause,
+                _cause: InferenceCause,
                 literal: Lit,
                 model: &DomainsSnapshot,
                 explanation: &mut Explanation,
@@ -380,7 +393,7 @@ pub mod test {
                 .expect("failed prop");
 
             // save the current domains state
-            let mut domains_save = domains.clone();
+            let domains_save = domains.clone();
 
             for _rotation_id in 0..decisions.len() {
                 let mut domains = domains_save.clone();
@@ -391,7 +404,7 @@ pub mod test {
                         continue;
                     }
                     // println!("  Decide {l:?}");
-                    domains.decide(l);
+                    domains.decide(l).unwrap();
                     propagator
                         .propagate(&mut domains, INFERENCE_CAUSE)
                         .expect("failed prop");
