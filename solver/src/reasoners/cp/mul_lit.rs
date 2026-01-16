@@ -1,13 +1,8 @@
 use std::cmp::{max, min};
 
 use crate::{
-    core::{
-        Lit, Relation, VarRef,
-        state::{Explanation, Term},
-    },
+    core::{Lit, Relation, VarRef},
     model::extensions::DomainsExt,
-    reasoners::Contradiction,
-    reif,
 };
 
 use super::Propagator;
@@ -174,19 +169,11 @@ impl Propagator for VarEqVarMulLit {
 
 #[cfg(test)]
 mod tests {
-    use itertools::Itertools;
     use rand::prelude::SmallRng;
-    use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
 
-    use crate::backtrack::Backtrack;
-    use crate::core::literals::Disjunction;
-    use crate::core::state::{Event, Origin};
-    use crate::core::{IntCst, Relation};
-    use crate::{
-        core::state::{Cause, Domains, Explainer, Explanation, InferenceCause, InvalidUpdate},
-        reasoners::{Contradiction, ReasonerId},
-    };
+    use crate::core::IntCst;
+    use crate::core::state::{Cause, Domains};
 
     use super::*;
 
@@ -279,12 +266,6 @@ mod tests {
         check_bounds(l.variable(), &d, 0, 0);
     }
 
-    static INFERENCE_CAUSE: Cause = Cause::Inference(InferenceCause {
-        writer: ReasonerId::Cp,
-        payload: 0,
-    });
-
-    /// Generate random problems (domains + propagator)
     fn gen_problems(n: usize) -> Vec<(Domains, VarEqVarMulLit)> {
         let mut problems = Vec::new();
         let mut rng = SmallRng::seed_from_u64(0);

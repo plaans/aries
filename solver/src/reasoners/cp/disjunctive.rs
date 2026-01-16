@@ -1,7 +1,7 @@
 use hashbrown::HashSet;
 use itertools::Itertools;
 
-use crate::core::state::{Explanation, RangeDomain};
+use crate::core::state::Explanation;
 use crate::prelude::*;
 
 use crate::reasoners::Contradiction;

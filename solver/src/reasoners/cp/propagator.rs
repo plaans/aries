@@ -9,7 +9,7 @@ use crate::reasoners::Contradiction;
 
 use super::Watches;
 
-/// Unique ID of a propagator (assigned by the CP reasoner)
+// Unique ID of a propagator (assigned by the CP reasoner)
 create_ref_type!(PropagatorId);
 
 /// The propagator trait describe the required implementations for implementing a custom propagator in the CP reasoner.
@@ -300,7 +300,7 @@ pub mod test {
                         let mut conjuncts = explanation.lits;
                         conjuncts.shuffle(&mut rng);
                         for &conjunct in &conjuncts {
-                            d.set(conjunct, Cause::Decision);
+                            d.set(conjunct, Cause::Decision).unwrap();
                         }
 
                         assert!(

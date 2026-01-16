@@ -1,5 +1,3 @@
-#![allow(unused)] // TODO: remove once stabilized
-
 pub mod disjunctive;
 pub mod linear;
 pub mod max;
