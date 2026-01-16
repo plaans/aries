@@ -14,7 +14,7 @@ use aries::{
         },
         Model,
     },
-    solver::Solver,
+    solver::{SearchLimit, Solver},
 };
 use malachite::{Natural, Rational};
 
@@ -262,7 +262,7 @@ impl CspProblem {
         }
 
         let mut solver = Solver::new(m);
-        let result = solver.solve().expect("Solver interrupted");
+        let result = solver.solve(SearchLimit::None).expect("Solver interrupted");
         result.is_some() // An assignment exists
     }
 }

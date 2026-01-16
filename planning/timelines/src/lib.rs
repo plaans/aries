@@ -16,6 +16,7 @@ use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
 use aries::model::lang::hreif::BoolExpr;
 use aries::model::lang::*;
+use aries::prelude::*;
 use aries::solver::Solver;
 use idmap::DirectIdMap;
 use itertools::Itertools;
@@ -155,7 +156,7 @@ impl Sched {
     pub fn solve(&self) -> Option<Assignment<'static>> {
         let encoding = self.encode();
         let mut solver = Solver::new(encoding);
-        solver.solve().unwrap().map(Assignment::shared)
+        solver.solve(SearchLimit::None).unwrap().map(Assignment::shared)
     }
 
     pub fn explainable_solver<T: Ord + Clone>(

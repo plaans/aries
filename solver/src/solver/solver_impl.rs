@@ -20,7 +20,7 @@ use env_param::EnvParam;
 use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tracing::instrument;
 
 /// If true, decisions will be logged to the standard output.
@@ -43,6 +43,29 @@ macro_rules! log_dec {
             print!("[{:?}] ", std::thread::current().id());
             println!($($arg)+);
         }
+    }
+}
+
+/// Represents an absolute search limit
+#[derive(Clone, Copy, Debug)]
+pub enum SearchLimit {
+    /// Absolute time before which the search must be concluded
+    Deadline(Instant),
+    /// Number of decisions before which search must be concluded
+    ///
+    /// *Note:* this references the number of decisions in the stats and might not be 0 if the solver was already used
+    NumDecisions(u64),
+    /// Number of conflicts before which search must be concluded
+    ///
+    /// *Note:* this references the number of decisions in the stats and might not be 0 if the solver was already used
+    NumConflicts(u64),
+    /// No limit to search.
+    None,
+}
+
+impl SearchLimit {
+    pub fn duration(dur: Duration) -> Self {
+        Self::Deadline(Instant::now() + dur)
     }
 }
 
@@ -574,12 +597,12 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
-    pub fn solve(&mut self) -> Result<Option<Arc<Domains>>, Exit> {
+    pub fn solve(&mut self, limit: SearchLimit) -> Result<Option<Arc<Domains>>, Exit> {
         if self.post_constraints().is_err() {
             return Ok(None);
         }
 
-        match self.search()? {
+        match self.search(limit)? {
             SearchResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
             SearchResult::ExternalSolution(s) => Ok(Some(s)),
             SearchResult::Unsat(_) => Ok(None),
@@ -592,7 +615,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
     ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
     ///  needed for something else.
-    pub fn enumerate(&mut self, variables: &[VarRef]) -> Result<Vec<Vec<IntCst>>, Exit> {
+    pub fn enumerate(&mut self, variables: &[VarRef], limit: SearchLimit) -> Result<Vec<Vec<IntCst>>, Exit> {
         let mut valid_assignments = Vec::with_capacity(64);
 
         // If trivially UNSAT
@@ -605,7 +628,7 @@ impl<Lbl: Label> Solver<Lbl> {
             valid_assignments.push(assignment);
         };
 
-        self.enumerate_with(variables, on_new_solution)?;
+        self.enumerate_with(variables, on_new_solution, limit)?;
         Ok(valid_assignments)
     }
 
@@ -620,6 +643,7 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         variables: &[VarRef],
         mut on_new_solution: impl FnMut(&Domains),
+        limit: SearchLimit,
     ) -> Result<bool, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         debug_assert!(
@@ -639,7 +663,7 @@ impl<Lbl: Label> Solver<Lbl> {
         }
         let mut sat = false;
         loop {
-            match self.search()? {
+            match self.search(limit)? {
                 SearchResult::Unsat(_) => return Ok(sat),
                 SearchResult::AtSolution => {
                     // Solution found
@@ -714,8 +738,8 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Incremental solving: Solves the problem with the assumptions that were pushed.
     /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
-    pub fn incremental_solve(&mut self) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
-        match self.search()? {
+    pub fn incremental_solve(&mut self, limit: SearchLimit) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
+        match self.search(limit)? {
             SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
             SearchResult::ExternalSolution(s) => Ok(Ok(s)),
             SearchResult::Unsat(conflict) => {
@@ -732,7 +756,11 @@ impl<Lbl: Label> Solver<Lbl> {
     /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
     ///
     /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions on the stack)
-    pub fn solve_with_assumptions(&mut self, assumptions: &[Lit]) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
+    pub fn solve_with_assumptions(
+        &mut self,
+        assumptions: &[Lit],
+        limit: SearchLimit,
+    ) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
@@ -751,7 +779,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 return Ok(Err(unsat_core));
             }
         }
-        match self.search()? {
+        match self.search(limit)? {
             SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
             SearchResult::ExternalSolution(s) => Ok(Ok(s)),
             SearchResult::Unsat(conflict) => {
@@ -798,7 +826,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///
     /// Invariant: when exiting, the `search` method will always let the solver in a state where all reasoners are fully propagated.
     /// The only exceptions is redundant clauses received from an external process that may still be pending (but those can be handled in any decision level).
-    fn search(&mut self) -> Result<SearchResult, Exit> {
+    fn search(&mut self, limit: SearchLimit) -> Result<SearchResult, Exit> {
         assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
@@ -806,6 +834,25 @@ impl<Lbl: Label> Solver<Lbl> {
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
         loop {
+            match limit {
+                SearchLimit::Deadline(deadline) => {
+                    if Instant::now() >= deadline {
+                        return Err(Exit::Interrupted);
+                    }
+                }
+                SearchLimit::NumDecisions(max_decs) => {
+                    if self.stats.num_decisions >= max_decs {
+                        return Err(Exit::Interrupted);
+                    }
+                }
+
+                SearchLimit::NumConflicts(max_conflicts) => {
+                    if self.stats.num_conflicts >= max_conflicts {
+                        return Err(Exit::Interrupted);
+                    }
+                }
+                SearchLimit::None => {}
+            }
             // first propagate everything to make sure we are in a clean, consistent state
             // note that this method call will have the search backtrack when encountering an inconsistent state
             if let Err(conflict) = self.propagate_and_backtrack_to_consistent() {
@@ -864,60 +911,38 @@ impl<Lbl: Label> Solver<Lbl> {
         }
     }
 
-    pub fn minimize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.minimize_with_callback(objective, |_, _| ())
+    pub fn minimize(
+        &mut self,
+        objective: impl Into<IAtom>,
+        limit: SearchLimit,
+    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
+        self.minimize_with_callback(objective, |_, _| (), limit)
     }
 
     pub fn minimize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
         on_new_solution: impl FnMut(IntCst, &Domains),
+        limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), true, on_new_solution, None)
+        self.optimize_with(objective.into(), true, on_new_solution, limit)
     }
 
-    pub fn minimize_with_optional_initial_solution(
+    pub fn maximize(
         &mut self,
         objective: impl Into<IAtom>,
-        initial_solution: Option<(IntCst, Arc<Domains>)>,
+        limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), true, |_, _| (), initial_solution)
-    }
-
-    pub fn minimize_with_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: (IntCst, Arc<Domains>),
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.minimize_with_optional_initial_solution(objective.into(), Some(initial_solution))
-    }
-
-    pub fn maximize(&mut self, objective: impl Into<IAtom>) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.maximize_with_callback(objective, |_, _| ())
+        self.maximize_with_callback(objective, |_, _| (), limit)
     }
 
     pub fn maximize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
         on_new_solution: impl FnMut(IntCst, &Domains),
+        limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), false, on_new_solution, None)
-    }
-
-    pub fn maximize_with_optional_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: Option<(IntCst, Arc<Domains>)>,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), false, |_, _| (), initial_solution)
-    }
-
-    pub fn maximize_with_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: (IntCst, Arc<Domains>),
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.maximize_with_optional_initial_solution(objective.into(), Some(initial_solution))
+        self.optimize_with(objective.into(), false, on_new_solution, limit)
     }
 
     fn optimize_with(
@@ -925,16 +950,12 @@ impl<Lbl: Label> Solver<Lbl> {
         objective: IAtom,
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &Domains),
-        initial_solution: Option<(IntCst, Arc<Domains>)>,
+        limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
         let mut best = None;
-
-        if let Some((objective_value, sol)) = initial_solution {
-            self.brancher.new_assignment_found(objective_value, sol.clone());
-        }
 
         if self.post_constraints().is_err() || self.propagate().is_err() {
             // trivially UNSAT
@@ -942,7 +963,7 @@ impl<Lbl: Label> Solver<Lbl> {
         }
 
         loop {
-            let sol = match self.search()? {
+            let sol = match self.search(limit)? {
                 SearchResult::AtSolution => {
                     // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
                     // notify other solvers that we have found a new solution
@@ -996,6 +1017,11 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
             }
         }
+    }
+
+    /// Hint the brancher about an initial solution
+    pub fn warm_start(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
+        self.brancher.new_assignment_found(objective_value, assignment);
     }
 
     pub fn decide(&mut self, decision: Lit) {

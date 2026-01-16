@@ -5,7 +5,7 @@ use crate::model::Label;
 use crate::model::extensions::DomainsExt;
 use crate::model::lang::IAtom;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
-use crate::solver::{Exit, Solver, UnsatCore};
+use crate::solver::{Exit, SearchLimit, Solver, UnsatCore};
 use crossbeam_channel::{Receiver, Sender, select};
 use itertools::Itertools;
 use std::sync::Arc;
@@ -156,7 +156,10 @@ impl<Lbl: Label> ParSolver<Lbl> {
             "Workers need to have the same assumptions pushed into them",
         );
         self.race_solvers(
-            |s| s.incremental_solve().map(|res| res.map_err(|uc: UnsatCore| Some(uc))),
+            |s| {
+                s.incremental_solve(SearchLimit::None)
+                    .map(|res| res.map_err(|uc: UnsatCore| Some(uc)))
+            },
             |_| {},
             deadline,
         )
@@ -168,7 +171,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let run = move |s: &mut Solver<Lbl>| {
-            s.solve_with_assumptions(assumptions.iter().as_slice())
+            s.solve_with_assumptions(assumptions.iter().as_slice(), SearchLimit::None)
                 .map(|res| res.map_err(|uc: UnsatCore| Some(uc)))
         };
         self.race_solvers(run, |_| {}, deadline)
@@ -176,14 +179,20 @@ impl<Lbl: Label> ParSolver<Lbl> {
 
     /// Solve the problem that was given on initialization using all available solvers.
     pub fn solve(&mut self, deadline: Option<Instant>) -> SolverResult<Solution> {
-        self.race_solvers(|s| s.solve().map(|res| res.ok_or(None)), |_| {}, deadline)
+        // TODO: leverage deadline search
+        self.race_solvers(
+            |s| s.solve(SearchLimit::None).map(|res| res.ok_or(None)),
+            |_| {},
+            deadline,
+        )
     }
 
     /// Minimize the value of the given expression.
     pub fn minimize(&mut self, objective: impl Into<IAtom>, deadline: Option<Instant>) -> SolverResult<Solution> {
+        // TODO: leverage deadline search
         let objective = objective.into();
         self.race_solvers(
-            move |s| match s.minimize(objective) {
+            move |s| match s.minimize(objective, SearchLimit::None) {
                 Ok(Some((_cost, sol))) => Ok(Ok(sol)),
                 Ok(None) => Ok(Err(None)),
                 Err(x) => Err(x),
@@ -200,7 +209,6 @@ impl<Lbl: Label> ParSolver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         on_improved_solution: impl Fn(Solution),
-        initial_solution: Option<(IntCst, Solution)>,
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let objective = objective.into();
@@ -220,8 +228,10 @@ impl<Lbl: Label> ParSolver<Lbl> {
                 previous_best = Some(obj_value)
             }
         };
+
+        // TODO: leverage deadline search
         self.race_solvers(
-            move |s| match s.minimize_with_optional_initial_solution(objective, initial_solution.clone()) {
+            move |s| match s.minimize(objective, SearchLimit::None) {
                 Ok(Some((_cost, sol))) => Ok(Ok(sol)),
                 Ok(None) => Ok(Err(None)),
                 Err(x) => Err(x),
@@ -229,6 +239,15 @@ impl<Lbl: Label> ParSolver<Lbl> {
             on_new_sol,
             deadline,
         )
+    }
+
+    /// Hint the brancher about an initial solution
+    pub fn warm_start(&mut self, objective_value: IntCst, assignment: Solution) {
+        for solver in &mut self.solvers {
+            if let Worker::Idle(solver) = solver {
+                solver.warm_start(objective_value, assignment.clone());
+            }
+        }
     }
 
     /// Generic function to run a lambda in parallel on all available solvers and return the result of the

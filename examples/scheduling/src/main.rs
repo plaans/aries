@@ -93,7 +93,6 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let result = solver.minimize_with(
         makespan,
         |s| println!("New solution with makespan: {}", s.bounds(makespan).0),
-        None,
         deadline,
     );
 
@@ -176,6 +175,7 @@ mod test {
     use aries::model::Label;
     use aries::prelude::*;
     use aries::solver::search::random::RandomChoice;
+    use aries::solver::{SearchLimit, Solver};
 
     /// Solve the problem multiple with different random variable ordering, ensuring that all results are as expected.
     /// It also set up solution witness to check that no learned clause prune valid solutions.
@@ -187,13 +187,17 @@ mod test {
             let solver = &mut Solver::new(model);
             solver.set_brancher(RandomChoice::new(seed as u64));
             let result = if let Some((makespan, assignment)) = solver
-                .minimize_with_callback(objective, |makespan, _| {
-                    if expected_result == Some(makespan) {
-                        // we have found the expected solution, remove the witness because the current solution
-                        // will be disallowed to force an improvement
-                        witness::remove_solution_witness()
-                    }
-                })
+                .minimize_with_callback(
+                    objective,
+                    |makespan, _| {
+                        if expected_result == Some(makespan) {
+                            // we have found the expected solution, remove the witness because the current solution
+                            // will be disallowed to force an improvement
+                            witness::remove_solution_witness()
+                        }
+                    },
+                    SearchLimit::None,
+                )
                 .unwrap()
             {
                 println!("[{seed}] SOL: {makespan:?}");
