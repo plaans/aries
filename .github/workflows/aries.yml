@@ -376,7 +376,10 @@ jobs:
           name: up_aries.tar.gz
           path: dist/
       - name: Rename python package with version
-        run: mv dist/up_aries.tar.gz dist/up_aries-${{github.ref_name}}.tar.gz
+        run: |
+          TAG=${{github.ref_name}}
+          VERSION="${TAG:1}" # remove the `v` in `v0.3.5`
+          mv dist/up_aries.tar.gz dist/up_aries-${VERSION}.tar.gz
 
       - name: Display artifacts
         run: ls -R
