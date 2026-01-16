@@ -925,25 +925,7 @@ impl<Lbl: Label> Solver<Lbl> {
         on_new_solution: impl FnMut(IntCst, &Domains),
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), true, on_new_solution, None, limit)
-    }
-
-    pub fn minimize_with_optional_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: Option<(IntCst, Arc<Domains>)>,
-        limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), true, |_, _| (), initial_solution, limit)
-    }
-
-    pub fn minimize_with_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: (IntCst, Arc<Domains>),
-        limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.minimize_with_optional_initial_solution(objective.into(), Some(initial_solution), limit)
+        self.optimize_with(objective.into(), true, on_new_solution, limit)
     }
 
     pub fn maximize(
@@ -960,25 +942,7 @@ impl<Lbl: Label> Solver<Lbl> {
         on_new_solution: impl FnMut(IntCst, &Domains),
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), false, on_new_solution, None, limit)
-    }
-
-    pub fn maximize_with_optional_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: Option<(IntCst, Arc<Domains>)>,
-        limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.optimize_with(objective.into(), false, |_, _| (), initial_solution, limit)
-    }
-
-    pub fn maximize_with_initial_solution(
-        &mut self,
-        objective: impl Into<IAtom>,
-        initial_solution: (IntCst, Arc<Domains>),
-        limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
-        self.maximize_with_optional_initial_solution(objective.into(), Some(initial_solution), limit)
+        self.optimize_with(objective.into(), false, on_new_solution, limit)
     }
 
     fn optimize_with(
@@ -986,17 +950,12 @@ impl<Lbl: Label> Solver<Lbl> {
         objective: IAtom,
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &Domains),
-        initial_solution: Option<(IntCst, Arc<Domains>)>,
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
         let mut best = None;
-
-        if let Some((objective_value, sol)) = initial_solution {
-            self.brancher.new_assignment_found(objective_value, sol.clone());
-        }
 
         if self.post_constraints().is_err() || self.propagate().is_err() {
             // trivially UNSAT
@@ -1058,6 +1017,11 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
             }
         }
+    }
+
+    /// Hint the brancher about an initial solution
+    pub fn warm_start(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
+        self.brancher.new_assignment_found(objective_value, assignment);
     }
 
     pub fn decide(&mut self, decision: Lit) {

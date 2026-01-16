@@ -93,7 +93,6 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let result = solver.minimize_with(
         makespan,
         |s| println!("New solution with makespan: {}", s.bounds(makespan).0),
-        None,
         deadline,
     );
 

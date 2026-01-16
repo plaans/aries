@@ -209,7 +209,6 @@ impl<Lbl: Label> ParSolver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         on_improved_solution: impl Fn(Solution),
-        initial_solution: Option<(IntCst, Solution)>,
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {
         let objective = objective.into();
@@ -232,11 +231,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
 
         // TODO: leverage deadline search
         self.race_solvers(
-            move |s| match s.minimize_with_optional_initial_solution(
-                objective,
-                initial_solution.clone(),
-                SearchLimit::None,
-            ) {
+            move |s| match s.minimize(objective, SearchLimit::None) {
                 Ok(Some((_cost, sol))) => Ok(Ok(sol)),
                 Ok(None) => Ok(Err(None)),
                 Err(x) => Err(x),
@@ -244,6 +239,15 @@ impl<Lbl: Label> ParSolver<Lbl> {
             on_new_sol,
             deadline,
         )
+    }
+
+    /// Hint the brancher about an initial solution
+    pub fn warm_start(&mut self, objective_value: IntCst, assignment: Solution) {
+        for solver in &mut self.solvers {
+            if let Worker::Idle(solver) = solver {
+                solver.warm_start(objective_value, assignment.clone());
+            }
+        }
     }
 
     /// Generic function to run a lambda in parallel on all available solvers and return the result of the
