@@ -54,7 +54,6 @@ impl Propagator for AtLeastOneGeq {
         let lb = |svar: SignedVar| domains.lb(svar);
 
         let mut candidates = Candidates::Empty;
-        let lhs_ub = ub(self.lhs);
         let lhs_lb = lb(self.lhs);
         let mut rhs_max = INT_CST_MIN - 1;
 
@@ -138,7 +137,7 @@ impl Propagator for AtLeastOneGeq {
                 .elements
                 .iter()
                 .enumerate()
-                .find(|(i, e)| literal == e.presence || literal.svar() == -e.var)
+                .find(|(_, e)| literal == e.presence || literal.svar() == -e.var)
                 .unwrap();
 
             let max_lb = domains.lb(self.lhs);
@@ -217,19 +216,19 @@ mod test {
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 13);
 
-        d.set_ub(a, 9, CAUSE);
+        d.set_ub(a, 9, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 13);
 
-        d.set_ub(b, 9, CAUSE);
+        d.set_ub(b, 9, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 10);
 
-        d.set_ub(a, 5, CAUSE);
+        d.set_ub(a, 5, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 10);
 
-        d.set_ub(b, 3, CAUSE);
+        d.set_ub(b, 3, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 6);
     }

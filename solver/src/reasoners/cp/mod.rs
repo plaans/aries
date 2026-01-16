@@ -1,5 +1,4 @@
-#![allow(unused)] // TODO: remove once stabilized
-
+pub mod disjunctive;
 pub mod linear;
 pub mod max;
 pub mod mul;
@@ -10,26 +9,15 @@ pub use propagator::*;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
-use crate::collections::set::RefSet;
 use crate::collections::*;
-use crate::core::state::{
-    Cause, Domains, DomainsSnapshot, Event, Explainer, Explanation, InferenceCause, InvalidUpdate,
-};
-use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
-use crate::create_ref_type;
-use crate::model::extensions::{DisjunctionExt, DomainsExt};
+use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
+use crate::core::{Lit, SignedVar, VarRef};
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
-use crate::reasoners::cp::max::AtLeastOneGeq;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
-use anyhow::Context;
 use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-//
-// ========= CP =============
 
 #[derive(Clone, Default)]
 pub struct Watches {

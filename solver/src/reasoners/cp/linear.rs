@@ -7,8 +7,7 @@ use crate::core::{
 };
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
-use itertools::Itertools;
-use num_integer::{Integer, div_ceil, div_floor};
+use num_integer::div_floor;
 use std::cmp::{Ordering, PartialEq};
 use std::collections::BinaryHeap;
 use std::fmt::{Debug, Formatter};
@@ -67,7 +66,6 @@ impl SumElem {
     }
     fn set_ub(&self, ub: LongCst, domains: &mut Domains, cause: Cause) -> Result<bool, InvalidUpdate> {
         debug_assert!(self.factor > 0);
-        let var = self.var;
 
         // We need to enforce `ub >= var * factor`  with factor > 0
         // enforce  ub / factor >= var
@@ -184,6 +182,7 @@ impl std::fmt::Display for LinearSumLeq {
 }
 
 impl LinearSumLeq {
+    #[allow(unused)]
     fn print(&self, domains: &Domains) {
         println!("ub: {}", self.ub);
         for e in &self.elements {
@@ -304,6 +303,7 @@ impl Propagator for LinearSumLeq {
         }
 
         let sum_lb = |culps: &BinaryHeap<LbBoundEvent>| -> LongCst { culps.iter().map(|e| e.lb()).sum() };
+        #[allow(unused)]
         let print = |culps: &BinaryHeap<LbBoundEvent>| {
             println!("QUEUE:");
             for e in culps.iter() {
@@ -371,15 +371,10 @@ impl Propagator for LinearSumLeq {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
     use crate::backtrack::Backtrack;
-    use crate::core::SignedVar;
-    use crate::core::literals::Disjunction;
-    use crate::core::state::{Explainer, InferenceCause, Origin};
-    use crate::reasoners::ReasonerId;
-    use rand::prelude::SmallRng;
-    use rand::seq::SliceRandom;
-    use rand::{Rng, SeedableRng};
     /* ============================== Factories ============================= */
 
     fn var(lb: IntCst, ub: IntCst, factor: IntCst, dom: &mut Domains) -> SumElem {
@@ -415,7 +410,6 @@ mod tests {
     fn test_ub_setter_var() {
         let mut d = Domains::new();
         let v = var(-100, 100, 2, &mut d);
-        let s = sum(vec![v], 10, Lit::TRUE);
         check_bounds(&v, &d, -200, 200);
         assert_eq!(v.set_ub(50, &mut d, Cause::Decision), Ok(true));
         check_bounds(&v, &d, -200, 50);
@@ -428,7 +422,6 @@ mod tests {
     fn test_ub_setter_cst() {
         let mut d = Domains::new();
         let c = var(3, 3, 1, &mut d);
-        let s = sum(vec![c], 10, Lit::TRUE);
         check_bounds(&c, &d, 3, 3);
         assert_eq!(c.set_ub(50, &mut d, Cause::Decision), Ok(false));
         check_bounds(&c, &d, 3, 3);
@@ -524,7 +517,7 @@ mod tests {
 
         // take a decision that will make the constraint unsatifiable and thus deactivate it
         d.save_state();
-        d.decide(c.var.geq(25));
+        d.decide(c.var.geq(25)).unwrap();
         assert!(s.propagate(&mut d, Cause::Decision).is_ok());
         // constraint should have been deactivated
         check_bounds_var(v, &d, 0, 1);
@@ -551,14 +544,14 @@ mod tests {
         for (weights, ub) in constraints {
             // we have one constraint to test
             let mut d = Domains::new();
-            let vars = (0..weights.len()).map(|i| d.new_var(0, 10)).collect_vec();
+            let vars = (0..weights.len()).map(|_| d.new_var(0, 10)).collect_vec();
             let elems = weights
                 .iter()
                 .zip(vars.iter())
                 .map(|(w, v)| SumElem::new(*w, *v))
                 .collect_vec();
 
-            let mut s = sum(elems, *ub, Lit::TRUE);
+            let s = sum(elems, *ub, Lit::TRUE);
             problems.push((d, s));
         }
         problems

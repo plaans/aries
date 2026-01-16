@@ -21,8 +21,6 @@ pub enum Var {
     Start(OperationId),
     Prec(OperationId, OperationId),
     Presence(OperationId),
-    // a variable used to encode the problem but not necessary to reconstruct the solution.
-    Intermediate,
 }
 
 impl std::fmt::Display for Var {

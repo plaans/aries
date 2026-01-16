@@ -1,7 +1,7 @@
 use crate::{
     core::{
         IntCst, Lit, VarRef,
-        state::{Cause, Domains, DomainsSnapshot, Explanation, IntDomain},
+        state::{Cause, Domains, DomainsSnapshot, Explanation},
     },
     reasoners::{
         Contradiction,
