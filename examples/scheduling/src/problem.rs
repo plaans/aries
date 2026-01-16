@@ -1,9 +1,8 @@
 use crate::search::{Model, Var};
-use aries::core::{u32_to_cst, IntCst, Lit, VarRef};
+use aries::core::{u32_to_cst, IntCst, Lit};
 use aries::model::lang::expr::{alternative, eq, leq, or};
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::{IAtom, IVar};
+use aries::reasoners::cp::disjunctive::{NoOverlap, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -353,36 +352,13 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_const
             }
         }
 
+        // let use_constraints = false;
         if use_constraints {
-            // variable that is bound to the start of first task executing on the machine
-            let start_first = m.new_ivar(0, upper_bound, Var::Intermediate);
-            let mut starts = alts.iter().map(|a| a.start).collect_vec();
-            starts.push(e.makespan); // add the makespan as a fallback in case there are no tasks on this machine
-            m.enforce(EqMin::new(start_first, starts), []);
-
-            // variable bound to the end of the latest task executing on the machine
-            let end_last = m.new_ivar(0, upper_bound, Var::Intermediate);
-            let mut ends = alts.iter().map(|a| a.end()).collect_vec();
-            ends.push(start_first.into()); // add the start (=makespan) as fallback if not tasks are scheduled on this machine
-            m.enforce(EqMax::new(end_last, ends), []);
-            m.enforce(leq(end_last, e.makespan), []);
-
-            // sum of the duration of all tasks executing on the machine
-            let mut dur_sum = LinearSum::zero();
-            for alt in &alts {
-                // TODO: this is currently a workaound a missing API
-                if alt.presence.variable() != VarRef::ZERO {
-                    let i_prez = IVar::new(alt.presence.variable());
-                    // assumes that i_prez is a 0-1 variable where 1 indicates presence
-                    dur_sum += i_prez * alt.duration;
-                } else {
-                    assert_eq!(alt.presence, Lit::TRUE);
-                    dur_sum += alt.duration;
-                }
-            }
-
-            m.enforce((dur_sum + start_first).leq(end_last), []);
-            // m.enforce(dur_sum.leq(e.makespan), []); // weaker version does not require the intermediate variables
+            let tasks_on_machine = alts
+                .iter()
+                .map(|op| Task::new(op.start, op.duration, op.end(), op.presence));
+            let no_overlap = NoOverlap::new(tasks_on_machine);
+            m.enforce_user_propagator(no_overlap);
         }
     }
     match pb.kind {

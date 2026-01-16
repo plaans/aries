@@ -136,7 +136,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
 }
 
-/// Write the solution to file if the file if the file is not None
+/// Write the solution to file if the file is not None
 fn export(solution: &Solution, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
     if let Some(output_file) = file {
         let mut formatted_solution = String::new();
@@ -173,11 +173,9 @@ mod test {
     use crate::search::Var;
     use crate::{parser, problem};
     use aries::core::state::witness;
-    use aries::core::IntCst;
-    use aries::model::lang::IVar;
-    use aries::model::{Label, Model};
+    use aries::model::Label;
+    use aries::prelude::*;
     use aries::solver::search::random::RandomChoice;
-    use aries::solver::Solver;
 
     /// Solve the problem multiple with different random variable ordering, ensuring that all results are as expected.
     /// It also set up solution witness to check that no learned clause prune valid solutions.
