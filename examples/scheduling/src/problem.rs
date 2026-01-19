@@ -1,5 +1,5 @@
 use crate::search::{Model, Var};
-use aries::core::{u32_to_cst, IntCst, Lit};
+use aries::core::{u32_to_cst, IntCst, Lit, INT_CST_MAX};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
 use aries::reasoners::cp::disjunctive::{NoOverlap, Task};
@@ -283,9 +283,14 @@ impl Encoding {
     }
 }
 
-pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_constraints: bool) -> (Model, Encoding) {
+pub(crate) fn encode(
+    pb: &Problem,
+    lower_bound: u32,
+    upper_bound: Option<u32>,
+    use_constraints: bool,
+) -> (Model, Encoding) {
     let lower_bound = u32_to_cst(lower_bound);
-    let upper_bound = u32_to_cst(upper_bound);
+    let upper_bound = u32_to_cst(upper_bound.unwrap_or(INT_CST_MAX as u32));
     let mut m = Model::new();
     let e = Encoding::new(pb, lower_bound, upper_bound, &mut m);
 
