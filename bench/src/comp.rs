@@ -1,24 +1,6 @@
 use std::{fmt::Display, rc::Rc};
 
 use crate::{Metric, SolveResult};
-use owo_colors::OwoColorize;
-
-enum Delta<T> {
-    Better(T),
-    Neutral(T),
-    Worse(T),
-    Unknown(T),
-}
-impl<T: Display> Display for Delta<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Delta::Better(value) => write!(f, "{}", value.to_string().green()),
-            Delta::Neutral(value) => write!(f, "{}", value),
-            Delta::Worse(value) => write!(f, "{}", value.to_string().red()),
-            Delta::Unknown(value) => write!(f, "{}", value.to_string().blue()),
-        }
-    }
-}
 
 pub struct MeasureWithImprovement<T> {
     pub measure: Option<T>,
@@ -38,40 +20,31 @@ impl<T> MeasureWithImprovement<T> {
             improvement: self.improvement,
         }
     }
+    pub fn cell(self) -> comfy_table::Cell
+    where
+        T: Display,
+    {
+        let color = match self.improvement {
+            None => comfy_table::Color::White,
+            Some(n) if n > 1.01 => comfy_table::Color::Red,
+            Some(n) if n < 0.99 => comfy_table::Color::Green,
+            _ => comfy_table::Color::Grey,
+        };
+        comfy_table::Cell::new(self)
+            .fg(color)
+            .set_alignment(comfy_table::CellAlignment::Right)
+    }
 }
 
 impl<T: Display> Display for MeasureWithImprovement<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Some(measure) = self.measure.as_ref() else {
-            return write!(f, "-");
+            return write!(f, "-        ");
         };
         let Some(improv) = self.improvement.as_ref() else {
-            return write!(f, "{}", Delta::Unknown(measure));
+            return write!(f, "{measure}        ");
         };
-        let res = if improv < &0.99 {
-            Delta::Better(measure)
-        } else if improv > &1.01 {
-            Delta::Worse(measure)
-        } else {
-            Delta::Neutral(measure)
-        };
-        write!(f, "{res} (x{improv:.2})")
-    }
-}
-
-fn increase<F>(lens: F, new: &SolveResult, reference: Option<&SolveResult>) -> String
-where
-    F: Fn(&SolveResult) -> f64,
-{
-    increase_fmt(lens(new), reference.map(lens))
-}
-
-fn increase_fmt(new: f64, base: Option<f64>) -> String {
-    if let Some(reference) = base {
-        let improv = new / reference;
-        format!(" x{:.2}", improv)
-    } else {
-        "      ".to_string()
+        write!(f, "{measure} (x{improv:.2})")
     }
 }
 
@@ -97,29 +70,5 @@ impl RunWithRef {
 
     pub fn metric(&self, metric: Metric) -> MeasureWithImprovement<f64> {
         self.measure(|r| r.metrics.get(&metric).copied())
-    }
-
-    pub fn increase(&self, lens: impl Fn(&SolveResult) -> f64) -> String {
-        increase_fmt(
-            lens(self.run.as_ref()),
-            self.reference.as_ref().map(|r| lens(r.as_ref())),
-        )
-    }
-}
-
-pub struct MetricValueWithRef {
-    pub value: f64,
-    pub reference: Option<f64>,
-}
-
-impl Display for MetricValueWithRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} ", readable::Float::from(self.value))?;
-        if let Some(reference) = self.reference {
-            let improv = self.value / reference;
-            write!(f, " x{:.2}", improv)
-        } else {
-            write!(f, "      ")
-        }
     }
 }

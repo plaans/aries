@@ -64,3 +64,10 @@ ci-pddl-parse-all filter="d":
         echo $f
         target/ci/pddl-parser  $f > /dev/null
     done
+
+bench name timeout="10":
+    #!/usr/bin/env bash
+    set -e  # stop on first error
+    for instance in `cat benches.jsp`; do
+        cargo run --profile perf --bin scheduler -- -t {{ timeout }} -r {{ name }} jsp $instance
+    done

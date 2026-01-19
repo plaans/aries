@@ -1,6 +1,9 @@
 use anyhow::{Context, Result};
 use aries_bench::{comp::RunWithRef, *};
 use clap::Parser;
+use comfy_table::modifiers::UTF8_ROUND_CORNERS;
+use comfy_table::presets::UTF8_FULL;
+use comfy_table::*;
 use std::{fs, rc::Rc};
 
 /// Benchmark results analyzer
@@ -50,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     let directory = args.directory;
 
     let results = results_from_dir(&directory)?;
-    let reference_results = results_from_dir(&args.reference)?; // TODO
+    let reference_results = results_from_dir(&args.reference)?;
 
     let results: Vec<RunWithRef> = results
         .into_iter()
@@ -63,34 +66,61 @@ fn main() -> anyhow::Result<()> {
         })
         .collect();
 
-    // Print header
-    println!(
-        "{:<60} {:<10} {:>15} {:>15} {:>15} {:>15} {:>15}",
-        "Problem", "Status", "Objective", "Runtime", "Conflicts", "Decisions", "DomUpdates"
-    );
-    println!("{}", "-".repeat(140));
+    // Create and configure comfy table
+    let mut table = Table::new();
 
-    // Print each result with metrics
+    // Set table style with borders and alignment
+    table
+        .load_preset(UTF8_FULL)
+        .apply_modifier(UTF8_ROUND_CORNERS)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Problem").set_alignment(comfy_table::CellAlignment::Left),
+            Cell::new("Status").set_alignment(comfy_table::CellAlignment::Left),
+            Cell::new("Objective").set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("Runtime").set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("Conflicts").set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("Decisions").set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("DomUpdates").set_alignment(comfy_table::CellAlignment::Right),
+        ])
+        .set_content_arrangement(ContentArrangement::Dynamic);
+
+    // Add each result as a row
     for result in results {
         let problem_name = result.run.problem.id();
         let status = match result.run.status {
             SolveStatus::Solved => "Solved",
             SolveStatus::Timeout => "Timeout",
         };
+        let status_color = match result.reference.as_ref().map(|r| r.status) {
+            Some(s) if s > result.run.status => Color::Green,
+            Some(s) if s < result.run.status => Color::Red,
+            Some(_) => Color::Grey,
+            None => Color::White,
+        };
+        let status = Cell::new(status).fg(status_color);
         let objective = result.objective();
         let runtime = result
             .measure(|r| Some(r.runtime.as_secs_f64()))
             .map(readable::Float::new_2_point);
 
-        let conflicts = result.metric(Metric::NumConflicts).to_string();
-        let decisions = result.metric(Metric::NumDecisions).to_string();
-        let dom_updates = result.metric(Metric::NumDomUpdates).to_string();
+        let conflicts = result.metric(Metric::NumConflicts).map(readable::Int::from);
+        let decisions = result.metric(Metric::NumDecisions).map(readable::Int::from);
+        let dom_updates = result.metric(Metric::NumDomUpdates).map(readable::Int::from);
 
-        println!(
-            "{:<60} {:<10} {:>15} {:>15} {:>15} {:>15} {:>15}",
-            problem_name, status, objective, runtime, conflicts, decisions, dom_updates
-        );
+        table.add_row(vec![
+            Cell::new(problem_name).set_alignment(comfy_table::CellAlignment::Left),
+            status,
+            objective.cell(),
+            runtime.cell(),
+            conflicts.cell(),
+            decisions.cell(),
+            dom_updates.cell(),
+        ]);
     }
+
+    // Print the table
+    println!("{}", table);
 
     Ok(())
 }

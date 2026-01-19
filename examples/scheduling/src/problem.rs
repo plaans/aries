@@ -289,6 +289,7 @@ pub(crate) fn encode(
     upper_bound: Option<u32>,
     use_constraints: bool,
 ) -> (Model, Encoding) {
+    //let use_constraints = false;
     let lower_bound = u32_to_cst(lower_bound);
     let upper_bound = u32_to_cst(upper_bound.unwrap_or(INT_CST_MAX as u32));
     let mut m = Model::new();

@@ -50,7 +50,7 @@ impl Problem {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
     Solved,
     Timeout,

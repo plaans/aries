@@ -10,4 +10,4 @@ tempfile = "3.10"
 anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 readable = "0.1"
-owo-colors = "4.0"
+comfy-table = "7.0"
