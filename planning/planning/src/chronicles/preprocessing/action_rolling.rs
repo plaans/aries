@@ -11,7 +11,7 @@ use aries::model::extensions::partial_assignment::{PartialAssignment, PartialAss
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::{Atom, Cst, FAtom, IAtom, Rational};
 use aries::model::Model;
-use aries::solver::Solver;
+use aries::solver::{SearchLimit, Solver};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -183,7 +183,7 @@ fn extract_constraints(
 
     // enumerate all possible values combinations for these variables
     let mut solver = Solver::new(csp);
-    let results = solver.enumerate(&replacement_vars).unwrap();
+    let results = solver.enumerate(&replacement_vars, SearchLimit::None).unwrap();
 
     // the &[IntCst] type represents an assignment to the replacement variables,
     // i.e., one of the solutions to the CSP

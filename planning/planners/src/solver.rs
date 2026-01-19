@@ -577,10 +577,13 @@ fn solve_finite_problem(
     let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
         strats[id].adapt_solver(s, pb.clone(), encoding.clone())
     });
+    if let Some((objective_value, assignment)) = initial_solution {
+        solver.warm_start(objective_value, assignment);
+    }
 
     let result = if let Some(metric) = metric {
         if minimize_metric {
-            solver.minimize_with(metric, on_new_solution, initial_solution, deadline)
+            solver.minimize_with(metric, on_new_solution, deadline)
         } else {
             solver.solve(deadline)
         }

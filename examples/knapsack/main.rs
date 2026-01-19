@@ -8,6 +8,7 @@ use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::Brancher;
+use aries::solver::SearchLimit;
 use env_param::EnvParam;
 use itertools::Itertools;
 use std::cmp::max;
@@ -229,7 +230,7 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
     let mut solver = Solver::new(model);
     solver.set_brancher_boxed(brancher);
 
-    if let Some(sol) = solver.maximize(total_value).unwrap() {
+    if let Some(sol) = solver.maximize(total_value, SearchLimit::None).unwrap() {
         let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
         let items: Vec<Item> = vars
             .iter()

@@ -3,7 +3,7 @@ mod mapsolver;
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::Lit;
 use crate::model::Label;
-use crate::solver::{Exit, Solver};
+use crate::solver::{Exit, SearchLimit, Solver};
 
 use std::collections::BTreeSet;
 
@@ -114,7 +114,9 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
     /// - If UNSAT: returns an unsat core of `subset`.
     fn check_subset(&mut self, subset: &BTreeSet<Lit>) -> Result<Result<BTreeSet<Lit>, BTreeSet<Lit>>, Exit> {
         let mut find_unsat_core_fn = |assumptions: &[Lit]| {
-            let res = self.main_solver.solve_with_assumptions(assumptions)?;
+            let res = self
+                .main_solver
+                .solve_with_assumptions(assumptions, SearchLimit::None)?;
             self.main_solver.reset();
             Ok(res)
         };
@@ -250,13 +252,18 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         let mcs = mcs.iter().copied().collect_vec();
 
         // Test mss being feasible
-        debug_assert!(self.main_solver.solve_with_assumptions(&mss).unwrap().is_ok());
+        debug_assert!(
+            self.main_solver
+                .solve_with_assumptions(&mss, SearchLimit::None)
+                .unwrap()
+                .is_ok()
+        );
         // Test mcs being minimal (i.e. mss + any element of mcs being infeasible)
         for &lit in &mcs {
             self.main_solver.reset();
             debug_assert!(
                 self.main_solver
-                    .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec())
+                    .solve_with_assumptions(&mss.iter().chain([&lit]).copied().collect_vec(), SearchLimit::None)
                     .unwrap()
                     .is_err()
             )
@@ -272,14 +279,22 @@ impl<'a, Lbl: Label> Marco<'a, Lbl> {
         let mus = mus.iter().copied().collect_vec();
 
         // Test mus being infeasible
-        debug_assert!(self.main_solver.solve_with_assumptions(&mus).unwrap().is_err());
+        debug_assert!(
+            self.main_solver
+                .solve_with_assumptions(&mus, SearchLimit::None)
+                .unwrap()
+                .is_err()
+        );
 
         // Test mus being minimal
         for &lit in &mus {
             self.main_solver.reset();
             debug_assert!(
                 self.main_solver
-                    .solve_with_assumptions(&mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec())
+                    .solve_with_assumptions(
+                        &mus.iter().filter_map(|&l| (l != lit).then_some(l)).collect_vec(),
+                        SearchLimit::None
+                    )
                     .unwrap()
                     .is_ok()
             );
