@@ -4,10 +4,9 @@ mod search;
 
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
 use crate::search::{SearchStrategy, Solver, Var};
-use anyhow::*;
-use aries::model::extensions::DomainsExt;
 use aries::model::lang::IVar;
-use aries::solver::parallel::{Solution, SolverResult};
+use aries::prelude::*;
+use aries::solver::{Exit, SearchLimit};
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
@@ -36,12 +35,9 @@ pub struct Opt {
     /// maximum runtime, in seconds.
     #[structopt(long = "timeout", short = "t")]
     timeout: Option<u32>,
-    /// Number of threads to allocate to search
-    #[structopt(long, default_value = "1")]
-    num_threads: u32,
 }
 
-fn main() -> Result<()> {
+fn main() -> anyhow::Result<()> {
     // Terminate the process if a thread panics.
     // take_hook() returns the default hook in case when a custom one is not set
     let orig_hook = std::panic::take_hook();
@@ -70,7 +66,10 @@ fn main() -> Result<()> {
 }
 
 fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
-    let deadline = opt.timeout.map(|dur| Instant::now() + Duration::from_secs(dur as u64));
+    let deadline = opt
+        .timeout
+        .map(|dur| SearchLimit::Deadline(Instant::now() + Duration::from_secs(dur as u64)))
+        .unwrap_or(SearchLimit::None);
     let start_time = std::time::Instant::now();
     let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
     let pb = match kind {
@@ -88,23 +87,26 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
-    let mut solver = search::get_solver(solver, &opt.search, &encoding, opt.num_threads as usize);
+    let mut solver = search::get_solver(solver, &opt.search, &encoding);
 
-    let result = solver.minimize_with(
+    let mut best = Option::None;
+    let result = solver.minimize_with_callback(
         makespan,
-        |s| println!("New solution with makespan: {}", s.bounds(makespan).0),
+        |obj, sol| {
+            println!("New solution with makespan: {}", obj);
+            best = Some(sol.clone());
+        },
         deadline,
     );
+    solver.print_stats();
+    println!();
 
     match result {
-        SolverResult::Sol(solution) => {
-            let optimum = solution.var_domain(makespan).lb;
+        Ok(Some((obj, solution))) => {
+            let optimum = solution.value_of(makespan).unwrap();
+            assert_eq!(obj, optimum); // sanity check
             println!("> OPTIMAL (cost: {optimum})");
 
-            // export the solution to file if specified
-            export(&solution, &pb, &encoding, opt.output.as_ref());
-
-            solver.print_stats();
             if let Some(expected) = opt.expected_makespan {
                 assert_eq!(
                     optimum as u32, expected,
@@ -113,30 +115,30 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
             }
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
         }
-        SolverResult::Unsat(_) => {
-            solver.print_stats();
+        Ok(None) => {
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
         }
-        SolverResult::Timeout(None) => {
-            solver.print_stats();
-            println!("> TIMEOUT (not solution found)");
-        }
-        SolverResult::Timeout(Some(solution)) => {
-            let best_cost = solution.var_domain(makespan).lb;
-            println!("> TIMEOUT (best solution cost {best_cost})");
-
-            // export the solution to file if specified
-            export(&solution, &pb, &encoding, opt.output.as_ref());
-
-            solver.print_stats();
-        }
+        Err(Exit::Interrupted) => match best.as_ref() {
+            Some(sol) => {
+                let best_cost = sol.value_of(makespan).unwrap();
+                println!("> TIMEOUT (best solution cost {best_cost})")
+            }
+            None => {
+                println!("> TIMEOUT (no solution found)");
+            }
+        },
     }
+    if let Some(solution) = best.as_ref() {
+        // export the solution to file if specified
+        export(solution, &pb, &encoding, opt.output.as_ref());
+    }
+
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
 }
 
 /// Write the solution to file if the file is not None
-fn export(solution: &Solution, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
+fn export(solution: &Domains, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
     if let Some(output_file) = file {
         let mut formatted_solution = String::new();
         for m in pb.machines() {
