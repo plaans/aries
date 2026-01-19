@@ -1,0 +1,13 @@
+[package]
+name = "aries-bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.10"
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+readable = "0.1"
+owo-colors = "4.0"
