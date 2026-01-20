@@ -6,14 +6,13 @@ use comfy_table::presets::UTF8_FULL;
 use comfy_table::*;
 use std::{fs, rc::Rc};
 
-/// Benchmark results analyzer
+/// Compare set of benchmark results.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(help = "Path to directory with benchmark results")]
+    /// Directory containing the benchmark results to be used as reference to compute improvements.
     reference: String,
     /// Directory containing benchmark result JSON files
-    #[arg(help = "Path to directory with benchmark results")]
     directory: String,
 }
 
@@ -48,13 +47,12 @@ fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
 }
 
 fn main() -> anyhow::Result<()> {
-    // Parse command line arguments using clap
     let args = Args::parse();
-    let directory = args.directory;
 
-    let results = results_from_dir(&directory)?;
+    let results = results_from_dir(&args.directory)?;
     let reference_results = results_from_dir(&args.reference)?;
 
+    // combine results with their reference when available
     let results: Vec<RunWithRef> = results
         .into_iter()
         .map(|run| {
@@ -68,8 +66,6 @@ fn main() -> anyhow::Result<()> {
 
     // Create and configure comfy table
     let mut table = Table::new();
-
-    // Set table style with borders and alignment
     table
         .load_preset(UTF8_FULL)
         .apply_modifier(UTF8_ROUND_CORNERS)
@@ -82,8 +78,7 @@ fn main() -> anyhow::Result<()> {
             Cell::new("Conflicts").set_alignment(comfy_table::CellAlignment::Right),
             Cell::new("Decisions").set_alignment(comfy_table::CellAlignment::Right),
             Cell::new("DomUpdates").set_alignment(comfy_table::CellAlignment::Right),
-        ])
-        .set_content_arrangement(ContentArrangement::Dynamic);
+        ]);
 
     // Add each result as a row
     for result in results {

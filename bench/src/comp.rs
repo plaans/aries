@@ -2,8 +2,14 @@ use std::{fmt::Display, rc::Rc};
 
 use crate::{Metric, SolveResult};
 
+/// An optional measure, together with an optional improvement ratio if we had
+/// the corresponding measure in the reference set.
 pub struct MeasureWithImprovement<T> {
+    /// Main measure for the current run.
+    /// May be absent.
     pub measure: Option<T>,
+    /// Improvement: ratio of the new measure and the old one.
+    /// Thus a number > 1 indicates and increase.
     pub improvement: Option<f64>,
 }
 impl<T> MeasureWithImprovement<T> {
@@ -48,6 +54,7 @@ impl<T: Display> Display for MeasureWithImprovement<T> {
     }
 }
 
+/// A solver result on a given problem, along with corresponding run of the reference (if any)
 pub struct RunWithRef {
     pub run: Rc<SolveResult>,
     pub reference: Option<Rc<SolveResult>>,

@@ -5,15 +5,21 @@ use std::{collections::BTreeMap, time::Duration};
 
 pub mod comp;
 
+/// Characterization of a benchmark problem
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Problem {
+    /// Name of the problem (often a path in the folder containing the benchmarks)
     pub name: String,
+    /// Maximum time given to the solver.
     pub timeout: Duration,
+    /// Lower bound given to the solver.
     pub lb: Option<i64>,
+    /// Upper bound given to the solver.
     pub ub: Option<i64>,
 }
 
 impl Problem {
+    /// A unique identifier of the problem.
     pub fn id(&self) -> String {
         let mut id = self.name.clone();
         write!(id, "__to:{}s", self.timeout.as_secs_f32()).unwrap();
@@ -28,9 +34,9 @@ impl Problem {
 
     /// Generates a filesystem-safe filename from the problem ID
     pub fn filename(&self) -> String {
-        let id = self.id();
         // Replace problematic characters with underscores
-        let normalized = id
+        let normalized = self
+            .id()
             .chars()
             .map(|c| {
                 if c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-' {
