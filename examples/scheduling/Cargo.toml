@@ -9,6 +9,7 @@ itertools = { workspace = true }
 structopt = { workspace = true }
 anyhow = { workspace = true }
 aries = { path = "../../solver", features = ["cpu_cycles"] }
+aries-bench = { path = "../../bench" }
 walkdir = { workspace = true }
 
 

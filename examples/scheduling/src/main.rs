@@ -4,10 +4,9 @@ mod search;
 
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
 use crate::search::{SearchStrategy, Solver, Var};
-use anyhow::*;
-use aries::model::extensions::DomainsExt;
 use aries::model::lang::IVar;
-use aries::solver::parallel::{Solution, SolverResult};
+use aries::prelude::*;
+use aries::solver::{Exit, SearchLimit};
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
@@ -26,22 +25,23 @@ pub struct Opt {
     /// When set, the solver will fail with an exit code of 1 if the found solution does not have this makespan.
     #[structopt(long = "expected-makespan")]
     expected_makespan: Option<u32>,
-    #[structopt(long = "lower-bound", default_value = "0")]
-    lower_bound: u32,
-    #[structopt(long = "upper-bound", default_value = "100000")]
-    upper_bound: u32,
+    #[structopt(long = "lower-bound")]
+    lower_bound: Option<u32>,
+    #[structopt(long = "upper-bound")]
+    upper_bound: Option<u32>,
     /// Search strategy to use
     #[structopt(long = "search", default_value = "default")]
     search: SearchStrategy,
     /// maximum runtime, in seconds.
     #[structopt(long = "timeout", short = "t")]
     timeout: Option<u32>,
-    /// Number of threads to allocate to search
-    #[structopt(long, default_value = "1")]
-    num_threads: u32,
+    /// If set, a summary of the run will be saved in the indicated directory.
+    /// This option is intended to ease the collection of benchmark results with `aries-bench`
+    #[structopt(long = "report", short = "r")]
+    report: Option<String>,
 }
 
-fn main() -> Result<()> {
+fn main() -> anyhow::Result<()> {
     // Terminate the process if a thread panics.
     // take_hook() returns the default hook in case when a custom one is not set
     let orig_hook = std::panic::take_hook();
@@ -55,22 +55,25 @@ fn main() -> Result<()> {
 
     let file = &opt.file;
     if std::fs::metadata(file)?.is_file() {
-        solve(opt.kind, &opt.file, &opt);
+        solve(opt.kind, &opt.file, &opt)?;
         Ok(())
     } else {
         for entry in WalkDir::new(file).follow_links(true).into_iter().filter_map(|e| e.ok()) {
             let f_name = entry.file_name().to_string_lossy();
             if f_name.ends_with(".txt") {
                 println!("{f_name}");
-                solve(opt.kind, &entry.path().to_string_lossy(), &opt);
+                solve(opt.kind, &entry.path().to_string_lossy(), &opt)?;
             }
         }
         Ok(())
     }
 }
 
-fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
-    let deadline = opt.timeout.map(|dur| Instant::now() + Duration::from_secs(dur as u64));
+fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
+    let deadline = opt
+        .timeout
+        .map(|dur| SearchLimit::Deadline(Instant::now() + Duration::from_secs(dur as u64)))
+        .unwrap_or(SearchLimit::None);
     let start_time = std::time::Instant::now();
     let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
     let pb = match kind {
@@ -81,30 +84,33 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
     assert_eq!(pb.kind, kind);
     // println!("{:?}", pb);
 
-    let lower_bound = (opt.lower_bound).max(pb.makespan_lower_bound() as u32);
+    let lower_bound = (opt.lower_bound.unwrap_or(0)).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {lower_bound}");
 
     let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, true);
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
-    let mut solver = search::get_solver(solver, &opt.search, &encoding, opt.num_threads as usize);
+    let mut solver = search::get_solver(solver, &opt.search, &encoding);
 
-    let result = solver.minimize_with(
+    let mut best = Option::None;
+    let result = solver.minimize_with_callback(
         makespan,
-        |s| println!("New solution with makespan: {}", s.bounds(makespan).0),
+        |obj, sol| {
+            println!("New solution with makespan: {}", obj);
+            best = Some(sol.clone());
+        },
         deadline,
     );
+    solver.print_stats();
+    println!();
 
-    match result {
-        SolverResult::Sol(solution) => {
-            let optimum = solution.var_domain(makespan).lb;
+    let status = match result {
+        Ok(Some((obj, solution))) => {
+            let optimum = solution.value_of(makespan).unwrap();
+            assert_eq!(obj, optimum); // sanity check
             println!("> OPTIMAL (cost: {optimum})");
 
-            // export the solution to file if specified
-            export(&solution, &pb, &encoding, opt.output.as_ref());
-
-            solver.print_stats();
             if let Some(expected) = opt.expected_makespan {
                 assert_eq!(
                     optimum as u32, expected,
@@ -112,31 +118,60 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) {
                 );
             }
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
+            aries_bench::SolveStatus::Solved
         }
-        SolverResult::Unsat(_) => {
-            solver.print_stats();
+        Ok(None) => {
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
+            aries_bench::SolveStatus::Solved
         }
-        SolverResult::Timeout(None) => {
-            solver.print_stats();
-            println!("> TIMEOUT (not solution found)");
-        }
-        SolverResult::Timeout(Some(solution)) => {
-            let best_cost = solution.var_domain(makespan).lb;
-            println!("> TIMEOUT (best solution cost {best_cost})");
-
-            // export the solution to file if specified
-            export(&solution, &pb, &encoding, opt.output.as_ref());
-
-            solver.print_stats();
-        }
+        Err(Exit::Interrupted) => match best.as_ref() {
+            Some(sol) => {
+                let best_cost = sol.value_of(makespan).unwrap();
+                println!("> TIMEOUT (best solution cost {best_cost})");
+                aries_bench::SolveStatus::Timeout
+            }
+            None => {
+                println!("> TIMEOUT (no solution found)");
+                aries_bench::SolveStatus::Timeout
+            }
+        },
+    };
+    if let Some(solution) = best.as_ref() {
+        // export the solution to file if specified
+        export(solution, &pb, &encoding, opt.output.as_ref());
     }
+    if let Some(report_dir) = opt.report.as_ref() {
+        let problem = aries_bench::Problem {
+            name: opt.file.clone(),
+            timeout: opt
+                .timeout
+                .map(|t| Duration::from_secs(t as u64))
+                .unwrap_or(Duration::MAX),
+            lb: opt.lower_bound.map(i64::from),
+            ub: opt.upper_bound.map(i64::from),
+        };
+
+        let result = aries_bench::SolveResult {
+            problem,
+            status,
+            runtime: start_time.elapsed(),
+            objective_value: best.map(|sol| sol.value_of(makespan).unwrap() as i64),
+            metrics: Default::default(),
+        }
+        .with_metric(aries_bench::Metric::NumConflicts, solver.stats.num_conflicts as f64)
+        .with_metric(aries_bench::Metric::NumDecisions, solver.stats.num_decisions as f64)
+        .with_metric(aries_bench::Metric::NumDomUpdates, solver.stats.num_dom_updates as f64);
+
+        result.save_to_dir(report_dir)?;
+    }
+
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
+    Ok(())
 }
 
 /// Write the solution to file if the file is not None
-fn export(solution: &Solution, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
+fn export(solution: &Domains, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
     if let Some(output_file) = file {
         let mut formatted_solution = String::new();
         for m in pb.machines() {
@@ -229,7 +264,7 @@ mod test {
         let lower_bound = pb.makespan_lower_bound() as u32;
 
         // prodice a model for this problem
-        let (model, _encoding) = problem::encode(&pb, lower_bound, opt * 2, use_constraints);
+        let (model, _encoding) = problem::encode(&pb, lower_bound, Some(opt * 2), use_constraints);
         let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
         // run several random solvers on the problem to assert the coherency of the results

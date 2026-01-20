@@ -1,0 +1,15 @@
+[package]
+name = "aries-bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+readable = "0.1"
+comfy-table = "7.0"
+
+[dev-dependencies]
+tempfile = "3.10"
