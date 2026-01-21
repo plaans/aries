@@ -1,6 +1,8 @@
 use crate::backtrack::{DecLvl, EventIndex};
-use crate::core::state::{Domains, Event, Term};
+use crate::core::state::{Domains, Event};
+use crate::core::views::Dom;
 use crate::core::{IntCst, Lit, SignedVar};
+use crate::prelude::*;
 
 /// View of the domains at a given point in time.
 ///
@@ -14,7 +16,7 @@ use crate::core::{IntCst, Lit, SignedVar};
 ///    as the snapshot does not bring any added value compared to the wrapped state).
 ///    Query and construction should remain with a very low overhead
 ///
-/// Note that
+/// The crate implements the [`Dom`] views crates that exposes many methods through the [`DomainsExt`] extension trait.
 pub enum DomainsSnapshot<'a> {
     Current { doms: &'a Domains },
     Past { doms: &'a Domains, next_event: EventIndex },
@@ -42,8 +44,9 @@ impl<'a> DomainsSnapshot<'a> {
     }
 
     /// Returns the upper bound ob the given (signed) variable.
-    pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
-        let var = var.into();
+    ///
+    /// Note: this is only meant to implement the [`Dom`] trait.
+    fn get_upper_bound(&self, var: SignedVar) -> IntCst {
         match self {
             DomainsSnapshot::Current { doms } => doms.ub(var),
             DomainsSnapshot::Past { doms, next_event } => doms
@@ -56,38 +59,11 @@ impl<'a> DomainsSnapshot<'a> {
         }
     }
 
-    /// Returns the lower bound ob the given (signed) variable.
-    pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
-        -self.ub(-var.into())
-    }
-
-    pub fn bounds(&self, var: impl Into<SignedVar>) -> (IntCst, IntCst) {
-        let var = var.into();
-        (self.lb(var), self.ub(var))
-    }
-
-    /// Returns true if the given literal is entailed by the current state;
-    pub fn entails(&self, lit: Lit) -> bool {
-        let curr_ub = self.ub(lit.svar());
-        curr_ub <= lit.ub_value()
-    }
-
-    pub fn value(&self, lit: Lit) -> Option<bool> {
-        if self.entails(lit) {
-            Some(true)
-        } else if self.entails(!lit) {
-            Some(false)
-        } else {
-            None
-        }
-    }
-
-    pub fn presence(&self, term: impl Term) -> Lit {
+    /// Returns the presence literal of the variable
+    ///
+    /// Note: this is only meant to implement the [`Dom`] trait.
+    fn get_presence_literal(&self, term: VarRef) -> Lit {
         self.domains().presence(term)
-    }
-
-    pub fn present(&self, term: impl Term) -> Option<bool> {
-        self.value(self.presence(term))
     }
 
     fn domains(&self) -> &Domains {
@@ -108,6 +84,16 @@ impl<'a> DomainsSnapshot<'a> {
 
     pub fn entailing_level(&self, lit: Lit) -> DecLvl {
         self.domains().entailing_level(lit)
+    }
+}
+
+impl<'a> Dom for DomainsSnapshot<'a> {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.get_upper_bound(svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.get_presence_literal(var)
     }
 }
 

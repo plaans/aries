@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefVec;
 use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
@@ -12,6 +10,8 @@ use crate::core::state::{
 use crate::core::views::{Boundable, Dom, VarView};
 use crate::core::*;
 use crate::model::lang::{Atom, IAtom};
+use crate::prelude::*;
+use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(debug_assertions)]

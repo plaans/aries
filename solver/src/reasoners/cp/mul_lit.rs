@@ -94,7 +94,7 @@ impl Propagator for VarEqVarMulLit {
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);
-        let orig_prez = state.presence(self.original);
+        let orig_prez = state.presence_literal(self.original);
 
         if literal == self.lit {
             // Explain why lit is true

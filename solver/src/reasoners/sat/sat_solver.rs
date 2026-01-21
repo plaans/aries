@@ -4,6 +4,7 @@ use crate::core::literals::{WatchSet, Watches};
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
+use crate::prelude::*;
 use crate::reasoners::sat::clauses::*;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use itertools::Itertools;
@@ -633,7 +634,7 @@ impl SatSolver {
     }
 
     pub fn explain(&mut self, explained: Lit, cause: u32, model: &DomainsSnapshot, explanation: &mut Explanation) {
-        let explained_presence = model.presence(explained);
+        let explained_presence = model.presence_literal(explained);
         let clause = ClauseId::from(cause);
 
         // bump the activity of any clause used in an explanation

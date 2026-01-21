@@ -3,6 +3,7 @@ use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
 use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
 use crate::model::{Label, Model};
+use crate::prelude::DomainsExt;
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
@@ -799,7 +800,7 @@ impl Theory for DenseEqTheory {
                     debug_assert!(domains.entails(ab_act), "Propagation occurred on inactive edges.");
                     out_explanation.push(ab_act);
                     let ab_lbl = self.graph.label(a, b);
-                    match domains.value(ab_lbl) {
+                    match domains.value_of(ab_lbl) {
                         Some(true) => out_explanation.push(ab_lbl),
                         Some(false) => out_explanation.push(!ab_lbl),
                         None => {

@@ -1,5 +1,6 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
 use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar};
+use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 
@@ -97,7 +98,7 @@ impl Propagator for AtLeastOneGeq {
     }
 
     fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
-        debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
+        debug_assert_eq!(self.scope, domains.presence_literal(self.lhs.variable()));
         if literal == !self.scope {
             // PROP 1
             let max_lb = domains.lb(self.lhs);

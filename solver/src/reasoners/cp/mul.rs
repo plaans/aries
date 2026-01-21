@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::{
     core::{
         IntCst, Lit, VarRef,

@@ -1,9 +1,9 @@
-use state::{Domains, DomainsSnapshot};
-
 use crate::backtrack::EventIndex;
 use crate::collections::ref_store::{Ref, RefMap};
 use crate::core::*;
+use crate::prelude::*;
 use crate::reasoners::stn::theory::PropagatorId;
+use state::{Domains, DomainsSnapshot};
 use std::cell::RefCell;
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap};

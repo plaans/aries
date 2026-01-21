@@ -3,8 +3,8 @@
 use std::fmt::Debug;
 
 use crate::core::state::*;
-use crate::core::*;
 use crate::create_ref_type;
+use crate::prelude::*;
 use crate::reasoners::Contradiction;
 
 use super::Watches;

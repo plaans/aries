@@ -5,6 +5,7 @@ use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, In
 use crate::core::{
     INT_CST_MAX, INT_CST_MIN, IntCst, Lit, LongCst, SignedVar, VarRef, cst_int_to_long, cst_long_to_int,
 };
+use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use num_integer::div_floor;
