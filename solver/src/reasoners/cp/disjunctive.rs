@@ -8,6 +8,7 @@ use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{DynPropagator, UserPropagator};
 use crate::{core::state::Term, reasoners::cp::Propagator};
 
+mod theta_lambda_tree;
 mod theta_tree;
 
 #[derive(Debug, Clone)]
