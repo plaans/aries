@@ -21,7 +21,7 @@ impl Activity {
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq)]
-struct ThetaNode {
+pub(super) struct ThetaNode {
     sum_p: IntCst,
     ect: IntCst,
 }
@@ -33,7 +33,7 @@ impl ThetaNode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
-struct Node(usize);
+pub(super) struct Node(pub(super) usize);
 
 impl Node {
     pub const ROOT: Node = Node(0);
@@ -140,7 +140,12 @@ impl ThetaTree {
 
     #[allow(unused)]
     pub fn display(&self) {
-        self.print(Node::ROOT, 0);
+        if self[Node::ROOT].is_empty() {
+            println!("Empty tree");
+        } else {
+            println!("LCT_THETA: {}", self.lct_theta());
+            self.print(Node::ROOT, 0);
+        }
     }
 
     fn print(&self, node: Node, depth: usize) {
@@ -201,6 +206,7 @@ impl ThetaTree {
 
     /// Given an already overloaded tree, select a minimal subset that is still overloaded
     pub fn minimize_overloaded_set(&mut self) {
+        // TODO: this is correct but very far from a minimal explanation (better implemented in theta_lambda_tree.rs)
         debug_assert!(self.is_overloaded());
         for task in self.tasks() {
             debug_assert!(self.is_overloaded());
@@ -223,6 +229,7 @@ impl ThetaTree {
         let mut explanation = Vec::new();
         debug_assert!(self.is_overloaded());
         for task in self.in_tree_activities() {
+            explanation.push(ExplanationItem::Present(task.id));
             explanation.push(ExplanationItem::EstGeq(task.id, est_theta));
             explanation.push(ExplanationItem::DurationGeq(task.id, task.p));
             explanation.push(ExplanationItem::LctLeq(task.id, lct_theta));
@@ -245,7 +252,11 @@ impl IndexMut<Node> for ThetaTree {
 }
 
 pub(crate) type Explanation = Vec<ExplanationItem>;
-pub(crate) enum ExplanationItem {
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum ExplanationItem {
+    Present(ActivityId),
+    Absent(ActivityId),
     EstGeq(ActivityId, IntCst),
     DurationGeq(ActivityId, IntCst),
     LctLeq(ActivityId, IntCst),

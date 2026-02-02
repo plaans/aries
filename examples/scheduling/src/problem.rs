@@ -314,7 +314,6 @@ pub(crate) fn encode(
 
             if use_constraints {
                 let starts = e.alternatives(j, op).map(|alt| alt.start()).collect_vec();
-                println!("alternatives starts: {starts:?} {:?}", operation.start);
                 m.enforce(alternative(operation.start, starts), []);
                 let ends = e.alternatives(j, op).map(|alt| alt.end()).collect_vec();
                 m.enforce(alternative(operation.end, ends), []);
