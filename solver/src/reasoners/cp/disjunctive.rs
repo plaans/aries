@@ -113,30 +113,10 @@ impl NoOverlap {
         debug_assert_eq!(self.kind, PropagatorKind::OverloadWithOptional);
         // compute the bounds of the activities to place in the tree, ignoring any activity to known to be present
         // for efficiency, we extract them once from the domains and place their values directly in the tree
-        let acts = self
-            .tasks
-            .iter()
-            .enumerate()
-            .filter_map(|(i, t)| {
-                let optional = if domains.entails(!t.presence) {
-                    return None; // necessarily absent, ignore
-                } else if domains.entails(t.presence) {
-                    false // non-optional: presence is entailed
-                } else {
-                    true // optional task
-                };
-                Some(theta_lambda_tree::Activity::new(
-                    i,
-                    domains.lb(t.start),
-                    domains.ub(t.end),
-                    domains.lb(t.duration),
-                    optional,
-                ))
-            })
-            .collect_vec();
+        let acts = self.activities(domains);
 
         // build the theta tree and look for an overloaded subset of activities
-        let mut tree = TLTree::init_empty(acts.clone()); // TODO: remove clone
+        let mut tree = TLTree::init_empty(acts); // TODO: remove clone
         let mut buff = Vec::new();
         match tree.check_overload(&mut buff) {
             PropagationResult::Conflict(conflict_set) => {
@@ -151,7 +131,6 @@ impl NoOverlap {
                     if is_witness(lit) {
                         // TODO: left here to ease debugging
                         println!("inferred: {inferred:?}");
-                        dbg!(&acts);
                     }
                     domains.set(lit, cause)?;
                 }
@@ -197,6 +176,31 @@ impl NoOverlap {
         for cause in implicants {
             out_explanation.push(self.expl_item_to_lit(*cause));
         }
+    }
+
+    // compute the bounds of the activities to place in the tree, ignoring any activity to known to be present
+    // for efficiency, we extract them once from the domains and place their values directly in the tree
+    fn activities(&self, domains: &Domains) -> Vec<theta_lambda_tree::Activity> {
+        self.tasks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, t)| {
+                let optional = if domains.entails(!t.presence) {
+                    return None; // necessarily absent, ignore
+                } else if domains.entails(t.presence) {
+                    false // non-optional: presence is entailed
+                } else {
+                    true // optional task
+                };
+                Some(theta_lambda_tree::Activity::new(
+                    i,
+                    domains.lb(t.start),
+                    domains.ub(t.end),
+                    domains.lb(t.duration),
+                    optional,
+                ))
+            })
+            .collect_vec()
     }
 }
 
