@@ -10,7 +10,12 @@ use itertools::Itertools;
 
 use crate::core::{INT_CST_MAX, IntCst};
 
+/// External identifier of an activity
 type ActivityId = usize;
+
+/// Task identifier: Index in the internal activity array of the tree (typically ordered by EST)
+#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
+pub struct Task(u32);
 
 const EMPTY_DUR: IntCst = 0;
 const EMPTY_ECT: IntCst = 0;
@@ -103,46 +108,50 @@ impl TLTree {
         }
     }
 
-    fn task_to_node(&self, task: usize) -> Node {
+    fn task_to_node(&self, task: Task) -> Node {
         // first task is at (capacity -1)
-        Node(self.capacity - 1 + task)
+        Node(self.capacity - 1 + task.0 as usize)
     }
 
     /// If this node is a leaf, returns the corresponding task index
-    fn node_to_task(&self, node: Node) -> Option<usize> {
+    fn node_to_task(&self, node: Node) -> Option<Task> {
         if node.0 >= self.capacity - 1 {
-            Some(node.0 + 1 - self.capacity)
+            Some(Task((node.0 + 1 - self.capacity) as u32))
         } else {
             None
         }
     }
 
-    fn tasks(&self) -> Range<usize> {
-        0..self.activities.len()
+    fn tasks(&self) -> impl Iterator<Item = Task> + use<> {
+        (0..self.activities.len()).map(|i| Task(i as u32))
     }
 
-    fn in_tree(&self, task: usize) -> bool {
+    fn task(&self, task: Task) -> &Activity {
+        &self.activities[task.0 as usize]
+    }
+
+    fn in_tree(&self, task: Task) -> bool {
         !self[self.task_to_node(task)].is_empty()
     }
 
-    pub fn insert(&mut self, task: usize) {
+    pub fn insert(&mut self, task: Task) {
         let node = self.task_to_node(task);
-        let task = &self.activities[task];
+        let task = &self.task(task);
         self[node] = task.tree_node();
         self.propagate_update(node);
     }
 
-    pub fn remove(&mut self, task: usize) {
+    pub fn remove(&mut self, task: Task) {
         let node = self.task_to_node(task);
         self[node] = TLNode::EMPTY;
         self.propagate_update(node);
     }
 
     pub fn in_tree_activities(&self) -> impl Iterator<Item = &Activity> + '_ {
-        (0..self.activities.len()).filter_map(|tid| {
+        self.tasks().filter_map(|tid| {
             let n = self.task_to_node(tid);
             if !self[n].is_empty() {
-                Some(&self.activities[tid])
+                Some(self.task(tid))
             } else {
                 None
             }
@@ -218,7 +227,7 @@ impl TLTree {
     fn est_theta(&self, node: Node) -> IntCst {
         if let Some(task) = self.node_to_task(node) {
             // we are at a leaf, return the est
-            return self.activities[task].est;
+            return self.task(task).est;
         }
         let right = node.right_child();
         let left = node.left_child();
@@ -238,7 +247,7 @@ impl TLTree {
     fn est_theta_lambda(&self, node: Node) -> IntCst {
         if let Some(task) = self.node_to_task(node) {
             // we are at a leaf, return the est
-            return self.activities[task].est;
+            return self.task(task).est;
         }
         let right = node.right_child();
         let left = node.left_child();
@@ -263,15 +272,13 @@ impl TLTree {
         self.clear_tree();
 
         let num_activities = self.activities.len();
-        let acts = (0..num_activities)
-            .sorted_by_cached_key(|a| self.activities[*a].lct)
-            .collect_vec();
+        let acts = self.tasks().sorted_by_cached_key(|a| self.task(*a).lct).collect_vec();
 
         for j in acts {
             self.insert(j);
             debug_assert!(self.in_tree_activities().count() > 0);
-            debug_assert!(self.lct_theta() >= self.activities[j].lct);
-            if self.ect_theta() > self.activities[j].lct {
+            debug_assert!(self.lct_theta() >= self.task(j).lct);
+            if self.ect_theta() > self.task(j).lct {
                 debug_assert!(self.is_overloaded());
                 return true;
             } else {
@@ -327,8 +334,7 @@ impl TLTree {
         self.clear_tree();
         buffer.clear();
 
-        let num_activities = self.activities.len();
-        let mut acts = (0..num_activities).map(|a| (a, self.activities[a].lct)).collect_vec();
+        let mut acts = self.tasks().map(|a| (a, self.task(a).lct)).collect_vec();
         acts.sort_unstable_by_key(|(_a, lct)| *lct);
 
         for (i, lct_i) in acts {
@@ -346,7 +352,7 @@ impl TLTree {
                 let opt_overloader = self.cause_of_ect_theta_lambda(Node::ROOT);
                 // restore feasibility by forcing its absence and removing it from the tree
                 self.remove(opt_overloader);
-                buffer.push(ExplanationItem::Absent(self.activities[opt_overloader].id));
+                buffer.push(ExplanationItem::Absent(self.task(opt_overloader).id));
             }
         }
 
@@ -368,8 +374,7 @@ impl TLTree {
         let mut buffer = Vec::new();
         std::mem::swap(&mut buffer, &mut self.buffer);
 
-        let num_activities = self.activities.len();
-        let mut acts = (0..num_activities).map(|a| (a, self.activities[a].lct)).collect_vec();
+        let mut acts = self.tasks().map(|a| (a, self.task(a).lct)).collect_vec();
         acts.sort_unstable_by_key(|(_a, lct)| *lct);
 
         let mut culprit = None;
@@ -399,7 +404,8 @@ impl TLTree {
         let est_tl = self.est_theta_lambda(Node::ROOT);
         // let lct_tl = self.lct_theta();
         let mut sum_duration = 0;
-        let culprit_task = self.activities[culprit];
+        let culprit_task = self.task(culprit);
+        let culprit_task_id = culprit_task.id;
         buffer.push(ExplanationItem::EstGeq(culprit_task.id, est_tl));
         buffer.push(ExplanationItem::DurationGeq(culprit_task.id, culprit_task.p));
         buffer.push(ExplanationItem::LctLeq(culprit_task.id, lct_tl));
@@ -423,13 +429,13 @@ impl TLTree {
         std::mem::swap(&mut self.buffer, &mut buffer);
         debug_assert!(buffer.is_empty() && !self.buffer.is_empty());
 
-        (&self.buffer, culprit_task.id)
+        (&self.buffer, culprit_task_id)
     }
 
-    fn cause_of_ect_theta_lambda(&self, node: Node) -> ActivityId {
+    fn cause_of_ect_theta_lambda(&self, node: Node) -> Task {
         if let Some(task) = self.node_to_task(node) {
             // we have reached a leaf, this must be the culprit
-            debug_assert!(self.activities[task].optional);
+            debug_assert!(self.task(task).optional);
             return task;
         }
         let n = self[node];
@@ -445,10 +451,10 @@ impl TLTree {
             self.cause_of_ect_theta_lambda(node.left_child())
         }
     }
-    fn cause_of_sum_p_theta_lambda(&self, node: Node) -> ActivityId {
+    fn cause_of_sum_p_theta_lambda(&self, node: Node) -> Task {
         if let Some(task) = self.node_to_task(node) {
             // we have reached a leaf, this must be the culprit
-            debug_assert!(self.activities[task].optional);
+            debug_assert!(self.task(task).optional);
             return task;
         }
         let n = self[node];
@@ -564,14 +570,10 @@ mod test {
         println!("{:?}", tt);
         tt.display();
 
-        tt.insert(0);
-        tt.display();
-        tt.insert(1);
-        tt.display();
-        tt.insert(2);
-        tt.display();
-        tt.insert(3);
-        tt.display();
+        for t in tt.tasks() {
+            tt.insert(t);
+            tt.display();
+        }
 
         assert!(!tt.find_overloaded_subset())
     }

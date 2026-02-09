@@ -15,11 +15,23 @@ where
     X: Dom,
 {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        (*self).upper_bound(svar)
+        Dom::upper_bound(*self, svar)
     }
 
     fn presence(&self, var: VarRef) -> Lit {
-        (*self).presence(var)
+        Dom::presence(*self, var)
+    }
+}
+impl<X> Dom for &mut X
+where
+    X: Dom,
+{
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Dom::upper_bound(*self, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        Dom::presence(*self, var)
     }
 }
 

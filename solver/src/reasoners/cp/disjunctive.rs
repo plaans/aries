@@ -2,6 +2,7 @@ use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::core::state::{Cause, DomainsSnapshot, Explanation};
+use crate::core::views::Dom;
 use crate::prelude::*;
 
 use crate::reasoners::Contradiction;
@@ -180,7 +181,7 @@ impl NoOverlap {
 
     // compute the bounds of the activities to place in the tree, ignoring any activity to known to be present
     // for efficiency, we extract them once from the domains and place their values directly in the tree
-    fn activities(&self, domains: &Domains) -> Vec<theta_lambda_tree::Activity> {
+    fn activities(&self, domains: &impl Dom) -> Vec<theta_lambda_tree::Activity> {
         self.tasks
             .iter()
             .enumerate()

@@ -40,7 +40,7 @@ where
         false
     }
 
-    fn fusable(&self, l1: Lit, l2: Lit) -> bool {
+    fn fusable_lits(&self, l1: Lit, l2: Lit) -> bool {
         l1 == !self.presence_literal(l2) || l2 == !self.presence_literal(l1)
     }
     fn unit_clause(&self, disjuncts: Disj) -> bool {
@@ -57,7 +57,7 @@ where
                 for other in disjuncts {
                     if !self.entails(!other) {
                         // literal is not falsified
-                        if self.fusable(pending, other) {
+                        if self.fusable_lits(pending, other) {
                             // we can have at most one of those
                             count += 1;
                             if count > 1 {

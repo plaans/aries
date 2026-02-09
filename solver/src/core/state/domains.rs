@@ -7,7 +7,7 @@ use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{
     Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain,
 };
-use crate::core::views::{Boundable, Dom, VarView};
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::lang::{Atom, IAtom};
 use crate::prelude::*;
@@ -893,7 +893,7 @@ impl Term for Atom {
     }
 }
 
-impl Dom for Domains {
+impl crate::core::views::Dom for Domains {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::upper_bound(self, svar)
     }
