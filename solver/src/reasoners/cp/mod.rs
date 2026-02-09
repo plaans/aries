@@ -188,7 +188,7 @@ impl Theory for Cp {
         }
 
         for propagator in self.pending_propagations.iter() {
-            let constraint = self.constraints[propagator].constraint.as_ref();
+            let constraint = self.constraints[propagator].constraint.as_mut();
             let cause = self.id.cause(propagator);
             self.stats.num_propagations += 1;
             constraint.propagate(domains, cause)?;

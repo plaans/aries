@@ -221,7 +221,7 @@ impl Propagator for NoOverlap {
             context.add_watch(var, id);
         }
     }
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         match self.kind {
             PropagatorKind::Overload => self.propagate_overload(domains, cause),
             PropagatorKind::OverloadWithOptional => self.propagate_overload_with_optional(domains, cause),

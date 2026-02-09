@@ -42,7 +42,7 @@ impl Propagator for AtLeastOneGeq {
         }
     }
 
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(!self.scope) {
             return Ok(()); // inactive, skip propagation
         }
@@ -198,7 +198,7 @@ mod test {
         let a = d.new_var(0, 10);
         let b = d.new_var(0, 12);
 
-        let c = AtLeastOneGeq {
+        let mut c = AtLeastOneGeq {
             scope: Lit::TRUE,
             lhs: SignedVar::plus(m),
             elements: vec![
