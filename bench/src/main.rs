@@ -14,6 +14,12 @@ struct Args {
     reference: String,
     /// Directory containing benchmark result JSON files
     directory: String,
+    #[arg(short, long)]
+    /// Only consider instances whose ID contains the given string
+    filter: Option<String>,
+    #[arg(short, long)]
+    /// Only consider instances whose ID does not contain the given string
+    exclude: Option<String>,
 }
 
 fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
@@ -62,6 +68,8 @@ fn main() -> anyhow::Result<()> {
                 .map(Rc::clone);
             RunWithRef { run, reference }
         })
+        .filter(|r| args.filter.iter().all(|f| r.run.problem.id().contains(f)))
+        .filter(|r| args.exclude.iter().all(|e| !r.run.problem.id().contains(e)))
         .collect();
 
     // Create and configure comfy table
@@ -97,7 +105,7 @@ fn main() -> anyhow::Result<()> {
         let objective = result.objective();
         let runtime = result
             .measure(|r| Some(r.runtime.as_secs_f64()))
-            .map(readable::Float::new_2_point);
+            .map(|r| format!("{:.2}", r));
 
         let conflicts = result.metric(Metric::NumConflicts).map(readable::Int::from);
         let decisions = result.metric(Metric::NumDecisions).map(readable::Int::from);

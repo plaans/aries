@@ -4,6 +4,7 @@ use crate::{Metric, SolveResult};
 
 /// An optional measure, together with an optional improvement ratio if we had
 /// the corresponding measure in the reference set.
+#[derive(Debug)]
 pub struct MeasureWithImprovement<T> {
     /// Main measure for the current run.
     /// May be absent.
@@ -32,8 +33,8 @@ impl<T> MeasureWithImprovement<T> {
     {
         let color = match self.improvement {
             None => comfy_table::Color::White,
-            Some(n) if n > 1.01 => comfy_table::Color::Red,
-            Some(n) if n < 0.99 => comfy_table::Color::Green,
+            Some(n) if n > 1.0001 => comfy_table::Color::Red,
+            Some(n) if n < 0.9999 => comfy_table::Color::Green,
             _ => comfy_table::Color::Grey,
         };
         comfy_table::Cell::new(self)
@@ -55,6 +56,7 @@ impl<T: Display> Display for MeasureWithImprovement<T> {
 }
 
 /// A solver result on a given problem, along with corresponding run of the reference (if any)
+#[derive(Debug)]
 pub struct RunWithRef {
     pub run: Rc<SolveResult>,
     pub reference: Option<Rc<SolveResult>>,
