@@ -22,11 +22,11 @@ const EMPTY_ECT: IntCst = 0;
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Activity {
-    id: ActivityId,
-    est: IntCst,
-    lct: IntCst,
-    p: IntCst,
-    optional: bool,
+    pub id: ActivityId,
+    pub est: IntCst,
+    pub lct: IntCst,
+    pub p: IntCst,
+    pub optional: bool,
 }
 
 impl Activity {
@@ -122,11 +122,11 @@ impl TLTree {
         }
     }
 
-    fn tasks(&self) -> impl Iterator<Item = Task> + use<> {
+    pub fn tasks(&self) -> impl Iterator<Item = Task> + use<> {
         (0..self.activities.len()).map(|i| Task(i as u32))
     }
 
-    fn task(&self, task: Task) -> &Activity {
+    pub fn task(&self, task: Task) -> &Activity {
         &self.activities[task.0 as usize]
     }
 
@@ -224,7 +224,14 @@ impl TLTree {
     /// Returns the Earliest Starting Time (EST) that cause the current value of [`Node::ect`]
     ///
     /// Complexity: `O(log(N))`
-    fn est_theta(&self, node: Node) -> IntCst {
+    pub fn est_theta(&self) -> IntCst {
+        self._est_theta(Node::ROOT)
+    }
+
+    /// Returns the Earliest Starting Time (EST) that cause the current value of [`Node::ect`]
+    ///
+    /// Complexity: `O(log(N))`
+    fn _est_theta(&self, node: Node) -> IntCst {
         if let Some(task) = self.node_to_task(node) {
             // we are at a leaf, return the est
             return self.task(task).est;
@@ -239,12 +246,15 @@ impl TLTree {
             debug_assert_eq!(self[node].ect, self[left].ect + self[right].sum_p);
             left
         };
-        self.est_theta(next) // tail recursive, hoping it will bo optimized into a loop
+        self._est_theta(next) // tail recursive, hoping it will bo optimized into a loop
     }
     /// Returns the Earliest Starting Time (EST) that causes the current value of [`Node::ect_opt`]
     ///
     /// Complexity: `O(log(N))`
-    fn est_theta_lambda(&self, node: Node) -> IntCst {
+    pub fn est_theta_lambda(&self) -> IntCst {
+        self._est_theta_lambda(Node::ROOT)
+    }
+    fn _est_theta_lambda(&self, node: Node) -> IntCst {
         if let Some(task) = self.node_to_task(node) {
             // we are at a leaf, return the est
             return self.task(task).est;
@@ -253,7 +263,7 @@ impl TLTree {
         let left = node.left_child();
         if self[node].ect_opt == self[left].ect + self[right].sum_p_opt {
             // we are looking of the one causing `left.ect` (NOT left.ect_opt !)
-            return self.est_theta(left);
+            return self._est_theta(left);
         }
         let next = if self[node].ect_opt == self[right].ect_opt {
             // ect_opt was set from the right chlid, so, est comes from there as well
@@ -263,7 +273,7 @@ impl TLTree {
             debug_assert!(self[node].ect_opt == self[left].ect_opt + self[right].sum_p);
             left
         };
-        self.est_theta_lambda(next) // tail recursive, hoping it will be optimized into a loop
+        self._est_theta_lambda(next) // tail recursive, hoping it will be optimized into a loop
     }
 
     /// Look for all subsets of activities if there is an overloaded one.
@@ -302,7 +312,7 @@ impl TLTree {
     /// Explains why the theta tree is currently overloaded
     fn explain_overload(&mut self, out: &mut Vec<ExplanationItem>) {
         out.clear();
-        let est_theta = self.est_theta(Node::ROOT);
+        let est_theta = self._est_theta(Node::ROOT);
         let lct_theta = self.lct_theta();
         debug_assert!(self.ect_theta() > lct_theta);
         let mut sum_duration = 0;
@@ -349,7 +359,7 @@ impl TLTree {
             while self.ect_theta_lambda() > lct_i {
                 // there is a grey node that, if added, would cause an overload
                 // this task is the one that participates in the computation of ECT(Theta, Lambda)
-                let opt_overloader = self.cause_of_ect_theta_lambda(Node::ROOT);
+                let opt_overloader = self._cause_of_ect_theta_lambda(Node::ROOT);
                 // restore feasibility by forcing its absence and removing it from the tree
                 self.remove(opt_overloader);
                 buffer.push(ExplanationItem::Absent(self.task(opt_overloader).id));
@@ -389,7 +399,7 @@ impl TLTree {
             if self.ect_theta_lambda() > lct_i {
                 // there is a grey node that, if added, would cause an overload
                 // this task is the one that participates in the computation of ECT(Theta, Lambda)
-                culprit = Some((self.cause_of_ect_theta_lambda(Node::ROOT), lct_i));
+                culprit = Some((self._cause_of_ect_theta_lambda(Node::ROOT), lct_i));
                 // we have found the state in which we would propagate: stop iteration,
                 break;
             }
@@ -401,7 +411,7 @@ impl TLTree {
         // now we have a minimal set of white nodes that forbid the presence of the culprit
         // so generate the explanation:
         // In a nutshell, the explanation is that we cannot have all tasks within [est_tl, lct_tl] because it smaller than the sum of all their durations.
-        let est_tl = self.est_theta_lambda(Node::ROOT);
+        let est_tl = self._est_theta_lambda(Node::ROOT);
         // let lct_tl = self.lct_theta();
         let mut sum_duration = 0;
         let culprit_task = self.task(culprit);
@@ -411,7 +421,7 @@ impl TLTree {
         buffer.push(ExplanationItem::LctLeq(culprit_task.id, lct_tl));
         sum_duration += culprit_task.p;
         for task in self.theta() {
-            if task.est < est_tl {
+            if task.est < est_tl || task.lct > lct_tl {
                 continue;
             }
             // TODO: we could additionaly ignore a set of task which duration does not contribute to the overload
@@ -432,7 +442,11 @@ impl TLTree {
         (&self.buffer, culprit_task_id)
     }
 
-    fn cause_of_ect_theta_lambda(&self, node: Node) -> Task {
+    /// Returns the grey task that participates in the current value of ECT(Theta, Lambda)
+    pub fn cause_of_ect_theta_lambda(&self) -> Task {
+        self._cause_of_ect_theta_lambda(Node::ROOT)
+    }
+    fn _cause_of_ect_theta_lambda(&self, node: Node) -> Task {
         if let Some(task) = self.node_to_task(node) {
             // we have reached a leaf, this must be the culprit
             debug_assert!(self.task(task).optional);
@@ -443,12 +457,12 @@ impl TLTree {
         let left = self[node.left_child()];
         let right = self[node.right_child()];
         if n.ect_opt == right.ect_opt {
-            self.cause_of_ect_theta_lambda(node.right_child())
+            self._cause_of_ect_theta_lambda(node.right_child())
         } else if n.ect_opt == left.ect + right.sum_p_opt {
             self.cause_of_sum_p_theta_lambda(node.right_child())
         } else {
             debug_assert!(n.ect_opt == left.ect_opt + right.sum_p);
-            self.cause_of_ect_theta_lambda(node.left_child())
+            self._cause_of_ect_theta_lambda(node.left_child())
         }
     }
     fn cause_of_sum_p_theta_lambda(&self, node: Node) -> Task {

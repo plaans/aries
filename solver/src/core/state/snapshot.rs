@@ -16,7 +16,7 @@ use crate::prelude::*;
 ///    as the snapshot does not bring any added value compared to the wrapped state).
 ///    Query and construction should remain with a very low overhead
 ///
-/// The crate implements the [`Dom`] views crates that exposes many methods through the [`DomainsExt`] extension trait.
+/// The type implements the [`Dom`] view trait that exposes many methods through the [`DomainsExt`] extension trait.
 pub enum DomainsSnapshot<'a> {
     Current { doms: &'a Domains },
     Past { doms: &'a Domains, next_event: EventIndex },
@@ -43,7 +43,7 @@ impl<'a> DomainsSnapshot<'a> {
         }
     }
 
-    /// Returns the upper bound ob the given (signed) variable.
+    /// Returns the upper bound of the given (signed) variable.
     ///
     /// Note: this is only meant to implement the [`Dom`] trait.
     fn get_upper_bound(&self, var: SignedVar) -> IntCst {
@@ -70,6 +70,17 @@ impl<'a> DomainsSnapshot<'a> {
         match self {
             DomainsSnapshot::Current { doms } => doms,
             DomainsSnapshot::Past { doms, .. } => doms,
+        }
+    }
+
+    /// Returns the index of the next event (if a new domain update was done, it would have this index in the trail).
+    ///
+    /// This is typically useful because a [`DomainsSnapshot`] object is used for explaining and is constructed
+    /// to be at the event immediately preceding the inference.
+    pub fn next_event(&self) -> EventIndex {
+        match self {
+            DomainsSnapshot::Current { doms } => doms.trail().next_slot(),
+            DomainsSnapshot::Past { next_event, .. } => *next_event,
         }
     }
 

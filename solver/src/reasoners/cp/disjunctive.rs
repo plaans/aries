@@ -1,13 +1,14 @@
 use hashbrown::HashSet;
 use itertools::Itertools;
 
-use crate::core::state::{Cause, DomainsSnapshot, Explanation};
+use crate::core::state::{Cause, DomainsSnapshot, Explanation, InvalidUpdate};
 use crate::core::views::Dom;
 use crate::prelude::*;
 
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::disjunctive::theta_lambda_tree::TLTree;
 use crate::reasoners::cp::disjunctive::theta_tree::ExplanationItem;
+use crate::reasoners::cp::trailed::{DomJust, JustifiedPropagator, MutDomExt};
 use crate::reasoners::cp::{DynPropagator, UserPropagator};
 use crate::{core::state::Term, reasoners::cp::Propagator};
 
@@ -245,7 +246,9 @@ impl Propagator for NoOverlap {
 
 impl UserPropagator for NoOverlap {
     fn get_propagator(&self) -> super::DynPropagator {
-        DynPropagator::from(self.clone())
+        let prop = JustifiedPropagator::new(self.clone());
+        DynPropagator::from(prop)
+        //DynPropagator::from(self.clone())
     }
 
     fn satisfied(&self, dom: &Domains) -> bool {
@@ -273,5 +276,119 @@ impl UserPropagator for NoOverlap {
             }
         }
         true // no possibly overlapping intervals
+    }
+}
+
+enum Justification {
+    Overload {
+        est: IntCst,
+        lct: IntCst,
+    },
+    OptOverload {
+        est: IntCst,
+        lct: IntCst,
+        opt_activity: usize,
+    },
+}
+
+impl super::trailed::JustifiedProp<Justification> for NoOverlap {
+    fn setup(&self, id: super::propagator::PropagatorId, context: &mut crate::reasoners::cp::Watches) {
+        Propagator::setup(self, id, context); // TODO
+    }
+
+    fn propagate(&mut self, domains: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
+        use theta_lambda_tree::*;
+        let mut buff = Vec::new();
+        let activities = self.activities(domains);
+
+        // build the theta tree and look for an overloaded subset of activities
+        let mut tree = TLTree::init_empty(activities); // TODO: remove clone
+
+        let mut acts = tree.tasks().map(|a| (a, tree.task(a).lct)).collect_vec();
+        acts.sort_unstable_by_key(|(_a, lct)| *lct);
+
+        for (i, lct_i) in acts {
+            tree.insert(i); // add task to tree (grey if optional)
+
+            if tree.ect_theta() > lct_i {
+                // overload of compulsory activities
+                let expl = Justification::Overload {
+                    est: tree.est_theta(),
+                    lct: lct_i,
+                };
+                self.set(expl, domains)?;
+                unreachable!("Setting an overload always errors and shortcircuits");
+            }
+            while tree.ect_theta_lambda() > lct_i {
+                // there is a grey node that, if added, would cause an overload
+                // this task is the one that participates in the computation of ECT(Theta, Lambda)
+                let opt_overloader = tree.cause_of_ect_theta_lambda();
+                // restore feasibility by forcing its absence and removing it from the tree
+                buff.push(Justification::OptOverload {
+                    est: tree.est_theta_lambda(),
+                    lct: lct_i,
+                    opt_activity: tree.task(opt_overloader).id,
+                });
+                tree.remove(opt_overloader);
+            }
+        }
+
+        for inference in buff {
+            self.set(inference, domains)?;
+        }
+        Ok(())
+    }
+
+    fn explain(
+        &self,
+        lit: Lit,
+        justification: &Justification,
+        domains: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
+        // Returns all activities that fit within the [est, lct] interval
+        let activities_inside = |est: IntCst, lct: IntCst| {
+            self.tasks
+                .iter()
+                .filter(move |t| domains.entails(t.presence) && domains.lb(t.start) >= est && domains.ub(t.end) <= lct)
+        };
+
+        match justification {
+            Justification::Overload { est, lct } => {
+                // the given interval is to small to fit all tasks that must be within it
+                // TODO: we could minimize the explanation by ignoring short tasks, whose absence does not impact the overloading
+                debug_assert!(lit.absurd());
+                activities_inside(*est, *lct).for_each(|t| {
+                    out_explanation.push(t.presence);
+                    out_explanation.push(t.start.ge_lit(*est));
+                    out_explanation.push(t.end.le_lit(*lct));
+                    out_explanation.push(t.duration.ge_lit(domains.lb(t.duration)));
+                });
+            }
+            Justification::OptOverload { est, lct, opt_activity } => {
+                let opt = &self.tasks[*opt_activity];
+                debug_assert!((!opt.presence).entails(lit));
+                out_explanation.push(opt.start.ge_lit(*est));
+                out_explanation.push(opt.end.le_lit(*lct));
+                out_explanation.push(opt.duration.ge_lit(domains.lb(opt.duration)));
+                // TODO: we could minimize the explanation by ignoring short tasks, whose absence does not impact the overloading
+                activities_inside(*est, *lct).for_each(|t| {
+                    out_explanation.push(t.presence);
+                    out_explanation.push(!t.start.ge_lit(*est));
+                    out_explanation.push(t.end.le_lit(*lct));
+                    out_explanation.push(t.duration.ge_lit(domains.lb(t.duration)));
+                });
+            }
+        }
+    }
+}
+
+impl NoOverlap {
+    fn set(&self, inference: Justification, dom: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
+        let lit = match &inference {
+            Justification::Overload { .. } => Lit::FALSE,
+            Justification::OptOverload { opt_activity, .. } => !self.tasks[*opt_activity].presence,
+        };
+        dom.set(lit, inference).map(|_| ())
     }
 }
