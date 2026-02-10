@@ -260,15 +260,16 @@ impl UserPropagator for NoOverlap {
                     Some((dom.lb(t.start), dom.ub(t.end)))
                 }
             })
+            .sorted_unstable()
             .collect_vec();
-        // Check all intervals to see if any may overlap
-        // Naive O(n^2) implementation. An O(n x log(n)) implementation is possible
-        // but probably not worth the trouble
-        for (i, (s1, e1)) in itvs.iter().enumerate() {
-            for (s2, e2) in &itvs[(i + 1)..] {
-                if !(e1 <= s2 || e2 <= s1) {
-                    return false;
-                }
+
+        for ((s1, e1), (s2, e2)) in itvs.iter().tuple_windows() {
+            if s1 > e1 || s2 > e2 {
+                return false; // malformormed intervals
+            }
+            debug_assert!(s1 <= s2); // enforced by sorting
+            if e1 > s2 {
+                return false; // intervals overlap
             }
         }
         true // no possibly overlapping intervals
