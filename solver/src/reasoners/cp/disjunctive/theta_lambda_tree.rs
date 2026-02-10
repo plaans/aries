@@ -1,12 +1,4 @@
-#![allow(unused)]
-
-use std::{
-    cell::RefCell,
-    collections::HashSet,
-    ops::{BitXor, Index, IndexMut, Range},
-};
-
-use itertools::Itertools;
+use std::ops::{BitXor, Index, IndexMut};
 
 use crate::core::{INT_CST_MAX, IntCst};
 
@@ -76,15 +68,34 @@ impl TLNode {
     }
 }
 
-use super::theta_tree::Node;
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
+struct Node(usize);
+
+impl Node {
+    pub const ROOT: Node = Node(0);
+
+    pub fn parent(self) -> Self {
+        Node((self.0 - 1) / 2)
+    }
+
+    pub fn left_child(self) -> Self {
+        Node(self.0 * 2 + 1)
+    }
+    pub fn right_child(self) -> Self {
+        Node(self.0 * 2 + 2)
+    }
+
+    #[allow(unused)]
+    pub fn sibling(self) -> Self {
+        Node((self.0 + 1).bitxor(1) - 1)
+    }
+}
 
 #[derive(Default, Debug)]
 pub(super) struct TLTree {
     activities: Vec<Activity>,
     tree: Vec<TLNode>,
     capacity: usize,
-    /// An internal buffer used to compute and share explanations and inferences
-    buffer: Vec<ExplanationItem>,
 }
 
 impl TLTree {
@@ -98,16 +109,17 @@ impl TLTree {
             activities,
             tree,
             capacity,
-            buffer: Default::default(),
         }
     }
 
-    fn clear_tree(&mut self) {
+    #[allow(unused)]
+    pub fn clear_tree(&mut self) {
         for node in &mut self.tree {
             *node = TLNode::EMPTY
         }
     }
 
+    /// Maps a task index into the corresponding node of the tree (guaranteed to be a leaf)
     fn task_to_node(&self, task: Task) -> Node {
         // first task is at (capacity -1)
         Node(self.capacity - 1 + task.0 as usize)
@@ -122,16 +134,15 @@ impl TLTree {
         }
     }
 
+    /// All tasks considered, even if they have not be inserted in the tree yet.
+    ///
+    /// Task are sorted by increasing EST
     pub fn tasks(&self) -> impl Iterator<Item = Task> + use<> {
         (0..self.activities.len()).map(|i| Task(i as u32))
     }
 
     pub fn task(&self, task: Task) -> &Activity {
         &self.activities[task.0 as usize]
-    }
-
-    fn in_tree(&self, task: Task) -> bool {
-        !self[self.task_to_node(task)].is_empty()
     }
 
     pub fn insert(&mut self, task: Task) {
@@ -147,7 +158,7 @@ impl TLTree {
         self.propagate_update(node);
     }
 
-    pub fn in_tree_activities(&self) -> impl Iterator<Item = &Activity> + '_ {
+    fn in_tree_activities(&self) -> impl Iterator<Item = &Activity> + '_ {
         self.tasks().filter_map(|tid| {
             let n = self.task_to_node(tid);
             if !self[n].is_empty() {
@@ -158,11 +169,8 @@ impl TLTree {
         })
     }
 
-    pub fn theta(&self) -> impl Iterator<Item = &Activity> + '_ {
-        self.in_tree_activities().filter(|a| !a.optional)
-    }
-    pub fn lambda(&self) -> impl Iterator<Item = &Activity> + '_ {
-        self.in_tree_activities().filter(|a| a.optional)
+    fn theta(&self) -> impl Iterator<Item = &Activity> + '_ {
+        self.in_tree_activities().filter(|a| !a.optional) // FIXME: should be white nodes (in edge finding grey != optional)
     }
 
     /// After an update of `node`, recomputes the update of all nodes to the root
@@ -202,10 +210,10 @@ impl TLTree {
     }
 
     pub fn ect_theta(&self) -> IntCst {
-        self.tree[0].ect
+        self[Node::ROOT].ect
     }
     pub fn ect_theta_lambda(&self) -> IntCst {
-        self.tree[0].ect_opt
+        self[Node::ROOT].ect_opt
     }
 
     /// Returns the Latest Completion Time (LCT) of activities in the tree (white nodes only).
@@ -276,172 +284,6 @@ impl TLTree {
         self._est_theta_lambda(next) // tail recursive, hoping it will be optimized into a loop
     }
 
-    /// Look for all subsets of activities if there is an overloaded one.
-    /// If there is, the method returns true and the tree will contain an overloaded subset.
-    fn find_overloaded_subset(&mut self) -> bool {
-        self.clear_tree();
-
-        let num_activities = self.activities.len();
-        let acts = self.tasks().sorted_by_cached_key(|a| self.task(*a).lct).collect_vec();
-
-        for j in acts {
-            self.insert(j);
-            debug_assert!(self.in_tree_activities().count() > 0);
-            debug_assert!(self.lct_theta() >= self.task(j).lct);
-            if self.ect_theta() > self.task(j).lct {
-                debug_assert!(self.is_overloaded());
-                return true;
-            } else {
-                debug_assert!(!self.is_overloaded())
-            }
-        }
-
-        false
-    }
-
-    /// Returns true if the tree is currently overloaded.
-    fn is_overloaded(&self) -> bool {
-        self.ect_theta() > self.lct_theta()
-    }
-
-    /// Returns true if the tree would be overloaded if one optional task form lambda was to be added
-    fn is_opt_overloaded(&self) -> bool {
-        self.ect_theta_lambda() > self.lct_theta()
-    }
-
-    /// Explains why the theta tree is currently overloaded
-    fn explain_overload(&mut self, out: &mut Vec<ExplanationItem>) {
-        out.clear();
-        let est_theta = self._est_theta(Node::ROOT);
-        let lct_theta = self.lct_theta();
-        debug_assert!(self.ect_theta() > lct_theta);
-        let mut sum_duration = 0;
-
-        debug_assert!(self.is_overloaded());
-        for task in self.theta() {
-            if task.est < est_theta {
-                continue;
-            }
-            out.push(ExplanationItem::Present(task.id));
-            out.push(ExplanationItem::EstGeq(task.id, est_theta));
-            out.push(ExplanationItem::DurationGeq(task.id, task.p));
-            out.push(ExplanationItem::LctLeq(task.id, lct_theta));
-            sum_duration += task.p;
-        }
-        debug_assert_eq!(est_theta + sum_duration, self.ect_theta());
-    }
-    /// Look for all subsets of activities if there is an overloaded one.
-    /// If there is, the method returns true and the tree will contain an overloaded subset.
-    pub fn check_overload<'a>(&mut self, buffer: &'a mut Vec<ExplanationItem>) -> PropagationResult<'a> {
-        let res = self._check_overload(buffer);
-        #[cfg(debug_assertions)]
-        self.verify_propagation_result(res.clone());
-        res
-    }
-
-    /// Implements [`Self::check_overload`], but without the validation step at the end (to avoid recursive invocation in the tests)
-    fn _check_overload<'a>(&mut self, buffer: &'a mut Vec<ExplanationItem>) -> PropagationResult<'a> {
-        self.clear_tree();
-        buffer.clear();
-
-        let mut acts = self.tasks().map(|a| (a, self.task(a).lct)).collect_vec();
-        acts.sort_unstable_by_key(|(_a, lct)| *lct);
-
-        for (i, lct_i) in acts {
-            self.insert(i);
-            debug_assert!(self.in_tree_activities().count() > 0);
-
-            if self.ect_theta() > lct_i {
-                // overloaded based on the present (white) nodes only.
-                self.explain_overload(buffer);
-                return PropagationResult::Conflict(buffer);
-            }
-            while self.ect_theta_lambda() > lct_i {
-                // there is a grey node that, if added, would cause an overload
-                // this task is the one that participates in the computation of ECT(Theta, Lambda)
-                let opt_overloader = self._cause_of_ect_theta_lambda(Node::ROOT);
-                // restore feasibility by forcing its absence and removing it from the tree
-                self.remove(opt_overloader);
-                buffer.push(ExplanationItem::Absent(self.task(opt_overloader).id));
-            }
-        }
-
-        PropagationResult::Inferences(buffer)
-    }
-
-    /// Knowing that an overload deactivation of an optional task was triggered for the current set of activities,
-    /// Returns an activity that would be deactivated together with the cause of the deactivation
-    /// (set of literals that, if all true) would force the activity to be absent.
-    pub fn explain_overload_deactivation(&mut self) -> (&[ExplanationItem], ActivityId) {
-        // there might be more than one optional task in our activities.
-        // It is expected that the common case would be having just one because the requester would put us in this situation,
-        // leaving only the relevant optional tasks (typically one).
-        // Handling the case with only one could be the subject of a fast-track which is not implemented yet.
-        //
-        // In the general case, we need to find the overload point, thus we reproduce the propagation algorithm
-
-        self.clear_tree();
-        let mut buffer = Vec::new();
-        std::mem::swap(&mut buffer, &mut self.buffer);
-
-        let mut acts = self.tasks().map(|a| (a, self.task(a).lct)).collect_vec();
-        acts.sort_unstable_by_key(|(_a, lct)| *lct);
-
-        let mut culprit = None;
-        for (i, lct_i) in acts {
-            self.insert(i);
-            debug_assert!(self.in_tree_activities().count() > 0);
-
-            debug_assert!(
-                self.ect_theta() <= lct_i,
-                "Trying to explain overload-deactivation in an already overloaded instance."
-            );
-            if self.ect_theta_lambda() > lct_i {
-                // there is a grey node that, if added, would cause an overload
-                // this task is the one that participates in the computation of ECT(Theta, Lambda)
-                culprit = Some((self._cause_of_ect_theta_lambda(Node::ROOT), lct_i));
-                // we have found the state in which we would propagate: stop iteration,
-                break;
-            }
-        }
-        debug_assert!(self.lambda().count() >= 1); // there should be at least one optional task
-        debug_assert!(self.is_opt_overloaded());
-        let (culprit, lct_tl) = culprit.expect("iteration finished without identifying an activity to deactivate");
-
-        // now we have a minimal set of white nodes that forbid the presence of the culprit
-        // so generate the explanation:
-        // In a nutshell, the explanation is that we cannot have all tasks within [est_tl, lct_tl] because it smaller than the sum of all their durations.
-        let est_tl = self._est_theta_lambda(Node::ROOT);
-        // let lct_tl = self.lct_theta();
-        let mut sum_duration = 0;
-        let culprit_task = self.task(culprit);
-        let culprit_task_id = culprit_task.id;
-        buffer.push(ExplanationItem::EstGeq(culprit_task.id, est_tl));
-        buffer.push(ExplanationItem::DurationGeq(culprit_task.id, culprit_task.p));
-        buffer.push(ExplanationItem::LctLeq(culprit_task.id, lct_tl));
-        sum_duration += culprit_task.p;
-        for task in self.theta() {
-            if task.est < est_tl || task.lct > lct_tl {
-                continue;
-            }
-            // TODO: we could additionaly ignore a set of task which duration does not contribute to the overload
-            //       For instance, it might be the case that we are too long by 10 time units but there is an activity with a duration of 2
-            //       that could be removed from the set of culprits
-            buffer.push(ExplanationItem::Present(task.id));
-            buffer.push(ExplanationItem::EstGeq(task.id, est_tl));
-            buffer.push(ExplanationItem::DurationGeq(task.id, task.p));
-            buffer.push(ExplanationItem::LctLeq(task.id, lct_tl));
-            sum_duration += task.p;
-        }
-        debug_assert_eq!(est_tl + sum_duration, self.ect_theta_lambda());
-        debug_assert!(sum_duration > lct_tl - est_tl); // sanity check that we are overloading
-
-        std::mem::swap(&mut self.buffer, &mut buffer);
-        debug_assert!(buffer.is_empty() && !self.buffer.is_empty());
-
-        (&self.buffer, culprit_task_id)
-    }
-
     /// Returns the grey task that participates in the current value of ECT(Theta, Lambda)
     pub fn cause_of_ect_theta_lambda(&self) -> Task {
         self._cause_of_ect_theta_lambda(Node::ROOT)
@@ -482,62 +324,6 @@ impl TLTree {
             self.cause_of_sum_p_theta_lambda(node.left_child())
         }
     }
-
-    /// Costly verification step to check that:
-    ///  - every optional activity deactivated indeed overloads the resource
-    ///  - every optional activity *not* deactivated would indeed not overload the resource if it was present
-    fn verify_propagation_result<'a>(&'a self, res: PropagationResult<'a>) {
-        use super::theta_tree as tt;
-        // creates the set of all compulsory activities plus 0 or 1 optional activity (marked as compulsory)
-        let acts_with = |opt: Option<ActivityId>| {
-            self.activities
-                .iter()
-                .filter(|&a| (!a.optional || Some(a.id) == opt))
-                .map(|a| tt::Activity::new(a.id, a.est, a.lct, a.p))
-                .collect_vec()
-        };
-        let overloaded = |acts: Vec<tt::Activity>| {
-            let mut tree = tt::ThetaTree::init_empty(acts);
-            tree.find_overloaded_subset()
-        };
-        match res {
-            PropagationResult::Conflict(explanation_items) => {
-                let tt_acts = acts_with(None);
-            }
-            PropagationResult::Inferences(explanation_items) => {
-                let mut overloading_opts: HashSet<ActivityId> = Default::default();
-                for e in explanation_items {
-                    let ExplanationItem::Absent(e) = e else { unreachable!() };
-                    overloading_opts.insert(*e);
-                }
-
-                for &overloader in &overloading_opts {
-                    assert!(overloaded(acts_with(Some(overloader))))
-                }
-
-                let non_overloading = self
-                    .activities
-                    .iter()
-                    .filter_map(|a| {
-                        if overloading_opts.contains(&a.id) {
-                            None
-                        } else {
-                            Some(a.id)
-                        }
-                    })
-                    .collect_vec();
-                for non_overloader in non_overloading {
-                    assert!(!overloaded(acts_with(Some(non_overloader))));
-                }
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum PropagationResult<'a> {
-    Conflict(&'a [ExplanationItem]),
-    Inferences(&'a [ExplanationItem]),
 }
 
 impl Index<Node> for TLTree {
@@ -553,8 +339,6 @@ impl IndexMut<Node> for TLTree {
     }
 }
 
-pub(super) use super::theta_tree::ExplanationItem;
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -567,71 +351,6 @@ mod test {
             assert_eq!(n.right_child().parent(), n);
             assert_eq!(n.left_child().sibling(), n.right_child());
             assert_eq!(n.right_child().sibling(), n.left_child());
-        }
-    }
-
-    #[test]
-    fn test() {
-        let activities = vec![
-            Activity::new(0, 0, 20, 5, false),
-            Activity::new(1, 25, 60, 9, false),
-            Activity::new(2, 30, 60, 5, true),
-            Activity::new(3, 32, 47, 10, false),
-        ];
-
-        let mut tt = TLTree::init_empty(activities);
-
-        println!("{:?}", tt);
-        tt.display();
-
-        for t in tt.tasks() {
-            tt.insert(t);
-            tt.display();
-        }
-
-        assert!(!tt.find_overloaded_subset())
-    }
-    #[test]
-    fn test_overload() {
-        let overloaded = vec![
-            vec![
-                Activity::new(2, 30, 35, 4, false),
-                Activity::new(1, 35, 41, 6, false),
-                Activity::new(3, 32, 47, 10, false),
-            ],
-            vec![
-                Activity::new(0, 0, 6, 5, false),
-                Activity::new(2, 30, 35, 4, false),
-                Activity::new(1, 5, 40, 6, false),
-                Activity::new(3, 32, 43, 10, false),
-            ],
-        ];
-        let not_overloaded = vec![
-            vec![
-                Activity::new(2, 30, 35, 4, false),
-                Activity::new(1, 5, 40, 6, false),
-                Activity::new(3, 32, 50, 10, false),
-            ],
-            vec![
-                Activity::new(0, 0, 6, 5, false),
-                Activity::new(2, 30, 35, 4, false),
-                Activity::new(1, 5, 40, 6, false),
-                Activity::new(3, 32, 47, 10, false),
-            ],
-        ];
-
-        for acts in overloaded {
-            println!("{acts:?}");
-            let mut tt = TLTree::init_empty(acts);
-            assert!(tt.find_overloaded_subset());
-            assert!(tt.is_overloaded());
-            tt.display();
-        }
-
-        for acts in not_overloaded {
-            println!("{acts:?}");
-            let mut tt = TLTree::init_empty(acts);
-            assert!(!tt.find_overloaded_subset())
         }
     }
 }
