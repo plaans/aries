@@ -6,7 +6,9 @@
 import os
 import subprocess
 
-os.system("cargo build --profile ci --bin scheduler")
+res = os.system("cargo build --profile ci --bin scheduler")
+if res != 0:
+    exit(1)
 solver = "target/ci/scheduler"
 
 solver_cmd = solver + " {kind} {instance} --expected-makespan {makespan}"

@@ -6,7 +6,7 @@ use crate::core::{INT_CST_MAX, IntCst};
 type ActivityId = usize;
 
 /// Task identifier: Index in the internal activity array of the tree (typically ordered by EST)
-#[derive(Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Task(u32);
 
 const EMPTY_DUR: IntCst = 0;
@@ -65,6 +65,12 @@ impl TLNode {
     };
     pub fn is_empty(&self) -> bool {
         self == &TLNode::EMPTY
+    }
+    pub fn is_white(&self) -> bool {
+        self.ect != EMPTY_ECT
+    }
+    pub fn is_grey(&self) -> bool {
+        !self.is_empty() && !self.is_white()
     }
 }
 
@@ -134,6 +140,13 @@ impl TLTree {
         }
     }
 
+    pub fn is_grey(&self, task: Task) -> bool {
+        self[self.task_to_node(task)].is_grey()
+    }
+    pub fn is_white(&self, task: Task) -> bool {
+        self[self.task_to_node(task)].is_white()
+    }
+
     /// All tasks considered, even if they have not be inserted in the tree yet.
     ///
     /// Task are sorted by increasing EST
@@ -158,6 +171,13 @@ impl TLTree {
         self.propagate_update(node);
     }
 
+    pub fn make_grey(&mut self, task: Task) {
+        let node = self.task_to_node(task);
+        self[node].ect = EMPTY_ECT;
+        self[node].sum_p = EMPTY_DUR;
+        self.propagate_update(node);
+    }
+
     fn in_tree_activities(&self) -> impl Iterator<Item = &Activity> + '_ {
         self.tasks().filter_map(|tid| {
             let n = self.task_to_node(tid);
@@ -170,7 +190,9 @@ impl TLTree {
     }
 
     fn theta(&self) -> impl Iterator<Item = &Activity> + '_ {
-        self.in_tree_activities().filter(|a| !a.optional) // FIXME: should be white nodes (in edge finding grey != optional)
+        self.tasks()
+            .filter(|t| self[self.task_to_node(*t)].is_white())
+            .map(|t| self.task(t))
     }
 
     /// After an update of `node`, recomputes the update of all nodes to the root
@@ -219,7 +241,7 @@ impl TLTree {
     /// Returns the Latest Completion Time (LCT) of activities in the tree (white nodes only).
     ///
     /// Complexity: `O(N)`
-    fn lct_theta(&self) -> IntCst {
+    pub fn lct_theta(&self) -> IntCst {
         self.theta().map(|a| a.lct).max().unwrap_or(INT_CST_MAX)
     }
     /// Returns the Latest Completion Time (LCT) of activities in the tree (white nodes + one grey node).
@@ -269,19 +291,21 @@ impl TLTree {
         }
         let right = node.right_child();
         let left = node.left_child();
-        if self[node].ect_opt == self[left].ect + self[right].sum_p_opt {
-            // we are looking of the one causing `left.ect` (NOT left.ect_opt !)
-            return self._est_theta(left);
-        }
-        let next = if self[node].ect_opt == self[right].ect_opt {
+        // find the origin of the value
+        // IMPORTANT: there might be more than one possible source (two justification for the same ECT)
+        //            It is critical to remain consistent with `cause_of_ect_theta_lambda` to avoid suble bug
+        //            Hence, we must explore the options in the same order
+        if self[node].ect_opt == self[right].ect_opt {
             // ect_opt was set from the right chlid, so, est comes from there as well
-            right
+            self._est_theta_lambda(right)
+        } else if self[node].ect_opt == self[left].ect + self[right].sum_p_opt {
+            // we are looking of the one causing `left.ect` (NOT left.ect_opt !)
+            self._est_theta(left)
         } else {
             // ect_opt must come from left (there are two possibilities for that)
             debug_assert!(self[node].ect_opt == self[left].ect_opt + self[right].sum_p);
-            left
-        };
-        self._est_theta_lambda(next) // tail recursive, hoping it will be optimized into a loop
+            self._est_theta_lambda(left) // tail recursive, hoping it will be optimized into a loop
+        }
     }
 
     /// Returns the grey task that participates in the current value of ECT(Theta, Lambda)
@@ -291,13 +315,17 @@ impl TLTree {
     fn _cause_of_ect_theta_lambda(&self, node: Node) -> Task {
         if let Some(task) = self.node_to_task(node) {
             // we have reached a leaf, this must be the culprit
-            debug_assert!(self.task(task).optional);
+            debug_assert!(self.is_grey(task));
             return task;
         }
         let n = self[node];
         debug_assert_ne!(n.ect, n.ect_opt, "no culprit");
         let left = self[node.left_child()];
         let right = self[node.right_child()];
+        // find the origin of the value
+        // IMPORTANT: there might be more than one possible source (two justification for the same ECT)
+        //            It is critical to remain consistent with `est_theta_lambda` to avoid subtle bugs
+        //            Hence, we must explore the options in the same order
         if n.ect_opt == right.ect_opt {
             self._cause_of_ect_theta_lambda(node.right_child())
         } else if n.ect_opt == left.ect + right.sum_p_opt {
@@ -310,7 +338,7 @@ impl TLTree {
     fn cause_of_sum_p_theta_lambda(&self, node: Node) -> Task {
         if let Some(task) = self.node_to_task(node) {
             // we have reached a leaf, this must be the culprit
-            debug_assert!(self.task(task).optional);
+            debug_assert!(self.is_grey(task));
             return task;
         }
         let n = self[node];

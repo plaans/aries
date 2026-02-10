@@ -66,7 +66,7 @@ impl<'a> DomainsSnapshot<'a> {
         self.domains().presence(term)
     }
 
-    fn domains(&self) -> &Domains {
+    pub(crate) fn domains(&self) -> &Domains {
         match self {
             DomainsSnapshot::Current { doms } => doms,
             DomainsSnapshot::Past { doms, .. } => doms,
