@@ -150,7 +150,7 @@ impl NoOverlap {
                     0
                 } else {
                     let est_theta = theta.iter().map(|t| t.est).min().unwrap();
-                    let dur_theta: i32 = theta.iter().map(|t| t.p).sum();
+                    let dur_theta: IntCst = theta.iter().map(|t| t.p).sum();
                     let lct_theta_computed = theta.iter().map(|t| t.lct).max().unwrap();
                     assert!(lct_theta >= lct_theta_computed);
                     let ect_theta_computed = est_theta + dur_theta;
@@ -174,7 +174,7 @@ impl NoOverlap {
                 //     "theta': \n - {}",
                 //     theta_prime.iter().map(|t| format!("{t:?}")).join("\n  - ")
                 // );
-                let dur_theta_prime: i32 = theta_prime.iter().map(|t| t.p).sum();
+                let dur_theta_prime: IntCst = theta_prime.iter().map(|t| t.p).sum();
                 let ect_theta_i = est_theta_lambda + dur_theta + dur_theta_prime + dur_i;
                 assert!(
                     ect_theta_i > lct_theta,
@@ -238,7 +238,7 @@ enum Justification {
         lct_theta: IntCst,
         ect_theta: IntCst,
         activity: usize,
-        est_theta_lambda: i32,
+        est_theta_lambda: IntCst,
     },
 }
 
