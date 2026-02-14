@@ -39,6 +39,10 @@ pub struct Opt {
     /// This option is intended to ease the collection of benchmark results with `aries-bench`
     #[structopt(long = "report", short = "r")]
     report: Option<String>,
+    /// Choose the propagation level for the no-overlap constraint.
+    /// Options: try it out, you will get an error message with the options
+    #[structopt(long = "no-overlap", default_value = "edge-finding")]
+    no_overlap: aries::reasoners::cp::disjunctive::PropagatorKind,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -87,7 +91,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
     let lower_bound = (opt.lower_bound.unwrap_or(0)).max(pb.makespan_lower_bound() as u32);
     println!("Initial lower bound: {lower_bound}");
 
-    let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, true);
+    let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, opt.no_overlap);
     let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
     let solver = Solver::new(model);
@@ -209,6 +213,7 @@ mod test {
     use aries::core::state::witness;
     use aries::model::Label;
     use aries::prelude::*;
+    use aries::reasoners::cp::disjunctive;
     use aries::solver::search::random::RandomChoice;
     use aries::solver::{SearchLimit, Solver};
 
@@ -260,11 +265,16 @@ mod test {
             ProblemKind::FlexibleShop => parser::flexshop(&filecontent),
         };
         assert_eq!(pb.kind, kind);
+        let propagation_level = if use_constraints {
+            disjunctive::PropagatorKind::default()
+        } else {
+            disjunctive::PropagatorKind::None
+        };
 
         let lower_bound = pb.makespan_lower_bound() as u32;
 
-        // prodice a model for this problem
-        let (model, _encoding) = problem::encode(&pb, lower_bound, Some(opt * 2), use_constraints);
+        // produce a model for this problem
+        let (model, _encoding) = problem::encode(&pb, lower_bound, Some(opt * 2), propagation_level);
         let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
 
         // run several random solvers on the problem to assert the coherency of the results

@@ -2,7 +2,7 @@ use crate::search::{Model, Var};
 use aries::core::{u32_to_cst, IntCst, Lit, INT_CST_MAX};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
-use aries::reasoners::cp::disjunctive::{NoOverlap, Task};
+use aries::reasoners::cp::disjunctive::{self, NoOverlap, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -287,9 +287,9 @@ pub(crate) fn encode(
     pb: &Problem,
     lower_bound: u32,
     upper_bound: Option<u32>,
-    use_constraints: bool,
+    no_overlap: disjunctive::PropagatorKind,
 ) -> (Model, Encoding) {
-    //let use_constraints = false;
+    let use_constraints = no_overlap > disjunctive::PropagatorKind::None;
     let lower_bound = u32_to_cst(lower_bound);
     let upper_bound = u32_to_cst(upper_bound.unwrap_or(INT_CST_MAX as u32));
     let mut m = Model::new();
@@ -358,12 +358,11 @@ pub(crate) fn encode(
             }
         }
 
-        // let use_constraints = false;
         if use_constraints {
             let tasks_on_machine = alts
                 .iter()
                 .map(|op| Task::new(op.start, op.duration, op.end(), op.presence));
-            let no_overlap = NoOverlap::new(tasks_on_machine);
+            let no_overlap = NoOverlap::new(tasks_on_machine).kind(no_overlap);
             m.enforce_user_propagator(no_overlap);
         }
     }

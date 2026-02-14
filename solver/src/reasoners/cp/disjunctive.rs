@@ -1,7 +1,6 @@
 use hashbrown::HashSet;
 use itertools::Itertools;
 
-use crate::backtrack::Backtrack;
 use crate::core::state::{DomainsSnapshot, Explanation, InvalidUpdate};
 use crate::core::views::Dom;
 use crate::prelude::*;
@@ -26,6 +25,7 @@ mod theta_lambda_tree;
 /// ```
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PropagatorKind {
+    None,
     /// Overload checking on all tasks known to be present.
     /// This propagator would detect a conflict if a subset of tasks result in an overload.
     Overload,
@@ -34,6 +34,22 @@ pub enum PropagatorKind {
     /// Performs edge finding
     #[default]
     EdgeFinding,
+}
+impl std::str::FromStr for PropagatorKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use PropagatorKind::*;
+        match s {
+            "none" => Ok(None),
+            "overload" => Ok(Overload),
+            "overload-opt" => Ok(OverloadWithOptional),
+            "edge-finding" => Ok(EdgeFinding),
+            _ => Err(format!(
+                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding'"
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -258,6 +274,9 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
     }
 
     fn propagate(&mut self, domains: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
+        if self.kind <= PropagatorKind::None {
+            return Ok(());
+        }
         use theta_lambda_tree::*;
         let mut buff = Vec::new();
         let activities = self.activities(domains);
@@ -413,6 +432,7 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
 
         #[cfg(debug_assertions)]
         {
+            use crate::backtrack::Backtrack;
             // check correctness with current domains
             self.check_correctness(domains, justification);
             // create a copy of the domains such that only the facts in the explanation are true
