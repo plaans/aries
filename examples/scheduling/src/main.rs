@@ -7,6 +7,7 @@ use crate::search::{SearchStrategy, Solver, Var};
 use aries::model::lang::IVar;
 use aries::prelude::*;
 use aries::solver::{Exit, SearchLimit};
+use aries_bench::IntermediateResult;
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
@@ -96,12 +97,17 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
 
     let solver = Solver::new(model);
     let mut solver = search::get_solver(solver, &opt.search, &encoding);
+    let mut solution_history: Vec<IntermediateResult> = Default::default();
 
     let mut best = Option::None;
     let result = solver.minimize_with_callback(
         makespan,
         |obj, sol| {
             println!("New solution with makespan: {}", obj);
+            solution_history.push(IntermediateResult {
+                timestamp: start_time.elapsed(),
+                objective: obj as i64,
+            });
             best = Some(sol.clone());
         },
         deadline,
@@ -162,6 +168,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
             runtime: start_time.elapsed(),
             objective_value: best.map(|sol| sol.value_of(makespan).unwrap() as i64),
             metrics: Default::default(),
+            objective_history: solution_history,
         }
         .with_metric(aries_bench::Metric::NumConflicts, solver.stats.num_conflicts as f64)
         .with_metric(aries_bench::Metric::NumDecisions, solver.stats.num_decisions as f64)

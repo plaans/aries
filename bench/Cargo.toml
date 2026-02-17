@@ -10,6 +10,8 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 readable = "0.1"
 comfy-table = "7.0"
+itertools = { workspace = true }
+plotly = "0.14.1"
 
 [dev-dependencies]
 tempfile = "3.10"

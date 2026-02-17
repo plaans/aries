@@ -77,5 +77,5 @@ bench-fjs name timeout="30":
     set -e  # stop on first error
     cargo build --profile perf --bin scheduler
     for instance in `cat benches.fjs`; do
-        ./target/perf/scheduler  -t {{ timeout }} -r {{ name }} fjs $instance
+        ./target/perf/scheduler  -t {{ timeout }} -r bench-res/{{ name }} fjs $instance
     done

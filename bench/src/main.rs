@@ -1,25 +1,39 @@
 use anyhow::{Context, Result};
-use aries_bench::{comp::RunWithRef, *};
-use clap::Parser;
+use aries_bench::{
+    results::{ProblemResults, ResultCollection},
+    time_series::TimeSerie,
+    *,
+};
+use clap::{Parser, ValueEnum};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::*;
-use std::{fs, rc::Rc};
+use std::{collections::HashMap, fs, ops::AddAssign, rc::Rc, str::FromStr, time::Duration};
+use std::{hash::Hash, ops::DivAssign};
 
 /// Compare set of benchmark results.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Directory containing the benchmark results to be used as reference to compute improvements.
-    reference: String,
-    /// Directory containing benchmark result JSON files
-    directory: String,
-    #[arg(short, long)]
+    solvers: Vec<String>,
     /// Only consider instances whose ID contains the given string
-    filter: Option<String>,
     #[arg(short, long)]
+    filter: Vec<String>,
     /// Only consider instances whose ID does not contain the given string
-    exclude: Option<String>,
+    #[arg(short, long)]
+    exclude: Vec<String>,
+    /// Only consider instances with the givne Timeout
+    #[arg(short, long)]
+    timeout: Option<u64>,
+    #[arg(short, long = "plot", value_enum)]
+    plots: Vec<Plot>,
+}
+
+#[derive(Debug, Copy, Clone, ValueEnum)]
+enum Plot {
+    Solved,
+    Quality,
 }
 
 fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
@@ -55,22 +69,101 @@ fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let results = results_from_dir(&args.directory)?;
-    let reference_results = results_from_dir(&args.reference)?;
+    let reference = &args.solvers[1];
+    let evaluated = &args.solvers[0];
 
-    // combine results with their reference when available
-    let results: Vec<RunWithRef> = results
-        .into_iter()
-        .map(|run| {
-            let reference = reference_results
-                .iter()
-                .find(|ref_run| run.problem.id() == ref_run.problem.id())
-                .map(Rc::clone);
-            RunWithRef { run, reference }
-        })
-        .filter(|r| args.filter.iter().all(|f| r.run.problem.id().contains(f)))
-        .filter(|r| args.exclude.iter().all(|e| !r.run.problem.id().contains(e)))
-        .collect();
+    let mut col = ResultCollection::default();
+    for solver in &args.solvers {
+        let results = results_from_dir(solver)?;
+        col.add_solver(solver.clone(), results);
+    }
+
+    args.filter.iter().for_each(|f| col.retain(|pb| pb.id().contains(f)));
+    args.exclude.iter().for_each(|f| col.retain(|pb| !pb.id().contains(f)));
+    args.timeout
+        .iter()
+        .for_each(|to| col.retain(|pb| pb.timeout == Duration::from_secs(*to)));
+
+    print_comparison_table(&col, evaluated, reference);
+    plot(&col, &args.plots);
+
+    Ok(())
+}
+
+fn plot(col: &ResultCollection, plots: &[Plot]) {
+    let col = col.clone().with_data_for_all_solvers();
+
+    for plot in plots {
+        match plot {
+            Plot::Quality => {
+                let series = col.measures::<TimeSerie>(ipc_hist);
+                let results = avg(series, |(_, solver, serie)| (solver, serie));
+                plot::plot_cactus(&results);
+            }
+            Plot::Solved => {
+                let series = col.measures::<TimeSerie>(solved_hist);
+                let results = sum(series, |(_, solver, serie)| (solver, serie));
+                plot::plot_cactus(&results);
+            }
+        }
+    }
+}
+
+fn ipc_hist(runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
+    let Some(best) = runs.results.values().filter_map(|r| r.objective_value).min() else {
+        return TimeSerie::constant(0.0, Duration::ZERO, runs.problem.timeout);
+    };
+    run.ipc_history(best)
+}
+fn solved_hist(runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
+    run.solved_hist()
+}
+fn sum<Measure, Key, Value>(
+    measures: impl Iterator<Item = Measure>,
+    kv: impl Fn(Measure) -> (Key, Value),
+) -> HashMap<Key, Value>
+where
+    Key: Hash + Eq,
+    Value: AddAssign<Value>,
+{
+    let mut results = HashMap::new();
+    for measure in measures {
+        let (k, v) = kv(measure);
+        if let Some(prev) = results.get_mut(&k) {
+            *prev += v;
+        } else {
+            results.insert(k, v);
+        }
+    }
+    results
+}
+fn avg<Measure, Key, Value>(
+    measures: impl Iterator<Item = Measure>,
+    kv: impl Fn(Measure) -> (Key, Value),
+) -> HashMap<Key, Value>
+where
+    Key: Hash + Eq + Clone,
+    Value: AddAssign<Value> + DivAssign<f64>,
+{
+    let mut counts: HashMap<_, i32> = HashMap::new();
+    let mut results = HashMap::new();
+    for measure in measures {
+        let (k, v) = kv(measure);
+        *counts.entry(k.clone()).or_default() += 1;
+        if let Some(prev) = results.get_mut(&k) {
+            *prev += v;
+        } else {
+            results.insert(k, v);
+        }
+    }
+    for (k, v) in results.iter_mut() {
+        *v /= counts[k] as f64;
+    }
+    results
+}
+
+fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &SolverID) {
+    let results = col.comparison(main, reference);
 
     // Create and configure comfy table
     let mut table = Table::new();
@@ -124,6 +217,4 @@ fn main() -> anyhow::Result<()> {
 
     // Print the table
     println!("{}", table);
-
-    Ok(())
 }

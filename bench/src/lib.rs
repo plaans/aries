@@ -3,10 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use std::{collections::BTreeMap, time::Duration};
 
+use crate::time_series::TimeSerie;
+
 pub mod comp;
+pub mod plot;
+pub mod results;
+pub mod time_series;
+
+/// Identifier of solver (typically a string derive from the location of its results)
+pub type SolverID = String;
 
 /// Characterization of a benchmark problem
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Problem {
     /// Name of the problem (often a path in the folder containing the benchmarks)
     pub name: String,
@@ -62,13 +70,22 @@ pub enum SolveStatus {
     Timeout,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+pub type MetricValue = i64;
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct IntermediateResult {
+    pub timestamp: Duration,
+    pub objective: MetricValue,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SolveResult {
     pub problem: Problem,
     pub status: SolveStatus,
     pub runtime: Duration,
     pub objective_value: Option<i64>,
     pub metrics: BTreeMap<Metric, f64>,
+    pub objective_history: Vec<IntermediateResult>,
 }
 
 impl SolveResult {
@@ -115,9 +132,40 @@ impl SolveResult {
         self.metrics.insert(metric, value.into());
         self
     }
+
+    pub fn objective_hist(&self) -> TimeSerie {
+        let mut hist = vec![];
+        for measure in &self.objective_history {
+            hist.push((measure.timestamp, measure.objective as f64));
+        }
+        if let Some(final_obj) = self.objective_value {
+            hist.push((self.runtime, final_obj as f64));
+        }
+        TimeSerie::from_constant_per_part(hist, self.problem.timeout)
+    }
+
+    pub fn ipc_history(&self, best: MetricValue) -> TimeSerie {
+        let best = best as f64;
+        let mut hist = vec![(Duration::ZERO, 0.0)];
+        for measure in &self.objective_history {
+            hist.push((measure.timestamp, best / measure.objective as f64));
+        }
+        if let Some(final_obj) = self.objective_value {
+            hist.push((self.runtime, best / final_obj as f64));
+        }
+        TimeSerie::from_constant_per_part(hist, self.problem.timeout)
+    }
+
+    pub fn solved_hist(&self) -> TimeSerie {
+        let mut hist = vec![(Duration::ZERO, 0.0)];
+        if self.status == SolveStatus::Solved {
+            hist.push((self.runtime, 1.0));
+        }
+        TimeSerie::from_constant_per_part(hist, self.problem.timeout)
+    }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
 pub enum Metric {
     NumConflicts,
     NumDecisions,
@@ -147,6 +195,7 @@ mod tests {
             runtime: Duration::from_secs(5),
             objective_value: Some(42),
             metrics,
+            objective_history: vec![],
         }
     }
 

@@ -45,7 +45,7 @@ instances = [
 
 ]
 
-for (kind, instance, makespan) in instances:
+for kind, instance, makespan in instances:
     cmd = solver_cmd.format(kind=kind, instance=instance, makespan=makespan).split(" ")
     print("Solving instance: " + instance)
     solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
