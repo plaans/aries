@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use plotly::common::Mode;
 use plotly::layout::{Axis, AxisType};
 use plotly::{Layout, Plot, Scatter};
@@ -8,7 +9,7 @@ use crate::time_series::TimeSerie;
 pub fn plot_cactus(series: &HashMap<impl AsRef<str>, TimeSerie>) {
     let mut plot = Plot::new();
 
-    for (name, serie) in series {
+    for (name, serie) in series.iter().sorted_by_key(|(name, _)| name.as_ref().to_string()) {
         let (xs, ys) = serie.line();
         let trace = Scatter::new(xs, ys).name(name).mode(Mode::Lines);
         plot.add_trace(trace);

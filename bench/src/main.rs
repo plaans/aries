@@ -8,7 +8,7 @@ use clap::{Parser, ValueEnum};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::*;
-use std::{collections::HashMap, fs, ops::AddAssign, rc::Rc, str::FromStr, time::Duration};
+use std::{collections::HashMap, fs, ops::AddAssign, rc::Rc, time::Duration};
 use std::{hash::Hash, ops::DivAssign};
 
 /// Compare set of benchmark results.
@@ -115,7 +115,7 @@ fn ipc_hist(runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
     };
     run.ipc_history(best)
 }
-fn solved_hist(runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
+fn solved_hist(_runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
     run.solved_hist()
 }
 fn sum<Measure, Key, Value>(

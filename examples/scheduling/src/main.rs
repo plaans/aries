@@ -4,11 +4,13 @@ mod search;
 
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
 use crate::search::{SearchStrategy, Solver, Var};
+use anyhow::Context;
 use aries::model::lang::IVar;
 use aries::prelude::*;
 use aries::solver::{Exit, SearchLimit};
 use aries_bench::IntermediateResult;
 use std::fmt::Write;
+use std::path::Path;
 use std::time::{Duration, Instant};
 use structopt::StructOpt;
 use walkdir::WalkDir;
@@ -44,6 +46,9 @@ pub struct Opt {
     /// Options: try it out, you will get an error message with the options
     #[structopt(long = "no-overlap", default_value = "edge-finding")]
     no_overlap: aries::reasoners::cp::disjunctive::PropagatorKind,
+    /// Indicates a layout file, containing a matrix with the transportation times between all pairs of machines.
+    #[structopt(long = "layout")]
+    layout_file: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -80,12 +85,17 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
         .map(|dur| SearchLimit::Deadline(Instant::now() + Duration::from_secs(dur as u64)))
         .unwrap_or(SearchLimit::None);
     let start_time = std::time::Instant::now();
-    let filecontent = std::fs::read_to_string(instance).expect("Cannot read file");
-    let pb = match kind {
+    let filecontent = read_file(instance)?;
+    let mut pb = match kind {
         ProblemKind::OpenShop => parser::openshop(&filecontent),
         ProblemKind::JobShop => parser::jobshop(&filecontent),
         ProblemKind::FlexibleShop => parser::flexshop(&filecontent),
     };
+    if let Some(layout) = opt.layout_file.as_ref() {
+        let file_content = read_file(layout)?;
+        let transport_times = parser::transport_time(&file_content);
+        pb.set_transport_times(transport_times);
+    }
     assert_eq!(pb.kind, kind);
     // println!("{:?}", pb);
 
@@ -152,15 +162,23 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
         export(solution, &pb, &encoding, opt.output.as_ref());
     }
     if let Some(report_dir) = opt.report.as_ref() {
-        let problem = aries_bench::Problem {
+        let mut problem = aries_bench::Problem {
             name: opt.file.clone(),
             timeout: opt
                 .timeout
                 .map(|t| Duration::from_secs(t as u64))
                 .unwrap_or(Duration::MAX),
-            lb: opt.lower_bound.map(i64::from),
-            ub: opt.upper_bound.map(i64::from),
+            flags: Default::default(),
         };
+        if let Some(lb) = opt.lower_bound {
+            problem.flags.insert("lb".to_string(), lb.to_string());
+        }
+        if let Some(ub) = opt.upper_bound {
+            problem.flags.insert("ub".to_string(), ub.to_string());
+        }
+        if let Some(layout) = opt.layout_file.as_ref() {
+            problem.flags.insert("layout".to_string(), layout.to_string());
+        }
 
         let result = aries_bench::SolveResult {
             problem,
@@ -210,6 +228,10 @@ fn export(solution: &Domains, pb: &Problem, encoding: &Encoding, file: Option<&S
         // write solution to file
         std::fs::write(output_file, formatted_solution).unwrap();
     }
+}
+
+fn read_file(file: impl AsRef<Path>) -> anyhow::Result<String> {
+    std::fs::read_to_string(file.as_ref()).with_context(move || format!("Cannot read file: '{:?}'", file.as_ref()))
 }
 
 #[cfg(test)]

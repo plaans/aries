@@ -1,4 +1,5 @@
 use aries::core::u32_to_cst;
+use itertools::Itertools;
 
 use crate::problem::*;
 
@@ -97,5 +98,15 @@ pub(crate) fn flexshop(input: &str) -> Problem {
         num_jobs,
         num_machines,
         operations,
+        transport_times: None,
     }
+}
+
+pub(crate) fn transport_time(input: &str) -> Vec<Vec<u32>> {
+    let mut tt = Vec::new();
+    for line in lines(input) {
+        let line = ints(line).map(|i| i as u32).collect_vec();
+        tt.push(line);
+    }
+    tt
 }

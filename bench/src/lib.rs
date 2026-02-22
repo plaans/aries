@@ -20,10 +20,7 @@ pub struct Problem {
     pub name: String,
     /// Maximum time given to the solver.
     pub timeout: Duration,
-    /// Lower bound given to the solver.
-    pub lb: Option<i64>,
-    /// Upper bound given to the solver.
-    pub ub: Option<i64>,
+    pub flags: BTreeMap<String, String>,
 }
 
 impl Problem {
@@ -31,11 +28,8 @@ impl Problem {
     pub fn id(&self) -> String {
         let mut id = self.name.clone();
         write!(id, "__to:{}s", self.timeout.as_secs_f32()).unwrap();
-        if let Some(lb) = self.lb {
-            write!(id, "_lb:{lb}").unwrap();
-        }
-        if let Some(ub) = self.ub {
-            write!(id, "_ub:{ub}").unwrap();
+        for (k, v) in &self.flags {
+            write!(id, "_{k}:{v}").unwrap()
         }
         id
     }
@@ -188,8 +182,7 @@ mod tests {
             problem: Problem {
                 name: "test_problem".to_string(),
                 timeout: Duration::from_secs(60),
-                lb: Some(0),
-                ub: Some(100),
+                flags: Default::default(),
             },
             status: SolveStatus::Solved,
             runtime: Duration::from_secs(5),
@@ -253,8 +246,7 @@ mod tests {
         // Check that all fields are preserved
         assert_eq!(result.problem.name, loaded.problem.name);
         assert_eq!(result.problem.timeout, loaded.problem.timeout);
-        assert_eq!(result.problem.lb, loaded.problem.lb);
-        assert_eq!(result.problem.ub, loaded.problem.ub);
+        assert_eq!(result.problem.flags, loaded.problem.flags);
         assert_eq!(result.status, loaded.status);
         assert_eq!(result.runtime, loaded.runtime);
         assert_eq!(result.objective_value, loaded.objective_value);
@@ -318,8 +310,7 @@ mod tests {
         let problem = Problem {
             name: "test/problem:with*special?chars".to_string(),
             timeout: Duration::from_secs(60),
-            lb: Some(0),
-            ub: Some(100),
+            flags: Default::default(),
         };
 
         let filename = problem.filename();
@@ -340,8 +331,7 @@ mod tests {
         let problem = Problem {
             name: "test_problem_ñáéíóú".to_string(),
             timeout: Duration::from_secs(30),
-            lb: None,
-            ub: None,
+            flags: Default::default(),
         };
 
         let filename = problem.filename();

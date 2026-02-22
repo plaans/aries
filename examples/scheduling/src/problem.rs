@@ -1,5 +1,5 @@
 use crate::search::{Model, Var};
-use aries::core::{u32_to_cst, IntCst, Lit, INT_CST_MAX};
+use aries::core::{INT_CST_MAX, IntCst, Lit, u32_to_cst};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
 use aries::reasoners::cp::disjunctive::{self, NoOverlap, Task};
@@ -52,6 +52,9 @@ pub struct Problem {
     pub num_jobs: u32,
     pub num_machines: u32,
     pub operations: Vec<Op>,
+    /// If set, indicates the transportation between any pair of machines.
+    /// For instance `transport_time[3][5]` indicates the time necessary to transport a piece from machine `3` to machine `5`.
+    pub transport_times: Option<Vec<Vec<u32>>>,
 }
 
 impl Problem {
@@ -84,6 +87,7 @@ impl Problem {
             num_jobs: num_jobs as u32,
             num_machines: num_machines as u32,
             operations: ops,
+            transport_times: None,
         }
     }
 
@@ -126,6 +130,17 @@ impl Problem {
 
         max_of_jobs.max(max_of_machines)
     }
+
+    /// Returns the required transportation time (if specified) to move between the two machines
+    pub fn transport_time(&self, from_machine: u32, to_machine: u32) -> Option<u32> {
+        self.transport_times
+            .as_ref()
+            .map(|tt| tt[from_machine as usize][to_machine as usize])
+    }
+
+    pub fn set_transport_times(&mut self, transport_times: Vec<Vec<u32>>) {
+        self.transport_times = Some(transport_times);
+    }
 }
 
 /// Represents an operation that must be executed and is associated to one or more alternative.
@@ -158,7 +173,7 @@ impl Debug for OperationId {
 }
 
 /// Represents one alternative to an operation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OperationAlternative {
     pub id: OperationId,
     pub machine: u32,
@@ -371,13 +386,29 @@ pub(crate) fn encode(
             // enforce total order between tasks of the same job
             for j in pb.jobs() {
                 let ops = e.operations_ids(j).collect_vec();
+
                 for i in 1..ops.len() {
                     let op1 = ops[i - 1];
                     let op2 = ops[i];
 
                     let o1 = e.operation(j, op1);
                     let o2 = e.operation(j, op2);
-                    m.enforce(leq(o1.end, o2.start), [])
+                    m.enforce(leq(o1.end, o2.start), []);
+
+                    // add transportation time between machines.
+                    // These are machine-dependent and thus placed between any pair of alternatives
+                    for a1 in e.alternatives(j, op1) {
+                        for a2 in e.alternatives(j, op2) {
+                            if let Some(transport_time) = pb.transport_time(a1.machine, a2.machine)
+                                && transport_time > 0
+                            {
+                                m.enforce(
+                                    leq(a1.end() + (transport_time as IntCst), a2.start()),
+                                    [a1.presence, a2.presence],
+                                );
+                            }
+                        }
+                    }
                 }
             }
         }
