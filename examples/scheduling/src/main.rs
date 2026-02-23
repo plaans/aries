@@ -49,6 +49,9 @@ pub struct Opt {
     /// Indicates a layout file, containing a matrix with the transportation times between all pairs of machines.
     #[structopt(long = "layout")]
     layout_file: Option<String>,
+    /// Indicates a maximum delay (time lag) between two operations of the same job
+    #[structopt(long = "time-lag")]
+    time_lag: Option<u32>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -95,6 +98,9 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
         let file_content = read_file(layout)?;
         let transport_times = parser::transport_time(&file_content);
         pb.set_transport_times(transport_times);
+    }
+    if let Some(time_lag) = opt.time_lag {
+        pb.set_time_lag(time_lag);
     }
     assert_eq!(pb.kind, kind);
     // println!("{:?}", pb);
@@ -178,6 +184,9 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
         }
         if let Some(layout) = opt.layout_file.as_ref() {
             problem.flags.insert("layout".to_string(), layout.to_string());
+        }
+        if let Some(time_lag) = opt.time_lag {
+            problem.flags.insert("time-lag".to_string(), time_lag.to_string());
         }
 
         let result = aries_bench::SolveResult {

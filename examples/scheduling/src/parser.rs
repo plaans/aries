@@ -99,6 +99,7 @@ pub(crate) fn flexshop(input: &str) -> Problem {
         num_machines,
         operations,
         transport_times: None,
+        time_lag: None,
     }
 }
 

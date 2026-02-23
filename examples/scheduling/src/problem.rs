@@ -59,6 +59,8 @@ pub struct Problem {
     /// If set, indicates the transportation between any pair of machines.
     /// For instance `transport_time[3][5]` indicates the time necessary to transport a piece from machine `3` to machine `5`.
     pub transport_times: Option<Vec<Vec<u32>>>,
+    /// If set, indicates the maximum delay between operations of the same job
+    pub time_lag: Option<u32>,
 }
 
 impl Problem {
@@ -92,6 +94,7 @@ impl Problem {
             num_machines: num_machines as u32,
             operations: ops,
             transport_times: None,
+            time_lag: None,
         }
     }
 
@@ -167,6 +170,10 @@ impl Problem {
 
     pub fn set_transport_times(&mut self, transport_times: Vec<Vec<u32>>) {
         self.transport_times = Some(transport_times);
+    }
+
+    pub(crate) fn set_time_lag(&mut self, time_lag: u32) {
+        self.time_lag = Some(time_lag)
     }
 }
 
@@ -435,6 +442,11 @@ pub(crate) fn encode(
                                 );
                             }
                         }
+                    }
+
+                    // If there is time-lag, enforce it as a maximum delay between the two tasks.
+                    if let Some(time_lag) = pb.time_lag {
+                        m.enforce(leq(o2.start, o1.end + time_lag as IntCst), []);
                     }
                 }
             }
