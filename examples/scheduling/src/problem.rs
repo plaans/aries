@@ -1,5 +1,5 @@
 use crate::search::{Model, Var};
-use aries::core::{INT_CST_MAX, IntCst, Lit, u32_to_cst};
+use aries::core::{IntCst, Lit, u32_to_cst};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
 use aries::reasoners::cp::disjunctive::{self, NoOverlap, Task};
@@ -37,6 +37,10 @@ pub struct Op {
 impl Op {
     pub fn min_duration(&self) -> IntCst {
         self.alternatives.iter().map(|a| a.duration).min().unwrap()
+    }
+    /// Returns the maximum duration the operation may take.
+    pub fn max_duration(&self) -> IntCst {
+        self.alternatives.iter().map(|a| a.duration).max().unwrap()
     }
 }
 
@@ -129,6 +133,25 @@ impl Problem {
         let max_of_machines: IntCst = max_by_machine.iter().max().copied().unwrap();
 
         max_of_jobs.max(max_of_machines)
+    }
+
+    /// Computes a naïve upper bound on the makespan, assuming all operations are scheduled in sequence.
+    ///
+    /// Under a makespan-minimization objective, this can be used as an upper bound on the domains of start-time variables.
+    pub fn makespan_upper_bound(&self) -> IntCst {
+        let max_transition_time = if let Some(transport_times) = self.transport_times.as_ref() {
+            transport_times.iter().flat_map(|tt| tt.iter()).copied().max()
+        } else {
+            None
+        };
+        let max_transition_time = max_transition_time.unwrap_or(0) as IntCst;
+        self.jobs()
+            .map(|j| {
+                self.ops_by_job(j)
+                    .map(|op| op.max_duration() + max_transition_time)
+                    .sum::<IntCst>()
+            })
+            .sum()
     }
 
     /// Returns the required transportation time (if specified) to move between the two machines
@@ -306,7 +329,7 @@ pub(crate) fn encode(
 ) -> (Model, Encoding) {
     let use_constraints = no_overlap > disjunctive::PropagatorKind::None;
     let lower_bound = u32_to_cst(lower_bound);
-    let upper_bound = u32_to_cst(upper_bound.unwrap_or(INT_CST_MAX as u32));
+    let upper_bound = upper_bound.map(u32_to_cst).unwrap_or(pb.makespan_upper_bound());
     let mut m = Model::new();
     let e = Encoding::new(pb, lower_bound, upper_bound, &mut m);
 
