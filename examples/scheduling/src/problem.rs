@@ -156,9 +156,13 @@ impl Problem {
 
     /// Returns the required transportation time (if specified) to move between the two machines
     pub fn transport_time(&self, from_machine: u32, to_machine: u32) -> Option<u32> {
-        self.transport_times
-            .as_ref()
-            .map(|tt| tt[from_machine as usize][to_machine as usize])
+        if let Some(tt) = self.transport_times.as_ref() {
+            let line = &tt[from_machine as usize % tt.len()];
+            let time = line[to_machine as usize % line.len()];
+            Some(time)
+        } else {
+            None
+        }
     }
 
     pub fn set_transport_times(&mut self, transport_times: Vec<Vec<u32>>) {
