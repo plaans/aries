@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use hashbrown::HashSet;
 use itertools::Itertools;
 
@@ -31,9 +34,11 @@ pub enum PropagatorKind {
     Overload,
     /// Same as [`Overload`] but in addition deactivates any optional task whose presence would result in an Overload.
     OverloadWithOptional,
-    /// Performs edge finding
+    /// Performs edge finding, tightening the bounds of tasks detected to be after a set of others.
     #[default]
     EdgeFinding,
+    /// Performs edge finding, and post precedence constraints in addition to tightening the bounds.
+    EdgeFindingPrecedences,
 }
 impl std::str::FromStr for PropagatorKind {
     type Err = String;
@@ -44,9 +49,10 @@ impl std::str::FromStr for PropagatorKind {
             "none" => Ok(None),
             "overload" => Ok(Overload),
             "overload-opt" => Ok(OverloadWithOptional),
-            "edge-finding" => Ok(EdgeFinding),
+            "edge-finding" | "ef" => Ok(EdgeFinding),
+            "edge-finding-prec" | "efp" => Ok(EdgeFindingPrecedences),
             _ => Err(format!(
-                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding'"
+                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding', 'edge-finding-prec'"
             )),
         }
     }
@@ -71,10 +77,13 @@ impl Task {
     }
 }
 
+pub type PrecedenceMatrix = HashMap<(usize, usize), Lit>;
+
 #[derive(Debug, Clone)]
 pub struct NoOverlap {
     kind: PropagatorKind,
     tasks: Vec<Task>,
+    precedences: Arc<PrecedenceMatrix>,
 }
 
 impl NoOverlap {
@@ -82,10 +91,15 @@ impl NoOverlap {
         Self {
             kind: PropagatorKind::default(),
             tasks: tasks.into_iter().collect(),
+            precedences: Default::default(),
         }
     }
-    pub fn kind(mut self, kind: PropagatorKind) -> Self {
+    pub fn with_kind(mut self, kind: PropagatorKind) -> Self {
         self.kind = kind;
+        self
+    }
+    pub fn with_precedences(mut self, precedences: PrecedenceMatrix) -> Self {
+        self.precedences = Arc::new(precedences);
         self
     }
     // compute the bounds of the activities to place in the tree, ignoring any activity known to be absent
@@ -199,6 +213,18 @@ impl NoOverlap {
             }
         }
     }
+
+    /// Returns all activities that fit within the [est, lct] interval
+    fn activities_inside<'a>(
+        &'a self,
+        est: IntCst,
+        lct: IntCst,
+        domains: &'a impl DomainsExt,
+    ) -> impl Iterator<Item = (usize, &'a Task)> {
+        self.tasks.iter().enumerate().filter(move |(_id, t)| {
+            domains.entails(t.presence) && domains.lb(t.start) >= est && domains.ub(t.end) <= lct
+        })
+    }
 }
 
 impl UserPropagator for NoOverlap {
@@ -235,7 +261,7 @@ impl UserPropagator for NoOverlap {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Justification {
     Overload {
         est: IntCst,
@@ -369,12 +395,7 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
         domains: &DomainsSnapshot,
         out_explanation: &mut Explanation,
     ) {
-        // Returns all activities that fit within the [est, lct] interval
-        let activities_inside = |est: IntCst, lct: IntCst| {
-            self.tasks.iter().enumerate().filter(move |(_id, t)| {
-                domains.entails(t.presence) && domains.lb(t.start) >= est && domains.ub(t.end) <= lct
-            })
-        };
+        let activities_inside = |est: IntCst, lct: IntCst| self.activities_inside(est, lct, domains);
 
         match justification {
             Justification::Overload { est, lct } => {
@@ -410,7 +431,9 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
                 est_theta,
             } => {
                 let grey = &self.tasks[*activity];
-                debug_assert!(grey.start.ge_lit(*ect_theta).entails(lit));
+                debug_assert!(
+                    grey.start.ge_lit(*ect_theta).entails(lit) || self.kind >= PropagatorKind::EdgeFindingPrecedences
+                );
                 out_explanation.push(grey.start.ge_lit(*est_theta_lambda));
                 out_explanation.push(grey.duration.ge_lit(domains.lb(grey.duration)));
                 for (id, t) in activities_inside(*est_theta_lambda, *lct_theta) {
@@ -473,6 +496,33 @@ impl NoOverlap {
                 ect_theta, activity, ..
             } => self.tasks[*activity].start.ge_lit(*ect_theta),
         };
-        dom.set(lit, inference).map(|_| ())
+        dom.set(lit, inference.clone()).map(|_| ())?;
+
+        if self.kind >= PropagatorKind::EdgeFindingPrecedences {
+            #[allow(clippy::single_match)]
+            match &inference {
+                Justification::EdgeFinding {
+                    est_theta,
+                    lct_theta,
+                    activity,
+                    ..
+                } => {
+                    let predecessors = self
+                        .activities_inside(*est_theta, *lct_theta, dom)
+                        .map(|(id, _)| id)
+                        .collect_vec();
+                    for pred_id in predecessors {
+                        if let Some(pred_lit) = self.precedences.get(&(pred_id, *activity)) {
+                            dom.set(*pred_lit, inference.clone())?;
+                        } else {
+                            panic!("unregistered precedence: {pred_id:?} < {activity:?}");
+                        }
+                    }
+                }
+                _ => {}
+            };
+        }
+
+        Ok(())
     }
 }

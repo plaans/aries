@@ -4,6 +4,7 @@ use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
 use aries::reasoners::cp::disjunctive::{self, NoOverlap, Task};
 use itertools::Itertools;
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -395,8 +396,11 @@ pub(crate) fn encode(
     // for each machine, impose that any two alternatives do not overlap
     for machine in 0..(pb.num_machines) {
         let alts = e.alternatives_on_machine(machine).collect_vec();
+        let mut precedence_matrix = HashMap::with_capacity(alts.len() * alts.len());
         for (i, alt1) in alts.iter().enumerate() {
-            for alt2 in &alts[i + 1..] {
+            #[allow(clippy::needless_range_loop)]
+            for j in (i + 1)..alts.len() {
+                let alt2 = &alts[j];
                 // variable that is true if alt1 comes first and false otherwise.
                 // in any case, setting a value to it enforces that the two tasks do not overlap
                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
@@ -404,6 +408,9 @@ pub(crate) fn encode(
 
                 m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
                 m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
+
+                precedence_matrix.insert((i, j), prec.true_lit());
+                precedence_matrix.insert((j, i), prec.false_lit());
             }
         }
 
@@ -411,7 +418,9 @@ pub(crate) fn encode(
             let tasks_on_machine = alts
                 .iter()
                 .map(|op| Task::new(op.start, op.duration, op.end(), op.presence));
-            let no_overlap = NoOverlap::new(tasks_on_machine).kind(no_overlap);
+            let no_overlap = NoOverlap::new(tasks_on_machine)
+                .with_kind(no_overlap)
+                .with_precedences(precedence_matrix);
             m.enforce_user_propagator(no_overlap);
         }
     }
