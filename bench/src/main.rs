@@ -8,8 +8,8 @@ use clap::{Parser, ValueEnum};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::*;
-use std::{collections::HashMap, fs, ops::AddAssign, rc::Rc, time::Duration};
-use std::{hash::Hash, ops::DivAssign};
+use std::ops::DivAssign;
+use std::{collections::BTreeMap, f64, fs, ops::AddAssign, rc::Rc, time::Duration};
 
 /// Compare set of benchmark results.
 #[derive(Parser, Debug)]
@@ -28,6 +28,15 @@ struct Args {
     timeout: Option<u64>,
     #[arg(short, long = "plot", value_enum)]
     plots: Vec<Plot>,
+    /// Only retain problems that were solved by all solvers
+    #[arg(long)]
+    easy: bool,
+    /// Only retain problems that were not solved by at least one solver
+    #[arg(long)]
+    hard: bool,
+    /// Base directory in which to look for planner results.
+    #[arg(long = "base-dir", short = 'd')]
+    base_directory: Option<String>,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
@@ -69,13 +78,22 @@ fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let reference = &args.solvers[1];
-    let evaluated = &args.solvers[0];
+    let solver_path = |solver_path: &str| {
+        if let Some(base) = args.base_directory.as_ref() {
+            format!("{base}{solver_path}")
+        } else {
+            solver_path.to_string()
+        }
+    };
+
+    let reference = solver_path(&args.solvers[1]);
+    let evaluated = solver_path(&args.solvers[0]);
 
     let mut col = ResultCollection::default();
     for solver in &args.solvers {
-        let results = results_from_dir(solver)?;
-        col.add_solver(solver.clone(), results);
+        let solver = solver_path(solver);
+        let results = results_from_dir(&solver)?;
+        col.add_solver(solver, results);
     }
 
     args.filter.iter().for_each(|f| col.retain(|pb| pb.id().contains(f)));
@@ -83,8 +101,10 @@ fn main() -> anyhow::Result<()> {
     args.timeout
         .iter()
         .for_each(|to| col.retain(|pb| pb.timeout == Duration::from_secs(*to)));
+    args.easy.then(|| col = col.clone().easy());
+    args.hard.then(|| col = col.clone().hard());
 
-    print_comparison_table(&col, evaluated, reference);
+    print_comparison_table(&col, &evaluated, &reference);
     plot(&col, &args.plots);
 
     Ok(())
@@ -121,12 +141,12 @@ fn solved_hist(_runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
 fn sum<Measure, Key, Value>(
     measures: impl Iterator<Item = Measure>,
     kv: impl Fn(Measure) -> (Key, Value),
-) -> HashMap<Key, Value>
+) -> BTreeMap<Key, Value>
 where
-    Key: Hash + Eq,
+    Key: Ord,
     Value: AddAssign<Value>,
 {
-    let mut results = HashMap::new();
+    let mut results = BTreeMap::default();
     for measure in measures {
         let (k, v) = kv(measure);
         if let Some(prev) = results.get_mut(&k) {
@@ -140,13 +160,13 @@ where
 fn avg<Measure, Key, Value>(
     measures: impl Iterator<Item = Measure>,
     kv: impl Fn(Measure) -> (Key, Value),
-) -> HashMap<Key, Value>
+) -> BTreeMap<Key, Value>
 where
-    Key: Hash + Eq + Clone,
+    Key: Ord + Clone,
     Value: AddAssign<Value> + DivAssign<f64>,
 {
-    let mut counts: HashMap<_, i32> = HashMap::new();
-    let mut results = HashMap::new();
+    let mut counts: BTreeMap<_, i32> = BTreeMap::new();
+    let mut results = BTreeMap::new();
     for measure in measures {
         let (k, v) = kv(measure);
         *counts.entry(k.clone()).or_default() += 1;

@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{Problem, SolveResult, SolverID, comp::RunWithRef, time_series::TimeSerie};
+use crate::{Problem, SolveResult, SolveStatus, SolverID, comp::RunWithRef};
 
 #[derive(Clone, Default, Debug)]
 pub struct ResultCollection {
@@ -33,6 +33,22 @@ impl ResultCollection {
         self
     }
 
+    /// Retains only instances that were solved by all solvers.
+    pub fn easy(self) -> Self {
+        let mut x = self.with_data_for_all_solvers();
+        x.results
+            .retain(|_, runs| runs.results.values().all(|r| r.status == SolveStatus::Solved));
+        x
+    }
+
+    /// Retains only instances that at least one solver could not solve.
+    pub fn hard(self) -> Self {
+        let mut x = self.with_data_for_all_solvers();
+        x.results
+            .retain(|_, runs| runs.results.values().any(|r| r.status != SolveStatus::Solved));
+        x
+    }
+
     pub fn comparison(&self, main: &SolverID, reference: &SolverID) -> Vec<RunWithRef> {
         assert!(
             self.solvers.contains(main),
@@ -57,8 +73,8 @@ impl ResultCollection {
 
     pub fn measures<'a, T>(
         &'a self,
-        f: impl Fn(&ProblemResults, &SolveResult) -> TimeSerie + 'a,
-    ) -> impl Iterator<Item = (&'a Problem, &'a SolverID, TimeSerie)> + 'a {
+        f: impl Fn(&ProblemResults, &SolveResult) -> T + 'a,
+    ) -> impl Iterator<Item = (&'a Problem, &'a SolverID, T)> + 'a {
         self.results
             .values()
             .flat_map(|runs| self.solvers.iter().map(move |s| (runs, s)))
