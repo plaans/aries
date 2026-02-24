@@ -1,8 +1,8 @@
 mod mapsolver;
 
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::core::Lit;
 use crate::model::Label;
+use crate::prelude::*;
 use crate::solver::{Exit, SearchLimit, Solver};
 
 use std::collections::BTreeSet;

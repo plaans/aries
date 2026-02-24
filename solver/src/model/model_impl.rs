@@ -154,8 +154,8 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    pub fn with_domains(mut self, domains: Domains) -> Model<Lbl> {
-        self.state = domains;
+    pub fn with_domains(mut self, solution: Solution) -> Model<Lbl> {
+        self.state.set_domains(solution);
         self
     }
 

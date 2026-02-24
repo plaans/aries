@@ -2,6 +2,7 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
+use crate::core::views::Dom;
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
 use crate::model::lang::IAtom;
@@ -74,7 +75,7 @@ enum SearchResult {
     /// A solution was found through search and the solver's assignment is on this solution
     AtSolution,
     /// The solver was made aware of a solution from its input channel.
-    ExternalSolution(Arc<Domains>),
+    ExternalSolution(Solution),
     /// The solver has exhausted its search space.
     Unsat(Conflict),
 }
@@ -351,7 +352,7 @@ impl<Lbl: Label> Solver<Lbl> {
                             if x.factor != 1 || y.factor != 1 {
                                 continue;
                             }
-                            if doms.presence(d.var) != doms.presence(enabler) {
+                            if doms.presence(d.var) != doms.presence_literal(enabler) {
                                 // presence of the constraint does not match the one of the edge
                                 continue;
                             }
@@ -599,13 +600,13 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Searches for the first satisfying assignment, returning none if the search
     /// space was exhausted without encountering a solution.
-    pub fn solve(&mut self, limit: SearchLimit) -> Result<Option<Arc<Domains>>, Exit> {
+    pub fn solve(&mut self, limit: SearchLimit) -> Result<Option<Solution>, Exit> {
         if self.post_constraints().is_err() {
             return Ok(None);
         }
 
         match self.search(limit)? {
-            SearchResult::AtSolution => Ok(Some(Arc::new(self.model.state.clone()))),
+            SearchResult::AtSolution => Ok(Some(self.model.state.extract_solution())),
             SearchResult::ExternalSolution(s) => Ok(Some(s)),
             SearchResult::Unsat(_) => Ok(None),
         }
@@ -740,9 +741,9 @@ impl<Lbl: Label> Solver<Lbl> {
 
     /// Incremental solving: Solves the problem with the assumptions that were pushed.
     /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
-    pub fn incremental_solve(&mut self, limit: SearchLimit) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
+    pub fn incremental_solve(&mut self, limit: SearchLimit) -> Result<Result<Solution, UnsatCore>, Exit> {
         match self.search(limit)? {
-            SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SearchResult::AtSolution => Ok(Ok(self.model.state.extract_solution())),
             SearchResult::ExternalSolution(s) => Ok(Ok(s)),
             SearchResult::Unsat(conflict) => {
                 let unsat_core = self
@@ -762,7 +763,7 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         assumptions: &[Lit],
         limit: SearchLimit,
-    ) -> Result<Result<Arc<Domains>, UnsatCore>, Exit> {
+    ) -> Result<Result<Solution, UnsatCore>, Exit> {
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
 
@@ -782,7 +783,7 @@ impl<Lbl: Label> Solver<Lbl> {
             }
         }
         match self.search(limit)? {
-            SearchResult::AtSolution => Ok(Ok(Arc::new(self.model.state.clone()))),
+            SearchResult::AtSolution => Ok(Ok(self.model.state.extract_solution())),
             SearchResult::ExternalSolution(s) => Ok(Ok(s)),
             SearchResult::Unsat(conflict) => {
                 let unsat_core = self
@@ -917,16 +918,16 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
+    ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.minimize_with_callback(objective, |_, _| (), limit)
     }
 
     pub fn minimize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
-        on_new_solution: impl FnMut(IntCst, &Domains),
+        on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
+    ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.optimize_with(objective.into(), true, on_new_solution, limit)
     }
 
@@ -934,16 +935,16 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         objective: impl Into<IAtom>,
         limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
+    ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.maximize_with_callback(objective, |_, _| (), limit)
     }
 
     pub fn maximize_with_callback(
         &mut self,
         objective: impl Into<IAtom>,
-        on_new_solution: impl FnMut(IntCst, &Domains),
+        on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
+    ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.optimize_with(objective.into(), false, on_new_solution, limit)
     }
 
@@ -951,9 +952,9 @@ impl<Lbl: Label> Solver<Lbl> {
         &mut self,
         objective: IAtom,
         minimize: bool,
-        mut on_new_solution: impl FnMut(IntCst, &Domains),
+        mut on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
-    ) -> Result<Option<(IntCst, Arc<Domains>)>, Exit> {
+    ) -> Result<Option<(IntCst, Solution)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
         // best solution found so far
@@ -969,9 +970,9 @@ impl<Lbl: Label> Solver<Lbl> {
                 SearchResult::AtSolution => {
                     // solver stopped at a solution, this is necessarily an improvement on the best solution found so far
                     // notify other solvers that we have found a new solution
-                    let sol = Arc::new(self.model.state.clone());
+                    let sol = self.model.state.extract_solution();
                     self.sync.notify_solution_found(sol.clone());
-                    let objective_value = sol.var_domain(objective).lb;
+                    let objective_value = sol.lb(objective);
                     if STATS_AT_SOLUTION.get() {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
@@ -984,7 +985,7 @@ impl<Lbl: Label> Solver<Lbl> {
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
-            let objective_value = sol.var_domain(objective).lb;
+            let objective_value = sol.lb(objective);
             let is_improvement = match best {
                 None => true,
                 Some((previous_best, _)) => {
@@ -1000,7 +1001,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 // Notify the brancher that a new solution has been found.
                 // This enables the use of LNS-like solution and letting the brancher use the values in the best solution
                 // as the preferred ones.
-                self.brancher.new_assignment_found(objective_value, sol.clone());
+                self.brancher.new_assignment_found(objective_value, &sol);
                 self.stats.add_solution(objective_value); // TODO: might consider external solutions
 
                 // save the best solution
@@ -1022,7 +1023,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     /// Hint the brancher about an initial solution
-    pub fn warm_start(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
+    pub fn warm_start(&mut self, objective_value: IntCst, assignment: &Solution) {
         self.brancher.new_assignment_found(objective_value, assignment);
     }
 

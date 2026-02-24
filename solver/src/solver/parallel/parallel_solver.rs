@@ -1,22 +1,17 @@
-use crate::core::IntCst;
-use crate::core::Lit;
-use crate::core::state::Domains;
 use crate::model::Label;
 use crate::model::extensions::DomainsExt;
 use crate::model::lang::IAtom;
+use crate::prelude::*;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, SearchLimit, Solver, UnsatCore};
 use crossbeam_channel::{Receiver, Sender, select};
 use itertools::Itertools;
-use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 pub struct ParSolver<Lbl> {
     solvers: Vec<Worker<Lbl>>,
 }
-
-pub type Solution = Arc<Domains>;
 
 #[derive(Clone)]
 pub enum SolverResult<Solution> {
@@ -242,10 +237,10 @@ impl<Lbl: Label> ParSolver<Lbl> {
     }
 
     /// Hint the brancher about an initial solution
-    pub fn warm_start(&mut self, objective_value: IntCst, assignment: Solution) {
+    pub fn warm_start(&mut self, objective_value: IntCst, assignment: &Solution) {
         for solver in &mut self.solvers {
             if let Worker::Idle(solver) = solver {
-                solver.warm_start(objective_value, assignment.clone());
+                solver.warm_start(objective_value, assignment);
             }
         }
     }

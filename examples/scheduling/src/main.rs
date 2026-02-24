@@ -209,7 +209,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
 }
 
 /// Write the solution to file if the file is not None
-fn export(solution: &Domains, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
+fn export(solution: &Solution, pb: &Problem, encoding: &Encoding, file: Option<&String>) {
     if let Some(output_file) = file {
         let mut formatted_solution = String::new();
         for m in pb.machines() {
@@ -284,7 +284,7 @@ mod test {
                     // we have the expected solution, save it to be checked against
                     // when this is set, solver for the current thread will check that any learned clause does not
                     // forbid this solution
-                    witness::set_solution_witness(assignment.as_ref())
+                    witness::set_solution_witness(assignment)
                 }
 
                 Some(makespan)

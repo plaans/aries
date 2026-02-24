@@ -5,7 +5,7 @@ use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{
-    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain,
+    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain, Solution,
 };
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
@@ -793,6 +793,15 @@ impl Domains {
     /// This function returns true if the two literals are in this relationship, i.e., one represents the absence of the other
     pub fn fusable(&self, l1: Lit, l2: Lit) -> bool {
         l1 == !self.presence(l2) || l2 == !self.presence(l1)
+    }
+
+    pub fn extract_solution(&self) -> Solution {
+        Solution::new(self.doms.bounds.clone(), self.presence.clone())
+    }
+
+    /// Set the current domains from a solution
+    pub(crate) fn set_domains(&mut self, solution: Solution) {
+        self.doms.bounds = solution.data.values.clone();
     }
 }
 

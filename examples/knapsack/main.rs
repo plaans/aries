@@ -231,7 +231,7 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
     solver.set_brancher_boxed(brancher);
 
     if let Some(sol) = solver.maximize(total_value, SearchLimit::None).unwrap() {
-        let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
+        let model = solver.model.clone().with_domains(sol.1);
         let items: Vec<Item> = vars
             .iter()
             .zip(items.iter())

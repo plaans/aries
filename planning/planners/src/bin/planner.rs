@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use aries::core::state::Domains;
+use aries::prelude::*;
 use aries::utils::input::Input;
 use aries_planners::solver::{format_plan, solve, SolverResult};
 use aries_planners::solver::{Metric, Strat};
@@ -121,7 +121,7 @@ fn main() -> Result<()> {
     };
 
     // prints a plan to a standard output and to the provided file, if any
-    let print_plan = move |finite_problem: &FiniteProblem, assignment: &Domains, output_file: Option<&PathBuf>| {
+    let print_plan = move |finite_problem: &FiniteProblem, assignment: &Solution, output_file: Option<&PathBuf>| {
         if let Ok(plan_out) = format_plan(finite_problem, assignment, htn_mode) {
             println!("\n{plan_out}");
 

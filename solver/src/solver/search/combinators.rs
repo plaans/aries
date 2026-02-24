@@ -1,12 +1,11 @@
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::core::IntCst;
-use crate::core::state::{Conflict, Domains, Explainer};
+use crate::core::state::{Conflict, Explainer};
 use crate::model::Model;
+use crate::prelude::*;
 
 use crate::solver::search::{Brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use itertools::Itertools;
-use std::sync::Arc;
 
 /// A trait that provides extension methods for branchers
 pub trait CombinatorExt<L> {
@@ -69,8 +68,8 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.import_vars(model);
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
-        self.first.new_assignment_found(objective_value, assignment.clone());
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
+        self.first.new_assignment_found(objective_value, assignment);
         self.second.new_assignment_found(objective_value, assignment);
     }
 
@@ -144,7 +143,7 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
         }
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
         if self.active {
             self.brancher.new_assignment_found(objective_value, assignment)
         }
@@ -230,7 +229,7 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
         self.brancher.import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
         self.brancher.new_assignment_found(objective_value, assignment)
     }
 
@@ -322,7 +321,7 @@ impl<L: 'static> SearchControl<L> for RoundRobin<L> {
         self.current_mut().import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<Domains>) {
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
         self.current_mut().new_assignment_found(objective_value, assignment)
     }
 

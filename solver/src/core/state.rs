@@ -5,6 +5,7 @@ mod event;
 mod explanation;
 mod int_domains;
 mod snapshot;
+mod solution;
 
 pub use cause::*;
 pub use domain::*;
@@ -13,6 +14,7 @@ pub use event::*;
 pub use explanation::*;
 pub use int_domains::*;
 pub use snapshot::DomainsSnapshot;
+pub use solution::*;
 
 use crate::core::Lit;
 

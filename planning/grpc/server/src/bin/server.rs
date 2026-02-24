@@ -1,6 +1,6 @@
 use anyhow::{bail, ensure, Context, Error};
 
-use aries::core::state::Domains;
+use aries::prelude::*;
 use aries_grpc_server::chronicles::problem_to_chronicles;
 use aries_grpc_server::serialize::{engine, serialize_plan};
 use aries_grpc_server::warm_up::plan_from_option_upf;
@@ -197,7 +197,7 @@ fn solve_blocking(
     let warm_up_plan = plan_from_option_upf(warm_up_plan, &base_problem)?;
 
     // callback that will be invoked each time an intermediate solution is found
-    let on_new_solution = |pb: &FiniteProblem, ass: Arc<Domains>| {
+    let on_new_solution = |pb: &FiniteProblem, ass: Solution| {
         let plan = serialize_plan(&problem, pb, &ass);
         match plan {
             Ok(plan) => on_new_sol(plan),
