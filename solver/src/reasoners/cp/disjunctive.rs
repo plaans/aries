@@ -1,17 +1,20 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::core::state::{DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::views::Dom;
+use crate::core::views::{Boundable, Dom, VarView};
 use crate::prelude::*;
 
 use crate::core::state::Term;
+use crate::reasoners::cp::disjunctive::neg_iatom::PMIAtom;
 use crate::reasoners::cp::trailed::{DomJust, JustifiedPropagator, MutDomExt};
 use crate::reasoners::cp::{DynPropagator, UserPropagator};
 
+mod neg_iatom;
 mod theta_lambda_tree;
 
 /// Defines the level of propagation enforced.
@@ -34,10 +37,12 @@ pub enum PropagatorKind {
     Overload,
     /// Same as [`Overload`] but in addition deactivates any optional task whose presence would result in an Overload.
     OverloadWithOptional,
-    /// Performs edge finding, tightening the bounds of tasks detected to be after a set of others.
+    /// Performs edge finding, tightening only the *upper* bounds of task detected to be after a set of others.
+    EdgeFindingUpper,
+    /// Performs edge finding, tightening the upper/lower bounds of tasks detected to be after/before  a set of others.
     #[default]
     EdgeFinding,
-    /// Performs edge finding, and post precedence constraints in addition to tightening the bounds.
+    /// Performs edge finding, and posts precedence constraints in addition to tightening the bounds.
     EdgeFindingPrecedences,
 }
 impl std::str::FromStr for PropagatorKind {
@@ -49,25 +54,26 @@ impl std::str::FromStr for PropagatorKind {
             "none" => Ok(None),
             "overload" => Ok(Overload),
             "overload-opt" => Ok(OverloadWithOptional),
+            "edge-finding-upper" | "efu" => Ok(EdgeFindingUpper),
             "edge-finding" | "ef" => Ok(EdgeFinding),
             "edge-finding-prec" | "efp" => Ok(EdgeFindingPrecedences),
             _ => Err(format!(
-                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding', 'edge-finding-prec'"
+                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding-upper', 'edge-finding', 'edge-finding-prec'"
             )),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Task {
-    start: IAtom,
-    duration: IAtom,
-    end: IAtom,
+pub struct Task<IntVar> {
+    start: IntVar,
+    duration: IntVar,
+    end: IntVar,
     presence: Lit,
 }
 
-impl Task {
-    pub fn new(start: impl Into<IAtom>, duration: impl Into<IAtom>, end: impl Into<IAtom>, presence: Lit) -> Self {
+impl<IntVar> Task<IntVar> {
+    pub fn new(start: impl Into<IntVar>, duration: impl Into<IntVar>, end: impl Into<IntVar>, presence: Lit) -> Self {
         Self {
             start: start.into(),
             duration: duration.into(),
@@ -80,24 +86,46 @@ impl Task {
 pub type PrecedenceMatrix = HashMap<(usize, usize), Lit>;
 
 #[derive(Debug, Clone)]
-pub struct NoOverlap {
+pub struct NoOverlap<IntVar> {
     kind: PropagatorKind,
-    tasks: Vec<Task>,
+    tasks: Vec<Task<IntVar>>,
     precedences: Arc<PrecedenceMatrix>,
 }
 
-impl NoOverlap {
-    pub fn new(tasks: impl IntoIterator<Item = Task>) -> Self {
+impl NoOverlap<IAtom> {
+    /// Creates a reversed view of the propagator, which when propagated, will operate on the lower bound.
+    /// An inteval `(s, d, e)` become the interval `(-e, d, -s)`
+    fn reversed(&self) -> NoOverlap<PMIAtom> {
+        let p = |i| PMIAtom::Plus(i);
+        let m = |i| PMIAtom::Minus(i);
+        NoOverlap::new(
+            self.tasks
+                .iter()
+                .map(|t| Task::new(m(t.end), p(t.duration), m(t.start), t.presence)),
+        )
+    }
+}
+
+impl<IntVar> NoOverlap<IntVar>
+where
+    IntVar: VarView<Value = IntCst> + Copy + Boundable<Value = IntCst>,
+{
+    /// Creates a new NoOverlap constraint from a set of intervals.
+    pub fn new(tasks: impl IntoIterator<Item = Task<IntVar>>) -> Self {
         Self {
             kind: PropagatorKind::default(),
             tasks: tasks.into_iter().collect(),
             precedences: Default::default(),
         }
     }
+
+    /// Sets the propagation level of the constraint.
     pub fn with_kind(mut self, kind: PropagatorKind) -> Self {
         self.kind = kind;
         self
     }
+
+    /// Adds a precedence matrix to the constraints, necessary for the propagation level [`PropagatorKind::EdgeFindingPrecedences`].
     pub fn with_precedences(mut self, precedences: PrecedenceMatrix) -> Self {
         self.precedences = Arc::new(precedences);
         self
@@ -220,17 +248,62 @@ impl NoOverlap {
         est: IntCst,
         lct: IntCst,
         domains: &'a impl DomainsExt,
-    ) -> impl Iterator<Item = (usize, &'a Task)> {
+    ) -> impl Iterator<Item = (usize, &'a Task<IntVar>)> {
         self.tasks.iter().enumerate().filter(move |(_id, t)| {
             domains.entails(t.presence) && domains.lb(t.start) >= est && domains.ub(t.end) <= lct
         })
     }
+
+    /// Enforce the literals entailed by the given inference.
+    fn post_inference(&self, inference: Justification, dom: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
+        self.check_correctness(dom, &inference);
+        let lit = match &inference {
+            Justification::Overload { .. } => Lit::FALSE,
+            Justification::OptOverload { opt_activity, .. } => !self.tasks[*opt_activity].presence,
+            Justification::EdgeFinding {
+                ect_theta, activity, ..
+            } => self.tasks[*activity].start.geq(*ect_theta),
+        };
+        dom.set(lit, inference.clone()).map(|_| ())?;
+
+        if self.kind >= PropagatorKind::EdgeFindingPrecedences {
+            #[allow(clippy::single_match)]
+            match &inference {
+                Justification::EdgeFinding {
+                    est_theta,
+                    lct_theta,
+                    activity,
+                    ..
+                } => {
+                    let predecessors = self
+                        .activities_inside(*est_theta, *lct_theta, dom)
+                        .map(|(id, _)| id)
+                        .collect_vec();
+                    for pred_id in predecessors {
+                        if let Some(pred_lit) = self.precedences.get(&(pred_id, *activity)) {
+                            dom.set(*pred_lit, inference.clone())?;
+                        } else {
+                            panic!("unregistered precedence: {pred_id:?} < {activity:?}");
+                        }
+                    }
+                }
+                _ => {}
+            };
+        }
+
+        Ok(())
+    }
 }
 
-impl UserPropagator for NoOverlap {
-    fn get_propagator(&self) -> super::DynPropagator {
-        let prop = JustifiedPropagator::new(self.clone());
-        DynPropagator::from(prop)
+/// [`UserPropagator` is only implemented for `IAtom` because we need to be able to reverse the propagator (and we don't have a trait easily capturing that).
+impl UserPropagator for NoOverlap<IAtom> {
+    fn get_propagators(&self) -> Vec<super::DynPropagator> {
+        let mut propagators = vec![DynPropagator::from(JustifiedPropagator::new(self.clone()))];
+        if self.kind >= PropagatorKind::EdgeFinding {
+            // below this propagation level, there is either no-edge finding or the edge-finding only operates on upper bounds and thus does not required the reversed view.
+            propagators.push(DynPropagator::from(JustifiedPropagator::new(self.reversed())));
+        }
+        propagators
     }
 
     fn satisfied(&self, dom: &Domains) -> bool {
@@ -284,15 +357,18 @@ enum Justification {
     },
 }
 
-impl super::trailed::JustifiedProp<Justification> for NoOverlap {
+impl<IntVar> super::trailed::JustifiedProp<Justification> for NoOverlap<IntVar>
+where
+    IntVar: VarView<Value = IntCst> + Copy + Send + Sync + Debug + Term + Boundable<Value = IntCst> + 'static,
+{
     fn setup(&self, id: super::propagator::PropagatorId, context: &mut crate::reasoners::cp::Watches) {
         // TODO: use a different API for setup
         let mut vars = HashSet::with_capacity(64);
         for t in &self.tasks {
             vars.insert(t.presence.variable());
-            vars.insert(t.start.var.variable());
-            vars.insert(t.duration.var.variable());
-            vars.insert(t.end.var.variable());
+            vars.insert(t.start.variable());
+            vars.insert(t.duration.variable());
+            vars.insert(t.end.variable());
         }
         for var in vars {
             context.add_watch(var, id);
@@ -322,7 +398,7 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
                     est: tree.est_theta(),
                     lct: lct_i,
                 };
-                self.set(expl, domains)?;
+                self.post_inference(expl, domains)?;
                 unreachable!("Setting an overload always errors and shortcircuits");
             }
             if self.kind >= PropagatorKind::OverloadWithOptional {
@@ -346,7 +422,7 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
         // - any overloading optional activity has been flagged as absent and removed from the tree
         // - all other activities are in the tree, white for compulsory and grey for optionals
 
-        if self.kind >= PropagatorKind::EdgeFinding {
+        if self.kind >= PropagatorKind::EdgeFindingUpper {
             let mut queue = tree
                 .tasks()
                 .filter(|t| !tree.task(*t).optional)
@@ -383,7 +459,7 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
         }
 
         for inference in buff {
-            self.set(inference, domains)?;
+            self.post_inference(inference, domains)?;
         }
         Ok(())
     }
@@ -404,23 +480,23 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
                 debug_assert!(lit.absurd());
                 for (_id, t) in activities_inside(*est, *lct) {
                     out_explanation.push(t.presence);
-                    out_explanation.push(t.start.ge_lit(*est));
-                    out_explanation.push(t.end.le_lit(*lct));
-                    out_explanation.push(t.duration.ge_lit(domains.lb(t.duration)));
+                    out_explanation.push(t.start.geq(*est));
+                    out_explanation.push(t.end.leq(*lct));
+                    out_explanation.push(t.duration.geq(domains.lb(t.duration)));
                 }
             }
             Justification::OptOverload { est, lct, opt_activity } => {
                 let opt = &self.tasks[*opt_activity];
                 debug_assert!((!opt.presence).entails(lit));
-                out_explanation.push(opt.start.ge_lit(*est));
-                out_explanation.push(opt.end.le_lit(*lct));
-                out_explanation.push(opt.duration.ge_lit(domains.lb(opt.duration)));
+                out_explanation.push(opt.start.geq(*est));
+                out_explanation.push(opt.end.leq(*lct));
+                out_explanation.push(opt.duration.geq(domains.lb(opt.duration)));
                 // TODO: we could minimize the explanation by ignoring short tasks, whose absence does not impact the overloading
                 for (_id, t) in activities_inside(*est, *lct) {
                     out_explanation.push(t.presence);
-                    out_explanation.push(t.start.ge_lit(*est));
-                    out_explanation.push(t.end.le_lit(*lct));
-                    out_explanation.push(t.duration.ge_lit(domains.lb(t.duration)));
+                    out_explanation.push(t.start.geq(*est));
+                    out_explanation.push(t.end.leq(*lct));
+                    out_explanation.push(t.duration.geq(domains.lb(t.duration)));
                 }
             }
             Justification::EdgeFinding {
@@ -432,22 +508,22 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
             } => {
                 let grey = &self.tasks[*activity];
                 debug_assert!(
-                    grey.start.ge_lit(*ect_theta).entails(lit) || self.kind >= PropagatorKind::EdgeFindingPrecedences
+                    grey.start.geq(*ect_theta).entails(lit) || self.kind >= PropagatorKind::EdgeFindingPrecedences
                 );
-                out_explanation.push(grey.start.ge_lit(*est_theta_lambda));
-                out_explanation.push(grey.duration.ge_lit(domains.lb(grey.duration)));
+                out_explanation.push(grey.start.geq(*est_theta_lambda));
+                out_explanation.push(grey.duration.geq(domains.lb(grey.duration)));
                 for (id, t) in activities_inside(*est_theta_lambda, *lct_theta) {
                     if activity == &id {
                         continue;
                     }
                     out_explanation.push(t.presence);
-                    out_explanation.push(t.end.le_lit(*lct_theta));
-                    out_explanation.push(t.duration.ge_lit(domains.lb(t.duration)));
+                    out_explanation.push(t.end.leq(*lct_theta));
+                    out_explanation.push(t.duration.geq(domains.lb(t.duration)));
                     let est = domains.lb(t.start);
                     if est >= *est_theta {
-                        out_explanation.push(t.start.ge_lit(*est_theta));
+                        out_explanation.push(t.start.geq(*est_theta));
                     } else {
-                        out_explanation.push(t.start.ge_lit(*est_theta_lambda));
+                        out_explanation.push(t.start.geq(*est_theta_lambda));
                     }
                 }
             }
@@ -468,8 +544,7 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
             self.check_correctness(&domains, justification);
 
             // reproagate from the initial domains and check that it is indeed re-established
-            let prop = self.clone();
-            let mut prop = prop.get_propagator();
+            let mut prop = DynPropagator::from(JustifiedPropagator::new(self.clone()));
             // println!("before: {:?}", domains.bounds(lit.variable()));
             let res = prop
                 .constraint
@@ -483,46 +558,5 @@ impl super::trailed::JustifiedProp<Justification> for NoOverlap {
                 );
             }
         }
-    }
-}
-
-impl NoOverlap {
-    fn set(&self, inference: Justification, dom: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
-        self.check_correctness(dom, &inference);
-        let lit = match &inference {
-            Justification::Overload { .. } => Lit::FALSE,
-            Justification::OptOverload { opt_activity, .. } => !self.tasks[*opt_activity].presence,
-            Justification::EdgeFinding {
-                ect_theta, activity, ..
-            } => self.tasks[*activity].start.ge_lit(*ect_theta),
-        };
-        dom.set(lit, inference.clone()).map(|_| ())?;
-
-        if self.kind >= PropagatorKind::EdgeFindingPrecedences {
-            #[allow(clippy::single_match)]
-            match &inference {
-                Justification::EdgeFinding {
-                    est_theta,
-                    lct_theta,
-                    activity,
-                    ..
-                } => {
-                    let predecessors = self
-                        .activities_inside(*est_theta, *lct_theta, dom)
-                        .map(|(id, _)| id)
-                        .collect_vec();
-                    for pred_id in predecessors {
-                        if let Some(pred_lit) = self.precedences.get(&(pred_id, *activity)) {
-                            dom.set(*pred_lit, inference.clone())?;
-                        } else {
-                            panic!("unregistered precedence: {pred_id:?} < {activity:?}");
-                        }
-                    }
-                }
-                _ => {}
-            };
-        }
-
-        Ok(())
     }
 }

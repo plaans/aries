@@ -417,8 +417,8 @@ pub(crate) fn encode(
         if use_constraints {
             let tasks_on_machine = alts
                 .iter()
-                .map(|op| Task::new(op.start, op.duration, op.end(), op.presence));
-            let no_overlap = NoOverlap::new(tasks_on_machine)
+                .map(|op| Task::<IAtom>::new(op.start, op.duration, op.end(), op.presence));
+            let no_overlap: NoOverlap<IAtom> = NoOverlap::new(tasks_on_machine)
                 .with_kind(no_overlap)
                 .with_precedences(precedence_matrix);
             m.enforce_user_propagator(no_overlap);

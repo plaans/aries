@@ -247,3 +247,18 @@ impl std::ops::Mul<IntCst> for IVar {
         LinearTerm::int(rhs, self)
     }
 }
+
+impl Boundable for IAtom {
+    type Value = IntCst;
+
+    #[inline]
+    fn leq(&self, ub: Self::Value) -> Lit {
+        // var + shift <= ub <=> var <= ub - shib
+        self.var.leq(ub - self.shift)
+    }
+
+    #[inline]
+    fn geq(&self, lb: Self::Value) -> Lit {
+        self.var.geq(lb - self.shift)
+    }
+}

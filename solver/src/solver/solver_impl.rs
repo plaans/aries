@@ -178,7 +178,9 @@ impl<Lbl: Label> Solver<Lbl> {
         let (constraint, enabler) = match constraint {
             Constraint::Propagator(user_propagator) => {
                 // black-box propagator, there is nothing we can do except posting it to the CP solver
-                self.reasoners.cp.add_propagator(user_propagator.get_propagator());
+                for prop in user_propagator.get_propagators() {
+                    self.reasoners.cp.add_propagator(prop);
+                }
                 return Ok(());
             }
             Constraint::HalfReified(reif_expr, lit) => (reif_expr, lit),

@@ -10,7 +10,7 @@ type ActivityId = usize;
 pub struct Task(u32);
 
 const EMPTY_DUR: IntCst = 0;
-const EMPTY_ECT: IntCst = 0;
+const EMPTY_ECT: IntCst = IntCst::MIN;
 
 #[derive(Default, Debug, Copy, Clone)]
 pub struct Activity {

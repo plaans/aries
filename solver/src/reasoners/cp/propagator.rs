@@ -81,7 +81,7 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
 /// Trait describing the minimal functionnality a custom propagator needs in order to be added to a [`Model`].
 pub trait UserPropagator: Debug + Sync + Send {
     /// Instantiate a new propagator to be integrated into the CP engine.
-    fn get_propagator(&self) -> DynPropagator;
+    fn get_propagators(&self) -> Vec<DynPropagator>;
 
     /// Returns true iff, the propagator is entailed by the current domains.
     fn satisfied(&self, dom: &Domains) -> bool;

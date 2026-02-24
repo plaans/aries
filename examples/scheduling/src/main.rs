@@ -21,7 +21,7 @@ pub struct Opt {
     /// Kind of the problem to be solved in {jobshop, openshop, flexible}
     kind: ProblemKind,
     /// File containing the instance to solve.
-    file: String,
+    files: Vec<String>,
     /// Output file to write the solution
     #[structopt(long = "output", short = "o")]
     output: Option<String>,
@@ -66,20 +66,20 @@ fn main() -> anyhow::Result<()> {
     // read command line arguments
     let opt = Opt::from_args();
 
-    let file = &opt.file;
-    if std::fs::metadata(file)?.is_file() {
-        solve(opt.kind, &opt.file, &opt)?;
-        Ok(())
-    } else {
-        for entry in WalkDir::new(file).follow_links(true).into_iter().filter_map(|e| e.ok()) {
-            let f_name = entry.file_name().to_string_lossy();
-            if f_name.ends_with(".txt") {
-                println!("{f_name}");
-                solve(opt.kind, &entry.path().to_string_lossy(), &opt)?;
+    for file in &opt.files {
+        if std::fs::metadata(file)?.is_file() {
+            solve(opt.kind, file, &opt)?;
+        } else {
+            for entry in WalkDir::new(file).follow_links(true).into_iter().filter_map(|e| e.ok()) {
+                let f_name = entry.file_name().to_string_lossy();
+                if f_name.ends_with(".txt") {
+                    println!("{f_name}");
+                    solve(opt.kind, &entry.path().to_string_lossy(), &opt)?;
+                }
             }
         }
-        Ok(())
     }
+    Ok(())
 }
 
 fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
@@ -169,7 +169,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
     }
     if let Some(report_dir) = opt.report.as_ref() {
         let mut problem = aries_bench::Problem {
-            name: opt.file.clone(),
+            name: instance.to_string(),
             timeout: opt
                 .timeout
                 .map(|t| Duration::from_secs(t as u64))
