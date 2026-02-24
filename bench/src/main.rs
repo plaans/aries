@@ -107,6 +107,38 @@ fn main() -> anyhow::Result<()> {
     print_comparison_table(&col, &evaluated, &reference);
     plot(&col, &args.plots);
 
+    let col = col.with_data_for_all_solvers();
+    let filters = [Some("lag"), Some("lay"), None];
+
+    let mut base = col.clone();
+    for f in filters {
+        let cur = if let Some(filter) = f {
+            let mut cur = base.clone();
+            cur.retain(|pb| pb.id().contains(filter));
+            base.retain(|pb| !pb.id().contains(filter));
+            cur
+        } else {
+            base.clone()
+        };
+
+        println!("\n == Filter: {f:?} == \n");
+        let solved = sum(
+            cur.measures(|_pb, res| if res.status == SolveStatus::Solved { 1 } else { 0 }),
+            |(_pb, solver, count)| (solver, count),
+        );
+        dbg!(solved);
+        let objective = avg(
+            cur.measures(|_pb, res| res.objective_value.map(|i| i as f64).unwrap_or(f64::NAN)),
+            |(_pb, solver, count)| (solver, count),
+        );
+        dbg!(objective);
+        // let branches = avg(
+        //     cur.measures(|_pb, res| res.metrics.get(&Metric::NumDecisions).copied().unwrap_or(f64::NAN)),
+        //     |(_pb, solver, count)| (solver, count),
+        // );
+        // dbg!(branches);
+    }
+
     Ok(())
 }
 
