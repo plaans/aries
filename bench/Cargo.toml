@@ -3,6 +3,10 @@ name = "aries-bench"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+plot = ["plotly"]
+
+
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -11,7 +15,12 @@ clap = { workspace = true }
 readable = "0.1"
 comfy-table = "7.0"
 itertools = { workspace = true }
-plotly = "0.14.1"
+plotly = { version = "0.14.1", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
+
+[[bin]]
+name = "aries-bench"
+path = "src/main.rs"
+required-features = ["plot"]

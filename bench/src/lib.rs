@@ -6,6 +6,7 @@ use std::{collections::BTreeMap, time::Duration};
 use crate::time_series::TimeSerie;
 
 pub mod comp;
+#[cfg(feature = "plot")]
 pub mod plot;
 pub mod results;
 pub mod time_series;
