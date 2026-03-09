@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use aries_bench::{
+    plot::PlotOptionsBuilder,
     results::{ProblemResults, ResultCollection},
     time_series::TimeSerie,
     *,
@@ -8,8 +9,8 @@ use clap::{Parser, ValueEnum};
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::*;
-use std::ops::DivAssign;
 use std::{collections::BTreeMap, f64, fs, ops::AddAssign, rc::Rc, time::Duration};
+use std::{fmt::Display, ops::DivAssign};
 
 /// Compare set of benchmark results.
 #[derive(Parser, Debug)]
@@ -23,7 +24,7 @@ struct Args {
     /// Only consider instances whose ID does not contain the given string
     #[arg(short, long)]
     exclude: Vec<String>,
-    /// Only consider instances with the givne Timeout
+    /// Only consider instances with the given Timeout
     #[arg(short, long)]
     timeout: Option<u64>,
     #[arg(short, long = "plot", value_enum)]
@@ -37,12 +38,37 @@ struct Args {
     /// Base directory in which to look for planner results.
     #[arg(long = "base-dir", short = 'd')]
     base_directory: Option<String>,
+    #[arg(long, value_enum, default_value = "all")]
+    conf: Configuration,
+    #[arg(long, default_value = "")]
+    out_dir: String,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum)]
 enum Plot {
     Solved,
     Quality,
+}
+#[derive(Debug, Copy, Clone, ValueEnum)]
+enum Configuration {
+    All,
+    Fjs,
+    FjsLag,
+    FjsTt,
+}
+impl Display for Configuration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Configuration::All => "all",
+                Configuration::Fjs => "fjs",
+                Configuration::FjsLag => "fjslag",
+                Configuration::FjsTt => "fjstt",
+            }
+        )
+    }
 }
 
 fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
@@ -96,8 +122,17 @@ fn main() -> anyhow::Result<()> {
         col.add_solver(solver, results);
     }
 
-    args.filter.iter().for_each(|f| col.retain(|pb| pb.id().contains(f)));
-    args.exclude.iter().for_each(|f| col.retain(|pb| !pb.id().contains(f)));
+    let (mut filters, mut excludes) = match args.conf {
+        Configuration::All => (vec![], vec![]),
+        Configuration::Fjs => (vec![], vec!["lag".to_string(), "layout".to_string()]),
+        Configuration::FjsLag => (vec!["lag".to_string()], vec![]),
+        Configuration::FjsTt => (vec!["layout".to_string()], vec![]),
+    };
+    filters.extend_from_slice(&args.filter);
+    excludes.extend_from_slice(&args.exclude);
+
+    filters.iter().for_each(|f| col.retain(|pb| pb.id().contains(f)));
+    excludes.iter().for_each(|f| col.retain(|pb| !pb.id().contains(f)));
     args.timeout
         .iter()
         .for_each(|to| col.retain(|pb| pb.timeout == Duration::from_secs(*to)));
@@ -105,7 +140,7 @@ fn main() -> anyhow::Result<()> {
     args.hard.then(|| col = col.clone().hard());
 
     print_comparison_table(&col, &evaluated, &reference);
-    plot(&col, &args.plots);
+    plot(&col, &args.plots, &args.conf.to_string(), &args.out_dir);
 
     let col = col.with_data_for_all_solvers();
     let filters = [Some("lag"), Some("lay"), None];
@@ -126,12 +161,36 @@ fn main() -> anyhow::Result<()> {
             cur.measures(|_pb, res| if res.status == SolveStatus::Solved { 1 } else { 0 }),
             |(_pb, solver, count)| (solver, count),
         );
-        dbg!(solved);
-        let objective = avg(
-            cur.measures(|_pb, res| res.objective_value.map(|i| i as f64).unwrap_or(f64::NAN)),
+        println!("Solved: ");
+        for (solver, val) in solved {
+            println!("  {solver}: {val:.2}");
+        }
+        // dbg!(solved);
+        // let objective = avg(
+        //     cur.measures(|_pb, res| res.objective_value.map(|i| i as f64).unwrap_or(f64::NAN)),
+        //     |(_pb, solver, count)| (solver, count),
+        // );
+        // println!("Objective: ");
+        // for (solver, val) in objective {
+        //     println!("  {solver}: {val:.2}");
+        // }
+        let ipc = avg(
+            cur.measures(|_pb, res| {
+                let best = _pb.results.iter().filter_map(|(_s, r)| r.objective_value).min();
+                let Some(best) = best else {
+                    return 0.0;
+                };
+                let best = best as f64;
+
+                res.objective_value.map(|i| best / (i as f64)).unwrap_or(0.0)
+            }),
             |(_pb, solver, count)| (solver, count),
         );
-        dbg!(objective);
+        println!("IPC: ");
+        for (solver, val) in ipc {
+            println!("  {solver}: {:.2}", val * 100.0);
+        }
+        // dbg!(objective);
         // let branches = avg(
         //     cur.measures(|_pb, res| res.metrics.get(&Metric::NumDecisions).copied().unwrap_or(f64::NAN)),
         //     |(_pb, solver, count)| (solver, count),
@@ -142,20 +201,40 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn plot(col: &ResultCollection, plots: &[Plot]) {
+fn plot(col: &ResultCollection, plots: &[Plot], basename: &str, out_dir: &str) {
     let col = col.clone().with_data_for_all_solvers();
+    let plots_options = PlotOptionsBuilder::default()
+        .min_x(0.1)
+        .log_x(true)
+        .x_label("Time (s)".to_string())
+        .out_dir(out_dir.to_string());
 
     for plot in plots {
         match plot {
             Plot::Quality => {
+                let opts = plots_options
+                    .clone()
+                    .title("Quality".to_string())
+                    .y_label("IPC Score".to_string())
+                    .file(format!("{basename}-quality"))
+                    .legenc_loc(plot::LegendLoc::BottomRight)
+                    .build()
+                    .unwrap();
                 let series = col.measures::<TimeSerie>(ipc_hist);
                 let results = avg(series, |(_, solver, serie)| (solver, serie));
-                plot::plot_cactus(&results);
+                plot::plot_cactus(&results, &opts);
             }
             Plot::Solved => {
+                let opts = plots_options
+                    .clone()
+                    .title("Optimality proofs".to_string())
+                    .y_label("Solved instances".to_string())
+                    .file(format!("{basename}-solved"))
+                    .build()
+                    .unwrap();
                 let series = col.measures::<TimeSerie>(solved_hist);
                 let results = sum(series, |(_, solver, serie)| (solver, serie));
-                plot::plot_cactus(&results);
+                plot::plot_cactus(&results, &opts);
             }
         }
     }
@@ -215,7 +294,7 @@ where
 }
 
 fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &SolverID) {
-    let results = col.comparison(main, reference);
+    let mut results = col.comparison(main, reference);
 
     // Create and configure comfy table
     let mut table = Table::new();
@@ -232,6 +311,8 @@ fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &S
             Cell::new("Decisions").set_alignment(comfy_table::CellAlignment::Right),
             Cell::new("DomUpdates").set_alignment(comfy_table::CellAlignment::Right),
         ]);
+
+    results.sort_by_cached_key(|r| r.run.problem.id());
 
     // Add each result as a row
     for result in results {

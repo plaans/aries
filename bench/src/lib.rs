@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, time::Duration};
 use crate::time_series::TimeSerie;
 
 pub mod comp;
-#[cfg(feature = "plot")]
+//#[cfg(feature = "plot")]
 pub mod plot;
 pub mod results;
 pub mod time_series;
@@ -143,6 +143,8 @@ impl SolveResult {
         let best = best as f64;
         let mut hist = vec![(Duration::ZERO, 0.0)];
         for measure in &self.objective_history {
+            let x = best / measure.objective as f64;
+            assert!(x.is_finite(), "{best} / {}", measure.objective);
             hist.push((measure.timestamp, best / measure.objective as f64));
         }
         if let Some(final_obj) = self.objective_value {

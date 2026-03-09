@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-plot = ["plotly"]
+default = ["plot"]
+plot = ["gnuplot", "derive_builder"]
 
 
 [dependencies]
@@ -15,7 +16,8 @@ clap = { workspace = true }
 readable = "0.1"
 comfy-table = "7.0"
 itertools = { workspace = true }
-plotly = { version = "0.14.1", optional = true }
+gnuplot = { version = "0.0.46", optional = true }
+derive_builder = { version = "*", optional = true }
 
 [dev-dependencies]
 tempfile = "3.10"
