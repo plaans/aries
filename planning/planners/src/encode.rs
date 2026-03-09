@@ -518,15 +518,30 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
         for ch in &pb.chronicles {
             let prez = ch.chronicle.presence;
+            use ChronicleKind::*;
             // chronicle finishes before the horizon and has a non negative duration
-            if matches!(ch.chronicle.kind, ChronicleKind::Action | ChronicleKind::DurativeAction) {
+            if matches!(ch.chronicle.kind, Action | DurativeAction) {
                 solver.enforce(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
             }
-            solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez]);
+            match ch.chronicle.kind {
+                Problem | Action | DurativeAction => {
+                    solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez])
+                }
+                Method => {
+                    // Minimum length of a method is -EPSILON (possible if it does not introduce any actions, directly or indirectly).
+                    //  This is to ensure that, if a method is empty, the decomposed task can have a -EPSILON duration
+                    solver.enforce(f_leq(ch.chronicle.start - FAtom::EPSILON, ch.chronicle.end), [prez])
+                }
+            }
 
             // enforce temporal coherence between the chronicle and its subtasks
             for subtask in &ch.chronicle.subtasks {
-                solver.enforce(f_leq(subtask.start, subtask.end), [prez]);
+                // a task can have a -EPSILON duration which will only occur when the underlying method does not introduce any action.
+                // This ensures that a no-op task does not contribute to the makespan :
+                // A task network constraint `t1 < t2` is translated to `t1.end + epsilon <= t2.start`.
+                // When `t1` is a no-op and set to its minimal duration, it only requires `t1.start <= t2.start`, meaning that
+                // `t1` does not reserve any time
+                solver.enforce(f_leq(subtask.start - FAtom::EPSILON, subtask.end), [prez]);
                 solver.enforce(f_leq(ch.chronicle.start, subtask.start), [prez]);
                 solver.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
             }
