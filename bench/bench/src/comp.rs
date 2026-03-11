@@ -1,6 +1,6 @@
 use std::{fmt::Display, rc::Rc};
 
-use crate::{Metric, SolveResult};
+use crate::{SolveResult, SolverMetric};
 
 /// An optional measure, together with an optional improvement ratio if we had
 /// the corresponding measure in the reference set.
@@ -77,7 +77,7 @@ impl RunWithRef {
         }
     }
 
-    pub fn metric(&self, metric: Metric) -> MeasureWithImprovement<f64> {
+    pub fn metric(&self, metric: SolverMetric) -> MeasureWithImprovement<f64> {
         self.measure(|r| r.metrics.get(&metric).copied())
     }
 }

@@ -20,6 +20,7 @@ pub struct PlotOptions {
     #[builder(default = "false")]
     pub log_x: bool,
     #[builder(default = "PlotOptions::default().fmt_line")]
+    #[allow(clippy::type_complexity)]
     pub fmt_line: Arc<dyn Fn(&str) -> (&str, usize, usize)>,
     #[builder(default = "\"/tmp/plots\".to_string()")]
     pub out_dir: String,
@@ -38,6 +39,7 @@ impl Default for PlotOptions {
             log_x: false,
             //fmt_line: Box::new(|id| id.to_string()),
             fmt_line: Arc::new(|id| match id {
+                // TODO: remove
                 "aries" | "aries-fast" => ("Aries", 0, 0),
                 "optal" => ("OptalCP", 1, 0),
                 "optal-lns" => ("OptalCP_{LNS}", 1, 2),

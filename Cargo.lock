@@ -139,12 +139,22 @@ name = "aries-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aries-bench-data",
  "clap 4.5.54",
  "comfy-table",
  "derive_builder",
  "gnuplot",
  "itertools",
  "readable",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aries-bench-data"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "serde",
  "serde_json",
  "tempfile",
@@ -293,7 +303,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
- "aries-bench",
+ "aries-bench-data",
  "itertools",
  "structopt",
  "walkdir",

@@ -8,7 +8,7 @@ use anyhow::Context;
 use aries::model::lang::IVar;
 use aries::prelude::*;
 use aries::solver::{Exit, SearchLimit};
-use aries_bench::IntermediateResult;
+use aries_bench_data::IntermediateResult;
 use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -144,22 +144,22 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
                 );
             }
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
-            aries_bench::SolveStatus::Solved
+            aries_bench_data::SolveStatus::Solved
         }
         Ok(None) => {
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
-            aries_bench::SolveStatus::Solved
+            aries_bench_data::SolveStatus::Solved
         }
         Err(Exit::Interrupted) => match best.as_ref() {
             Some(sol) => {
                 let best_cost = sol.value_of(makespan).unwrap();
                 println!("> TIMEOUT (best solution cost {best_cost})");
-                aries_bench::SolveStatus::Timeout
+                aries_bench_data::SolveStatus::Timeout
             }
             None => {
                 println!("> TIMEOUT (no solution found)");
-                aries_bench::SolveStatus::Timeout
+                aries_bench_data::SolveStatus::Timeout
             }
         },
     };
@@ -168,7 +168,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
         export(solution, &pb, &encoding, opt.output.as_ref());
     }
     if let Some(report_dir) = opt.report.as_ref() {
-        let mut problem = aries_bench::Problem {
+        let mut problem = aries_bench_data::Problem {
             name: instance.to_string(),
             timeout: opt
                 .timeout
@@ -189,7 +189,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
             problem.flags.insert("time-lag".to_string(), time_lag.to_string());
         }
 
-        let result = aries_bench::SolveResult {
+        let result = aries_bench_data::SolveResult {
             problem,
             status,
             runtime: start_time.elapsed(),
@@ -197,9 +197,18 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
             metrics: Default::default(),
             objective_history: solution_history,
         }
-        .with_metric(aries_bench::Metric::NumConflicts, solver.stats.num_conflicts as f64)
-        .with_metric(aries_bench::Metric::NumDecisions, solver.stats.num_decisions as f64)
-        .with_metric(aries_bench::Metric::NumDomUpdates, solver.stats.num_dom_updates as f64);
+        .with_metric(
+            aries_bench_data::SolverMetric::NumConflicts,
+            solver.stats.num_conflicts as f64,
+        )
+        .with_metric(
+            aries_bench_data::SolverMetric::NumDecisions,
+            solver.stats.num_decisions as f64,
+        )
+        .with_metric(
+            aries_bench_data::SolverMetric::NumDomUpdates,
+            solver.stats.num_dom_updates as f64,
+        );
 
         result.save_to_dir(report_dir)?;
     }

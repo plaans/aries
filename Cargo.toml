@@ -2,7 +2,8 @@
 
 members = [
     "solver",
-    "bench",
+    "bench/data",
+    "bench/bench",
     "env_param",
     "planning/engine",
     "planning/planx",

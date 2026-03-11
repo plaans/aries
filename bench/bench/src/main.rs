@@ -1,22 +1,22 @@
 use anyhow::{Context, Result};
 use aries_bench::{
+    aggregator::{Avg, Sum, avg, sum},
+    metric::{Ipc, IpcHist, Solved, SolvedHist},
     plot::PlotOptionsBuilder,
-    results::{ProblemResults, ResultCollection},
-    time_series::TimeSerie,
+    results::ResultCollection,
+    table::*,
     *,
 };
 use clap::{Parser, ValueEnum};
-use comfy_table::modifiers::UTF8_ROUND_CORNERS;
-use comfy_table::presets::UTF8_FULL;
-use comfy_table::*;
-use std::{collections::BTreeMap, f64, fs, ops::AddAssign, rc::Rc, time::Duration};
-use std::{fmt::Display, ops::DivAssign};
+use std::fmt::Display;
+use std::{fs, rc::Rc, time::Duration};
 
 /// Compare set of benchmark results.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Directory containing the benchmark results to be used as reference to compute improvements.
+    /// The first one is the evaluated solver and the second is used as a reference to compute improvements.
     solvers: Vec<String>,
     /// Only consider instances whose ID contains the given string
     #[arg(short, long)]
@@ -27,8 +27,12 @@ struct Args {
     /// Only consider instances with the given Timeout
     #[arg(short, long)]
     timeout: Option<u64>,
-    #[arg(short, long = "plot", value_enum)]
+    /// Ask to generate the corresponding plot(s)
+    #[arg(long = "plot", value_enum)]
     plots: Vec<Plot>,
+    /// Ask to generate the corresponding plot(s)
+    #[arg(long = "table", value_enum)]
+    tables: Vec<Table>,
     /// Only retain problems that were solved by all solvers
     #[arg(long)]
     easy: bool,
@@ -38,9 +42,11 @@ struct Args {
     /// Base directory in which to look for planner results.
     #[arg(long = "base-dir", short = 'd')]
     base_directory: Option<String>,
+    /// Predefined configuration (filters/excludes). TODO: remove or generalize beyond flexible jobshop
     #[arg(long, value_enum, default_value = "all")]
     conf: Configuration,
-    #[arg(long, default_value = "")]
+    /// Diretory to which plots and tables will be exported
+    #[arg(long, default_value = "/tmp")]
     out_dir: String,
 }
 
@@ -49,6 +55,13 @@ enum Plot {
     Solved,
     Quality,
 }
+
+#[derive(Debug, Copy, Clone, ValueEnum)]
+enum Table {
+    Solved,
+    Ipc,
+}
+
 #[derive(Debug, Copy, Clone, ValueEnum)]
 enum Configuration {
     All,
@@ -112,7 +125,11 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let reference = solver_path(&args.solvers[1]);
+    let reference = solver_path(
+        args.solvers
+            .get(1)
+            .context("At least two solvers should be provided.")?,
+    );
     let evaluated = solver_path(&args.solvers[0]);
 
     let mut col = ResultCollection::default();
@@ -143,59 +160,37 @@ fn main() -> anyhow::Result<()> {
     plot(&col, &args.plots, &args.conf.to_string(), &args.out_dir);
 
     let col = col.with_data_for_all_solvers();
-    let filters = [Some("lag"), Some("lay"), None];
 
-    let mut base = col.clone();
-    for f in filters {
-        let cur = if let Some(filter) = f {
-            let mut cur = base.clone();
-            cur.retain(|pb| pb.id().contains(filter));
-            base.retain(|pb| !pb.id().contains(filter));
-            cur
-        } else {
-            base.clone()
-        };
+    for table in &args.tables {
+        // common table options
+        let opts = TableOptionsBuilder::default()
+            .highlight_best(true)
+            .out_dir(args.out_dir.clone());
 
-        println!("\n == Filter: {f:?} == \n");
-        let solved = sum(
-            cur.measures(|_pb, res| if res.status == SolveStatus::Solved { 1 } else { 0 }),
-            |(_pb, solver, count)| (solver, count),
-        );
-        println!("Solved: ");
-        for (solver, val) in solved {
-            println!("  {solver}: {val:.2}");
+        match *table {
+            Table::Solved => {
+                print_latex_table(
+                    &col,
+                    &|_, solver| solver.to_string(),
+                    &|pb, _| pb.dirname("data/"),
+                    Solved,
+                    Sum,
+                    |s| format!("{s}"),
+                    opts.file(format!("{}-solved.tex", args.conf)).build().unwrap(),
+                );
+            }
+            Table::Ipc => {
+                print_latex_table(
+                    &col,
+                    &|_, solver| solver.to_string(),
+                    &|pb, _| pb.dirname("data/"),
+                    Ipc,
+                    Avg,
+                    |s| format!("{:.1}", s * 100.0),
+                    opts.file(format!("{}-ipc.tex", args.conf)).build().unwrap(),
+                );
+            }
         }
-        // dbg!(solved);
-        // let objective = avg(
-        //     cur.measures(|_pb, res| res.objective_value.map(|i| i as f64).unwrap_or(f64::NAN)),
-        //     |(_pb, solver, count)| (solver, count),
-        // );
-        // println!("Objective: ");
-        // for (solver, val) in objective {
-        //     println!("  {solver}: {val:.2}");
-        // }
-        let ipc = avg(
-            cur.measures(|_pb, res| {
-                let best = _pb.results.iter().filter_map(|(_s, r)| r.objective_value).min();
-                let Some(best) = best else {
-                    return 0.0;
-                };
-                let best = best as f64;
-
-                res.objective_value.map(|i| best / (i as f64)).unwrap_or(0.0)
-            }),
-            |(_pb, solver, count)| (solver, count),
-        );
-        println!("IPC: ");
-        for (solver, val) in ipc {
-            println!("  {solver}: {:.2}", val * 100.0);
-        }
-        // dbg!(objective);
-        // let branches = avg(
-        //     cur.measures(|_pb, res| res.metrics.get(&Metric::NumDecisions).copied().unwrap_or(f64::NAN)),
-        //     |(_pb, solver, count)| (solver, count),
-        // );
-        // dbg!(branches);
     }
 
     Ok(())
@@ -220,7 +215,7 @@ fn plot(col: &ResultCollection, plots: &[Plot], basename: &str, out_dir: &str) {
                     .legenc_loc(plot::LegendLoc::BottomRight)
                     .build()
                     .unwrap();
-                let series = col.measures::<TimeSerie>(ipc_hist);
+                let series = col.measures(IpcHist);
                 let results = avg(series, |(_, solver, serie)| (solver, serie));
                 plot::plot_cactus(&results, &opts);
             }
@@ -232,7 +227,7 @@ fn plot(col: &ResultCollection, plots: &[Plot], basename: &str, out_dir: &str) {
                     .file(format!("{basename}-solved"))
                     .build()
                     .unwrap();
-                let series = col.measures::<TimeSerie>(solved_hist);
+                let series = col.measures(SolvedHist);
                 let results = sum(series, |(_, solver, serie)| (solver, serie));
                 plot::plot_cactus(&results, &opts);
             }
@@ -240,60 +235,10 @@ fn plot(col: &ResultCollection, plots: &[Plot], basename: &str, out_dir: &str) {
     }
 }
 
-fn ipc_hist(runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
-    let Some(best) = runs.results.values().filter_map(|r| r.objective_value).min() else {
-        return TimeSerie::constant(0.0, Duration::ZERO, runs.problem.timeout);
-    };
-    run.ipc_history(best)
-}
-fn solved_hist(_runs: &ProblemResults, run: &SolveResult) -> TimeSerie {
-    run.solved_hist()
-}
-fn sum<Measure, Key, Value>(
-    measures: impl Iterator<Item = Measure>,
-    kv: impl Fn(Measure) -> (Key, Value),
-) -> BTreeMap<Key, Value>
-where
-    Key: Ord,
-    Value: AddAssign<Value>,
-{
-    let mut results = BTreeMap::default();
-    for measure in measures {
-        let (k, v) = kv(measure);
-        if let Some(prev) = results.get_mut(&k) {
-            *prev += v;
-        } else {
-            results.insert(k, v);
-        }
-    }
-    results
-}
-fn avg<Measure, Key, Value>(
-    measures: impl Iterator<Item = Measure>,
-    kv: impl Fn(Measure) -> (Key, Value),
-) -> BTreeMap<Key, Value>
-where
-    Key: Ord + Clone,
-    Value: AddAssign<Value> + DivAssign<f64>,
-{
-    let mut counts: BTreeMap<_, i32> = BTreeMap::new();
-    let mut results = BTreeMap::new();
-    for measure in measures {
-        let (k, v) = kv(measure);
-        *counts.entry(k.clone()).or_default() += 1;
-        if let Some(prev) = results.get_mut(&k) {
-            *prev += v;
-        } else {
-            results.insert(k, v);
-        }
-    }
-    for (k, v) in results.iter_mut() {
-        *v /= counts[k] as f64;
-    }
-    results
-}
-
 fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &SolverID) {
+    use comfy_table::modifiers::UTF8_ROUND_CORNERS;
+    use comfy_table::presets::UTF8_FULL;
+    use comfy_table::*;
     let mut results = col.comparison(main, reference);
 
     // Create and configure comfy table
@@ -333,9 +278,9 @@ fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &S
             .measure(|r| Some(r.runtime.as_secs_f64()))
             .map(|r| format!("{:.2}", r));
 
-        let conflicts = result.metric(Metric::NumConflicts).map(readable::Int::from);
-        let decisions = result.metric(Metric::NumDecisions).map(readable::Int::from);
-        let dom_updates = result.metric(Metric::NumDomUpdates).map(readable::Int::from);
+        let conflicts = result.metric(SolverMetric::NumConflicts).map(readable::Int::from);
+        let decisions = result.metric(SolverMetric::NumDecisions).map(readable::Int::from);
+        let dom_updates = result.metric(SolverMetric::NumDomUpdates).map(readable::Int::from);
 
         table.add_row(vec![
             Cell::new(problem_name).set_alignment(comfy_table::CellAlignment::Left),
@@ -350,4 +295,7 @@ fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &S
 
     // Print the table
     println!("{}", table);
+    println!(
+        "Above is a table showing the results of '{main}', using '{reference}' as a reference to compute variations."
+    )
 }

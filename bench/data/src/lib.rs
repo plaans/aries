@@ -1,18 +1,13 @@
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+//! A minimal crate defining a data format for benchmark results.
+//!
+//! This is intended to be depended upon by solvers so they can easily export their results.
+
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::{collections::BTreeMap, time::Duration};
 
-use crate::time_series::TimeSerie;
-
-pub mod comp;
-//#[cfg(feature = "plot")]
-pub mod plot;
-pub mod results;
-pub mod time_series;
-
-/// Identifier of solver (typically a string derive from the location of its results)
-pub type SolverID = String;
+use anyhow::*;
+use serde::*;
 
 /// Characterization of a benchmark problem
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
@@ -35,8 +30,22 @@ impl Problem {
         id
     }
 
+    /// Attempts to retrieve the directory in which the instance is defined and remove the given prefix if present.
+    pub fn dirname(&self, strip_prefix: &str) -> String {
+        let parent_dir = PathBuf::from(&self.name)
+            .parent()
+            .unwrap()
+            .to_path_buf()
+            .display()
+            .to_string();
+        parent_dir
+            .strip_prefix(strip_prefix)
+            .unwrap_or(parent_dir.as_str())
+            .to_string()
+    }
+
     /// Generates a filesystem-safe filename from the problem ID
-    pub fn filename(&self) -> String {
+    pub fn id_filename(&self) -> String {
         // Replace problematic characters with underscores
         let normalized = self
             .id()
@@ -79,7 +88,7 @@ pub struct SolveResult {
     pub status: SolveStatus,
     pub runtime: Duration,
     pub objective_value: Option<i64>,
-    pub metrics: BTreeMap<Metric, f64>,
+    pub metrics: BTreeMap<SolverMetric, f64>,
     pub objective_history: Vec<IntermediateResult>,
 }
 
@@ -93,7 +102,7 @@ impl SolveResult {
         std::fs::create_dir_all(dir).context("Failed to create directory")?;
 
         // Generate a filesystem-safe filename from the problem
-        let filename = self.problem.filename();
+        let filename = self.problem.id_filename();
         let file_path = std::path::Path::new(dir).join(filename);
         let file_path_str = file_path.to_str().context("Failed to convert file path to string")?;
 
@@ -123,47 +132,14 @@ impl SolveResult {
         SolveResult::deserialize(&content).context("Failed to deserialize file content")
     }
 
-    pub fn with_metric(mut self, metric: Metric, value: impl Into<f64>) -> Self {
+    pub fn with_metric(mut self, metric: SolverMetric, value: impl Into<f64>) -> Self {
         self.metrics.insert(metric, value.into());
         self
-    }
-
-    pub fn objective_hist(&self) -> TimeSerie {
-        let mut hist = vec![];
-        for measure in &self.objective_history {
-            hist.push((measure.timestamp, measure.objective as f64));
-        }
-        if let Some(final_obj) = self.objective_value {
-            hist.push((self.runtime, final_obj as f64));
-        }
-        TimeSerie::from_constant_per_part(hist, self.problem.timeout)
-    }
-
-    pub fn ipc_history(&self, best: MetricValue) -> TimeSerie {
-        let best = best as f64;
-        let mut hist = vec![(Duration::ZERO, 0.0)];
-        for measure in &self.objective_history {
-            let x = best / measure.objective as f64;
-            assert!(x.is_finite(), "{best} / {}", measure.objective);
-            hist.push((measure.timestamp, best / measure.objective as f64));
-        }
-        if let Some(final_obj) = self.objective_value {
-            hist.push((self.runtime, best / final_obj as f64));
-        }
-        TimeSerie::from_constant_per_part(hist, self.problem.timeout)
-    }
-
-    pub fn solved_hist(&self) -> TimeSerie {
-        let mut hist = vec![(Duration::ZERO, 0.0)];
-        if self.status == SolveStatus::Solved {
-            hist.push((self.runtime, 1.0));
-        }
-        TimeSerie::from_constant_per_part(hist, self.problem.timeout)
     }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
-pub enum Metric {
+pub enum SolverMetric {
     NumConflicts,
     NumDecisions,
     NumDomUpdates,
@@ -172,14 +148,14 @@ pub enum Metric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use std::{collections::BTreeMap, time::Duration};
     use tempfile::tempdir;
 
     fn create_test_solve_result() -> SolveResult {
         let mut metrics = BTreeMap::new();
-        metrics.insert(Metric::NumConflicts, 10.0);
-        metrics.insert(Metric::NumDecisions, 5.0);
-        metrics.insert(Metric::NumDomUpdates, 3.0);
+        metrics.insert(SolverMetric::NumConflicts, 10.0);
+        metrics.insert(SolverMetric::NumDecisions, 5.0);
+        metrics.insert(SolverMetric::NumDomUpdates, 3.0);
 
         SolveResult {
             problem: Problem {
@@ -268,7 +244,7 @@ mod tests {
         result.save_to_dir(dir_path_str)?;
 
         // Check that the file was created with the expected name
-        let expected_filename = result.problem.filename();
+        let expected_filename = result.problem.id_filename();
         let expected_file_path = dir_path.join(expected_filename);
         assert!(expected_file_path.exists());
 
@@ -298,7 +274,7 @@ mod tests {
         assert!(subdir_path.exists());
 
         // Check that the file was created
-        let expected_filename = result.problem.filename();
+        let expected_filename = result.problem.id_filename();
         let expected_file_path = subdir_path.join(expected_filename);
         assert!(expected_file_path.exists());
         Ok(())
@@ -308,7 +284,7 @@ mod tests {
     fn test_filename_normalization() {
         // Test with a problem name that contains special characters
         let mut metrics = BTreeMap::new();
-        metrics.insert(Metric::NumConflicts, 10.0);
+        metrics.insert(SolverMetric::NumConflicts, 10.0);
 
         let problem = Problem {
             name: "test/problem:with*special?chars".to_string(),
@@ -316,7 +292,7 @@ mod tests {
             flags: Default::default(),
         };
 
-        let filename = problem.filename();
+        let filename = problem.id_filename();
 
         // Verify that special characters are replaced with underscores
         assert!(filename.contains("test_problem_with_special_chars"));
@@ -337,7 +313,7 @@ mod tests {
             flags: Default::default(),
         };
 
-        let filename = problem.filename();
+        let filename = problem.id_filename();
 
         // Verify that unicode characters are replaced with underscores
         assert!(filename.contains("test_problem_"));

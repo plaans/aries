@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{Problem, SolveResult, SolveStatus, SolverID, comp::RunWithRef};
+use crate::{Problem, SolveResult, SolveStatus, SolverID, comp::RunWithRef, metric::Metric};
 
 #[derive(Clone, Default, Debug)]
 pub struct ResultCollection {
@@ -71,10 +71,10 @@ impl ResultCollection {
             .collect()
     }
 
-    pub fn measures<'a, T>(
+    pub fn measures<'a, M: Metric + 'static>(
         &'a self,
-        f: impl Fn(&ProblemResults, &SolveResult) -> T + 'a,
-    ) -> impl Iterator<Item = (&'a Problem, &'a SolverID, T)> + 'a {
+        m: M,
+    ) -> impl Iterator<Item = (&'a Problem, &'a SolverID, M::T)> + 'a {
         self.results
             .values()
             .flat_map(|runs| self.solvers.iter().map(move |s| (runs, s)))
@@ -82,7 +82,7 @@ impl ResultCollection {
                 let Some(run) = runs.get_solver(solver) else {
                     panic!("Solver '{solver}' is missing in runs: {runs:?}");
                 };
-                let measure = f(runs, &run);
+                let measure = m.compute(&run, runs);
                 (&runs.problem, solver, measure)
             })
     }
