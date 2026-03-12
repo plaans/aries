@@ -8,4 +8,4 @@ pytest
 pytest-cov
 mypy
 pre-commit
-black==22.6.0
+black==26.3.1
