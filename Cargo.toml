@@ -28,8 +28,10 @@ arcstr = { version = "1.2" }
 async-trait = "0.1"
 bumpalo = { version = "3.19" }
 clap = { version = "4.5", features = ["derive"] }
+comfy-table = "7.0"
 crossbeam-channel = "0.5"
 derivative = "2.2"
+derive_builder = "0.20"
 itertools = { version = "0.14" }
 fixedbitset = { version = "0.5.7", default-features = false }
 format_num = "0.1.0"
@@ -42,6 +44,7 @@ num-integer = { default-features = false, version = "0.1.46" }
 pathfinding = "4.14.0"
 prost = { version = "0.14" }
 rand = { version = "0.9", features = ["small_rng"] }
+readable = "0.1"
 regex = { version = "1" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
