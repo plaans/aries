@@ -1,12 +1,4 @@
-use std::sync::Arc;
-
-use aries::{
-    core::{
-        IntCst, Lit, SignedVar, VarRef,
-        state::{Domains, Term},
-    },
-    model::lang::{IAtom, IVar},
-};
+use aries::{core::state::Term, prelude::*};
 
 /// Trait representing the capability to be evaluated (to a givn type) when provided a total assignment.
 ///
@@ -55,28 +47,24 @@ impl Evaluable for IAtom {
 }
 
 /// Represents a total assignment, i.e., constructing this type is only valid if all variables are bound or absent in the model
-pub enum Assignment<'a> {
-    Borrowed(&'a Domains),
-    Shared(Arc<Domains>),
+///
+/// TODO: this type should be removed
+pub struct Assignment {
+    sol: Solution,
 }
 
-impl<'a> Assignment<'a> {
-    pub fn new(doms: &'a Domains) -> Self {
-        Self::Borrowed(doms)
-    }
-    pub fn shared(sol: Arc<Domains>) -> Assignment<'static> {
-        Assignment::Shared(sol)
-    }
-
-    fn doms(&self) -> &Domains {
-        match self {
-            Assignment::Borrowed(domains) => domains,
-            Assignment::Shared(domains) => domains.as_ref(),
+impl Assignment {
+    pub fn new(doms: &Domains) -> Self {
+        Self {
+            sol: doms.extract_solution(),
         }
+    }
+    pub fn shared(sol: Solution) -> Self {
+        Self { sol }
     }
 
     fn value_of_var(&self, var: VarRef) -> Option<IntCst> {
-        let doms = self.doms();
+        let doms = &self.sol;
         match doms.present(var) {
             Some(true) => Some(doms.lb(var)),
             Some(false) => None,

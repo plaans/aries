@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::{
     core::{
         IntCst, Lit, VarRef,
@@ -33,7 +34,7 @@ impl Propagator for Mul {
         context.add_lit_watch(self.valid, id);
     }
 
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(!self.valid) || domains.entails(!self.active) {
             // constraint is necessarily inactive, no propagations can be made
             return Ok(());
@@ -296,7 +297,7 @@ mod test {
     use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     use super::*;
-    use crate::{core::*, reasoners::cp::test::utils::test_explanations};
+    use crate::{core::*, reasoners::cp::propagator::test::utils::test_explanations};
 
     // === Assertions ===
 
@@ -408,7 +409,7 @@ mod test {
         fact2_res: (IntCst, IntCst),
     ) {
         let mut d = Domains::new();
-        let prop = {
+        let mut prop = {
             let d: &mut Domains = &mut d;
             let prod = d.new_var(prod_bounds.0, prod_bounds.1);
             let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
@@ -441,7 +442,7 @@ mod test {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
-        let prop = Mul {
+        let mut prop = Mul {
             prod,
             fact1: fact,
             fact2: fact,
@@ -466,7 +467,7 @@ mod test {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
-        let prop = Mul {
+        let mut prop = Mul {
             prod,
             fact1: fact,
             fact2: prod,
@@ -485,14 +486,14 @@ mod test {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
-        let prop = Mul {
+        let mut prop = Mul {
             prod,
             fact1: fact,
             fact2: prod,
             active: d.new_var(-1, 1).geq(0),
             valid: Lit::TRUE,
         };
-        test_explanations(&d, &prop, false);
+        test_explanations(&d, &mut prop, false);
     }
 
     // === Tests ===
@@ -645,7 +646,7 @@ mod test {
     #[test]
     fn test_propagation_random() {
         // Standard
-        for (mut d, prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, true) {
+        for (mut d, mut prop, (prod_val, fact1_val, fact2_val)) in gen_problems(1000, 10, true) {
             // Propagate and check that bounds are consistent with true values
             assert!(
                 prop.propagate(&mut d, Cause::Decision).is_ok(),
@@ -656,7 +657,7 @@ mod test {
             check_in_bounds(&d, prop.fact2, fact2_val);
         }
         // Square
-        for (mut d, prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, true) {
+        for (mut d, mut prop, (prod_val, fact_val)) in gen_square_problems(1000, 10, true) {
             // Propagate and check that bounds are consistent with true values
             assert!(
                 prop.propagate(&mut d, Cause::Decision).is_ok(),
@@ -669,11 +670,11 @@ mod test {
 
     #[test]
     fn test_explanations_random() {
-        for (d, prop, _) in gen_problems(1000, 10, false) {
-            test_explanations(&d, &prop, false);
+        for (d, mut prop, _) in gen_problems(1000, 10, false) {
+            test_explanations(&d, &mut prop, false);
         }
-        for (d, prop, _) in gen_square_problems(1000, 10, false) {
-            test_explanations(&d, &prop, false);
+        for (d, mut prop, _) in gen_square_problems(1000, 10, false) {
+            test_explanations(&d, &mut prop, false);
         }
     }
 }

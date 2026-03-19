@@ -15,11 +15,23 @@ where
     X: Dom,
 {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        (*self).upper_bound(svar)
+        Dom::upper_bound(*self, svar)
     }
 
     fn presence(&self, var: VarRef) -> Lit {
-        (*self).presence(var)
+        Dom::presence(*self, var)
+    }
+}
+impl<X> Dom for &mut X
+where
+    X: Dom,
+{
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Dom::upper_bound(*self, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        Dom::presence(*self, var)
     }
 }
 
@@ -47,12 +59,14 @@ impl VarView for SignedVar {
 impl VarView for Lit {
     type Value = bool;
 
+    #[inline]
     fn upper_bound(&self, dom: impl Dom) -> Self::Value {
         // the upper bound is `false` if the Lit is not satisfiable anymore
         // i.e.,  given the lit `(var <= val)`  it is incompatible with the lower bound var >= val +1
         self.svar().lower_bound(dom) <= self.ub_value()
     }
 
+    #[inline]
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
         // the lower bound is `true` if the Lit is always satified
         // i.e.,  given the lit `(var <= val)`  it is satisfied if ub(var) <= val
@@ -71,11 +85,11 @@ impl Boundable for SignedVar {
 
     #[inline]
     fn leq(&self, ub: Self::Value) -> Lit {
-        (*self).leq(ub)
+        Lit::leq(*self, ub)
     }
 
     #[inline]
     fn geq(&self, lb: Self::Value) -> Lit {
-        (*self).geq(lb)
+        Lit::geq(*self, lb)
     }
 }

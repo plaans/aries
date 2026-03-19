@@ -1,16 +1,16 @@
-use crate::core::state::Domains;
+use crate::prelude::*;
 use std::cell::RefCell;
 
 use crate::core::literals::Disjunction;
 
 thread_local! {
     /// Represent a valid solution to the problem attempted on the current thread
-    static SOLUTION_WITNESS: RefCell<Option<Domains>> = const { RefCell::new(None) };
+    static SOLUTION_WITNESS: RefCell<Option<Solution>> = const { RefCell::new(None) };
 }
 
 /// Records a solution witness for the current thread
-pub fn set_solution_witness(sol: &Domains) {
-    SOLUTION_WITNESS.with(|w| *w.borrow_mut() = Some(sol.clone()));
+pub fn set_solution_witness(sol: Solution) {
+    SOLUTION_WITNESS.with(|w| *w.borrow_mut() = Some(sol));
 }
 
 /// Remove the solution witness for the current thread

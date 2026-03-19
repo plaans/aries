@@ -2,14 +2,14 @@
 name = "aries_scheduling"
 version = "0.1.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 itertools = { workspace = true }
 structopt = { workspace = true }
 anyhow = { workspace = true }
 aries = { path = "../../solver", features = ["cpu_cycles"] }
-aries-bench = { path = "../../bench" }
+aries-bench-data = { path = "../../bench/data" }
 walkdir = { workspace = true }
 
 

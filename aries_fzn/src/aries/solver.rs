@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use aries::core::IntCst;
 use aries::core::VarRef;
-use aries::core::state::Domains;
 use aries::model::Model as AriesModel;
+use aries::prelude::Domains;
+use aries::prelude::DomainsExt;
 use aries::solver::Exit;
 use aries::solver::SearchLimit;
 use aries::solver::Solver as AriesSolver;
@@ -185,7 +186,8 @@ impl Solver {
                 let var_refs: Vec<VarRef> =
                     output_var_ids.iter().map(translate).collect();
 
-                let g = |d: &Domains| f(self.make_solution(d));
+                let g =
+                    |d: &Domains| f(self.make_solution(&d.extract_solution()));
                 let sat = aries_solver.enumerate_with(
                     &var_refs,
                     g,
@@ -197,7 +199,9 @@ impl Solver {
                 let obj_var = objective.variable();
                 let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
                 let is_minimize = objective.goal() == &Goal::Minimize;
-                let g = |_: IntCst, d: &Domains| f(self.make_solution(d));
+                let g = |_: IntCst, d: &aries::prelude::Solution| {
+                    f(self.make_solution(d))
+                };
                 let limit = SearchLimit::None;
                 let sat = if is_minimize {
                     aries_solver
@@ -234,7 +238,11 @@ impl Solver {
         var_ids
     }
 
-    fn make_assignment(&self, var: &FznVar, domains: &Domains) -> Assignment {
+    fn make_assignment(
+        &self,
+        var: &FznVar,
+        domains: &aries::prelude::Solution,
+    ) -> Assignment {
         match var {
             FznVar::Bool(v) => {
                 let var_ref = self.translation.get(v.id()).unwrap();
@@ -276,7 +284,7 @@ impl Solver {
     }
 
     /// Make solution from flatzinc variables.
-    fn make_solution(&self, domains: &Domains) -> Solution {
+    fn make_solution(&self, domains: &aries::prelude::Solution) -> Solution {
         let assignments = self
             .fzn_model
             .variables()

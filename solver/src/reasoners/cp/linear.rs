@@ -5,6 +5,7 @@ use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, In
 use crate::core::{
     INT_CST_MAX, INT_CST_MIN, IntCst, Lit, LongCst, SignedVar, VarRef, cst_int_to_long, cst_long_to_int,
 };
+use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 use num_integer::div_floor;
@@ -209,7 +210,7 @@ impl Propagator for LinearSumLeq {
         }
     }
 
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(!self.valid) || domains.entails(!self.active) {
             return Ok(()); // constraint is necessarily inactive
         }
@@ -437,7 +438,7 @@ mod tests {
         let mut d = Domains::new();
         let x = var(-100, 100, 2, &mut d);
         let c = var(3, 3, 1, &mut d);
-        let s = sum(vec![x, c], 10, Lit::TRUE);
+        let mut s = sum(vec![x, c], 10, Lit::TRUE);
 
         // Check bounds
         check_bounds(&x, &d, -200, 200);
@@ -467,7 +468,7 @@ mod tests {
         let y = var(-100, 100, 3, &mut d);
         let z = var(-100, 100, 1, &mut d);
         let c = var(25, 25, 1, &mut d);
-        let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
+        let mut s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
         check_bounds(&x, &d, -200, 200);
@@ -491,7 +492,7 @@ mod tests {
         let y = var(-100, 100, -3, &mut d);
         let z = var(0, 0, 1, &mut d);
         let c = var(25, 25, 1, &mut d);
-        let s = sum(vec![x, y, z, c], 10, Lit::TRUE);
+        let mut s = sum(vec![x, y, z, c], 10, Lit::TRUE);
 
         // Check bounds
         check_bounds(&x, &d, -200, 200);
@@ -513,7 +514,7 @@ mod tests {
         let mut d = Domains::new();
         let v = d.new_var(-1, 1);
         let c = var(0, 25, 1, &mut d);
-        let s = sum(vec![c], 10, v.lt(0));
+        let mut s = sum(vec![c], 10, v.lt(0));
 
         // take a decision that will make the constraint unsatifiable and thus deactivate it
         d.save_state();
@@ -560,9 +561,9 @@ mod tests {
     #[test]
     fn test_explanations() {
         use crate::reasoners::cp::propagator::test::utils::*;
-        for (d, s) in gen_problems() {
+        for (d, mut s) in gen_problems() {
             println!("\nConstraint: {s:?}");
-            test_explanations(&d, &s, true);
+            test_explanations(&d, &mut s, true);
         }
     }
 }

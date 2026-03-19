@@ -1,21 +1,22 @@
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+//! A minimal crate defining a data format for benchmark results.
+//!
+//! This is intended to be depended upon by solvers so they can easily export their results.
+
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::{collections::BTreeMap, time::Duration};
 
-pub mod comp;
+use anyhow::*;
+use serde::*;
 
 /// Characterization of a benchmark problem
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
 pub struct Problem {
     /// Name of the problem (often a path in the folder containing the benchmarks)
     pub name: String,
     /// Maximum time given to the solver.
     pub timeout: Duration,
-    /// Lower bound given to the solver.
-    pub lb: Option<i64>,
-    /// Upper bound given to the solver.
-    pub ub: Option<i64>,
+    pub flags: BTreeMap<String, String>,
 }
 
 impl Problem {
@@ -23,17 +24,28 @@ impl Problem {
     pub fn id(&self) -> String {
         let mut id = self.name.clone();
         write!(id, "__to:{}s", self.timeout.as_secs_f32()).unwrap();
-        if let Some(lb) = self.lb {
-            write!(id, "_lb:{lb}").unwrap();
-        }
-        if let Some(ub) = self.ub {
-            write!(id, "_ub:{ub}").unwrap();
+        for (k, v) in &self.flags {
+            write!(id, "_{k}:{v}").unwrap()
         }
         id
     }
 
+    /// Attempts to retrieve the directory in which the instance is defined and remove the given prefix if present.
+    pub fn dirname(&self, strip_prefix: &str) -> String {
+        let parent_dir = PathBuf::from(&self.name)
+            .parent()
+            .unwrap()
+            .to_path_buf()
+            .display()
+            .to_string();
+        parent_dir
+            .strip_prefix(strip_prefix)
+            .unwrap_or(parent_dir.as_str())
+            .to_string()
+    }
+
     /// Generates a filesystem-safe filename from the problem ID
-    pub fn filename(&self) -> String {
+    pub fn id_filename(&self) -> String {
         // Replace problematic characters with underscores
         let normalized = self
             .id()
@@ -62,13 +74,22 @@ pub enum SolveStatus {
     Timeout,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+pub type MetricValue = i64;
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct IntermediateResult {
+    pub timestamp: Duration,
+    pub objective: MetricValue,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct SolveResult {
     pub problem: Problem,
     pub status: SolveStatus,
     pub runtime: Duration,
     pub objective_value: Option<i64>,
-    pub metrics: BTreeMap<Metric, f64>,
+    pub metrics: BTreeMap<SolverMetric, f64>,
+    pub objective_history: Vec<IntermediateResult>,
 }
 
 impl SolveResult {
@@ -81,7 +102,7 @@ impl SolveResult {
         std::fs::create_dir_all(dir).context("Failed to create directory")?;
 
         // Generate a filesystem-safe filename from the problem
-        let filename = self.problem.filename();
+        let filename = self.problem.id_filename();
         let file_path = std::path::Path::new(dir).join(filename);
         let file_path_str = file_path.to_str().context("Failed to convert file path to string")?;
 
@@ -111,14 +132,14 @@ impl SolveResult {
         SolveResult::deserialize(&content).context("Failed to deserialize file content")
     }
 
-    pub fn with_metric(mut self, metric: Metric, value: impl Into<f64>) -> Self {
+    pub fn with_metric(mut self, metric: SolverMetric, value: impl Into<f64>) -> Self {
         self.metrics.insert(metric, value.into());
         self
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
-pub enum Metric {
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Debug)]
+pub enum SolverMetric {
     NumConflicts,
     NumDecisions,
     NumDomUpdates,
@@ -127,26 +148,26 @@ pub enum Metric {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use std::{collections::BTreeMap, time::Duration};
     use tempfile::tempdir;
 
     fn create_test_solve_result() -> SolveResult {
         let mut metrics = BTreeMap::new();
-        metrics.insert(Metric::NumConflicts, 10.0);
-        metrics.insert(Metric::NumDecisions, 5.0);
-        metrics.insert(Metric::NumDomUpdates, 3.0);
+        metrics.insert(SolverMetric::NumConflicts, 10.0);
+        metrics.insert(SolverMetric::NumDecisions, 5.0);
+        metrics.insert(SolverMetric::NumDomUpdates, 3.0);
 
         SolveResult {
             problem: Problem {
                 name: "test_problem".to_string(),
                 timeout: Duration::from_secs(60),
-                lb: Some(0),
-                ub: Some(100),
+                flags: Default::default(),
             },
             status: SolveStatus::Solved,
             runtime: Duration::from_secs(5),
             objective_value: Some(42),
             metrics,
+            objective_history: vec![],
         }
     }
 
@@ -204,8 +225,7 @@ mod tests {
         // Check that all fields are preserved
         assert_eq!(result.problem.name, loaded.problem.name);
         assert_eq!(result.problem.timeout, loaded.problem.timeout);
-        assert_eq!(result.problem.lb, loaded.problem.lb);
-        assert_eq!(result.problem.ub, loaded.problem.ub);
+        assert_eq!(result.problem.flags, loaded.problem.flags);
         assert_eq!(result.status, loaded.status);
         assert_eq!(result.runtime, loaded.runtime);
         assert_eq!(result.objective_value, loaded.objective_value);
@@ -224,7 +244,7 @@ mod tests {
         result.save_to_dir(dir_path_str)?;
 
         // Check that the file was created with the expected name
-        let expected_filename = result.problem.filename();
+        let expected_filename = result.problem.id_filename();
         let expected_file_path = dir_path.join(expected_filename);
         assert!(expected_file_path.exists());
 
@@ -254,7 +274,7 @@ mod tests {
         assert!(subdir_path.exists());
 
         // Check that the file was created
-        let expected_filename = result.problem.filename();
+        let expected_filename = result.problem.id_filename();
         let expected_file_path = subdir_path.join(expected_filename);
         assert!(expected_file_path.exists());
         Ok(())
@@ -264,16 +284,15 @@ mod tests {
     fn test_filename_normalization() {
         // Test with a problem name that contains special characters
         let mut metrics = BTreeMap::new();
-        metrics.insert(Metric::NumConflicts, 10.0);
+        metrics.insert(SolverMetric::NumConflicts, 10.0);
 
         let problem = Problem {
             name: "test/problem:with*special?chars".to_string(),
             timeout: Duration::from_secs(60),
-            lb: Some(0),
-            ub: Some(100),
+            flags: Default::default(),
         };
 
-        let filename = problem.filename();
+        let filename = problem.id_filename();
 
         // Verify that special characters are replaced with underscores
         assert!(filename.contains("test_problem_with_special_chars"));
@@ -291,11 +310,10 @@ mod tests {
         let problem = Problem {
             name: "test_problem_ñáéíóú".to_string(),
             timeout: Duration::from_secs(30),
-            lb: None,
-            ub: None,
+            flags: Default::default(),
         };
 
-        let filename = problem.filename();
+        let filename = problem.id_filename();
 
         // Verify that unicode characters are replaced with underscores
         assert!(filename.contains("test_problem_"));

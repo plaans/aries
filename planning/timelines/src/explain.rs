@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use aries::prelude::*;
 use aries::{
     backtrack::Backtrack,
-    core::{IntCst, Lit},
     model::lang::{IVar, hreif::Store, linear::LinearSum},
     solver::{Solver, musmcs::MusMcs},
 };

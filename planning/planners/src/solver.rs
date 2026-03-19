@@ -7,13 +7,12 @@ use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::search::{ForwardSearcher, ManualCausalSearch};
 use crate::Solver;
 use anyhow::Result;
-use aries::core::state::Domains;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::IAtom;
 use aries::model::Model;
+use aries::prelude::*;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
-use aries::solver::parallel::Solution;
 use aries::solver::search::activity::*;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
@@ -105,7 +104,7 @@ impl FromStr for Metric {
     }
 }
 
-pub type WarmingResult = SolverResult<(Arc<FiniteProblem>, Arc<Domains>, Option<IntCst>)>;
+pub type WarmingResult = SolverResult<(Arc<FiniteProblem>, Solution, Option<IntCst>)>;
 
 pub fn preprocess(problem: &mut Problem) -> Arc<Metadata> {
     if PRINT_RAW_MODEL.get() {
@@ -129,7 +128,7 @@ pub fn reproduce(
     metric: Option<Metric>,
     htn_mode: bool,
     warm_up_plan: Option<Vec<ActionInstance>>,
-    on_new_sol: impl Fn(&FiniteProblem, Arc<Domains>) + Clone,
+    on_new_sol: impl Fn(&FiniteProblem, Solution) + Clone,
     deadline: Option<Instant>,
 ) -> Result<Option<WarmingResult>> {
     if warm_up_plan.is_none() {
@@ -153,7 +152,7 @@ pub fn reproduce(
     let on_new_valid_assignment = {
         let constrained_pb = constrained_pb.clone();
         let on_new_sol = on_new_sol.clone();
-        move |ass: Arc<Domains>| on_new_sol(&constrained_pb, ass)
+        move |ass: Solution| on_new_sol(&constrained_pb, ass)
     };
 
     println!("  [{:.3}s] Warm Up Populated", start.elapsed().as_secs_f32());
@@ -200,9 +199,9 @@ pub fn solve(
     metric: Option<Metric>,
     htn_mode: bool,
     warm_up_plan: Option<Vec<ActionInstance>>,
-    on_new_sol: impl Fn(&FiniteProblem, Arc<Domains>) + Clone,
+    on_new_sol: impl Fn(&FiniteProblem, Solution) + Clone,
     deadline: Option<Instant>,
-) -> Result<SolverResult<(Arc<FiniteProblem>, Arc<Domains>)>> {
+) -> Result<SolverResult<(Arc<FiniteProblem>, Solution)>> {
     let default_best_cost = INT_CST_MAX + 1;
     let metadata = preprocess(&mut base_problem);
     let init_pb = FiniteProblem {
@@ -234,7 +233,8 @@ pub fn solve(
         _ => None,
     });
     let initial_solution = best.as_ref().map(|(_, sol, cost)| (*cost, sol.clone()));
-    let best_cost = |b: &Option<(Arc<_>, Arc<_>, IntCst)>| b.as_ref().map(|(_, _, c)| *c).unwrap_or(default_best_cost);
+    let best_cost =
+        |b: &Option<(Arc<_>, Solution, IntCst)>| b.as_ref().map(|(_, _, c)| *c).unwrap_or(default_best_cost);
 
     if warm_up_plan.is_some() {
         if let Some(warming_result) = warming_result {
@@ -295,7 +295,7 @@ pub fn solve(
         let on_new_valid_assignment = {
             let pb = pb.clone();
             let on_new_sol = on_new_sol.clone();
-            move |ass: Arc<Domains>| on_new_sol(&pb, ass)
+            move |ass: Solution| on_new_sol(&pb, ass)
         };
 
         // Solve the initial problem with the warming assignment if any.
@@ -317,7 +317,7 @@ pub fn solve(
         match result {
             SolverResult::Unsat(_) => {} // continue (increase depth)
             SolverResult::Sol((pb, (sol, cost))) if metric.is_some() && depth < max_depth => {
-                let cost = cost.expect("Not cost provided in optimization problem");
+                let cost: IntCst = cost.expect("Not cost provided in optimization problem");
                 assert!(
                     cost < best_cost(&best),
                     "New cost ({cost}) isn't better than the current best ({})",
@@ -357,7 +357,7 @@ fn propagate_and_print(pb: &FiniteProblem) -> bool {
     std::process::exit(0)
 }
 
-pub fn format_plan(problem: &FiniteProblem, assignment: &Domains, htn_mode: bool) -> Result<String> {
+pub fn format_plan(problem: &FiniteProblem, assignment: &Solution, htn_mode: bool) -> Result<String> {
     let plan = if htn_mode {
         format!(
             "\n**** Decomposition ****\n\n\
@@ -534,8 +534,8 @@ fn solve_finite_problem(
     metric: Option<Metric>,
     minimize_metric: bool,
     htn_mode: bool,
-    on_new_solution: impl Fn(Arc<Domains>),
-    initial_solution: Option<(IntCst, Arc<Domains>)>,
+    on_new_solution: impl Fn(Solution),
+    initial_solution: Option<(IntCst, Solution)>,
     deadline: Option<Instant>,
     cost_upper_bound: IntCst,
 ) -> SolverResult<(Solution, Option<IntCst>)> {
@@ -578,7 +578,7 @@ fn solve_finite_problem(
         strats[id].adapt_solver(s, pb.clone(), encoding.clone())
     });
     if let Some((objective_value, assignment)) = initial_solution {
-        solver.warm_start(objective_value, assignment);
+        solver.warm_start(objective_value, &assignment);
     }
 
     let result = if let Some(metric) = metric {

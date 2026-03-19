@@ -1,10 +1,10 @@
-// ========== Constraint ===========
+pub mod justified;
 
 use std::fmt::Debug;
 
 use crate::core::state::*;
-use crate::core::*;
 use crate::create_ref_type;
+use crate::prelude::*;
 use crate::reasoners::Contradiction;
 
 use super::Watches;
@@ -26,7 +26,7 @@ pub trait Propagator: Send {
     ///
     /// Each change in the domains should be annotated with the given `cause` which acts as a signature to determine
     /// that `self` is the propagator that made the inference and should be called for explaining it.
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction>;
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction>;
 
     /// Explain a previous inference made by the constraint.
     ///
@@ -81,7 +81,7 @@ impl<T: Propagator + 'static> From<T> for DynPropagator {
 /// Trait describing the minimal functionnality a custom propagator needs in order to be added to a [`Model`].
 pub trait UserPropagator: Debug + Sync + Send {
     /// Instantiate a new propagator to be integrated into the CP engine.
-    fn get_propagator(&self) -> DynPropagator;
+    fn get_propagators(&self) -> Vec<DynPropagator>;
 
     /// Returns true iff, the propagator is entailed by the current domains.
     fn satisfied(&self, dom: &Domains) -> bool;
@@ -109,12 +109,12 @@ pub mod test {
 
         impl Propagator for ImpliesProp {
             fn setup(&self, id: PropagatorId, context: &mut Watches) {
-                // request to be notified whenever `a` of `!b` becomes true
+                // request to be notified whenever `a` or `!b` becomes true
                 context.add_lit_watch(self.a, id);
                 context.add_lit_watch(!self.b, id);
             }
 
-            fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+            fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
                 if domains.entails(self.a) {
                     // a is true, we should propagate b
                     // we set `b` to true in the domain which wuold return one of:
@@ -182,15 +182,15 @@ pub mod test {
         #[test]
         fn test_explanations() {
             use crate::reasoners::cp::propagator::test::utils::*;
-            for (d, s) in implies_problems(1000) {
+            for (d, mut s) in implies_problems(1000) {
                 println!("\nConstraint: {s:?}");
-                test_explanations(&d, &s, true);
+                test_explanations(&d, &mut s, true);
             }
         }
     }
 
     pub mod utils {
-        //! Utility funcitons for testing propagators
+        //! Utility functions for testing propagators
 
         use itertools::Itertools;
         use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};
@@ -242,7 +242,7 @@ pub mod test {
         ///
         /// IMPORTANT: These tests rely on the `propagate` implementation and are not meaningful if this one is buggy
         /// (but they may show that it is in fact incoherent when called in different contexts)
-        pub fn test_explanations(d: &Domains, propagator: &dyn Propagator, check_minimality: bool) {
+        pub fn test_explanations(d: &Domains, propagator: &mut dyn Propagator, check_minimality: bool) {
             use crate::reasoners::cp::propagator::test::utils::pick_decisions;
 
             let mut decisions_rng = SmallRng::seed_from_u64(0);
@@ -338,7 +338,7 @@ pub mod test {
 
         /// Check that all events since the last decision have a minimal explanation
         //pub fn check_events(s: &Domains, explainer: &mut (impl Propagator + Explainer)) {
-        pub fn check_events(s: &Domains, explainer: &dyn Propagator, check_minimality: bool) {
+        pub fn check_events(s: &Domains, explainer: &mut dyn Propagator, check_minimality: bool) {
             let events = s
                 .trail()
                 .events()
@@ -354,7 +354,7 @@ pub mod test {
         }
 
         /// Checks that the event has a minimal explanion
-        pub fn check_event_explanation(s: &Domains, ev: &Event, prop: &dyn Propagator, check_minimality: bool) {
+        pub fn check_event_explanation(s: &Domains, ev: &Event, prop: &mut dyn Propagator, check_minimality: bool) {
             let mut explainer = explainer(prop);
             let implied = ev.new_literal();
             // generate explanation
@@ -368,7 +368,7 @@ pub mod test {
             domains: &Domains,
             implied: Lit,
             clause: Disjunction,
-            propagator: &dyn Propagator,
+            propagator: &mut dyn Propagator,
             check_minimality: bool,
         ) {
             let mut domains = domains.clone();

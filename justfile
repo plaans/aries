@@ -65,9 +65,17 @@ ci-pddl-parse-all filter="d":
         target/ci/pddl-parser  $f > /dev/null
     done
 
-bench name timeout="10":
+bench-jsp name timeout="10":
     #!/usr/bin/env bash
     set -e  # stop on first error
     for instance in `cat benches.jsp`; do
         cargo run --profile perf --bin scheduler -- -t {{ timeout }} -r {{ name }} jsp $instance
+    done
+
+bench-fjs name timeout="30":
+    #!/usr/bin/env bash
+    set -e  # stop on first error
+    cargo build --profile perf --bin scheduler
+    for instance in `cat benches.fjs`; do
+        ./target/perf/scheduler  -t {{ timeout }} -r bench-res/{{ name }} fjs $instance
     done

@@ -1,0 +1,22 @@
+[package]
+name = "aries-bench"
+version = "0.1.0"
+edition = "2024"
+
+
+
+[dependencies]
+aries-bench-data = { path = "../data" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+readable = { workspace = true }
+comfy-table = { workspace = true }
+itertools = { workspace = true }
+gnuplot = { version = "0.0.46"  }
+derive_builder = { workspace = true }
+
+[[bin]]
+name = "aries-bench"
+path = "src/main.rs"

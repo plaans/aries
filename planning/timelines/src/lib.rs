@@ -153,7 +153,7 @@ impl Sched {
         encoding
     }
 
-    pub fn solve(&self) -> Option<Assignment<'static>> {
+    pub fn solve(&self) -> Option<Assignment> {
         let encoding = self.encode();
         let mut solver = Solver::new(encoding);
         solver.solve(SearchLimit::None).unwrap().map(Assignment::shared)
@@ -166,7 +166,7 @@ impl Sched {
         ExplainableSolver::new(self, project)
     }
 
-    pub fn print(&self, sol: &Assignment<'_>) {
+    pub fn print(&self, sol: &Assignment) {
         let sorted_tasks = self
             .tasks
             .iter()

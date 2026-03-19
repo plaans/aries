@@ -32,7 +32,7 @@ impl ValueCause {
 #[derive(Clone)]
 pub struct IntDomains {
     /// Associates each lb/ub of each variable to its current value and the event that caused the latest update.
-    bounds: RefVec<SignedVar, ValueCause>,
+    pub(super) bounds: RefVec<SignedVar, ValueCause>,
     /// All events that updated the bound values.
     /// Used for explanation and backtracking.
     events: ObsTrail<Event>,

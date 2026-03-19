@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
 use crate::collections::ref_store::RefVec;
 use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
@@ -7,11 +5,13 @@ use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{
-    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain,
+    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain, Solution,
 };
-use crate::core::views::{Boundable, Dom, VarView};
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::lang::{Atom, IAtom};
+use crate::prelude::*;
+use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(debug_assertions)]
@@ -794,6 +794,10 @@ impl Domains {
     pub fn fusable(&self, l1: Lit, l2: Lit) -> bool {
         l1 == !self.presence(l2) || l2 == !self.presence(l1)
     }
+
+    pub fn extract_solution(&self) -> Solution {
+        Solution::new(self.doms.bounds.clone(), self.presence.clone())
+    }
 }
 
 impl Default for Domains {
@@ -893,7 +897,7 @@ impl Term for Atom {
     }
 }
 
-impl Dom for Domains {
+impl crate::core::views::Dom for Domains {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::upper_bound(self, svar)
     }

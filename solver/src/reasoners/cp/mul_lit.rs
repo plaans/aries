@@ -29,7 +29,7 @@ impl Propagator for VarEqVarMulLit {
     }
 
     fn propagate(
-        &self,
+        &mut self,
         domains: &mut crate::core::state::Domains,
         cause: crate::core::state::Cause,
     ) -> Result<(), crate::reasoners::Contradiction> {
@@ -94,7 +94,7 @@ impl Propagator for VarEqVarMulLit {
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);
-        let orig_prez = state.presence(self.original);
+        let orig_prez = state.presence_literal(self.original);
 
         if literal == self.lit {
             // Explain why lit is true
@@ -195,7 +195,7 @@ mod tests {
         let mut d = Domains::new();
         let r = d.new_var(-5, 10);
         let o = d.new_var(-10, 5);
-        let c = mul(r, o, Lit::TRUE);
+        let mut c = mul(r, o, Lit::TRUE);
 
         // Check initial bounds
         check_bounds(r, &d, -5, 10);
@@ -212,7 +212,7 @@ mod tests {
         let mut d = Domains::new();
         let r = d.new_var(-5, 10);
         let o = d.new_var(-10, 5);
-        let c = mul(r, o, Lit::FALSE);
+        let mut c = mul(r, o, Lit::FALSE);
 
         // Check initial bounds
         check_bounds(r, &d, -5, 10);
@@ -231,7 +231,7 @@ mod tests {
         let r = d.new_var(1, 10);
         let o = d.new_optional_var(-10, 5, p);
         let l = d.new_presence_literal(p);
-        let c = mul(r, o, l);
+        let mut c = mul(r, o, l);
 
         // Check initial bounds
         check_bounds(r, &d, 1, 10);
@@ -252,7 +252,7 @@ mod tests {
         let r = d.new_var(-5, 0);
         let o = d.new_optional_var(1, 5, p);
         let l = d.new_presence_literal(p);
-        let c = mul(r, o, l);
+        let mut c = mul(r, o, l);
 
         // Check initial bounds
         check_bounds(r, &d, -5, 0);
@@ -296,9 +296,9 @@ mod tests {
     #[test]
     fn test_explanations() {
         use crate::reasoners::cp::propagator::test::utils::*;
-        for (d, c) in gen_problems(100) {
+        for (d, mut c) in gen_problems(100) {
             println!("\nConstraint: {c:?}");
-            test_explanations(&d, &c, true);
+            test_explanations(&d, &mut c, true);
         }
     }
 }

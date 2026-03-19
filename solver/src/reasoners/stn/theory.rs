@@ -8,6 +8,7 @@ use crate::backtrack::{DecLvl, ObsTrailCursor, Trail};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::core::state::*;
 use crate::core::*;
+use crate::prelude::*;
 use crate::reasoners::stn::theory::Event::EdgeActivated;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use contraint_db::*;
