@@ -9,7 +9,7 @@ use crate::prelude::*;
 
 use crate::core::state::Term;
 use crate::reasoners::cp::no_overlap::neg_iatom::PMIAtom;
-use crate::reasoners::cp::trailed::{DomJust, JustifiedPropagator, MutDomExt};
+use crate::reasoners::cp::propagator::justified::*;
 use crate::reasoners::cp::{DynPropagator, UserPropagator};
 
 mod neg_iatom;
@@ -29,16 +29,16 @@ mod theta_lambda_tree;
 /// ```
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PropagatorKind {
-    /// No propagation at all. Requires redundant constraint (e.g. explicit precedences)
+    /// No propagation at all. Requires redundant constraints (e.g. explicit precedences)
     None,
     /// Overload checking on all tasks known to be present.
     /// This propagator would detect a conflict if a subset of tasks result in an overload.
     Overload,
-    /// Same as [`Overload`] but in addition deactivates any optional task whose presence would result in an Overload.
+    /// Same as [`PropagatorKind::Overload`] but in addition deactivates any optional task whose presence would result in an Overload.
     OverloadWithOptional,
     /// Performs edge finding, tightening only the *upper* bounds of task detected to be after a set of others.
     EdgeFindingUpper,
-    /// Performs edge finding, tightening the upper/lower bounds of tasks detected to be after/before  a set of others.
+    /// Performs edge finding, tightening the upper/lower bounds of tasks detected to be after/before  a set of others (default).
     #[default]
     EdgeFinding,
 }
@@ -85,6 +85,13 @@ impl<IntVar> Task<IntVar> {
     }
 }
 
+/// No-overlap propagtor that propagates the presence, earliest start and latest end time of a set of tasks.
+///
+/// The propagator implements the algorithms for overload checking and edge-finding, the level of propagation should be set
+/// with [`NoOverlap::with_kind`] method.
+///
+/// Important note: the propagator should be considered as an additional (redundant) one on top of disjunctive precedences that should
+/// be posted independently.
 #[derive(Debug, Clone)]
 pub struct NoOverlap<IntVar> {
     kind: PropagatorKind,
@@ -109,8 +116,8 @@ where
         self
     }
 
-    // compute the bounds of the activities to place in the tree, ignoring any activity known to be absent
-    // for efficiency, we extract them once from the domains and place their values directly in the tree
+    /// compute the bounds of the activities to place in the tree, ignoring any activity known to be absent
+    /// for efficiency, we extract them once from the domains and place their values directly in the tree
     fn activities(&self, domains: &impl Dom) -> Vec<theta_lambda_tree::Activity> {
         self.tasks
             .iter()
@@ -234,7 +241,11 @@ where
     }
 
     /// Enforce the literals entailed by the given inference.
-    fn post_inference(&self, inference: Justification, dom: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
+    fn post_inference(
+        &self,
+        inference: Justification,
+        dom: &mut DomainsAndJustifications<Justification>,
+    ) -> Result<(), InvalidUpdate> {
         self.check_correctness(dom, &inference);
         let lit = match &inference {
             Justification::Overload { .. } => Lit::FALSE,
@@ -264,13 +275,13 @@ impl NoOverlap<IAtom> {
     }
 }
 
-/// [`UserPropagator` is only implemented for `IAtom` because we need to be able to reverse the propagator (and we don't have a trait easily capturing that).
+/// [`UserPropagator`] is only implemented for `IAtom` because we need to be able to reverse the propagator (and we don't have a trait easily capturing that).
 impl UserPropagator for NoOverlap<IAtom> {
     fn get_propagators(&self) -> Vec<super::DynPropagator> {
-        let mut propagators = vec![DynPropagator::from(JustifiedPropagator::new(self.clone()))];
+        let mut propagators = vec![DynPropagator::from(PropagatorWithJustifications::new(self.clone()))];
         if self.kind >= PropagatorKind::EdgeFinding {
             // below this propagation level, there is either no-edge finding or the edge-finding only operates on upper bounds and thus does not required the reversed view.
-            propagators.push(DynPropagator::from(JustifiedPropagator::new(self.reversed())));
+            propagators.push(DynPropagator::from(PropagatorWithJustifications::new(self.reversed())));
         }
         propagators
     }
@@ -326,7 +337,7 @@ enum Justification {
     },
 }
 
-impl<IntVar> super::trailed::JustifiedProp<Justification> for NoOverlap<IntVar>
+impl<IntVar> JustifiedPropagator<Justification> for NoOverlap<IntVar>
 where
     IntVar: VarView<Value = IntCst> + Copy + Send + Sync + Debug + Term + Boundable<Value = IntCst> + 'static,
 {
@@ -344,7 +355,7 @@ where
         }
     }
 
-    fn propagate(&mut self, domains: &mut DomJust<Justification>) -> Result<(), InvalidUpdate> {
+    fn propagate(&mut self, domains: &mut DomainsAndJustifications<Justification>) -> Result<(), InvalidUpdate> {
         if self.kind <= PropagatorKind::None {
             return Ok(());
         }
@@ -511,7 +522,7 @@ where
             self.check_correctness(&domains, justification);
 
             // reproagate from the initial domains and check that it is indeed re-established
-            let mut prop = DynPropagator::from(JustifiedPropagator::new(self.clone()));
+            let mut prop = DynPropagator::from(PropagatorWithJustifications::new(self.clone()));
             // println!("before: {:?}", domains.bounds(lit.variable()));
             let res = prop
                 .constraint

@@ -1,4 +1,4 @@
-pub mod trailed;
+pub mod justified;
 
 use std::fmt::Debug;
 
@@ -109,7 +109,7 @@ pub mod test {
 
         impl Propagator for ImpliesProp {
             fn setup(&self, id: PropagatorId, context: &mut Watches) {
-                // request to be notified whenever `a` of `!b` becomes true
+                // request to be notified whenever `a` or `!b` becomes true
                 context.add_lit_watch(self.a, id);
                 context.add_lit_watch(!self.b, id);
             }
@@ -190,7 +190,7 @@ pub mod test {
     }
 
     pub mod utils {
-        //! Utility funcitons for testing propagators
+        //! Utility functions for testing propagators
 
         use itertools::Itertools;
         use rand::{Rng, SeedableRng, rngs::SmallRng, seq::SliceRandom};

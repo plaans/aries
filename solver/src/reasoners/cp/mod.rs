@@ -4,8 +4,8 @@ pub mod mul;
 pub mod mul_lit;
 pub mod no_overlap;
 
-mod propagator;
-pub use propagator::*;
+pub mod propagator;
+pub use propagator::{DynPropagator, Propagator, PropagatorId, UserPropagator};
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
