@@ -88,4 +88,4 @@ opt-level = 3
 # A profile meant for profiling in perf, providing all optimizations of release together with debug symbols
 [profile.perf]
 inherits = "release"
-debug = true
+debug = "line-tables-only" # Keep only the information for backtraces, not debugging (speeds up compilation)
