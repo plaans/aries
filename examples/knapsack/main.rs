@@ -230,13 +230,11 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
     let mut solver = Solver::new(model);
     solver.set_brancher_boxed(brancher);
 
-    if let Some(sol) = solver.maximize(total_value, SearchLimit::None).unwrap() {
-        let model = solver.model.clone().with_domains(sol.1);
+    if let Some((_opt, sol)) = solver.maximize(total_value, SearchLimit::None).unwrap() {
         let items: Vec<Item> = vars
             .iter()
             .zip(items.iter())
-            // .filter(|(&prez, _)| model.var_domain(prez).lb >= 1)
-            .flat_map(|(prez, item)| std::iter::repeat_n(*item, model.var_domain(*prez).lb as usize).cloned())
+            .flat_map(|(prez, item)| std::iter::repeat_n(*item, sol.lb(*prez) as usize).cloned())
             .collect();
         let solution = Sol { items };
         assert!(pb.is_valid(&solution));

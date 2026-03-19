@@ -798,11 +798,6 @@ impl Domains {
     pub fn extract_solution(&self) -> Solution {
         Solution::new(self.doms.bounds.clone(), self.presence.clone())
     }
-
-    /// Set the current domains from a solution
-    pub(crate) fn set_domains(&mut self, solution: Solution) {
-        self.doms.bounds = solution.data.values.clone();
-    }
 }
 
 impl Default for Domains {

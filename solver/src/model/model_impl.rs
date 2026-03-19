@@ -154,11 +154,6 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    pub fn with_domains(mut self, solution: Solution) -> Model<Lbl> {
-        self.state.set_domains(solution);
-        self
-    }
-
     pub fn new_bvar(&mut self, label: impl Into<Lbl>) -> BVar {
         self.create_bvar(None, label)
     }
