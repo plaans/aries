@@ -1,8 +1,8 @@
-pub mod disjunctive;
 pub mod linear;
 pub mod max;
 pub mod mul;
 pub mod mul_lit;
+pub mod no_overlap;
 
 mod propagator;
 pub use propagator::*;

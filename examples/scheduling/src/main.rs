@@ -45,7 +45,7 @@ pub struct Opt {
     /// Choose the propagation level for the no-overlap constraint.
     /// Options: try it out, you will get an error message with the options
     #[structopt(long = "no-overlap", default_value = "edge-finding")]
-    no_overlap: aries::reasoners::cp::disjunctive::PropagatorKind,
+    no_overlap: aries::reasoners::cp::no_overlap::PropagatorKind,
     /// Indicates a layout file, containing a matrix with the transportation times between all pairs of machines.
     #[structopt(long = "layout")]
     layout_file: Option<String>,
@@ -260,7 +260,7 @@ mod test {
     use aries::core::state::witness;
     use aries::model::Label;
     use aries::prelude::*;
-    use aries::reasoners::cp::disjunctive;
+    use aries::reasoners::cp::no_overlap;
     use aries::solver::search::random::RandomChoice;
     use aries::solver::{SearchLimit, Solver};
 
@@ -313,9 +313,9 @@ mod test {
         };
         assert_eq!(pb.kind, kind);
         let propagation_level = if use_constraints {
-            disjunctive::PropagatorKind::default()
+            no_overlap::PropagatorKind::default()
         } else {
-            disjunctive::PropagatorKind::None
+            no_overlap::PropagatorKind::None
         };
 
         let lower_bound = pb.makespan_lower_bound() as u32;

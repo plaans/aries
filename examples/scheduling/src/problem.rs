@@ -2,9 +2,8 @@ use crate::search::{Model, Var};
 use aries::core::{IntCst, Lit, u32_to_cst};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
-use aries::reasoners::cp::disjunctive::{self, NoOverlap, Task};
+use aries::reasoners::cp::no_overlap::{self, NoOverlap, Task};
 use itertools::Itertools;
-use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -337,9 +336,9 @@ pub(crate) fn encode(
     pb: &Problem,
     lower_bound: u32,
     upper_bound: Option<u32>,
-    no_overlap: disjunctive::PropagatorKind,
+    no_overlap: no_overlap::PropagatorKind,
 ) -> (Model, Encoding) {
-    let use_constraints = no_overlap > disjunctive::PropagatorKind::None;
+    let use_constraints = no_overlap > no_overlap::PropagatorKind::None;
     let lower_bound = u32_to_cst(lower_bound);
     let upper_bound = upper_bound.map(u32_to_cst).unwrap_or(pb.makespan_upper_bound());
     let mut m = Model::new();
@@ -396,7 +395,6 @@ pub(crate) fn encode(
     // for each machine, impose that any two alternatives do not overlap
     for machine in 0..(pb.num_machines) {
         let alts = e.alternatives_on_machine(machine).collect_vec();
-        let mut precedence_matrix = HashMap::with_capacity(alts.len() * alts.len());
         for (i, alt1) in alts.iter().enumerate() {
             #[allow(clippy::needless_range_loop)]
             for j in (i + 1)..alts.len() {
@@ -408,9 +406,6 @@ pub(crate) fn encode(
 
                 m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
                 m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
-
-                precedence_matrix.insert((i, j), prec.true_lit());
-                precedence_matrix.insert((j, i), prec.false_lit());
             }
         }
 
@@ -418,9 +413,7 @@ pub(crate) fn encode(
             let tasks_on_machine = alts
                 .iter()
                 .map(|op| Task::<IAtom>::new(op.start, op.duration, op.end(), op.presence));
-            let no_overlap: NoOverlap<IAtom> = NoOverlap::new(tasks_on_machine)
-                .with_kind(no_overlap)
-                .with_precedences(precedence_matrix);
+            let no_overlap: NoOverlap<IAtom> = NoOverlap::new(tasks_on_machine).with_kind(no_overlap);
             m.enforce_user_propagator(no_overlap);
         }
     }

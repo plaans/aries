@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use hashbrown::HashSet;
 use itertools::Itertools;
@@ -10,7 +8,7 @@ use crate::core::views::{Boundable, Dom, VarView};
 use crate::prelude::*;
 
 use crate::core::state::Term;
-use crate::reasoners::cp::disjunctive::neg_iatom::PMIAtom;
+use crate::reasoners::cp::no_overlap::neg_iatom::PMIAtom;
 use crate::reasoners::cp::trailed::{DomJust, JustifiedPropagator, MutDomExt};
 use crate::reasoners::cp::{DynPropagator, UserPropagator};
 
@@ -25,12 +23,13 @@ mod theta_lambda_tree;
 /// Notable adaptations are with respect to explanations and propagation of the bounds of optional intervals in edge-finding.
 ///
 /// ```
-/// use aries::reasoners::cp::disjunctive::PropagatorKind::*;
+/// use aries::reasoners::cp::no_overlap::PropagatorKind::*;
 /// assert!(Overload < OverloadWithOptional);
 /// assert!(OverloadWithOptional < EdgeFinding);
 /// ```
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PropagatorKind {
+    /// No propagation at all. Requires redundant constraint (e.g. explicit precedences)
     None,
     /// Overload checking on all tasks known to be present.
     /// This propagator would detect a conflict if a subset of tasks result in an overload.
@@ -42,8 +41,6 @@ pub enum PropagatorKind {
     /// Performs edge finding, tightening the upper/lower bounds of tasks detected to be after/before  a set of others.
     #[default]
     EdgeFinding,
-    /// Performs edge finding, and posts precedence constraints in addition to tightening the bounds.
-    EdgeFindingPrecedences,
 }
 impl std::str::FromStr for PropagatorKind {
     type Err = String;
@@ -56,14 +53,19 @@ impl std::str::FromStr for PropagatorKind {
             "overload-opt" => Ok(OverloadWithOptional),
             "edge-finding-upper" | "efu" => Ok(EdgeFindingUpper),
             "edge-finding" | "ef" => Ok(EdgeFinding),
-            "edge-finding-prec" | "efp" => Ok(EdgeFindingPrecedences),
             _ => Err(format!(
-                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding-upper', 'edge-finding', 'edge-finding-prec'"
+                "Invalid option '{s}', accepted: 'none', 'overload', 'overload-opt', 'edge-finding-upper', 'edge-finding'"
             )),
         }
     }
 }
 
+/// Representation of a task in the no-overlap constraint.
+///
+/// Each task has a variable (possibly constant) denoting its start, duration and end time, and a presence
+/// literal (possibly tautological if the that is mandatory).
+///
+/// The presence literal must imply the presence of all all other variables.
 #[derive(Debug, Clone)]
 pub struct Task<IntVar> {
     start: IntVar,
@@ -83,27 +85,10 @@ impl<IntVar> Task<IntVar> {
     }
 }
 
-pub type PrecedenceMatrix = HashMap<(usize, usize), Lit>;
-
 #[derive(Debug, Clone)]
 pub struct NoOverlap<IntVar> {
     kind: PropagatorKind,
     tasks: Vec<Task<IntVar>>,
-    precedences: Arc<PrecedenceMatrix>,
-}
-
-impl NoOverlap<IAtom> {
-    /// Creates a reversed view of the propagator, which when propagated, will operate on the lower bound.
-    /// An inteval `(s, d, e)` become the interval `(-e, d, -s)`
-    fn reversed(&self) -> NoOverlap<PMIAtom> {
-        let p = |i| PMIAtom::Plus(i);
-        let m = |i| PMIAtom::Minus(i);
-        NoOverlap::new(
-            self.tasks
-                .iter()
-                .map(|t| Task::new(m(t.end), p(t.duration), m(t.start), t.presence)),
-        )
-    }
 }
 
 impl<IntVar> NoOverlap<IntVar>
@@ -115,7 +100,6 @@ where
         Self {
             kind: PropagatorKind::default(),
             tasks: tasks.into_iter().collect(),
-            precedences: Default::default(),
         }
     }
 
@@ -125,11 +109,6 @@ where
         self
     }
 
-    /// Adds a precedence matrix to the constraints, necessary for the propagation level [`PropagatorKind::EdgeFindingPrecedences`].
-    pub fn with_precedences(mut self, precedences: PrecedenceMatrix) -> Self {
-        self.precedences = Arc::new(precedences);
-        self
-    }
     // compute the bounds of the activities to place in the tree, ignoring any activity known to be absent
     // for efficiency, we extract them once from the domains and place their values directly in the tree
     fn activities(&self, domains: &impl Dom) -> Vec<theta_lambda_tree::Activity> {
@@ -266,32 +245,22 @@ where
         };
         dom.set(lit, inference.clone()).map(|_| ())?;
 
-        if self.kind >= PropagatorKind::EdgeFindingPrecedences {
-            #[allow(clippy::single_match)]
-            match &inference {
-                Justification::EdgeFinding {
-                    est_theta,
-                    lct_theta,
-                    activity,
-                    ..
-                } => {
-                    let predecessors = self
-                        .activities_inside(*est_theta, *lct_theta, dom)
-                        .map(|(id, _)| id)
-                        .collect_vec();
-                    for pred_id in predecessors {
-                        if let Some(pred_lit) = self.precedences.get(&(pred_id, *activity)) {
-                            dom.set(*pred_lit, inference.clone())?;
-                        } else {
-                            panic!("unregistered precedence: {pred_id:?} < {activity:?}");
-                        }
-                    }
-                }
-                _ => {}
-            };
-        }
-
         Ok(())
+    }
+}
+
+impl NoOverlap<IAtom> {
+    /// Creates a reversed view of the propagator, which when propagated, will operate on the lower bound.
+    /// An interval `(s, d, e)` become the interval `(-e, d, -s)`
+    fn reversed(&self) -> NoOverlap<PMIAtom> {
+        let p = |i| PMIAtom::Plus(i);
+        let m = |i| PMIAtom::Minus(i);
+        NoOverlap::new(
+            self.tasks
+                .iter()
+                .map(|t| Task::new(m(t.end), p(t.duration), m(t.start), t.presence)),
+        )
+        .with_kind(self.kind)
     }
 }
 
@@ -507,9 +476,7 @@ where
                 est_theta,
             } => {
                 let grey = &self.tasks[*activity];
-                debug_assert!(
-                    grey.start.geq(*ect_theta).entails(lit) || self.kind >= PropagatorKind::EdgeFindingPrecedences
-                );
+                debug_assert!(grey.start.geq(*ect_theta).entails(lit));
                 out_explanation.push(grey.start.geq(*est_theta_lambda));
                 out_explanation.push(grey.duration.geq(domains.lb(grey.duration)));
                 for (id, t) in activities_inside(*est_theta_lambda, *lct_theta) {
