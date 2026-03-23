@@ -107,6 +107,7 @@ pub trait Substitution {
 
 /// A substitution of params by instances.
 /// The constructor validates the input to make sure that the parameters and instances are of the same kind.
+#[derive(Debug)]
 pub struct Sub {
     parameters: Vec<VarRef>,
     instances: Vec<VarRef>,
