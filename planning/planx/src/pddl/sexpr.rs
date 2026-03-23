@@ -1,0 +1,442 @@
+use crate::pddl::input::*;
+use crate::utils::disp_slice;
+use crate::{Res, Sym, errors::*};
+use itertools::Itertools;
+use std::fmt::{Debug, Display, Formatter};
+
+pub type SAtom = crate::Sym;
+
+#[derive(Clone)]
+pub struct SList {
+    list: Vec<SExpr>,
+    span: Span,
+}
+
+impl Display for SList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({})", self.list.iter().join(" "))
+    }
+}
+
+impl SList {
+    pub fn iter(&self) -> ListIter<'_> {
+        ListIter {
+            elems: self.list.as_slice(),
+            span: &self.span,
+        }
+    }
+
+    pub fn loc(&self) -> Span {
+        self.span.clone()
+    }
+
+    pub fn invalid(&self, error: impl ToString) -> Message {
+        self.span.invalid(error)
+    }
+}
+
+impl std::ops::Index<usize> for SList {
+    type Output = SExpr;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.list[index]
+    }
+}
+
+#[derive(Clone)]
+pub enum SExpr {
+    Atom(SAtom),
+    List(SList),
+}
+
+impl SExpr {
+    pub fn loc(&self) -> Span {
+        match self {
+            SExpr::Atom(atom) => atom.loc(),
+            SExpr::List(list) => list.loc(),
+        }
+    }
+
+    pub fn invalid(&self, error: impl ToString) -> Message {
+        self.loc().invalid(error)
+    }
+
+    pub fn is_atom(&self, expected_atom: &str) -> bool {
+        self.as_atom()
+            .map(|a| a.canonical_str() == expected_atom)
+            .unwrap_or(false)
+    }
+
+    /// If this s-expression is the application of the function `function_name`, returns
+    /// the arguments of the application.
+    ///
+    /// ```
+    /// use planx::pddl::{input::Input, sexpr::parse};
+    /// let sexpr = parse(Input::from_string("(add 1 2)")).unwrap();
+    /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
+    /// assert_eq!(args[0].as_atom().unwrap().canonical_str(), "1");
+    /// assert_eq!(args[1].as_atom().unwrap().canonical_str(), "2");
+    /// ```
+    pub fn as_application(&self, function_name: &str) -> Option<&[SExpr]> {
+        match self {
+            SExpr::Atom(_) => None,
+            SExpr::List(l) => match l.list.as_slice() {
+                [SExpr::Atom(head), rest @ ..] if head.canonical_str() == function_name => Some(rest),
+                _ => None,
+            },
+        }
+    }
+}
+impl SExpr {
+    pub fn as_list(&self) -> Option<&SList> {
+        match &self {
+            SExpr::List(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    pub fn as_list_iter(&self) -> Option<ListIter<'_>> {
+        match &self {
+            SExpr::List(v) => Some(ListIter {
+                elems: v.list.as_slice(),
+                span: &v.span,
+            }),
+            _ => None,
+        }
+    }
+
+    pub fn as_atom(&self) -> Option<&SAtom> {
+        match self {
+            SExpr::Atom(a) => Some(a),
+            _ => None,
+        }
+    }
+}
+
+impl Spanned for &SExpr {
+    fn span(&self) -> Option<&Span> {
+        match self {
+            SExpr::Atom(sym) => sym.span.as_ref(),
+            SExpr::List(slist) => Some(&slist.span),
+        }
+    }
+}
+
+pub struct ListIter<'a> {
+    elems: &'a [SExpr],
+    span: &'a Span,
+}
+
+impl<'a> ListIter<'a> {
+    pub fn peek(&self) -> Option<&'a SExpr> {
+        self.elems.first()
+    }
+
+    pub fn pop(&mut self) -> std::result::Result<&'a SExpr, Message> {
+        self.next()
+            .ok_or_else(|| self.loc().end().invalid("Unexpected end of list"))
+    }
+
+    pub fn loc(&self) -> Span {
+        self.span.clone()
+    }
+
+    pub fn invalid(&self, error: impl ToString) -> Message {
+        self.loc().invalid(error)
+    }
+
+    pub fn len(&self) -> usize {
+        self.elems.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.elems.is_empty()
+    }
+
+    pub fn pop_known_atom(&mut self, expected: &str) -> std::result::Result<(), Message> {
+        match self.next() {
+            None => Err(self
+                .loc()
+                .end()
+                .invalid(format!("Expected atom {expected} but got end of list"))),
+
+            Some(sexpr) => {
+                let sexpr = sexpr
+                    .as_atom()
+                    .ok_or_else(|| sexpr.invalid(format!("Expected atom `{expected}`")))?;
+                if sexpr.canonical_str() == expected {
+                    Ok(())
+                } else {
+                    Err(sexpr.invalid(format!("Expected the atom `{expected}`")))
+                }
+            }
+        }
+    }
+
+    pub fn pop_atom(&mut self) -> std::result::Result<&'a SAtom, Message> {
+        match self.next() {
+            None => Err(self.loc().end().invalid("Expected an atom but got end of list.")),
+            Some(sexpr) => sexpr.as_atom().ok_or_else(|| sexpr.invalid("Expected an atom")),
+        }
+    }
+    pub fn pop_list(&mut self) -> std::result::Result<&SList, Message> {
+        match self.next() {
+            None => Err(self.loc().end().invalid("Expected a list but got end of list.")),
+            Some(sexpr) => sexpr.as_list().ok_or_else(|| sexpr.invalid("Expected a list")),
+        }
+    }
+}
+
+impl<'a> Iterator for ListIter<'a> {
+    type Item = &'a SExpr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.elems.split_first() {
+            None => None,
+            Some((head, tail)) => {
+                self.elems = tail;
+                Some(head)
+            }
+        }
+    }
+}
+
+impl Display for SExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            SExpr::Atom(a) => write!(f, "{a}"),
+            SExpr::List(l) => {
+                write!(f, "(")?;
+                disp_slice(f, &l.list, " ")?;
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+impl Debug for SExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Token {
+    Sym { start: usize, end: usize, start_pos: Pos },
+    LParen(Pos),
+    RParen(Pos),
+}
+
+pub fn parse(s: Input) -> Res<SExpr> {
+    let tokenized = tokenize(&s);
+    let mut tokens = tokenized.iter().peekable();
+    read(&mut tokens, &s)
+}
+pub fn parse_many(s: Input) -> Res<Vec<SExpr>> {
+    let tokenized = tokenize(&s);
+    let mut tokens = tokenized.iter().peekable();
+    let mut expressions = Vec::new();
+    while tokens.peek().is_some() {
+        let e = read(&mut tokens, &s)?;
+        expressions.push(e);
+    }
+    Ok(expressions)
+}
+
+/// Parse the input into a sequence of tokens.
+fn tokenize(source: &Input) -> Vec<Token> {
+    let s = source.text.as_str();
+    let mut tokens = Vec::new();
+
+    // current index into `s`
+    // start index of the current atom
+    let mut cur_start = None;
+
+    // current line number (starts a 0)
+    let mut line: usize = 0;
+    // index of the start of the line
+    let mut line_start = 0;
+
+    // true if we are currently inside a comment (between a ';' and a '\n')
+    let mut is_in_comment = false;
+
+    let mut is_in_string = false;
+
+    // creates a new symbol token
+    let make_sym = |start, end, line, line_start| {
+        let start_pos = Pos {
+            index: start as u32,
+            line: line as u32,
+            column: (start - line_start) as u32,
+        };
+        Token::Sym { start, end, start_pos }
+    };
+
+    for (index, n) in s.char_indices() {
+        if n == '"' && !is_in_comment {
+            if is_in_string {
+                is_in_string = false;
+                if let Some(start) = cur_start {
+                    tokens.push(make_sym(start, index, line, line_start));
+                    cur_start = None;
+                } else {
+                    unreachable!("string should have a start")
+                }
+            } else {
+                cur_start = Some(index);
+                is_in_string = true;
+            }
+        } else if n.is_whitespace() || n == '(' || n == ')' || n == ';' || is_in_comment {
+            // if we were parsing a symbol, we have reached its end
+            if !is_in_string {
+                if let Some(start) = cur_start {
+                    tokens.push(make_sym(start, index - 1, line, line_start));
+                    cur_start = None;
+                }
+                if n == '\n' {
+                    // switch to next line and exit comment mode
+                    line += 1;
+                    line_start = index + 1; // line will start at the next character
+                    is_in_comment = false;
+                } else if n == ';' {
+                    is_in_comment = true;
+                } else if !is_in_comment {
+                    let pos = Pos {
+                        index: index as u32,
+                        line: line as u32,
+                        column: (index - line_start) as u32,
+                    };
+                    if n == '(' {
+                        tokens.push(Token::LParen(pos));
+                    } else if n == ')' {
+                        tokens.push(Token::RParen(pos));
+                    }
+                }
+            }
+        } else if cur_start.is_none() {
+            // we are not inside a token
+
+            // helper: returns true if the next char (after `n`) is nimeric
+            let next_is_numeric = || {
+                let mut chars_from_index = s[index..].chars();
+                // remove the current char (note that it may span multiple bytes so we do not know the start of the next)
+                let cur = chars_from_index.next().unwrap();
+                debug_assert_eq!(cur, n);
+                chars_from_index.next().is_some_and(|next| next.is_numeric())
+            };
+            // not inside a token
+            if n == '-' && !next_is_numeric() {
+                // '-' cannot start a token, so if we encounter it we immediately return a token
+                // note: this is a work around for badly formated domains present in the IPC where a type annotation does not spearate the `-` and the type
+                // e.g. (:params ?m -machine)  which should be (:params ?m - machine)
+                //
+                // Hence we split `-machine` in to two tokens `-` and `machine` unless the the `-` is immediately followed by a numeric digit
+                // in which case it should be considered as a numeric literal, e.g., `-32.4`
+                tokens.push(make_sym(index, index, line, line_start));
+            } else {
+                // this is the begenning of a token
+                cur_start = Some(index);
+            }
+        }
+    }
+    if let Some(start) = cur_start {
+        tokens.push(make_sym(start, s.len() - 1, line, line_start));
+    }
+    tokens
+}
+
+fn read(tokens: &mut std::iter::Peekable<core::slice::Iter<Token>>, src: &Input) -> Res<SExpr> {
+    match tokens.next() {
+        Some(Token::Sym { start, end, start_pos }) => {
+            let original = &src.text.as_str()[*start..=*end];
+            let canonical = original.to_ascii_lowercase();
+            let loc = Span::new(src.clone(), start_pos.index as usize, *end);
+            let atom = Sym::with_source(canonical, loc);
+
+            Ok(SExpr::Atom(atom))
+        }
+        Some(Token::LParen(start)) => {
+            let mut es = Vec::new();
+            loop {
+                match tokens.peek() {
+                    Some(Token::RParen(end)) => {
+                        let _ = tokens.next(); // consume
+                        let list = SList {
+                            list: es,
+                            span: Span::new(src.clone(), start.index as usize, end.index as usize),
+                        };
+                        break Ok(SExpr::List(list));
+                    }
+                    _ => {
+                        let e = read(tokens, src)?;
+                        es.push(e);
+                    }
+                }
+            }
+        }
+        Some(Token::RParen(start)) => {
+            let msg = Span::new(src.clone(), start.index as usize, start.index as usize)
+                .invalid("Unexpected closing parenthesis");
+            Err(msg)
+        }
+        None => {
+            let src = src.clone();
+            let err = match src.text.char_indices().last() {
+                Some((last_index, _)) => Span::new(src, last_index, last_index)
+                    .invalid("Unexpected end of input, typically to unclosed parenthesis."),
+                None => Message::error(format!(
+                    "Empty input: {}",
+                    if let Some(src) = &src.source { src } else { "??" }
+                )),
+            };
+            Err(err)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn formats_as(input: &str, output: &str) {
+        let input = Input::from_string(input);
+        let res = parse(input).unwrap();
+        let formatted = format!("{res}");
+        assert_eq!(&formatted, output);
+    }
+
+    #[test]
+    fn parsing_string() {
+        formats_as("(a \"b c\" d)", "(a \"b c\" d)");
+        formats_as("(a \"(b c)\" d)", "(a \"(b c)\" d)");
+        formats_as("(a b); \"(a b)\"", "(a b)");
+        formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
+        formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
+        formats_as("(A \"b ; C\" d)", "(A \"b ; C\" d)");
+    }
+
+    #[test]
+    fn parsing() {
+        formats_as("aa", "aa");
+        formats_as("aa", "aa");
+        formats_as(" aa", "aa");
+        formats_as("aa ", "aa");
+        formats_as(" aa ", "aa");
+        formats_as("(a b)", "(a b)");
+        formats_as("(a b)", "(a b)");
+        formats_as("(a (b c) d)", "(a (b c) d)");
+        formats_as(" ( a  ( b  c )   d  )   ", "(a (b c) d)");
+        formats_as(
+            " ( a  (
+        b  c )   d  )   ",
+            "(a (b c) d)",
+        );
+        formats_as(
+            " ( a  ( b ; (y x)
+         c )   d
+           )
+          ",
+            "(a (b c) d)",
+        );
+    }
+}

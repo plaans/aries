@@ -1,0 +1,4 @@
+var -2..2: x:: output_var;
+var -2..2: y:: output_var;
+constraint int_abs(x,y);
+solve satisfy;

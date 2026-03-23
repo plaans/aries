@@ -1,0 +1,12 @@
+  (pick ball2 rooma right)
+  (pick ball1 rooma left)
+  (move rooma roomb)
+  (drop ball2 roomb right)
+  (drop ball1 roomb left)
+  (move roomb rooma)
+  (pick ball4 rooma right)
+  (pick ball3 rooma left)
+     ; dummy comment to stress parser
+  (move rooma roomb)
+  (drop ball4 roomb right)
+  (drop ball3 roomb left)

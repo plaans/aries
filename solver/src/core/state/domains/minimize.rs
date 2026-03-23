@@ -1,9 +1,9 @@
 use itertools::Itertools;
 
 use crate::backtrack::{DecLvl, EventIndex};
+use crate::core::Lit;
 use crate::core::literals::LitSet;
 use crate::core::state::{Domains, Explainer, Explanation, Origin};
-use crate::core::Lit;
 use std::collections::HashSet;
 
 use super::literals::Disjunction;
@@ -74,7 +74,7 @@ pub fn minimize_clause(clause: Disjunction, doms: &Domains, explainer: &mut impl
         next = last_on_level + 1;
     }
 
-    Disjunction::new(res.clause)
+    Disjunction::from_vec(res.clause)
 }
 
 #[derive(Clone, Copy)]

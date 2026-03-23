@@ -1,17 +1,16 @@
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::{Conflict, Explainer};
-use crate::core::IntCst;
-use crate::model::extensions::SavedAssignment;
 use crate::model::Model;
+use crate::prelude::*;
+
 use crate::solver::search::{Brancher, Decision, SearchControl};
 use crate::solver::stats::Stats;
 use itertools::Itertools;
-use std::sync::Arc;
 
 /// A trait that provides extension methods for branchers
 pub trait CombinatorExt<L> {
     /// Creates a brancher that will systematically ask the `self` brancher for a decision.
-    /// If the `fallback` brancher has no decisions left, it will provide the result  
+    /// If the `fallback` brancher has no decisions left, it will provide the result
     fn and_then(self, fallback: Brancher<L>) -> Brancher<L>;
 
     /// Creates a brancher that extends `self` to have geometric restarts.
@@ -29,7 +28,7 @@ impl<L: 'static> CombinatorExt<L> for Brancher<L> {
 }
 
 /// A brancher that will systematically ask the `first` brancher for a decision.
-/// If the `first` brancher has no decisions left, it will provide the result  
+/// If the `first` brancher has no decisions left, it will provide the result
 pub struct AndThen<L> {
     first: Brancher<L>,
     second: Brancher<L>,
@@ -69,8 +68,8 @@ impl<L: 'static> SearchControl<L> for AndThen<L> {
         self.second.import_vars(model);
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
-        self.first.new_assignment_found(objective_value, assignment.clone());
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
+        self.first.new_assignment_found(objective_value, assignment);
         self.second.new_assignment_found(objective_value, assignment);
     }
 
@@ -144,7 +143,7 @@ impl<L: 'static> SearchControl<L> for UntilFirstConflict<L> {
         }
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
         if self.active {
             self.brancher.new_assignment_found(objective_value, assignment)
         }
@@ -230,7 +229,7 @@ impl<L: 'static> SearchControl<L> for WithGeomRestart<L> {
         self.brancher.import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
         self.brancher.new_assignment_found(objective_value, assignment)
     }
 
@@ -322,7 +321,7 @@ impl<L: 'static> SearchControl<L> for RoundRobin<L> {
         self.current_mut().import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {
         self.current_mut().new_assignment_found(objective_value, assignment)
     }
 

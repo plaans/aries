@@ -1,7 +1,6 @@
 use anyhow::{ensure, Context, Result};
-use aries::core::state::Domains;
-use aries::model::extensions::AssignmentExt;
 use aries::model::lang::{Atom, FAtom};
+use aries::prelude::*;
 use aries_planners::encoding::ChronicleId;
 use aries_planners::fmt::{extract_plan_actions, format_atom};
 use aries_planning::chronicles::{ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
@@ -12,7 +11,7 @@ use unified_planning::{Real, Schedule};
 pub fn serialize_plan(
     problem_request: &up::Problem,
     problem: &FiniteProblem,
-    assignment: &Domains,
+    assignment: &Solution,
 ) -> Result<unified_planning::Plan> {
     // retrieve all chronicles present in the solution, with their chronicle_id
     let mut chronicles: Vec<_> = problem
@@ -44,7 +43,7 @@ pub fn serialize_plan(
     };
 
     for &(id, ch) in &chronicles {
-        if assignment.value(ch.chronicle.presence) != Some(true) {
+        if assignment.value_of(ch.chronicle.presence) != Some(true) {
             continue; // chronicle is absent, skip
         }
 
@@ -200,7 +199,7 @@ fn real_to_rational(r: &up::Real) -> num_rational::Rational64 {
     num_rational::Rational64::new(r.numerator, r.denominator)
 }
 
-fn serialize_time(fatom: FAtom, ass: &Domains) -> Result<up::Real> {
+fn serialize_time(fatom: FAtom, ass: &Solution) -> Result<up::Real> {
     let num = ass.var_domain(fatom.num).as_singleton().context("Unbound variable")?;
     Ok(rational_to_real(num_rational::Rational64::new(
         num as i64,
@@ -208,10 +207,10 @@ fn serialize_time(fatom: FAtom, ass: &Domains) -> Result<up::Real> {
     )))
 }
 
-fn serialize_atom(atom: Atom, pb: &FiniteProblem, ass: &Domains) -> Result<up::Atom> {
+fn serialize_atom(atom: Atom, pb: &FiniteProblem, ass: &Solution) -> Result<up::Atom> {
     let content = match atom {
         Atom::Bool(l) => {
-            let value = ass.value(l).context("Unassigned literal")?;
+            let value = ass.value_of(l).context("Unassigned literal")?;
             up::atom::Content::Boolean(value)
         }
         Atom::Int(i) => {

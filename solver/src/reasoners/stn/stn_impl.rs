@@ -1,7 +1,7 @@
 use crate::backtrack::Backtrack;
 use crate::core::literals::Disjunction;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, InferenceCause};
-use crate::core::Lit;
+use crate::core::{IntCst, Lit, SignedVar};
 use crate::model::Model;
 use crate::reasoners::stn::theory::{StnConfig, StnTheory, Timepoint, W};
 use crate::reasoners::{Contradiction, Theory};
@@ -41,6 +41,11 @@ impl Stn {
         debug_assert!(self.model.state.entails(active_edge));
         self.stn
             .add_reified_edge(active_edge, source, target, weight, &self.model.state)
+    }
+
+    pub fn add_dynamic_edge(&mut self, source: Timepoint, target: Timepoint, ub_var: SignedVar, ub_factor: IntCst) {
+        self.stn
+            .add_dynamic_edge(source, target, ub_var, ub_factor, &self.model.state);
     }
 
     pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Lit {
@@ -120,6 +125,30 @@ impl Stn {
             .state
             .refine_explanation(explanation, &mut Exp { stn: &mut self.stn })
             .clause
+    }
+
+    #[cfg(test)]
+    pub(crate) fn implying_literals(&mut self, literal: Lit) -> Option<Vec<Lit>> {
+        struct Exp<'a> {
+            stn: &'a mut StnTheory,
+        }
+        impl<'a> Explainer for Exp<'a> {
+            fn explain(
+                &mut self,
+                cause: InferenceCause,
+                literal: Lit,
+                model: &DomainsSnapshot,
+                explanation: &mut Explanation,
+            ) {
+                assert_eq!(cause.writer, self.stn.identity.writer_id);
+                self.stn.explain(literal, cause, model, explanation);
+            }
+        }
+        let mut explanation = Explanation::new();
+        explanation.push(literal);
+        self.model
+            .state
+            .implying_literals(literal, &mut Exp { stn: &mut self.stn })
     }
 }
 

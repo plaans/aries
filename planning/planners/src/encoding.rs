@@ -1,8 +1,6 @@
+use aries::core::{IntCst, Lit};
 use aries::model::lang::FAtom;
-use aries::{
-    core::{IntCst, Lit},
-    model::lang::Kind,
-};
+use aries::model::lang::Kind;
 pub use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::*;
 use env_param::EnvParam;
@@ -141,7 +139,7 @@ pub struct TaskRef<'a> {
     pub task: &'a Task,
 }
 
-pub(crate) fn get_task_ref(pb: &FiniteProblem, id: TaskId) -> TaskRef {
+pub(crate) fn get_task_ref(pb: &FiniteProblem, id: TaskId) -> TaskRef<'_> {
     let ch = &pb.chronicles[id.instance_id];
     let t = &ch.chronicle.subtasks[id.task_id];
     TaskRef {
@@ -155,7 +153,7 @@ pub(crate) fn get_task_ref(pb: &FiniteProblem, id: TaskId) -> TaskRef {
 /// Finds all possible refinements of a given task in the problem.
 ///
 /// The task it the task with id `task_id` in the chronicle instance with it `chronicle_id`.
-pub fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) -> Vec<TaskRef> {
+pub fn refinements_of(instance_id: usize, task_id: usize, pb: &FiniteProblem) -> Vec<TaskRef<'_>> {
     let mut supporters = Vec::new();
     let target_origin = TaskId { instance_id, task_id };
     for ch in pb.chronicles.iter() {

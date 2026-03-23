@@ -1,0 +1,2 @@
+var {1,4,5}: x:: output_var;
+solve satisfy;

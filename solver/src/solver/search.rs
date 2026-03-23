@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod beta;
 pub mod combinators;
 pub mod conflicts;
 pub mod lexical;
@@ -6,9 +7,8 @@ pub mod random;
 
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::core::state::{Conflict, Explainer};
-use crate::core::*;
-use crate::model::extensions::SavedAssignment;
 use crate::model::{Label, Model};
+use crate::prelude::*;
 use crate::solver::stats::Stats;
 
 pub enum Decision {
@@ -36,7 +36,7 @@ pub trait SearchControl<Lbl>: Backtrack {
     fn import_vars(&mut self, model: &Model<Lbl>) {}
 
     /// Notifies the search control that a new assignment has been found (either by itself or by an other solver running in parallel).
-    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: std::sync::Arc<SavedAssignment>) {}
+    fn new_assignment_found(&mut self, objective_value: IntCst, assignment: &Solution) {}
 
     /// Invoked by search immediately before saving the state
     fn pre_save_state(&mut self, _model: &Model<Lbl>) {}

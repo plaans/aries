@@ -1,0 +1,2 @@
+% Maximize integer constant
+solve maximize 5;

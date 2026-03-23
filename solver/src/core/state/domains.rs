@@ -1,14 +1,17 @@
-use itertools::Itertools;
-
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelClass, EventIndex, ObsTrail};
-use crate::collections::ref_store::RefMap;
+use crate::collections::ref_store::RefVec;
 use crate::core::literals::{Disjunction, DisjunctionBuilder, ImplicationGraph, LitSet};
 use crate::core::state::cause::{DirectOrigin, Origin};
 use crate::core::state::event::Event;
 use crate::core::state::int_domains::IntDomains;
-use crate::core::state::{Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain};
+use crate::core::state::{
+    Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain, Solution,
+};
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
-use crate::solver::UnsatCore;
+use crate::model::lang::{Atom, IAtom};
+use crate::prelude::*;
+use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
 #[cfg(debug_assertions)]
@@ -23,9 +26,9 @@ mod minimize;
 ///  - an integer variable that give the domain of the optional variable if is is present.
 ///
 /// Note that under this scheme, a non-optional variable could be represented a variable whose presence literal is
-/// the `TRUE` literal.
+/// the [`Lit::TRUE`] literal.
 ///
-/// Invariant:
+/// Invariants:
 ///  - all presence variables are non-optional
 ///  - a presence variable `a` might be declared with a *scope* literal `b`, meaning that `b => a`
 ///  - every variable always have a valid domain (which might be the empty domain if the variable is optional)
@@ -35,9 +38,10 @@ mod minimize;
 pub struct Domains {
     /// Integer part of the domains.
     pub(super) doms: IntDomains,
-    /// If a variable is optional, associates it with a literal that
-    /// is true if and only if the variable is present.
-    presence: RefMap<VarRef, Lit>,
+    /// Associates it with a literal that is true if and only if the variable is present.
+    ///
+    /// A non-optional variable is associated with [`Lit::TRUE`]
+    presence: RefVec<VarRef, Lit>,
     /// A graph to encode the relations between presence variables.
     implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
@@ -46,19 +50,32 @@ pub struct Domains {
 
 impl Domains {
     pub fn new() -> Self {
-        let domains = Domains {
+        let mut domains = Domains {
             doms: IntDomains::new(),
             presence: Default::default(),
             implications: Default::default(),
             queue: Default::default(),
         };
+        for _ in domains.doms.variables() {
+            domains.presence.push(Lit::TRUE);
+        }
         debug_assert!(domains.entails(Lit::TRUE));
         debug_assert!(!domains.entails(Lit::FALSE));
         domains
     }
 
+    /// Creates a new variable with the domain `[lb, ub]`.
+    ///
+    /// # Limitations
+    ///
+    /// The domain must be a subset of \[[`INT_CST_MIN`], [`INT_CST_MAX`]\], representing the extremes of domain values.
+    /// These value are dependent on the representation of domain values ([`IntCst`]) which defaults to 32 bits.
+    /// Larger domain values can be used (with a small runtime cost) with the `i64` and `i128` features.
     pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        self.doms.new_var(lb, ub)
+        let var = self.doms.new_var(lb, ub);
+        let var2 = self.presence.push(Lit::TRUE);
+        debug_assert_eq!(var, var2);
+        var
     }
 
     /// Records a direct implication `from => to`
@@ -94,16 +111,16 @@ impl Domains {
 
     pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
         assert!(
-            !self.presence.contains(presence.variable()),
+            self.presence[presence.variable()].tautological(),
             "The presence literal of an optional variable should not be based on an optional variable"
         );
         let var = self.new_var(lb, ub);
-        self.presence.insert(var, presence);
+        self.presence[var] = presence;
         var
     }
 
     pub fn presence(&self, term: impl Term) -> Lit {
-        self.presence.get(term.variable()).copied().unwrap_or(Lit::TRUE)
+        self.presence[term.variable()]
     }
 
     /// Returns `true` if `presence(a) => presence(b)`
@@ -158,18 +175,31 @@ impl Domains {
         }
     }
 
+    /// Returns the domain of an integer variable (ignoring its presence status)
+    pub fn concrete_domain<Var: VarView + Copy>(&self, var: Var) -> RangeDomain<Var::Value> {
+        let (lb, ub) = self.bounds(var);
+        RangeDomain::new(lb, ub)
+    }
+
     // ============== Integer domain accessors =====================
 
-    pub fn bounds(&self, v: VarRef) -> (IntCst, IntCst) {
+    pub fn bounds<Var: VarView + Copy>(&self, v: Var) -> (Var::Value, Var::Value) {
         (self.lb(v), self.ub(v))
     }
 
-    pub fn ub(&self, var: impl Into<SignedVar>) -> IntCst {
-        self.doms.ub(var)
+    /// Returns the upper bound of the variable.
+    pub fn ub<Var: VarView>(&self, var: Var) -> Var::Value {
+        var.upper_bound(self)
     }
 
-    pub fn lb(&self, var: impl Into<SignedVar>) -> IntCst {
-        self.doms.lb(var)
+    /// Returns the lower bound of the variable.
+    pub fn lb<Var: VarView>(&self, var: Var) -> Var::Value {
+        var.lower_bound(self)
+    }
+
+    /// Non-generic implementation that returns the upper bound of the signed var.
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.doms.ub(svar)
     }
 
     /// Returns true if the integer domain of the variable is a singleton or an empty set.
@@ -213,13 +243,17 @@ impl Domains {
     /// The function returns:
     ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain.
     ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
-    ///     provided bound is less constraining than the existing one.
+    ///    provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
-    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_lb(&mut self, var: impl Into<SignedVar>, new_lb: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        // var >= lb   <=>    -var <= -lb
-        self.set_ub(-var.into(), -new_lb, cause)
+    pub fn set_lb<Var: Boundable>(
+        &mut self,
+        var: Var,
+        new_lb: Var::Value,
+        cause: Cause,
+    ) -> Result<bool, InvalidUpdate> {
+        self.set(var.geq(new_lb), cause)
     }
 
     /// Modifies the upper bound of a variable.
@@ -229,26 +263,27 @@ impl Domains {
     /// The function returns:
     ///  - `Ok(true)` if the bound was changed and it results in a valid (non-empty) domain
     ///  - `Ok(false)` if no modification of the domain was carried out. This might occur if the
-    ///     provided bound is less constraining than the existing one.
+    ///    provided bound is less constraining than the existing one.
     ///  - `Err(EmptyDomain(v))` if the change resulted in the variable `v` having an empty domain.
-    ///     In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
+    ///    In general, it cannot be assumed that `v` is the same as the variable passed as parameter.
     #[inline]
-    pub fn set_ub(&mut self, var: impl Into<SignedVar>, new_ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_upper_bound(var.into(), new_ub, cause)
+    pub fn set_ub<Var: Boundable>(
+        &mut self,
+        var: Var,
+        new_ub: Var::Value,
+        cause: Cause,
+    ) -> Result<bool, InvalidUpdate> {
+        self.set(var.leq(new_ub), cause)
     }
 
     #[inline]
     pub fn set(&mut self, literal: Lit, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_upper_bound(literal.svar(), literal.ub_value(), cause)
+        self.set_upper_bound_impl(literal.svar(), literal.ub_value(), cause.into())
     }
 
     #[inline]
     fn set_impl(&mut self, literal: Lit, cause: DirectOrigin) -> Result<bool, InvalidUpdate> {
         self.set_upper_bound_impl(literal.svar(), literal.ub_value(), Origin::Direct(cause))
-    }
-
-    pub fn set_upper_bound(&mut self, affected: SignedVar, ub: IntCst, cause: Cause) -> Result<bool, InvalidUpdate> {
-        self.set_upper_bound_impl(affected, ub, cause.into())
     }
 
     fn set_upper_bound_impl(&mut self, affected: SignedVar, ub: IntCst, cause: Origin) -> Result<bool, InvalidUpdate> {
@@ -268,11 +303,12 @@ impl Domains {
         // variable must be optional
         debug_assert_ne!(prez, Lit::TRUE);
         // invariant: optional variable cannot be involved in implications
-        debug_assert!(self
-            .implications
-            .direct_implications_of(affected.leq(new_ub))
-            .next()
-            .is_none());
+        debug_assert!(
+            self.implications
+                .direct_implications_of(affected.leq(new_ub))
+                .next()
+                .is_none()
+        );
 
         let new_bound = affected.leq(new_ub);
 
@@ -354,18 +390,19 @@ impl Domains {
 
     pub fn set_bound_unchecked(&mut self, affected: SignedVar, new_ub: IntCst, cause: Cause) {
         // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.set_upper_bound(affected, new_ub, cause);
+        let res = self.set_upper_bound_impl(affected, new_ub, cause.into());
         debug_assert!(res.is_ok());
     }
 
     // ============= Variables =================
 
-    pub fn num_variables(&self) -> usize {
-        self.doms.num_variables()
-    }
-
     pub fn variables(&self) -> impl Iterator<Item = VarRef> {
         self.doms.variables()
+    }
+
+    /// Returns the number of variables in the model.
+    pub fn num_variables(&self) -> usize {
+        self.doms.num_variables()
     }
 
     pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
@@ -514,7 +551,7 @@ impl Domains {
                 // build the conflict clause and exit
                 debug_assert!(self.queue.is_empty());
                 result.push(!l);
-                break result.into();
+                break result.build();
             }
 
             debug_assert!(l_cause < self.trail().next_slot());
@@ -588,7 +625,7 @@ impl Domains {
             let implying_lits = self.implying_literals(lit, explainer).expect("Encountered ");
             explanation.extend(implying_lits);
         }
-        UnsatCore::from(Vec::from(result))
+        Explanation::from(Vec::from(result))
     }
 
     /// Extract an UNSAT core after a failure to impose or propagate an assumption.
@@ -596,7 +633,7 @@ impl Domains {
         &mut self,
         failed: InvalidUpdate,
         explainer: &mut impl Explainer,
-    ) -> UnsatCore {
+    ) -> Explanation {
         let InvalidUpdate(literal, cause) = failed;
         debug_assert!(
             !matches!(cause, Origin::Direct(DirectOrigin::Decision | DirectOrigin::Encoding)),
@@ -630,7 +667,7 @@ impl Domains {
         &mut self,
         conflict: Conflict,
         explainer: &mut impl Explainer,
-    ) -> UnsatCore {
+    ) -> Explanation {
         let explanation = Explanation::from(conflict.clause.literals().iter().map(|&l| !l).collect_vec());
         self.extract_assumptions_implying(explanation, explainer)
     }
@@ -647,6 +684,20 @@ impl Domains {
         }
 
         decs
+    }
+
+    /// Returns all the assumptions that were made since the root decision level.
+    pub fn assumptions(&self) -> Vec<Lit> {
+        let mut assumptions = Vec::new();
+        let mut lvl = DecLvl::ROOT + 1;
+        for e in self.trail().events() {
+            if e.cause == Origin::ASSUMPTION {
+                assumptions.push(e.new_literal());
+                lvl += 1;
+            }
+        }
+
+        assumptions
     }
 
     /// Computes literals `l_1 ... l_n` such that:
@@ -706,17 +757,13 @@ impl Domains {
     /// For a literal `l` that is true in the current state, returns a list of entailing literals `l_1 ... l_n`
     /// that forms an explanation `(l_1 & ... l_n) => l`.
     /// Returns None if the literal is a decision.
-    ///
-    /// Limitation: differently from the explanations provided in the main clause construction loop,
-    /// the explanation will not be built in the exact state where the inference was made (which might be problematic
-    /// for some reasoners).
     pub fn implying_literals(&self, literal: Lit, explainer: &mut dyn Explainer) -> Option<Vec<Lit>> {
         // we should be in a state where the literal is true
         debug_assert!(self.entails(literal));
         let event = if let Some(event) = self.implying_event(literal) {
             event
         } else {
-            // event is always true (entailed at root), and does have any implying literals
+            // event is always true (entailed at root), and thus does not have any implying literals
             return Some(Vec::new());
         };
         let event = self.get_event(event);
@@ -736,7 +783,6 @@ impl Domains {
                 &mut explanation,
                 explainer,
             );
-
             Some(explanation.lits)
         }
     }
@@ -747,6 +793,10 @@ impl Domains {
     /// This function returns true if the two literals are in this relationship, i.e., one represents the absence of the other
     pub fn fusable(&self, l1: Lit, l2: Lit) -> bool {
         l1 == !self.presence(l2) || l2 == !self.presence(l1)
+    }
+
+    pub fn extract_solution(&self) -> Solution {
+        Solution::new(self.doms.bounds.clone(), self.presence.clone())
     }
 }
 
@@ -803,7 +853,7 @@ impl Conflict {
     /// Here, a conflict with an empty clause.
     pub fn contradiction() -> Self {
         Conflict {
-            clause: Disjunction::new(Vec::new()),
+            clause: Disjunction::contradiction(),
             resolved: Default::default(),
         }
     }
@@ -834,6 +884,26 @@ impl Term for SignedVar {
 impl<T: Into<VarRef>> Term for T {
     fn variable(self) -> VarRef {
         self.into()
+    }
+}
+impl Term for IAtom {
+    fn variable(self) -> VarRef {
+        self.var.variable()
+    }
+}
+impl Term for Atom {
+    fn variable(self) -> VarRef {
+        self.variable()
+    }
+}
+
+impl crate::core::views::Dom for Domains {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Domains::upper_bound(self, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        Domains::presence(self, var)
     }
 }
 

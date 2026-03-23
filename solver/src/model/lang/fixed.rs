@@ -64,9 +64,12 @@ pub struct FAtom {
 // `?` represents a variable
 impl Debug for FAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "?f{:?}", VarRef::from(self.num.var).to_u32(),)?;
-        if self.num.shift != 0 {
-            write!(f, " + {}", self.num.shift as f32 / self.denom as f32)?;
+        if self.denom != 1 {
+            write!(f, "(")?;
+        }
+        write!(f, "{:?}", self.num)?;
+        if self.denom != 1 {
+            write!(f, ") / {}", self.denom)?;
         }
         Ok(())
     }
@@ -98,6 +101,12 @@ impl From<Rational> for FAtom {
     fn from(value: Rational) -> Self {
         let num = IAtom::from(*value.numer());
         FAtom::new(num, *value.denom())
+    }
+}
+impl From<IntCst> for FAtom {
+    fn from(value: IntCst) -> Self {
+        let num = IAtom::from(value);
+        FAtom::new(num, 1)
     }
 }
 impl TryFrom<FAtom> for Rational {

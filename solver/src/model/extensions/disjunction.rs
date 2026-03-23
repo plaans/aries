@@ -1,30 +1,21 @@
-use crate::core::*;
-use crate::model::extensions::PartialBoolAssignment;
+use crate::{core::*, prelude::DomainsExt};
 
 /// Extension trait that provides convenience methods to query the status of disjunctions.
 pub trait DisjunctionExt<Disj>
 where
     Disj: IntoIterator<Item = Lit>,
+    Self: DomainsExt,
 {
-    fn entails(&self, literal: Lit) -> bool;
-    fn value(&self, literal: Lit) -> Option<bool>;
-
-    fn presence(&self, literal: Lit) -> Lit;
-
     fn value_of_clause(&self, disjunction: Disj) -> Option<bool> {
         let mut found_undef = false;
         for disjunct in disjunction.into_iter() {
-            match self.value(disjunct) {
+            match self.value_of(disjunct) {
                 Some(true) => return Some(true),
                 Some(false) => {}
                 None => found_undef = true,
             }
         }
-        if found_undef {
-            None
-        } else {
-            Some(false)
-        }
+        if found_undef { None } else { Some(false) }
     }
 
     // =========== Clauses ============
@@ -49,8 +40,8 @@ where
         false
     }
 
-    fn fusable(&self, l1: Lit, l2: Lit) -> bool {
-        l1 == !self.presence(l2) || l2 == !self.presence(l1)
+    fn fusable_lits(&self, l1: Lit, l2: Lit) -> bool {
+        l1 == !self.presence_literal(l2) || l2 == !self.presence_literal(l1)
     }
     fn unit_clause(&self, disjuncts: Disj) -> bool {
         let mut disjuncts = disjuncts.into_iter();
@@ -66,7 +57,7 @@ where
                 for other in disjuncts {
                     if !self.entails(!other) {
                         // literal is not falsified
-                        if self.fusable(pending, other) {
+                        if self.fusable_lits(pending, other) {
                             // we can have at most one of those
                             count += 1;
                             if count > 1 {
@@ -85,15 +76,4 @@ where
     }
 }
 
-impl<Disj: IntoIterator<Item = Lit>, State: PartialBoolAssignment> DisjunctionExt<Disj> for State {
-    fn entails(&self, literal: Lit) -> bool {
-        self.entails(literal)
-    }
-    fn value(&self, literal: Lit) -> Option<bool> {
-        self.value(literal)
-    }
-
-    fn presence(&self, literal: Lit) -> Lit {
-        self.presence_literal(literal.variable())
-    }
-}
+impl<Disj: IntoIterator<Item = Lit>, State: DomainsExt> DisjunctionExt<Disj> for State {}

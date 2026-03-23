@@ -73,11 +73,7 @@ impl PartialAssignmentBuilder {
 
     fn add_var(&mut self, var: VarRef, val: IntCst) -> Result<(), InvalidAssignment> {
         if let Some(prev) = self.values.get(&var).copied() {
-            if val == prev {
-                Ok(())
-            } else {
-                Err(InvalidAssignment)
-            }
+            if val == prev { Ok(()) } else { Err(InvalidAssignment) }
         } else {
             self.values.insert(var, val);
             Ok(())
@@ -155,9 +151,9 @@ impl Default for PartialAssignmentBuilder {
 
 #[cfg(test)]
 mod tests {
+    use crate::model::Model;
     use crate::model::extensions::partial_assignment::{PartialAssignment, PartialAssignmentBuilder};
     use crate::model::lang::{Atom, Cst};
-    use crate::model::Model;
 
     #[test]
     fn test_partial_assignment() {

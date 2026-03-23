@@ -1,7 +1,8 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
-use crate::core::{IntCst, Lit, SignedVar, INT_CST_MIN};
-use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
+use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar};
+use crate::prelude::*;
 use crate::reasoners::Contradiction;
+use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct MaxElem {
@@ -16,13 +17,13 @@ impl MaxElem {
     }
 }
 
-/// Propagator for a constraint that enforces that at least on element from the RHS is present and greater than or
+/// Propagator for a constraint that enforces that at least one element from the RHS is present and greater than or
 /// equal to the element at the LHS. The scope of the propagator is the presence of the LHS.
 ///
 /// Constraint:  `prez(lhs)   =>    OR_i  prez(rhs[i]) & (rhs[i] >= lhs)`
 /// Assumes that:   `forall i , prez(rhs[i]) => prez(lhs)`  i.e.  RHS elements are in the (sub?)scope of LHS
 ///
-/// This is not sufficient to implement a propagator of the Max constraint and is only used as of several propagators in a decomposition.
+/// This is not sufficient to implement a propagator of the Max constraint and is only used as one of several propagators in a decomposition.
 #[derive(Clone)]
 pub(crate) struct AtLeastOneGeq {
     /// presence of LHS and scope of the constraint
@@ -41,7 +42,7 @@ impl Propagator for AtLeastOneGeq {
         }
     }
 
-    fn propagate(&self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
         if domains.entails(!self.scope) {
             return Ok(()); // inactive, skip propagation
         }
@@ -54,7 +55,6 @@ impl Propagator for AtLeastOneGeq {
         let lb = |svar: SignedVar| domains.lb(svar);
 
         let mut candidates = Candidates::Empty;
-        let lhs_ub = ub(self.lhs);
         let lhs_lb = lb(self.lhs);
         let mut rhs_max = INT_CST_MIN - 1;
 
@@ -98,7 +98,7 @@ impl Propagator for AtLeastOneGeq {
     }
 
     fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
-        debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
+        debug_assert_eq!(self.scope, domains.presence_literal(self.lhs.variable()));
         if literal == !self.scope {
             // PROP 1
             let max_lb = domains.lb(self.lhs);
@@ -138,7 +138,7 @@ impl Propagator for AtLeastOneGeq {
                 .elements
                 .iter()
                 .enumerate()
-                .find(|(i, e)| literal == e.presence || literal.svar() == -e.var)
+                .find(|(_, e)| literal == e.presence || literal.svar() == -e.var)
                 .unwrap();
 
             let max_lb = domains.lb(self.lhs);
@@ -178,8 +178,8 @@ impl Propagator for AtLeastOneGeq {
 mod test {
     use crate::core::state::{Cause, Domains};
     use crate::core::{IntCst, Lit, SignedVar, VarRef};
-    use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
     use crate::reasoners::cp::Propagator;
+    use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 
     fn check_bounds(d: &Domains, v: VarRef, lb: IntCst, ub: IntCst) {
         assert_eq!(d.lb(v), lb);
@@ -198,7 +198,7 @@ mod test {
         let a = d.new_var(0, 10);
         let b = d.new_var(0, 12);
 
-        let c = AtLeastOneGeq {
+        let mut c = AtLeastOneGeq {
             scope: Lit::TRUE,
             lhs: SignedVar::plus(m),
             elements: vec![
@@ -217,19 +217,19 @@ mod test {
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 13);
 
-        d.set_ub(a, 9, CAUSE);
+        d.set_ub(a, 9, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 13);
 
-        d.set_ub(b, 9, CAUSE);
+        d.set_ub(b, 9, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 10);
 
-        d.set_ub(a, 5, CAUSE);
+        d.set_ub(a, 5, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 10);
 
-        d.set_ub(b, 3, CAUSE);
+        d.set_ub(b, 3, CAUSE).unwrap();
         c.propagate(d, CAUSE).unwrap();
         check_bounds(d, m, 0, 6);
     }

@@ -1,10 +1,11 @@
 use crate::core::literals::Disjunction;
-use crate::model::extensions::SavedAssignment;
+use crate::prelude::*;
+
 use crossbeam_channel::{Receiver, Sender};
 use env_param::EnvParam;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The maximum size of a clause that can be shared with other threads.
 static MAX_CLAUSE_SHARING_SIZE: EnvParam<usize> = EnvParam::new("ARIES_MAX_CLAUSE_SHARING_SIZE", "3");
@@ -22,7 +23,7 @@ pub enum InputSignal {
     /// A clause was learned in another solver.
     LearnedClause(Arc<Disjunction>),
     /// A solution was found in another solver.
-    SolutionFound(Arc<SavedAssignment>),
+    SolutionFound(Solution),
 }
 
 pub struct InputStream {
@@ -53,7 +54,7 @@ pub enum OutputSignal {
     /// Represents a clause that has been inferred by the solver
     LearntClause(Arc<Disjunction>),
     /// An intermediate solution was found, typically a solution that is valid but was not proven optimal yet.
-    SolutionFound(Arc<SavedAssignment>),
+    SolutionFound(Solution),
 }
 
 /// A structure that holds the various components to communicate to a solver.
@@ -105,7 +106,7 @@ impl Synchro {
     }
 
     /// Notify listeners that a new solution was found.
-    pub fn notify_solution_found(&self, assignment: Arc<SavedAssignment>) {
+    pub fn notify_solution_found(&self, assignment: Solution) {
         if let Some(output) = &self.output {
             let msg = OutputSignal::SolutionFound(assignment);
             // ignore errors as the thread might just be running alone in the ether

@@ -1,0 +1,4 @@
+var bool: x:: output_var;
+var -1..8: i:: output_var;
+constraint array_bool_element(i, [true, false, false, true], x);
+solve satisfy;

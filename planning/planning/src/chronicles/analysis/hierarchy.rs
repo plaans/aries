@@ -1,6 +1,6 @@
 use crate::chronicles::analysis::ProblemClass;
 use crate::chronicles::{Chronicle, Problem};
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::Atom;
 
 pub fn class_of(pb: &Problem) -> ProblemClass {

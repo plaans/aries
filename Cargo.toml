@@ -2,11 +2,17 @@
 
 members = [
     "solver",
+    "bench/data",
+    "bench/bench",
     "env_param",
+    "planning/engine",
+    "planning/planx",
+    "planning/timelines",
     "planning/planning",
     "planning/planners",
     "planning/grpc/api",
     "planning/grpc/server",
+    "aries_fzn",
     "examples/sat",
     "examples/scheduling",
     "examples/smt",
@@ -18,24 +24,61 @@ resolver = "2"
 
 [workspace.dependencies]
 anyhow = { version = "1.0" }
-clap = { version = "4.4", features = ["derive"] }
-num-rational = { version = "0.4.1" }
+arcstr = { version = "1.2" }
+async-trait = "0.1"
+bumpalo = { version = "3.19" }
+clap = { version = "4.5", features = ["derive"] }
+comfy-table = "7.0"
+crossbeam-channel = "0.5"
+derivative = "2.2"
+derive_builder = "0.20"
+itertools = { version = "0.14" }
+fixedbitset = { version = "0.5.7", default-features = false }
+format_num = "0.1.0"
+hashbrown = "0.16"
+im = "15.1"
+lru = "0.16"
+malachite = "0.9.0"
+num-rational = { version = "0.4.2" }
+num-integer = { default-features = false, version = "0.1.46" }
+pathfinding = "4.14.0"
+prost = { version = "0.14" }
+rand = { version = "0.9", features = ["small_rng"] }
+readable = "0.1"
 regex = { version = "1" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+smallvec = { version = "1.15", features = ["union"] }
+structopt = "0.3"
+streaming-iterator = "0.1.9"
+test_each_file = "0.3.6"
+tonic = "0.14.2"
+tonic-prost = "0.14.2"
+tonic-prost-build = "0.14.2"
+tokio = { default-features = false, version = "1.49.0", features = [
+    "rt-multi-thread",
+    "macros",
+] }
+tokio-stream = { default-features = false, version = "0.1" }
 tracing = { version = "0.1", features = ["release_max_level_debug"] }
 tracing-subscriber = "0.3"
-itertools = { version = "0.13" }
-rand = { version = "0.8.5", features = ["small_rng"] }
-fixedbitset = { version = "0.5.7", default-features = false }
-prost = { version = "0.12.6" }
-tonic = "0.11.0"
-tonic-build = "0.11.0"
+transitive = "1.2.0"
+vec_map = "0.8"
+walkdir = "2.5"
+zip = { default-features = false, features = ["deflate"], version = "7.0.0" }
+derive_more = { version = "2.1", features = ["display"] }
+thiserror = "2"
+annotate-snippets = "0.12.10"
+idmap = "0.3.5"
+compact_str = "0.9.0"
 
 [profile.dev]
 opt-level = 0
+debug = "line-tables-only" # Keep only the information for backtraces, not debugging (speeds up compilation)
 
 [profile.release]
 codegen-units = 8
-debug = false # No debug symbols to keep executables small
+debug = false     # No debug symbols to keep executables small
 lto = "thin"
 opt-level = 3
 panic = "abort"
@@ -44,3 +87,8 @@ panic = "abort"
 [profile.ci]
 inherits = "dev"
 opt-level = 3
+
+# A profile meant for profiling in perf, providing all optimizations of release together with debug symbols
+[profile.perf]
+inherits = "release"
+debug = "line-tables-only" # Keep only the information for backtraces, not debugging (speeds up compilation)

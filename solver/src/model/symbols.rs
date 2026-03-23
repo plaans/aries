@@ -1,5 +1,5 @@
 use crate::collections::id_map::IdMap;
-use crate::core::{u32_to_cst, IntCst};
+use crate::core::{IntCst, u32_to_cst};
 use crate::create_ref_type;
 use crate::model::types::{TypeHierarchy, TypeId};
 use anyhow::*;

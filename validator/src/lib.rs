@@ -9,13 +9,14 @@ use aries::core::INT_CST_MAX;
 // Public exportation of the interfaces
 pub use interfaces::unified_planning::validate_upf;
 
+use anyhow::{bail, ensure, Result};
+use malachite::base::num::arithmetic::traits::Abs;
+use malachite::Rational;
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Display,
 };
 
-use anyhow::{bail, ensure, Result};
-use malachite::{num::arithmetic::traits::Abs, Rational};
 use models::{
     action::{Action, DurativeAction, SpanAction},
     condition::{Condition, DurativeCondition, SpanCondition},

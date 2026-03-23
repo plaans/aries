@@ -1,13 +1,14 @@
 #![allow(clippy::needless_range_loop)]
 
 use aries::core::{IntCst, Lit, INT_CST_MAX};
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::{IVar, Rational};
 use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::Brancher;
+use aries::solver::SearchLimit;
 use env_param::EnvParam;
 use itertools::Itertools;
 use std::cmp::max;
@@ -229,17 +230,11 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
     let mut solver = Solver::new(model);
     solver.set_brancher_boxed(brancher);
 
-    if let Some(sol) = solver.maximize(total_value).unwrap() {
-        let model = solver.model.clone().with_domains(sol.1.as_ref().clone());
+    if let Some((_opt, sol)) = solver.maximize(total_value, SearchLimit::None).unwrap() {
         let items: Vec<Item> = vars
             .iter()
             .zip(items.iter())
-            // .filter(|(&prez, _)| model.var_domain(prez).lb >= 1)
-            .flat_map(|(prez, item)| {
-                std::iter::repeat(*item)
-                    .take(model.var_domain(*prez).lb as usize)
-                    .cloned()
-            })
+            .flat_map(|(prez, item)| std::iter::repeat_n(*item, sol.lb(*prez) as usize).cloned())
             .collect();
         let solution = Sol { items };
         assert!(pb.is_valid(&solution));

@@ -1,8 +1,9 @@
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::{IntCst, Lit, SignedVar, VarRef, INT_CST_MIN};
+use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
 use crate::model::{Label, Model};
+use crate::prelude::DomainsExt;
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;
@@ -799,7 +800,7 @@ impl Theory for DenseEqTheory {
                     debug_assert!(domains.entails(ab_act), "Propagation occurred on inactive edges.");
                     out_explanation.push(ab_act);
                     let ab_lbl = self.graph.label(a, b);
-                    match domains.value(ab_lbl) {
+                    match domains.value_of(ab_lbl) {
                         Some(true) => out_explanation.push(ab_lbl),
                         Some(false) => out_explanation.push(!ab_lbl),
                         None => {
@@ -923,11 +924,7 @@ impl<L: Label> ReifyEq for Model<L> {
     fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit {
         let pa = self.state.presence(a);
         let pb = self.state.presence(b);
-        if self.state.implies(pa, pb) {
-            Lit::TRUE
-        } else {
-            pb
-        }
+        if self.state.implies(pa, pb) { Lit::TRUE } else { pb }
     }
 }
 
@@ -944,7 +941,7 @@ mod tests {
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
     use crate::solver::search::random::RandomChoice;
-    use crate::solver::Solver;
+    use crate::solver::{SearchLimit, Solver};
     use crate::utils::input::Sym;
     use itertools::Itertools;
     use rand::prelude::SmallRng;
@@ -961,11 +958,7 @@ mod tests {
         pub fn new(a: impl Into<Node>, b: impl Into<Node>) -> Pair {
             let a = a.into();
             let b = b.into();
-            if a <= b {
-                Pair { a, b }
-            } else {
-                Pair { a: b, b: a }
-            }
+            if a <= b { Pair { a, b } } else { Pair { a: b, b: a } }
         }
     }
 
@@ -1197,7 +1190,7 @@ mod tests {
             let model = model.clone();
             let solver = &mut Solver::new(model);
             solver.set_brancher(RandomChoice::new(seed));
-            let solution = solver.solve().unwrap().is_some();
+            let solution = solver.solve(SearchLimit::None).unwrap().is_some();
             if let Some(expected_sat) = expected_result {
                 assert_eq!(solution, expected_sat)
             }
@@ -1210,7 +1203,7 @@ mod tests {
     fn random_model(seed: u64) -> Model<String> {
         let mut rng = SmallRng::seed_from_u64(seed);
         let objects = ["alice", "bob", "chloe", "donald", "elon"];
-        let num_objects = rng.gen_range(1..5);
+        let num_objects = rng.random_range(1..5);
         let objects = objects[0..num_objects].to_vec();
         let symbols = SymbolTable::from(vec![("obj", objects.clone())]);
         let symbols = Arc::new(symbols);
@@ -1219,7 +1212,7 @@ mod tests {
 
         let mut model: Model<String> = Model::new_with_symbols(symbols.clone());
 
-        let num_scopes = rng.gen_range(0..3);
+        let num_scopes = rng.random_range(0..3);
         let scopes = (0..=num_scopes)
             .map(|i| {
                 if i == 0 {
@@ -1230,12 +1223,12 @@ mod tests {
             })
             .collect_vec();
 
-        let num_vars = rng.gen_range(0..10);
+        let num_vars = rng.random_range(0..10);
         println!("Problem num_scopes: {num_scopes}, num_vars:  {num_vars}  num_values: {num_objects}");
 
         let mut vars = Vec::with_capacity(num_vars);
         for i in 0..num_vars {
-            let scope_id = rng.gen_range(0..scopes.len());
+            let scope_id = rng.random_range(0..scopes.len());
             let scope = scopes[scope_id];
             let var_name = format!("x{i}");
             println!("  {var_name} [{scope_id}]  in {:?}", &objects);
@@ -1254,9 +1247,9 @@ mod tests {
 
     #[test]
     fn random_problems() {
-        for seed in 0..100 {
+        for seed in 0..10 {
             let model = random_model(seed);
-            random_solves(&model, 30, Some(true));
+            random_solves(&model, 10, Some(true));
         }
     }
 

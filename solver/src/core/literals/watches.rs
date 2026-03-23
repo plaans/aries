@@ -68,16 +68,18 @@ impl<Watcher> WatchSet<Watcher> {
         self.watches.iter()
     }
 
-    pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
-        let mut i = 0;
-        while i < self.watches.len() {
-            if literal.ub_value() <= self.watches[i].guard {
-                let w = self.watches.swap_remove(i);
-                out.watches.push(w);
+    pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>)
+    where
+        Watcher: Copy,
+    {
+        self.watches.retain(|w| {
+            if literal.ub_value() <= w.guard {
+                out.watches.push(*w);
+                false
             } else {
-                i += 1
+                true
             }
-        }
+        });
     }
 }
 
@@ -161,7 +163,10 @@ impl<Watcher> Watches<Watcher> {
         }
     }
 
-    pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>) {
+    pub fn move_watches_to(&mut self, literal: Lit, out: &mut WatchSet<Watcher>)
+    where
+        Watcher: Copy,
+    {
         if self.watches.contains(literal.svar()) {
             self.watches[literal.svar()].move_watches_to(literal, out)
         }

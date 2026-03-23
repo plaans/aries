@@ -1,7 +1,6 @@
 pub mod heap;
 pub mod id_map;
 pub mod ref_store;
-pub mod seq;
 pub mod set;
 
 pub struct Range<A> {
@@ -61,10 +60,6 @@ impl<A: Next + Copy + PartialOrd> Iterator for Range<A> {
         let prev = self.first;
         self.first = prev.next();
 
-        if prev < self.after_last {
-            Some(prev)
-        } else {
-            None
-        }
+        if prev < self.after_last { Some(prev) } else { None }
     }
 }

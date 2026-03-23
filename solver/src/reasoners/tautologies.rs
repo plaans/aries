@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::core::Lit;
+use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation, InferenceCause};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 
 /// A reasoner that holds a set of tautologies (single literals that are known to be true)

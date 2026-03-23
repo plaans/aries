@@ -3,17 +3,17 @@ use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::core::literals::{LitSet, Watches};
 use crate::core::state::{Conflict, Domains, Event, Explainer, IntDomain, Origin};
-use crate::core::{IntCst, Lit, VarRef};
-use crate::model::extensions::{AssignmentExt, SavedAssignment};
 use crate::model::Model;
+use crate::model::extensions::DomainsExt;
+use crate::prelude::*;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 
-use crate::collections::set::IterableRefSet;
+use crate::collections::set::{IterableRefSet, RefSet};
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::fmt::Debug;
 
 #[derive(Default, Clone)]
@@ -32,7 +32,7 @@ pub struct ConflictBasedBrancher {
     /// vars that should be considered for branching but htat have not been processed yet.
     unprocessed_vars: Vec<VarRef>,
     /// Associates presence literals to the optional variables
-    /// Essentially a Map<Lit, Set<VarRef>>
+    /// Essentially a `Map<Lit, Set<VarRef>>`
     presences: Watches<VarRef>,
     cursor: ObsTrailCursor<Event>,
     pub params: Params,
@@ -218,7 +218,7 @@ impl ConflictBasedBrancher {
     }
 
     pub fn with(choices: Vec<Lit>, params: Params) -> Self {
-        let vars: HashSet<VarRef> = choices.iter().map(|l| l.variable()).collect();
+        let vars: BTreeSet<VarRef> = choices.iter().map(|l| l.variable()).collect();
         ConflictBasedBrancher {
             params,
             heap: VarSelect::new(Default::default()),
@@ -283,43 +283,44 @@ impl ConflictBasedBrancher {
         // returns true if this variable is available for decision
         let decidable = |var: VarRef| !model.state.is_bound(var) && model.state.present(var) == Some(true);
 
-        let next_unset =
-            if self.params.random_var_period != 0 && _stats.num_decisions % self.params.random_var_period == 0 {
-                // select an unset variable randomly
-                let vars = self
-                    .heap
-                    .heap
-                    .enqueued_variables()
-                    .filter(|&v| decidable(v))
-                    .collect_vec();
-                if vars.is_empty() {
-                    None
-                } else {
-                    let idx = self.rng.gen_range(0..vars.len());
-                    Some(vars[idx])
-                }
+        let next_unset = if self.params.random_var_period != 0
+            && _stats.num_decisions.is_multiple_of(self.params.random_var_period)
+        {
+            // select an unset variable randomly
+            let vars = self
+                .heap
+                .heap
+                .enqueued_variables()
+                .filter(|&v| decidable(v))
+                .collect_vec();
+            if vars.is_empty() {
+                None
             } else {
-                // extract the highest priority variable that is not set yet.
-                loop {
-                    // we are only allowed to remove from the queue variables that are bound/absent.
-                    // so peek at the next one an only remove it if it was
-                    match self.heap.peek() {
-                        Some(v) => {
-                            if !decidable(v) {
-                                // already bound or not present yet, drop the peeked variable before proceeding to next
-                                self.heap.pop().unwrap();
-                            } else {
-                                // not set, select for decision
-                                break Some(v);
-                            }
-                        }
-                        None => {
-                            // no variables left in queue
-                            break None;
+                let idx = self.rng.random_range(0..vars.len());
+                Some(vars[idx])
+            }
+        } else {
+            // extract the highest priority variable that is not set yet.
+            loop {
+                // we are only allowed to remove from the queue variables that are bound/absent.
+                // so peek at the next one an only remove it if it was
+                match self.heap.peek() {
+                    Some(v) => {
+                        if !decidable(v) {
+                            // already bound or not present yet, drop the peeked variable before proceeding to next
+                            self.heap.pop().unwrap();
+                        } else {
+                            // not set, select for decision
+                            break Some(v);
                         }
                     }
+                    None => {
+                        // no variables left in queue
+                        break None;
+                    }
                 }
-            };
+            }
+        };
         if let Some(v) = next_unset {
             // determine value for literal:
             // - first from per-variable preferred assignments
@@ -400,7 +401,7 @@ struct VarSelect {
     /// Heap where pending variables are present and allows extracting the highest-priority variable.
     heap: Heap,
     /// Decision variables among which we must select.
-    vars: HashSet<VarRef>,
+    vars: RefSet<VarRef>,
     /// Trail that record events and allows repopulating the heap when backtracking.
     trail: Trail<HeapEvent>,
 }
@@ -416,7 +417,7 @@ impl VarSelect {
     }
 
     pub fn is_declared(&self, v: VarRef) -> bool {
-        self.vars.contains(&v)
+        self.vars.contains(v)
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
@@ -459,7 +460,7 @@ impl VarSelect {
 
     fn lit_increase_activity(&mut self, lit: Lit, factor: f64) {
         let var = lit.variable();
-        if self.vars.contains(&var) {
+        if self.vars.contains(var) {
             let var_inc = self.params.var_inc * factor;
 
             self.heap.change_priority(var, |p| *p += var_inc);
@@ -474,7 +475,7 @@ impl VarSelect {
         debug_assert!(!new_value.is_nan());
         debug_assert!(!factor.is_nan());
         let var = lit.variable();
-        if self.vars.contains(&var) {
+        if self.vars.contains(var) {
             // assert!(self.params.var_inc == 1.0_f32);
 
             let new_priority = loop {
@@ -585,7 +586,7 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
         self.import_vars(model)
     }
 
-    fn new_assignment_found(&mut self, objective: IntCst, assignment: std::sync::Arc<SavedAssignment>) {
+    fn new_assignment_found(&mut self, objective: IntCst, assignment: &Solution) {
         // if we are in LNS mode and the given solution is better than the previous one,
         // set the default value of all variables to the one they have in the solution.
         let is_improvement = if let Some(prev) = self.default_assignment.objective_found {
@@ -683,17 +684,17 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
         if self.params.active >= ActiveLiterals::Reasoned {
             for disjunct in clause.literals() {
                 let l = !*disjunct;
-                if model.entails(l) {
-                    if let Some(reasons) = model.state.implying_literals(l, _explainer) {
-                        for &r in &reasons {
-                            // the reason is expected to be entailed, but it may not if it serves as a (presence) guard
-                            // of another literal of an explanation.
-                            // Note that after a few explanations, the guard may be indirect (i.e. a literal that implies the presence)
-                            // so we cannot explicitly check that it is the presence of another literal in the clause.
-                            // We only check that the non-entailed literal may be a presence literal (i.e. always present).
-                            debug_assert!(model.entails(r) || model.presence_literal(r.variable()) == Lit::TRUE);
-                            culprits.insert(r);
-                        }
+                if model.entails(l)
+                    && let Some(reasons) = model.state.implying_literals(l, _explainer)
+                {
+                    for &r in &reasons {
+                        // the reason is expected to be entailed, but it may not if it serves as a (presence) guard
+                        // of another literal of an explanation.
+                        // Note that after a few explanations, the guard may be indirect (i.e. a literal that implies the presence)
+                        // so we cannot explicitly check that it is the presence of another literal in the clause.
+                        // We only check that the non-entailed literal may be a presence literal (i.e. always present).
+                        debug_assert!(model.entails(r) || model.presence_literal(r.variable()) == Lit::TRUE);
+                        culprits.insert(r);
                     }
                 }
             }

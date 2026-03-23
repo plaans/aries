@@ -467,7 +467,6 @@ impl SubstitutionGroup {
 
 /// Checks whether a group is substitutable, meaning that of all predicate that may map to a single
 /// ground state variable, only one may be true at any point in time
-
 fn is_substitutable(pb: &Problem, group: &SubstitutionGroup) -> bool {
     let fluent_name = format!("{group:?}");
     let _span = tracing::span!(tracing::Level::TRACE, "to-sv", fluent = fluent_name).entered();

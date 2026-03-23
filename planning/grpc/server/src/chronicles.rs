@@ -409,7 +409,7 @@ fn standalone_chronicle_for_constraints(
     factory.env = global_env.clone();
 
     for constraint in constraints {
-        factory.enforce(*constraint, None)?;
+        factory.enforce(constraint, None)?;
     }
 
     factory.build_instance(ChronicleOrigin::Original)
@@ -631,9 +631,7 @@ impl<'a> ChronicleFactory<'a> {
             .model
             .new_presence_variable(Lit::TRUE, self.container / VarType::Presence);
         self.variables.push(bvar.into());
-        let prez = bvar.true_lit();
-        // self.env.presences.insert(name, prez);
-        prez
+        bvar.true_lit()
     }
 
     fn add_up_effect(&mut self, eff: &up::Effect) -> Result<(), Error> {

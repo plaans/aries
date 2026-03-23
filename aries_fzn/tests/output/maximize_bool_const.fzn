@@ -1,0 +1,2 @@
+% Maximize boolean constant
+solve maximize true;

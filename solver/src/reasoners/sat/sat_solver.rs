@@ -1,9 +1,10 @@
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail};
 use crate::collections::set::{IterableRefSet, RefSet};
-use crate::core::literals::{Disjunction, WatchSet, Watches};
+use crate::core::literals::{WatchSet, Watches};
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::*;
 use crate::model::extensions::DisjunctionExt;
+use crate::prelude::*;
 use crate::reasoners::sat::clauses::*;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use itertools::Itertools;
@@ -155,42 +156,41 @@ impl SatSolver {
 
     /// Adds a new clause that will be part of the problem definition.
     /// Returns a unique and stable identifier for the clause.
-    pub fn add_clause(&mut self, clause: impl Into<Disjunction>) -> ClauseId {
-        self.add_clause_impl(Clause::new(clause.into()), false)
+    pub fn add_clause(&mut self, clause: &[Lit]) -> ClauseId {
+        self.add_clause_impl(clause, None, false)
     }
 
     /// Adds a new clause that only needs to be active when the scope literal is true.
     ///
     /// Invariant: All literals in scoped clauses must only be present if the scope literal is true.
     /// This invariant allows scoped clauses to be eagerly propagated even when the scope literal is unknown.
-    pub fn add_clause_scoped(&mut self, clause: impl Into<Disjunction>, scope: Lit) -> ClauseId {
-        self.add_clause_impl(Clause::new_scoped(clause.into(), scope), false)
+    pub fn add_clause_scoped(&mut self, clause: &[Lit], scope: Lit) -> ClauseId {
+        self.add_clause_impl(clause, Some(scope), false)
     }
 
     /// Adds a new clause representing `from => to`.
     pub fn add_implication(&mut self, from: Lit, to: Lit) -> ClauseId {
-        self.add_clause([!from, to])
+        self.add_clause(&[!from, to])
     }
 
     /// Adds a clause that is implied by the other clauses and that the solver is allowed to forget if
     /// it judges that its constraint database is bloated and that this clause is not helpful in resolution.
-    pub fn add_forgettable_clause(&mut self, clause: impl Into<Disjunction>) {
-        self.add_clause_impl(Clause::new(clause.into()), true);
+    pub fn add_forgettable_clause(&mut self, clause: &[Lit]) {
+        self.add_clause_impl(clause, None, true);
     }
 
     /// Adds an asserting clause that was learnt as a result of a conflict
     /// On the next propagation, the clause will be propagated should assert a new literal.
     /// We set it to the front of the propagation queue as we know it will be triggered.
-    pub fn add_learnt_clause(&mut self, clause: impl Into<Disjunction>) {
+    pub fn add_learnt_clause(&mut self, clause: &[Lit]) {
         self.stats.conflicts += 1;
-        let clause = clause.into();
-        let cl_id = self.clauses.add_clause(Clause::new(clause), true);
+        let cl_id = self.clauses.add_clause(clause, None, true);
 
         self.pending_clauses.push_front(PendingClause { clause: cl_id });
     }
 
-    fn add_clause_impl(&mut self, clause: Clause, learnt: bool) -> ClauseId {
-        let cl_id = self.clauses.add_clause(clause, learnt);
+    fn add_clause_impl(&mut self, clause: &[Lit], scope: Option<Lit>, learnt: bool) -> ClauseId {
+        let cl_id = self.clauses.add_clause(clause, scope, learnt);
         self.pending_clauses.push_back(PendingClause { clause: cl_id });
         cl_id
     }
@@ -428,7 +428,7 @@ impl SatSolver {
         debug_assert_eq!(model.value(p), Some(true));
         // counter intuitive: this method is only called after removing the watch
         // and we are responsible for resetting a valid watch.
-        debug_assert!(!self.watches.is_watched_by(p, clause_id));
+        // debug_assert!(!self.watches.is_watched_by(p, clause_id)); // Check deactivated because to costly on some problems (suposedly due to lack of LTO).
         // self.stats.propagations += 1;
         let clause = &mut self.clauses[clause_id];
         if clause.has_single_literal() {
@@ -467,8 +467,8 @@ impl SatSolver {
         }
 
         let mut replacement = Replacement::None;
-        for i in 0..clause.unwatched.len() {
-            let lit = clause.unwatched[i];
+        for i in 0..clause.unwatched_lits().len() {
+            let lit = clause.unwatched(i);
             if !model.entails(!lit) {
                 // this is a candidate, distinguish the case where it is fusable with watch1
                 if model.fusable(clause.watch1, lit) {
@@ -477,8 +477,8 @@ impl SatSolver {
                         // this might occur for a clause `!p v a v b`   where `p` is the presence of both `a` and `b`
                         // here, !p might be fused with both a and b
                         // the clause is not unit so we should set up a regular watch
-                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched[prev_i]));
-                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched[i]));
+                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched(prev_i)));
+                        debug_assert_eq!(!clause.watch1, model.presence(clause.unwatched(i)));
                         replacement = Replacement::Regular(prev_i);
                         break;
                     } else {
@@ -498,20 +498,20 @@ impl SatSolver {
         match replacement {
             Replacement::Regular(i) => {
                 // clause is not unit, we have a replacement, set the watch and exit
-                let lit = clause.unwatched[i];
+                let lit = clause.unwatched(i);
                 clause.set_watch2(i);
                 self.watches.add_watch(clause_id, !lit);
                 true
             }
             Replacement::FusableUnit(i) => {
                 // clause is unit because the two only unset literals can be fused
-                let lit = clause.unwatched[i];
+                let lit = clause.unwatched(i);
                 clause.set_watch2(i);
                 self.watches.add_watch(clause_id, !lit);
 
                 debug_assert!(model.fusable(clause.watch1, clause.watch2));
                 // all other literals should be false
-                debug_assert!(clause.unwatched.iter().all(|&l| model.entails(!l)));
+                debug_assert!(clause.unwatched_lits().iter().all(|&l| model.entails(!l)));
 
                 // distinguish between the optional literal and its absent literal
                 let (opt, absent) = if clause.watch1 == !model.presence(clause.watch2) {
@@ -628,13 +628,13 @@ impl SatSolver {
             }
         }
         if state.fusable(l0, l1) {
-            assert!(cl.unwatched.iter().all(|&l| state.entails(!l)));
+            assert!(cl.unwatched_lits().iter().all(|&l| state.entails(!l)));
         }
         true
     }
 
     pub fn explain(&mut self, explained: Lit, cause: u32, model: &DomainsSnapshot, explanation: &mut Explanation) {
-        let explained_presence = model.presence(explained);
+        let explained_presence = model.presence_literal(explained);
         let clause = ClauseId::from(cause);
 
         // bump the activity of any clause used in an explanation
@@ -750,11 +750,12 @@ impl Theory for SatSolver {
 }
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::backtrack::Backtrack;
-    use crate::collections::seq::Seq;
     use crate::core::state::{Cause, Explainer, InferenceCause};
-    use crate::model::extensions::AssignmentExt;
+    use crate::model::extensions::DomainsExt;
 
     type Model = crate::model::Model<&'static str>;
 
@@ -768,7 +769,7 @@ mod tests {
         let mut sat = SatSolver::new(writer);
         let a_or_b = vec![a.true_lit(), b.true_lit()];
 
-        sat.add_clause(a_or_b);
+        sat.add_clause(&a_or_b);
         sat.propagate(&mut model.state).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
@@ -800,7 +801,7 @@ mod tests {
         let mut sat = SatSolver::new(writer);
         let clause = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
 
-        sat.add_clause(clause);
+        sat.add_clause(&clause);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [None, None, None, None]);
 
@@ -854,7 +855,7 @@ mod tests {
         let mut sat = SatSolver::new(writer);
         let a_or_b = vec![a.true_lit(), b.true_lit()];
 
-        sat.add_clause(a_or_b);
+        sat.add_clause(&a_or_b);
         sat.propagate(&mut model.state).unwrap();
         assert_eq!(model.boolean_value_of(a), None);
         assert_eq!(model.boolean_value_of(b), None);
@@ -889,27 +890,27 @@ mod tests {
         model.state.set(b.false_lit(), Cause::Decision).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let abcd = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
+        let abcd = &[a.true_lit(), b.true_lit(), c.true_lit(), d.true_lit()];
         sat.add_clause(abcd);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let nota_notb = vec![a.false_lit(), b.false_lit()];
+        let nota_notb = &[a.false_lit(), b.false_lit()];
         sat.add_clause(nota_notb);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let nota_b = vec![a.false_lit(), b.true_lit()];
+        let nota_b = &[a.false_lit(), b.true_lit()];
         sat.add_clause(nota_b);
         sat.propagate(&mut model.state).unwrap();
         check_values(model, [Some(false), Some(false), None, None]);
 
-        let a_b_notc = vec![a.true_lit(), b.true_lit(), c.false_lit()];
+        let a_b_notc = &[a.true_lit(), b.true_lit(), c.false_lit()];
         sat.add_clause(a_b_notc);
         sat.propagate(&mut model.state).unwrap(); // should trigger and in turn trigger the first clause
         check_values(model, [Some(false), Some(false), Some(false), Some(true)]);
 
-        let violated = vec![a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
+        let violated = &[a.true_lit(), b.true_lit(), c.true_lit(), d.false_lit()];
         sat.add_clause(violated);
         assert!(sat.propagate(&mut model.state).is_err());
     }
@@ -924,17 +925,17 @@ mod tests {
         let d = model.new_ivar(0, 10, "d");
 
         let check_values = |model: &Model, values: [(IntCst, IntCst); 4]| {
-            assert_eq!(model.domain_of(a), values[0]);
-            assert_eq!(model.domain_of(b), values[1]);
-            assert_eq!(model.domain_of(c), values[2]);
-            assert_eq!(model.domain_of(d), values[3]);
+            assert_eq!(model.bounds(a), values[0]);
+            assert_eq!(model.bounds(b), values[1]);
+            assert_eq!(model.bounds(c), values[2]);
+            assert_eq!(model.bounds(d), values[3]);
         };
         check_values(model, [(0, 10), (0, 10), (0, 10), (0, 10)]);
 
         let mut sat = SatSolver::new(writer);
-        let clause = vec![Lit::leq(a, 5), Lit::leq(b, 5)];
+        let clause = &[Lit::leq(a, 5), Lit::leq(b, 5)];
         sat.add_clause(clause);
-        let clause = vec![Lit::geq(c, 5), Lit::geq(d, 5)];
+        let clause = &[Lit::geq(c, 5), Lit::geq(d, 5)];
         sat.add_clause(clause);
 
         sat.propagate(&mut model.state).unwrap();
@@ -999,6 +1000,11 @@ mod tests {
         check_values(model, [(8, 10), (0, 5), (0, 2), (5, 10)]);
     }
 
+    /// Converts a sequence into a Set
+    fn set(items: impl AsRef<[Lit]>) -> HashSet<Lit> {
+        items.as_ref().iter().copied().collect()
+    }
+
     #[test]
     fn test_clauses_with_optionals() {
         let m = &mut Model::new();
@@ -1016,9 +1022,9 @@ mod tests {
                 self.sat.explain(literal, cause.payload, model, explanation);
             }
         }
-        fn check_explanation(m: &Model, sat: &mut SatSolver, lit: Lit, expected: impl Seq<Lit>) {
+        fn check_explanation(m: &Model, sat: &mut SatSolver, lit: Lit, expected: impl AsRef<[Lit]>) {
             let result = m.state.implying_literals(lit, &mut Exp { sat }).unwrap();
-            assert_eq!(result.to_set(), expected.to_set());
+            assert_eq!(set(result), set(expected));
         }
 
         let px = m.new_presence_variable(Lit::TRUE, "px").true_lit();
@@ -1038,17 +1044,17 @@ mod tests {
         m.save_state();
         sat.save_state();
 
-        sat.add_clause_scoped([x1, x2], px);
+        sat.add_clause_scoped(&[x1, x2], px);
 
         m.state.decide(!x1).unwrap();
         sat.propagate(&mut m.state).unwrap();
         assert!(m.entails(x2));
-        assert!(m.value_of_literal(px).is_none());
+        assert!(m.value_of(px).is_none());
         check_explanation(m, sat, x2, [!x1]);
 
         assert!(!m.entails(!py));
-        sat.add_clause_scoped([!y2, y1], py);
-        sat.add_clause_scoped([!y2, !y1], py);
+        sat.add_clause_scoped(&[!y2, y1], py);
+        sat.add_clause_scoped(&[!y2, !y1], py);
         m.state.decide(y2).unwrap();
         sat.propagate(&mut m.state).unwrap();
         assert!(m.entails(!py));
@@ -1060,7 +1066,7 @@ mod tests {
         sat.save_state();
 
         assert!(!m.entails(!py));
-        sat.add_clause_scoped([y1, y2], py);
+        sat.add_clause_scoped(&[y1, y2], py);
         m.state.decide(!y1).unwrap();
         m.state.decide(!y2).unwrap();
         sat.propagate(&mut m.state).unwrap();
@@ -1073,7 +1079,7 @@ mod tests {
         sat.save_state();
 
         assert!(!m.entails(!pz));
-        sat.add_clause_scoped([z1, z2], pz);
+        sat.add_clause_scoped(&[z1, z2], pz);
         m.state.decide(pz).unwrap();
         m.state.decide(!z1).unwrap();
         m.state.decide(!z2).unwrap();

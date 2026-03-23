@@ -1,0 +1,24 @@
+[package]
+name = "aries-plan-engine"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { workspace = true }
+derivative = { workspace = true }
+derive_more = { workspace = true }
+itertools = { workspace = true }
+im = { workspace = true }
+smallvec = { workspace = true }
+
+planx = { path = "../planx" }
+timelines = { package = "aries-timelines", path = "../timelines" }
+aries = { path = "../../solver" }
+
+
+[[bin]]
+name = "ape"
+path = "src/main.rs"

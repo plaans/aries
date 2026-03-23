@@ -1,12 +1,12 @@
 // ============= Forward progression ===========
 
+use crate::Var;
 use crate::problem::Encoding;
 use crate::search::Model;
-use crate::Var;
 use aries::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries::core::state::{OptDomain, Term};
 use aries::core::{IntCst, Lit, VarRef};
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
 

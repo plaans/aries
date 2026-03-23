@@ -1,0 +1,17 @@
+a = false;
+b = false;
+r = true;
+----------
+a = false;
+b = true;
+r = false;
+----------
+a = true;
+b = false;
+r = false;
+----------
+a = true;
+b = true;
+r = true;
+----------
+==========

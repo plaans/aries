@@ -1,9 +1,8 @@
 use crate::search::{Model, Var};
-use aries::core::{u32_to_cst, IntCst, Lit, VarRef};
+use aries::core::{IntCst, Lit, u32_to_cst};
 use aries::model::lang::expr::{alternative, eq, leq, or};
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::{IAtom, IVar};
+use aries::reasoners::cp::no_overlap::{self, NoOverlap, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -39,6 +38,10 @@ impl Op {
     pub fn min_duration(&self) -> IntCst {
         self.alternatives.iter().map(|a| a.duration).min().unwrap()
     }
+    /// Returns the maximum duration the operation may take.
+    pub fn max_duration(&self) -> IntCst {
+        self.alternatives.iter().map(|a| a.duration).max().unwrap()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +56,11 @@ pub struct Problem {
     pub num_jobs: u32,
     pub num_machines: u32,
     pub operations: Vec<Op>,
+    /// If set, indicates the transportation between any pair of machines.
+    /// For instance `transport_time[3][5]` indicates the time necessary to transport a piece from machine `3` to machine `5`.
+    pub transport_times: Option<Vec<Vec<u32>>>,
+    /// If set, indicates the maximum delay between operations of the same job
+    pub time_lag: Option<u32>,
 }
 
 impl Problem {
@@ -85,6 +93,8 @@ impl Problem {
             num_jobs: num_jobs as u32,
             num_machines: num_machines as u32,
             operations: ops,
+            transport_times: None,
+            time_lag: None,
         }
     }
 
@@ -127,6 +137,44 @@ impl Problem {
 
         max_of_jobs.max(max_of_machines)
     }
+
+    /// Computes a naïve upper bound on the makespan, assuming all operations are scheduled in sequence.
+    ///
+    /// Under a makespan-minimization objective, this can be used as an upper bound on the domains of start-time variables.
+    pub fn makespan_upper_bound(&self) -> IntCst {
+        let max_transition_time = if let Some(transport_times) = self.transport_times.as_ref() {
+            transport_times.iter().flat_map(|tt| tt.iter()).copied().max()
+        } else {
+            None
+        };
+        let max_transition_time = max_transition_time.unwrap_or(0) as IntCst;
+        self.jobs()
+            .map(|j| {
+                self.ops_by_job(j)
+                    .map(|op| op.max_duration() + max_transition_time)
+                    .sum::<IntCst>()
+            })
+            .sum()
+    }
+
+    /// Returns the required transportation time (if specified) to move between the two machines
+    pub fn transport_time(&self, from_machine: u32, to_machine: u32) -> Option<u32> {
+        if let Some(tt) = self.transport_times.as_ref() {
+            let line = &tt[from_machine as usize % tt.len()];
+            let time = line[to_machine as usize % line.len()];
+            Some(time)
+        } else {
+            None
+        }
+    }
+
+    pub fn set_transport_times(&mut self, transport_times: Vec<Vec<u32>>) {
+        self.transport_times = Some(transport_times);
+    }
+
+    pub(crate) fn set_time_lag(&mut self, time_lag: u32) {
+        self.time_lag = Some(time_lag)
+    }
 }
 
 /// Represents an operation that must be executed and is associated to one or more alternative.
@@ -159,7 +207,7 @@ impl Debug for OperationId {
 }
 
 /// Represents one alternative to an operation
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OperationAlternative {
     pub id: OperationId,
     pub machine: u32,
@@ -284,9 +332,15 @@ impl Encoding {
     }
 }
 
-pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_constraints: bool) -> (Model, Encoding) {
+pub(crate) fn encode(
+    pb: &Problem,
+    lower_bound: u32,
+    upper_bound: Option<u32>,
+    no_overlap: no_overlap::PropagatorKind,
+) -> (Model, Encoding) {
+    let use_constraints = no_overlap > no_overlap::PropagatorKind::None;
     let lower_bound = u32_to_cst(lower_bound);
-    let upper_bound = u32_to_cst(upper_bound);
+    let upper_bound = upper_bound.map(u32_to_cst).unwrap_or(pb.makespan_upper_bound());
     let mut m = Model::new();
     let e = Encoding::new(pb, lower_bound, upper_bound, &mut m);
 
@@ -342,47 +396,25 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_const
     for machine in 0..(pb.num_machines) {
         let alts = e.alternatives_on_machine(machine).collect_vec();
         for (i, alt1) in alts.iter().enumerate() {
-            for alt2 in &alts[i + 1..] {
+            #[allow(clippy::needless_range_loop)]
+            for j in (i + 1)..alts.len() {
+                let alt2 = &alts[j];
                 // variable that is true if alt1 comes first and false otherwise.
                 // in any case, setting a value to it enforces that the two tasks do not overlap
                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
                 let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
 
-                m.bind(leq(alt1.end(), alt2.start), prec.true_lit());
-                m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
+                m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
+                m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
             }
         }
 
         if use_constraints {
-            // variable that is bound to the start of first task executing on the machine
-            let start_first = m.new_ivar(0, upper_bound, Var::Intermediate);
-            let mut starts = alts.iter().map(|a| a.start).collect_vec();
-            starts.push(e.makespan); // add the makespan as a fallback in case there are no tasks on this machine
-            m.enforce(EqMin::new(start_first, starts), []);
-
-            // variable bound to the end of the latest task executing on the machine
-            let end_last = m.new_ivar(0, upper_bound, Var::Intermediate);
-            let mut ends = alts.iter().map(|a| a.end()).collect_vec();
-            ends.push(start_first.into()); // add the start (=makespan) as fallback if not tasks are scheduled on this machine
-            m.enforce(EqMax::new(end_last, ends), []);
-            m.enforce(leq(end_last, e.makespan), []);
-
-            // sum of the duration of all tasks executing on the machine
-            let mut dur_sum = LinearSum::zero();
-            for alt in &alts {
-                // TODO: this is currently a workaound a missing API
-                if alt.presence.variable() != VarRef::ZERO {
-                    let i_prez = IVar::new(alt.presence.variable());
-                    // assumes that i_prez is a 0-1 variable where 1 indicates presence
-                    dur_sum += i_prez * alt.duration;
-                } else {
-                    assert_eq!(alt.presence, Lit::TRUE);
-                    dur_sum += alt.duration;
-                }
-            }
-
-            m.enforce((dur_sum + start_first).leq(end_last), []);
-            // m.enforce(dur_sum.leq(e.makespan), []); // weaker version does not require the intermediate variables
+            let tasks_on_machine = alts
+                .iter()
+                .map(|op| Task::<IAtom>::new(op.start, op.duration, op.end(), op.presence));
+            let no_overlap: NoOverlap<IAtom> = NoOverlap::new(tasks_on_machine).with_kind(no_overlap);
+            m.enforce_user_propagator(no_overlap);
         }
     }
     match pb.kind {
@@ -390,13 +422,34 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_const
             // enforce total order between tasks of the same job
             for j in pb.jobs() {
                 let ops = e.operations_ids(j).collect_vec();
+
                 for i in 1..ops.len() {
                     let op1 = ops[i - 1];
                     let op2 = ops[i];
 
                     let o1 = e.operation(j, op1);
                     let o2 = e.operation(j, op2);
-                    m.enforce(leq(o1.end, o2.start), [])
+                    m.enforce(leq(o1.end, o2.start), []);
+
+                    // add transportation time between machines.
+                    // These are machine-dependent and thus placed between any pair of alternatives
+                    for a1 in e.alternatives(j, op1) {
+                        for a2 in e.alternatives(j, op2) {
+                            if let Some(transport_time) = pb.transport_time(a1.machine, a2.machine)
+                                && transport_time > 0
+                            {
+                                m.enforce(
+                                    leq(a1.end() + (transport_time as IntCst), a2.start()),
+                                    [a1.presence, a2.presence],
+                                );
+                            }
+                        }
+                    }
+
+                    // If there is time-lag, enforce it as a maximum delay between the two tasks.
+                    if let Some(time_lag) = pb.time_lag {
+                        m.enforce(leq(o2.start, o1.end + time_lag as IntCst), []);
+                    }
                 }
             }
         }
@@ -413,8 +466,8 @@ pub(crate) fn encode(pb: &Problem, lower_bound: u32, upper_bound: u32, use_const
                                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
                                 let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
 
-                                m.bind(leq(alt1.end(), alt2.start), prec.true_lit());
-                                m.bind(leq(alt2.end(), alt1.start), prec.false_lit());
+                                m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
+                                m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
                             }
                         }
                     }

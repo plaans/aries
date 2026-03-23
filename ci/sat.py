@@ -11,7 +11,7 @@ import time
 os.system("cargo build --profile ci --bin aries-sat")
 solver = "target/ci/aries-sat"
 
-solver_cmd = solver + " {params} --source {archive} {instance}"
+solver_cmd = solver + " solve {params} --source {archive} {instance}"
 
 
 def files_in_archive(archive):

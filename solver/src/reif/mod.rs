@@ -1,11 +1,11 @@
-use crate::core::literals::Disjunction;
+use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::{Domains, OptDomain};
-use crate::core::{cst_int_to_long, IntCst, Lit, SignedVar, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, VarRef, cst_int_to_long};
+use crate::model::lang::ValidityScope;
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
-use crate::model::lang::mul::NFEqVarMulLit;
-use crate::model::lang::ValidityScope;
+use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::model::{Label, Model};
 use std::fmt::{Debug, Formatter};
 use std::ops::Not;
@@ -28,11 +28,12 @@ pub enum ReifExpr {
     Neq(VarRef, VarRef),
     EqVal(VarRef, IntCst),
     NeqVal(VarRef, IntCst),
-    Or(Vec<Lit>),
-    And(Vec<Lit>),
+    Or(Disjunction),
+    And(Lits), // TODO: do similar for conjunction
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
     EqMax(NFEqMax),
+    EqMul(EqMul),
     EqVarMulLit(NFEqVarMulLit),
 }
 
@@ -49,6 +50,7 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::And(and) => write!(f, "and{and:?}"),
             ReifExpr::Linear(l) => write!(f, "{l}"),
             ReifExpr::EqMax(em) => write!(f, "{em:?}"),
+            ReifExpr::EqMul(em) => write!(f, "{em:?}"),
             ReifExpr::Alternative(alt) => write!(f, "{alt:?}"),
             ReifExpr::EqVarMulLit(em) => write!(f, "{em:?}"),
         }
@@ -66,18 +68,21 @@ impl ReifExpr {
             ReifExpr::NeqVal(a, _) => ValidityScope::new([presence(*a)], []),
             ReifExpr::Or(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
-                literals.iter().copied().filter(|l| presence(l.variable()) == Lit::TRUE),
+                literals.iter().filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
             ReifExpr::And(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals
                     .iter()
-                    .map(|&l| !l)
+                    .map(|l| !l)
                     .filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
             ReifExpr::Linear(lin) => lin.validity_scope(presence),
             ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
             ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
+            ReifExpr::EqMul(eq_mul) => {
+                ValidityScope::new([presence(eq_mul.lhs), presence(eq_mul.rhs1), presence(eq_mul.rhs2)], [])
+            }
             ReifExpr::EqVarMulLit(em) => ValidityScope::new([presence(em.lhs)], []),
         }
     }
@@ -150,11 +155,11 @@ impl ReifExpr {
             }
             ReifExpr::Or(lits) => {
                 for l in lits {
-                    if prez(l.variable()) && assignment.entails(*l) {
+                    if prez(l.variable()) && assignment.entails(l) {
                         return Some(true);
                     }
                 }
-                if lits.iter().all(|l| prez(l.variable()) && assignment.entails(!*l)) {
+                if lits.iter().all(|l| prez(l.variable()) && assignment.entails(!l)) {
                     return Some(false);
                 }
                 assert!(lits.iter().any(|l| !prez(l.variable())));
@@ -210,14 +215,29 @@ impl ReifExpr {
                     Some(true)
                 }
             }
+            ReifExpr::EqMul(EqMul { lhs, rhs1, rhs2 }) => {
+                if !prez(*lhs) || !prez(*rhs2) || !prez(*rhs2) {
+                    None
+                } else {
+                    Some(value(*lhs) == value(*rhs1).saturating_mul(value(*rhs2)))
+                }
+            }
             ReifExpr::EqVarMulLit(NFEqVarMulLit { lhs, rhs, lit }) => {
-                let lit_value: IntCst = lvalue(*lit).into();
                 if !prez(*lhs) {
                     None
-                } else if !prez(*rhs) {
-                    Some(value(*lhs) == 0 && lit_value == 0)
+                } else if !prez(lit.variable()) {
+                    if !prez(*rhs) {
+                        None
+                    } else {
+                        Some(value(*lhs) == 0 && value(*rhs) == 0)
+                    }
                 } else {
-                    Some(value(*lhs) == lit_value * value(*rhs))
+                    let lit_value: IntCst = lvalue(*lit).into();
+                    if !prez(*rhs) {
+                        Some(value(*lhs) == 0 && lit_value == 0)
+                    } else {
+                        Some(value(*lhs) == lit_value * value(*rhs))
+                    }
                 }
             }
         }
@@ -245,7 +265,7 @@ impl From<Disjunction> for ReifExpr {
         } else if value.literals().len() == 1 {
             ReifExpr::Lit(*value.literals().first().unwrap())
         } else {
-            ReifExpr::Or(value.into())
+            ReifExpr::Or(value)
         }
     }
 }
@@ -261,17 +281,19 @@ impl Not for ReifExpr {
             ReifExpr::Neq(a, b) => ReifExpr::Eq(a, b),
             ReifExpr::EqVal(a, b) => ReifExpr::NeqVal(a, b),
             ReifExpr::NeqVal(a, b) => ReifExpr::EqVal(a, b),
-            ReifExpr::Or(mut lits) => {
+            ReifExpr::Or(lits) => {
+                let mut lits = lits.into_lits();
                 lits.iter_mut().for_each(|l| *l = !*l);
                 ReifExpr::And(lits)
             }
             ReifExpr::And(mut lits) => {
                 lits.iter_mut().for_each(|l| *l = !*l);
-                ReifExpr::Or(lits)
+                ReifExpr::Or(Disjunction::new(lits))
             }
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
             ReifExpr::EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
+            ReifExpr::EqMul(_) => panic!("EqMul is a constraint and cannot be negated"),
             ReifExpr::EqVarMulLit(_) => panic!("EqVarMulLit is a constraint and cannot be negated"),
         }
     }
@@ -304,5 +326,17 @@ impl Not for DifferenceExpression {
 
     fn not(self) -> Self::Output {
         DifferenceExpression::new(self.a, self.b, -self.ub - 1)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{core::Lit, reif::ReifExpr};
+
+    #[test]
+    fn test_reif_expr_size() {
+        if std::mem::size_of::<Lit>() == 8 {
+            assert_eq!(std::mem::size_of::<ReifExpr>(), 40)
+        }
     }
 }

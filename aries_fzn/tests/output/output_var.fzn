@@ -1,0 +1,4 @@
+% x is output and y is not
+var 1..3: x:: output_var;
+var 4..8: y;
+solve satisfy;

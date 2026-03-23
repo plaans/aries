@@ -61,17 +61,26 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> anyhow::Result<PathBuf>
         candidate_domain_files.push(name.into());
     }
 
+    // if the problem if of the form instance-NN.Zddl
+    // the add domain-NN.Zddl to the candidates filenames
+    let re = Regex::new("^instance-([1-9]+)\\.([hp]ddl)$").unwrap();
+    for m in re.captures_iter(problem_filename) {
+        let name = format!("domain-{}.{}", &m[1], &m[2]);
+        candidate_domain_files.push(name.into());
+    }
+
     // directories where to look for the domain
     let mut candidate_directories = Vec::with_capacity(2);
     if let Some(curr) = problem_file.parent() {
-        candidate_directories.push(curr);
+        candidate_directories.push(curr.to_owned());
         if let Some(parent) = curr.parent() {
-            candidate_directories.push(parent);
+            candidate_directories.push(parent.to_owned());
+            candidate_directories.push(parent.join("domains"));
         }
     }
 
     for f in &candidate_domain_files {
-        for &dir in &candidate_directories {
+        for dir in &candidate_directories {
             let candidate = dir.join(f);
             if candidate.exists() {
                 return Ok(candidate);
@@ -536,7 +545,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, ErrLoc> {
                 let parameters = consume_typed_symbols(&mut params.iter())?;
                 property.pop_known_atom(":task")?;
                 let task = parse_task(property.pop()?, false)?;
-                let precondition = if property.peek().map_or(false, |e| e.is_atom(":precondition")) {
+                let precondition = if property.peek().is_some_and(|e| e.is_atom(":precondition")) {
                     property.pop_known_atom(":precondition").unwrap();
                     vec![property.pop()?.clone()]
                 } else {

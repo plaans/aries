@@ -1,6 +1,8 @@
+use crate::core::state::Term;
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
-use crate::model::lang::linear::LinearTerm;
 use crate::model::lang::ConversionError;
+use crate::model::lang::linear::LinearTerm;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;
@@ -51,6 +53,30 @@ impl From<IVar> for SignedVar {
     }
 }
 
+impl VarView for IVar {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.variable().upper_bound(dom)
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.variable().lower_bound(dom)
+    }
+}
+
+impl Boundable for IVar {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        self.variable().leq(ub)
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        self.variable().geq(lb)
+    }
+}
+
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
@@ -59,10 +85,28 @@ pub struct IAtom {
     pub shift: IntCst,
 }
 
+impl VarView for IAtom {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.var.upper_bound(dom) + self.shift
+    }
+
+    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
+        self.var.lower_bound(dom) + self.shift
+    }
+}
+
 // Implement Debug for IAtom
 impl Debug for IAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} + {:?}", self.var, self.shift)
+        if self.var == IVar::ZERO {
+            write!(f, "{}", self.shift)
+        } else if self.shift == 0 {
+            write!(f, "{:?}", self.var)
+        } else {
+            write!(f, "{:?} + {:?}", self.var, self.shift)
+        }
     }
 }
 
@@ -201,5 +245,20 @@ impl std::ops::Mul<IntCst> for IVar {
 
     fn mul(self, rhs: IntCst) -> Self::Output {
         LinearTerm::int(rhs, self)
+    }
+}
+
+impl Boundable for IAtom {
+    type Value = IntCst;
+
+    #[inline]
+    fn leq(&self, ub: Self::Value) -> Lit {
+        // var + shift <= ub <=> var <= ub - shib
+        self.var.leq(ub - self.shift)
+    }
+
+    #[inline]
+    fn geq(&self, lb: Self::Value) -> Lit {
+        self.var.geq(lb - self.shift)
     }
 }

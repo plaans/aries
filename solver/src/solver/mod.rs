@@ -1,3 +1,4 @@
+pub mod musmcs;
 pub mod parallel;
 pub mod search;
 pub mod stats;

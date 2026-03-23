@@ -5,7 +5,7 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2021"
 
 [dependencies]
-structopt = "0.3"
+structopt = { workspace = true }
 anyhow = { workspace = true }
 aries_planning = { path = "../../planning/planning" }
 aries = { path = "../../solver" }

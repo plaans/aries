@@ -22,7 +22,7 @@ impl Display for SList {
 }
 
 impl SList {
-    pub fn iter(&self) -> ListIter {
+    pub fn iter(&self) -> ListIter<'_> {
         ListIter {
             elems: self.list.as_slice(),
             source: self.source.clone(),
@@ -113,7 +113,7 @@ impl SExpr {
         }
     }
 
-    pub fn as_list_iter(&self) -> Option<ListIter> {
+    pub fn as_list_iter(&self) -> Option<ListIter<'_>> {
         match &self {
             SExpr::List(v) => Some(ListIter {
                 elems: v.list.as_slice(),
@@ -444,14 +444,14 @@ mod tests {
         formats_as("(a (b c) d)", "(a (b c) d)");
         formats_as(" ( a  ( b  c )   d  )   ", "(a (b c) d)");
         formats_as(
-            " ( a  (  
+            " ( a  (
         b  c )   d  )   ",
             "(a (b c) d)",
         );
         formats_as(
             " ( a  ( b ; (y x)
          c )   d
-           )  
+           )
           ",
             "(a (b c) d)",
         );
@@ -481,19 +481,19 @@ mod tests {
         displayed_as(&ex[1].as_list().unwrap()[0],
                      "( a (b c))",
                      "     ^");
-        displayed_as(&ex[1].as_list().unwrap()[1], 
+        displayed_as(&ex[1].as_list().unwrap()[1],
                      "( a (b c))",
                      "       ^");
-        
+
         let src = " \n
-(a (b c 
+(a (b c
     d (e f g))\n
 )";
         let src = parse(src).unwrap();
         displayed_as(
-            &src, 
-            "(a (b c ",
-            "^^^^^^^^"
+            &src,
+            "(a (b c",
+            "^^^^^^^"
         );
     }
 }

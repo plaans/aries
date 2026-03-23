@@ -1,13 +1,14 @@
 use std::convert::TryFrom;
-use std::fmt::Formatter;
+use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::StableLitSet;
 use crate::core::state::*;
+use crate::core::views::Dom;
 use crate::core::*;
-use crate::model::extensions::{AssignmentExt, SavedAssignment, Shaped};
+use crate::model::extensions::{DomainsExt, Shaped};
 use crate::model::label::{Label, VariableLabels};
 use crate::model::lang::expr::or;
 use crate::model::lang::reification::Reification;
@@ -15,22 +16,27 @@ use crate::model::lang::*;
 use crate::model::model_impl::scopes::Scopes;
 use crate::model::symbols::SymbolTable;
 use crate::model::types::TypeId;
+use crate::reasoners::cp::UserPropagator;
 use crate::reif::{ReifExpr, Reifiable};
 
 mod scopes;
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+/// Constraint in the CP model.
+#[derive(Debug, Clone)]
 pub enum Constraint {
-    /// Constraint enforcing that the left and right terms evaluate to the same value.
-    Reified(ReifExpr, Lit),
+    /// Constraint enforcing that if the literal is true, then the expression evaluates to true.
+    HalfReified(ReifExpr, Lit),
+    /// A custom propagator provided by a user. Implementation is a black-box for aries.
+    Propagator(Arc<dyn UserPropagator>),
 }
 
 impl std::fmt::Display for Constraint {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Constraint::Reified(r, l) => {
-                write!(f, "{l:?} <=> {r}")
+            Constraint::HalfReified(r, l) => {
+                write!(f, "{l:?} => {r}")
             }
+            Constraint::Propagator(user_propagator) => write!(f, "{user_propagator:?}"),
         }
     }
 }
@@ -75,33 +81,45 @@ impl<Lbl: Label> ModelShape<Lbl> {
     fn set_type(&mut self, var: VarRef, typ: Type) {
         self.types.insert(var, typ);
     }
-
-    fn add_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
-        let c = Constraint::Reified(expr, value);
+    fn add_half_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
+        let c = Constraint::HalfReified(expr, value);
         tracing::trace!("Adding constraint: {}", c);
         self.constraints.push(c)
     }
 
-    /// Given a TOTAL assignment, check that the all constraints are satisfied.
+    fn add_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
+        let constraints = [
+            Constraint::HalfReified(expr.clone(), value),
+            Constraint::HalfReified(!expr, !value),
+        ];
+        for c in constraints {
+            tracing::trace!("Adding constraint: {}", c);
+            self.constraints.push(c)
+        }
+    }
+
+    /// Given a TOTAL assignment, check that all constraints are satisfied.
     /// NOTE: Currently not really polished and intended for internal use.
     pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
         for c in &self.constraints {
-            let Constraint::Reified(expr, reified) = c;
-            if assignment.present(reified.variable()).unwrap() {
-                let actual_value = expr.eval(assignment);
-                let expected_value = Some(assignment.value(*reified).unwrap());
-                anyhow::ensure!(
-                    actual_value == expected_value,
-                    "{}: {:?}  !=  {:?} [{:?}]",
-                    expr,
-                    actual_value,
-                    expected_value,
-                    reified
-                );
-            } else {
-                // Underspecified: we may be able to determine a value on the
-                // expression side (e.g. with short-circuiting "or") even though we are not in the
-                // validity scope of the literal.
+            match c {
+                Constraint::HalfReified(expr, enabler) => {
+                    if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
+                        let actual_value = expr.eval(assignment);
+                        anyhow::ensure!(
+                            actual_value == Some(true),
+                            "{} : {:?}  [but enabled by {:?}]",
+                            expr,
+                            actual_value,
+                            enabler
+                        );
+                    } else {
+                        // Underspecified: we may be able to determine a value on the
+                        // expression side (e.g. with short-circuiting "or") even though we are not in the
+                        // validity scope of the literal.
+                    }
+                }
+                Constraint::Propagator(user_propagator) => anyhow::ensure!(user_propagator.satisfied(assignment)),
             }
         }
         Ok(())
@@ -136,11 +154,6 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    pub fn with_domains(mut self, domains: Domains) -> Model<Lbl> {
-        self.state = domains;
-        self
-    }
-
     pub fn new_bvar(&mut self, label: impl Into<Lbl>) -> BVar {
         self.create_bvar(None, label)
     }
@@ -161,9 +174,11 @@ impl<Lbl: Label> Model<Lbl> {
 
     /// Returns a presence literal that is true iff all given presence literal are true.
     pub fn get_conjunctive_scope(&mut self, presence_variables: &[Lit]) -> Lit {
-        assert!(presence_variables
-            .iter()
-            .all(|l| self.state.presence(l.variable()) == Lit::TRUE));
+        assert!(
+            presence_variables
+                .iter()
+                .all(|l| self.state.presence(l.variable()) == Lit::TRUE)
+        );
         let empty: &[Lit] = &[];
         let scope = ValidityScope::new(presence_variables.iter().copied(), empty.iter().copied());
         let scope = scope.to_conjunction(
@@ -179,6 +194,9 @@ impl<Lbl: Label> Model<Lbl> {
     /// with domain `[1,1]` with `presence=scope` but will ensure that only one such
     /// variable is created in this scope.
     pub fn get_tautology_of_scope(&mut self, scope: Lit) -> Lit {
+        if scope == Lit::TRUE {
+            return Lit::TRUE;
+        }
         self.shape
             .conjunctive_scopes
             .get_tautology_of_scope(scope)
@@ -193,6 +211,9 @@ impl<Lbl: Label> Model<Lbl> {
 
     fn new_conjunctive_presence_variable(&mut self, set: impl Into<StableLitSet>) -> Lit {
         let set = set.into();
+        if set.is_empty() {
+            return Lit::TRUE;
+        }
         if let Some(l) = self.shape.conjunctive_scopes.get(&set) {
             // scope already exists, return it immediately
             return l;
@@ -332,6 +353,7 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    #[doc(hidden)]
     pub fn unifiable(&self, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
         let a = a.into();
         let b = b.into();
@@ -345,6 +367,7 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    #[doc(hidden)]
     pub fn unifiable_seq<A: Into<Atom> + Copy, B: Into<Atom> + Copy>(&self, a: &[A], b: &[B]) -> bool {
         if a.len() != b.len() {
             false
@@ -372,6 +395,15 @@ impl<Lbl: Label> Model<Lbl> {
         self.reify_core(decomposed, false)
     }
 
+    /// Returns a new literal that, if set to true, will force the given expression to be true.
+    /// This is done by posting a half-reified constraint.
+    ///
+    /// Important: calling the function twice with the same expression will return the same literal.
+    pub fn half_reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
+        let decomposed = expr.decompose(self); // TODO: we do not need full decomposition
+        self.half_reify_core(decomposed)
+    }
+
     fn simplify(&self, expr: &mut ReifExpr) {
         let entailed = |lit| {
             if self.state.current_decision_level() == DecLvl::ROOT {
@@ -382,18 +414,18 @@ impl<Lbl: Label> Model<Lbl> {
         };
         let negated = |lit: Lit| entailed(!lit);
         match expr {
-            ReifExpr::Or(disjuncts) if disjuncts.iter().any(|&l| entailed(l)) => *expr = ReifExpr::Lit(Lit::TRUE),
+            ReifExpr::Or(disjuncts) if disjuncts.iter().any(entailed) => *expr = ReifExpr::Lit(Lit::TRUE),
             ReifExpr::Or(disjuncts) => {
-                disjuncts.retain(|&l| !negated(l));
+                disjuncts.retain(|l| !negated(l));
                 match disjuncts.len() {
                     0 => *expr = ReifExpr::Lit(Lit::FALSE),
                     1 => *expr = ReifExpr::Lit(disjuncts[0]),
                     _ => {}
                 }
             }
-            ReifExpr::And(conjuncts) if conjuncts.iter().any(|&l| negated(l)) => *expr = ReifExpr::Lit(Lit::FALSE),
+            ReifExpr::And(conjuncts) if conjuncts.iter().any(negated) => *expr = ReifExpr::Lit(Lit::FALSE),
             ReifExpr::And(conjuncts) => {
-                conjuncts.retain(|l| !entailed(*l));
+                conjuncts.retain(|l| !entailed(l));
                 match conjuncts.len() {
                     0 => *expr = ReifExpr::Lit(Lit::TRUE),
                     1 => *expr = ReifExpr::Lit(conjuncts[0]),
@@ -431,15 +463,10 @@ impl<Lbl: Label> Model<Lbl> {
     pub(crate) fn reify_core(&mut self, mut expr: ReifExpr, use_tautology: bool) -> Lit {
         self.simplify(&mut expr);
 
-        if let Some(l) = self.shape.expressions.interned(&expr) {
+        if let Some(l) = self.shape.expressions.interned_full(&expr) {
             l
         } else {
-            let scope = expr.scope(|var| self.state.presence(var));
-            let scope = scope.to_conjunction(
-                |l| self.shape.conjunctive_scopes.conjuncts(l),
-                |l| self.state.entails(l),
-            );
-            let scope = self.new_conjunctive_presence_variable(scope);
+            let scope = self.scope_lit_of(&expr);
             let lit = if use_tautology {
                 self.get_tautology_of_scope(scope)
             } else {
@@ -447,11 +474,37 @@ impl<Lbl: Label> Model<Lbl> {
                 self.shape.set_type(var, Type::Bool);
                 var.geq(1)
             };
-            self.shape.expressions.intern_as(expr.clone(), lit);
+            self.shape.expressions.intern_full_as(expr.clone(), lit);
             self.shape.add_reification_constraint(lit, expr);
 
             lit
         }
+    }
+    pub(crate) fn half_reify_core(&mut self, mut expr: ReifExpr) -> Lit {
+        self.simplify(&mut expr);
+
+        if let Some(l) = self.shape.expressions.interned_half(&expr) {
+            l
+        } else {
+            let scope = self.scope_lit_of(&expr);
+            let var = self.state.new_optional_var(0, 1, scope);
+            self.shape.set_type(var, Type::Bool);
+            let lit = var.geq(1);
+            self.shape.expressions.intern_half_as(expr.clone(), lit);
+            self.shape.add_half_reification_constraint(lit, expr);
+
+            lit
+        }
+    }
+
+    /// Returns a scope literal, that is true iff the expression is valid.
+    pub(crate) fn scope_lit_of(&mut self, expr: &ReifExpr) -> Lit {
+        let scope = expr.scope(|var| self.state.presence(var));
+        let scope = scope.to_conjunction(
+            |l| self.shape.conjunctive_scopes.conjuncts(l),
+            |l| self.state.entails(l),
+        );
+        self.new_conjunctive_presence_variable(scope)
     }
 
     /// Enforce the given expression to be true whenever all literals of the scope are true.
@@ -482,7 +535,7 @@ impl<Lbl: Label> Model<Lbl> {
         // retrieve or create an optional variable that is always true in the scope
         let tauto = self.get_tautology_of_scope(scope);
 
-        self.bind(expr, tauto);
+        self.shape.add_half_reification_constraint(tauto, expr);
     }
 
     pub fn enforce_all<Expr: Reifiable<Lbl>>(
@@ -493,6 +546,14 @@ impl<Lbl: Label> Model<Lbl> {
         for b in bools {
             self.enforce(b, scope.clone());
         }
+    }
+
+    /// Adds a conditional constraint (aka, half-reified constraint)
+    /// `enabler => expr`
+    pub fn enforce_if<Expr: Reifiable<Lbl>>(&mut self, enabler: Lit, expr: Expr) {
+        let mut expr = expr.decompose(self);
+        self.simplify(&mut expr);
+        self.shape.add_half_reification_constraint(enabler, expr);
     }
 
     /// Record that `b <=> literal`
@@ -513,12 +574,12 @@ impl<Lbl: Label> Model<Lbl> {
         //     "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
         // );
 
-        if let Some(reified) = self.shape.expressions.interned(&expr) {
+        if let Some(reified) = self.shape.expressions.interned_full(&expr) {
             // expression already reified, unify it with expected value
             self.bind_literals(value, reified)
         } else if expression_scope == self.presence_literal(value.variable()) {
             // not yet reified and compatible scopes, propose our literal as the reification
-            self.shape.expressions.intern_as(expr.clone(), value);
+            self.shape.expressions.intern_full_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
         } else {
             // not yet reified but our literal cannot be used directly because it has a different scope
@@ -528,6 +589,15 @@ impl<Lbl: Label> Model<Lbl> {
             let reified = self.reify_core(expr, use_tautology);
             self.bind_literals(value, reified);
         }
+    }
+
+    /// Adds a custom propagator with external implementation.
+    ///
+    /// The propagator will be posted to the CP reasoner for propagation.
+    pub fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static) {
+        self.shape
+            .constraints
+            .push(Constraint::Propagator(Arc::new(propagator)));
     }
 
     /// Record that `b <=> literal`
@@ -558,6 +628,16 @@ impl<Lbl: Label> Model<Lbl> {
     }
 }
 
+impl<Lbl> Dom for Model<Lbl> {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        Domains::ub(&self.state, svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.state.presence(var)
+    }
+}
+
 impl<Lbl: Label> Default for Model<Lbl> {
     fn default() -> Self {
         Self::new()
@@ -579,24 +659,6 @@ impl<Lbl> Backtrack for Model<Lbl> {
 
     fn restore(&mut self, saved_id: DecLvl) {
         self.state.restore(saved_id);
-    }
-}
-
-impl<Lbl> AssignmentExt for Model<Lbl> {
-    fn entails(&self, literal: Lit) -> bool {
-        self.state.entails(literal)
-    }
-
-    fn var_domain(&self, var: impl Into<IAtom>) -> IntDomain {
-        self.state.var_domain(var)
-    }
-
-    fn presence_literal(&self, variable: impl Term) -> Lit {
-        self.state.presence(variable)
-    }
-
-    fn to_owned_assignment(&self) -> SavedAssignment {
-        self.state.clone()
     }
 }
 

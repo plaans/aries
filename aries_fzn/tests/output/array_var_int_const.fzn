@@ -1,0 +1,5 @@
+% array of var int with literals
+var 1..5: x1 = 5;
+var 1..5: x3 = 3;
+array [1..5] of var int: x:: output_array([1..5]) = [x1, 4, x3, 2, 1];
+solve satisfy;

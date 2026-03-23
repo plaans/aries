@@ -1,0 +1,4 @@
+var 0..4: x:: output_var;
+var 2..5: y:: output_var;
+constraint int_lin_eq([3,2], [x,y], 13);
+solve satisfy;

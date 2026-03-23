@@ -1,11 +1,12 @@
 use aries::backtrack::Backtrack;
-use aries::core::state::OptDomain;
+use aries::core::state::{OptDomain, Term};
 use aries::core::Lit;
-use aries::model::extensions::AssignmentExt;
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::alternative::Alternative;
 use aries::model::lang::expr::*;
 use aries::model::lang::max::{EqMax, EqMin};
 use aries::model::lang::IVar;
+use aries::solver::SearchLimit;
 use itertools::Itertools;
 
 type Model = aries::model::Model<String>;
@@ -19,17 +20,17 @@ fn sat() {
 
     let mut solver = Solver::new(model);
     solver.enforce(a, []);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     solver.reset();
     solver.enforce(implies(a, b), []);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
     solver.enforce(!b, []);
 
-    assert!(solver.solve().unwrap().is_none());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
 
 #[test]
@@ -43,7 +44,7 @@ fn diff_logic() {
 
     let mut solver = Solver::new(model);
     solver.enforce_all(constraints, []);
-    assert!(solver.solve().unwrap().is_none());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
 
 #[test]
@@ -61,9 +62,9 @@ fn minimize() {
     model.enforce(or([x, y]), []);
 
     let mut solver = Solver::new(model);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     solver.reset();
-    match solver.minimize(c).unwrap() {
+    match solver.minimize(c, SearchLimit::None).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 7),
     }
@@ -80,9 +81,9 @@ fn minimize_small() {
     model.enforce(or([x, y]), []);
 
     let mut solver = Solver::new(model);
-    assert!(solver.solve().unwrap().is_some());
+    assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     solver.reset();
-    match solver.minimize(a).unwrap() {
+    match solver.minimize(a, SearchLimit::None).unwrap() {
         None => panic!(),
         Some((val, _)) => assert_eq!(val, 6),
     }
@@ -124,7 +125,7 @@ fn int_bounds() {
     solver.enforce_all(constraints, []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     let check_dom = |v, lb, ub| {
-        assert_eq!(solver.model.domain_of(v), (lb, ub));
+        assert_eq!(solver.model.bounds(v), (lb, ub));
     };
     check_dom(a, 2, 8);
     check_dom(b, 2, 8);
@@ -152,13 +153,13 @@ fn bools_as_ints() {
 
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.boolean_value_of(a), None);
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
 
     solver.enforce(a.true_lit(), []);
     solver.enforce(b.false_lit(), []);
@@ -167,13 +168,13 @@ fn bools_as_ints() {
 
     solver.propagate().unwrap();
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
-    assert_eq!(solver.model.domain_of(ia), (1, 1));
+    assert_eq!(solver.model.bounds(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(b), Some(false));
-    assert_eq!(solver.model.domain_of(ib), (0, 0));
+    assert_eq!(solver.model.bounds(ib), (0, 0));
     assert_eq!(solver.model.boolean_value_of(c), Some(true));
-    assert_eq!(solver.model.domain_of(ic), (1, 1));
+    assert_eq!(solver.model.bounds(ic), (1, 1));
     assert_eq!(solver.model.boolean_value_of(d), Some(false));
-    assert_eq!(solver.model.domain_of(id), (0, 0));
+    assert_eq!(solver.model.bounds(id), (0, 0));
 }
 
 #[test]
@@ -186,27 +187,51 @@ fn ints_and_bools() {
     let mut solver = Solver::new(model);
 
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
-    assert_eq!(solver.model.domain_of(i), (-10, 10));
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(i), (-10, 10));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     solver.enforce(leq(i, ia), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
-    assert_eq!(solver.model.domain_of(i), (-10, 1));
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(i), (-10, 1));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     solver.enforce(gt(ia, i), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
-    assert_eq!(solver.model.domain_of(i), (-10, 0));
-    assert_eq!(solver.model.domain_of(ia), (0, 1));
+    assert_eq!(solver.model.bounds(i), (-10, 0));
+    assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
     solver.enforce(geq(i, 0), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
-    assert_eq!(solver.model.domain_of(i), (0, 0));
-    assert_eq!(solver.model.domain_of(ia), (1, 1));
+    assert_eq!(solver.model.bounds(i), (0, 0));
+    assert_eq!(solver.model.bounds(ia), (1, 1));
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
+}
+
+#[test]
+fn test_multiplication() {
+    let mut model = Model::new();
+
+    let a = model.new_ivar(0, 9, "a");
+    let b = model.new_ivar(0, 9, "b");
+    let c = model.new_ivar(0, 9, "c");
+
+    let constraint = eq_mul(a, b, c);
+
+    model.enforce(constraint, []);
+    let mut solver = Solver::new(model);
+
+    println!("a = b * c");
+    for sol in solver
+        .enumerate(&[a.variable(), b.variable(), c.variable()], SearchLimit::None)
+        .unwrap()
+    {
+        let [a, b, c] = [sol[0], sol[1], sol[2]];
+        println!("{a} = {b} * {c}");
+        assert_eq!(a, b * c);
+    }
 }
 
 #[test]
