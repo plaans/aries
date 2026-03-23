@@ -4,6 +4,7 @@ use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
 use crate::reasoners::eq::SplitEqTheory;
+use crate::reasoners::lprelax::LpRelax;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::theory::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
@@ -11,6 +12,7 @@ use std::fmt::{Display, Formatter};
 
 pub mod cp;
 pub mod eq;
+pub mod lprelax;
 pub mod sat;
 pub mod stn;
 pub mod tautologies;
@@ -24,6 +26,7 @@ pub enum ReasonerId {
     Cp,
     Eq(u16),
     Tautologies,
+    LpRelax,
 }
 
 impl ReasonerId {
@@ -44,6 +47,7 @@ impl Display for ReasonerId {
                 Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
+                LpRelax => "LpRelax",
             }
         )
     }
@@ -87,12 +91,13 @@ impl From<Explanation> for Contradiction {
 ///
 /// SAT should always be first because we should not allow anything to happen between
 /// the moment a clause is learned and the moment it is is propagated.
-pub(crate) const REASONERS: [ReasonerId; 5] = [
+pub(crate) const REASONERS: [ReasonerId; 6] = [
     ReasonerId::Sat,
     ReasonerId::Tautologies,
     ReasonerId::Diff,
     ReasonerId::Eq(0),
     ReasonerId::Cp,
+    ReasonerId::LpRelax,
 ];
 
 /// A set of inference modules for constraint propagation.
@@ -103,6 +108,7 @@ pub struct Reasoners {
     pub eq: SplitEqTheory,
     pub cp: Cp,
     pub tautologies: Tautologies,
+    pub lprelax: LpRelax,
 }
 impl Reasoners {
     pub fn new() -> Self {
@@ -112,6 +118,7 @@ impl Reasoners {
             eq: Default::default(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
+            lprelax: LpRelax::default(),
         }
     }
 
@@ -122,6 +129,7 @@ impl Reasoners {
             ReasonerId::Eq(_) => &self.eq,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
+            ReasonerId::LpRelax => &self.lprelax,
         }
     }
 
@@ -132,6 +140,7 @@ impl Reasoners {
             ReasonerId::Eq(_) => &mut self.eq,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
+            ReasonerId::LpRelax => &mut self.lprelax,
         }
     }
 

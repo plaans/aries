@@ -43,3 +43,4 @@ tracing = { workspace = true }
 rand = { workspace = true }
 num-rational = { workspace = true }
 hashbrown = { workspace = true }
+highs = { workspace = true }

@@ -123,7 +123,8 @@ dependencies = [
  "env_param",
  "format_num",
  "hashbrown",
- "itertools",
+ "highs",
+ "itertools 0.14.0",
  "lru",
  "num-integer",
  "num-rational",
@@ -144,7 +145,7 @@ dependencies = [
  "comfy-table",
  "derive_builder",
  "gnuplot",
- "itertools",
+ "itertools 0.14.0",
  "readable",
  "serde",
  "serde_json",
@@ -170,7 +171,7 @@ dependencies = [
  "derivative",
  "derive_more",
  "im",
- "itertools",
+ "itertools 0.14.0",
  "planx",
  "smallvec",
 ]
@@ -182,7 +183,7 @@ dependencies = [
  "aries",
  "env_param",
  "idmap",
- "itertools",
+ "itertools 0.14.0",
  "smallvec",
  "tracing",
 ]
@@ -195,7 +196,7 @@ dependencies = [
  "aries",
  "clap 4.5.54",
  "flatzinc",
- "itertools",
+ "itertools 0.14.0",
  "test_each_file",
  "transitive",
 ]
@@ -222,7 +223,7 @@ dependencies = [
  "async-trait",
  "clap 4.5.54",
  "env_param",
- "itertools",
+ "itertools 0.14.0",
  "num-rational",
  "prost",
  "regex",
@@ -240,7 +241,7 @@ version = "0.1.0"
 dependencies = [
  "aries",
  "env_param",
- "itertools",
+ "itertools 0.14.0",
 ]
 
 [[package]]
@@ -263,7 +264,7 @@ dependencies = [
  "aries",
  "aries_planning",
  "env_param",
- "itertools",
+ "itertools 0.14.0",
  "num-rational",
  "structopt",
  "tracing",
@@ -278,7 +279,7 @@ dependencies = [
  "aries",
  "env_param",
  "fixedbitset",
- "itertools",
+ "itertools 0.14.0",
  "pathfinding",
  "regex",
  "streaming-iterator",
@@ -304,7 +305,7 @@ dependencies = [
  "anyhow",
  "aries",
  "aries-bench-data",
- "itertools",
+ "itertools 0.14.0",
  "structopt",
  "walkdir",
 ]
@@ -314,7 +315,7 @@ name = "aries_smt"
 version = "0.1.0"
 dependencies = [
  "aries",
- "itertools",
+ "itertools 0.14.0",
 ]
 
 [[package]]
@@ -407,6 +408,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bindgen"
+version = "0.72.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
+dependencies = [
+ "bitflags 2.10.0",
+ "cexpr",
+ "clang-sys",
+ "itertools 0.13.0",
+ "log",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -461,10 +482,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc"
+version = "1.2.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a0dd1ca384932ff3641c8718a02769f1698e7563dc6974ffd03346116310423"
+dependencies = [
+ "find-msvc-tools",
+ "shlex",
+]
+
+[[package]]
+name = "cexpr"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fac387a98bb7c37292057cffc56d62ecb629900026402633ae9160df93a8766"
+dependencies = [
+ "nom",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "clang-sys"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
+dependencies = [
+ "glob",
+ "libc",
+ "libloading",
+]
 
 [[package]]
 name = "clap"
@@ -520,6 +571,15 @@ name = "clap_lex"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
+
+[[package]]
+name = "cmake"
+version = "0.1.57"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75443c44cd6b379beb8c5b45d85d0773baf31cce901fe7bb252f4eff3008ef7d"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "colorchoice"
@@ -776,6 +836,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
+name = "find-msvc-tools"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
 name = "fixedbitset"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -874,6 +940,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
 name = "gnuplot"
 version = "0.0.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -935,6 +1007,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "highs"
+version = "2.1.0"
+source = "git+https://github.com/nrealus/highs.git#57de2cfb11740123c64e6a3c22ccae9b03d160c3"
+dependencies = [
+ "highs-sys",
+ "log",
+]
+
+[[package]]
+name = "highs-sys"
+version = "1.13.1"
+source = "git+https://github.com/nrealus/highs-sys.git#779d4ce3071f9c1a0cfd3473911eaa5052ded17f"
+dependencies = [
+ "bindgen",
+ "cmake",
 ]
 
 [[package]]
@@ -1102,6 +1192,15 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -1132,6 +1231,16 @@ name = "libc"
 version = "0.2.179"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c5a2d376baa530d1238d133232d15e239abad80d05838b4b59354e5268af431f"
+
+[[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if",
+ "windows-link",
+]
 
 [[package]]
 name = "libm"
@@ -1203,7 +1312,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5eb2a098b227df48779e28ed4125dd3161b792a9254961377cea6f5c19e5b417"
 dependencies = [
  "hashbrown",
- "itertools",
+ "itertools 0.14.0",
  "libm",
  "ryu",
 ]
@@ -1214,7 +1323,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef3dfdcaabc1e9c59b7e4ba04d17a22d91944f2f22afcdeb04d43e03415fefb4"
 dependencies = [
- "itertools",
+ "itertools 0.14.0",
  "malachite-base",
  "malachite-nz",
  "malachite-q",
@@ -1226,7 +1335,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab7c0ddc4e2681459d70591baf30ca5abd31c25969e76d3605838bec794c8077"
 dependencies = [
- "itertools",
+ "itertools 0.14.0",
  "libm",
  "malachite-base",
  "wide",
@@ -1238,7 +1347,7 @@ version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13d19f04fc672f251d477c8d58c13c6c5550553dfba6a665c9ad3604466ac9a"
 dependencies = [
- "itertools",
+ "itertools 0.14.0",
  "malachite-base",
  "malachite-nz",
 ]
@@ -1260,6 +1369,12 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
@@ -1287,6 +1402,16 @@ name = "multimap"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
+]
 
 [[package]]
 name = "nu-ansi-term"
@@ -1454,7 +1579,7 @@ dependencies = [
  "derive_more",
  "hashbrown",
  "idmap",
- "itertools",
+ "itertools 0.14.0",
  "num-rational",
  "regex",
  "smallvec",
@@ -1530,7 +1655,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -1552,7 +1677,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -1814,6 +1939,12 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "shlex"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "simd-adler32"
@@ -2281,7 +2412,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 name = "unified_planning"
 version = "0.1.0"
 dependencies = [
- "itertools",
+ "itertools 0.14.0",
  "prost",
  "tonic",
  "tonic-prost",

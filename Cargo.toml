@@ -36,6 +36,7 @@ itertools = { version = "0.14" }
 fixedbitset = { version = "0.5.7", default-features = false }
 format_num = "0.1.0"
 hashbrown = "0.16"
+highs = { git = "https://github.com/nrealus/highs.git" }
 im = "15.1"
 lru = "0.16"
 malachite = "0.9.0"
