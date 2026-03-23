@@ -442,13 +442,13 @@ pub struct Hierarchy {
     #[prost(message, optional, tag = "3")]
     pub initial_task_network: ::core::option::Option<TaskNetwork>,
 }
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScopedConstraint {
     #[prost(message, optional, tag = "1")]
     pub constraint: ::core::option::Option<Expression>,
     /// a list of boolean expressiosn that condition the constraint
     /// If all expressions in the scope are true, then constraint must hold
+    /// feature: SCOPED_CONSTRAINTS
     #[prost(message, repeated, tag = "2")]
     pub scope: ::prost::alloc::vec::Vec<Expression>,
 }
@@ -458,7 +458,8 @@ pub struct Activity {
     /// Name of the activity that must uniquely identify it.
     #[prost(string, tag = "1")]
     pub name: ::prost::alloc::string::String,
-    /// If true, the activity is optional and might absent from a solution.
+    /// If true, the activity is optional and might be absent from a solution.
+    /// feature: OPTIONAL_ACTIVITIES
     #[prost(bool, tag = "7")]
     pub optional: bool,
     /// Typed and named parameters of the activity.
@@ -486,10 +487,11 @@ pub struct SchedulingExtension {
     /// All variables in the base problem
     #[prost(message, repeated, tag = "2")]
     pub variables: ::prost::alloc::vec::Vec<Parameter>,
-    /// All constraints in the base problem.
+    /// All mandatory constraints in the base problem, which is all constraint when there are no optional activities.
     #[prost(message, repeated, tag = "5")]
     pub constraints: ::prost::alloc::vec::Vec<Expression>,
-    /// feature: OPTIONAL_SCHEDULING
+    /// All constraints in the base problem with a scope definition (that may be empty for mandatory constraints).
+    /// feature: SCOPED_CONSTRAINTS
     #[prost(message, repeated, tag = "6")]
     pub scoped_constraints: ::prost::alloc::vec::Vec<ScopedConstraint>,
 }
@@ -572,7 +574,7 @@ pub struct Metric {
     /// Empty, if the `kind` is not {MIN/MAX}IMIZE_EXPRESSION_ON_FINAL_STATE
     #[prost(message, optional, tag = "2")]
     pub expression: ::core::option::Option<Expression>,
-    /// If \`kind == MINIMIZE_ACTION_COSTS\``, then each action is associated to a cost expression.
+    /// If `kind == MINIMIZE_ACTION_COSTS`, then each action is associated to a cost expression.
     ///
     /// TODO: Document what is allowed in the expression. See issue #134
     /// In particular, for this metric to be useful in many practical problems, the cost expression
@@ -1259,6 +1261,9 @@ pub enum Feature {
     /// INITIAL_STATE
     UndefinedInitialNumeric = 68,
     UndefinedInitialSymbolic = 69,
+    /// SCHEDULING
+    OptionalActivities = 70,
+    ScopedConstraints = 71,
 }
 impl Feature {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1345,6 +1350,8 @@ impl Feature {
             Self::TaskOrderTemporal => "TASK_ORDER_TEMPORAL",
             Self::UndefinedInitialNumeric => "UNDEFINED_INITIAL_NUMERIC",
             Self::UndefinedInitialSymbolic => "UNDEFINED_INITIAL_SYMBOLIC",
+            Self::OptionalActivities => "OPTIONAL_ACTIVITIES",
+            Self::ScopedConstraints => "SCOPED_CONSTRAINTS",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1430,6 +1437,8 @@ impl Feature {
             "TASK_ORDER_TEMPORAL" => Some(Self::TaskOrderTemporal),
             "UNDEFINED_INITIAL_NUMERIC" => Some(Self::UndefinedInitialNumeric),
             "UNDEFINED_INITIAL_SYMBOLIC" => Some(Self::UndefinedInitialSymbolic),
+            "OPTIONAL_ACTIVITIES" => Some(Self::OptionalActivities),
+            "SCOPED_CONSTRAINTS" => Some(Self::ScopedConstraints),
             _ => None,
         }
     }
