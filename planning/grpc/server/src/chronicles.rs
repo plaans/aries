@@ -358,6 +358,16 @@ fn scheduling_problem_to_chronicles(
         let scope = factory.context.model.get_conjunctive_scope(&scope_lits);
         scoped_constraints.push((constraint.clone(), scope));
     }
+    if scheduling.scoped_constraints.is_empty() {
+        // the scoped_constraints are empty which means either:
+        // (1) there are no constraints, or
+        // (2) the client is using an outdated unified-planning version that does not populate them
+        // For remaining compatible in the second case we must process the unscoped constraints
+        // (note that if we are in the first case, `constraints` would be empty)
+        for constraint in &scheduling.constraints {
+            scoped_constraints.push((constraint.clone(), Lit::TRUE));
+        }
+    }
 
     instances.push(factory.build_instance(ChronicleOrigin::Original)?);
 
