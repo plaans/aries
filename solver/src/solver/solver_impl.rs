@@ -200,8 +200,8 @@ impl<Lbl: Label> Solver<Lbl> {
         }
         match constraint {
             &ReifExpr::Lit(lit) => {
-                // let expr_scope = self.model.presence_literal(lit.variable());
-                // assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
+                let expr_scope = self.model.presence_literal(lit.variable());
+                assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
                 self.add_clause([!enabler, lit], scope)?; // value => lit
                 Ok(())
             }

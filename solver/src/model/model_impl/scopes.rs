@@ -64,7 +64,7 @@ impl Scopes {
             .entry(literal)
             .or_insert_with(|| conjunction.clone());
         // ideally, we want to have each literal pointing to its smallest conjunctive set (relaxable)
-        //debug_assert!(self.conjunction_of[&literal].len() <= conjunction.len(), "Sanity check");
+        // debug_assert!(self.conjunction_of[&literal].len() <= conjunction.len(), "Sanity check");
 
         self.conjunctive_scopes.insert(conjunction, literal);
     }
