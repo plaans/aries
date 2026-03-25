@@ -199,7 +199,7 @@ fn extract_constraints(
         .map(|s| Atom::Sym(*s))
         .collect_vec();
 
-    // returns true if the given expression is bound by the one parameters of the chronicle
+    // returns true if the given expression is bound by the parameters of the chronicle
     let bound_by_action_params = |e: Atom| {
         let v = e.variable();
         v == VarRef::ZERO || v == VarRef::ONE || ch.chronicle.name.iter().any(|p| p.variable() == v)
@@ -230,10 +230,12 @@ fn extract_constraints(
             vals: a,
         };
 
+        // add the transition `pre --(dur)--> post` to the graph for theis state variable
+        // if we cannot evaluate, then shortcircuit to abandon rolling (this is likely due to implicit constraints involving conditions)
         graphs.entry(ass.evaluate_seq(&sv_vars).unwrap()).or_default().insert(
-            ass.evaluate(tr.pre).unwrap(),
-            ass.evaluate(tr.post).unwrap(),
-            ass.evaluate_int(dur).unwrap(),
+            ass.evaluate(tr.pre)?,
+            ass.evaluate(tr.post)?,
+            ass.evaluate_int(dur)?,
         );
     }
 

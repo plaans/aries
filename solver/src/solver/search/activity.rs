@@ -110,24 +110,26 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
     }
 
     pub fn import_vars(&mut self, model: &Model<Lbl>) {
-        let mut count = 0;
-        // go through the model's variables and declare any newly declared variable
-        let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(VarRef::from);
-        for var in unprocessed_vars {
-            debug_assert!(!self.heap.is_declared(var));
-            let prez = model.presence_literal(var);
-            self.heap.declare_variable(var, self.priority(var, model), None);
-            // remember that, when `prez` becomes true we must enqueue the variable
-            self.presences.add_watch(var, prez);
+        if self.num_processed_var < model.state.num_variables() {
+            let mut count = 0;
+            // go through the model's variables and declare any newly declared variable
+            let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(VarRef::from);
+            for var in unprocessed_vars {
+                debug_assert!(!self.heap.is_declared(var));
+                let prez = model.presence_literal(var);
+                self.heap.declare_variable(var, self.priority(var, model), None);
+                // remember that, when `prez` becomes true we must enqueue the variable
+                self.presences.add_watch(var, prez);
 
-            // `prez` is already true, enqueue the variable immediately
-            if model.entails(prez) {
-                self.heap.enqueue_variable(var);
+                // `prez` is already true, enqueue the variable immediately
+                if model.entails(prez) {
+                    self.heap.enqueue_variable(var);
+                }
+                count += 1;
             }
-            count += 1;
+            self.num_processed_var += count;
+            debug_assert_eq!(self.num_processed_var, model.state.num_variables());
         }
-        self.num_processed_var += count;
-
         // process all new events and enqueue the variables that became present
         while let Some(x) = self.cursor.pop(model.state.trail()) {
             for var in self.presences.watches_on(x.new_literal()) {

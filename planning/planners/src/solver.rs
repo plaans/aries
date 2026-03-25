@@ -385,14 +385,14 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
 }
 
 /// Default set of strategies for HTN problems
-const HTN_DEFAULT_STRATEGIES: [Strat; 4] = [
+const HTN_DEFAULT_STRATEGIES: &[Strat] = &[
     Strat::ActivityBool,
     Strat::ActivityBoolLight,
     Strat::Causal,
     Strat::Forward,
 ];
 /// Default set of strategies for generative (flat) problems.
-const GEN_DEFAULT_STRATEGIES: [Strat; 4] = [
+const GEN_DEFAULT_STRATEGIES: &[Strat] = &[
     Strat::ActivityBool,
     Strat::ActivityBoolLight,
     Strat::Causal,
@@ -570,9 +570,9 @@ fn solve_finite_problem(
     } else if !env_strats.is_empty() {
         &env_strats
     } else if htn_mode {
-        &HTN_DEFAULT_STRATEGIES
+        HTN_DEFAULT_STRATEGIES
     } else {
-        &GEN_DEFAULT_STRATEGIES
+        GEN_DEFAULT_STRATEGIES
     };
     let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
         strats[id].adapt_solver(s, pb.clone(), encoding.clone())

@@ -4,7 +4,8 @@ ci: ci-up-solve ci-up-val ci-ipc ci-warm-up
 
 # Run planning tests for UP integration
 ci-up-solve:
-    python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries -e up_aries_tests
+    # ignore invalid problem `robot_with_variable_duration`. Bug report: https://github.com/aiplan4eu/unified-planning/pull/734
+    python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries -e up_aries_tests -b robot_with_variable_duration
 
 # Run validation tests for UP integration
 ci-up-val:
