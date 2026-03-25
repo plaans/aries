@@ -1,16 +1,15 @@
 import os
-from pathlib import Path
 import re
 import subprocess  # nosec: B404
 import sys
 import time
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from unified_planning.engines.results import PlanGenerationResultStatus as Status
 from unified_planning.io.pddl_reader import PDDLReader
 from unified_planning.plans import Plan
 from unified_planning.shortcuts import OneshotPlanner
-
 
 # ============================================================================ #
 #                                   Constants                                  #
@@ -162,10 +161,7 @@ def validate_plan_with_val(pb: Path, dom: Path, plan: Path) -> bool:
     ext = "pddl"
     if ":hierarchy" in dom.read_text():
         ext = "hddl"
-    cmd = (
-        f"./planning/ext/val-{ext} "
-        f"{dom.as_posix()} {pb.as_posix()} {plan.as_posix()}"
-    )
+    cmd = f"./planning/ext/val-{ext} {dom.as_posix()} {pb.as_posix()} {plan.as_posix()}"
     return (
         subprocess.run(
             cmd,
@@ -184,6 +180,9 @@ def validate_plan_with_val(pb: Path, dom: Path, plan: Path) -> bool:
 
 pb_folders = Path(__file__).parent.parent / "planning/problems/upf"
 problems = sorted(pb_folders.iterdir(), key=lambda f: f.stem)
+
+# ignore the woodworking domain that requires adherence to the delete-before-add seamntics
+problems = [f for f in problems if "ipc2008-woodworking" not in f.stem]
 
 if len(sys.argv) > 1:
     problems = [pb for pb in problems if pb.stem in sys.argv[1:]]
@@ -264,7 +263,9 @@ try:
                     # Solved problem
                     if result.status in VALID_STATUS:
                         write_line("\nValidating plan by Val", cyan=True)
-                        out_path = Path(out_file).with_stem((Path(out_file).stem + "_val"))
+                        out_path = Path(out_file).with_stem(
+                            (Path(out_file).stem + "_val")
+                        )
                         extract_plan_for_val(result.plan, domain, problem, out_path)
                         if validate_plan_with_val(problem, domain, out_path):
                             write_line("Plan is valid", bold=True, green=True)
