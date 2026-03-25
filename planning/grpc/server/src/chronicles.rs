@@ -1104,7 +1104,7 @@ impl<'a> ChronicleFactory<'a> {
                         };
                         let lit =
                             self.env.presences.get(container).with_context(|| {
-                                format!("Not presence variable recorded for container {container:?}")
+                                format!("No presence variable recorded for container {container:?}")
                             })?;
                         self.chronicle.constraints.push(Constraint::atom(Atom::Bool(*lit)));
                     }
@@ -1165,7 +1165,7 @@ impl<'a> ChronicleFactory<'a> {
                         .env
                         .presences
                         .get(container)
-                        .with_context(|| format!("Not presence variable recorded for container {container:?}"))?;
+                        .with_context(|| format!("No presence variable recorded for container {container:?}"))?;
                     Ok(Atom::Bool(*lit))
                 } else if operator == "up:start"
                     || operator == "up:end"

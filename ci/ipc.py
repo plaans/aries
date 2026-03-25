@@ -181,7 +181,7 @@ def validate_plan_with_val(pb: Path, dom: Path, plan: Path) -> bool:
 pb_folders = Path(__file__).parent.parent / "planning/problems/upf"
 problems = sorted(pb_folders.iterdir(), key=lambda f: f.stem)
 
-# ignore the woodworking domain that requires adherence to the delete-before-add seamntics
+# ignore the woodworking domain that requires adherence to the delete-before-add semantics
 problems = [f for f in problems if "ipc2008-woodworking" not in f.stem]
 
 if len(sys.argv) > 1:
