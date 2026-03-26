@@ -1,14 +1,17 @@
 
-# Aries Planning Engine
+# Aries Planning Engine (APE)
 
 WIP: this in an ongoing effort to reimplement the Aries solver planning capabilities for PDDL.
 
+The CLI tool currently proposes the following functionalities (most in heavy development)
 
+ - parsing of PDDL files
+ - validation of PDDL plans
+ - optimization of PDDL plans
+ - domain repair
 
 
 ## Domain repair
-
-
 
 ```sh
 # Domain repair options.

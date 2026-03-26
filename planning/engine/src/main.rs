@@ -9,6 +9,7 @@ use aries_plan_engine::plans::lifted_plan;
 use clap::*;
 use planx::{
     Message, Res,
+    errors::*,
     pddl::{self, input::Input},
 };
 
@@ -24,6 +25,10 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    // PDDL parser.
+    //
+    // Will parse the PDDL problem and print the corresponding model to the standard output or provided (hopefully useful) error messages if the problem could not be parsed.
+    Parse(Parse),
     /// Plan validation.
     ///
     /// Specify a plan, and we will attempt to determine if it is valid and provide an appropriate exit code.
@@ -40,6 +45,16 @@ enum Commands {
     OptimizePlan(OptimizePlan),
     /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
+}
+
+#[derive(Parser, Debug)]
+pub struct Parse {
+    /// Path to the problem file
+    problem_file: PathBuf,
+    /// Path to the PDDL domain file.
+    /// If not specified, we will attempt to automaticall infer it based on the plan file.
+    #[arg(short, long)]
+    domain: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -82,19 +97,40 @@ fn main() -> Res<()> {
     let args = Args::parse();
 
     match &args.command {
+        Commands::Parse(command) => parse(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
-        Commands::DomRepair(command) => match repair(command) {
-            Ok(()) => {}
-            Err(e) => {
-                // We report the error here and exit normally to ease the integration with external tooling
-                // but this is typically not something we would like to keep in a released version
-                println!("{e}");
-                println!("REPORT {}   ERROR", command.plan_pb.plan.display());
-            }
-        },
+        Commands::DomRepair(command) => repair(command)?,
     }
 
+    Ok(())
+}
+
+fn parse(command: &Parse) -> Res<()> {
+    let problem_file = &command.problem_file;
+    if !problem_file.exists() {
+        return Err(Message::error(format!(
+            "Problem file {} does not exist",
+            problem_file.display()
+        )));
+    }
+
+    let problem_file = problem_file.canonicalize().unwrap();
+    let domain_file = match command.domain.as_ref() {
+        Some(name) => name.clone(),
+        None => pddl::find_domain_of(&problem_file).title(
+            "Unable to automatically find the domain file. Consider specifying the domain with the option -d/--domain",
+        )?, // TODO: this erases the previous, possibly more informative, error message
+    };
+    let domain_file = Input::from_file(&domain_file)?;
+
+    let problem_file = Input::from_file(&problem_file)?;
+    let domain = pddl::parse_pddl_domain(domain_file)?;
+    let problem = pddl::parse_pddl_problem(problem_file)?;
+
+    let model = pddl::build_model(&domain, &problem)?;
+
+    println!("{model}");
     Ok(())
 }
 
