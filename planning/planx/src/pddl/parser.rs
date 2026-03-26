@@ -805,6 +805,21 @@ pub struct Problem {
     pub constraints: Vec<SExpr>,
 }
 
+impl Problem {
+    pub fn empty(domain_name: impl Into<Sym>, problem_name: impl Into<Sym>) -> Self {
+        Problem {
+            problem_name: problem_name.into(),
+            domain_name: domain_name.into(),
+            objects: vec![],
+            init: vec![],
+            task_network: None,
+            goal: vec![],
+            metric: None,
+            constraints: vec![],
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Metric {
     Minimize(SExpr),
@@ -847,16 +862,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
     domain_name_def.pop_known_atom(":domain")?;
     let domain_name = domain_name_def.pop_atom()?.clone();
 
-    let mut res = Problem {
-        problem_name,
-        domain_name,
-        objects: vec![],
-        init: vec![],
-        task_network: None,
-        goal: vec![],
-        metric: None,
-        constraints: vec![],
-    };
+    let mut res = Problem::empty(domain_name, problem_name);
 
     for current in problem {
         // a property associates a key (e.g. `:objects`) to a value or a sequence of values

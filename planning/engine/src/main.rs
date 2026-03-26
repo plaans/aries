@@ -25,10 +25,12 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    // PDDL parser.
-    //
-    // Will parse the PDDL problem and print the corresponding model to the standard output or provided (hopefully useful) error messages if the problem could not be parsed.
+    /// PDDL parser (problem and associated domain).
+    ///
+    /// Will parse the PDDL problem and print the corresponding model to the standard output or provided (hopefully useful) error messages if the problem could not be parsed.
     Parse(Parse),
+    /// PDDL parser (domain file only)
+    ParseDomain(ParseDomain),
     /// Plan validation.
     ///
     /// Specify a plan, and we will attempt to determine if it is valid and provide an appropriate exit code.
@@ -52,9 +54,15 @@ pub struct Parse {
     /// Path to the problem file
     problem_file: PathBuf,
     /// Path to the PDDL domain file.
-    /// If not specified, we will attempt to automaticall infer it based on the plan file.
+    /// If not specified, we will attempt to automatically infer it based on the plan file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct ParseDomain {
+    /// Path to the PDDL domain file.
+    domain_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -98,6 +106,7 @@ fn main() -> Res<()> {
 
     match &args.command {
         Commands::Parse(command) => parse(command)?,
+        Commands::ParseDomain(command) => parse_domain(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
         Commands::DomRepair(command) => repair(command)?,
@@ -127,6 +136,26 @@ fn parse(command: &Parse) -> Res<()> {
     let problem_file = Input::from_file(&problem_file)?;
     let domain = pddl::parse_pddl_domain(domain_file)?;
     let problem = pddl::parse_pddl_problem(problem_file)?;
+
+    let model = pddl::build_model(&domain, &problem)?;
+
+    println!("{model}");
+    Ok(())
+}
+
+fn parse_domain(command: &ParseDomain) -> Res<()> {
+    let domain_file = &command.domain_file;
+    if !domain_file.exists() {
+        return Err(Message::error(format!(
+            "Problem file {} does not exist",
+            domain_file.display()
+        )));
+    }
+
+    let domain_file = Input::from_file(domain_file)?;
+
+    let domain = pddl::parse_pddl_domain(domain_file)?;
+    let problem = pddl::Problem::empty(&domain.name, "?");
 
     let model = pddl::build_model(&domain, &problem)?;
 
@@ -207,16 +236,16 @@ pub struct PlanAndProblem {
     /// Path to the plan.
     plan: PathBuf,
     /// Path to the PDDL problem file.
-    /// If not specified, we will attempt to automaticall infer it based on the plan file.
+    /// If not specified, we will attempt to automatically infer it based on the plan file.
     #[arg(short, long)]
     problem: Option<PathBuf>,
     /// Path to the PDDL domain file.
-    /// If not specified, we will attempt to automaticall infer it based on the plan file.
+    /// If not specified, we will attempt to automatically infer it based on the plan file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
 }
 impl PlanAndProblem {
-    /// Parse the domain, problem and plan and returns them.
+    /// Parses the domain, problem and plan and returns them.
     /// If the the problem or domains are not specified, the method will attempt to infer
     /// them from naming conventions.
     pub fn parse(&self) -> Res<(pddl::Domain, pddl::Problem, pddl::Plan)> {
@@ -234,12 +263,6 @@ impl PlanAndProblem {
         } else {
             &pddl::find_domain_of(pb)?
         };
-        println!(
-            "# Starting domain repair:\n - Domain:  {}\n - Problem: {}\n - Plan:    {}\n",
-            dom.display(),
-            pb.display(),
-            plan.display()
-        );
 
         // raw PDDL model
         let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;
