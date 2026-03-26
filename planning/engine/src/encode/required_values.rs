@@ -80,3 +80,9 @@ impl RequiredValues {
         all
     }
 }
+
+impl Default for RequiredValues {
+    fn default() -> Self {
+        Self::new()
+    }
+}
