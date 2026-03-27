@@ -65,7 +65,7 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) 
     let mut solver = encode_dom_repair(model, plan)?;
     let encoding_time = start.elapsed().as_millis();
 
-    if solver.check_satisfiability() {
+    if solver.check_satisfiability().is_some() {
         println!("Plan is valid.");
         return Ok(RepairReport {
             status: RepairStatus::ValidPlan,
@@ -187,12 +187,12 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
             let arg = match arg {
                 // ground parameter, get the corresponding object constant
-                lifted_plan::OperationArg::Ground(object) => sched
+                lifted_plan::ObjectOrVariable::Ground(object) => sched
                     .objects
                     .object_atom(object.name().canonical_str())
                     .ok_or_else(|| object.name().invalid("unknown object"))?,
                 // variable parameter, retrieve the variable we created for it
-                lifted_plan::OperationArg::Variable { name } => plan_variables[name],
+                lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
             };
 
             // incorpare the potential values taken by this operation param into the one of the action

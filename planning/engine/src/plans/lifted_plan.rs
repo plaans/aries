@@ -1,28 +1,19 @@
 use std::collections::BTreeMap;
 
-use planx::{ActionRef, Model, Res, Sym, errors::Span};
+use planx::{Model, Res, Sym};
 use timelines::IntCst;
+
+use crate::plans::Operation;
 
 #[derive(Debug, Clone)]
 pub struct LiftedPlan {
     /// A set of operations: actions instances with arguments, start times and durations
-    pub operations: Vec<Operation>,
+    pub operations: Vec<Operation<ObjectOrVariable>>,
     /// All variables apprearing in the lifted plan, together with an inferred type (most specific one from all their appearances.)
     pub variables: BTreeMap<Sym, planx::UserType>,
 }
-
 #[derive(Debug, Clone)]
-pub struct Operation {
-    pub start: IntCst,
-    pub duration: IntCst,
-    pub action_ref: ActionRef,
-    pub arguments: Vec<OperationArg>,
-    #[allow(unused)]
-    pub span: Option<Span>,
-}
-
-#[derive(Debug, Clone)]
-pub enum OperationArg {
+pub enum ObjectOrVariable {
     Ground(planx::Object),
     Variable { name: Sym },
 }
@@ -65,7 +56,7 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
                         param
                     )));
                 }
-                OperationArg::Ground(obj)
+                ObjectOrVariable::Ground(obj)
             } else if arg.canonical_str().starts_with("?") {
                 // variable: compute its as the most specific between its previous one and the parameter of the action
                 let prev_type = variables.get(arg).unwrap_or(&top_type);
@@ -82,7 +73,7 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
                 };
                 // reinsert the variable with the new type
                 variables.insert(arg.clone(), tpe.clone());
-                OperationArg::Variable { name: arg.clone() }
+                ObjectOrVariable::Variable { name: arg.clone() }
             } else {
                 return Err(arg.invalid("cannot interpret argument: not a known object nor a variable"));
             };

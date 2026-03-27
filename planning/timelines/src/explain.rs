@@ -49,14 +49,14 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
     }
 
-    /// Returns true if the model is satisfiable with all assumptions
-    pub fn check_satisfiability(&mut self) -> bool {
+    /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
+    pub fn check_satisfiability(&mut self) -> Option<Solution> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let res = self
             .solver
             .solve_with_assumptions(&assumptions, aries::solver::SearchLimit::None)
             .unwrap()
-            .is_ok();
+            .ok();
         self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res

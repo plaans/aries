@@ -37,7 +37,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res
 
     let _encoding_time = start.elapsed().as_millis();
 
-    if solver.check_satisfiability() {
+    if let Some(_solution) = solver.check_satisfiability() {
         println!("Plan is valid.");
         return Ok(());
     } else {
@@ -100,12 +100,12 @@ pub fn encode_plan_optimization_problem(
         for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
             let arg = match arg {
                 // ground parameter, get the corresponding object constant
-                lifted_plan::OperationArg::Ground(object) => sched
+                lifted_plan::ObjectOrVariable::Ground(object) => sched
                     .objects
                     .object_atom(object.name().canonical_str())
                     .ok_or_else(|| object.name().invalid("unknown object"))?,
                 // variable parameter, retrieve the variable we created for it
-                lifted_plan::OperationArg::Variable { name } => plan_variables[name],
+                lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
             };
 
             // incorpare the potential values taken by this operation param into the one of the action

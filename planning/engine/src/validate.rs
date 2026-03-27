@@ -15,5 +15,5 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
     };
     let mut solver = encode_plan_optimization_problem(model, plan, &opt_options)?;
 
-    Ok(solver.check_satisfiability())
+    Ok(solver.check_satisfiability().is_some())
 }
