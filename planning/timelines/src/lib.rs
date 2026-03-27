@@ -2,6 +2,7 @@ pub mod boxes;
 pub mod constraints;
 mod effects;
 pub mod explain;
+pub mod rational;
 pub mod symbols;
 pub mod tasks;
 

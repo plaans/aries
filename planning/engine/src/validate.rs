@@ -13,7 +13,7 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
         relaxation: vec![],                              // no relaxation
         objective: optimize_plan::Objective::PlanLength, // TODO: change to domain's metric
     };
-    let mut solver = encode_plan_optimization_problem(model, plan, &opt_options)?;
+    let (mut solver, _encoding) = encode_plan_optimization_problem(model, plan, &opt_options)?;
 
     Ok(solver.check_satisfiability().is_some())
 }

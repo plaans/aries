@@ -1,6 +1,7 @@
 //! A number of utility functions for converting from `planx` to `aries-timelines`
 
 pub mod constraints;
+pub mod encoding;
 pub mod required_values;
 
 use aries::{

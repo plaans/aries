@@ -2,7 +2,11 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::prelude::*;
 use aries_plan_engine::{
-    encode::{required_values::RequiredValues, *},
+    encode::{
+        encoding::{ActionInstance, Encoding, ObjectVar},
+        required_values::RequiredValues,
+        *,
+    },
     plans::lifted_plan::{self, LiftedPlan},
 };
 use derive_more::derive::Display;
@@ -33,12 +37,13 @@ pub enum Objective {
 
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res<()> {
     let start = Instant::now();
-    let mut solver = encode_plan_optimization_problem(model, plan, options)?;
+    let (mut solver, encoding) = encode_plan_optimization_problem(model, plan, options)?;
 
     let _encoding_time = start.elapsed().as_millis();
 
-    if let Some(_solution) = solver.check_satisfiability() {
-        println!("Plan is valid.");
+    if let Some(solution) = solver.check_satisfiability() {
+        println!("\n> Problem is satifiable: (non-optimized plan)");
+        println!("{}\n", encoding.plan(&solution));
         return Ok(());
     } else {
         println!("Invalid plan");
@@ -50,9 +55,12 @@ pub fn encode_plan_optimization_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
     _options: &Options, // TODO: use those
-) -> Res<ExplainableSolver<RelaxableConstraint>> {
+) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding)> {
+    let mut encoding = Encoding::new();
+
     // build encoding of all objects: associates each object to a int value and each type to a range of values
     let objs = types(model);
+    let object_decoder = objs.decoder();
     let mut sched = timelines::Sched::new(1, objs);
 
     let global_scope = Scope::global(&sched);
@@ -125,6 +133,18 @@ pub fn encode_plan_optimization_problem(
             presence: Lit::TRUE, // TODO: action is necessarily present!!
             args,
         };
+        // add the action to the encoding so we can retrieve it later
+        encoding.add_action(ActionInstance {
+            action_ref: a.name.clone(),
+            prez: bindings.presence,
+            start: bindings.start,
+            end: bindings.end,
+            arguments: bindings
+                .args
+                .values()
+                .map(|var| ObjectVar::new(*var, &object_decoder))
+                .collect(),
+        });
 
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for c in a.conditions.iter() {
@@ -200,5 +220,5 @@ pub fn encode_plan_optimization_problem(
 
     let constraint_to_repair = |_cid: ConstraintID| None;
 
-    Ok(sched.explainable_solver(constraint_to_repair))
+    Ok((sched.explainable_solver(constraint_to_repair), encoding))
 }
