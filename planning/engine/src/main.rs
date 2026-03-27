@@ -47,6 +47,7 @@ enum Commands {
     OptimizePlan(OptimizePlan),
     /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
+    FindDomain(FindDomain),
 }
 
 #[derive(Parser, Debug)]
@@ -63,6 +64,13 @@ pub struct Parse {
 pub struct ParseDomain {
     /// Path to the PDDL domain file.
     domain_file: PathBuf,
+}
+
+/// Find the domain of a problem file, from naming conventions.
+#[derive(Parser, Debug)]
+pub struct FindDomain {
+    /// Path to the problem file
+    problem_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -107,6 +115,7 @@ fn main() -> Res<()> {
     match &args.command {
         Commands::Parse(command) => parse(command)?,
         Commands::ParseDomain(command) => parse_domain(command)?,
+        Commands::FindDomain(command) => find_domain(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
         Commands::DomRepair(command) => repair(command)?,
@@ -161,6 +170,16 @@ fn parse_domain(command: &ParseDomain) -> Res<()> {
 
     println!("{model}");
     Ok(())
+}
+
+fn find_domain(command: &FindDomain) -> Res<()> {
+    match pddl::find_domain_of(&command.problem_file) {
+        Ok(path) => {
+            print!("{}", path.display());
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn validate_plan(command: &Validate) -> Res<()> {
