@@ -6,18 +6,21 @@ use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, Inference
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst, Lit, VarRef};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 
-pub fn f64_as_int_cst(value: f64) -> IntCst {
+type Float = f64;
+
+pub fn float_as_int_cst(value: Float) -> IntCst {
     if value <= INT_CST_MIN.into() {
         INT_CST_MIN
     } else if value >= INT_CST_MAX.into() {
         INT_CST_MAX
     } else {
+        debug_assert!(value.fract().abs() < 1e-9);
         value as IntCst
     }
 }
 
-pub type ExplainIisBoundsFn = Arc<dyn Fn(highs::Col, bool, f64) -> Option<Vec<Lit>> + Send + Sync>;
-pub type UpdateLpBoundsFn = Arc<dyn Fn(Lit) -> Option<Vec<(highs::Col, bool, f64)>> + Send + Sync>;
+pub type ExplainIisBoundsFn = Arc<dyn Fn(highs::Col, bool, Float) -> Option<Vec<Lit>> + Send + Sync>;
+pub type UpdateLpBoundsFn = Arc<dyn Fn(Lit) -> Option<Vec<(highs::Col, bool, Float)>> + Send + Sync>;
 
 pub struct LpNewColumnMetadata {
     var_ref: VarRef,
@@ -26,7 +29,7 @@ pub struct LpNewColumnMetadata {
 }
 
 ///
-/// 
+///
 /// TODO: Improve highs API:
 /// - Change RowProblem and try_optimise such that no conversion to ColProblem needs to take place
 /// - Avoid having to clone lp_problem only to move its allocated vectors(' pointers) to the C API. Tackling this naively could result in dangling pointers.
@@ -35,6 +38,7 @@ pub struct LpRelax {
     model_events: ObsTrailCursor<Event>,
     saved: DecLvl,
 
+    // TODO: INTERNAL `trail` AS IN STN THEORY, TO BE ABLE TO RESTORE BOUNDS
     lp_optim_sense: highs::Sense,
     lp_prob: highs::RowProblem,
     lp_cached_model: highs::Model,
@@ -46,8 +50,8 @@ pub struct LpRelax {
 unsafe impl Send for LpRelax {}
 unsafe impl Sync for LpRelax {}
 
-fn new_lp_model(lp_prob: highs::RowProblem, sense: highs::Sense) -> highs::Model {
-    lp_prob.try_optimise(sense).unwrap()
+fn new_lp_model(lp_prob: highs::RowProblem, lp_optim_sense: highs::Sense) -> highs::Model {
+    lp_prob.try_optimise(lp_optim_sense).unwrap()
     // let lp_model = lp_prob.try_optimise(sense).unwrap();
     // self.lp_model.set_option("iis_strategy", 0b00110)
     // lp_model
@@ -94,7 +98,7 @@ impl Default for LpRelax {
 }
 
 impl LpRelax {
-    pub fn add_column<N: Into<f64> + Copy, B: std::ops::RangeBounds<N>>(&mut self, bounds: B) -> highs::Col {
+    pub fn add_column<N: Into<Float> + Copy, B: std::ops::RangeBounds<N>>(&mut self, bounds: B) -> highs::Col {
         assert!(self.explain_iis_bounds.len() == self.lp_prob.num_cols());
 
         self.explain_iis_bounds.push(None);
@@ -109,9 +113,9 @@ impl LpRelax {
     }
 
     pub fn add_row<
-        N: Into<f64> + Copy,
+        N: Into<Float> + Copy,
         B: std::ops::RangeBounds<N>,
-        ITEM: std::borrow::Borrow<(highs::Col, f64)>,
+        ITEM: std::borrow::Borrow<(highs::Col, Float)>,
         I: IntoIterator<Item = ITEM>,
     >(
         &mut self,
@@ -192,7 +196,7 @@ impl Theory for LpRelax {
     }
 
     fn print_stats(&self) {
-        todo!()
+        println!("TODO");
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -221,7 +225,7 @@ pub mod test {
 
     use crate::core::Relation;
     use crate::core::state::{Cause, Domains, Explanation};
-    use crate::reasoners::lprelax::{LpNewColumnMetadata, LpRelax, f64_as_int_cst};
+    use crate::reasoners::lprelax::{LpNewColumnMetadata, LpRelax, float_as_int_cst};
     use crate::reasoners::{Contradiction, Theory};
 
     #[test]
@@ -245,9 +249,9 @@ pub mod test {
                 explain_iis_bounds: Arc::new(move |col, upper, bound| {
                     assert_eq!(col, ai);
                     if upper {
-                        Some(vec![a.leq(f64_as_int_cst(bound.ceil()))])
+                        Some(vec![a.leq(float_as_int_cst(bound.ceil()))])
                     } else {
-                        Some(vec![a.geq(f64_as_int_cst(bound.floor()))])
+                        Some(vec![a.geq(float_as_int_cst(bound.floor()))])
                     }
                 }),
                 update_lp_bounds: Arc::new(move |lit| {
@@ -269,9 +273,9 @@ pub mod test {
                 explain_iis_bounds: Arc::new(move |col, upper, bound| {
                     assert_eq!(col, bi);
                     if upper {
-                        Some(vec![b.leq(f64_as_int_cst(bound.ceil()))])
+                        Some(vec![b.leq(float_as_int_cst(bound.ceil()))])
                     } else {
-                        Some(vec![b.geq(f64_as_int_cst(bound.floor()))])
+                        Some(vec![b.geq(float_as_int_cst(bound.floor()))])
                     }
                 }),
                 update_lp_bounds: Arc::new(move |lit| {
@@ -290,10 +294,7 @@ pub mod test {
         let _ = d.set_ub(a, 0, Cause::Decision).unwrap();
         let _ = d.set_ub(b, 0, Cause::Decision).unwrap();
 
-        let res = theory.propagate(&mut d);
-        println!("{res:?}");
-
-        let expl = match res {
+        let expl = match theory.propagate(&mut d) {
             Err(Contradiction::Explanation(expl)) => expl,
             _ => Explanation::new(),
         };
