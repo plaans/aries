@@ -1,5 +1,4 @@
-use crate::core::state::Term;
-use crate::core::views::{Boundable, VarView};
+use crate::core::views::{Boundable, Term, VarView};
 use crate::core::*;
 use crate::model::lang::ConversionError;
 use crate::model::lang::linear::LinearTerm;

@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::{
-    core::{IntCst, Lit, VarRef, state::Term},
+    core::{IntCst, Lit, VarRef, views::Term},
     model::{
         Label, Model,
         lang::expr::{And, Leq, Or, or},
@@ -252,7 +252,6 @@ mod test {
     };
 
     use super::*;
-    use crate::core::state::Term;
 
     /// All different with potentially optional variables
     struct AllDifferent(Vec<IAtom>);

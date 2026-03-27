@@ -1,4 +1,4 @@
-use crate::core::state::Term;
+use crate::core::views::Term;
 use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::{Atom, Cst, FAtom, IAtom, Rational, SAtom};
 use crate::model::symbols::{SymId, TypedSym};

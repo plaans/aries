@@ -1,4 +1,3 @@
-pub mod assignment;
 pub mod boxes;
 pub mod constraints;
 mod effects;
@@ -22,7 +21,6 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
-use crate::assignment::Assignment;
 pub use crate::effects::*;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
@@ -153,10 +151,10 @@ impl Sched {
         encoding
     }
 
-    pub fn solve(&self) -> Option<Assignment> {
+    pub fn solve(&self) -> Option<Solution> {
         let encoding = self.encode();
         let mut solver = Solver::new(encoding);
-        solver.solve(SearchLimit::None).unwrap().map(Assignment::shared)
+        solver.solve(SearchLimit::None).unwrap()
     }
 
     pub fn explainable_solver<T: Ord + Clone>(
@@ -166,7 +164,7 @@ impl Sched {
         ExplainableSolver::new(self, project)
     }
 
-    pub fn print(&self, sol: &Assignment) {
+    pub fn print(&self, sol: &Solution) {
         let sorted_tasks = self
             .tasks
             .iter()

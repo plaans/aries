@@ -1,11 +1,10 @@
 use crate::core::state::{FixedDomain, IntDomain, OptDomain, RangeDomain};
-use crate::core::views::{Dom, VarView};
+use crate::core::views::{Dom, Term, VarView};
 use crate::core::*;
 use crate::model::lang::linear::LinearSum;
 use crate::model::lang::{Atom, Cst, IAtom, Rational, SAtom};
 use crate::model::symbols::SymId;
 use crate::model::symbols::TypedSym;
-use state::Term;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait DomainsExt: Dom + Sized {
