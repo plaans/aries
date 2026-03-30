@@ -1,6 +1,7 @@
 use num_integer::lcm;
 
-use crate::core::{IntCst, Lit, VarRef};
+use crate::core::state::Evaluable;
+use crate::core::{IntCst, Lit, QCst, VarRef};
 use crate::model::lang::{IAtom, IVar, ValidityScope};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
@@ -406,10 +407,34 @@ use crate::transitive_conversion;
 use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
 
+impl Evaluable for LinearSum {
+    type Value = QCst;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        let mut sum = QCst::new(self.constant, self.denom);
+        for term in &self.terms {
+            // add the contribution of each term, BUT
+            // we shortcircuit and return None if the term is absent
+            sum += term.evaluate(solution)?;
+        }
+        Some(sum)
+    }
+}
+
+impl Evaluable for LinearTerm {
+    type Value = QCst;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        let var_value = self.var.evaluate(solution)?;
+        Some(QCst::new(self.factor, self.denom) * QCst::from_integer(var_value))
+    }
+}
+
 /* ========================================================================== */
 /*                                  LinearLeq                                 */
 /* ========================================================================== */
 
+#[derive(Clone)]
 pub struct LinearLeq {
     sum: LinearSum,
     ub: IntCst,
