@@ -1,5 +1,6 @@
-use aries_plan_engine::plans::lifted_plan::LiftedPlan;
-use planx::{Model, Res};
+use aries::core::state::Evaluable;
+use aries_plan_engine::{encode::tags::format_culprit_set, plans::lifted_plan::LiftedPlan};
+use planx::{Message, Model, Res};
 
 use crate::optimize_plan::{self, encode_plan_optimization_problem};
 
@@ -13,7 +14,22 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
         relaxation: vec![],                              // no relaxation
         objective: optimize_plan::Objective::PlanLength, // TODO: change to domain's metric
     };
-    let (mut solver, _encoding) = encode_plan_optimization_problem(model, plan, &opt_options)?;
+    let (mut solver, encoding) = encode_plan_optimization_problem(model, plan, &opt_options)?;
 
-    Ok(solver.check_satisfiability().is_some())
+    if let Some(solution) = solver.check_satisfiability() {
+        println!("\n> Plan is valid");
+        if let Some(objective) = encoding.objective {
+            println!("> objective: {}", objective.evaluate(&solution).unwrap());
+        }
+
+        Ok(true)
+    } else {
+        println!("Plan is INVALID!!!!");
+        for mus in solver.muses() {
+            let msg = format_culprit_set(Message::error("INVALID PLAN"), &mus, model, plan);
+            println!("\n{msg}\n");
+        }
+        println!("Plan is INVALID!!!!");
+        Ok(false)
+    }
 }
