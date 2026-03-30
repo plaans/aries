@@ -32,12 +32,12 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 let l = if let Some(l) = trigger.get(&tag) {
                     *l
                 } else {
-                    let l = encoding.new_literal(Lit::TRUE);
+                    let l = encoding.new_literal(Lit::TRUE); // could we use the conjunctive scope directly?
                     assumptions_map.insert(l, tag.clone());
                     trigger.insert(tag, l);
                     l
                 };
-                c.enforce_if(l, sched, &mut encoding);
+                c.opt_enforce_if(l, sched, &mut encoding);
             } else {
                 c.enforce(sched, &mut encoding);
             }
