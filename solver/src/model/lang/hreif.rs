@@ -4,7 +4,10 @@ use crate::{
     core::{IntCst, Lit, VarRef, views::Term},
     model::{
         Label, Model,
-        lang::expr::{And, Leq, Or, or},
+        lang::{
+            expr::{And, Leq, Or, or},
+            linear::LinearLeq,
+        },
     },
     prelude::DomainsExt,
     reif::ReifExpr,
@@ -175,6 +178,7 @@ crate::impl_reif!(Lit);
 crate::impl_reif!(Or);
 crate::impl_reif!(And);
 crate::impl_reif!(Leq);
+crate::impl_reif!(LinearLeq);
 
 #[macro_export]
 macro_rules! impl_reif {
