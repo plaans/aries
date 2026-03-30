@@ -618,16 +618,18 @@ pub fn parse_goal(
     env: &mut Environment,
     bindings: &Rc<Bindings>,
 ) -> Result<Goal, Message> {
-    if let Some([vars, sexpr]) = sexpr.as_application("forall")
+    let mut g = if let Some([vars, sexpr]) = sexpr.as_application("forall")
         && !at_horizon
     {
         // (forall (?x - loc ?y - obj) <constraint>)
         let vars = parse_var_list(vars, env)?;
         let bindings = Rc::new(Bindings::stacked(&vars, bindings));
-        parse_unquantified_goal(sexpr, at_horizon, env, &bindings).map(|g| g.forall(vars))
+        parse_unquantified_goal(sexpr, at_horizon, env, &bindings).map(|g| g.forall(vars))?
     } else {
-        parse_unquantified_goal(sexpr, at_horizon, env, bindings).map(|g| g.forall(vec![]))
-    }
+        parse_unquantified_goal(sexpr, at_horizon, env, bindings).map(|g| g.forall(vec![]))?
+    };
+    g.span = sexpr.span().cloned();
+    Ok(g)
 }
 
 /// Parses a goal (at_horizon=true) of constraint (at_horizon=false), without a forall
