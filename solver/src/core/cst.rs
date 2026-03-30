@@ -43,7 +43,7 @@ mod types {
     pub const INT_TYPE_NAME: &str = "i128";
 
     /// Type representing a rational constant.
-    pub type QCst = num_rational::BigRational;
+    pub type QCst = num_rational::Ratio<i128>;
 }
 
 /// Convert IntCst to LongCst
