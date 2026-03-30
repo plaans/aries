@@ -3,6 +3,7 @@
 pub mod constraints;
 pub mod encoding;
 pub mod required_values;
+pub mod tags;
 
 use aries::{
     core::literals::ConjunctionBuilder,

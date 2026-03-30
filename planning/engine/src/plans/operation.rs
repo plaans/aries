@@ -1,7 +1,10 @@
 use std::fmt::Display;
 
 use itertools::Itertools;
-use planx::{ActionRef, errors::Span};
+use planx::{
+    ActionRef,
+    errors::{Span, Spanned},
+};
 use timelines::rational::QCst;
 
 /// Absolute time, associated to an operation start/end
@@ -37,5 +40,11 @@ impl<Arg: Display> Display for Operation<Arg> {
             self.arguments.iter().format(" "),
             self.duration
         )
+    }
+}
+
+impl<Arg: Display> Spanned for Operation<Arg> {
+    fn span(&self) -> Option<&Span> {
+        self.span.as_ref()
     }
 }

@@ -189,7 +189,7 @@ fn validate_plan(command: &Validate) -> Res<()> {
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
-    println!("{plan:?}");
+    println!("\n===== Plan ====\n\n{plan}\n");
 
     let valid = validate::validate(&model, &plan, &command.options)?;
     if valid {
@@ -213,10 +213,9 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
-    println!("{plan:?}");
+    println!("\n===== Plan ====\n\n{plan}\n");
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options)?;
-    todo!()
+    optimize_plan::optimize_plan(&model, &plan, &command.options)
 }
 
 fn repair(command: &DomRepair) -> Res<()> {

@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use aries::core::QCst;
+use itertools::Itertools;
 use planx::{Model, Res, Sym};
 use timelines::IntCst;
 
@@ -13,10 +14,26 @@ pub struct LiftedPlan {
     /// All variables apprearing in the lifted plan, together with an inferred type (most specific one from all their appearances.)
     pub variables: BTreeMap<Sym, planx::UserType>,
 }
+
+impl Display for LiftedPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.operations.iter().format("\n"))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ObjectOrVariable {
     Ground(planx::Object),
     Variable { name: Sym },
+}
+
+impl Display for ObjectOrVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectOrVariable::Ground(object) => write!(f, "{object}"),
+            ObjectOrVariable::Variable { name } => write!(f, "{name}"),
+        }
+    }
 }
 
 /// Parse a lifted plan into our own representation.

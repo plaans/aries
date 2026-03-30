@@ -1,25 +1,38 @@
-use std::fmt::Display;
+use std::{collections::BTreeMap, fmt::Display};
 
-use aries::{core::state::Evaluable, prelude::*};
+use aries::{core::state::Evaluable, model::lang::FAtom, prelude::*};
 use itertools::Itertools;
 use planx::ActionRef;
-use timelines::{Sym, Time, symbols::ObjectDecoder};
+use timelines::{ConstraintID, Sym, Time, symbols::ObjectDecoder};
 
-use crate::plans::Operation;
+use crate::{encode::tags::Tag, plans::Operation};
 
 /// Representation of the encoding that allows reconstructing a solution plan from a valid assignment.
 #[derive(Default)]
 pub struct Encoding {
+    /// All actions instances that may appear in the plan.
     pub actions: Vec<ActionInstance>,
+    /// Variable encoding the objective value (minimization)
+    pub objective: Option<FAtom>,
+    /// for each relaxable constraint, stores a constraint tag so that we can later decide if it should be relaxed.
+    pub constraints_tags: BTreeMap<ConstraintID, Tag>,
 }
 
 impl Encoding {
     pub fn new() -> Self {
-        Encoding { actions: vec![] }
+        Encoding {
+            actions: vec![],
+            objective: None,
+            constraints_tags: Default::default(),
+        }
     }
 
     pub fn add_action(&mut self, instance: ActionInstance) {
         self.actions.push(instance);
+    }
+
+    pub fn set_objective(&mut self, objective: impl Into<FAtom>) {
+        self.objective = Some(objective.into())
     }
 
     /// Extracts the plan corresponding to this solution.

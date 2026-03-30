@@ -1,10 +1,15 @@
 use std::{collections::BTreeMap, time::Instant};
 
-use aries::prelude::*;
+use aries::{
+    core::state::Evaluable,
+    model::lang::{FAtom, hreif::Store, linear::LinearSum},
+    prelude::*,
+};
 use aries_plan_engine::{
     encode::{
         encoding::{ActionInstance, Encoding, ObjectVar},
         required_values::RequiredValues,
+        tags::{ActionCondition, Tag, format_culprit_set},
         *,
     },
     plans::lifted_plan::{self, LiftedPlan},
@@ -12,9 +17,9 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
-use timelines::{ConstraintID, SymAtom, Time, boxes::Segment, explain::ExplainableSolver};
+use timelines::{ConstraintID, Sched, SymAtom, Time, boxes::Segment, explain::ExplainableSolver};
 
-pub type RelaxableConstraint = ();
+pub type RelaxableConstraint = Tag;
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct Options {
@@ -25,12 +30,12 @@ pub struct Options {
     pub objective: Objective,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy, Display)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Relaxation {
     ActionPresence,
 }
 
-#[derive(clap::ValueEnum, Debug, Clone, Copy, Display)]
+#[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Objective {
     PlanLength,
 }
@@ -41,20 +46,30 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res
 
     let _encoding_time = start.elapsed().as_millis();
 
-    if let Some(solution) = solver.check_satisfiability() {
-        println!("\n> Problem is satifiable: (non-optimized plan)");
-        println!("{}\n", encoding.plan(&solution));
-        return Ok(());
+    let objective = encoding.objective.unwrap(); //TODO: error message
+
+    let print = |sol: &Solution| {
+        println!("==== Plan (objective: {}) =====", objective.evaluate(sol).unwrap());
+        println!("{}\n", encoding.plan(sol));
+    };
+
+    if let Some(solution) = solver.find_optimal(objective, &print) {
+        println!("\n> Found optimal solution:");
+        print(&solution);
     } else {
-        println!("Invalid plan");
+        println!("No solution !!!!");
+        for mus in solver.muses() {
+            let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
+            println!("\n{msg}\n");
+        }
     }
-    todo!()
+    Ok(())
 }
 
 pub fn encode_plan_optimization_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
-    _options: &Options, // TODO: use those
+    options: &Options,
 ) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding)> {
     let mut encoding = Encoding::new();
 
@@ -96,7 +111,7 @@ pub fn encode_plan_optimization_problem(
     // initial processing of all operations
     // we create its scope (binding of timepoints, params, ...) and process its conditions
     // Effects are defered to a later point
-    for op in lifted_plan.operations.iter() {
+    for (op_id, op) in lifted_plan.operations.iter().enumerate() {
         // corresponding action in the model
         let a = model
             .actions
@@ -126,11 +141,16 @@ pub fn encode_plan_optimization_problem(
             // add argument to the bindings
             args.insert(&param.name, arg);
         }
+        let presence = if options.relaxation.contains(&Relaxation::ActionPresence) {
+            sched.model.new_literal(Lit::TRUE)
+        } else {
+            Lit::TRUE
+        };
 
         let bindings = Scope {
             start: Time::from(op.start), // start time is the index of the action in the plan
             end: Time::from(op.start + op.duration),
-            presence: Lit::TRUE, // TODO: action is necessarily present!!
+            presence,
             args,
         };
         // add the action to the encoding so we can retrieve it later
@@ -147,12 +167,22 @@ pub fn encode_plan_optimization_problem(
         });
 
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
-        for c in a.conditions.iter() {
+        for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
                 let constraint =
                     condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
 
-                sched.add_constraint(constraint);
+                let cid = sched.add_constraint(constraint);
+                encoding.constraints_tags.insert(
+                    cid,
+                    Tag::Support {
+                        operator_id: op_id,
+                        cond: ActionCondition {
+                            action: a.name.clone(),
+                            condition_id: cond_id,
+                        },
+                    },
+                );
             }
         }
 
@@ -160,7 +190,7 @@ pub fn encode_plan_optimization_problem(
         operations_scopes.push((a, bindings));
     }
     // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
-    for x in model.goals.iter() {
+    for (gid, x) in model.goals.iter().enumerate() {
         assert!(x.universal_quantification.is_empty());
         match x.goal_expression {
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
@@ -174,7 +204,8 @@ pub fn encode_plan_optimization_problem(
                         Some(&mut required_values),
                     )?;
 
-                    sched.add_constraint(constraint);
+                    let cid = sched.add_constraint(constraint);
+                    encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
                 } else {
                     todo!("durative goal")
                 }
@@ -207,7 +238,6 @@ pub fn encode_plan_optimization_problem(
         for x in a.effects.iter() {
             let eff = convert_effect(x, true, model, &mut sched, bindings)?;
             // replace the effect presence by its enabler
-            assert_eq!(eff.prez, Lit::TRUE);
             action_effects.push(eff);
         }
 
@@ -218,7 +248,46 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    let constraint_to_repair = |_cid: ConstraintID| None;
+    let objective: FAtom = match options.objective {
+        Objective::PlanLength => {
+            let mut sum = LinearSum::zero();
+            for (_a, scope) in &operations_scopes {
+                let action_prez = scope.presence;
+                sum += bool2int(action_prez, &sched.model)
+            }
+            reify_sum(sum, &mut sched)
+        }
+    };
+    encoding.set_objective(objective);
+
+    let tags = encoding.constraints_tags.clone();
+    let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
 
     Ok((sched.explainable_solver(constraint_to_repair), encoding))
+}
+
+fn bool2int(b: Lit, model: &dyn Store) -> LinearSum {
+    let is_zero_one = model.bounds(b.variable()) == (0, 1);
+    if model.entails(b) {
+        1.into()
+    } else if model.entails(!b) {
+        0.into()
+    } else if is_zero_one && b == b.variable().geq(1) {
+        IVar::new(b.variable()).into()
+    } else if is_zero_one && b == b.variable().leq(0) {
+        LinearSum::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
+    } else {
+        todo!() // cannot immediately reuse the variable, create a new one and bind it
+    }
+}
+
+fn reify_sum(sum: LinearSum, model: &mut Sched) -> FAtom {
+    let reified: FAtom = model
+        .model
+        .new_fvar(INT_CST_MIN, INT_CST_MAX, sum.denom(), "Sum reif")
+        .into();
+    model.add_constraint(sum.clone().leq(reified));
+    model.add_constraint(sum.geq(reified));
+
+    reified
 }
