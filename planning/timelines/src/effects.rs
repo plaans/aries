@@ -111,6 +111,19 @@ pub struct Effects {
     ///
     /// If the boxes of two effects to not overlap, they can be safely determined to never overlap (and thus do not require coherence enforcement constraints).
     achieved_bounding_boxes: BoxUniverse<String, usize>,
+    /// Associates every effect to a `Box` in a universe.
+    /// This box denotes a the set of values that the effect may support.
+    /// The intuition if that
+    ///
+    /// Boxes are partitioned based on their state variables (one world per state variable).
+    /// The box of each effect captures the space-time region it affects with dimesions:
+    ///
+    ///  - time: `[lb(transition_start), ub(transition_end))`
+    ///  - for each parameter p:
+    ///    - `[lb(p), ub(p)]`
+    ///
+    /// If the boxes of two effects to not overlap, they can be safely determined to never overlap (and thus do not require coherence enforcement constraints).
+    transition_bounding_boxes: BoxUniverse<String, usize>,
 }
 
 type Segments = SmallVec<[Segment; 16]>;
@@ -121,6 +134,7 @@ impl Effects {
             effects: Default::default(),
             affected_bb: BoxUniverse::new(),
             achieved_bounding_boxes: BoxUniverse::new(),
+            transition_bounding_boxes: BoxUniverse::new(),
         }
     }
 
@@ -161,15 +175,36 @@ impl Effects {
         self.achieved_bounding_boxes
             .add_box(&eff.state_var.fluent, &buff, eff_id);
 
+        // compute and store the achievable bounding boxes
+        buff.clear();
+        buff.push(Segment::new(
+            dom(eff.transition_start.num).0,
+            dom(eff.transition_end.num).1 - 1,
+        )); // TODO: careful with denom
+        for arg in &eff.state_var.args {
+            let (lb, ub) = dom(*arg);
+            buff.push(Segment::new(lb, ub));
+        }
+        self.transition_bounding_boxes
+            .add_box(&eff.state_var.fluent, &buff, eff_id);
+
         self.effects.push(eff);
         eff_id
     }
 
-    pub fn potentially_interacting_effects(&self) -> impl Iterator<Item = (EffectId, EffectId)> + '_ {
+    /// Returns a list of effects that may overlap on the state variable and overall activity period `[transition_start, mutex_end]`
+    pub(crate) fn potentially_interacting_effects(&self) -> impl Iterator<Item = (EffectId, EffectId)> + '_ {
         self.affected_bb.overlapping_boxes().map(|(e1, e2)| (*e1, *e2))
     }
 
-    pub fn potentially_supporting_effects<'a>(
+    /// Returns a list of potentially supporting effect for a condition, representing as a bounding box with
+    /// the given fluents and the following segments:
+    ///
+    ///  - time: `[lb(condition_start), ub(condition_end)]`
+    ///  - for each parameter p:
+    ///    - `[lb(p), ub(p)]`
+    ///  - value: `[lb(value), ub(value)]`
+    pub(crate) fn potentially_supporting_effects<'a>(
         &'a self,
         fluent: &'a String,
         value_box: BoxRef<'a>,
@@ -178,6 +213,23 @@ impl Effects {
 
         self.achieved_bounding_boxes
             .find_overlapping_with(fluent, value_box)
+            .copied()
+    }
+
+    /// Returns a list of effects whose transition period `[transition_start, transition_end)` may overlap a condition with the
+    /// the given fluents and a given value_box (same bounding box as [`Self::potentially_supporting_effects`]).
+    ///
+    /// Note that the last segment of the box (representing the value) is ignored in the lookup.
+    pub(crate) fn potentially_overlapping_transitions<'a>(
+        &'a self,
+        fluent: &'a String,
+        value_box: BoxRef<'a>,
+    ) -> impl Iterator<Item = EffectId> + 'a {
+        // the same box but without the value
+        let box_without_value = value_box.drop_tail(1);
+
+        self.transition_bounding_boxes
+            .find_overlapping_with(fluent, box_without_value)
             .copied()
     }
 }

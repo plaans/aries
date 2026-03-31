@@ -166,10 +166,12 @@ impl BoolExpr<Sched> for HasValueAt {
             end: self.timepoint,
             presence: self.prez,
         };
-        for eff in ctx.effects.iter() {
-            // TODO: here we iterate on all effects AND do a string comparison which
-            // may be very slow. Use bounding boxes to do a broad-phase filter
-            if eff.source != self.source && eff.state_var.fluent == self.state_var.fluent {
+        for eff_id in ctx
+            .effects
+            .potentially_overlapping_transitions(&self.state_var.fluent, value_box.as_ref())
+        {
+            let eff = &ctx.effects[eff_id];
+            if eff.source != self.source {
                 let itv_eff = IntervalOnStateVariable {
                     state_var: &eff.state_var,
                     start: eff.transition_start,
