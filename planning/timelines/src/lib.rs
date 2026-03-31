@@ -118,7 +118,7 @@ impl Sched {
     }
 
     pub fn add_effect(&mut self, eff: Effect) -> EffectId {
-        self.effects.add_effect(eff, |var| self.model.int_bounds(var))
+        self.effects.add_effect(eff, &self.model)
     }
 
     pub fn new_timepoint(&mut self) -> Time {

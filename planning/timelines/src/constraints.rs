@@ -178,7 +178,6 @@ impl BoolExpr<Sched> for HasValueAt {
                     end: eff.transition_end - FAtom::EPSILON,
                     presence: eff.prez,
                 };
-                dbg!(eff, self);
                 let exclu = Exclusive {
                     a: &itv_cond,
                     b: &itv_eff,

@@ -1,7 +1,4 @@
-use aries::{
-    core::{IntCst, Lit},
-    model::lang::IAtom,
-};
+use aries::{core::views::Dom, prelude::*};
 use smallvec::SmallVec;
 use std::{
     fmt::{Debug, Formatter},
@@ -146,25 +143,28 @@ impl Effects {
         &self.effects[eff_id]
     }
 
-    pub fn add_effect(&mut self, eff: Effect, dom: impl Fn(IAtom) -> (IntCst, IntCst)) -> EffectId {
+    pub fn add_effect(&mut self, eff: Effect, dom: impl Dom) -> EffectId {
         // ID of the effect will be the index of the next free slot
         let eff_id = self.effects.len();
 
         let mut buff = Segments::new();
 
         // compute and store affected bounding_box
-        buff.push(Segment::new(dom(eff.transition_start.num).0, dom(eff.mutex_end.num).1)); // TODO: careful with denom
+        buff.push(Segment::new(
+            dom.lb(eff.transition_start.num),
+            dom.ub(eff.mutex_end.num),
+        )); // TODO: careful with denom
         for arg in &eff.state_var.args {
-            let (lb, ub) = dom(*arg);
+            let (lb, ub) = dom.bounds(*arg);
             buff.push(Segment::new(lb, ub));
         }
         self.affected_bb.add_box(&eff.state_var.fluent, &buff, eff_id);
 
         // compute and store the achievable bounding boxes
         buff.clear();
-        buff.push(Segment::new(dom(eff.transition_end.num).0, dom(eff.mutex_end.num).1)); // TODO: careful with denom
+        buff.push(Segment::new(dom.lb(eff.transition_end.num), dom.ub(eff.mutex_end.num))); // TODO: careful with denom
         for arg in &eff.state_var.args {
-            let (lb, ub) = dom(*arg);
+            let (lb, ub) = dom.bounds(*arg);
             buff.push(Segment::new(lb, ub));
         }
         let value_segment = match &eff.operation {
@@ -178,11 +178,11 @@ impl Effects {
         // compute and store the achievable bounding boxes
         buff.clear();
         buff.push(Segment::new(
-            dom(eff.transition_start.num).0,
-            dom(eff.transition_end.num).1 - 1,
+            dom.lb(eff.transition_start.num),
+            dom.ub(eff.transition_end.num) - 1,
         )); // TODO: careful with denom
         for arg in &eff.state_var.args {
-            let (lb, ub) = dom(*arg);
+            let (lb, ub) = dom.bounds(*arg);
             buff.push(Segment::new(lb, ub));
         }
         self.transition_bounding_boxes
