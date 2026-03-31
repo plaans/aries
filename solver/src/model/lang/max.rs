@@ -6,6 +6,7 @@ use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
 /// Constraint equivalent to `lhs = max { e | e \in rhs }`
+#[derive(Clone)]
 pub struct EqMax {
     lhs: IAtom,
     rhs: Vec<IAtom>,
@@ -21,6 +22,7 @@ impl EqMax {
 }
 
 /// Constraint equivalent to `lhs = min { e | e \in rhs }`
+#[derive(Clone)]
 pub struct EqMin {
     lhs: IAtom,
     rhs: Vec<IAtom>,

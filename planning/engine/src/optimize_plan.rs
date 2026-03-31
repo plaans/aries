@@ -39,6 +39,7 @@ pub enum Relaxation {
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Objective {
     PlanLength,
+    Makespan,
 }
 
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res<()> {
@@ -275,6 +276,7 @@ pub fn encode_plan_optimization_problem(
             }
             reify_sum(sum, &mut sched)
         }
+        Objective::Makespan => sched.makespan,
     };
     encoding.set_objective(objective);
 

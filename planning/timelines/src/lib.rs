@@ -109,7 +109,7 @@ impl Sched {
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
-            constraints: vec![Box::new(EffectCoherence)], // TODO: add default constraints (consitency, makespan), ...
+            constraints: vec![Box::new(MakespanIsMaxTaskEnd), Box::new(EffectCoherence)],
         }
     }
 

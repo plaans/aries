@@ -7,6 +7,7 @@ use crate::{
         lang::{
             expr::{And, Leq, Or, or},
             linear::LinearLeq,
+            max::{EqMax, EqMin},
         },
     },
     prelude::DomainsExt,
@@ -179,6 +180,8 @@ crate::impl_reif!(Or);
 crate::impl_reif!(And);
 crate::impl_reif!(Leq);
 crate::impl_reif!(LinearLeq);
+crate::impl_reif!(EqMax);
+crate::impl_reif!(EqMin);
 
 #[macro_export]
 macro_rules! impl_reif {

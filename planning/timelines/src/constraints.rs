@@ -4,10 +4,35 @@ use aries::{
     model::lang::{
         expr::{and, eq, f_geq, f_leq, f_lt, neq, or},
         hreif::{BoolExpr, Store, exclu_choice},
+        max::EqMax,
     },
 };
 
 use crate::{boxes::Segment, effects::EffectOp, *};
+
+/// Constraint that enforces the [`Sched::makespan`] variable to be equal to the
+/// maximum end time of tasks, or zero in the absence of tasks.
+pub(crate) struct MakespanIsMaxTaskEnd;
+impl BoolExpr<Sched> for MakespanIsMaxTaskEnd {
+    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
+        assert_eq!(ctx.makespan.denom, ctx.time_scale);
+        let mut ends = ctx
+            .tasks
+            .iter()
+            .map(|t| {
+                assert_eq!(t.end.denom, ctx.time_scale);
+                t.end.num
+            })
+            .collect_vec();
+        ends.push(IAtom::ZERO); // default value when no task is present
+        EqMax::new(ctx.makespan.num, ends).enforce_if(l, ctx, store);
+    }
+
+    fn conj_scope(&self, _ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
+        // constraints is always valid (scope of makespan variable)
+        lits![]
+    }
+}
 
 pub struct NoOverlap(Vec<TaskId>);
 impl NoOverlap {
