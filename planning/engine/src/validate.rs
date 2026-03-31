@@ -17,9 +17,9 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
     let (mut solver, encoding) = encode_plan_optimization_problem(model, plan, &opt_options)?;
 
     if let Some(solution) = solver.check_satisfiability() {
-        println!("\n> Plan is valid");
+        println!("> Plan is valid");
         if let Some(objective) = encoding.objective {
-            println!("> objective: {}", objective.evaluate(&solution).unwrap());
+            println!("> Objective: {}", objective.evaluate(&solution).unwrap());
         }
 
         Ok(true)
