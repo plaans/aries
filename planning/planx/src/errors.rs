@@ -1,6 +1,7 @@
 use std::{
     fmt::{Debug, Display},
     ops::Range,
+    panic::Location,
 };
 
 pub type Res<T> = Result<T, Message>;
@@ -103,6 +104,14 @@ pub trait Spanned: Display {
         }
     }
 
+    /// Creates a debug error message that will also provide the source code location appended to the message.
+    #[track_caller]
+    fn todo(&self, msg: impl ToString) -> Message {
+        let caller = Location::caller();
+        let msg = format!("{} ({}:{})", msg.to_string(), caller.file(), caller.line());
+        self.invalid(msg)
+    }
+
     fn error(&self, message: impl ToString) -> Annot {
         self.annotate(Level::ERROR, message)
     }
@@ -166,6 +175,14 @@ impl Message {
     #[cold]
     pub fn error(title: impl ToString) -> Self {
         Self::new(Level::ERROR, title)
+    }
+
+    /// Builds an error message with the file:line of the call site
+    #[cold]
+    #[track_caller]
+    pub fn todo(title: impl ToString) -> Self {
+        let caller = Location::caller();
+        Self::error(format!("{} ({}:{}", title.to_string(), caller.file(), caller.line()))
     }
     #[cold]
     pub fn warning(title: impl ToString) -> Self {

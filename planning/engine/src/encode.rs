@@ -15,7 +15,7 @@ use aries::{
     reif::ReifExpr,
 };
 use itertools::Itertools;
-use planx::{ExprId, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use planx::{ExprId, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 use timelines::{
     Effect, EffectOp, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt, symbols::ObjectEncoding,
 };
@@ -115,7 +115,7 @@ pub fn condition_to_constraint(
             let e2 = reify_sym(exprs[1], model, sched, bindings)?;
             ConditionConstraint::Eq(e1, e2)
         }
-        e => todo!("{e:?}"),
+        _ => return Err(expr.todo("not supported")),
     };
 
     // update the required values if requested by caller
@@ -294,7 +294,11 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
 
 pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<FAtom> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
-    if *t.delay.numer() == 0 { Ok(tp) } else { todo!() }
+    if *t.delay.numer() == 0 {
+        Ok(tp)
+    } else {
+        Message::todo("unsupported non-zero delay").failed()
+    }
 }
 pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<FAtom> {
     match t {
@@ -302,7 +306,7 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
         TimeRef::Horizon => Ok(sched.horizon),
         TimeRef::ActionStart => Ok(binding.start),
         TimeRef::ActionEnd => Ok(binding.end),
-        _ => todo!("{t:?}"),
+        _ => Message::todo(format!("unsupported timeref {t:?}")).failed(),
     }
 }
 
@@ -321,7 +325,7 @@ pub fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -
             .get(param.name().canonical_str())
             .copied()
             .ok_or_else(|| param.name().invalid("unknown parameter")),
-        _ => todo!(),
+        _ => e.todo("not supported").failed(),
     }
 }
 
@@ -329,6 +333,6 @@ pub fn reify_bool(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<bool> {
     let e = model.env.node(e);
     match e.expr() {
         planx::Expr::Bool(b) => Ok(*b),
-        _ => todo!(),
+        _ => e.todo("not supported").failed(),
     }
 }
