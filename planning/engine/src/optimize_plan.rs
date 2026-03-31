@@ -17,7 +17,7 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
-use timelines::{ConstraintID, Sched, SymAtom, Time, boxes::Segment, explain::ExplainableSolver};
+use timelines::{ConstraintID, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst};
 
 pub type RelaxableConstraint = Tag;
 
@@ -33,6 +33,7 @@ pub struct Options {
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Relaxation {
     ActionPresence,
+    StartTime,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
@@ -146,12 +147,29 @@ pub fn encode_plan_optimization_problem(
         } else {
             Lit::TRUE
         };
+        let start = if options.relaxation.contains(&Relaxation::StartTime) {
+            sched.new_opt_timepoint(presence)
+        } else {
+            Time::from(op.start)
+        };
+        assert_eq!(op.duration, QCst::ZERO, "we use the start as end");
+        let end = start;
 
+        // record a task in `Sched` which
+        //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
+        //  - make the scheduler aware of the tasks when computing the makespan.
+        let task_id = sched.add_task(Task {
+            name: format!("op{op_id}"),
+            start,
+            end,
+            presence,
+        });
         let bindings = Scope {
-            start: Time::from(op.start), // start time is the index of the action in the plan
-            end: Time::from(op.start + op.duration),
+            start,
+            end,
             presence,
             args,
+            source: Some(task_id),
         };
         // add the action to the encoding so we can retrieve it later
         encoding.add_action(ActionInstance {

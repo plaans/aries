@@ -19,7 +19,7 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, FluentId, Message, Model, Param, Res, Sym, errors::Spanned};
-use timelines::{ConstraintID, EffectOp, Sched, SymAtom, Time, boxes::Segment, explain::ExplainableSolver};
+use timelines::{ConstraintID, EffectOp, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver};
 
 use crate::{
     ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
@@ -205,12 +205,25 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             // add argument to the bindings
             args.insert(&param.name, arg);
         }
+        // start time is the index of the action in the plan
+        let start = Time::from(op.start);
+        let end = Time::from(op.start + op.duration);
+        // action is necessarily present
+        let presence = Lit::TRUE;
+
+        let task_id = sched.add_task(Task {
+            name: format!("operation{op_id}"),
+            start,
+            end,
+            presence,
+        });
 
         let bindings = Scope {
-            start: Time::from(op.start), // start time is the index of the action in the plan
-            end: Time::from(op.start + op.duration),
-            presence: Lit::TRUE, // action is necessarily present
+            start,
+            end,
+            presence,
             args,
+            source: Some(task_id),
         };
 
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
@@ -447,6 +460,7 @@ fn create_potential_effect(
         state_var: sv,
         operation: op,
         prez: enalber,
+        source: bindings.source,
     };
     Ok(eff)
 }

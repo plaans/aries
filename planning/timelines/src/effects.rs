@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::{
-    StateVar, Time,
+    StateVar, TaskId, Time,
     boxes::{BoxRef, BoxUniverse, Segment},
 };
 
@@ -33,6 +33,11 @@ pub struct Effect {
     pub operation: EffectOp,
     /// Presence literal indicating whether the effect is present
     pub prez: Lit,
+    /// Specifies if this effect originates from a particular task.
+    /// This is used to enforce the PDDL-mutex constraint that specifies
+    /// that an aciton must not rely on a value that is immediately delete by *another* action.
+    /// (mutex conditions).
+    pub source: Option<TaskId>,
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {

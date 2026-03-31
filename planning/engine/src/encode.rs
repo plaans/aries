@@ -16,7 +16,9 @@ use aries::{
 };
 use itertools::Itertools;
 use planx::{ExprId, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
-use timelines::{Effect, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding};
+use timelines::{
+    Effect, EffectOp, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+};
 
 use crate::encode::{constraints::ConditionConstraint, required_values::RequiredValues};
 
@@ -46,6 +48,7 @@ pub struct Scope<'a> {
     pub end: Time,
     pub presence: Lit,
     pub args: im::OrdMap<&'a Sym, SymAtom>,
+    pub source: Option<TaskId>,
 }
 impl<'a> Scope<'a> {
     pub fn global(sched: &Sched) -> Scope<'a> {
@@ -54,6 +57,7 @@ impl<'a> Scope<'a> {
             end: sched.horizon,
             presence: Lit::TRUE,
             args: im::OrdMap::new(),
+            source: None,
         }
     }
 }
@@ -87,6 +91,7 @@ pub fn condition_to_constraint(
                 value: Lit::TRUE.into(),
                 timepoint: reify_timing(tp, model, sched, bindings)?,
                 prez: bindings.presence,
+                source: bindings.source,
             };
             ConditionConstraint::HasValue(c)
         }
@@ -164,6 +169,7 @@ pub fn convert_effect(
         state_var: sv,
         operation: op,
         prez: bindings.presence,
+        source: bindings.source,
     };
     Ok(eff)
 }
@@ -192,6 +198,8 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
             state_var: sv,
             operation: EffectOp::Assign(false),
             prez: Lit::TRUE,
+            // no action source as it is part of the problem definition
+            source: None,
         };
         sched.add_effect(eff);
     }
