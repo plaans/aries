@@ -1,7 +1,7 @@
 use num_integer::lcm;
 
 use crate::core::state::Evaluable;
-use crate::core::{IntCst, Lit, QCst, VarRef};
+use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
 use crate::model::lang::{IAtom, IVar, ValidityScope};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
@@ -320,6 +320,22 @@ impl From<IAtom> for LinearSum {
         };
         sum += LinearTerm::constant_int(value.shift);
         sum
+    }
+}
+
+impl From<SignedVar> for LinearTerm {
+    fn from(value: SignedVar) -> Self {
+        LinearTerm {
+            factor: if value.is_plus() { 1 } else { -1 },
+            var: IVar::new(value.variable()),
+            denom: 1,
+        }
+    }
+}
+
+impl From<SignedVar> for LinearSum {
+    fn from(value: SignedVar) -> Self {
+        LinearSum::from(LinearTerm::from(value))
     }
 }
 

@@ -6,6 +6,7 @@ use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
 use crate::model::lang::IAtom;
+use crate::model::lang::linear::LinearSum;
 use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
@@ -460,32 +461,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 for item in &a.rhs {
                     let item_scope = self.model.state.presence(item.var);
                     debug_assert!(self.model.state.implies(item_scope, scope));
-                    // a.lhs >= item.var + item.cst
-                    // a.lhs - item.var >= item.cst
-                    // item.var - a.lhs <= -item.cst
                     let alt_value = self.model.get_tautology_of_scope(item_scope);
-                    if item.var.is_plus() {
-                        assert!(a.lhs.is_plus());
-                        self.post_constraint(&Constraint::HalfReified(
-                            ReifExpr::MaxDiff(DifferenceExpression::new(
-                                item.var.variable(),
-                                a.lhs.variable(),
-                                -item.cst,
-                            )),
-                            alt_value,
-                        ))?;
-                    } else {
-                        assert!(a.lhs.is_minus());
-                        // item.var - a.lhs <= -item.cst
-                        let x = item.var.variable();
-                        let y = a.lhs.variable();
-                        // (-x) - (-y) <= -item.cst
-                        // y - x <= -item.cst
-                        self.post_constraint(&Constraint::HalfReified(
-                            ReifExpr::MaxDiff(DifferenceExpression::new(y, x, -item.cst)),
-                            alt_value,
-                        ))?;
-                    }
+                    // a.lhs >= item.var + item.cst
+                    let constraint = LinearSum::from(a.lhs).geq(LinearSum::from(item.var) + item.cst);
+                    self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
                 }
 
                 let prez = |v: SignedVar| self.model.state.presence(v);
