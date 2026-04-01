@@ -38,11 +38,11 @@ pub struct Effect {
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
-    Assign(bool),
+    Assign(IntCst),
 }
 impl EffectOp {
-    // pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::TRUE);
-    // pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(Atom::FALSE);
+    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(1);
+    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(0);
 }
 impl Debug for EffectOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -168,8 +168,7 @@ impl Effects {
             buff.push(Segment::new(lb, ub));
         }
         let value_segment = match &eff.operation {
-            EffectOp::Assign(true) => Segment::new(1, 1),
-            EffectOp::Assign(false) => Segment::new(0, 0),
+            EffectOp::Assign(v) => Segment::new(*v, *v),
         };
         buff.push(value_segment);
         self.achieved_bounding_boxes

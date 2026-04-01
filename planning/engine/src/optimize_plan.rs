@@ -250,18 +250,33 @@ pub fn encode_plan_optimization_problem(
 
         // vec to accumulate all effects of the action.
         // these will then be post-processed to match the set-based semantics of PDDL (add-after-delete, ...)
-        let mut action_effects = Vec::with_capacity(64);
+        let mut action_effects = Vec::with_capacity(16);
+        // store the effects on predicates independently at first because they will need post-processing
+        let mut predicate_action_effects = Vec::with_capacity(16);
 
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
             let eff = convert_effect(x, true, model, &mut sched, bindings)?;
-            // replace the effect presence by its enabler
-            action_effects.push(eff);
+            // store the effect either in hte global pool or in the predicate specific one
+            let is_predicate = model
+                .env
+                .fluents
+                .get(x.effect_expression.state_variable.fluent)
+                .return_type
+                == planx::Type::Bool;
+            if is_predicate {
+                predicate_action_effects.push(eff);
+            } else {
+                action_effects.push(eff);
+            }
         }
 
-        // post process the effect to align them with PDDL semantics
-        let action_effects = convert_to_pddl_set_semantics(action_effects, &mut sched);
+        // post process the effects on predicates to align them with PDDL semantics
+        let predicate_action_effects = convert_to_pddl_set_semantics(predicate_action_effects, &mut sched);
+
+        // merge the post-processed effects on predicate in the global effect set
+        action_effects.extend(predicate_action_effects);
         for eff in action_effects {
             sched.add_effect(eff);
         }

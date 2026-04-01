@@ -322,9 +322,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             let enabler = match &eff.effect_expression.operation {
                 planx::EffectOp::Assign(expr_id) => {
                     // hacky way to determine if the effect is positive (will only work for classical planning)
-                    let imposed_value = reify_bool(*expr_id, model, &mut sched)?;
-                    let possibly_detrimental =
-                        required_values.may_require_value(eff.effect_expression.state_variable.fluent, !imposed_value);
+                    let imposed_value = reify_value(*expr_id, model, &mut sched)?;
+                    let possibly_detrimental = required_values
+                        .may_require_value(eff.effect_expression.state_variable.fluent, 1 - imposed_value);
                     if possibly_detrimental {
                         // effect may delete a precondition, it must be relaxable and we tie its presence to a new literal
                         sched.model.new_literal(Lit::TRUE)
@@ -452,6 +452,7 @@ fn create_potential_effect(
         fluent: model.env.fluents.get(fid).name().to_string(),
         args,
     };
+    let value = if value { 1 } else { 0 };
     let op = EffectOp::Assign(value);
     let eff = timelines::Effect {
         transition_start: t,

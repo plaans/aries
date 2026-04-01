@@ -114,6 +114,12 @@ impl IAtom {
         var: IVar::ZERO,
         shift: 0,
     };
+    pub const ONE: IAtom = IAtom {
+        var: IVar::ZERO,
+        shift: 1,
+    };
+    pub const TRUE: IAtom = Self::ONE;
+    pub const FALSE: IAtom = Self::ZERO;
     pub fn new(var: IVar, shift: IntCst) -> IAtom {
         IAtom { var, shift }
     }

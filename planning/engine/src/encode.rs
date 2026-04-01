@@ -88,7 +88,7 @@ pub fn condition_to_constraint(
             };
             let c = HasValueAt {
                 state_var,
-                value: Lit::TRUE.into(),
+                value: IAtom::TRUE,
                 timepoint: reify_timing(tp, model, sched, bindings)?,
                 prez: bindings.presence,
                 source: bindings.source,
@@ -100,11 +100,14 @@ pub fn condition_to_constraint(
             let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, None)?;
             match c {
                 ConditionConstraint::HasValue(mut c) => {
-                    let Ok(x) = Lit::try_from(c.value) else {
-                        panic!();
-                    };
-                    c.value = x.not().into();
-                    ConditionConstraint::HasValue(c)
+                    if let Ok(x) = IntCst::try_from(c.value)
+                        && (x == 0 || x == 1)
+                    {
+                        c.value = (1 - x).into(); // negation : 0 -> 1 and 1 -> 0
+                        ConditionConstraint::HasValue(c)
+                    } else {
+                        return expr.todo("unsupported").failed();
+                    }
                 }
                 ConditionConstraint::Eq(a, b) => ConditionConstraint::Neq(a, b),
                 ConditionConstraint::Neq(a, b) => ConditionConstraint::Eq(a, b),
@@ -124,7 +127,7 @@ pub fn condition_to_constraint(
             ConditionConstraint::HasValue(c) => {
                 // record that someone required such a value
                 let fluent_id = model.env.fluents.get_by_name(&c.state_var.fluent).unwrap();
-                reqs.add(fluent_id, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+                reqs.add(fluent_id, c.value_box(&sched.model).as_ref());
             }
             // not on a fluent and thus no need to update the required_values
             ConditionConstraint::Eq(_, _) => {}
@@ -157,7 +160,7 @@ pub fn convert_effect(
     };
     let op = match x.operation {
         planx::EffectOp::Assign(e) => {
-            let val = reify_bool(e, model, sched)?;
+            let val = reify_value(e, model, sched)?;
             EffectOp::Assign(val)
         }
         _ => todo!(),
@@ -196,7 +199,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
             transition_end: t,
             mutex_end,
             state_var: sv,
-            operation: EffectOp::Assign(false),
+            operation: EffectOp::FALSE_ASSIGNMENT,
             prez: Lit::TRUE,
             // no action source as it is part of the problem definition
             source: None,
@@ -223,12 +226,13 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
         let possible_overriden_by = |oid: usize, o: &Effect| -> bool {
             let cancellable = match (&e.operation, &o.operation) {
                 // the delete can be overriden by the add (add-after-delete semantics)
-                (EffectOp::Assign(false), EffectOp::Assign(true)) => true,
+                (&EffectOp::FALSE_ASSIGNMENT, &EffectOp::TRUE_ASSIGNMENT) => true,
                 // the two effects are of the same kind, the currend (eid) can be overriden by one appearing earlier in the effect list
-                (EffectOp::Assign(true), EffectOp::Assign(true)) => eid > oid,
-                (EffectOp::Assign(false), EffectOp::Assign(false)) => eid > oid,
+                (&EffectOp::TRUE_ASSIGNMENT, &EffectOp::TRUE_ASSIGNMENT) => eid > oid,
+                (&EffectOp::FALSE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => eid > oid,
                 // an add cannot be overriden by a delete
-                (EffectOp::Assign(true), EffectOp::Assign(false)) => false,
+                (&EffectOp::TRUE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => false,
+                (_, _) => todo!("Not a boolean state variable or non-constant assignment"), // TODO: make it truly unreachable
             };
 
             cancellable
@@ -329,10 +333,20 @@ pub fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -
     }
 }
 
-pub fn reify_bool(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<bool> {
+pub fn reify_value(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<IntCst> {
     let e = model.env.node(e);
+    use planx::Expr::*;
     match e.expr() {
-        planx::Expr::Bool(b) => Ok(*b),
+        Bool(true) => Ok(1),
+        Bool(false) => Ok(0),
+        Real(r) if r.denom() == &1 => {
+            if let Ok(i) = IntCst::try_from(*r.numer()) {
+                Ok(i)
+            } else {
+                e.todo(format!("Cannot be converted to an {}", aries::core::INT_TYPE_NAME))
+                    .failed()
+            }
+        }
         _ => e.todo("not supported").failed(),
     }
 }

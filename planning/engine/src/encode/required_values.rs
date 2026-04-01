@@ -44,8 +44,7 @@ impl RequiredValues {
             .is_some_and(|b| b.as_ref().overlaps(vbox))
     }
 
-    pub fn may_require_value(&self, fluent: FluentId, value: bool) -> bool {
-        let value = if value { 1 } else { 0 };
+    pub fn may_require_value(&self, fluent: FluentId, value: IntCst) -> bool {
         self.values_by_fluent
             .get(&fluent)
             .is_some_and(|b| b.as_ref().last().unwrap().points().contains(&value))

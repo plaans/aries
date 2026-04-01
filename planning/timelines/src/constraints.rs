@@ -1,5 +1,6 @@
+use aries::prelude::*;
 use aries::{
-    core::literals::DisjunctionBuilder,
+    core::{literals::DisjunctionBuilder, views::Dom},
     lits,
     model::lang::{
         expr::{and, eq, f_geq, f_leq, f_lt, neq, or},
@@ -113,7 +114,7 @@ impl BoolExpr<Sched> for EffectCoherence {
 #[derive(Debug)]
 pub struct HasValueAt {
     pub state_var: StateVar,
-    pub value: Atom,
+    pub value: IAtom,
     pub timepoint: Time,
     /// Presence of the condition. Must imply the presence of all variables appearing in it.
     pub prez: Lit,
@@ -126,21 +127,13 @@ pub struct HasValueAt {
 
 impl HasValueAt {
     /// Returns a box capturing when and what may be the value required by this condition.
-    pub fn value_box(&self, dom: impl Fn(IAtom) -> (IntCst, IntCst)) -> crate::boxes::BBox {
+    pub fn value_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = Vec::with_capacity(self.state_var.args.len() + 2);
-        let (earliest, latest) = dom(self.timepoint.num); // TODO: careful with denom
-        buff.push(Segment::new(earliest, latest));
+        buff.push(Segment::from(dom.bounds(self.timepoint.num))); // TODO: careful with denom
         for arg in &self.state_var.args {
-            let (lb, ub) = dom(*arg);
-            buff.push(Segment::new(lb, ub));
+            buff.push(Segment::from(dom.bounds(*arg)));
         }
-        let value_segment = match self.value {
-            Atom::Bool(lit) if lit.tautological() => Segment::new(1, 1),
-            Atom::Bool(lit) if lit.absurd() => Segment::new(0, 0),
-            Atom::Bool(_) => Segment::new(0, 1),
-            _ => todo!(),
-        };
-        buff.push(value_segment);
+        buff.push(Segment::from(dom.bounds(self.value)));
         crate::boxes::BBox::new(buff)
     }
 }
@@ -149,7 +142,7 @@ impl BoolExpr<Sched> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
         let mut options = Vec::with_capacity(4);
 
-        let value_box = self.value_box(|v| ctx.model.int_bounds(v));
+        let value_box = self.value_box(&ctx.model);
 
         // ensures that at least one effect supports the conditions
         for eff_id in ctx
