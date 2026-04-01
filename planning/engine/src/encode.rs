@@ -138,15 +138,16 @@ pub fn condition_to_constraint(
 }
 
 pub fn convert_effect(
-    x: &planx::Effect,
+    effect: &planx::Effect,
     transition_time: bool,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
 ) -> Res<timelines::Effect> {
-    assert!(x.universal_quantification.is_empty());
-    let x = &x.effect_expression;
-    assert!(x.condition.is_none());
+    if !effect.universal_quantification.is_empty() || effect.effect_expression.condition.is_some() {
+        return model.env.node(effect).todo("Unsupported").failed();
+    }
+    let x = &effect.effect_expression;
     let t = reify_timing(x.timing, model, sched, bindings)?;
     let args: Vec<SymAtom> = x
         .state_variable
@@ -163,7 +164,7 @@ pub fn convert_effect(
             let val = reify_value(e, model, sched)?;
             EffectOp::Assign(val)
         }
-        _ => todo!(),
+        _ => return model.env.node(effect).todo("Unsupported").failed(),
     };
     let eff = timelines::Effect {
         transition_start: t,
