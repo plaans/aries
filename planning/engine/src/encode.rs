@@ -182,11 +182,14 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
     // time at which to place the negative effects. This is -1 so that it can be overrided by an initial effect (at 0).
     let t = Time::from(-1);
 
-    // all state variables that may require a `false` value
+    // all state variables that may require a `0` value, which encodes `false` for predicates
     // we will only place a negative effect for those state variables.
     let req_state_vars = reqs.state_variables(|v| v == 0);
 
     for sv in req_state_vars {
+        if model.env.fluents.get(sv.fluent).return_type != planx::Type::Bool {
+            continue; // this is not a boolean fluent and thus not eligible for the closed world assumption
+        }
         let args: Vec<SymAtom> = sv.params.0.into_iter().map(SymAtom::from).collect_vec();
         let sv = timelines::StateVar {
             fluent: model.env.fluents.get(sv.fluent).name().to_string(),
