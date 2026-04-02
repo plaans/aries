@@ -1,5 +1,4 @@
 use aries::{core::views::Dom, prelude::*};
-use smallvec::SmallVec;
 use std::{
     fmt::{Debug, Formatter},
     ops::Index,
@@ -7,7 +6,7 @@ use std::{
 
 use crate::{
     StateVar, TaskId, Time,
-    boxes::{BoxRef, BoxUniverse, Segment},
+    boxes::{BBox, BoxRef, BoxUniverse, Segment},
 };
 
 /// Represents an effect on a state variable.
@@ -38,7 +37,10 @@ pub struct Effect {
 }
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
+    /// Sets the state variable to an absolute value
     Assign(IntCst),
+    /// Increase the state variable by a given value (positive or negative)
+    Step(IntCst),
 }
 impl EffectOp {
     pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(1);
@@ -50,6 +52,8 @@ impl Debug for EffectOp {
             EffectOp::Assign(val) => {
                 write!(f, ":= {val:?}")
             }
+            EffectOp::Step(v) if v >= &0 => write!(f, "+= {v:?}"),
+            EffectOp::Step(v) => write!(f, "-= {:?}", -v),
         }
     }
 }
@@ -73,6 +77,58 @@ impl Effect {
     }
     pub fn variable(&self) -> &StateVar {
         &self.state_var
+    }
+
+    /// Bounding box capturing the space affected by this effect
+    ///
+    /// - `[lb(trans-start), ub(mutex_end)]`
+    /// - `[lb(a), ub(a)]` for a in args
+    pub(crate) fn affected_box(&self, dom: impl Dom) -> crate::boxes::BBox {
+        let mut buff = crate::boxes::Segments::new();
+        buff.push(Segment::new(
+            dom.lb(self.transition_start.num),
+            dom.ub(self.mutex_end.num),
+        )); // TODO: carfeul with denom
+        buff.extend(self.args_segments(&dom));
+        BBox::new(buff)
+    }
+    /// Returns a box capturing when and what may be the value the effect may help achieve
+    ///
+    /// - `[lb(trans-start), ub(mutex_end)]`
+    /// - `[lb(a), ub(a)]` for a in args
+    /// - `[v, v]` where v is the value in the assignment or step operation
+    pub(crate) fn value_box(&self, dom: impl Dom) -> crate::boxes::BBox {
+        let mut buff = crate::boxes::Segments::new();
+        let start = dom.lb(self.transition_end.num); // TODO: carerful with denom
+        let end = dom.ub(self.mutex_end.num); // TODO: carerful with denom
+        buff.push(Segment::new(start, end));
+        buff.extend(self.args_segments(&dom));
+        let value_segment = match self.operation {
+            EffectOp::Assign(v) | EffectOp::Step(v) => Segment::point(v),
+        };
+        buff.push(value_segment);
+        crate::boxes::BBox::new(buff)
+    }
+
+    /// Returns a box capturing when the effect induces a transition
+    ///
+    /// - `[lb(trans-start), ub(trans-end)[`  (note that the transition is excluded from the segment)
+    /// - `[lb(a), ub(a)]` for a in args
+    pub(crate) fn transition_box(&self, dom: &impl Dom) -> crate::boxes::BBox {
+        let mut buff = crate::boxes::Segments::new();
+        buff.push(Segment::new(
+            dom.lb(self.transition_start.num),
+            dom.ub(self.transition_end.num) - 1,
+        )); // TODO: carfeul with denom
+        buff.extend(self.args_segments(&dom));
+        BBox::new(buff)
+    }
+
+    fn args_segments(&self, dom: impl Dom) -> impl Iterator<Item = Segment> {
+        self.state_var
+            .args
+            .iter()
+            .map(move |arg| Segment::from(dom.bounds(arg)))
     }
 }
 
@@ -107,7 +163,8 @@ pub struct Effects {
     ///  - value: `[lb(value), ub(value)]`
     ///
     /// If the boxes of two effects to not overlap, they can be safely determined to never overlap (and thus do not require coherence enforcement constraints).
-    achieved_bounding_boxes: BoxUniverse<String, usize>,
+    assignment_bounding_boxes: BoxUniverse<String, usize>,
+    steps_bounding_boxes: BoxUniverse<String, usize>,
     /// Associates every effect to a `Box` in a universe.
     /// This box denotes a the set of values that the effect may support.
     /// The intuition if that
@@ -123,14 +180,13 @@ pub struct Effects {
     transition_bounding_boxes: BoxUniverse<String, usize>,
 }
 
-type Segments = SmallVec<[Segment; 16]>;
-
 impl Effects {
     pub fn new() -> Self {
         Self {
             effects: Default::default(),
             affected_bb: BoxUniverse::new(),
-            achieved_bounding_boxes: BoxUniverse::new(),
+            assignment_bounding_boxes: BoxUniverse::new(),
+            steps_bounding_boxes: BoxUniverse::new(),
             transition_bounding_boxes: BoxUniverse::new(),
         }
     }
@@ -147,45 +203,22 @@ impl Effects {
         // ID of the effect will be the index of the next free slot
         let eff_id = self.effects.len();
 
-        let mut buff = Segments::new();
+        let fluent = &eff.state_var.fluent;
 
         // compute and store affected bounding_box
-        buff.push(Segment::new(
-            dom.lb(eff.transition_start.num),
-            dom.ub(eff.mutex_end.num),
-        )); // TODO: careful with denom
-        for arg in &eff.state_var.args {
-            let (lb, ub) = dom.bounds(*arg);
-            buff.push(Segment::new(lb, ub));
-        }
-        self.affected_bb.add_box(&eff.state_var.fluent, &buff, eff_id);
+        let bbox = eff.affected_box(&dom);
+        self.affected_bb.add_box(fluent, bbox.segments(), eff_id);
 
         // compute and store the achievable bounding boxes
-        buff.clear();
-        buff.push(Segment::new(dom.lb(eff.transition_end.num), dom.ub(eff.mutex_end.num))); // TODO: careful with denom
-        for arg in &eff.state_var.args {
-            let (lb, ub) = dom.bounds(*arg);
-            buff.push(Segment::new(lb, ub));
+        let bbox = eff.value_box(&dom);
+        match eff.operation {
+            EffectOp::Assign(_) => self.assignment_bounding_boxes.add_box(fluent, bbox.segments(), eff_id),
+            EffectOp::Step(_) => self.steps_bounding_boxes.add_box(fluent, bbox.segments(), eff_id),
         }
-        let value_segment = match &eff.operation {
-            EffectOp::Assign(v) => Segment::new(*v, *v),
-        };
-        buff.push(value_segment);
-        self.achieved_bounding_boxes
-            .add_box(&eff.state_var.fluent, &buff, eff_id);
 
         // compute and store the achievable bounding boxes
-        buff.clear();
-        buff.push(Segment::new(
-            dom.lb(eff.transition_start.num),
-            dom.ub(eff.transition_end.num) - 1,
-        )); // TODO: careful with denom
-        for arg in &eff.state_var.args {
-            let (lb, ub) = dom.bounds(*arg);
-            buff.push(Segment::new(lb, ub));
-        }
-        self.transition_bounding_boxes
-            .add_box(&eff.state_var.fluent, &buff, eff_id);
+        let bbox = eff.transition_box(&dom);
+        self.transition_bounding_boxes.add_box(fluent, bbox.segments(), eff_id);
 
         self.effects.push(eff);
         eff_id
@@ -196,7 +229,16 @@ impl Effects {
         self.affected_bb.overlapping_boxes().map(|(e1, e2)| (*e1, *e2))
     }
 
-    /// Returns a list of potentially supporting effect for a condition, representing as a bounding box with
+    /// Returns a list of effects that may overlap the given box (time + arguments)
+    pub(crate) fn potentially_overlapping_effects<'a>(
+        &'a self,
+        fluent: &'a String,
+        affected_box: BoxRef<'a>,
+    ) -> impl Iterator<Item = EffectId> + 'a {
+        self.affected_bb.find_overlapping_with(fluent, affected_box).copied()
+    }
+
+    /// Returns a list of potentially supporting effect (assign or step) for a condition, represented as a bounding box with
     /// the given fluents and the following segments:
     ///
     ///  - time: `[lb(condition_start), ub(condition_end)]`
@@ -208,11 +250,21 @@ impl Effects {
         fluent: &'a String,
         value_box: BoxRef<'a>,
     ) -> impl Iterator<Item = EffectId> + 'a {
-        // compute the value bounding box
-
-        self.achieved_bounding_boxes
-            .find_overlapping_with(fluent, value_box)
-            .copied()
+        if self.steps_bounding_boxes.has_world(fluent) {
+            // there exists step effects for this fluent
+            // This means we cannot immediately rely on the value because the values achievable for an assignment should consider the contribution of any step
+            //
+            // For now, we workaround this by ignoring the value and juste looking for boxes that overlap the box on time and arguments.
+            // A potential improvement would be to consider the min/max for all steps and then look for the assignment that achieve the value expaned by this min/max
+            // Note that that the step effects must be included in the return as well
+            let affected_box = value_box.drop_tail(1);
+            self.affected_bb.find_overlapping_with(fluent, affected_box).copied()
+        } else {
+            // no steps, we simply return
+            self.assignment_bounding_boxes
+                .find_overlapping_with(fluent, value_box)
+                .copied()
+        }
     }
 
     /// Returns a list of effects whose transition period `[transition_start, transition_end)` may overlap a condition with the

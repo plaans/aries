@@ -160,11 +160,9 @@ pub fn convert_effect(
         args,
     };
     let op = match x.operation {
-        planx::EffectOp::Assign(e) => {
-            let val = reify_value(e, model, sched)?;
-            EffectOp::Assign(val)
-        }
-        _ => return model.env.node(effect).todo("Unsupported").failed(),
+        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_value(v, model, sched)?),
+        planx::EffectOp::Increase(v) => EffectOp::Step(reify_value(v, model, sched)?),
+        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_value(v, model, sched)?),
     };
     let eff = timelines::Effect {
         transition_start: t,

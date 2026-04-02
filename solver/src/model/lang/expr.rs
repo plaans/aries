@@ -1,9 +1,9 @@
 use crate::core::literals::{Disjunction, Lits};
-use crate::core::*;
 use crate::model::lang::alternative::Alternative;
 use crate::model::lang::hreif::{BoolExpr, Store};
 use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
 use crate::model::{Label, Model};
+use crate::prelude::*;
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use env_param::EnvParam;
 use itertools::Itertools;
@@ -107,6 +107,13 @@ impl Not for And {
         Disjunction::from_vec(lits.to_vec())
     }
 }
+impl Not for &And {
+    type Output = Or;
+
+    fn not(self) -> Self::Output {
+        Disjunction::from_iter(self.0.iter().map(|&l| !l))
+    }
+}
 
 impl From<And> for ReifExpr {
     fn from(value: And) -> Self {
@@ -125,6 +132,13 @@ impl Not for Leq {
 
     fn not(self) -> Self::Output {
         gt(self.0, self.1)
+    }
+}
+impl Not for &Leq {
+    type Output = Leq;
+
+    fn not(self) -> Self::Output {
+        !*self
     }
 }
 
@@ -159,6 +173,21 @@ impl From<Leq> for ReifExpr {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Eq(Atom, Atom);
+
+impl Not for Eq {
+    type Output = Neq;
+
+    fn not(self) -> Self::Output {
+        Neq(self.0, self.1)
+    }
+}
+impl Not for &Eq {
+    type Output = Neq;
+
+    fn not(self) -> Self::Output {
+        !*self
+    }
+}
 
 impl<Lbl: Label> Reifiable<Lbl> for Eq {
     fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
@@ -287,10 +316,7 @@ impl<Ctx> BoolExpr<Ctx> for Eq {
     }
 
     fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
-        smallvec::smallvec![
-            store.presence_of_var(self.0.variable()),
-            store.presence_of_var(self.1.variable())
-        ]
+        smallvec::smallvec![store.presence_literal(self.0), store.presence_literal(self.1)]
     }
 }
 
@@ -383,9 +409,6 @@ impl<Ctx> BoolExpr<Ctx> for Neq {
         store.get_implicant(or(disjuncts).into())
     }
     fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
-        smallvec::smallvec![
-            store.presence_of_var(self.0.variable()),
-            store.presence_of_var(self.1.variable())
-        ]
+        smallvec::smallvec![store.presence_literal(self.0), store.presence_literal(self.1)]
     }
 }

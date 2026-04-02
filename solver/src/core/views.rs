@@ -10,7 +10,7 @@ pub trait Dom {
     }
 }
 
-impl<X> Dom for &X
+impl<X: ?Sized> Dom for &X
 where
     X: Dom,
 {
@@ -22,7 +22,7 @@ where
         Dom::presence(*self, var)
     }
 }
-impl<X> Dom for &mut X
+impl<X: ?Sized> Dom for &mut X
 where
     X: Dom,
 {

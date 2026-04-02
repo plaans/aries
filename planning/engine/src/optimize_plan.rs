@@ -287,7 +287,7 @@ pub fn encode_plan_optimization_problem(
             let mut sum = LinearSum::zero();
             for (_a, scope) in &operations_scopes {
                 let action_prez = scope.presence;
-                sum += bool2int(action_prez, &sched.model)
+                sum += timelines::constraints::bool2int(action_prez, &sched.model)
             }
             reify_sum(sum, &mut sched)
         }
@@ -299,21 +299,6 @@ pub fn encode_plan_optimization_problem(
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
 
     Ok((sched.explainable_solver(constraint_to_repair), encoding))
-}
-
-fn bool2int(b: Lit, model: &dyn Store) -> LinearSum {
-    let is_zero_one = model.bounds(b.variable()) == (0, 1);
-    if model.entails(b) {
-        1.into()
-    } else if model.entails(!b) {
-        0.into()
-    } else if is_zero_one && b == b.variable().geq(1) {
-        IVar::new(b.variable()).into()
-    } else if is_zero_one && b == b.variable().leq(0) {
-        LinearSum::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
-    } else {
-        todo!() // cannot immediately reuse the variable, create a new one and bind it
-    }
 }
 
 fn reify_sum(sum: LinearSum, model: &mut Sched) -> FAtom {

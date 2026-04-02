@@ -1,7 +1,7 @@
 use smallvec::SmallVec;
 
 use crate::{
-    core::{IntCst, Lit, VarRef, views::Term},
+    core::{IntCst, Lit, VarRef, views::Dom},
     model::{
         Label, Model,
         lang::{
@@ -10,35 +10,35 @@ use crate::{
             max::{EqMax, EqMin},
         },
     },
-    prelude::DomainsExt,
+    prelude::*,
     reif::ReifExpr,
 };
 
-pub trait Store {
+pub trait Store: Dom {
     fn new_literal(&mut self, presence: Lit) -> Lit;
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef;
     fn get_implicant(&mut self, e: ReifExpr) -> Lit;
     fn add_implies(&mut self, l: Lit, e: ReifExpr);
-    fn bounds(&self, var: VarRef) -> (IntCst, IntCst);
-    fn entails(&self, l: Lit) -> bool;
+    // fn bounds(&self, var: VarRef) -> (IntCst, IntCst);
+    // fn entails(&self, l: Lit) -> bool;
 
-    /// Returns the literal indicating whether the variable is present.
-    ///
-    /// See [`presence`] for a more general version.
-    fn presence_of_var(&self, var: VarRef) -> Lit;
+    // /// Returns the literal indicating whether the variable is present.
+    // ///
+    // /// See [`presence`] for a more general version.
+    // fn presence_of_var(&self, var: VarRef) -> Lit;
     fn conjunctive_scope(&mut self, lits: &[Lit]) -> Lit;
     fn tautology_of_scope(&mut self, scope: Lit) -> Lit;
 
-    /// Returns the literal indicate the whether the term is present.
-    ///
-    /// Note: this method is not dyn-compatible.
-    /// [`presence_of_var`] may be used as a more verbose fall-back.
-    fn presence(&self, var: impl Term) -> Lit
-    where
-        Self: Sized,
-    {
-        self.presence_of_var(var.variable())
-    }
+    // /// Returns the literal indicate the whether the term is present.
+    // ///
+    // /// Note: this method is not dyn-compatible.
+    // /// [`presence_of_var`] may be used as a more verbose fall-back.
+    // fn presence(&self, var: impl Term) -> Lit
+    // where
+    //     Self: Sized,
+    // {
+    //     self.presence_of_var(var.variable())
+    // }
 }
 
 pub trait ModelWrapper {
@@ -58,7 +58,7 @@ impl<L: Label> ModelWrapper for Model<L> {
     }
 }
 
-impl<T> Store for T
+impl<T: Dom> Store for T
 where
     T: ModelWrapper,
 {
@@ -76,16 +76,7 @@ where
         //println!("[{:?}] {l:?} -> {e:?}", self.presence(l)); // TODO: remove
         self.get_model_mut().enforce_if(l, e);
     }
-    fn bounds(&self, var: VarRef) -> (IntCst, IntCst) {
-        self.get_model().state.bounds(var)
-    }
-    fn entails(&self, l: Lit) -> bool {
-        self.get_model().state.entails(l)
-    }
 
-    fn presence_of_var(&self, var: VarRef) -> Lit {
-        self.get_model().state.presence_literal(var)
-    }
     fn conjunctive_scope(&mut self, presence_variables: &[Lit]) -> Lit {
         self.get_model_mut().get_conjunctive_scope(presence_variables)
     }
@@ -110,7 +101,7 @@ pub trait BoolExpr<Ctx> {
     }
     fn opt_enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
         let scope = self.scope(ctx, store);
-        let implicant = if scope == store.presence_of_var(l.variable()) {
+        let implicant = if scope == store.presence(l.variable()) {
             l // TODO: here we should instead test that scope => prez(l)
         } else if store.entails(l) {
             store.tautology_of_scope(scope)
@@ -125,6 +116,17 @@ pub trait BoolExpr<Ctx> {
         let scope = self.scope(ctx, store);
         let implicant = store.new_literal(scope);
         self.enforce_if(implicant, ctx, store);
+        implicant
+    }
+    fn reified<'a, NotSelf>(&'a self, ctx: &Ctx, store: &mut dyn Store) -> Lit
+    where
+        Self: Sized,
+        &'a Self: std::ops::Not<Output = NotSelf>,
+        NotSelf: BoolExpr<Ctx>,
+    {
+        let implicant = self.implicant(ctx, store);
+        let negated = !self;
+        negated.enforce_if(!implicant, ctx, store);
         implicant
     }
     fn enforce(&self, ctx: &Ctx, store: &mut dyn Store) {
@@ -160,7 +162,7 @@ impl<Ctx> BoolExpr<Ctx> for ReifExpr {
     }
 
     fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> Lits {
-        let vs = self.scope(|v| store.presence_of_var(v));
+        let vs = self.scope(|v| store.presence_literal(v));
         // TODO: give flattening context
         let conj_scope = vs.to_conjunction(|_| Option::<[Lit; 0]>::None, |l| l == Lit::TRUE);
         SmallVec::from_iter(conj_scope.literals())
@@ -227,7 +229,7 @@ impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
     fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
         if store.entails(l) {
             // a tautolgy, create a single variable representing both options
-            let choice_var = store.new_literal(store.presence_of_var(l.variable()));
+            let choice_var = store.new_literal(store.presence_literal(l));
             self.alt1.opt_enforce_if(choice_var, ctx, store);
             self.alt2.opt_enforce_if(!choice_var, ctx, store);
         } else {
@@ -248,6 +250,7 @@ impl<Ctx, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
 #[cfg(test)]
 mod test {
     use crate::{
+        core::views::Term,
         model::{
             extensions::DomainsExt,
             lang::{
@@ -265,10 +268,6 @@ mod test {
 
     /// True if the the two atoms are different, and undefined if at least one is absent
     struct Different(IAtom, IAtom);
-
-    fn prez(v: impl Term, store: &dyn Store) -> Lit {
-        store.presence_of_var(v.variable())
-    }
 
     impl<Ctx> BoolExpr<Ctx> for AllDifferent {
         fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
@@ -290,7 +289,7 @@ mod test {
         }
 
         fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> Lits {
-            lits![prez(self.0, store), prez(self.1, store)]
+            lits![store.presence_literal(self.0), store.presence_literal(self.1)]
         }
     }
 
