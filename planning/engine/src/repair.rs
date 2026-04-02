@@ -322,7 +322,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             let enabler = match &eff.effect_expression.operation {
                 planx::EffectOp::Assign(expr_id) => {
                     // hacky way to determine if the effect is positive (will only work for classical planning)
-                    let imposed_value = reify_value(*expr_id, model, &mut sched)?;
+                    let imposed_value = reify_constant(*expr_id, model, &mut sched, &global_scope)?;
                     let possibly_detrimental = required_values
                         .may_require_value(eff.effect_expression.state_variable.fluent, 1 - imposed_value);
                     if possibly_detrimental {

@@ -11,17 +11,17 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
     // we frame the problem as an optimization problem with no relaxation,
     // hence the solver is forced to reproduce the plan
     let opt_options = crate::optimize_plan::Options {
-        relaxation: vec![],                              // no relaxation
-        objective: optimize_plan::Objective::PlanLength, // TODO: change to domain's metric
+        relaxation: vec![],                            // no relaxation
+        objective: optimize_plan::Objective::Original, // TODO: change to domain's metric
     };
-    let (mut solver, encoding) = encode_plan_optimization_problem(model, plan, &opt_options)?;
+    let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, &opt_options)?;
 
     if let Some(solution) = solver.check_satisfiability() {
         println!("> Plan is valid");
         if let Some(objective) = encoding.objective {
             println!("> Objective: {}", objective.evaluate(&solution).unwrap());
         }
-
+        // sched.print(&solution);
         Ok(true)
     } else {
         println!("Plan is INVALID!!!!");

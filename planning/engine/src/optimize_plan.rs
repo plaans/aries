@@ -38,13 +38,15 @@ pub enum Relaxation {
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Objective {
+    /// The objective value defined in the domain
+    Original,
     PlanLength,
     Makespan,
 }
 
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res<()> {
     let start = Instant::now();
-    let (mut solver, encoding) = encode_plan_optimization_problem(model, plan, options)?;
+    let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, options)?;
 
     let _encoding_time = start.elapsed().as_millis();
 
@@ -72,7 +74,7 @@ pub fn encode_plan_optimization_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
     options: &Options,
-) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding)> {
+) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
     let mut encoding = Encoding::new();
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
@@ -283,7 +285,21 @@ pub fn encode_plan_optimization_problem(
     }
 
     let objective: FAtom = match options.objective {
-        Objective::PlanLength => {
+        Objective::Original if model.metric.is_some() => {
+            // TODO: is if let guard when stabilized
+            let metric = model.metric.unwrap();
+            let obj = match metric {
+                planx::Metric::Minimize(expr_id) => {
+                    reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?
+                }
+                planx::Metric::Maximize(_) => {
+                    return Message::error("unsupported maximization metric").failed();
+                }
+            };
+            FAtom::new(obj, 1)
+        }
+        // use plan-length as default when no metric is specified
+        Objective::PlanLength | Objective::Original => {
             let mut sum = LinearSum::zero();
             for (_a, scope) in &operations_scopes {
                 let action_prez = scope.presence;
@@ -298,7 +314,7 @@ pub fn encode_plan_optimization_problem(
     let tags = encoding.constraints_tags.clone();
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
 
-    Ok((sched.explainable_solver(constraint_to_repair), encoding))
+    Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
 
 fn reify_sum(sum: LinearSum, model: &mut Sched) -> FAtom {

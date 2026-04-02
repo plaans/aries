@@ -160,9 +160,9 @@ pub fn convert_effect(
         args,
     };
     let op = match x.operation {
-        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_value(v, model, sched)?),
-        planx::EffectOp::Increase(v) => EffectOp::Step(reify_value(v, model, sched)?),
-        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_value(v, model, sched)?),
+        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_constant(v, model, sched, bindings)?),
+        planx::EffectOp::Increase(v) => EffectOp::Step(reify_constant(v, model, sched, bindings)?),
+        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_constant(v, model, sched, bindings)?),
     };
     let eff = timelines::Effect {
         transition_start: t,
@@ -317,8 +317,35 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
 }
 
 pub fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
+    reify_expression(e, None, model, sched, binding)
+}
+
+pub fn reify_constant(e: ExprId, model: &Model, sched: &mut Sched, scope: &Scope) -> Res<IntCst> {
+    let reif = reify_expression(e, None, model, sched, scope)?;
+    let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
+    Ok(cst)
+}
+
+pub fn reify_expression(
+    e: ExprId,
+    time: Option<Time>,
+    model: &Model,
+    sched: &mut Sched,
+    binding: &Scope,
+) -> Res<IAtom> {
     let e = model.env.node(e);
+    use planx::Expr::*;
     match e.expr() {
+        Bool(true) => Ok(1.into()),
+        Bool(false) => Ok(0.into()),
+        Real(r) if r.denom() == &1 => {
+            if let Ok(i) = IntCst::try_from(*r.numer()) {
+                Ok(i.into())
+            } else {
+                e.todo(format!("Cannot be converted to an {}", aries::core::INT_TYPE_NAME))
+                    .failed()
+            }
+        }
         planx::Expr::Object(object) => {
             let id = sched
                 .objects
@@ -331,24 +358,34 @@ pub fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -
             .get(param.name().canonical_str())
             .copied()
             .ok_or_else(|| param.name().invalid("unknown parameter")),
-        _ => e.todo("not supported").failed(),
-    }
-}
-
-pub fn reify_value(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<IntCst> {
-    let e = model.env.node(e);
-    use planx::Expr::*;
-    match e.expr() {
-        Bool(true) => Ok(1),
-        Bool(false) => Ok(0),
-        Real(r) if r.denom() == &1 => {
-            if let Ok(i) = IntCst::try_from(*r.numer()) {
-                Ok(i)
-            } else {
-                e.todo(format!("Cannot be converted to an {}", aries::core::INT_TYPE_NAME))
-                    .failed()
-            }
+        StateVariable(fluent, args) => {
+            let Some(time) = time else {
+                return e
+                    .invalid("this is a state variable and cannot be interpreted without a temporal context")
+                    .failed();
+            };
+            let fluent = model.env.fluents.get(*fluent);
+            let reified_var = sched
+                .model
+                .new_optional_ivar(INT_CST_MIN, INT_CST_MAX, binding.presence, "");
+            let reified_args = args
+                .iter()
+                .map(|&arg| reify_expression(arg, Some(time), model, sched, binding))
+                .collect::<Res<Vec<IAtom>>>()?;
+            let state_var = StateVar {
+                fluent: fluent.name().to_string(),
+                args: reified_args,
+            };
+            let binding = HasValueAt {
+                state_var,
+                value: reified_var.into(),
+                timepoint: time,
+                prez: binding.presence,
+                source: binding.source,
+            };
+            sched.add_constraint(binding);
+            Ok(reified_var.into())
         }
-        _ => e.todo("not supported").failed(),
+        _ => e.todo(format!("not supported [{e}]")).failed(),
     }
 }
