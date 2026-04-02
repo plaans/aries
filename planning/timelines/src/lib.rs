@@ -6,6 +6,7 @@ pub mod rational;
 pub mod symbols;
 pub mod tasks;
 
+use aries::core::state::Evaluable;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
@@ -157,6 +158,7 @@ impl Sched {
     }
 
     pub fn print(&self, sol: &Solution) {
+        println!("==== tasks ====");
         let sorted_tasks = self
             .tasks
             .iter()
@@ -164,6 +166,20 @@ impl Sched {
             .sorted_by_cached_key(|t| sol.eval(t.start.num).unwrap());
         for t in sorted_tasks {
             println!("{}: {}", t.name, sol.eval(t.start.num).unwrap())
+        }
+        println!("==== Effects ====");
+        for e in self.effects.iter().sorted_by_key(|e| &e.state_var.fluent) {
+            if !sol.entails(e.prez) {
+                continue;
+            }
+            println!(
+                "{}: [{},{}] {:?} ...[{}]",
+                e.state_var.fluent,
+                e.transition_start.evaluate(sol).unwrap(),
+                e.transition_end.evaluate(sol).unwrap(),
+                e.operation,
+                e.mutex_end.evaluate(sol).unwrap(),
+            );
         }
     }
 }
