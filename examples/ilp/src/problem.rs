@@ -7,17 +7,21 @@ use lp_parser_rs::error::LpParseError;
 use lp_parser_rs::lexer::{Lexer, ParseResult, RawConstraint};
 use lp_parser_rs::lp::LpProblemParser;
 use lp_parser_rs::model::Sense;
-use lp_parser_rs::mps::parse_mps;
+//use lp_parser_rs::mps::parse_mps;
 use num_traits as num;
 use std::collections::HashMap;
 
 use crate::Model;
 
 fn cast(val: f64) -> Result<IntCst> {
-    if val.fract().abs() <= 1e-9 {
-        num::cast::<f64, IntCst>(val).ok_or_else(|| anyhow::anyhow!("Not an integer (nor a binary)."))
+    if val >= INT_CST_MAX.into() {
+        Ok(INT_CST_MAX)
+    } else if val <= INT_CST_MIN.into() {
+        Ok(INT_CST_MIN)
+    } else if val.fract().abs() < 1e-6 {
+        num::cast::<f64, IntCst>(val).ok_or_else(|| anyhow::anyhow!("{val} is not an integer (nor a binary) (1)."))
     } else {
-        Err(anyhow::anyhow!("Not an integer (nor a binary)."))
+        Err(anyhow::anyhow!("{val} is not an integer (nor a binary) (2)."))
     }
 }
 
@@ -38,10 +42,11 @@ impl IlpProblem {
         Self::from_parse_result(parse_result)
     }
 
-    pub fn from_mps(input: &str) -> Result<Self> {
+    /*pub fn from_mps(input: &str) -> Result<Self> {
+        todo!("TODO FIXME BUG : broken parsing: considers 'EQ' for rhs instead of 'LTE'");
         let parse_result = parse_mps(input)?;
         Self::from_parse_result(parse_result)
-    }
+    }*/
 
     fn from_parse_result(parse_result: ParseResult) -> Result<Self> {
         let mut vars = HashMap::new();
@@ -77,9 +82,9 @@ impl IlpProblem {
         if !parse_result.sos.is_empty() {
             return Err(anyhow::anyhow!("SOS constraints unsupported."));
         }
-        for (var_name, bounds) in &parse_result.bounds {
+        for (var_name, bounds) in parse_result.bounds {
             let (lb, ub) = vars
-                .get_mut(&var_name.to_string())
+                .get_mut(var_name)
                 .ok_or_else(|| anyhow::anyhow!("Continuous variables unsupported."))?;
             match bounds {
                 lp_parser_rs::model::VariableType::Free => {
@@ -91,14 +96,14 @@ impl IlpProblem {
                     *ub = INT_CST_MAX;
                 }
                 lp_parser_rs::model::VariableType::LowerBound(_lb) => {
-                    *lb = cast(*_lb)?;
+                    *lb = cast(_lb)?;
                 }
                 lp_parser_rs::model::VariableType::UpperBound(_ub) => {
-                    *ub = cast(*_ub)?;
+                    *ub = cast(_ub)?;
                 }
                 lp_parser_rs::model::VariableType::DoubleBound(_lb, _ub) => {
-                    *lb = cast(*_lb)?;
-                    *ub = cast(*_ub)?;
+                    *lb = cast(_lb)?;
+                    *ub = cast(_ub)?;
                 }
                 lp_parser_rs::model::VariableType::Binary => {
                     *lb = 0;
