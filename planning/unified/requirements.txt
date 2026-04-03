@@ -7,5 +7,6 @@ grpc-stubs
 pytest
 pytest-cov
 mypy
+pddl
 pre-commit
 black==22.6.0

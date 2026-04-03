@@ -529,7 +529,7 @@ impl<Lbl: Label> Model<Lbl> {
                 let expr_scope = self.new_conjunctive_presence_variable(expr_scope);
                 self.state.implies(scope, expr_scope)
             },
-            "Error in scope definition: the expression {expr:?} is not always define in the provided scope."
+            "Error in scope definition: the expression {expr:?} is not always defined in the provided scope."
         );
 
         // retrieve or create an optional variable that is always true in the scope

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Unified Planning Integration for Aries"""
+
 import os
 import platform
 import socket
@@ -8,7 +9,7 @@ import tempfile
 import time
 from fractions import Fraction
 from pathlib import Path
-from typing import IO, Callable, Optional, Iterator, Tuple
+from typing import IO, Callable, Iterator, Optional, Tuple
 
 import grpc
 import unified_planning as up
@@ -16,7 +17,7 @@ import unified_planning.engines.mixins as mixins
 import unified_planning.grpc.generated.unified_planning_pb2 as proto
 import unified_planning.grpc.generated.unified_planning_pb2_grpc as grpc_api
 from unified_planning import engines
-from unified_planning.engines import PlanGenerationResultStatus, AnytimeGuarantee
+from unified_planning.engines import AnytimeGuarantee, PlanGenerationResultStatus
 from unified_planning.engines.mixins.oneshot_planner import OptimalityGuarantee
 from unified_planning.grpc.proto_reader import (
     ProtobufReader,
@@ -132,6 +133,9 @@ _ARIES_SUPPORTED_KIND = up.model.ProblemKind(
         # INITIAL_STATE
         "UNDEFINED_INITIAL_NUMERIC",
         "UNDEFINED_INITIAL_SYMBOLIC",
+        # SCHEDULING
+        "OPTIONAL_ACTIVITIES",
+        "SCOPED_CONSTRAINTS",
     },
     version=2,
 )

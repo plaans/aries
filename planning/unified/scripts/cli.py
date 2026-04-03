@@ -1,23 +1,28 @@
 #!/usr/bin/python3
 
-import sys
 import argparse
+import sys
 
+import unified_planning as up
 from unified_planning.shortcuts import *
-from up_test_cases.report import *
-
+import unified_planning.grpc.generated.unified_planning_pb2 as proto
 from unified_planning.grpc.proto_reader import ProtobufReader
 from unified_planning.grpc.proto_writer import ProtobufWriter
-import unified_planning.grpc.generated.unified_planning_pb2 as proto
+from up_test_cases.report import *
 
 parser = argparse.ArgumentParser(
-    prog='aries-up-cli',
-    description='Utils for working with aries and the unified planning library')
-parser.add_argument("-s", "--solver", default="aries", )
+    prog="aries-up-cli",
+    description="Utils for working with aries and the unified planning library",
+)
+parser.add_argument(
+    "-s",
+    "--solver",
+    default="aries",
+)
 parser.add_argument("-m", "--mode", default="solve")
 parser.add_argument("-o", "--outfile", default="/tmp/problem.upp")
 parser.add_argument("--timeout", default="1800")
-parser.add_argument('-f', '--from-file', action='store_true')
+parser.add_argument("-f", "--from-file", action="store_true")
 parser.add_argument("problem_name")
 
 
@@ -50,7 +55,9 @@ if args.mode == "solve":
     plan = None
     try:
         with AnytimePlanner(name=args.solver) as planner:
-            for r in planner.get_solutions(problem, timeout=float(args.timeout), output_stream=sys.stdout):
+            for r in planner.get_solutions(
+                problem, timeout=float(args.timeout), output_stream=sys.stdout
+            ):
                 print(r)
                 plan = r.plan
                 print("\n===================\n")
@@ -60,9 +67,13 @@ if args.mode == "solve":
             plan = result.plan
             print(result)
 
-    with PlanValidator(problem_kind=problem.kind) as validator:
-        val_result = validator.validate(problem, plan)
-        print(val_result)
+    try:
+        with PlanValidator(problem_kind=problem.kind) as validator:
+            val_result = validator.validate(problem, plan)
+            print(val_result)
+    except up.exceptions.UPNoSuitableEngineAvailableException:
+        print("No validator available")
+
 
 elif args.mode == "dump":
     print(problem)

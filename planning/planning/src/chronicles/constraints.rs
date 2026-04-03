@@ -1,8 +1,8 @@
 use super::*;
 use aries::core::Lit;
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::expr::*;
 use aries::model::lang::linear::LinearSum;
+use aries::model::lang::{expr::*, Kind};
 use aries::model::lang::{Cst, Type};
 use aries::model::Label;
 use itertools::Itertools;
@@ -267,7 +267,15 @@ pub fn encode_constraint<L: Label>(
                 "Wrong number of parameters to equality constraint: {}",
                 constraint.variables.len()
             );
-            model.bind(eq(constraint.variables[0], constraint.variables[1]), value);
+            let a = constraint.variables[0];
+            let b = constraint.variables[1];
+            if matches!(a.kind(), Kind::Int | Kind::Fixed(_)) && matches!(b.kind(), Kind::Int | Kind::Fixed(_)) {
+                let a = FAtom::try_from(a).unwrap();
+                let b = FAtom::try_from(b).unwrap();
+                model.bind(eq(a, b), value);
+            } else {
+                model.bind(eq(a, b), value);
+            }
         }
         ConstraintType::Neq => {
             assert_eq!(
@@ -276,8 +284,15 @@ pub fn encode_constraint<L: Label>(
                 "Wrong number of parameters to inequality constraint: {}",
                 constraint.variables.len()
             );
-
-            model.bind(neq(constraint.variables[0], constraint.variables[1]), value);
+            let a = constraint.variables[0];
+            let b = constraint.variables[1];
+            if matches!(a.kind(), Kind::Int | Kind::Fixed(_)) && matches!(b.kind(), Kind::Int | Kind::Fixed(_)) {
+                let a = FAtom::try_from(a).unwrap();
+                let b = FAtom::try_from(b).unwrap();
+                model.bind(neq(a, b), value);
+            } else {
+                model.bind(neq(a, b), value);
+            }
         }
         ConstraintType::Duration(dur) => {
             let build_sum = |s: LinearSum, e: LinearSum, d: &LinearSum| LinearSum::of(vec![-s, e]) - d.clone();

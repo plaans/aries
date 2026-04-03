@@ -74,6 +74,7 @@ pub mod activity {
 
     pub fn activity(
         n: &str,
+        optional: bool,
         parameters: Vec<Parameter>,
         duration: Expression,
         conditions: Vec<Condition>,
@@ -82,6 +83,7 @@ pub mod activity {
     ) -> Activity {
         Activity {
             name: n.into(),
+            optional,
             parameters,
             duration: Some(duration::duration(duration)),
             conditions,
@@ -785,6 +787,7 @@ pub mod problem {
                 activities: vec![
                     activity::activity(
                         "a1",
+                        false,
                         vec![],
                         expression::int(20),
                         vec![],
@@ -828,6 +831,7 @@ pub mod problem {
                     ),
                     activity::activity(
                         "a2",
+                        false,
                         vec![],
                         expression::int(20),
                         vec![],
@@ -876,6 +880,7 @@ pub mod problem {
                     expression::end_of("a2"),
                     expression::start_of("a1"),
                 ])],
+                scoped_constraints: vec![],
             }),
             trajectory_constraints: vec![],
             discrete_time: true,
