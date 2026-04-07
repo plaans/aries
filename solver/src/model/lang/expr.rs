@@ -299,24 +299,24 @@ impl Eq {
     }
 }
 
-impl<Ctx> BoolExpr<Ctx> for Eq {
-    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
-        let elems = self.as_elementary_constraints(store);
+impl<Ctx: Store> BoolExpr<Ctx> for Eq {
+    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+        let elems = self.as_elementary_constraints(ctx);
         for elem in elems {
-            elem.enforce_if(l, ctx, store);
+            elem.enforce_if(l, ctx);
         }
     }
-    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
-        let elems = self.as_elementary_constraints(store);
+    fn implicant(&self, ctx: &mut Ctx) -> Lit {
+        let elems = self.as_elementary_constraints(ctx);
         if elems.contains(&ReifExpr::Lit(Lit::FALSE)) {
             return Lit::FALSE;
         }
-        let conjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
-        store.get_implicant(and(conjuncts).into())
+        let conjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
+        ctx.get_implicant(and(conjuncts).into())
     }
 
-    fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
-        smallvec::smallvec![store.presence_literal(self.0), store.presence_literal(self.1)]
+    fn conj_scope(&self, ctx: &Ctx) -> super::hreif::Lits {
+        smallvec::smallvec![ctx.presence_literal(self.0), ctx.presence_literal(self.1)]
     }
 }
 
@@ -394,21 +394,21 @@ impl Neq {
     }
 }
 
-impl<Ctx> BoolExpr<Ctx> for Neq {
-    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
-        let elems = self.as_elementary_disjuncts(store);
-        let disjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
-        or(disjuncts).enforce_if(l, ctx, store);
+impl<Ctx: Store> BoolExpr<Ctx> for Neq {
+    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+        let elems = self.as_elementary_disjuncts(ctx);
+        let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
+        or(disjuncts).enforce_if(l, ctx);
     }
-    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
-        let elems = self.as_elementary_disjuncts(store);
+    fn implicant(&self, ctx: &mut Ctx) -> Lit {
+        let elems = self.as_elementary_disjuncts(ctx);
         if elems.contains(&ReifExpr::Lit(Lit::TRUE)) {
             return Lit::TRUE;
         }
-        let disjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
-        store.get_implicant(or(disjuncts).into())
+        let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
+        ctx.get_implicant(or(disjuncts).into())
     }
-    fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
-        smallvec::smallvec![store.presence_literal(self.0), store.presence_literal(self.1)]
+    fn conj_scope(&self, ctx: &Ctx) -> super::hreif::Lits {
+        smallvec::smallvec![ctx.presence_literal(self.0), ctx.presence_literal(self.1)]
     }
 }

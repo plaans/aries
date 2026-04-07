@@ -16,23 +16,27 @@ use crate::{boxes::Segment, effects::EffectOp, *};
 
 /// Constraint that enforces the [`Sched::makespan`] variable to be equal to the
 /// maximum end time of tasks, or zero in the absence of tasks.
+///
+/// It is encorced by default in [`Sched`].
 pub(crate) struct MakespanIsMaxTaskEnd;
-impl BoolExpr<Sched> for MakespanIsMaxTaskEnd {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
-        assert_eq!(ctx.makespan.denom, ctx.time_scale);
+
+impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        assert_eq!(ctx.sched.makespan.denom, ctx.sched.time_scale);
         let mut ends = ctx
+            .sched
             .tasks
             .iter()
             .map(|t| {
-                assert_eq!(t.end.denom, ctx.time_scale);
+                assert_eq!(t.end.denom, ctx.sched.time_scale);
                 t.end.num
             })
             .collect_vec();
         ends.push(IAtom::ZERO); // default value when no task is present
-        EqMax::new(ctx.makespan.num, ends).enforce_if(l, ctx, store);
+        EqMax::new(ctx.sched.makespan.num, ends).enforce_if(l, ctx);
     }
 
-    fn conj_scope(&self, _ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
         // constraints is always valid (scope of makespan variable)
         lits![]
     }
@@ -45,53 +49,59 @@ impl NoOverlap {
     }
 }
 
-impl BoolExpr<Sched> for NoOverlap {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
+impl BoolExpr<SchedEncoder> for NoOverlap {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
         for (i, t1) in self.0.iter().copied().enumerate() {
             for &t2 in &self.0[(i + 1)..] {
-                Mutex(t1, t2).opt_enforce_if(l, ctx, store);
+                Mutex(t1, t2).opt_enforce_if(l, ctx);
             }
         }
     }
 
-    fn conj_scope(&self, _ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
         lits![]
     }
 }
 
 pub struct Mutex(TaskId, TaskId);
 
-impl BoolExpr<Sched> for Mutex {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
-        let t1 = &ctx.tasks[self.0];
-        let t2 = &ctx.tasks[self.1];
+impl BoolExpr<SchedEncoder> for Mutex {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let t1 = &ctx.sched.tasks[self.0];
+        let t2 = &ctx.sched.tasks[self.1];
         let exclu = exclu_choice(f_leq(t1.end, t2.start), f_leq(t2.end, t1.start));
-        exclu.opt_enforce_if(l, ctx, store);
+        exclu.opt_enforce_if(l, ctx);
     }
 
-    fn conj_scope(&self, ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
-        aries::lits![ctx.tasks[self.0].presence, ctx.tasks[self.1].presence]
+    fn conj_scope(&self, ctx: &SchedEncoder) -> hreif::Lits {
+        aries::lits![ctx.sched.tasks[self.0].presence, ctx.sched.tasks[self.1].presence]
     }
 }
 
+/// Ensures all effects are coherent (enforced by default in [`Sched`]).
+///
+/// This requires to conditions
+///  - that no two assignments have overlapping exclusitivity periods
+///  - that every step is within an assignment validity period
 pub(crate) struct EffectCoherence;
 
-impl BoolExpr<Sched> for EffectCoherence {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
-        for e in ctx.effects.iter() {
+impl BoolExpr<SchedEncoder> for EffectCoherence {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let sched = ctx.sched.clone();
+        for e in sched.effects.iter() {
             // WARN: this is not guarded by the effect presence (assumption is that this is always true in an effect)
-            f_leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx, store);
+            f_leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx);
             // WARN: this is not guarded by the effect presence (assumption is that that the mutex end has the same scope as the effect)
-            f_leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx, store);
+            f_leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx);
         }
 
         // two phases coherence enforcement (between assignments only):
         //  - broad phase: computing a bounding box of the space potentially affected by the effect and gather all overlapping boxes
         //  - for any pair of effects with overlapping bounding boxes, add coherence constraints
-        for (eff_id1, eff_id2) in ctx.effects.potentially_interacting_effects() {
+        for (eff_id1, eff_id2) in sched.effects.potentially_interacting_effects() {
             // ensure that the interval `(transition_start, mutex_end]` do not overlap
-            let eff1 = &ctx.effects[eff_id1];
-            let eff2 = &ctx.effects[eff_id2];
+            let eff1 = &sched.effects[eff_id1];
+            let eff2 = &sched.effects[eff_id2];
 
             // this phase only concerns assignments
             let EffectOp::Assign(_) = eff1.operation else {
@@ -113,22 +123,23 @@ impl BoolExpr<Sched> for EffectCoherence {
                 presence: eff2.prez,
             };
             let exclu = Exclusive { a: &itv1, b: &itv2 };
-            exclu.opt_enforce_if(l, ctx, store);
+            exclu.opt_enforce_if(l, ctx);
         }
 
-        // for any step, ensures that:
+        // for any 'step', ensures that:
         //  1) it appears in an assignments exclusivity interval
         //  2) its mutex_end matches this assignments' mutex end
         // Condition 2) is necessary to make sure that any time at which the step contributes to the state variable value is included in its interval
-        for step in ctx.effects.iter() {
+        for step in sched.effects.iter() {
             let EffectOp::Step(_) = step.operation else {
                 continue;
             };
             let compatible_assignemnts = ctx
+                .sched
                 .effects
-                .potentially_overlapping_effects(&step.state_var.fluent, step.affected_box(&store).as_ref())
+                .potentially_overlapping_effects(&step.state_var.fluent, step.affected_box(&ctx).as_ref())
                 .filter_map(|eid| {
-                    let eff = &ctx.effects[eid];
+                    let eff = &sched.effects[eid];
                     match eff.operation {
                         EffectOp::Assign(_) => Some(eff),
                         EffectOp::Step(_) => None,
@@ -141,23 +152,23 @@ impl BoolExpr<Sched> for EffectCoherence {
             for ass in compatible_assignemnts {
                 let mut conjuncts = ConjunctionBuilder::new();
                 conjuncts.push(ass.prez);
-                conjuncts.push(f_leq(ass.transition_end, step.transition_start).implicant(ctx, store));
+                conjuncts.push(f_leq(ass.transition_end, step.transition_start).implicant(ctx));
                 // note: this forces the `step` interval to exactly match the end of the assignment
-                conjuncts.push(f_leq(ass.mutex_end, step.mutex_end).implicant(ctx, store));
-                conjuncts.push(f_geq(ass.mutex_end, step.mutex_end).implicant(ctx, store));
+                conjuncts.push(f_leq(ass.mutex_end, step.mutex_end).implicant(ctx));
+                conjuncts.push(f_geq(ass.mutex_end, step.mutex_end).implicant(ctx));
                 for (arg1, arg2) in ass.state_var.args.iter().zip_eq(step.state_var.args.iter()) {
-                    conjuncts.push(eq(*arg1, *arg2).implicant(ctx, store))
+                    conjuncts.push(eq(*arg1, *arg2).implicant(ctx))
                 }
-                let supports = and(conjuncts.build().into_lits().into_boxed_slice()).implicant(ctx, store);
+                let supports = and(conjuncts.build().into_lits().into_boxed_slice()).implicant(ctx);
                 support_options.push(supports);
             }
             // if the step it present, then at least one of the assignment must "support it"
             support_options.push(!step.prez);
-            support_options.build().enforce_if(l, ctx, store);
+            support_options.build().enforce_if(l, ctx);
         }
     }
 
-    fn conj_scope(&self, _ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
         lits![]
     }
 }
@@ -200,15 +211,18 @@ struct AssignEstablisher {
     base: IntCst,
 }
 
-impl BoolExpr<Sched> for HasValueAt {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
-        let value_box = self.value_box(&ctx.model);
+impl BoolExpr<SchedEncoder> for HasValueAt {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        // cheap clone to please the borrow checker
+        let sched: std::sync::Arc<Sched> = ctx.sched.clone();
+
+        let value_box = self.value_box(&*ctx);
 
         // gathers all effect that may contribute to the value
-        let relevant_effects = ctx
+        let relevant_effects = sched
             .effects
             .potentially_supporting_effects(&self.state_var.fluent, value_box.as_ref())
-            .map(|eff_id| &ctx.effects[eff_id])
+            .map(|eff_id| &sched.effects[eff_id])
             .collect_vec();
 
         let mut step_contributors = Vec::new();
@@ -223,14 +237,14 @@ impl BoolExpr<Sched> for HasValueAt {
 
             let mut conjuncts = ConjunctionBuilder::new();
             conjuncts.push(eff.prez);
-            conjuncts.push(f_geq(self.timepoint, eff.effective_start()).reified(ctx, store));
-            conjuncts.push(f_leq(self.timepoint, eff.mutex_end).reified(ctx, store));
+            conjuncts.push(f_geq(self.timepoint, eff.effective_start()).reified(ctx));
+            conjuncts.push(f_leq(self.timepoint, eff.mutex_end).reified(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(eq(*arg1, *arg2).reified(ctx, store))
+                conjuncts.push(eq(*arg1, *arg2).reified(ctx))
             }
             if !conjuncts.absurd() {
                 let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
-                let contributes = conjuncts.reified(ctx, store); // presence should be the same as self.presence?
+                let contributes = conjuncts.reified(ctx); // presence should be the same as self.presence?
                 step_contributors.push(StepContributor {
                     contributes,
                     contribution: step,
@@ -250,14 +264,14 @@ impl BoolExpr<Sched> for HasValueAt {
             }
             let mut conjuncts = ConjunctionBuilder::new();
             conjuncts.push(eff.prez);
-            conjuncts.push(f_geq(self.timepoint, eff.effective_start()).implicant(ctx, store));
-            conjuncts.push(f_leq(self.timepoint, eff.mutex_end).implicant(ctx, store));
+            conjuncts.push(f_geq(self.timepoint, eff.effective_start()).implicant(ctx));
+            conjuncts.push(f_leq(self.timepoint, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(eq(*arg1, *arg2).implicant(ctx, store))
+                conjuncts.push(eq(*arg1, *arg2).implicant(ctx))
             }
             if !conjuncts.absurd() {
                 let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
-                let establishes = conjuncts.implicant(ctx, store); // presence should be the same as self.presence?
+                let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 establishers.push(AssignEstablisher {
                     establishes,
                     base: assignment,
@@ -266,7 +280,7 @@ impl BoolExpr<Sched> for HasValueAt {
         }
 
         if step_contributors.is_empty() {
-            bind_alternative(l, self.value, self.prez, &establishers, store);
+            bind_alternative(l, self.value, self.prez, &establishers, ctx);
         } else {
             // note: if there are not steps, we can use self.value as the base_variable (which is equivalent to the previous encoding?)
 
@@ -274,17 +288,17 @@ impl BoolExpr<Sched> for HasValueAt {
             // has a base_variable = alternative { e in assign_establishers }
             let base_lb = establishers.iter().map(|e| e.base).min().unwrap_or(0);
             let base_ub = establishers.iter().map(|e| e.base).max().unwrap_or(0);
-            let base_var: IAtom = store.new_optional_var(base_lb, base_ub, self.prez).into();
-            bind_alternative(l, base_var, self.prez, &establishers, store);
+            let base_var: IAtom = ctx.new_optional_var(base_lb, base_ub, self.prez).into();
+            bind_alternative(l, base_var, self.prez, &establishers, ctx);
 
             // and self.value = base_variable + Sum { step contirbutions }
             let lhs = LinearSum::from(self.value);
             let mut rhs = LinearSum::from(base_var);
             for step in step_contributors {
-                rhs += bool2int(step.contributes, store) * step.contribution;
+                rhs += bool2int(step.contributes, ctx) * step.contribution;
             }
-            lhs.clone().leq(rhs.clone()).enforce(ctx, store);
-            lhs.geq(rhs).enforce(ctx, store);
+            lhs.clone().leq(rhs.clone()).enforce(ctx);
+            lhs.geq(rhs).enforce(ctx);
         }
 
         // PDDL mutex: a condition of an action cannot rely on a fact that is about to be modified by another action
@@ -296,12 +310,12 @@ impl BoolExpr<Sched> for HasValueAt {
             end: self.timepoint,
             presence: self.prez,
         };
-        for eff_id in ctx
+        for eff_id in sched
             .effects
             .potentially_overlapping_transitions(&self.state_var.fluent, value_box.as_ref())
         {
             // TODO: mutex when considering steps?
-            let eff = &ctx.effects[eff_id];
+            let eff = &sched.effects[eff_id];
             if eff.source != self.source {
                 let itv_eff = IntervalOnStateVariable {
                     state_var: &eff.state_var,
@@ -313,12 +327,12 @@ impl BoolExpr<Sched> for HasValueAt {
                     a: &itv_cond,
                     b: &itv_eff,
                 };
-                exclu.opt_enforce_if(l, ctx, store);
+                exclu.opt_enforce_if(l, ctx);
             }
         }
     }
 
-    fn conj_scope(&self, _ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
         lits![self.prez]
     }
 }
@@ -327,23 +341,28 @@ impl BoolExpr<Sched> for HasValueAt {
 ///  - exactly one of the alternatives is holds (call it a)
 ///  - for this alternative a , `value = a.base`
 /// ELEMENT
-fn bind_alternative(l: Lit, value: IAtom, presence: Lit, alternatives: &[AssignEstablisher], store: &mut dyn Store) {
+fn bind_alternative<Ctx: Store + Dom>(
+    l: Lit,
+    value: IAtom,
+    presence: Lit,
+    alternatives: &[AssignEstablisher],
+    ctx: &mut Ctx,
+) {
     // println!("\n\n ===== bind alts ===== \n\n");
     // dbg!(value, presence, alternatives);
-    let ctx = &(); // constraints used here are independent of any context, so we just use the unit type
 
     // at least one esatablisher must hold
-    Disjunction::from_iter(alternatives.iter().map(|a| a.establishes)).enforce_if(l, ctx, store);
+    Disjunction::from_iter(alternatives.iter().map(|a| a.establishes)).enforce_if(l, ctx);
 
     for (ai, a) in alternatives.iter().enumerate() {
         // it is exclusive of all other establishers
         // note that is expected to be a redundant constraint (already indirectly enforced by effect coherence)
         for b in &alternatives[ai + 1..] {
-            or([!presence, !a.establishes, !b.establishes]).enforce_if(l, ctx, store);
+            or([!presence, !a.establishes, !b.establishes]).enforce_if(l, ctx);
         }
 
         // if `a` is the establishers the the variable must have its value
-        or([!presence, !a.establishes, eq(a.base, value).implicant(ctx, store)]).enforce_if(l, ctx, store);
+        or([!presence, !a.establishes, eq(a.base, value).implicant(ctx)]).enforce_if(l, ctx);
     }
 }
 
@@ -366,8 +385,8 @@ struct Exclusive<'a> {
     a: &'a IntervalOnStateVariable<'a>,
     b: &'a IntervalOnStateVariable<'a>,
 }
-impl<'a> BoolExpr<Sched> for Exclusive<'a> {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
+impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
+    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let a = &self.a;
         let b = &self.b;
         debug_assert_eq!(
@@ -376,24 +395,24 @@ impl<'a> BoolExpr<Sched> for Exclusive<'a> {
         );
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
-            for opt in neq(*x1, *x2).as_elementary_disjuncts(store) {
-                disjuncts.push(opt.implicant(ctx, store));
+            for opt in neq(*x1, *x2).as_elementary_disjuncts(ctx) {
+                disjuncts.push(opt.implicant(ctx));
                 if disjuncts.tautological() {
                     return;
                 }
             }
         }
         // put last as we are more likely to be able to short circuit on the parameters
-        disjuncts.push(f_lt(a.end, b.start).implicant(ctx, store));
-        disjuncts.push(f_lt(b.end, a.start).implicant(ctx, store));
+        disjuncts.push(f_lt(a.end, b.start).implicant(ctx));
+        disjuncts.push(f_lt(b.end, a.start).implicant(ctx));
         disjuncts.push(!a.presence);
         disjuncts.push(!b.presence);
         if !disjuncts.tautological() {
-            or(disjuncts).opt_enforce_if(l, ctx, store);
+            or(disjuncts).opt_enforce_if(l, ctx);
         }
     }
 
-    fn conj_scope(&self, _ctx: &Sched, _store: &dyn Store) -> hreif::Lits {
+    fn conj_scope(&self, _ctx: &Ctx) -> hreif::Lits {
         lits![]
     }
 }
@@ -401,7 +420,7 @@ impl<'a> BoolExpr<Sched> for Exclusive<'a> {
 /// Transforms a boolean into an integer expression
 /// NOte: the implementation is currently incomplete
 #[doc(hidden)]
-pub fn bool2int(b: Lit, model: &mut dyn Store) -> LinearSum {
+pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinearSum {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {
         1.into()
@@ -413,7 +432,7 @@ pub fn bool2int(b: Lit, model: &mut dyn Store) -> LinearSum {
         LinearSum::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
     } else {
         let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
-        eq(bvar.geq(1), b).enforce(&(), model);
+        eq(bvar.geq(1), b).enforce(model);
         LinearSum::from(bvar)
     }
 }

@@ -1,15 +1,18 @@
 pub mod boxes;
 pub mod constraints;
 mod effects;
+pub mod encoder;
 pub mod explain;
 pub mod rational;
 pub mod symbols;
 pub mod tasks;
 
 use aries::core::state::Evaluable;
+use aries::core::views::Dom;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
@@ -22,6 +25,7 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 pub use crate::effects::*;
+use crate::encoder::SchedEncoder;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
@@ -79,9 +83,10 @@ pub enum Tag {
     TaskEnd(TaskId),
 }
 
-type Constraint = Box<dyn BoolExpr<Sched>>;
+type Constraint = std::sync::Arc<dyn BoolExpr<SchedEncoder> + Send + Sync>;
 pub type ConstraintID = usize;
 
+#[derive(Clone)]
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
@@ -109,7 +114,7 @@ impl Sched {
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
-            constraints: vec![Box::new(MakespanIsMaxTaskEnd), Box::new(EffectCoherence)],
+            constraints: vec![Arc::new(MakespanIsMaxTaskEnd), Arc::new(EffectCoherence)],
         }
     }
 
@@ -129,19 +134,28 @@ impl Sched {
             .new_optional_fvar(0, INT_CST_MAX, self.time_scale, scope, "_")
             .into()
     }
-    pub fn add_constraint<C: BoolExpr<Sched> + 'static>(&mut self, c: C) -> ConstraintID {
-        self.add_boxed_constraint(Box::new(c))
+    pub fn add_constraint<C: BoolExpr<SchedEncoder> + 'static + Send + Sync>(&mut self, c: C) -> ConstraintID {
+        self.add_boxed_constraint(Arc::new(c))
     }
-    pub fn add_boxed_constraint(&mut self, c: Box<dyn BoolExpr<Sched> + 'static>) -> ConstraintID {
+    pub fn add_boxed_constraint(&mut self, c: Arc<dyn BoolExpr<SchedEncoder> + 'static + Send + Sync>) -> ConstraintID {
         self.constraints.push(c);
         self.constraints.len() - 1
     }
-    pub fn encode(&self) -> Model {
-        let mut encoding = self.model.clone();
-        for c in &self.constraints {
-            c.enforce(self, &mut encoding);
+
+    fn encoder(self) -> SchedEncoder {
+        let store = self.model.clone();
+        SchedEncoder {
+            sched: Arc::new(self),
+            store,
         }
-        encoding
+    }
+
+    pub fn encode(&self) -> Model {
+        let mut encoder = self.clone().encoder();
+        for c in &self.constraints {
+            c.enforce(&mut encoder);
+        }
+        encoder.store
     }
 
     pub fn solve(&self) -> Option<Solution> {
@@ -181,5 +195,15 @@ impl Sched {
                 e.mutex_end.evaluate(sol).unwrap(),
             );
         }
+    }
+}
+
+impl Dom for Sched {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.model.upper_bound(svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.model.presence(var)
     }
 }

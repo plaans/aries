@@ -23,7 +23,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
     ///  - foreground constraints (soft), enabled by assumptions. Two foregrounds constriants with the
     ///    same projection will be enabled together by the same assumption.
     pub fn new(sched: &Sched, project: impl Fn(ConstraintID) -> Option<T>) -> Self {
-        let mut encoding = sched.model.clone();
+        let mut encoding = sched.clone().encoder();
 
         let mut assumptions_map = BTreeMap::new();
         let mut trigger = BTreeMap::new();
@@ -38,12 +38,12 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                     trigger.insert(tag, l);
                     l
                 };
-                c.opt_enforce_if(l, sched, &mut encoding);
+                c.opt_enforce_if(l, &mut encoding);
             } else {
-                c.enforce(sched, &mut encoding);
+                c.enforce(&mut encoding);
             }
         }
-        let solver = Solver::new(encoding);
+        let solver = Solver::new(encoding.store);
         Self {
             solver,
             enablers: assumptions_map,
