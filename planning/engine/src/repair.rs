@@ -232,7 +232,11 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 let constraint =
                     condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
 
-                let cid = sched.add_constraint(constraint);
+                let cid = if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
+                    sched.add_condition(c)
+                } else {
+                    sched.add_constraint(constraint)
+                };
                 constraints_tags.insert(
                     cid,
                     CTag::Support {
@@ -264,7 +268,11 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                         Some(&mut required_values),
                     )?;
 
-                    let cid = sched.add_constraint(constraint);
+                    let cid = if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
+                        sched.add_condition(c)
+                    } else {
+                        sched.add_constraint(constraint)
+                    };
                     constraints_tags.insert(cid, CTag::EnforceGoal(gid));
                 } else {
                     todo!()
