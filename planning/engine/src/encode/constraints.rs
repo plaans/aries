@@ -30,7 +30,7 @@ impl BoolExpr<SchedEncoder> for ConditionConstraint {
         }
     }
 
-    fn conj_scope(&self, ctx: &SchedEncoder) -> aries::model::lang::hreif::Lits {
+    fn conj_scope(&self, ctx: &SchedEncoder) -> Conjunction {
         match self {
             ConditionConstraint::HasValue(has_value_at) => has_value_at.conj_scope(ctx),
             ConditionConstraint::EqZero(sum) => sum.clone().leq(INT_CST_MAX).conj_scope(ctx), // TODO: improve

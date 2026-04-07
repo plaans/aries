@@ -1,5 +1,3 @@
-use smallvec::SmallVec;
-
 use crate::{
     core::{IntCst, Lit, VarRef, views::Dom},
     model::{
@@ -93,7 +91,7 @@ pub trait BoolExpr<Ctx: Store> {
     /// Examples:
     ///   - (a < b) would have a conjunctive scope `[prez(a), prez(b)]` as it is only valid when both
     ///     a and b are present. The conjunctive scope is thus the list their presence variable.
-    fn conj_scope(&self, ctx: &Ctx) -> Lits; // TODO: should be Conjunction
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction; // TODO: should be Conjunction
     fn scope(&self, ctx: &mut Ctx) -> Lit {
         let conj_scope = self.conj_scope(ctx);
         ctx.conjunctive_scope(&conj_scope)
@@ -138,7 +136,7 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
         (*self).enforce_if(l, ctx);
     }
 
-    fn conj_scope(&self, ctx: &Ctx) -> Lits {
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
         (*self).conj_scope(ctx)
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
@@ -149,22 +147,16 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     //      - implement all other methods to make sure we use the most specific implementation
 }
 
-pub type Lits = SmallVec<[Lit; 2]>;
-#[macro_export]
-macro_rules! lits {
-    ($($x:tt)*) => {smallvec::smallvec![$($x)*]}
-}
-
 impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         ctx.add_implies(l, self.clone());
     }
 
-    fn conj_scope(&self, ctx: &Ctx) -> Lits {
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
         let vs = self.scope(|v| ctx.presence_literal(v));
         // TODO: give flattening context
         let conj_scope = vs.to_conjunction(|_| Option::<[Lit; 0]>::None, |l| l == Lit::TRUE);
-        SmallVec::from_iter(conj_scope.literals())
+        Conjunction::from_iter(conj_scope.literals())
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
         if let ReifExpr::Lit(l) = self {
@@ -195,7 +187,7 @@ macro_rules! impl_reif {
             fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
                 ReifExpr::from(self.clone()).enforce_if(l, ctx);
             }
-            fn conj_scope(&self, ctx: &Ctx) -> Lits {
+            fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
                 ReifExpr::from(self.clone()).conj_scope(ctx)
             }
             fn implicant(&self, ctx: &mut Ctx) -> Lit {
@@ -239,11 +231,11 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
             or([a, b]).opt_enforce_if(l, ctx);
         }
     }
-    fn conj_scope(&self, ctx: &Ctx) -> Lits {
-        let mut sa = self.alt1.conj_scope(ctx);
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        let mut sa = self.alt1.conj_scope(ctx).into_lits();
         let sb = self.alt2.conj_scope(ctx);
         sa.extend_from_slice(&sb);
-        sa
+        sa.into()
     }
 }
 
@@ -278,8 +270,8 @@ mod test {
             }
         }
 
-        fn conj_scope(&self, _ctx: &Ctx) -> Lits {
-            lits![]
+        fn conj_scope(&self, _ctx: &Ctx) -> Conjunction {
+            Conjunction::tautology()
         }
     }
 
@@ -288,8 +280,8 @@ mod test {
             neq(self.0, self.1).opt_enforce_if(l, ctx);
         }
 
-        fn conj_scope(&self, ctx: &Ctx) -> Lits {
-            lits![ctx.presence_literal(self.0), ctx.presence_literal(self.1)]
+        fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+            [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
         }
     }
 
@@ -379,7 +371,7 @@ mod test {
             c.opt_enforce_if(l, ctx);
         }
 
-        fn conj_scope(&self, ctx: &ModelWithMetadata) -> Lits {
+        fn conj_scope(&self, ctx: &ModelWithMetadata) -> Conjunction {
             let c = lt(ctx.starts[self.0], ctx.starts[self.1]);
             c.conj_scope(ctx)
         }

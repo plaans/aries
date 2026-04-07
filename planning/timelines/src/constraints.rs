@@ -4,7 +4,6 @@ use aries::model::lang::linear::LinearSum;
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
-    lits,
     model::lang::{
         expr::{and, eq, f_geq, f_leq, f_lt, neq, or},
         hreif::{BoolExpr, Store, exclu_choice},
@@ -36,9 +35,9 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
         EqMax::new(ctx.sched.makespan.num, ends).enforce_if(l, ctx);
     }
 
-    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
         // constraints is always valid (scope of makespan variable)
-        lits![]
+        Conjunction::tautology()
     }
 }
 
@@ -58,8 +57,8 @@ impl BoolExpr<SchedEncoder> for NoOverlap {
         }
     }
 
-    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
-        lits![]
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
+        Conjunction::tautology()
     }
 }
 
@@ -73,8 +72,8 @@ impl BoolExpr<SchedEncoder> for Mutex {
         exclu.opt_enforce_if(l, ctx);
     }
 
-    fn conj_scope(&self, ctx: &SchedEncoder) -> hreif::Lits {
-        aries::lits![ctx.sched.tasks[self.0].presence, ctx.sched.tasks[self.1].presence]
+    fn conj_scope(&self, ctx: &SchedEncoder) -> Conjunction {
+        [ctx.sched.tasks[self.0].presence, ctx.sched.tasks[self.1].presence].into()
     }
 }
 
@@ -168,8 +167,8 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
         }
     }
 
-    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
-        lits![]
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
+        Conjunction::tautology()
     }
 }
 
@@ -332,8 +331,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         }
     }
 
-    fn conj_scope(&self, _ctx: &SchedEncoder) -> hreif::Lits {
-        lits![self.prez]
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
+        [self.prez].into()
     }
 }
 
@@ -412,8 +411,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         }
     }
 
-    fn conj_scope(&self, _ctx: &Ctx) -> hreif::Lits {
-        lits![]
+    fn conj_scope(&self, _ctx: &Ctx) -> Conjunction {
+        Conjunction::tautology()
     }
 }
 

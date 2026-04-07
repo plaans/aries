@@ -315,8 +315,8 @@ impl<Ctx: Store> BoolExpr<Ctx> for Eq {
         ctx.get_implicant(and(conjuncts).into())
     }
 
-    fn conj_scope(&self, ctx: &Ctx) -> super::hreif::Lits {
-        smallvec::smallvec![ctx.presence_literal(self.0), ctx.presence_literal(self.1)]
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
     }
 }
 
@@ -408,7 +408,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Neq {
         let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
         ctx.get_implicant(or(disjuncts).into())
     }
-    fn conj_scope(&self, ctx: &Ctx) -> super::hreif::Lits {
-        smallvec::smallvec![ctx.presence_literal(self.0), ctx.presence_literal(self.1)]
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
     }
 }

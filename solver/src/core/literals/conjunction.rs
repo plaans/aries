@@ -72,6 +72,7 @@ impl Conjunction {
         self.literals.contains(&lit)
     }
 }
+
 impl<'a> IntoIterator for &'a Conjunction {
     type Item = Lit;
     type IntoIter = <&'a Lits as IntoIterator>::IntoIter;
