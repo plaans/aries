@@ -394,14 +394,14 @@ fn into_effects(
             // stack bindings so that downstream expression know the declared variables
             let bindings = Rc::new(Bindings::stacked(&vars, bindings));
             let effs = into_effects(default_timestamp, quantified_expr, env, &bindings)?;
-            all_effs.extend(effs.into_iter().map(|e| e.with_quantification(&vars)))
+            all_effs.extend(effs.into_iter().map(|e| e.with_quantification(&vars).with_span(expr)))
         } else if let Some([tp, expr]) = expr.as_application("at")
             && let Ok(time) = parse_timestamp(tp)
         {
             // (at end (not (loc r1 l1)))   or   (at 12.3 (loc r1 l2))
             // in the condition we check that we indeed have a valid timepoint because it is common to have also an `at` fluent
             let effs = into_effects(Some(time), expr, env, bindings)?;
-            all_effs.extend(effs);
+            all_effs.extend(effs.into_iter().map(|e| e.with_span(expr)));
         } else if let Some([cond, expr]) = expr.as_application("when") {
             let cond = parse(cond, env, bindings)?;
             let effs = into_effects(default_timestamp, expr, env, bindings)?;
@@ -409,17 +409,16 @@ fn into_effects(
                 if let Some(other_cond) = eff.effect_expression.condition {
                     return Err(env.node(other_cond).invalid("expected second condition"));
                 }
-                all_effs.push(eff.with_condition(cond));
+                all_effs.push(eff.with_condition(cond).with_span(expr));
             }
         } else {
             let Some(time) = default_timestamp else {
                 return Err(expr.invalid("expected temporal qualifier, e.g., (at end ...)"));
             };
             let eff = into_effect(time, expr, env, bindings)?;
-            all_effs.push(eff.not_quantified());
+            all_effs.push(eff.not_quantified().with_span(expr));
         }
     }
-
     Ok(all_effs)
 }
 
@@ -618,16 +617,18 @@ pub fn parse_goal(
     env: &mut Environment,
     bindings: &Rc<Bindings>,
 ) -> Result<Goal, Message> {
-    if let Some([vars, sexpr]) = sexpr.as_application("forall")
+    let mut g = if let Some([vars, sexpr]) = sexpr.as_application("forall")
         && !at_horizon
     {
         // (forall (?x - loc ?y - obj) <constraint>)
         let vars = parse_var_list(vars, env)?;
         let bindings = Rc::new(Bindings::stacked(&vars, bindings));
-        parse_unquantified_goal(sexpr, at_horizon, env, &bindings).map(|g| g.forall(vars))
+        parse_unquantified_goal(sexpr, at_horizon, env, &bindings).map(|g| g.forall(vars))?
     } else {
-        parse_unquantified_goal(sexpr, at_horizon, env, bindings).map(|g| g.forall(vec![]))
-    }
+        parse_unquantified_goal(sexpr, at_horizon, env, bindings).map(|g| g.forall(vec![]))?
+    };
+    g.span = sexpr.span().cloned();
+    Ok(g)
 }
 
 /// Parses a goal (at_horizon=true) of constraint (at_horizon=false), without a forall

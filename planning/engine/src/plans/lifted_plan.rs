@@ -1,30 +1,39 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
-use planx::{ActionRef, Model, Res, Sym, errors::Span};
+use aries::core::QCst;
+use itertools::Itertools;
+use planx::{Model, Res, Sym};
 use timelines::IntCst;
+
+use crate::plans::Operation;
 
 #[derive(Debug, Clone)]
 pub struct LiftedPlan {
     /// A set of operations: actions instances with arguments, start times and durations
-    pub operations: Vec<Operation>,
+    pub operations: Vec<Operation<ObjectOrVariable>>,
     /// All variables apprearing in the lifted plan, together with an inferred type (most specific one from all their appearances.)
     pub variables: BTreeMap<Sym, planx::UserType>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Operation {
-    pub start: IntCst,
-    pub duration: IntCst,
-    pub action_ref: ActionRef,
-    pub arguments: Vec<OperationArg>,
-    #[allow(unused)]
-    pub span: Option<Span>,
+impl Display for LiftedPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.operations.iter().format("\n"))
+    }
 }
 
 #[derive(Debug, Clone)]
-pub enum OperationArg {
+pub enum ObjectOrVariable {
     Ground(planx::Object),
     Variable { name: Sym },
+}
+
+impl Display for ObjectOrVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjectOrVariable::Ground(object) => write!(f, "{object}"),
+            ObjectOrVariable::Variable { name } => write!(f, "{name}"),
+        }
+    }
 }
 
 /// Parse a lifted plan into our own representation.
@@ -65,7 +74,7 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
                         param
                     )));
                 }
-                OperationArg::Ground(obj)
+                ObjectOrVariable::Ground(obj)
             } else if arg.canonical_str().starts_with("?") {
                 // variable: compute its as the most specific between its previous one and the parameter of the action
                 let prev_type = variables.get(arg).unwrap_or(&top_type);
@@ -82,15 +91,15 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
                 };
                 // reinsert the variable with the new type
                 variables.insert(arg.clone(), tpe.clone());
-                OperationArg::Variable { name: arg.clone() }
+                ObjectOrVariable::Variable { name: arg.clone() }
             } else {
                 return Err(arg.invalid("cannot interpret argument: not a known object nor a variable"));
             };
             arguments.push(arg);
         }
         operations.push(Operation {
-            start: aid as IntCst, // start time is the index of the action in the sequence
-            duration: 0,          // action is instantaneous
+            start: QCst::from_integer(aid as IntCst), // start time is the index of the action in the sequence
+            duration: QCst::ZERO,                     // action is instantaneous
             action_ref: a.name.clone(),
             arguments,
             span: a.span().cloned(),

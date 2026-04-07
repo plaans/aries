@@ -4,10 +4,9 @@ use hashbrown::HashSet;
 use itertools::Itertools;
 
 use crate::core::state::{DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::views::{Boundable, Dom, VarView};
+use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::prelude::*;
 
-use crate::core::state::Term;
 use crate::reasoners::cp::no_overlap::neg_iatom::PMIAtom;
 use crate::reasoners::cp::propagator::justified::*;
 use crate::reasoners::cp::{DynPropagator, UserPropagator};

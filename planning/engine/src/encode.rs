@@ -1,20 +1,25 @@
 //! A number of utility functions for converting from `planx` to `aries-timelines`
 
 pub mod constraints;
+pub mod encoding;
 pub mod required_values;
+pub mod tags;
 
 use aries::{
     core::literals::ConjunctionBuilder,
     model::lang::{
         FAtom,
         expr::{and, eq},
+        linear::LinearSum,
     },
     prelude::*,
     reif::ReifExpr,
 };
 use itertools::Itertools;
-use planx::{ExprId, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
-use timelines::{Effect, EffectOp, Sched, StateVar, SymAtom, Time, constraints::HasValueAt, symbols::ObjectEncoding};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use timelines::{
+    Effect, EffectOp, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+};
 
 use crate::encode::{constraints::ConditionConstraint, required_values::RequiredValues};
 
@@ -44,6 +49,7 @@ pub struct Scope<'a> {
     pub end: Time,
     pub presence: Lit,
     pub args: im::OrdMap<&'a Sym, SymAtom>,
+    pub source: Option<TaskId>,
 }
 impl<'a> Scope<'a> {
     pub fn global(sched: &Sched) -> Scope<'a> {
@@ -52,6 +58,7 @@ impl<'a> Scope<'a> {
             end: sched.horizon,
             presence: Lit::TRUE,
             args: im::OrdMap::new(),
+            source: None,
         }
     }
 }
@@ -68,6 +75,7 @@ pub fn condition_to_constraint(
     required_values: Option<&mut RequiredValues>,
 ) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
+    let timepoint = reify_timing(tp, model, sched, bindings)?;
     let constraint = match expr.expr() {
         planx::Expr::StateVariable(fluent_id, args) => {
             let fluent = model.env.fluents.get(*fluent_id);
@@ -82,9 +90,10 @@ pub fn condition_to_constraint(
             };
             let c = HasValueAt {
                 state_var,
-                value: Lit::TRUE.into(),
-                timepoint: reify_timing(tp, model, sched, bindings)?,
+                value: IAtom::TRUE,
+                timepoint,
                 prez: bindings.presence,
+                source: bindings.source,
             };
             ConditionConstraint::HasValue(c)
         }
@@ -93,22 +102,31 @@ pub fn condition_to_constraint(
             let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, None)?;
             match c {
                 ConditionConstraint::HasValue(mut c) => {
-                    let Ok(x) = Lit::try_from(c.value) else {
-                        panic!();
-                    };
-                    c.value = x.not().into();
-                    ConditionConstraint::HasValue(c)
+                    if let Ok(x) = IntCst::try_from(c.value)
+                        && (x == 0 || x == 1)
+                    {
+                        c.value = (1 - x).into(); // negation : 0 -> 1 and 1 -> 0
+                        ConditionConstraint::HasValue(c)
+                    } else {
+                        return expr.todo("unsupported").failed();
+                    }
                 }
-                ConditionConstraint::Eq(a, b) => ConditionConstraint::Neq(a, b),
-                ConditionConstraint::Neq(a, b) => ConditionConstraint::Eq(a, b),
+                ConditionConstraint::EqZero(sum) => ConditionConstraint::NeqZero(sum),
+                ConditionConstraint::NeqZero(sum) => ConditionConstraint::EqZero(sum),
+                ConditionConstraint::LeqZero(_) => todo!(),
             }
         }
         planx::Expr::App(planx::Fun::Eq, exprs) if exprs.len() == 2 => {
-            let e1 = reify_sym(exprs[0], model, sched, bindings)?;
-            let e2 = reify_sym(exprs[1], model, sched, bindings)?;
-            ConditionConstraint::Eq(e1, e2)
+            let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
+            let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
+            ConditionConstraint::EqZero(e1 - e2)
         }
-        e => todo!("{e:?}"),
+        planx::Expr::App(planx::Fun::Leq, exprs) if exprs.len() == 2 => {
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
+            ConditionConstraint::LeqZero(lhs - rhs)
+        }
+        _ => return Err(expr.todo("not supported")),
     };
 
     // update the required values if requested by caller
@@ -117,26 +135,27 @@ pub fn condition_to_constraint(
             ConditionConstraint::HasValue(c) => {
                 // record that someone required such a value
                 let fluent_id = model.env.fluents.get_by_name(&c.state_var.fluent).unwrap();
-                reqs.add(fluent_id, c.value_box(|v| sched.model.int_bounds(v)).as_ref());
+                reqs.add(fluent_id, c.value_box(&sched.model).as_ref());
             }
-            // not on a fluent and thus no need to update the required_values
-            ConditionConstraint::Eq(_, _) => {}
-            ConditionConstraint::Neq(_, _) => {}
+            ConditionConstraint::EqZero(_) => {} // TODO: are those handled in reifications?
+            ConditionConstraint::NeqZero(_) => {}
+            ConditionConstraint::LeqZero(_) => {} //TODO
         }
     }
     Ok(constraint)
 }
 
 pub fn convert_effect(
-    x: &planx::Effect,
+    effect: &planx::Effect,
     transition_time: bool,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
 ) -> Res<timelines::Effect> {
-    assert!(x.universal_quantification.is_empty());
-    let x = &x.effect_expression;
-    assert!(x.condition.is_none());
+    if !effect.universal_quantification.is_empty() || effect.effect_expression.condition.is_some() {
+        return model.env.node(effect).todo("Unsupported").failed();
+    }
+    let x = &effect.effect_expression;
     let t = reify_timing(x.timing, model, sched, bindings)?;
     let args: Vec<SymAtom> = x
         .state_variable
@@ -149,11 +168,9 @@ pub fn convert_effect(
         args,
     };
     let op = match x.operation {
-        planx::EffectOp::Assign(e) => {
-            let val = reify_bool(e, model, sched)?;
-            EffectOp::Assign(val)
-        }
-        _ => todo!(),
+        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_constant(v, model, sched, bindings)?),
+        planx::EffectOp::Increase(v) => EffectOp::Step(reify_constant(v, model, sched, bindings)?),
+        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_constant(v, model, sched, bindings)?),
     };
     let eff = timelines::Effect {
         transition_start: t,
@@ -162,6 +179,7 @@ pub fn convert_effect(
         state_var: sv,
         operation: op,
         prez: bindings.presence,
+        source: bindings.source,
     };
     Ok(eff)
 }
@@ -171,11 +189,14 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
     // time at which to place the negative effects. This is -1 so that it can be overrided by an initial effect (at 0).
     let t = Time::from(-1);
 
-    // all state variables that may require a `false` value
+    // all state variables that may require a `0` value, which encodes `false` for predicates
     // we will only place a negative effect for those state variables.
     let req_state_vars = reqs.state_variables(|v| v == 0);
 
     for sv in req_state_vars {
+        if model.env.fluents.get(sv.fluent).return_type != planx::Type::Bool {
+            continue; // this is not a boolean fluent and thus not eligible for the closed world assumption
+        }
         let args: Vec<SymAtom> = sv.params.0.into_iter().map(SymAtom::from).collect_vec();
         let sv = timelines::StateVar {
             fluent: model.env.fluents.get(sv.fluent).name().to_string(),
@@ -188,8 +209,10 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
             transition_end: t,
             mutex_end,
             state_var: sv,
-            operation: EffectOp::Assign(false),
+            operation: EffectOp::FALSE_ASSIGNMENT,
             prez: Lit::TRUE,
+            // no action source as it is part of the problem definition
+            source: None,
         };
         sched.add_effect(eff);
     }
@@ -213,12 +236,13 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
         let possible_overriden_by = |oid: usize, o: &Effect| -> bool {
             let cancellable = match (&e.operation, &o.operation) {
                 // the delete can be overriden by the add (add-after-delete semantics)
-                (EffectOp::Assign(false), EffectOp::Assign(true)) => true,
+                (&EffectOp::FALSE_ASSIGNMENT, &EffectOp::TRUE_ASSIGNMENT) => true,
                 // the two effects are of the same kind, the currend (eid) can be overriden by one appearing earlier in the effect list
-                (EffectOp::Assign(true), EffectOp::Assign(true)) => eid > oid,
-                (EffectOp::Assign(false), EffectOp::Assign(false)) => eid > oid,
+                (&EffectOp::TRUE_ASSIGNMENT, &EffectOp::TRUE_ASSIGNMENT) => eid > oid,
+                (&EffectOp::FALSE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => eid > oid,
                 // an add cannot be overriden by a delete
-                (EffectOp::Assign(true), EffectOp::Assign(false)) => false,
+                (&EffectOp::TRUE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => false,
+                (_, _) => todo!("Not a boolean state variable or non-constant assignment"), // TODO: make it truly unreachable
             };
 
             cancellable
@@ -284,7 +308,11 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
 
 pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<FAtom> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
-    if *t.delay.numer() == 0 { Ok(tp) } else { todo!() }
+    if *t.delay.numer() == 0 {
+        Ok(tp)
+    } else {
+        Message::todo("unsupported non-zero delay").failed()
+    }
 }
 pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<FAtom> {
     match t {
@@ -292,33 +320,105 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
         TimeRef::Horizon => Ok(sched.horizon),
         TimeRef::ActionStart => Ok(binding.start),
         TimeRef::ActionEnd => Ok(binding.end),
-        _ => todo!("{t:?}"),
+        _ => Message::todo(format!("unsupported timeref {t:?}")).failed(),
     }
 }
 
-pub fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
+pub fn reify_sym(eid: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
+    reify_expression(eid, None, model, sched, binding).and_then(|e| flatten_expression(eid, e, model, sched, binding))
+}
+
+pub fn reify_constant(e: ExprId, model: &Model, sched: &mut Sched, scope: &Scope) -> Res<IntCst> {
+    let reif = reify_expression(e, None, model, sched, scope)?;
+    let reif = flatten_expression(e, reif, model, sched, scope)?;
+    let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
+    Ok(cst)
+}
+
+pub type LinExpr = LinearSum;
+
+// todo: add required_value!
+pub fn reify_expression(
+    e: ExprId,
+    time: Option<Time>,
+    model: &Model,
+    sched: &mut Sched,
+    binding: &Scope,
+) -> Res<LinExpr> {
     let e = model.env.node(e);
+    use planx::Expr::*;
     match e.expr() {
+        Bool(true) => Ok(1.into()),
+        Bool(false) => Ok(0.into()),
+        Real(r) if r.denom() == &1 => {
+            if let Ok(i) = IntCst::try_from(*r.numer()) {
+                Ok(i.into())
+            } else {
+                e.todo(format!("Cannot be converted to an {}", aries::core::INT_TYPE_NAME))
+                    .failed()
+            }
+        }
         planx::Expr::Object(object) => {
             let id = sched
                 .objects
                 .object_id(object.name().canonical_str())
                 .ok_or_else(|| e.invalid("Object has no associated value"))?;
-            Ok(SymAtom::from(id))
+            Ok(id.into())
         }
         planx::Expr::Param(param) => binding
             .args
             .get(param.name().canonical_str())
             .copied()
+            .map(|id| id.into())
             .ok_or_else(|| param.name().invalid("unknown parameter")),
-        _ => todo!(),
+        StateVariable(fluent, args) => {
+            let Some(time) = time else {
+                return e
+                    .invalid("this is a state variable and cannot be interpreted without a temporal context")
+                    .failed();
+            };
+            let fluent = model.env.fluents.get(*fluent);
+            let reified_var = sched
+                .model
+                .new_optional_ivar(INT_CST_MIN, INT_CST_MAX, binding.presence, "");
+            let reified_args = args
+                .iter()
+                .map(|&arg| {
+                    reify_expression(arg, Some(time), model, sched, binding)
+                        .and_then(|arg_expr| flatten_expression(arg, arg_expr, model, sched, binding))
+                })
+                .collect::<Res<Vec<IAtom>>>()?;
+            let state_var = StateVar {
+                fluent: fluent.name().to_string(),
+                args: reified_args,
+            };
+            let binding = HasValueAt {
+                state_var,
+                value: reified_var.into(),
+                timepoint: time,
+                prez: binding.presence,
+                source: binding.source,
+            };
+            sched.add_constraint(binding);
+            Ok(reified_var.into())
+        }
+        planx::Expr::App(Fun::Plus, args) => {
+            let mut sum = LinearSum::zero();
+            for arg in args {
+                sum += reify_expression(*arg, time, model, sched, binding)?;
+            }
+            Ok(sum)
+        }
+        planx::Expr::App(Fun::Minus, args) if args.len() == 2 => {
+            let mut sum = LinearSum::zero();
+            sum += reify_expression(args[0], time, model, sched, binding)?;
+            sum -= reify_expression(args[1], time, model, sched, binding)?;
+            Ok(sum)
+        }
+        _ => e.todo(format!("not supported [{e}]")).failed(),
     }
 }
 
-pub fn reify_bool(e: ExprId, model: &Model, _sched: &mut Sched) -> Res<bool> {
-    let e = model.env.node(e);
-    match e.expr() {
-        planx::Expr::Bool(b) => Ok(*b),
-        _ => todo!(),
-    }
+pub fn flatten_expression(eid: ExprId, e: LinExpr, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IAtom> {
+    IAtom::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
 }

@@ -78,6 +78,9 @@ pub struct Validate {
     /// Expanded to provide command line options to get the plan, problem and domain
     #[command(flatten)]
     plan_pb: PlanAndProblem,
+    /// If set, will print verbose output
+    #[arg(short, long)]
+    verbose: bool,
     /// If set, the plan is expected to be invalid,
     /// The process will exit with error code 1 if the plan is valid.
     #[arg(short, long)]
@@ -188,17 +191,19 @@ fn validate_plan(command: &Validate) -> Res<()> {
     // processed model (from planx)
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
-    println!("{model}");
-    println!("{plan:?}");
+    if command.verbose {
+        println!("\n===== Model ====\n\n{model}\n");
+        println!("\n===== Plan ====\n\n{plan}\n");
+    }
 
     let valid = validate::validate(&model, &plan, &command.options)?;
     if valid {
-        println!("Plan is valid!");
+        println!("VALID");
         if command.invalid {
             std::process::exit(1);
         }
     } else {
-        println!("INVALID plan!");
+        println!("INVALID");
         if !command.invalid {
             std::process::exit(1);
         }
@@ -213,10 +218,9 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
-    println!("{plan:?}");
+    println!("\n===== Plan ====\n\n{plan}\n");
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options)?;
-    todo!()
+    optimize_plan::optimize_plan(&model, &plan, &command.options)
 }
 
 fn repair(command: &DomRepair) -> Res<()> {
@@ -282,6 +286,10 @@ impl PlanAndProblem {
         } else {
             &pddl::find_domain_of(pb)?
         };
+
+        println!("> Domain: {}", dom.display());
+        println!("> Problem: {}", pb.display());
+        println!("> Plan: {}", plan.display());
 
         // raw PDDL model
         let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;

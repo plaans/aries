@@ -1,6 +1,7 @@
 use num_integer::lcm;
 
-use crate::core::{IntCst, Lit, VarRef};
+use crate::core::state::Evaluable;
+use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
 use crate::model::lang::{IAtom, IVar, ValidityScope};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
@@ -322,6 +323,22 @@ impl From<IAtom> for LinearSum {
     }
 }
 
+impl From<SignedVar> for LinearTerm {
+    fn from(value: SignedVar) -> Self {
+        LinearTerm {
+            factor: if value.is_plus() { 1 } else { -1 },
+            var: IVar::new(value.variable()),
+            denom: 1,
+        }
+    }
+}
+
+impl From<SignedVar> for LinearSum {
+    fn from(value: SignedVar) -> Self {
+        LinearSum::from(LinearTerm::from(value))
+    }
+}
+
 impl TryFrom<Atom> for LinearSum {
     type Error = ConversionError;
 
@@ -401,15 +418,65 @@ impl std::ops::Neg for LinearSum {
     }
 }
 
+impl TryFrom<LinearSum> for IAtom {
+    type Error = ();
+
+    fn try_from(value: LinearSum) -> Result<Self, Self::Error> {
+        let value = value.simplify();
+        if value.denom != 1 {
+            return Err(());
+        }
+        let var = if value.terms.is_empty() {
+            IVar::ZERO
+        } else if value.terms.len() == 1 {
+            let term = value.terms[0];
+            debug_assert_eq!(term.denom, 1);
+            if term.factor() == 1 {
+                term.var
+            } else {
+                return Err(());
+            }
+        } else {
+            return Err(());
+        };
+        Ok(var + value.constant)
+    }
+}
+
 use crate::transitive_conversion;
 
 use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
+transitive_conversion!(LinearSum, IVar, VarRef);
+
+impl Evaluable for LinearSum {
+    type Value = QCst;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        let mut sum = QCst::new(self.constant, self.denom);
+        for term in &self.terms {
+            // add the contribution of each term, BUT
+            // we shortcircuit and return None if the term is absent
+            sum += term.evaluate(solution)?;
+        }
+        Some(sum)
+    }
+}
+
+impl Evaluable for LinearTerm {
+    type Value = QCst;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        let var_value = self.var.evaluate(solution)?;
+        Some(QCst::new(self.factor, self.denom) * QCst::from_integer(var_value))
+    }
+}
 
 /* ========================================================================== */
 /*                                  LinearLeq                                 */
 /* ========================================================================== */
 
+#[derive(Clone)]
 pub struct LinearLeq {
     sum: LinearSum,
     ub: IntCst,

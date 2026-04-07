@@ -97,6 +97,7 @@ impl SimpleEffect {
         Effect {
             universal_quantification: vars,
             effect_expression: self,
+            span: None,
         }
     }
 
@@ -104,6 +105,7 @@ impl SimpleEffect {
         Effect {
             universal_quantification: Vec::new(),
             effect_expression: self,
+            span: None,
         }
     }
 }
@@ -130,6 +132,7 @@ pub struct Effect {
     /// Universally quantified variables in the effect expression
     pub universal_quantification: Vec<Param>,
     pub effect_expression: SimpleEffect,
+    pub span: Option<Span>,
 }
 
 impl Effect {
@@ -145,7 +148,14 @@ impl Effect {
         Self {
             universal_quantification: self.universal_quantification,
             effect_expression: self.effect_expression.with_condition(cond),
+            span: self.span,
         }
+    }
+
+    /// Set the span of the effect to be the same as `s`
+    pub fn with_span(mut self, s: impl Spanned) -> Self {
+        self.span = s.span().cloned();
+        self
     }
 }
 
@@ -160,5 +170,11 @@ impl<'a> Display for Env<'a, &Effect> {
             )?;
         }
         Ok(())
+    }
+}
+
+impl<'a> Spanned for Env<'a, &Effect> {
+    fn span(&self) -> Option<&Span> {
+        self.elem.span.as_ref()
     }
 }

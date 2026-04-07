@@ -1,5 +1,6 @@
 use aries::backtrack::Backtrack;
-use aries::core::state::{OptDomain, Term};
+use aries::core::state::OptDomain;
+use aries::core::views::Term;
 use aries::core::Lit;
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::alternative::Alternative;

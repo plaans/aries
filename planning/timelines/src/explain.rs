@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use aries::model::lang::FAtom;
 use aries::prelude::*;
 use aries::{
     backtrack::Backtrack,
@@ -32,12 +33,12 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 let l = if let Some(l) = trigger.get(&tag) {
                     *l
                 } else {
-                    let l = encoding.new_literal(Lit::TRUE);
+                    let l = encoding.new_literal(Lit::TRUE); // could we use the conjunctive scope directly?
                     assumptions_map.insert(l, tag.clone());
                     trigger.insert(tag, l);
                     l
                 };
-                c.enforce_if(l, sched, &mut encoding);
+                c.opt_enforce_if(l, sched, &mut encoding);
             } else {
                 c.enforce(sched, &mut encoding);
             }
@@ -49,17 +50,29 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
     }
 
-    /// Returns true if the model is satisfiable with all assumptions
-    pub fn check_satisfiability(&mut self) -> bool {
+    /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
+    pub fn check_satisfiability(&mut self) -> Option<Solution> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let res = self
             .solver
             .solve_with_assumptions(&assumptions, aries::solver::SearchLimit::None)
             .unwrap()
-            .is_ok();
-        self.solver.print_stats();
+            .ok();
+        // self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res
+    }
+    ///
+    /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
+    pub fn find_optimal(&mut self, obj: FAtom, on_new_solution: impl FnMut(&Solution)) -> Option<Solution> {
+        let assumptions = self.enablers.keys().copied().collect_vec();
+        let res = self
+            .solver
+            .minimize_with_assumptions(obj.num, &assumptions, aries::solver::SearchLimit::None, on_new_solution)
+            .unwrap();
+        // self.solver.print_stats();
+        self.solver.reset(); // TODO: this should not be needed
+        res.ok()
     }
 
     /// Returns an iterator over all MUS and MCS in the model.
@@ -69,6 +82,14 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         self.solver
             .mus_and_mcs_enumerator(&assumptions)
             .map(move |mm| mm.project(projection))
+    }
+
+    /// Returns an iterator over all MUS (Minimal Unsatifiable Subsets) in the model.
+    pub fn muses(&mut self) -> impl Iterator<Item = BTreeSet<T>> + '_ {
+        self.explain_unsat().filter_map(|mus_mcs| match mus_mcs {
+            MusMcs::Mus(mus) => Some(mus),
+            MusMcs::Mcs(_) => None,
+        })
     }
 
     /// Returns the smallest MCS over all assumptions

@@ -1,4 +1,4 @@
-use crate::core::state::Term;
+use crate::core::views::Term;
 use crate::core::*;
 use crate::model::lang::IVar;
 

@@ -1,16 +1,15 @@
-pub mod assignment;
 pub mod boxes;
 pub mod constraints;
 mod effects;
 pub mod explain;
+pub mod rational;
 pub mod symbols;
 pub mod tasks;
 
-use aries::model::extensions::DomainsExt;
+use aries::core::state::Evaluable;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
-use std::collections::HashMap;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
@@ -22,7 +21,6 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
-use crate::assignment::Assignment;
 pub use crate::effects::*;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
@@ -93,7 +91,6 @@ pub struct Sched {
     pub makespan: Time,
     pub tasks: Tasks,
     pub effects: Effects,
-    tags: HashMap<Atom, Vec<Tag>>,
     constraints: Vec<Constraint>,
 }
 
@@ -112,14 +109,8 @@ impl Sched {
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
-            tags: Default::default(),
-            constraints: vec![Box::new(EffectCoherence)], // TODO: add default constraints (consitency, makespan), ...
+            constraints: vec![Box::new(MakespanIsMaxTaskEnd), Box::new(EffectCoherence)],
         }
-    }
-
-    pub fn tag(&mut self, atom: impl Into<Atom>, tag: Tag) {
-        let atom = atom.into();
-        self.tags.entry(atom).or_default().push(tag);
     }
 
     pub fn add_task(&mut self, task: Task) -> TaskId {
@@ -127,7 +118,7 @@ impl Sched {
     }
 
     pub fn add_effect(&mut self, eff: Effect) -> EffectId {
-        self.effects.add_effect(eff, |var| self.model.int_bounds(var))
+        self.effects.add_effect(eff, &self.model)
     }
 
     pub fn new_timepoint(&mut self) -> Time {
@@ -153,10 +144,10 @@ impl Sched {
         encoding
     }
 
-    pub fn solve(&self) -> Option<Assignment> {
+    pub fn solve(&self) -> Option<Solution> {
         let encoding = self.encode();
         let mut solver = Solver::new(encoding);
-        solver.solve(SearchLimit::None).unwrap().map(Assignment::shared)
+        solver.solve(SearchLimit::None).unwrap()
     }
 
     pub fn explainable_solver<T: Ord + Clone>(
@@ -166,7 +157,8 @@ impl Sched {
         ExplainableSolver::new(self, project)
     }
 
-    pub fn print(&self, sol: &Assignment) {
+    pub fn print(&self, sol: &Solution) {
+        println!("==== tasks ====");
         let sorted_tasks = self
             .tasks
             .iter()
@@ -174,6 +166,20 @@ impl Sched {
             .sorted_by_cached_key(|t| sol.eval(t.start.num).unwrap());
         for t in sorted_tasks {
             println!("{}: {}", t.name, sol.eval(t.start.num).unwrap())
+        }
+        println!("==== Effects ====");
+        for e in self.effects.iter().sorted_by_key(|e| &e.state_var.fluent) {
+            if !sol.entails(e.prez) {
+                continue;
+            }
+            println!(
+                "{}: [{},{}] {:?} ...[{}]",
+                e.state_var.fluent,
+                e.transition_start.evaluate(sol).unwrap(),
+                e.transition_end.evaluate(sol).unwrap(),
+                e.operation,
+                e.mutex_end.evaluate(sol).unwrap(),
+            );
         }
     }
 }

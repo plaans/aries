@@ -21,6 +21,7 @@ impl Segment {
         Segment { first, last }
     }
 
+    /// A segment that spans all possible values
     pub fn all() -> Self {
         Self {
             first: IntCst::MIN,
@@ -28,10 +29,12 @@ impl Segment {
         }
     }
 
+    /// A segment that contains conly a specific value
     pub fn point(val: IntCst) -> Self {
         Self { first: val, last: val }
     }
 
+    /// A segment with no values.
     pub fn empty() -> Self {
         Self {
             first: IntCst::MAX,
@@ -61,7 +64,7 @@ impl From<(IntCst, IntCst)> for Segment {
     }
 }
 
-type Segments = SmallVec<[Segment; 5]>;
+pub(crate) type Segments = SmallVec<[Segment; 5]>;
 
 #[derive(Clone, Debug)]
 pub struct BBox {
@@ -83,6 +86,10 @@ impl BBox {
 
     pub fn as_ref<'a>(&'a self) -> BoxRef<'a> {
         BoxRef::new(&self.dimensions)
+    }
+
+    pub fn segments(&self) -> &[Segment] {
+        &self.dimensions
     }
 }
 /// An axis-aligned box, defined by its projection on all dimensions.
@@ -217,6 +224,10 @@ impl<World: Ord + Clone, Tag> BoxUniverse<World, Tag> {
             .get(world)
             .into_iter()
             .flat_map(move |w| w.find_overlapping_with(bx))
+    }
+
+    pub fn has_world(&self, world: &World) -> bool {
+        self.worlds.contains_key(world)
     }
 }
 

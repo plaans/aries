@@ -183,7 +183,8 @@ dependencies = [
  "aries",
  "env_param",
  "idmap",
- "itertools 0.14.0",
+ "itertools",
+ "num-rational",
  "smallvec",
  "tracing",
 ]

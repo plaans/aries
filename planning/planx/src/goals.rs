@@ -2,12 +2,16 @@ use std::fmt::Display;
 
 use itertools::Itertools;
 
-use crate::{Condition, Env, ExprId, Param, RealValue, Sym, TimeInterval, Timestamp};
+use crate::{
+    Condition, Env, ExprId, Param, RealValue, Sym, TimeInterval, Timestamp,
+    errors::{Span, Spanned},
+};
 
 #[derive(Debug, Clone)]
 pub struct Goal {
     pub universal_quantification: Vec<Param>,
     pub goal_expression: SimpleGoal,
+    pub span: Option<Span>,
 }
 
 impl<'a> Display for Env<'a, &Goal> {
@@ -21,6 +25,12 @@ impl<'a> Display for Env<'a, &Goal> {
             )?;
         }
         Ok(())
+    }
+}
+
+impl<'a> Spanned for Env<'a, &Goal> {
+    fn span(&self) -> Option<&Span> {
+        self.elem.span.as_ref()
     }
 }
 
@@ -66,6 +76,7 @@ impl SimpleGoal {
         Goal {
             universal_quantification: vars,
             goal_expression: self,
+            span: None,
         }
     }
 }

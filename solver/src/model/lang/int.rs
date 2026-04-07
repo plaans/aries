@@ -1,5 +1,4 @@
-use crate::core::state::Term;
-use crate::core::views::{Boundable, VarView};
+use crate::core::views::{Boundable, Term, VarView};
 use crate::core::*;
 use crate::model::lang::ConversionError;
 use crate::model::lang::linear::LinearTerm;
@@ -44,6 +43,11 @@ impl IVar {
 impl From<IVar> for VarRef {
     fn from(i: IVar) -> Self {
         i.0
+    }
+}
+impl From<VarRef> for IVar {
+    fn from(v: VarRef) -> Self {
+        IVar::new(v)
     }
 }
 
@@ -115,6 +119,12 @@ impl IAtom {
         var: IVar::ZERO,
         shift: 0,
     };
+    pub const ONE: IAtom = IAtom {
+        var: IVar::ZERO,
+        shift: 1,
+    };
+    pub const TRUE: IAtom = Self::ONE;
+    pub const FALSE: IAtom = Self::ZERO;
     pub fn new(var: IVar, shift: IntCst) -> IAtom {
         IAtom { var, shift }
     }
