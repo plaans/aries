@@ -1,5 +1,6 @@
 //! Module that re-export most commonly used types and traits to ease import.
 
+pub use crate::core::literals::Conjunction;
 pub use crate::core::state::Domains;
 pub use crate::core::state::Solution;
 pub use crate::core::{IntCst, Lit, SignedVar, VarRef};

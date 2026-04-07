@@ -290,7 +290,8 @@ pub fn encode_plan_optimization_problem(
             let metric = model.metric.unwrap();
             let obj = match metric {
                 planx::Metric::Minimize(expr_id) => {
-                    reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?
+                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?;
+                    flatten_expression(expr_id, lin_obj, model, &mut sched, &global_scope)?
                 }
                 planx::Metric::Maximize(_) => {
                     return Message::error("unsupported maximization metric").failed();
@@ -303,7 +304,7 @@ pub fn encode_plan_optimization_problem(
             let mut sum = LinearSum::zero();
             for (_a, scope) in &operations_scopes {
                 let action_prez = scope.presence;
-                sum += timelines::constraints::bool2int(action_prez, &sched.model)
+                sum += timelines::constraints::bool2int(action_prez, &mut sched.model)
             }
             reify_sum(sum, &mut sched)
         }

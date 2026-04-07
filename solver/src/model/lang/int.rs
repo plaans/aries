@@ -45,6 +45,11 @@ impl From<IVar> for VarRef {
         i.0
     }
 }
+impl From<VarRef> for IVar {
+    fn from(v: VarRef) -> Self {
+        IVar::new(v)
+    }
+}
 
 impl From<IVar> for SignedVar {
     fn from(value: IVar) -> Self {

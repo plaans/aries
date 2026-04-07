@@ -326,6 +326,7 @@ impl BoolExpr<Sched> for HasValueAt {
 /// Enforce that, if presence is true, then,
 ///  - exactly one of the alternatives is holds (call it a)
 ///  - for this alternative a , `value = a.base`
+/// ELEMENT
 fn bind_alternative(l: Lit, value: IAtom, presence: Lit, alternatives: &[AssignEstablisher], store: &mut dyn Store) {
     // println!("\n\n ===== bind alts ===== \n\n");
     // dbg!(value, presence, alternatives);
@@ -400,7 +401,7 @@ impl<'a> BoolExpr<Sched> for Exclusive<'a> {
 /// Transforms a boolean into an integer expression
 /// NOte: the implementation is currently incomplete
 #[doc(hidden)]
-pub fn bool2int(b: Lit, model: &dyn Store) -> LinearSum {
+pub fn bool2int(b: Lit, model: &mut dyn Store) -> LinearSum {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {
         1.into()
@@ -411,6 +412,8 @@ pub fn bool2int(b: Lit, model: &dyn Store) -> LinearSum {
     } else if is_zero_one && b == b.variable().leq(0) {
         LinearSum::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
     } else {
-        todo!() // cannot immediately reuse the variable, create a new one and bind it
+        let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
+        eq(bvar.geq(1), b).enforce(&(), model);
+        LinearSum::from(bvar)
     }
 }

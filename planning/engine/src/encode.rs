@@ -10,12 +10,13 @@ use aries::{
     model::lang::{
         FAtom,
         expr::{and, eq},
+        linear::LinearSum,
     },
     prelude::*,
     reif::ReifExpr,
 };
 use itertools::Itertools;
-use planx::{ExprId, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 use timelines::{
     Effect, EffectOp, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt, symbols::ObjectEncoding,
 };
@@ -74,6 +75,7 @@ pub fn condition_to_constraint(
     required_values: Option<&mut RequiredValues>,
 ) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
+    let timepoint = reify_timing(tp, model, sched, bindings)?;
     let constraint = match expr.expr() {
         planx::Expr::StateVariable(fluent_id, args) => {
             let fluent = model.env.fluents.get(*fluent_id);
@@ -89,7 +91,7 @@ pub fn condition_to_constraint(
             let c = HasValueAt {
                 state_var,
                 value: IAtom::TRUE,
-                timepoint: reify_timing(tp, model, sched, bindings)?,
+                timepoint,
                 prez: bindings.presence,
                 source: bindings.source,
             };
@@ -109,14 +111,20 @@ pub fn condition_to_constraint(
                         return expr.todo("unsupported").failed();
                     }
                 }
-                ConditionConstraint::Eq(a, b) => ConditionConstraint::Neq(a, b),
-                ConditionConstraint::Neq(a, b) => ConditionConstraint::Eq(a, b),
+                ConditionConstraint::EqZero(sum) => ConditionConstraint::NeqZero(sum),
+                ConditionConstraint::NeqZero(sum) => ConditionConstraint::EqZero(sum),
+                ConditionConstraint::LeqZero(_) => todo!(),
             }
         }
         planx::Expr::App(planx::Fun::Eq, exprs) if exprs.len() == 2 => {
-            let e1 = reify_sym(exprs[0], model, sched, bindings)?;
-            let e2 = reify_sym(exprs[1], model, sched, bindings)?;
-            ConditionConstraint::Eq(e1, e2)
+            let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
+            let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
+            ConditionConstraint::EqZero(e1 - e2)
+        }
+        planx::Expr::App(planx::Fun::Leq, exprs) if exprs.len() == 2 => {
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
+            ConditionConstraint::LeqZero(lhs - rhs)
         }
         _ => return Err(expr.todo("not supported")),
     };
@@ -129,9 +137,9 @@ pub fn condition_to_constraint(
                 let fluent_id = model.env.fluents.get_by_name(&c.state_var.fluent).unwrap();
                 reqs.add(fluent_id, c.value_box(&sched.model).as_ref());
             }
-            // not on a fluent and thus no need to update the required_values
-            ConditionConstraint::Eq(_, _) => {}
-            ConditionConstraint::Neq(_, _) => {}
+            ConditionConstraint::EqZero(_) => {} // TODO: are those handled in reifications?
+            ConditionConstraint::NeqZero(_) => {}
+            ConditionConstraint::LeqZero(_) => {} //TODO
         }
     }
     Ok(constraint)
@@ -316,23 +324,27 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
     }
 }
 
-pub fn reify_sym(e: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
-    reify_expression(e, None, model, sched, binding)
+pub fn reify_sym(eid: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
+    reify_expression(eid, None, model, sched, binding).and_then(|e| flatten_expression(eid, e, model, sched, binding))
 }
 
 pub fn reify_constant(e: ExprId, model: &Model, sched: &mut Sched, scope: &Scope) -> Res<IntCst> {
     let reif = reify_expression(e, None, model, sched, scope)?;
+    let reif = flatten_expression(e, reif, model, sched, scope)?;
     let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
     Ok(cst)
 }
 
+pub type LinExpr = LinearSum;
+
+// todo: add required_value!
 pub fn reify_expression(
     e: ExprId,
     time: Option<Time>,
     model: &Model,
     sched: &mut Sched,
     binding: &Scope,
-) -> Res<IAtom> {
+) -> Res<LinExpr> {
     let e = model.env.node(e);
     use planx::Expr::*;
     match e.expr() {
@@ -351,12 +363,13 @@ pub fn reify_expression(
                 .objects
                 .object_id(object.name().canonical_str())
                 .ok_or_else(|| e.invalid("Object has no associated value"))?;
-            Ok(SymAtom::from(id))
+            Ok(id.into())
         }
         planx::Expr::Param(param) => binding
             .args
             .get(param.name().canonical_str())
             .copied()
+            .map(|id| id.into())
             .ok_or_else(|| param.name().invalid("unknown parameter")),
         StateVariable(fluent, args) => {
             let Some(time) = time else {
@@ -370,7 +383,10 @@ pub fn reify_expression(
                 .new_optional_ivar(INT_CST_MIN, INT_CST_MAX, binding.presence, "");
             let reified_args = args
                 .iter()
-                .map(|&arg| reify_expression(arg, Some(time), model, sched, binding))
+                .map(|&arg| {
+                    reify_expression(arg, Some(time), model, sched, binding)
+                        .and_then(|arg_expr| flatten_expression(arg, arg_expr, model, sched, binding))
+                })
                 .collect::<Res<Vec<IAtom>>>()?;
             let state_var = StateVar {
                 fluent: fluent.name().to_string(),
@@ -386,6 +402,23 @@ pub fn reify_expression(
             sched.add_constraint(binding);
             Ok(reified_var.into())
         }
+        planx::Expr::App(Fun::Plus, args) => {
+            let mut sum = LinearSum::zero();
+            for arg in args {
+                sum += reify_expression(*arg, time, model, sched, binding)?;
+            }
+            Ok(sum)
+        }
+        planx::Expr::App(Fun::Minus, args) if args.len() == 2 => {
+            let mut sum = LinearSum::zero();
+            sum += reify_expression(args[0], time, model, sched, binding)?;
+            sum -= reify_expression(args[1], time, model, sched, binding)?;
+            Ok(sum)
+        }
         _ => e.todo(format!("not supported [{e}]")).failed(),
     }
+}
+
+pub fn flatten_expression(eid: ExprId, e: LinExpr, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IAtom> {
+    IAtom::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
 }
