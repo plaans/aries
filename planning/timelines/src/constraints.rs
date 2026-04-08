@@ -208,6 +208,9 @@ struct StepContributor {
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("HasValueAt");
+        let _span = _span.enter();
+        tracing::debug!("{l:?} => {self:?}");
         // cheap clone to please the borrow checker
         let sched: std::sync::Arc<Sched> = ctx.sched.clone();
 
@@ -227,6 +230,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         //   - same state variable
         let mut step_contributors = Vec::new();
         for &eff in &relevant_effects {
+            let _span = tracing::debug_span!("Step");
+            let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
             let EffectOp::Step(step) = eff.operation else {
                 continue;
@@ -255,6 +260,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         // compute assign establisehrs. Those are exclusive (by effect coherence) so half reification is sufficient
         let mut establishers = Element::new();
         for &eff in &relevant_effects {
+            let _span = tracing::debug_span!("Establisher");
+            let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
             let EffectOp::Assign(assignment) = eff.operation else {
                 continue;
@@ -276,51 +283,59 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             }
         }
 
-        if step_contributors.is_empty() {
-            // note: if there are no steps, we can use self.value as the base_variable (which is equivalent to the previous encoding?)
-            establishers.enforce_eq_if(l, self.value, ctx);
-        } else {
-            // Create a `base_variable` that will take the value of the selected establisher
-            // has a base_variable = alternative { e in assign_establishers }
-            let base_var = establishers.reify([self.prez], ctx);
+        {
+            let _span = tracing::debug_span!("main");
+            let _span = _span.enter();
+            if step_contributors.is_empty() {
+                // there are no steps, we can use self.value as the base_variable (which is equivalent to the previous encoding?)
+                establishers.enforce_eq_if(l, self.value, ctx);
+            } else {
+                // Create a `base_variable` that will take the value of the selected establisher
+                // has a base_variable = alternative { e in assign_establishers }
+                let base_var = establishers.reify([self.prez], ctx);
 
-            // and self.value = base_variable + Sum { step contirbutions }
-            let lhs = LinearSum::from(self.value);
-            let mut rhs = LinearSum::from(base_var);
-            for step in step_contributors {
-                rhs += bool2int(step.contributes, ctx) * step.contribution;
+                // and self.value = base_variable + Sum { step contirbutions }
+                let lhs = LinearSum::from(self.value);
+                let mut rhs = LinearSum::from(base_var);
+                for step in step_contributors {
+                    rhs += bool2int(step.contributes, ctx) * step.contribution;
+                }
+                lhs.clone().leq(rhs.clone()).enforce(ctx);
+                lhs.geq(rhs).enforce(ctx);
             }
-            lhs.clone().leq(rhs.clone()).enforce(ctx);
-            lhs.geq(rhs).enforce(ctx);
         }
 
-        // PDDL mutex: a condition of an action cannot rely on a fact that is about to be modified by another action
-        // given the interval `[cond.start, cond.end]`, we ensure it does not meet the interval `[eff.transition_start, eff.transition_end)`
-        // for any effect `eff` with a different source
-        let itv_cond = IntervalOnStateVariable {
-            state_var: &self.state_var,
-            start: self.timepoint,
-            end: self.timepoint,
-            presence: self.prez,
-        };
-        for eff_id in sched
-            .effects
-            .potentially_overlapping_transitions(&self.state_var.fluent, value_box.as_ref())
         {
-            // TODO: mutex when considering steps?
-            let eff = &sched.effects[eff_id];
-            if eff.source != self.source {
-                let itv_eff = IntervalOnStateVariable {
-                    state_var: &eff.state_var,
-                    start: eff.transition_start,
-                    end: eff.transition_end - FAtom::EPSILON,
-                    presence: eff.prez,
-                };
-                let exclu = Exclusive {
-                    a: &itv_cond,
-                    b: &itv_eff,
-                };
-                exclu.opt_enforce_if(l, ctx);
+            let _span = tracing::debug_span!("PDDL Mutex");
+            let _span = _span.enter();
+            // PDDL mutex: a condition of an action cannot rely on a fact that is about to be modified by another action
+            // given the interval `[cond.start, cond.end]`, we ensure it does not meet the interval `[eff.transition_start, eff.transition_end)`
+            // for any effect `eff` with a different source
+            let itv_cond = IntervalOnStateVariable {
+                state_var: &self.state_var,
+                start: self.timepoint,
+                end: self.timepoint,
+                presence: self.prez,
+            };
+            for eff_id in sched
+                .effects
+                .potentially_overlapping_transitions(&self.state_var.fluent, value_box.as_ref())
+            {
+                // TODO: mutex when considering steps?
+                let eff = &sched.effects[eff_id];
+                if eff.source != self.source {
+                    let itv_eff = IntervalOnStateVariable {
+                        state_var: &eff.state_var,
+                        start: eff.transition_start,
+                        end: eff.transition_end - FAtom::EPSILON,
+                        presence: eff.prez,
+                    };
+                    let exclu = Exclusive {
+                        a: &itv_cond,
+                        b: &itv_eff,
+                    };
+                    exclu.opt_enforce_if(l, ctx);
+                }
             }
         }
     }

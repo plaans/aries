@@ -70,10 +70,16 @@ impl Hash for Fluent {
 
 pub type SymAtom = IAtom;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct StateVar {
     pub fluent: Sym,
     pub args: Vec<SymAtom>,
+}
+
+impl Debug for StateVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{:?}", self.fluent, self.args)
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]

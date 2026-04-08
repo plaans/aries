@@ -81,6 +81,8 @@ pub struct EqElement {
 
 impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+        let _span = tracing::debug_span!("EqElement");
+        let _span = _span.enter();
         // make sure that the implicant's scope is large enough
         ctx.add_assertion(implies(ctx.presence_literal(l), ctx.presence_literal(self.variable)));
 
