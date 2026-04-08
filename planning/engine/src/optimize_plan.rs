@@ -26,7 +26,7 @@ pub struct Options {
     #[arg(short, long, num_args(1..))]
     pub relaxation: Vec<Relaxation>,
 
-    #[arg(short, long, default_value("plan-length"))]
+    #[arg(short, long, default_value("original"))]
     pub objective: Objective,
 }
 
