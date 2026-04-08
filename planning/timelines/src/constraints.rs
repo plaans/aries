@@ -34,6 +34,9 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
             .collect_vec();
         ends.push(IAtom::ZERO); // default value when no task is present
         EqMax::new(ctx.sched.makespan.num, ends).enforce_if(l, ctx);
+
+        // enforce the horizon to be after the end of all actions
+        f_leq(ctx.sched.makespan, ctx.sched.horizon).enforce_if(l, ctx);
     }
 
     fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
@@ -93,6 +96,9 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
             f_leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx);
             // WARN: this is not guarded by the effect presence (assumption is that that the mutex end has the same scope as the effect)
             f_leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx);
+
+            // enforce that the horizon is after all effects
+            f_leq(e.mutex_end, ctx.sched.horizon).opt_enforce_if(l, ctx);
         }
 
         // two phases coherence enforcement (between assignments only):
