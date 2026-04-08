@@ -1,12 +1,6 @@
-use std::{
-    collections::BTreeMap,
-    time::Instant,
-};
+use std::{collections::BTreeMap, time::Instant};
 
-use aries::{
-    core::state::Evaluable,
-    prelude::*,
-};
+use aries::{core::state::Evaluable, prelude::*};
 use aries_plan_engine::{
     encode::{
         encoding::Encoding,
@@ -92,7 +86,10 @@ pub fn encode_finite_planning_problem(
         model,
         lifted_plan,
         &optimize_plan::Options {
-            relaxation: vec![optimize_plan::Relaxation::ActionPresence, optimize_plan::Relaxation::StartTime],
+            relaxation: vec![
+                optimize_plan::Relaxation::ActionPresence,
+                optimize_plan::Relaxation::StartTime,
+            ],
             objective,
         },
     )

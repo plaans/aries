@@ -1,7 +1,7 @@
 pub(crate) mod ctags;
+mod generate;
 pub(crate) mod optimize_plan;
 mod repair;
-mod generate;
 mod validate;
 
 use std::path::PathBuf;
