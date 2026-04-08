@@ -1,6 +1,7 @@
 pub(crate) mod ctags;
 pub(crate) mod optimize_plan;
 mod repair;
+mod generate;
 mod validate;
 
 use std::path::PathBuf;
@@ -45,6 +46,9 @@ enum Commands {
     Validate(Validate),
     /// Plan optimization: specify an input plan, metrics and relaxation options and get an optmized plan.
     OptimizePlan(OptimizePlan),
+    /// (Finite) planning problem solving (plan generation):
+    /// find a solution plan using, at most, a given finite number of action instances for each template (schema).
+    SolveFinite(SolveFiniteProblem),
     /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
     FindDomain(FindDomain),
@@ -99,6 +103,15 @@ pub struct OptimizePlan {
 }
 
 #[derive(Parser, Debug)]
+pub struct SolveFiniteProblem {
+    /// Expanded to provide command line options to get the problem and domain
+    #[command(flatten)]
+    pb: Problem,
+    #[command(flatten)]
+    options: generate::Options,
+}
+
+#[derive(Parser, Debug)]
 pub struct DomRepair {
     /// Expanded to provide command line options to get the plan, problem and domain
     #[command(flatten)]
@@ -121,6 +134,7 @@ fn main() -> Res<()> {
         Commands::FindDomain(command) => find_domain(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
+        Commands::SolveFinite(command) => solve_finite_problem(command)?,
         Commands::DomRepair(command) => repair(command)?,
     }
 
@@ -223,6 +237,16 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     optimize_plan::optimize_plan(&model, &plan, &command.options)
 }
 
+fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
+    let (dom, pb) = command.pb.parse()?;
+
+    // processed model (from planx)
+    let model = pddl::build_model(&dom, &pb)?;
+    println!("{model}");
+
+    generate::solve_finite_planning_problem(&model, &command.options)
+}
+
 fn repair(command: &DomRepair) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
@@ -296,5 +320,40 @@ impl PlanAndProblem {
         let pb = pddl::parse_pddl_problem(Input::from_file(pb)?)?;
         let plan = pddl::parse_plan(Input::from_file(plan)?)?;
         Ok((dom, pb, plan))
+    }
+}
+
+/// Structure that specifies a problem file and (optionnally) a domain file.
+#[derive(::clap::Args, Debug)]
+pub struct Problem {
+    /// Path to the PDDL problem file.
+    problem: PathBuf,
+    /// Path to the PDDL domain file.
+    /// If not specified, we will attempt to automatically infer it based on the plan file.
+    #[arg(short, long)]
+    domain: Option<PathBuf>,
+}
+impl Problem {
+    /// Parses the domain and problem and returns them.
+    /// If the the domain is not specified, the method will attempt to infer
+    /// it from naming conventions.
+    pub fn parse(&self) -> Res<(pddl::Domain, pddl::Problem)> {
+        let pb = &self.problem;
+        if !self.problem.exists() {
+            return Err(Message::error(format!("Problem file does not exist: {}", pb.display())));
+        }
+        let dom = if let Some(dom) = &self.domain {
+            dom
+        } else {
+            &pddl::find_domain_of(pb)?
+        };
+
+        println!("> Domain: {}", dom.display());
+        println!("> Problem: {}", pb.display());
+
+        // raw PDDL model
+        let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;
+        let pb = pddl::parse_pddl_problem(Input::from_file(pb)?)?;
+        Ok((dom, pb))
     }
 }
