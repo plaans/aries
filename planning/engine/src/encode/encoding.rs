@@ -13,7 +13,7 @@ pub struct Encoding {
     /// All actions instances that may appear in the plan.
     pub actions: Vec<ActionInstance>,
     /// Variable encoding the objective value (minimization)
-    pub objective: Option<FAtom>,
+    pub objective: Vec<FAtom>,
     /// for each relaxable constraint, stores a constraint tag so that we can later decide if it should be relaxed.
     pub constraints_tags: BTreeMap<ConstraintID, Tag>,
 }
@@ -22,7 +22,7 @@ impl Encoding {
     pub fn new() -> Self {
         Encoding {
             actions: vec![],
-            objective: None,
+            objective: vec![],
             constraints_tags: Default::default(),
         }
     }
@@ -32,7 +32,7 @@ impl Encoding {
     }
 
     pub fn set_objective(&mut self, objective: impl Into<FAtom>) {
-        self.objective = Some(objective.into())
+        self.objective.push(objective.into())
     }
 
     /// Extracts the plan corresponding to this solution.

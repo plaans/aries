@@ -62,10 +62,19 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         self.solver.reset(); // TODO: this should not be needed
         res
     }
-    ///
-    /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
-    pub fn find_optimal(&mut self, obj: FAtom, on_new_solution: impl FnMut(&Solution)) -> Option<Solution> {
-        let assumptions = self.enablers.keys().copied().collect_vec();
+
+    /// Find an optimal solution with all assumptions enforced.
+    /// The method accepts an additional set of assumptions `assumptions` that will be assumed in all solutions.
+    pub fn find_optimal(
+        &mut self,
+        obj: FAtom,
+        on_new_solution: impl FnMut(&Solution),
+        mut assumptions: Vec<Lit>,
+    ) -> Option<Solution> {
+        // add assumptions for detecting unsatifable constraints
+        for &enabler in self.enablers.keys() {
+            assumptions.push(enabler);
+        }
         let res = self
             .solver
             .minimize_with_assumptions(obj.num, &assumptions, aries::solver::SearchLimit::None, on_new_solution)

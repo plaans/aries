@@ -18,6 +18,7 @@ use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
 use timelines::{ConstraintID, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst};
+use aries::core::views::Boundable;
 
 pub type RelaxableConstraint = Tag;
 
@@ -26,8 +27,8 @@ pub struct Options {
     #[arg(short, long, num_args(1..))]
     pub relaxation: Vec<Relaxation>,
 
-    #[arg(short, long, default_value("original"))]
-    pub objective: Objective,
+    #[arg(short, long, num_args(1..), default_values(["original"]))]
+    pub objectives: Vec<Objective>,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, PartialOrd, Eq, Ord)]
@@ -46,28 +47,74 @@ pub enum Objective {
 
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res<()> {
     let start = Instant::now();
+    // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, options)?;
-
     let _encoding_time = start.elapsed().as_millis();
 
-    let objective = encoding.objective.unwrap(); //TODO: error message
+    // Pinning literals from previous phases; grows as objectives are solved
+    let mut phase_assumptions: Vec<Lit> = vec![];
+    let mut last_solution = None;
 
-    let print = |sol: &Solution| {
-        println!("==== Plan (objective: {}) =====", objective.evaluate(sol).unwrap());
-        println!("{}\n", encoding.plan(sol));
-    };
+    // Solve objectives lexicographically: each phase fixes the previous optimal values
+    for objective in encoding.objective.iter() {
+        // Minimize objective under normal constraints + previous pinnings
+        let Some(sol) = solver.find_optimal(*objective, |_| {}, phase_assumptions.clone()) else {
+            println!("No solution !!!!");
+            for mus in solver.muses() {
+                let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
+                println!("\n{msg}\n");
+            }
+            return Ok(());
+        };
 
-    if let Some(solution) = solver.find_optimal(objective, &print) {
-        println!("\n> Found optimal solution:");
-        print(&solution);
-    } else {
-        println!("No solution !!!!");
-        for mus in solver.muses() {
-            let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
-            println!("\n{msg}\n");
-        }
+        // Pin objective == opt_val for subsequent phases (upper + lower bound)
+        let opt_val = sol.eval(objective.num).unwrap();
+        phase_assumptions.push(objective.num.leq(opt_val));         // objective ≤ opt_val
+        phase_assumptions.push(!objective.num.leq(opt_val - 1));    // objective ≥ opt_val
+        last_solution = Some(sol);
     }
+
+    if let Some(solution) = last_solution {
+        let last_objective = encoding.objective.last().unwrap();
+        println!("==== Plan (objective: {}) =====\n", last_objective.evaluate(&solution).unwrap());
+        println!("{}\n", encoding.plan(&solution));
+    }
+
     Ok(())
+}
+
+fn build_objective(
+    objective: &Objective,
+    model: &Model,
+    sched: &mut Sched,
+    operations_scopes: &[(&planx::Action, Scope)], // <-- necesario para PlanLength
+    global_scope: &Scope,
+) -> Res<FAtom> {
+    Ok(match objective {
+        Objective::Original if model.metric.is_some() => {
+            // TODO: is if let guard when stabilized
+            let metric = model.metric.unwrap();
+            match metric {
+                planx::Metric::Minimize(expr_id) => {
+                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, sched, global_scope)?;
+                    let obj = flatten_expression(expr_id, lin_obj, model, sched, global_scope)?;
+                    FAtom::new(obj, 1)
+                }
+                planx::Metric::Maximize(_) => {
+                    return Message::error("unsupported maximization metric").failed();
+                }
+            }
+        }
+        // Fall back to plan length when no metric is defined in the domain
+        Objective::PlanLength | Objective::Original => {
+            let mut sum = LinearSum::zero();
+            for (_a, scope) in operations_scopes {
+                sum += timelines::constraints::bool2int(scope.presence, &mut sched.model);
+            }
+            reify_sum(sum, sched)
+        }
+        Objective::Makespan => sched.makespan,
+    })
 }
 
 pub fn encode_plan_optimization_problem(
@@ -210,7 +257,8 @@ pub fn encode_plan_optimization_problem(
         // store the scopes, we will need them when processing the effects
         operations_scopes.push((a, bindings));
     }
-    // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
+
+    // for each goal, add a constraint stating it must hold (the constraint is tagged but not relaxed for domain repair)
     for (gid, x) in model.goals.iter().enumerate() {
         assert!(x.universal_quantification.is_empty());
         match x.goal_expression {
@@ -238,7 +286,7 @@ pub fn encode_plan_optimization_problem(
     // make it immutable, we will start exploiting and want to guard against any addition
     let required_values = required_values;
 
-    // enforce all elemts of the initial state as effects
+    // enforce all elements of the initial state as effects
     for x in &model.init {
         let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
         sched.add_effect(eff);
@@ -260,7 +308,7 @@ pub fn encode_plan_optimization_problem(
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
             let eff = convert_effect(x, true, model, &mut sched, bindings)?;
-            // store the effect either in hte global pool or in the predicate specific one
+            // store the effect either in the global pool or in the predicate specific one
             let is_predicate = model
                 .env
                 .fluents
@@ -284,36 +332,14 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    let objective: FAtom = match options.objective {
-        Objective::Original if model.metric.is_some() => {
-            // TODO: is if let guard when stabilized
-            let metric = model.metric.unwrap();
-            let obj = match metric {
-                planx::Metric::Minimize(expr_id) => {
-                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?;
-                    flatten_expression(expr_id, lin_obj, model, &mut sched, &global_scope)?
-                }
-                planx::Metric::Maximize(_) => {
-                    return Message::error("unsupported maximization metric").failed();
-                }
-            };
-            FAtom::new(obj, 1)
-        }
-        // use plan-length as default when no metric is specified
-        Objective::PlanLength | Objective::Original => {
-            let mut sum = LinearSum::zero();
-            for (_a, scope) in &operations_scopes {
-                let action_prez = scope.presence;
-                sum += timelines::constraints::bool2int(action_prez, &mut sched.model)
-            }
-            reify_sum(sum, &mut sched)
-        }
-        Objective::Makespan => sched.makespan,
-    };
-    encoding.set_objective(objective);
-
     let tags = encoding.constraints_tags.clone();
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
+
+    // Build all objectives
+    for obj in &options.objectives {
+        let obj = build_objective(obj, model, &mut sched, &operations_scopes, &global_scope)?;
+        encoding.set_objective(obj);
+    }
 
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
