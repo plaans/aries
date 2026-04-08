@@ -5,6 +5,7 @@ use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
 use crate::model::lang::{IAtom, IVar, ValidityScope};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 /* ========================================================================== */
 /*                                 LinearTerm                                 */
@@ -566,7 +567,7 @@ impl std::ops::Neg for NFLinearSumItem {
 /*                                 NFLinearLeq                                */
 /* ========================================================================== */
 
-#[derive(Eq, PartialEq, Hash, Debug, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone)]
 pub struct NFLinearLeq {
     pub sum: Vec<NFLinearSumItem>,
     pub upper_bound: IntCst,
@@ -597,6 +598,12 @@ impl std::fmt::Display for NFLinearLeq {
             }
         }
         write!(f, " <= {}", self.upper_bound)
+    }
+}
+
+impl Debug for NFLinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
     }
 }
 
