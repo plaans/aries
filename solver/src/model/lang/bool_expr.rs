@@ -1,89 +1,20 @@
 use crate::{
-    core::{IntCst, Lit, VarRef, views::Dom},
-    model::{
-        Label, Model,
-        lang::{
-            expr::{And, Leq, Or, or},
-            linear::LinearLeq,
-            max::{EqMax, EqMin},
-        },
+    model::lang::{
+        expr::{And, Leq, Or, or},
+        max::{EqMax, EqMin},
+        *,
     },
     prelude::*,
     reif::ReifExpr,
 };
 
-pub trait Store: Dom {
-    fn new_literal(&mut self, presence: Lit) -> Lit;
-    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef;
-    fn get_implicant(&mut self, e: ReifExpr) -> Lit;
-    fn add_implies(&mut self, l: Lit, e: ReifExpr);
-    // fn bounds(&self, var: VarRef) -> (IntCst, IntCst);
-    // fn entails(&self, l: Lit) -> bool;
-
-    // /// Returns the literal indicating whether the variable is present.
-    // ///
-    // /// See [`presence`] for a more general version.
-    // fn presence_of_var(&self, var: VarRef) -> Lit;
-    fn conjunctive_scope(&mut self, lits: &[Lit]) -> Lit;
-    fn tautology_of_scope(&mut self, scope: Lit) -> Lit;
-
-    // /// Returns the literal indicate the whether the term is present.
-    // ///
-    // /// Note: this method is not dyn-compatible.
-    // /// [`presence_of_var`] may be used as a more verbose fall-back.
-    // fn presence(&self, var: impl Term) -> Lit
-    // where
-    //     Self: Sized,
-    // {
-    //     self.presence_of_var(var.variable())
-    // }
-}
-
-pub trait ModelWrapper {
-    type Lbl: Label;
-    fn get_model(&self) -> &Model<Self::Lbl>;
-    fn get_model_mut(&mut self) -> &mut Model<Self::Lbl>;
-}
-impl<L: Label> ModelWrapper for Model<L> {
-    type Lbl = L;
-
-    fn get_model(&self) -> &Model<Self::Lbl> {
-        self
-    }
-
-    fn get_model_mut(&mut self) -> &mut Model<Self::Lbl> {
-        self
-    }
-}
-
-impl<T> Store for T
-where
-    T: ModelWrapper + Dom,
-{
-    fn new_literal(&mut self, presence: Lit) -> Lit {
-        self.get_model_mut().state.new_optional_var(0, 1, presence).geq(1)
-    }
-    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
-        self.get_model_mut().state.new_optional_var(lb, ub, presence)
-    }
-    fn get_implicant(&mut self, e: ReifExpr) -> Lit {
-        self.get_model_mut().half_reify(e.clone())
-    }
-
-    fn add_implies(&mut self, l: Lit, e: ReifExpr) {
-        //println!("[{:?}] {l:?} -> {e:?}", self.presence(l)); // TODO: remove
-        self.get_model_mut().enforce_if(l, e);
-    }
-
-    fn conjunctive_scope(&mut self, presence_variables: &[Lit]) -> Lit {
-        self.get_model_mut().get_conjunctive_scope(presence_variables)
-    }
-    fn tautology_of_scope(&mut self, scope: Lit) -> Lit {
-        self.get_model_mut().get_tautology_of_scope(scope)
-    }
-}
+/// Representation of a boolean expression, that can be reified, made conditional or enforced
+/// in a [`Model`].
 pub trait BoolExpr<Ctx: Store> {
-    fn enforce_if(&self, l: Lit, ctx: &mut Ctx);
+    /// Enforce the expression to be true when `implicant` is true and defined.
+    ///
+    /// IMPORTANT: it must be the case that expression is defined whenever `implicant` is.
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx);
 
     /// Returns a set of literals that must all be true for the expression to be valid.
     /// The list is interpreted as a set: order and redundant elements are ignored.
@@ -92,6 +23,8 @@ pub trait BoolExpr<Ctx: Store> {
     ///   - (a < b) would have a conjunctive scope `[prez(a), prez(b)]` as it is only valid when both
     ///     a and b are present. The conjunctive scope is thus the list their presence variable.
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction; // TODO: should be Conjunction
+
+    /// Return a single literal that is true iff all leterals of the conjunctive scope are true.
     fn scope(&self, ctx: &mut Ctx) -> Lit {
         let conj_scope = self.conj_scope(ctx);
         ctx.conjunctive_scope(&conj_scope)
@@ -109,12 +42,19 @@ pub trait BoolExpr<Ctx: Store> {
         };
         self.enforce_if(implicant, ctx);
     }
+
+    /// Half-reifies the expression, posting a constraint that is
+    /// enforces the expression to be true whenever the return literal is.
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
         let scope = self.scope(ctx);
         let implicant = ctx.new_literal(scope);
         self.enforce_if(implicant, ctx);
         implicant
     }
+
+    /// Fully reifies the expression into a literal.
+    ///
+    /// Note that for this to be possible, it must be possible to build the logical negation of the expression.
     fn reified<'a, NotSelf>(&'a self, ctx: &mut Ctx) -> Lit
     where
         Self: Sized,
@@ -126,6 +66,8 @@ pub trait BoolExpr<Ctx: Store> {
         negated.enforce_if(!implicant, ctx);
         implicant
     }
+
+    /// Enforces that the expression is true whenever it is defined.
     fn enforce(&self, ctx: &mut Ctx) {
         self.opt_enforce_if(Lit::TRUE, ctx);
     }
@@ -143,8 +85,7 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
         (*self).implicant(ctx)
     }
 
-    //TODO: - check that we call the right one
-    //      - implement all other methods to make sure we use the most specific implementation
+    //TODO: implement all other methods to make sure we use the most specific implementation
 }
 
 impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
@@ -198,52 +139,12 @@ macro_rules! impl_reif {
     };
 }
 
-pub fn exclu_choice<T>(alt1: T, alt2: T) -> ExclusiveChoice<T> {
-    ExclusiveChoice { alt1, alt2 }
-}
-
-/// Represent a choice between two incompatible choices.
-/// `ExclusiveChoice(a, b) <=> a or b` however it is in addition known
-/// that  `(a -> !b) and (b -> !a)` (i.e. the two choices are mutually exclusive).
-///
-/// When enforced (half-reified to an always true literal),
-/// we can thus create a single variable `l` and impose:
-///   - `l -> a`
-///   - `!l -> b`
-pub struct ExclusiveChoice<T> {
-    /// First alternative (exclusive to the second one)
-    alt1: T,
-    /// Second alternative (exclusive to the first one)
-    alt2: T,
-}
-
-impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
-    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        if ctx.entails(l) {
-            // a tautolgy, create a single variable representing both options
-            let choice_var = ctx.new_literal(ctx.presence_literal(l));
-            self.alt1.opt_enforce_if(choice_var, ctx);
-            self.alt2.opt_enforce_if(!choice_var, ctx);
-        } else {
-            // no optimisation possible, resort to general formulation
-            let a = self.alt1.implicant(ctx);
-            let b = self.alt2.implicant(ctx);
-            or([a, b]).opt_enforce_if(l, ctx);
-        }
-    }
-    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        let mut sa = self.alt1.conj_scope(ctx).into_lits();
-        let sb = self.alt2.conj_scope(ctx);
-        sa.extend_from_slice(&sb);
-        sa.into()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
-        core::views::Term,
+        core::views::{Dom, Term},
         model::{
+            Label,
             extensions::DomainsExt,
             lang::{
                 Atom, IAtom,

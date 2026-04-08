@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use aries::model::lang::hreif::ModelWrapper;
+use aries::model::lang::ModelWrapper;
 
 use crate::*;
 

@@ -1,4 +1,6 @@
-use aries::core::literals::{ConjunctionBuilder, Disjunction};
+use aries::core::literals::ConjunctionBuilder;
+use aries::model::lang::element::Element;
+use aries::model::lang::exclusive_choice::exclu_choice;
 use aries::model::lang::expr::And;
 use aries::model::lang::linear::LinearSum;
 use aries::prelude::*;
@@ -6,7 +8,6 @@ use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
     model::lang::{
         expr::{and, eq, f_geq, f_leq, f_lt, neq, or},
-        hreif::{BoolExpr, Store, exclu_choice},
         max::EqMax,
     },
 };
@@ -204,11 +205,6 @@ struct StepContributor {
     contributes: Lit,
     contribution: IntCst,
 }
-#[derive(Debug)]
-struct AssignEstablisher {
-    establishes: Lit,
-    base: IntCst,
-}
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
@@ -217,13 +213,18 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
 
         let value_box = self.value_box(&*ctx);
 
-        // gathers all effect that may contribute to the value
+        // all effects (assign or steps) that may contribute to the value
         let relevant_effects = sched
             .effects
             .potentially_supporting_effects(&self.state_var.fluent, value_box.as_ref())
             .map(|eff_id| &sched.effects[eff_id])
             .collect_vec();
 
+        // gather all step effects that may contribute and
+        // create a literal that it is true iff it does contribute
+        //   - effect is present, and
+        //   - condition within activity period, and
+        //   - same state variable
         let mut step_contributors = Vec::new();
         for &eff in &relevant_effects {
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -252,7 +253,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         }
 
         // compute assign establisehrs. Those are exclusive (by effect coherence) so half reification is sufficient
-        let mut establishers = Vec::with_capacity(16);
+        let mut establishers = Element::new();
         for &eff in &relevant_effects {
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
             let EffectOp::Assign(assignment) = eff.operation else {
@@ -271,24 +272,17 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             if !conjuncts.absurd() {
                 let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
-                establishers.push(AssignEstablisher {
-                    establishes,
-                    base: assignment,
-                });
+                establishers.add_option(establishes, assignment);
             }
         }
 
         if step_contributors.is_empty() {
-            bind_alternative(l, self.value, self.prez, &establishers, ctx);
+            // note: if there are no steps, we can use self.value as the base_variable (which is equivalent to the previous encoding?)
+            establishers.enforce_eq_if(l, self.value, ctx);
         } else {
-            // note: if there are not steps, we can use self.value as the base_variable (which is equivalent to the previous encoding?)
-
             // Create a `base_variable` that will take the value of the selected establisher
             // has a base_variable = alternative { e in assign_establishers }
-            let base_lb = establishers.iter().map(|e| e.base).min().unwrap_or(0);
-            let base_ub = establishers.iter().map(|e| e.base).max().unwrap_or(0);
-            let base_var: IAtom = ctx.new_optional_var(base_lb, base_ub, self.prez).into();
-            bind_alternative(l, base_var, self.prez, &establishers, ctx);
+            let base_var = establishers.reify([self.prez], ctx);
 
             // and self.value = base_variable + Sum { step contirbutions }
             let lhs = LinearSum::from(self.value);
@@ -333,35 +327,6 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
 
     fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
         [self.prez].into()
-    }
-}
-
-/// Enforce that, if presence is true, then,
-///  - exactly one of the alternatives is holds (call it a)
-///  - for this alternative a , `value = a.base`
-/// ELEMENT
-fn bind_alternative<Ctx: Store + Dom>(
-    l: Lit,
-    value: IAtom,
-    presence: Lit,
-    alternatives: &[AssignEstablisher],
-    ctx: &mut Ctx,
-) {
-    // println!("\n\n ===== bind alts ===== \n\n");
-    // dbg!(value, presence, alternatives);
-
-    // at least one esatablisher must hold
-    Disjunction::from_iter(alternatives.iter().map(|a| a.establishes)).enforce_if(l, ctx);
-
-    for (ai, a) in alternatives.iter().enumerate() {
-        // it is exclusive of all other establishers
-        // note that is expected to be a redundant constraint (already indirectly enforced by effect coherence)
-        for b in &alternatives[ai + 1..] {
-            or([!presence, !a.establishes, !b.establishes]).enforce_if(l, ctx);
-        }
-
-        // if `a` is the establishers the the variable must have its value
-        or([!presence, !a.establishes, eq(a.base, value).implicant(ctx)]).enforce_if(l, ctx);
     }
 }
 

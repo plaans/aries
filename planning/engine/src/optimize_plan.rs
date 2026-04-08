@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::{
     core::state::Evaluable,
-    model::lang::{FAtom, hreif::Store, linear::LinearSum},
+    model::lang::{FAtom, Store, linear::LinearSum},
     prelude::*,
 };
 use aries_plan_engine::{

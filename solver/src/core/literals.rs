@@ -98,7 +98,13 @@ impl Lits {
     /// TODO: we are missing an opportunity to detect and simplify the clause in the presence of mutually exclusive literals.
     /// This step could be fused in the deduplication phase to keep a single traversal.
     pub(crate) fn simplify_disjunctive(&mut self) {
-        if self.len() <= 1 {
+        if self.is_empty() {
+            return;
+        }
+        if self.len() == 1 {
+            if self.elems[0].absurd() {
+                self.elems.pop();
+            }
             return;
         }
         // sort literals, so that they are grouped by (1) variable and (2) affected bound

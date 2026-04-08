@@ -1,7 +1,7 @@
 use crate::core::literals::{Disjunction, Lits};
+use crate::core::state::Evaluable;
 use crate::model::lang::alternative::Alternative;
-use crate::model::lang::hreif::{BoolExpr, Store};
-use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
+use crate::model::lang::*;
 use crate::model::{Label, Model};
 use crate::prelude::*;
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -92,6 +92,20 @@ impl Not for Or {
         let mut lits = self.into_lits();
         lits.iter_mut().for_each(|l| *l = !*l);
         And(lits.into_boxed_slice())
+    }
+}
+
+impl Evaluable for Disjunction {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &Solution) -> Option<Self::Value> {
+        if self.iter().any(|l| l.evaluate(solution) == Some(true)) {
+            Some(true)
+        } else if self.iter().any(|l| l.evaluate(solution).is_none()) {
+            None
+        } else {
+            Some(false)
+        }
     }
 }
 
@@ -244,7 +258,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
 
 impl Eq {
     /// Returns an equivalent *conjunction* of `ReifExpr`
-    fn as_elementary_constraints(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
+    fn as_elementary_constraints<Ctx: Store>(&self, store: &mut Ctx) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {
@@ -336,7 +350,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Neq {
 
 impl Neq {
     /// Returns an equivalent *disjunction* of `ReifExpr`
-    pub fn as_elementary_disjuncts(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
+    pub fn as_elementary_disjuncts<Ctx: Store>(&self, store: &Ctx) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {

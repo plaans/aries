@@ -1,5 +1,5 @@
 use aries::{
-    model::lang::{expr::or, hreif::BoolExpr, linear::LinearSum},
+    model::lang::{BoolExpr, expr::or, linear::LinearSum},
     prelude::*,
 };
 use timelines::{constraints::HasValueAt, encoder::SchedEncoder};
