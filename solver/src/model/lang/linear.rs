@@ -512,10 +512,7 @@ impl From<LinearLeq> for ReifExpr {
                 .or_insert(e.factor);
         }
         ReifExpr::Linear(NFLinearLeq {
-            sum: vars
-                .iter()
-                .map(|(&var, &factor)| NFLinearSumItem { var, factor })
-                .collect(),
+            sum: vars.iter().map(|(&var, &factor)| ScaledVar { var, factor }).collect(),
             upper_bound: value.ub - value.sum.constant,
         })
     }
@@ -526,12 +523,12 @@ impl From<LinearLeq> for ReifExpr {
 /* ========================================================================== */
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct NFLinearSumItem {
+pub struct ScaledVar {
     pub var: VarRef,
     pub factor: IntCst,
 }
 
-impl std::fmt::Display for NFLinearSumItem {
+impl std::fmt::Display for ScaledVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.factor != 1 {
             if self.factor == -1 {
@@ -552,11 +549,11 @@ impl std::fmt::Display for NFLinearSumItem {
     }
 }
 
-impl std::ops::Neg for NFLinearSumItem {
-    type Output = NFLinearSumItem;
+impl std::ops::Neg for ScaledVar {
+    type Output = ScaledVar;
 
     fn neg(self) -> Self::Output {
-        NFLinearSumItem {
+        ScaledVar {
             var: self.var,
             factor: -self.factor,
         }
@@ -569,7 +566,7 @@ impl std::ops::Neg for NFLinearSumItem {
 
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct NFLinearLeq {
-    pub sum: Vec<NFLinearSumItem>,
+    pub sum: Vec<ScaledVar>,
     pub upper_bound: IntCst,
 }
 
@@ -637,7 +634,7 @@ impl NFLinearLeq {
                 .into_iter()
                 .filter(|(v, f)| *f != 0 && *v != VarRef::ZERO)
                 .filter(|(v, _)| *v != VarRef::ONE) // Has been grouped into the upper bound
-                .map(|(v, f)| NFLinearSumItem { var: v, factor: f })
+                .map(|(v, f)| ScaledVar { var: v, factor: f })
                 .collect(),
             upper_bound,
         }
@@ -1258,7 +1255,7 @@ mod tests {
         let var1 = VarRef::from_u32(5);
         let var2 = VarRef::from_u32(6);
 
-        let item = |factor: IntCst, var: VarRef| NFLinearSumItem { var, factor };
+        let item = |factor: IntCst, var: VarRef| ScaledVar { var, factor };
 
         let obj = NFLinearLeq {
             sum: vec![

@@ -1,7 +1,7 @@
 use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinLe;
@@ -12,16 +12,16 @@ use crate::aries::constraint::LinLe;
 /// where `v[i]` are variables, `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinGe {
-    items: Vec<NFLinearSumItem>,
+    items: Vec<ScaledVar>,
     lb: IntCst,
 }
 
 impl LinGe {
-    pub fn new(items: Vec<NFLinearSumItem>, lb: IntCst) -> Self {
+    pub fn new(items: Vec<ScaledVar>, lb: IntCst) -> Self {
         Self { items, lb }
     }
 
-    pub fn items(&self) -> &Vec<NFLinearSumItem> {
+    pub fn items(&self) -> &Vec<ScaledVar> {
         &self.items
     }
 
@@ -32,7 +32,7 @@ impl LinGe {
 
 impl<Lbl: Label> Post<Lbl> for LinGe {
     fn post(&self, model: &mut Model<Lbl>) {
-        let minus = |i: &NFLinearSumItem| NFLinearSumItem {
+        let minus = |i: &ScaledVar| ScaledVar {
             var: i.var,
             factor: -i.factor,
         };

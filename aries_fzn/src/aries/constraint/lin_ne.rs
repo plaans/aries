@@ -4,7 +4,7 @@ use aries::model::Model;
 use aries::model::lang::IVar;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::linear::LinearTerm;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 
 use crate::aries::Post;
 
@@ -14,16 +14,16 @@ use crate::aries::Post;
 /// where `v[i]` are variables, `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinNe {
-    sum: Vec<NFLinearSumItem>,
+    sum: Vec<ScaledVar>,
     b: IntCst,
 }
 
 impl LinNe {
-    pub fn new(sum: Vec<NFLinearSumItem>, b: IntCst) -> Self {
+    pub fn new(sum: Vec<ScaledVar>, b: IntCst) -> Self {
         Self { sum, b }
     }
 
-    pub fn sum(&self) -> &Vec<NFLinearSumItem> {
+    pub fn sum(&self) -> &Vec<ScaledVar> {
         &self.sum
     }
 
