@@ -20,6 +20,9 @@ use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
 use timelines::{ConstraintID, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst};
 use aries::core::views::Boundable;
 
+use std::path::Path;
+use std::io::Write;
+
 pub type RelaxableConstraint = Tag;
 
 #[derive(clap::Args, Debug, Clone)]
@@ -45,7 +48,7 @@ pub enum Objective {
     Makespan,
 }
 
-pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res<()> {
+pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, options)?;
@@ -77,7 +80,17 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res
     if let Some(solution) = last_solution {
         let last_objective = encoding.objective.last().unwrap();
         println!("==== Plan (objective: {}) =====\n", last_objective.evaluate(&solution).unwrap());
-        println!("{}\n", encoding.plan(&solution));
+        let plan_str = encoding.plan(&solution);
+        println!("{plan_str}\n");
+
+        if let Some(path) = output_plan {
+            let mut file = std::fs::File::create(path)
+                .map_err(Message::from)
+                .title(format!("Cannot create output file {}", path.display()))?;
+            writeln!(file, "{plan_str}")
+                .map_err(Message::from)
+                .title(format!("Cannot write output file {}", path.display()))?;
+        }
     }
 
     Ok(())

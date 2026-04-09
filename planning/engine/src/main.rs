@@ -99,6 +99,9 @@ pub struct OptimizePlan {
     plan_pb: PlanAndProblem,
     #[command(flatten)]
     options: optimize_plan::Options,
+    /// If provided, the optimized plan will be written to this file.
+    #[arg(short = 'w', long)]
+    output_plan: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -225,13 +228,25 @@ fn validate_plan(command: &Validate) -> Res<()> {
 fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
-    // processed model (from planx)
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
     println!("\n===== Plan ====\n\n{plan}\n");
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options)
+    // Resolve the output path according to the three cases:
+    //  1. None          → no output file
+    //  2. existing dir  → create <dir>/<problem_name>.plan
+    //  3. file path     → create or overwrite that file
+    let resolved_output: Option<PathBuf> = match &command.output_plan {
+        None => None,
+        Some(path) if path.is_dir() => {
+            let filename = format!("{}.plan", pb.problem_name.canonical_str());
+            Some(path.join(filename))
+        }
+        Some(path) => Some(path.clone()),
+    };
+
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref())
 }
 
 fn repair(command: &DomRepair) -> Res<()> {

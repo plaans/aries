@@ -126,6 +126,11 @@ pub fn condition_to_constraint(
             let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
             ConditionConstraint::LeqZero(lhs - rhs)
         }
+        planx::Expr::App(planx::Fun::Geq, exprs) if exprs.len() == 2 => {
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
+            ConditionConstraint::LeqZero(rhs - lhs)
+        }
         _ => return Err(expr.todo("not supported")),
     };
 
