@@ -70,7 +70,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res
         // Pin objective == opt_val for subsequent phases (upper + lower bound)
         let opt_val = sol.eval(objective.num).unwrap();
         phase_assumptions.push(objective.num.leq(opt_val));         // objective ≤ opt_val
-        phase_assumptions.push(!objective.num.leq(opt_val - 1));    // objective ≥ opt_val
+        phase_assumptions.push(objective.num.geq(opt_val));    // objective ≥ opt_val
         last_solution = Some(sol);
     }
 
