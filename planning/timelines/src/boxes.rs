@@ -132,7 +132,7 @@ impl<'a> BoxRef<'a> {
         }
     }
 
-    pub fn points(self) -> impl StreamingIterator<Item = [IntCst]> {
+    pub fn points(self) -> impl StreamingIterator<Item = [IntCst]> + use<> {
         let generators = self.dimensions.iter().map(|seg| seg.points()).collect_vec();
         aries::utils::enumerate(generators)
     }

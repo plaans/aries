@@ -11,7 +11,6 @@ use aries::core::state::Evaluable;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
-use std::collections::HashMap;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
@@ -19,7 +18,7 @@ use aries::model::lang::hreif::BoolExpr;
 use aries::model::lang::*;
 use aries::prelude::*;
 use aries::solver::Solver;
-use idmap::{DirectIdMap, DirectIdSet};
+use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
@@ -27,7 +26,7 @@ pub use crate::effects::*;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
-use crate::transitions::{TransitionId, Transitions};
+use crate::transitions::Transitions;
 
 pub type Sym = String;
 pub type Time = FAtom;
@@ -160,48 +159,8 @@ impl Sched {
         }
         encoding
     }
-    pub fn gather_transitions(&self) -> Transitions {
-        let mut effects: HashMap<Option<TaskId>, Vec<(EffectId, &Effect)>> = HashMap::new();
-        let mut conditions: HashMap<Option<TaskId>, Vec<(ConstraintID, &HasValueAt)>> = HashMap::new();
-
-        for (id, e) in self.effects.iter().enumerate() {
-            effects.entry(e.source).and_modify(|v| v.push((id, e))).or_insert(vec![(id, e)]);
-        }
-        for (id, c) in self.conditions.iter() {
-            conditions.entry(c.source).and_modify(|v| v.push((id, c))).or_insert(vec![(id, c)]);
-        }
-
-        let mut lifted = vec![];
-        let mut e_in_condeff = DirectIdSet::new();
-        let mut c_in_condeff = DirectIdSet::new();
-
-        for (&e_src, es) in &effects {
-            for &(e_id, e) in es {
-                if let Some(cs) = conditions.get(&e_src) {
-                    for &(c_id, c) in cs {
-                        if e.state_var == c.state_var {
-                            lifted.push(TransitionId::CondEff(c_id, e_id));
-                            c_in_condeff.insert(c_id);
-                            e_in_condeff.insert(e_id);
-                        }
-                    }
-                }
-            }
-            for &(e_id, _) in es {
-                if !e_in_condeff.contains(e_id) {
-                    lifted.push(TransitionId::Eff(e_id))
-                }
-            }
-        };
-        for cs in conditions.values() {
-            for &(c_id, _) in cs {
-                if !c_in_condeff.contains(c_id) {
-                    lifted.push(TransitionId::Cond(c_id))
-                }
-            }
-        }
-
-        Transitions::from_lifted(lifted)
+    pub fn generate_transitions(&self) -> Transitions {
+        Transitions::new_ground(&self.effects, &self.conditions, &self.model)
     }
 
     pub fn solve(&self) -> Option<Solution> {
