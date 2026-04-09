@@ -84,10 +84,7 @@ impl Effect {
     /// - `[lb(a), ub(a)]` for a in args
     pub(crate) fn affected_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = crate::boxes::Segments::new();
-        buff.push(Segment::new(
-            dom.lb(self.transition_start.num),
-            dom.ub(self.mutex_end.num),
-        )); // TODO: carfeul with denom
+        buff.push(Segment::new(dom.lb(self.transition_start), dom.ub(self.mutex_end)));
         buff.extend(self.args_segments(&dom));
         BBox::new(buff)
     }
@@ -98,8 +95,8 @@ impl Effect {
     /// - `[v, v]` where v is the value in the assignment or step operation
     pub(crate) fn value_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = crate::boxes::Segments::new();
-        let start = dom.lb(self.transition_end.num); // TODO: carerful with denom
-        let end = dom.ub(self.mutex_end.num); // TODO: carerful with denom
+        let start = dom.lb(self.transition_end);
+        let end = dom.ub(self.mutex_end);
         buff.push(Segment::new(start, end));
         buff.extend(self.args_segments(&dom));
         let value_segment = match self.operation {
@@ -116,9 +113,9 @@ impl Effect {
     pub(crate) fn transition_box(&self, dom: &impl Dom) -> crate::boxes::BBox {
         let mut buff = crate::boxes::Segments::new();
         buff.push(Segment::new(
-            dom.lb(self.transition_start.num),
-            dom.ub(self.transition_end.num) - 1,
-        )); // TODO: carfeul with denom
+            dom.lb(self.transition_start),
+            dom.ub(self.transition_end) - 1,
+        ));
         buff.extend(self.args_segments(&dom));
         BBox::new(buff)
     }

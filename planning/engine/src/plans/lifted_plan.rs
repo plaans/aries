@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use aries::core::QCst;
 use itertools::Itertools;
 use planx::{Model, Res, Sym};
 use timelines::IntCst;
@@ -98,8 +97,8 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
             arguments.push(arg);
         }
         operations.push(Operation {
-            start: QCst::from_integer(aid as IntCst), // start time is the index of the action in the sequence
-            duration: QCst::ZERO,                     // action is instantaneous
+            start: aid as IntCst, // start time is the index of the action in the sequence
+            duration: 0,          // action is instantaneous
             action_ref: a.name.clone(),
             arguments,
             span: a.span().cloned(),

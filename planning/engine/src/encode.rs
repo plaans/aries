@@ -8,8 +8,8 @@ pub mod tags;
 use aries::{
     core::literals::ConjunctionBuilder,
     model::lang::{
-        FAtom,
-        expr::{and, eq},
+        BoolExpr,
+        expr::{and, eq, lin_eq},
     },
     prelude::*,
     reif::ReifExpr,
@@ -170,12 +170,11 @@ pub fn convert_effect(
     let op = match x.operation {
         planx::EffectOp::Assign(v) => EffectOp::Assign(reify_expression_to_term(v, Some(t), model, sched, bindings)?),
         planx::EffectOp::Increase(v) => EffectOp::Step(reify_expression_to_term(v, Some(t), model, sched, bindings)?),
-        planx::EffectOp::Decrease(v) => EffectOp::Step((-reify_constant(v, model, sched, bindings)?).into()),
-        // planx::EffectOp::Decrease(v) => return model.env.node(effect).todo("oups").failed(), //todo!(), // EffectOp::Step(-reify_expression_to_var(v, Some(t), model, sched, bindings)?),
+        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_expression_to_term(v, Some(t), model, sched, bindings)?),
     };
     let eff = timelines::Effect {
         transition_start: t,
-        transition_end: if transition_time { t + FAtom::EPSILON } else { t },
+        transition_end: if transition_time { t + sched.epsilon } else { t },
         mutex_end: sched.new_timepoint(),
         state_var: sv,
         operation: op,
@@ -204,7 +203,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
             args,
         };
         // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
-        let mutex_end: Time = sched.model.new_fvar(-1, INT_CST_MAX, sched.time_scale, "_").into();
+        let mutex_end: Time = sched.model.new_ivar(-1, INT_CST_MAX, "_").into();
         let eff = timelines::Effect {
             transition_start: t,
             transition_end: t,
@@ -252,8 +251,8 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
                 // they can be placed at the same timepoit
                 && sched
                     .model
-                    .var_domain(e.transition_end.num)
-                    .overlaps(&sched.model.var_domain(o.transition_end.num)) // TODO: we ignore the denominator here, which may not be correct in temporal planning
+                    .var_domain(e.transition_end)
+                    .overlaps(&sched.model.var_domain(o.transition_end))
                 // they arguments are compatible
                 && e.state_var
                     .args
@@ -287,7 +286,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
             override_conditions.push(sched.model.reify(eq(e.transition_start, overrider.transition_start)));
             // overrider must have the same state variable arguments
             for (a1, a2) in e.state_var.args.iter().zip_eq(overrider.state_var.args.iter()) {
-                override_conditions.push(sched.model.reify(eq(*a1, *a2)));
+                override_conditions.push(lin_eq(*a1, *a2).reified(&mut sched.model));
             }
             let lits = override_conditions.build();
             let cancelled_by = sched.model.reify(ReifExpr::And(lits.into_lits()));
@@ -307,7 +306,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
     with_set_semantics
 }
 
-pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<FAtom> {
+pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<Time> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
     if *t.delay.numer() == 0 {
         Ok(tp)
@@ -315,7 +314,7 @@ pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Sc
         Message::todo("unsupported non-zero delay").failed()
     }
 }
-pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<FAtom> {
+pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<Time> {
     match t {
         TimeRef::Origin => Ok(sched.origin),
         TimeRef::Horizon => Ok(sched.horizon),

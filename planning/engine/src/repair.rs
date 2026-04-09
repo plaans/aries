@@ -7,10 +7,7 @@ use std::{
     time::Instant,
 };
 
-use aries::model::{
-    extensions::DomainsExt,
-    lang::{FAtom, Store},
-};
+use aries::model::{extensions::DomainsExt, lang::Store};
 use aries::prelude::*;
 use aries_plan_engine::{
     encode::*,
@@ -196,7 +193,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             };
 
             // incorpare the potential values taken by this operation param into the one of the action
-            let seg = Segment::from(sched.model.int_bounds(arg));
+            let seg = Segment::from(sched.model.bounds(arg));
             actions_instanciations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
@@ -456,7 +453,7 @@ fn create_potential_effect(
     let op = EffectOp::Assign(value.into());
     let eff = timelines::Effect {
         transition_start: t,
-        transition_end: t + FAtom::EPSILON,
+        transition_end: t + sched.epsilon,
         mutex_end: sched.new_timepoint(),
         state_var: sv,
         operation: op,

@@ -5,13 +5,13 @@ use planx::{
     ActionRef,
     errors::{Span, Spanned},
 };
-use timelines::rational::QCst;
+use timelines::IntCst;
 
 /// Absolute time, associated to an operation start/end
-pub type Instant = QCst;
+pub type Instant = IntCst;
 
 /// Duration (difference between two instants)
-pub type Duration = QCst;
+pub type Duration = IntCst;
 
 /// An operation in a plan, typically a grounding of an action.
 ///

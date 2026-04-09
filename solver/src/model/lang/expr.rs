@@ -1,6 +1,7 @@
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::Evaluable;
 use crate::model::lang::alternative::Alternative;
+use crate::model::lang::linear::{LinEq, LinNeq};
 use crate::model::lang::*;
 use crate::model::{Label, Model};
 use crate::prelude::*;
@@ -48,6 +49,13 @@ pub fn f_geq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
     let rhs = rhs.into();
     assert_eq!(lhs.denom, rhs.denom);
     geq(lhs.num, rhs.num)
+}
+
+pub fn lin_eq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinEq {
+    lhs.into().eq(rhs)
+}
+pub fn lin_neq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinNeq {
+    lhs.into().neq(rhs)
 }
 
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {

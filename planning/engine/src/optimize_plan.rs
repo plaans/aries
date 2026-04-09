@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::{
     core::state::Evaluable,
-    model::lang::{FAtom, Store},
+    model::lang::{IntExpr, Store},
     prelude::*,
 };
 use aries_plan_engine::{
@@ -18,7 +18,7 @@ use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
 use timelines::{
-    ConstraintID, IntExp, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst,
+    ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
 };
 
 pub type RelaxableConstraint = Tag;
@@ -139,7 +139,7 @@ pub fn encode_plan_optimization_problem(
             };
 
             // incorpare the potential values taken by this operation param into the one of the action
-            let seg = Segment::from(sched.model.int_bounds(arg));
+            let seg = Segment::from(sched.model.bounds(arg));
             actions_instanciations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
@@ -158,7 +158,7 @@ pub fn encode_plan_optimization_problem(
         } else {
             Time::from(op.start)
         };
-        assert_eq!(op.duration, QCst::ZERO, "we use the start as end");
+        assert_eq!(op.duration, 0, "we use the start as end");
         let end = start;
 
         // record a task in `Sched` which
@@ -287,11 +287,11 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    let objective: FAtom = match options.objective {
+    let objective: LinTerm = match options.objective {
         Objective::Original if model.metric.is_some() => {
             // TODO: is if let guard when stabilized
             let metric = model.metric.unwrap();
-            let obj = match metric {
+            match metric {
                 planx::Metric::Minimize(expr_id) => {
                     let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?;
                     flatten_expression(expr_id, lin_obj, model, &mut sched, &global_scope)?
@@ -299,8 +299,7 @@ pub fn encode_plan_optimization_problem(
                 planx::Metric::Maximize(_) => {
                     return Message::error("unsupported maximization metric").failed();
                 }
-            };
-            FAtom::new(obj, 1)
+            }
         }
         // use plan-length as default when no metric is specified
         Objective::PlanLength | Objective::Original => {
@@ -311,7 +310,7 @@ pub fn encode_plan_optimization_problem(
             }
             reify_sum(sum, &mut sched)
         }
-        Objective::Makespan => sched.makespan,
+        Objective::Makespan => sched.makespan.into(),
     };
     encoding.set_objective(objective);
 
@@ -321,13 +320,6 @@ pub fn encode_plan_optimization_problem(
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
 
-fn reify_sum(sum: IntExp, model: &mut Sched) -> FAtom {
-    let reified: FAtom = model
-        .model
-        .new_fvar(INT_CST_MIN, INT_CST_MAX, sum.denom(), "Sum reif")
-        .into();
-    model.add_constraint(sum.clone().leq(reified));
-    model.add_constraint(sum.geq(reified));
-
-    reified
+fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
+    sum.reify(sum.conj_scope(&model), &mut model.model)
 }
