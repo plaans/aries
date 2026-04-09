@@ -9,7 +9,7 @@ use std::{
 
 use aries::model::{
     extensions::DomainsExt,
-    lang::{FAtom, hreif::Store},
+    lang::{FAtom, Store},
 };
 use aries::prelude::*;
 use aries_plan_engine::{

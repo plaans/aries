@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::{
     core::state::Evaluable,
-    model::lang::{FAtom, hreif::Store, linear::LinearSum},
+    model::lang::{FAtom, Store, linear::LinearSum},
     prelude::*,
 };
 use aries_plan_engine::{
@@ -26,7 +26,7 @@ pub struct Options {
     #[arg(short, long, num_args(1..))]
     pub relaxation: Vec<Relaxation>,
 
-    #[arg(short, long, default_value("plan-length"))]
+    #[arg(short, long, default_value("original"))]
     pub objective: Objective,
 }
 

@@ -107,3 +107,50 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
     }
     Ok(LiftedPlan { operations, variables })
 }
+
+pub fn new_empty_lifted_plan(
+    model: &Model,
+    a_instances_per_template: BTreeMap<planx::ActionRef, usize>,
+    a_instances_default: usize,
+) -> Res<LiftedPlan> {
+    let top_type = model.env.types.top_user_type();
+    use planx::errors::*;
+
+    let num_instances = |a_name| *a_instances_per_template.get(a_name).unwrap_or(&a_instances_default);
+
+    // all actions in the plan
+    let mut operations = Vec::with_capacity(model.actions.iter().map(|a| num_instances(&a.name)).sum());
+
+    // all variables appearing in the plan
+    let mut variables = BTreeMap::new();
+
+    for a in model.actions.iter() {
+        for aid in 0..num_instances(&a.name) {
+            let mut arguments = Vec::with_capacity(a.parameters.len());
+
+            for param in a.parameters.iter() {
+                let name = Sym::with_source(
+                    format!("{}.{}.{}", a.name.canonical_str(), aid, param.name().canonical_str()),
+                    param.name().span_or_default(),
+                );
+                let tpe = if let planx::Type::User(tpe) = param.tpe() {
+                    tpe.to_single_type().unwrap_or_else(|| top_type.clone())
+                } else {
+                    top_type.clone()
+                };
+
+                variables.insert(name.clone(), tpe);
+
+                arguments.push(ObjectOrVariable::Variable { name });
+            }
+            operations.push(Operation {
+                start: QCst::ZERO,
+                duration: QCst::ZERO,
+                action_ref: a.name.clone(),
+                arguments,
+                span: None,
+            });
+        }
+    }
+    Ok(LiftedPlan { operations, variables })
+}
