@@ -229,11 +229,12 @@ pub fn encode_plan_optimization_problem(
                         Some(&mut required_values),
                     )?;
 
-                    let cid = if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
-                        sched.add_condition(c)
-                    } else {
-                        sched.add_constraint(constraint)
-                    };
+                    let cid =
+                        if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
+                            sched.add_condition(c)
+                        } else {
+                            sched.add_constraint(constraint)
+                        };
                     encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
                 } else {
                     todo!("durative goal")
