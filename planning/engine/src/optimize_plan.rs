@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::{
     core::state::Evaluable,
-    model::lang::{FAtom, Store, linear::LinearSum},
+    model::lang::{FAtom, Store},
     prelude::*,
 };
 use aries_plan_engine::{
@@ -17,7 +17,9 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
-use timelines::{ConstraintID, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst};
+use timelines::{
+    ConstraintID, IntExp, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst,
+};
 
 pub type RelaxableConstraint = Tag;
 
@@ -302,7 +304,7 @@ pub fn encode_plan_optimization_problem(
         }
         // use plan-length as default when no metric is specified
         Objective::PlanLength | Objective::Original => {
-            let mut sum = LinearSum::zero();
+            let mut sum = IntExp::zero();
             for (_a, scope) in &operations_scopes {
                 let action_prez = scope.presence;
                 sum += timelines::constraints::bool2int(action_prez, &mut sched.model)
@@ -319,7 +321,7 @@ pub fn encode_plan_optimization_problem(
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
 
-fn reify_sum(sum: LinearSum, model: &mut Sched) -> FAtom {
+fn reify_sum(sum: IntExp, model: &mut Sched) -> FAtom {
     let reified: FAtom = model
         .model
         .new_fvar(INT_CST_MIN, INT_CST_MAX, sum.denom(), "Sum reif")

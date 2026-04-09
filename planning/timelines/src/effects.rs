@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    StateVar, TaskId, Time,
+    IntTerm, StateVar, TaskId, Time,
     boxes::{BBox, BoxRef, BoxUniverse, Segment},
 };
 
@@ -38,13 +38,13 @@ pub struct Effect {
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
     /// Sets the state variable to an absolute value
-    Assign(IAtom),
+    Assign(IntTerm),
     /// Increase the state variable by a given value (positive or negative)
-    Step(IAtom),
+    Step(IntTerm),
 }
 impl EffectOp {
-    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(IAtom::TRUE);
-    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(IAtom::FALSE);
+    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(IntTerm::TRUE);
+    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(IntTerm::FALSE);
 }
 impl Debug for EffectOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

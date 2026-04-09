@@ -30,7 +30,15 @@ use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
 pub type Sym = String;
+
+/// Type of timepoints
 pub type Time = FAtom;
+
+/// Type of simple int expressions (composed of at most one variable)
+pub type IntTerm = IAtom;
+
+/// Type of compound integer expressions.
+pub type IntExp = LinearSum;
 
 /// A fluent is a state function defined as a symbol and a set of parameter and return types.
 ///

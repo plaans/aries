@@ -10,7 +10,6 @@ use aries::{
     model::lang::{
         FAtom,
         expr::{and, eq},
-        linear::LinearSum,
     },
     prelude::*,
     reif::ReifExpr,
@@ -18,7 +17,8 @@ use aries::{
 use itertools::Itertools;
 use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 use timelines::{
-    Effect, EffectOp, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+    Effect, EffectOp, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt,
+    symbols::ObjectEncoding,
 };
 
 use crate::encode::{constraints::ConditionConstraint, required_values::RequiredValues};
@@ -90,7 +90,7 @@ pub fn condition_to_constraint(
             };
             let c = HasValueAt {
                 state_var,
-                value: IAtom::TRUE,
+                value: IntTerm::TRUE,
                 timepoint,
                 prez: bindings.presence,
                 source: bindings.source,
@@ -342,12 +342,10 @@ pub fn reify_expression_to_term(
     model: &Model,
     sched: &mut Sched,
     scope: &Scope,
-) -> Res<IAtom> {
+) -> Res<IntTerm> {
     let reif = reify_expression(e, time, model, sched, scope)?;
     flatten_expression(e, reif, model, sched, scope)
 }
-
-pub type LinExpr = LinearSum;
 
 // todo: add required_value!
 pub fn reify_expression(
@@ -356,7 +354,7 @@ pub fn reify_expression(
     model: &Model,
     sched: &mut Sched,
     binding: &Scope,
-) -> Res<LinExpr> {
+) -> Res<IntExp> {
     let e = model.env.node(e);
     use planx::Expr::*;
     match e.expr() {
@@ -399,7 +397,7 @@ pub fn reify_expression(
                     reify_expression(arg, Some(time), model, sched, binding)
                         .and_then(|arg_expr| flatten_expression(arg, arg_expr, model, sched, binding))
                 })
-                .collect::<Res<Vec<IAtom>>>()?;
+                .collect::<Res<Vec<IntTerm>>>()?;
             let state_var = StateVar {
                 fluent: fluent.name().to_string(),
                 args: reified_args,
@@ -415,14 +413,14 @@ pub fn reify_expression(
             Ok(reified_var.into())
         }
         planx::Expr::App(Fun::Plus, args) => {
-            let mut sum = LinearSum::zero();
+            let mut sum = IntExp::zero();
             for arg in args {
                 sum += reify_expression(*arg, time, model, sched, binding)?;
             }
             Ok(sum)
         }
         planx::Expr::App(Fun::Minus, args) if args.len() == 2 => {
-            let mut sum = LinearSum::zero();
+            let mut sum = IntExp::zero();
             sum += reify_expression(args[0], time, model, sched, binding)?;
             sum -= reify_expression(args[1], time, model, sched, binding)?;
             Ok(sum)
@@ -431,6 +429,6 @@ pub fn reify_expression(
     }
 }
 
-pub fn flatten_expression(eid: ExprId, e: LinExpr, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IAtom> {
-    IAtom::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
+pub fn flatten_expression(eid: ExprId, e: IntExp, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IntTerm> {
+    IntTerm::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
 }

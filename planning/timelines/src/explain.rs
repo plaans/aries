@@ -9,7 +9,7 @@ use aries::{
 };
 use itertools::Itertools;
 
-use crate::{ConstraintID, Sched};
+use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
@@ -102,7 +102,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let max_relaxed_assumptions = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
         let num_relaxed_assumptions = assumptions
             .iter()
-            .fold(LinearSum::constant_int(num_assumptions), |sum, l| {
+            .fold(IntExp::constant_int(num_assumptions), |sum, l| {
                 sum - IVar::new(l.variable())
             });
         self.solver

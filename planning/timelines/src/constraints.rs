@@ -2,7 +2,6 @@ use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
 use aries::model::lang::expr::And;
-use aries::model::lang::linear::LinearSum;
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -32,7 +31,7 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
                 t.end.num
             })
             .collect_vec();
-        ends.push(IAtom::ZERO); // default value when no task is present
+        ends.push(IntTerm::ZERO); // default value when no task is present
         EqMax::new(ctx.sched.makespan.num, ends).enforce_if(l, ctx);
 
         // enforce the horizon to be after the end of all actions
@@ -182,7 +181,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
 #[derive(Debug)]
 pub struct HasValueAt {
     pub state_var: StateVar,
-    pub value: IAtom,
+    pub value: IntTerm,
     pub timepoint: Time,
     /// Presence of the condition. Must imply the presence of all variables appearing in it.
     pub prez: Lit,
@@ -209,7 +208,7 @@ impl HasValueAt {
 #[derive(Debug)]
 struct StepContributor {
     contributes: Lit,
-    contribution: IAtom,
+    contribution: IntTerm,
 }
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
@@ -242,7 +241,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             let EffectOp::Step(step) = eff.operation else {
                 continue;
             };
-            if step == IAtom::ZERO {
+            if step == IntTerm::ZERO {
                 continue;
             }
 
@@ -301,8 +300,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let base_var = establishers.reify([self.prez], ctx);
 
                 // and self.value = base_variable + Sum { step contirbutions }
-                let lhs = LinearSum::from(self.value);
-                let mut rhs = LinearSum::from(base_var);
+                let lhs = IntExp::from(self.value);
+                let mut rhs = IntExp::from(base_var);
                 for step in step_contributors {
                     if let Ok(contribution) = IntCst::try_from(step.contribution) {
                         rhs += bool2int(step.contributes, ctx) * contribution;
@@ -411,7 +410,7 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 /// Transforms a boolean into an integer expression
 /// NOte: the implementation is currently incomplete
 #[doc(hidden)]
-pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinearSum {
+pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {
         1.into()
@@ -420,10 +419,10 @@ pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinearSum {
     } else if is_zero_one && b == b.variable().geq(1) {
         IVar::new(b.variable()).into()
     } else if is_zero_one && b == b.variable().leq(0) {
-        LinearSum::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
+        IntExp::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
     } else {
         let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
         eq(bvar.geq(1), b).enforce(model);
-        LinearSum::from(bvar)
+        IntExp::from(bvar)
     }
 }

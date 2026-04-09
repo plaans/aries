@@ -1,15 +1,15 @@
 use aries::{
-    model::lang::{BoolExpr, expr::or, linear::LinearSum},
+    model::lang::{BoolExpr, expr::or},
     prelude::*,
 };
-use timelines::{constraints::HasValueAt, encoder::SchedEncoder};
+use timelines::{IntExp, constraints::HasValueAt, encoder::SchedEncoder};
 
 /// Constraint representing a condition
 pub enum ConditionConstraint {
     HasValue(HasValueAt),
-    EqZero(LinearSum),
-    NeqZero(LinearSum),
-    LeqZero(LinearSum),
+    EqZero(IntExp),
+    NeqZero(IntExp),
+    LeqZero(IntExp),
 }
 impl BoolExpr<SchedEncoder> for ConditionConstraint {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {

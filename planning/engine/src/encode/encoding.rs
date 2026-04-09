@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt::Display};
 use aries::{core::state::Evaluable, model::lang::FAtom, prelude::*};
 use itertools::Itertools;
 use planx::ActionRef;
-use timelines::{ConstraintID, Sym, Time, symbols::ObjectDecoder};
+use timelines::{ConstraintID, IntTerm, Sym, Time, symbols::ObjectDecoder};
 
 use crate::{encode::tags::Tag, plans::Operation};
 
@@ -103,12 +103,12 @@ impl Evaluable for ActionInstance {
 /// A variable whose domain is a subset of the objects in the problem.
 #[derive(Clone)]
 pub struct ObjectVar {
-    var: IAtom,
+    var: IntTerm,
     decoder: ObjectDecoder,
 }
 
 impl ObjectVar {
-    pub fn new(var: impl Into<IAtom>, decoder: &ObjectDecoder) -> Self {
+    pub fn new(var: impl Into<IntTerm>, decoder: &ObjectDecoder) -> Self {
         Self {
             var: var.into(),
             decoder: decoder.clone(),
