@@ -19,6 +19,9 @@ use crate::repair::RepairOptions;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
+    #[structopt(short, long, default_value = "info")]
+    log_level: tracing::Level,
     #[command(subcommand)]
     command: Commands,
 }
@@ -114,6 +117,14 @@ pub struct DomRepair {
 
 fn main() -> Res<()> {
     let args = Args::parse();
+    // set up logger
+    let subscriber = tracing_subscriber::fmt()
+        .with_timer(tracing_subscriber::fmt::time::Uptime::from(std::time::Instant::now()))
+        // .without_time() // if activated, no time will be printed on logs (useful for counting events with `counts`)
+        // .with_thread_ids(true)
+        .with_max_level(args.log_level)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
 
     match &args.command {
         Commands::Parse(command) => parse(command)?,

@@ -83,7 +83,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
     }
     fn add_half_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
         let c = Constraint::HalfReified(expr, value);
-        tracing::trace!("Adding constraint: {}", c);
+        tracing::trace!("Post (hreif): {}", c);
         self.constraints.push(c)
     }
 
@@ -93,7 +93,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
             Constraint::HalfReified(!expr, !value),
         ];
         for c in constraints {
-            tracing::trace!("Adding constraint: {}", c);
+            tracing::trace!("Post (reif): {}", c);
             self.constraints.push(c)
         }
     }
@@ -119,7 +119,10 @@ impl<Lbl: Label> ModelShape<Lbl> {
                         // validity scope of the literal.
                     }
                 }
-                Constraint::Propagator(user_propagator) => anyhow::ensure!(user_propagator.satisfied(assignment)),
+                Constraint::Propagator(user_propagator) => anyhow::ensure!(
+                    user_propagator.satisfied(assignment),
+                    "user propagator is not satisfied:\n{user_propagator:?}"
+                ),
             }
         }
         Ok(())
@@ -553,6 +556,12 @@ impl<Lbl: Label> Model<Lbl> {
     pub fn enforce_if<Expr: Reifiable<Lbl>>(&mut self, enabler: Lit, expr: Expr) {
         let mut expr = expr.decompose(self);
         self.simplify(&mut expr);
+        tracing::debug!(
+            "enforce if: [{:?}] {:?} => {}",
+            self.presence_literal(enabler),
+            enabler,
+            expr
+        );
         self.shape.add_half_reification_constraint(enabler, expr);
     }
 

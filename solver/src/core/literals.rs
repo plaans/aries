@@ -3,6 +3,7 @@
 use std::{
     borrow::Borrow,
     cmp::Reverse,
+    fmt::Debug,
     ops::{Deref, DerefMut},
 };
 
@@ -26,7 +27,7 @@ const INLINE_SIZE: usize = 3;
 /// A sequence of literals, optimized to represent at least 3 elements inline.
 ///
 /// In the base case (when [`IntCst`] is 32 bits), it should only occupy 4 machine words (one more that a `Vec<Lit>`).
-#[derive(PartialEq, PartialOrd, Ord, Eq, Clone, Debug, Hash)]
+#[derive(PartialEq, PartialOrd, Ord, Eq, Clone, Hash)]
 pub struct Lits {
     elems: SmallVec<[Lit; INLINE_SIZE]>,
 }
@@ -152,6 +153,12 @@ impl Lits {
 
     fn as_slice(&self) -> &[Lit] {
         &self.elems
+    }
+}
+
+impl Debug for Lits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.elems)
     }
 }
 

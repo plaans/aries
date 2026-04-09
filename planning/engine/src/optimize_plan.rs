@@ -227,10 +227,10 @@ pub fn encode_plan_optimization_problem(
             prez: bindings.presence,
             start: bindings.start,
             end: bindings.end,
-            arguments: bindings
-                .args
-                .values()
-                .map(|var| ObjectVar::new(*var, &object_decoder))
+            arguments: a
+                .parameters
+                .iter()
+                .map(|param| ObjectVar::new(bindings.args[&param.name], &object_decoder))
                 .collect(),
         });
 
