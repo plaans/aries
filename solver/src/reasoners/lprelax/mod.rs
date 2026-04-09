@@ -371,7 +371,7 @@ impl LpRelax {
                         .dual_columns()
                         .iter()
                         .enumerate()
-                        //.filter(|(col , _)| *col != obj_col.index())
+                        .filter(|(col , _)| *col != obj_col.index())
                         .filter_map(|(col, &rc)| (rc != 0.).then_some((LpCol::from(col), rc, sol.columns()[col])))
                         .collect::<Vec<_>>();
 
@@ -387,8 +387,9 @@ impl LpRelax {
         };
 
         // Skip if the optimal objective computed above is too close to the incumbent (previous best known objective value).
-        let obj_diff = FloatCst::from(self.get_objective_current_bound().unwrap()) - optim_obj_val;
-        if !self.config.no_propagation_skips && obj_diff.abs() < 1. {
+        let obj_incumbent_bound = self.get_objective_current_bound().unwrap();
+        let obj_diff = FloatCst::from(obj_incumbent_bound) - optim_obj_val;
+        if !self.config.no_propagation_skips && (obj_diff).abs() < 1. {
             return Ok(());
         }
 
@@ -403,6 +404,13 @@ impl LpRelax {
                     unreachable!();
                 }
             }
+            match self.get_sense() {
+                Some(LpOptimSense::Minimise) =>
+                    reason.push(LpLit::geq(obj_col, obj_incumbent_bound)),
+                Some(LpOptimSense::Maximise) =>
+                    reason.push(LpLit::leq(obj_col, obj_incumbent_bound)),
+                None => unreachable!(),
+            };
             reason
         };
 
@@ -416,6 +424,17 @@ impl LpRelax {
             };
             self.set_lplit(lplit, LpEventCause::ReducedCostStrengthtening(reason.clone()), model)?;
         }
+        self.set_lplit(
+            match self.get_sense() {
+                    Some(LpOptimSense::Minimise) =>
+                        LpLit::geq(obj_col, float_as_ceil_int_cst(optim_obj_val)),
+                    Some(LpOptimSense::Maximise) =>
+                        LpLit::leq(obj_col, float_as_floor_int_cst(optim_obj_val)),
+                    None => unreachable!(),
+                },
+            LpEventCause::ReducedCostStrengthtening(reason.clone()),
+            model,
+        )?;
         Ok(())
     }
 
@@ -493,6 +512,7 @@ impl Theory for LpRelax {
         if !self.config.no_propagation_skips && self.current_decision_level() > DecLvl::ROOT {
             return Ok(());
         }
+        // TODO: allow propagation after a backtrack.
 
         if self.lpoptim.is_some() {
             self.propagate_reduced_costs_strengthtening(model)
