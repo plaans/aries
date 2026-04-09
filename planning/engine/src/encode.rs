@@ -168,9 +168,10 @@ pub fn convert_effect(
         args,
     };
     let op = match x.operation {
-        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_constant(v, model, sched, bindings)?),
-        planx::EffectOp::Increase(v) => EffectOp::Step(reify_constant(v, model, sched, bindings)?),
-        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_constant(v, model, sched, bindings)?),
+        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_expression_to_term(v, Some(t), model, sched, bindings)?),
+        planx::EffectOp::Increase(v) => EffectOp::Step(reify_expression_to_term(v, Some(t), model, sched, bindings)?),
+        planx::EffectOp::Decrease(v) => EffectOp::Step((-reify_constant(v, model, sched, bindings)?).into()),
+        // planx::EffectOp::Decrease(v) => return model.env.node(effect).todo("oups").failed(), //todo!(), // EffectOp::Step(-reify_expression_to_var(v, Some(t), model, sched, bindings)?),
     };
     let eff = timelines::Effect {
         transition_start: t,
@@ -333,6 +334,17 @@ pub fn reify_constant(e: ExprId, model: &Model, sched: &mut Sched, scope: &Scope
     let reif = flatten_expression(e, reif, model, sched, scope)?;
     let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
     Ok(cst)
+}
+
+pub fn reify_expression_to_term(
+    e: ExprId,
+    time: Option<Time>,
+    model: &Model,
+    sched: &mut Sched,
+    scope: &Scope,
+) -> Res<IAtom> {
+    let reif = reify_expression(e, time, model, sched, scope)?;
+    flatten_expression(e, reif, model, sched, scope)
 }
 
 pub type LinExpr = LinearSum;

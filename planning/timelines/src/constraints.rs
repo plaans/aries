@@ -209,7 +209,7 @@ impl HasValueAt {
 #[derive(Debug)]
 struct StepContributor {
     contributes: Lit,
-    contribution: IntCst,
+    contribution: IAtom,
 }
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
@@ -242,7 +242,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             let EffectOp::Step(step) = eff.operation else {
                 continue;
             };
-            if step == 0 {
+            if step == IAtom::ZERO {
                 continue;
             }
 
@@ -304,7 +304,13 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let lhs = LinearSum::from(self.value);
                 let mut rhs = LinearSum::from(base_var);
                 for step in step_contributors {
-                    rhs += bool2int(step.contributes, ctx) * step.contribution;
+                    if let Ok(contribution) = IntCst::try_from(step.contribution) {
+                        rhs += bool2int(step.contributes, ctx) * contribution;
+                    } else {
+                        let value =
+                            Element::build(&[(step.contributes, step.contribution), (!step.contributes, 0.into())]);
+                        rhs += value.reify([self.prez], ctx)
+                    }
                 }
                 lhs.clone().leq(rhs.clone()).enforce(ctx);
                 lhs.geq(rhs).enforce(ctx);

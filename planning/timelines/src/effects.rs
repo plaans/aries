@@ -38,13 +38,13 @@ pub struct Effect {
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
     /// Sets the state variable to an absolute value
-    Assign(IntCst),
+    Assign(IAtom),
     /// Increase the state variable by a given value (positive or negative)
-    Step(IntCst),
+    Step(IAtom),
 }
 impl EffectOp {
-    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(1);
-    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(0);
+    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(IAtom::TRUE);
+    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(IAtom::FALSE);
 }
 impl Debug for EffectOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -52,8 +52,7 @@ impl Debug for EffectOp {
             EffectOp::Assign(val) => {
                 write!(f, ":= {val:?}")
             }
-            EffectOp::Step(v) if v >= &0 => write!(f, "+= {v:?}"),
-            EffectOp::Step(v) => write!(f, "-= {:?}", -v),
+            EffectOp::Step(v) => write!(f, "+= {v:?}"), // TODO: nicer print of negative constants
         }
     }
 }
@@ -104,7 +103,7 @@ impl Effect {
         buff.push(Segment::new(start, end));
         buff.extend(self.args_segments(&dom));
         let value_segment = match self.operation {
-            EffectOp::Assign(v) | EffectOp::Step(v) => Segment::point(v),
+            EffectOp::Assign(v) | EffectOp::Step(v) => Segment::from(dom.bounds(v)),
         };
         buff.push(value_segment);
         crate::boxes::BBox::new(buff)

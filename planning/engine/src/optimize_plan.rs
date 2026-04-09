@@ -60,6 +60,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res
     if let Some(solution) = solver.find_optimal(objective, &print) {
         println!("\n> Found optimal solution:");
         print(&solution);
+        // _sched.print(&solution);
     } else {
         println!("No solution !!!!");
         for mus in solver.muses() {

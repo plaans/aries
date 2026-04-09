@@ -453,7 +453,7 @@ fn create_potential_effect(
         args,
     };
     let value = if value { 1 } else { 0 };
-    let op = EffectOp::Assign(value);
+    let op = EffectOp::Assign(value.into());
     let eff = timelines::Effect {
         transition_start: t,
         transition_end: t + FAtom::EPSILON,

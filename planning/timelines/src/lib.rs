@@ -189,17 +189,22 @@ impl Sched {
         println!("==== Effects ====");
         for e in self.effects.iter().sorted_by_key(|e| &e.state_var.fluent) {
             if !sol.entails(e.prez) {
+                println!("{:?}", e);
                 continue;
             }
             println!(
-                "{}: [{},{}] {:?} ...[{}]",
+                "{}: [{},{}] {} ...[{}]",
                 e.state_var.fluent,
                 e.transition_start.evaluate(sol).unwrap(),
                 e.transition_end.evaluate(sol).unwrap(),
-                e.operation,
+                match e.operation {
+                    EffectOp::Assign(v) => format!(":= {}", v.evaluate(sol).unwrap()),
+                    EffectOp::Step(v) => format!("+= {}", v.evaluate(sol).unwrap()),
+                },
                 e.mutex_end.evaluate(sol).unwrap(),
             );
         }
+        println!("Horizon: {}", self.horizon.evaluate(sol).unwrap())
     }
 }
 

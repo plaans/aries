@@ -33,6 +33,16 @@ impl Element {
         Self::default()
     }
 
+    pub fn build(options: &[(Lit, IAtom)]) -> Self {
+        Self {
+            options: options
+                .iter()
+                .copied()
+                .map(|(selector, value)| ElementOption { selector, value })
+                .collect(),
+        }
+    }
+
     /// Adds a value option and its selector to the element expresion.
     pub fn add_option(&mut self, selector: Lit, value: impl Into<IAtom>) {
         self.options.push(ElementOption {
@@ -94,7 +104,6 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
             implies(o.selector, eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
             // TODO: we could do a stronger propagation by ensuring that at least each value in the lhs domain is supported by value in the rhs domains
 
-            ctx.add_assertion(implies(o.selector, ctx.presence_literal(self.variable)));
             ctx.add_assertion(implies(o.selector, ctx.presence_literal(o.value)));
         }
     }
