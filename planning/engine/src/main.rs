@@ -4,7 +4,7 @@ pub(crate) mod optimize_plan;
 mod repair;
 mod validate;
 
-use std::path::PathBuf;
+use std::{io::IsTerminal, path::PathBuf};
 
 use aries_plan_engine::plans::lifted_plan;
 use clap::*;
@@ -153,9 +153,10 @@ fn main() -> Res<()> {
     // set up logger
     let subscriber = tracing_subscriber::fmt()
         .with_timer(tracing_subscriber::fmt::time::Uptime::from(std::time::Instant::now()))
+        .with_ansi(std::io::stdout().is_terminal()) // deactivate color when not printing to a terminal (e.g. redirected to a file)
         // .without_time() // if activated, no time will be printed on logs (useful for counting events with `counts`)
         // .with_thread_ids(true)
-        .with_max_level(args.log_level)
+        .with_max_level(args.log_level) // set max level (not that in release, debug and trace logs are not compiled)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
