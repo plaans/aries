@@ -28,6 +28,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let mut trigger = BTreeMap::new();
 
         for (cid, c) in sched.constraints.iter().enumerate() {
+            tracing::debug!("Adding constraint: {c:?}");
             if let Some(tag) = project(cid) {
                 let l = if let Some(l) = trigger.get(&tag) {
                     *l

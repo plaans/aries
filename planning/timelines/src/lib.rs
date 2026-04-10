@@ -96,7 +96,14 @@ pub enum Tag {
     TaskEnd(TaskId),
 }
 
-type Constraint = std::sync::Arc<dyn BoolExpr<SchedEncoder> + Send + Sync>;
+/// Trait capturing the requirements of constraitns posted to a [`Sched`]
+///
+/// It is automatically derived for any element providing the requirements,
+/// but needed for making the element dyn-compatible.
+pub trait SchedConstraint: BoolExpr<SchedEncoder> + Send + Sync + Debug {}
+impl<C> SchedConstraint for C where C: BoolExpr<SchedEncoder> + Send + Sync + Debug {}
+
+type Constraint = std::sync::Arc<dyn SchedConstraint>;
 pub type ConstraintID = usize;
 
 #[derive(Clone)]
@@ -149,10 +156,10 @@ impl Sched {
     pub fn new_opt_timepoint(&mut self, scope: Lit) -> Time {
         self.model.new_optional_ivar(0, INT_CST_MAX, scope, "_").into()
     }
-    pub fn add_constraint<C: BoolExpr<SchedEncoder> + 'static + Send + Sync>(&mut self, c: C) -> ConstraintID {
+    pub fn add_constraint<C: SchedConstraint + 'static>(&mut self, c: C) -> ConstraintID {
         self.add_boxed_constraint(Arc::new(c))
     }
-    pub fn add_boxed_constraint(&mut self, c: Arc<dyn BoolExpr<SchedEncoder> + 'static + Send + Sync>) -> ConstraintID {
+    pub fn add_boxed_constraint(&mut self, c: Arc<dyn SchedConstraint + 'static>) -> ConstraintID {
         self.constraints.push(c);
         self.constraints.len() - 1
     }

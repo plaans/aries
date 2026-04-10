@@ -17,10 +17,13 @@ use crate::{boxes::Segment, effects::EffectOp, *};
 /// maximum end time of tasks, or zero in the absence of tasks.
 ///
 /// It is encorced by default in [`Sched`].
+#[derive(Debug)]
 pub(crate) struct MakespanIsMaxTaskEnd;
 
 impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("MakespanIsMaxTaskEnd");
+        let _span = _span.enter();
         let mut ends = ctx.sched.tasks.iter().map(|t| t.end).collect_vec();
         ends.push(IAtom::ZERO); // default value when no task is present
         EqMax::new(ctx.sched.makespan, ends).enforce_if(l, ctx);
@@ -80,6 +83,8 @@ pub(crate) struct EffectCoherence;
 
 impl BoolExpr<SchedEncoder> for EffectCoherence {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("EffectCoherence");
+        let _span = _span.enter();
         let sched = ctx.sched.clone();
         for e in sched.effects.iter() {
             // WARN: this is not guarded by the effect presence (assumption is that this is always true in an effect)
