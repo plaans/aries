@@ -1,7 +1,7 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_leq, lin_neq, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_leq, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -386,8 +386,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
             // TODO: this reifies the value even though it could be decomposed into the two disjuncts
-            let opt = lin_neq(*x1, *x2).implicant(ctx);
-            disjuncts.push(opt.implicant(ctx));
+            disjuncts.push(lin_leq(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_geq(*x1, *x2).implicant(ctx));
             if disjuncts.tautological() {
                 return;
             }

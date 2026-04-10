@@ -18,7 +18,7 @@ TIMEOUT="${TIMEOUT:-5s}"
 echo "Building..."
 cargo build --profile ci --bin ape
 
-PLAN_FILES=$(find planning/problems/upf -name *.plan | sort)
+PLAN_FILES=$(find planning/problems/upf -name *.enhsp.plan | sort)
 
 for PLAN_FILE in $PLAN_FILES
 do
