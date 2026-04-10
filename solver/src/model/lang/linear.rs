@@ -796,13 +796,26 @@ impl LinSum {
     pub fn conj_scope(&self, dom: impl Dom) -> Conjunction {
         Conjunction::from_iter(self.vars.iter().map(|sv| dom.presence(sv.var)))
     }
+
+    /// Simplify the variables to their normal form
+    ///
+    /// Note that it should be an invariant that the `LinearSum` is always in its normal form.
+    ///
+    /// TODO: complete simplification (sort + merge same vars)
+    fn simplify(&mut self) {
+        self.vars.retain(|sv| !sv.is_zero());
+    }
 }
 
 impl From<LinTerm> for LinSum {
     fn from(value: LinTerm) -> Self {
-        Self {
-            vars: smallvec![value.scaled_var],
-            constant: value.constant,
+        if value.scaled_var.is_zero() {
+            LinSum::cst(value.constant)
+        } else {
+            Self {
+                vars: smallvec![value.scaled_var],
+                constant: value.constant,
+            }
         }
     }
 }
@@ -829,6 +842,7 @@ impl<T: Into<Self>> std::ops::AddAssign<T> for LinSum {
         let rhs = rhs.into();
         self.vars.extend_from_slice(&rhs.vars);
         self.constant += rhs.constant;
+        self.simplify();
     }
 }
 impl<T: Into<Self>> std::ops::Add<T> for LinSum {
@@ -850,6 +864,7 @@ impl std::ops::Neg for LinSum {
 impl<T: Into<Self>> std::ops::SubAssign<T> for LinSum {
     fn sub_assign(&mut self, rhs: T) {
         *self += -rhs.into();
+        self.simplify();
     }
 }
 impl<T: Into<Self>> std::ops::Sub<T> for LinSum {
@@ -864,6 +879,7 @@ impl std::ops::MulAssign<IntCst> for LinSum {
     fn mul_assign(&mut self, rhs: IntCst) {
         self.constant *= rhs;
         self.vars.iter_mut().for_each(|sv| sv.factor *= rhs);
+        self.simplify(); // note: probably useless if the factor is > 0
     }
 }
 impl std::ops::Mul<IntCst> for LinSum {
@@ -901,11 +917,13 @@ impl<Ctx: Store> IntExpr<Ctx> for LinSum {
 /// A linear inequality over integer variables.
 ///
 /// The expression is true iff the linear sum is lesser than or equal to zero.
+#[derive(Clone)]
 pub struct LinLeq(LinSum);
 
 /// A linear equality over integer variables.
 ///
 /// The expression is true iff the linear sum is equal to zero.
+#[derive(Debug, Clone)]
 pub struct LinEq(LinSum);
 
 /// A linear disequality over integer variables.
@@ -959,17 +977,6 @@ impl std::ops::Not for &LinLeq {
     }
 }
 
-// TODO: use native implementation
-impl<Ctx: Store> BoolExpr<Ctx> for LinLeq {
-    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
-        LinearSum::from(&self.0).leq(0).enforce_if(implicant, ctx);
-    }
-
-    fn conj_scope(&self, ctx: &Ctx) -> crate::prelude::Conjunction {
-        self.0.conj_scope(ctx)
-    }
-}
-
 impl From<LinLeq> for ReifExpr {
     fn from(value: LinLeq) -> Self {
         LinearSum::from(&value.0).leq(0).into()
@@ -981,6 +988,18 @@ impl<Ctx: Store> BoolExpr<Ctx> for LinEq {
         let sum = &self.0;
         sum.clone().leq(0).enforce_if(implicant, ctx);
         sum.clone().geq(0).enforce_if(implicant, ctx);
+    }
+
+    fn implicant(&self, ctx: &mut Ctx) -> Lit {
+        if self.0.vars.is_empty() {
+            Lit::from(self.0.constant == 0)
+        } else {
+            // copy of default implimentation
+            let scope = self.scope(ctx);
+            let implicant = ctx.new_literal(scope);
+            self.enforce_if(implicant, ctx);
+            implicant
+        }
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> crate::prelude::Conjunction {

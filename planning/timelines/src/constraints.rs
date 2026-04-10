@@ -1,7 +1,7 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_neq, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_leq, lin_neq, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -277,7 +277,9 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             conjuncts.push(geq(self.timepoint, eff.effective_start()).implicant(ctx));
             conjuncts.push(leq(self.timepoint, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
+                // note we use the conjunctive form with bot leq and geq to avoid reification of the equality
+                conjuncts.push(lin_leq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
                 let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction

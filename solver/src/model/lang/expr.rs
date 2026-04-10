@@ -1,7 +1,7 @@
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::Evaluable;
 use crate::model::lang::alternative::Alternative;
-use crate::model::lang::linear::{LinEq, LinNeq};
+use crate::model::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::model::lang::*;
 use crate::model::{Label, Model};
 use crate::prelude::*;
@@ -56,6 +56,12 @@ pub fn lin_eq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinEq {
 }
 pub fn lin_neq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinNeq {
     lhs.into().neq(rhs)
+}
+pub fn lin_leq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().leq(rhs)
+}
+pub fn lin_geq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().geq(rhs)
 }
 
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
