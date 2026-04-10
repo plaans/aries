@@ -598,12 +598,18 @@ impl Boundable for ScaledVar {
     type Value = IntCst;
 
     fn leq(&self, ub: Self::Value) -> Lit {
+        if self.is_zero() {
+            return Lit::from(0 <= ub);
+        }
         // a*X <= ub
         // X <= ub/a   (floor gets us the first integer value below)
         self.var.leq(div_floor(ub, self.factor))
     }
 
     fn geq(&self, lb: Self::Value) -> Lit {
+        if self.is_zero() {
+            return Lit::from(0 >= lb);
+        }
         // a*X >= lb
         // X >= lb/a
         self.var.geq(div_ceil(lb, self.factor))
