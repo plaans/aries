@@ -143,8 +143,8 @@ pub fn new_empty_lifted_plan(
                 arguments.push(ObjectOrVariable::Variable { name });
             }
             operations.push(Operation {
-                start: QCst::ZERO,
-                duration: QCst::ZERO,
+                start: 0,
+                duration: 0,
                 action_ref: a.name.clone(),
                 arguments,
                 span: None,
