@@ -51,6 +51,7 @@ enum Commands {
     /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
     FindDomain(FindDomain),
+    FindProblem(FindProblem),
 }
 
 #[derive(Parser, Debug)]
@@ -70,10 +71,23 @@ pub struct ParseDomain {
 }
 
 /// Find the domain of a problem file, from naming conventions.
+///
+/// The file name is printed on the standard output to enable using a command like:
+///
+///     > my-planner `ape find-domain $PROBLEM_FILE` $PROBLEM_FILE
 #[derive(Parser, Debug)]
 pub struct FindDomain {
     /// Path to the problem file
     problem_file: PathBuf,
+}
+/// Find the problem of a plan file, from naming conventions.
+///
+/// The command works similarly to `find-domain` and prints only the file name on the stdout
+/// to enable nesting in other command.
+#[derive(Parser, Debug)]
+pub struct FindProblem {
+    /// Path to the plan file
+    plan_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -130,6 +144,7 @@ fn main() -> Res<()> {
         Commands::Parse(command) => parse(command)?,
         Commands::ParseDomain(command) => parse_domain(command)?,
         Commands::FindDomain(command) => find_domain(command)?,
+        Commands::FindProblem(command) => find_problem(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
         Commands::DomRepair(command) => repair(command)?,
@@ -188,6 +203,16 @@ fn parse_domain(command: &ParseDomain) -> Res<()> {
 
 fn find_domain(command: &FindDomain) -> Res<()> {
     match pddl::find_domain_of(&command.problem_file) {
+        Ok(path) => {
+            print!("{}", path.display());
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+fn find_problem(command: &FindProblem) -> Res<()> {
+    match pddl::find_problem_of(&command.plan_file) {
         Ok(path) => {
             print!("{}", path.display());
             Ok(())
