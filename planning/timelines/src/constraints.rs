@@ -79,6 +79,7 @@ impl BoolExpr<SchedEncoder> for Mutex {
 /// This requires to conditions
 ///  - that no two assignments have overlapping exclusitivity periods
 ///  - that every step is within an assignment validity period
+#[derive(Debug)]
 pub(crate) struct EffectCoherence;
 
 impl BoolExpr<SchedEncoder> for EffectCoherence {
