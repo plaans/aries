@@ -12,6 +12,7 @@ use planx::{
     errors::*,
     pddl::{self, input::Input},
 };
+use timelines::IntCst;
 
 use crate::repair::RepairOptions;
 
@@ -102,6 +103,11 @@ pub struct Validate {
     /// The process will exit with error code 1 if the plan is valid.
     #[arg(short, long)]
     invalid: bool,
+    /// If set, the process will exit with error code 1 if the plan's objective value is not the one indicated.
+    ///
+    /// This is primarily intended to enable testing (e.g. that the validator reproduces reference results).
+    #[arg(short, long)]
+    expected_objective: Option<IntCst>,
     #[command(flatten)]
     options: validate::Options,
 }
@@ -232,16 +238,27 @@ fn validate_plan(command: &Validate) -> Res<()> {
         println!("\n===== Plan ====\n\n{plan}\n");
     }
 
-    let valid = validate::validate(&model, &plan, &command.options)?;
-    if valid {
-        println!("VALID");
-        if command.invalid {
-            std::process::exit(1);
+    match validate::validate(&model, &plan, &command.options)? {
+        validate::ValidationResult::Valid { objective_value } => {
+            println!("VALID");
+            if command.invalid {
+                std::process::exit(1);
+            }
+            match (command.expected_objective, objective_value) {
+                (Some(_exptected), None) => {
+                    return Message::error("expected an objective value to be computed").failed();
+                }
+                (Some(exptected), Some(computed)) if exptected != computed => {
+                    return Message::error(format!("expected an objective value of {exptected}")).failed();
+                }
+                (_, _) => {}
+            }
         }
-    } else {
-        println!("INVALID");
-        if !command.invalid {
-            std::process::exit(1);
+        validate::ValidationResult::Invalid => {
+            println!("INVALID");
+            if !command.invalid {
+                std::process::exit(1);
+            }
         }
     }
     Ok(())
