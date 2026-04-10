@@ -173,6 +173,8 @@ dependencies = [
  "itertools",
  "planx",
  "smallvec",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -183,6 +185,7 @@ dependencies = [
  "env_param",
  "idmap",
  "itertools",
+ "num-rational",
  "smallvec",
  "tracing",
 ]

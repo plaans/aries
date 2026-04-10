@@ -1,31 +1,39 @@
 pub mod alternative;
 mod atom;
+mod bool_expr;
 mod boolean;
 mod cst;
+pub mod element;
+pub mod exclusive_choice;
 pub mod expr;
 mod fixed;
-pub mod hreif;
 mod int;
-pub mod linear;
+mod int_expr;
+pub mod linear; // TODO: make pub(crate)
 pub mod max;
 pub mod mul;
 pub mod reification;
+mod store;
 mod sym;
 mod validity_scope;
 mod variables;
 
 pub use crate::core::Lit;
 pub use atom::Atom;
+pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
 pub use cst::Cst;
 pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
+pub use int_expr::IntExpr;
+pub use linear::{LinearLeq, LinearSum, LinearTerm};
+pub use store::{ModelWrapper, Store};
+pub use sym::{SAtom, SVar};
 pub use validity_scope::*;
+pub use variables::Variable;
 
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};
 use crate::model::types::TypeId;
-pub use sym::{SAtom, SVar};
-pub use variables::Variable;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub enum Type {

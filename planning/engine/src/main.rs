@@ -12,6 +12,7 @@ use planx::{
     errors::*,
     pddl::{self, input::Input},
 };
+use timelines::IntCst;
 
 use crate::repair::RepairOptions;
 
@@ -19,6 +20,9 @@ use crate::repair::RepairOptions;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Logging level to use: one of "error", "warn", "info", "debug", "trace"
+    #[structopt(short, long, default_value = "info")]
+    log_level: tracing::Level,
     #[command(subcommand)]
     command: Commands,
 }
@@ -48,6 +52,7 @@ enum Commands {
     /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
     FindDomain(FindDomain),
+    FindProblem(FindProblem),
 }
 
 #[derive(Parser, Debug)]
@@ -67,10 +72,23 @@ pub struct ParseDomain {
 }
 
 /// Find the domain of a problem file, from naming conventions.
+///
+/// The file name is printed on the standard output to enable using a command like:
+///
+///     > my-planner `ape find-domain $PROBLEM_FILE` $PROBLEM_FILE
 #[derive(Parser, Debug)]
 pub struct FindDomain {
     /// Path to the problem file
     problem_file: PathBuf,
+}
+/// Find the problem of a plan file, from naming conventions.
+///
+/// The command works similarly to `find-domain` and prints only the file name on the stdout
+/// to enable nesting in other command.
+#[derive(Parser, Debug)]
+pub struct FindProblem {
+    /// Path to the plan file
+    plan_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -78,10 +96,18 @@ pub struct Validate {
     /// Expanded to provide command line options to get the plan, problem and domain
     #[command(flatten)]
     plan_pb: PlanAndProblem,
+    /// If set, will print verbose output
+    #[arg(short, long)]
+    verbose: bool,
     /// If set, the plan is expected to be invalid,
     /// The process will exit with error code 1 if the plan is valid.
     #[arg(short, long)]
     invalid: bool,
+    /// If set, the process will exit with error code 1 if the plan's objective value is not the one indicated.
+    ///
+    /// This is primarily intended to enable testing (e.g. that the validator reproduces reference results).
+    #[arg(short, long)]
+    expected_objective: Option<IntCst>,
     #[command(flatten)]
     options: validate::Options,
 }
@@ -111,11 +137,20 @@ pub struct DomRepair {
 
 fn main() -> Res<()> {
     let args = Args::parse();
+    // set up logger
+    let subscriber = tracing_subscriber::fmt()
+        .with_timer(tracing_subscriber::fmt::time::Uptime::from(std::time::Instant::now()))
+        // .without_time() // if activated, no time will be printed on logs (useful for counting events with `counts`)
+        // .with_thread_ids(true)
+        .with_max_level(args.log_level)
+        .finish();
+    tracing::subscriber::set_global_default(subscriber)?;
 
     match &args.command {
         Commands::Parse(command) => parse(command)?,
         Commands::ParseDomain(command) => parse_domain(command)?,
         Commands::FindDomain(command) => find_domain(command)?,
+        Commands::FindProblem(command) => find_problem(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
         Commands::DomRepair(command) => repair(command)?,
@@ -182,25 +217,48 @@ fn find_domain(command: &FindDomain) -> Res<()> {
     }
 }
 
+fn find_problem(command: &FindProblem) -> Res<()> {
+    match pddl::find_problem_of(&command.plan_file) {
+        Ok(path) => {
+            print!("{}", path.display());
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 fn validate_plan(command: &Validate) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
     // processed model (from planx)
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
-    println!("{model}");
-    println!("{plan:?}");
+    if command.verbose {
+        println!("\n===== Model ====\n\n{model}\n");
+        println!("\n===== Plan ====\n\n{plan}\n");
+    }
 
-    let valid = validate::validate(&model, &plan, &command.options)?;
-    if valid {
-        println!("Plan is valid!");
-        if command.invalid {
-            std::process::exit(1);
+    match validate::validate(&model, &plan, &command.options)? {
+        validate::ValidationResult::Valid { objective_value } => {
+            println!("VALID");
+            if command.invalid {
+                std::process::exit(1);
+            }
+            match (command.expected_objective, objective_value) {
+                (Some(_exptected), None) => {
+                    return Message::error("expected an objective value to be computed").failed();
+                }
+                (Some(exptected), Some(computed)) if exptected != computed => {
+                    return Message::error(format!("expected an objective value of {exptected}")).failed();
+                }
+                (_, _) => {}
+            }
         }
-    } else {
-        println!("INVALID plan!");
-        if !command.invalid {
-            std::process::exit(1);
+        validate::ValidationResult::Invalid => {
+            println!("INVALID");
+            if !command.invalid {
+                std::process::exit(1);
+            }
         }
     }
     Ok(())
@@ -213,10 +271,9 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let model = pddl::build_model(&dom, &pb)?;
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
-    println!("{plan:?}");
+    println!("\n===== Plan ====\n\n{plan}\n");
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options)?;
-    todo!()
+    optimize_plan::optimize_plan(&model, &plan, &command.options)
 }
 
 fn repair(command: &DomRepair) -> Res<()> {
@@ -282,6 +339,10 @@ impl PlanAndProblem {
         } else {
             &pddl::find_domain_of(pb)?
         };
+
+        println!("> Domain: {}", dom.display());
+        println!("> Problem: {}", pb.display());
+        println!("> Plan: {}", plan.display());
 
         // raw PDDL model
         let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;

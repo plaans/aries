@@ -1,0 +1,8 @@
+(sendtohome spadea spade2 spade n1 spade0 n0)
+(sendtohome diamonda hearta diamond n1 diamond0 n0)
+(sendtohome_b hearta heart n1 heart0 n0 n0 n1)
+(sendtohome_b spade2 spade n2 spadea n1 n1 n2)
+(sendtohome heart2 cluba heart n2 hearta n1)
+(sendtohome_b cluba club n1 club0 n0 n2 n3)
+(sendtohome club2 diamond2 club n2 cluba n1)
+(sendtohome_b diamond2 diamond n2 diamonda n1 n3 n4)

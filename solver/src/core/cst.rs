@@ -11,6 +11,9 @@ mod types {
 
     /// Name of the `IntCst` underlying type
     pub const INT_TYPE_NAME: &str = "i32";
+
+    /// Type representing a rational constant.
+    pub type QCst = num_rational::Rational32;
 }
 
 #[cfg(all(feature = "i64", not(feature = "i128")))]
@@ -23,6 +26,9 @@ mod types {
 
     /// Name of the `IntCst` underlying type
     pub const INT_TYPE_NAME: &str = "i64";
+
+    /// Type representing a rational constant.
+    pub type QCst = num_rational::Rational64;
 }
 
 #[cfg(feature = "i128")]
@@ -35,6 +41,9 @@ mod types {
 
     /// Name of the `IntCst` underlying type
     pub const INT_TYPE_NAME: &str = "i128";
+
+    /// Type representing a rational constant.
+    pub type QCst = num_rational::Ratio<i128>;
 }
 
 /// Convert IntCst to LongCst

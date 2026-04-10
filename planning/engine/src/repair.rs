@@ -7,10 +7,7 @@ use std::{
     time::Instant,
 };
 
-use aries::model::{
-    extensions::DomainsExt,
-    lang::{FAtom, hreif::Store},
-};
+use aries::model::{extensions::DomainsExt, lang::Store};
 use aries::prelude::*;
 use aries_plan_engine::{
     encode::*,
@@ -19,7 +16,7 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, FluentId, Message, Model, Param, Res, Sym, errors::Spanned};
-use timelines::{ConstraintID, EffectOp, Sched, SymAtom, Time, boxes::Segment, explain::ExplainableSolver};
+use timelines::{ConstraintID, EffectOp, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver};
 
 use crate::{
     ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
@@ -65,7 +62,7 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) 
     let mut solver = encode_dom_repair(model, plan)?;
     let encoding_time = start.elapsed().as_millis();
 
-    if solver.check_satisfiability() {
+    if solver.check_satisfiability().is_some() {
         println!("Plan is valid.");
         return Ok(RepairReport {
             status: RepairStatus::ValidPlan,
@@ -187,16 +184,16 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
             let arg = match arg {
                 // ground parameter, get the corresponding object constant
-                lifted_plan::OperationArg::Ground(object) => sched
+                lifted_plan::ObjectOrVariable::Ground(object) => sched
                     .objects
                     .object_atom(object.name().canonical_str())
                     .ok_or_else(|| object.name().invalid("unknown object"))?,
                 // variable parameter, retrieve the variable we created for it
-                lifted_plan::OperationArg::Variable { name } => plan_variables[name],
+                lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
             };
 
             // incorpare the potential values taken by this operation param into the one of the action
-            let seg = Segment::from(sched.model.int_bounds(arg));
+            let seg = Segment::from(sched.model.bounds(arg));
             actions_instanciations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
@@ -205,12 +202,25 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             // add argument to the bindings
             args.insert(&param.name, arg);
         }
+        // start time is the index of the action in the plan
+        let start = Time::from(op.start);
+        let end = Time::from(op.start + op.duration);
+        // action is necessarily present
+        let presence = Lit::TRUE;
+
+        let task_id = sched.add_task(Task {
+            name: format!("operation{op_id}"),
+            start,
+            end,
+            presence,
+        });
 
         let bindings = Scope {
-            start: Time::from(op.start), // start time is the index of the action in the plan
-            end: Time::from(op.start + op.duration),
-            presence: Lit::TRUE, // action is necessarily present
+            start,
+            end,
+            presence,
             args,
+            source: Some(task_id),
         };
 
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
@@ -309,9 +319,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             let enabler = match &eff.effect_expression.operation {
                 planx::EffectOp::Assign(expr_id) => {
                     // hacky way to determine if the effect is positive (will only work for classical planning)
-                    let imposed_value = reify_bool(*expr_id, model, &mut sched)?;
-                    let possibly_detrimental =
-                        required_values.may_require_value(eff.effect_expression.state_variable.fluent, !imposed_value);
+                    let imposed_value = reify_constant(*expr_id, model, &mut sched, &global_scope)?;
+                    let possibly_detrimental = required_values
+                        .may_require_value(eff.effect_expression.state_variable.fluent, 1 - imposed_value);
                     if possibly_detrimental {
                         // effect may delete a precondition, it must be relaxable and we tie its presence to a new literal
                         sched.model.new_literal(Lit::TRUE)
@@ -439,14 +449,16 @@ fn create_potential_effect(
         fluent: model.env.fluents.get(fid).name().to_string(),
         args,
     };
-    let op = EffectOp::Assign(value);
+    let value = if value { 1 } else { 0 };
+    let op = EffectOp::Assign(value.into());
     let eff = timelines::Effect {
         transition_start: t,
-        transition_end: t + FAtom::EPSILON,
+        transition_end: t + sched.epsilon,
         mutex_end: sched.new_timepoint(),
         state_var: sv,
         operation: op,
         prez: enalber,
+        source: bindings.source,
     };
     Ok(eff)
 }

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use aries::core::VarRef;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -110,16 +110,16 @@ impl Encode for BoolLinEq {
         translation: &HashMap<usize, VarRef>,
     ) -> Box<dyn Post<usize>> {
         let translate = |v: Rc<VarBool>| translation.get(v.id()).unwrap();
-        let mut sum: Vec<NFLinearSumItem> = self
+        let mut sum: Vec<ScaledVar> = self
             .a
             .iter()
             .zip(self.b.clone())
-            .map(|x| NFLinearSumItem {
+            .map(|x| ScaledVar {
                 var: *translate(x.1),
                 factor: *x.0,
             })
             .collect();
-        sum.push(NFLinearSumItem {
+        sum.push(ScaledVar {
             var: *translation.get(self.c.id()).unwrap(),
             factor: -1,
         });

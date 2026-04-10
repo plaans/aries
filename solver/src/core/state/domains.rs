@@ -7,9 +7,8 @@ use crate::core::state::int_domains::IntDomains;
 use crate::core::state::{
     Cause, DomainsSnapshot, Explainer, Explanation, ExplanationQueue, InvalidUpdate, OptDomain, RangeDomain, Solution,
 };
-use crate::core::views::{Boundable, VarView};
+use crate::core::views::{Boundable, Term, VarView};
 use crate::core::*;
-use crate::model::lang::{Atom, IAtom};
 use crate::prelude::*;
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
@@ -866,37 +865,6 @@ impl Debug for Conflict {
     }
 }
 
-/// A term that can be converted into a variable.
-/// Notably implemented for `VarRef`, `Lit`, `IVar`, `SVar`, `BVar`
-pub trait Term {
-    fn variable(self) -> VarRef;
-}
-impl Term for Lit {
-    fn variable(self) -> VarRef {
-        self.variable()
-    }
-}
-impl Term for SignedVar {
-    fn variable(self) -> VarRef {
-        self.variable()
-    }
-}
-impl<T: Into<VarRef>> Term for T {
-    fn variable(self) -> VarRef {
-        self.into()
-    }
-}
-impl Term for IAtom {
-    fn variable(self) -> VarRef {
-        self.var.variable()
-    }
-}
-impl Term for Atom {
-    fn variable(self) -> VarRef {
-        self.variable()
-    }
-}
-
 impl crate::core::views::Dom for Domains {
     fn upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::upper_bound(self, svar)
@@ -1316,9 +1284,9 @@ mod tests {
 
         model.save_state();
         assert!(model.assume(x.leq(3)).unwrap());
-        assert_eq!(model.bounds(x.variable()), (0, 3));
+        assert_eq!(model.bounds(x), (0, 3));
         propagate(&mut model).unwrap();
-        assert_eq!(model.bounds(y.variable()), (6, 10));
+        assert_eq!(model.bounds(y), (6, 10));
 
         model.save_state();
         let err = model.assume(y.leq(4)).unwrap_err();

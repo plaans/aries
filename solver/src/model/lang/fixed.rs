@@ -1,4 +1,5 @@
-use crate::core::{IntCst, VarRef};
+use crate::core::views::{Dom, Term, VarView};
+use crate::core::{IntCst, QCst, VarRef};
 use crate::model::lang::{ConversionError, IAtom, IVar};
 use num_rational::Ratio;
 use std::cmp::Ordering;
@@ -58,6 +59,24 @@ impl std::ops::Add<IntCst> for FVar {
 pub struct FAtom {
     pub num: IAtom,
     pub denom: IntCst,
+}
+impl VarView for FAtom {
+    type Value = QCst;
+
+    fn upper_bound(&self, dom: impl Dom) -> Self::Value {
+        debug_assert!(self.denom > 0);
+        QCst::new(self.num.upper_bound(dom), self.denom)
+    }
+
+    fn lower_bound(&self, dom: impl Dom) -> Self::Value {
+        debug_assert!(self.denom > 0);
+        QCst::new(self.num.lower_bound(dom), self.denom)
+    }
+}
+impl Term for FAtom {
+    fn variable(self) -> VarRef {
+        self.num.variable()
+    }
 }
 
 //Implement Debug for FAtom

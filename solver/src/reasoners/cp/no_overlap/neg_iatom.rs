@@ -1,8 +1,5 @@
 use crate::{
-    core::{
-        state::Term,
-        views::{Boundable, VarView},
-    },
+    core::views::{Boundable, Term, VarView},
     prelude::*,
 };
 

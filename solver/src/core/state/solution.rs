@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     collections::ref_store::RefVec,
-    core::{state::ValueCause, views::Dom},
+    core::{
+        state::ValueCause,
+        views::{Dom, Optional, VarView},
+    },
     prelude::*,
 };
 
@@ -23,6 +26,11 @@ impl Solution {
         Self {
             data: Arc::new(SolutionInternal { values, presences }),
         }
+    }
+
+    /// Returns the value that the expression has in the solution, or None if the value is absent.
+    pub fn eval<T: Evaluable>(&self, expr: T) -> Option<T::Value> {
+        expr.evaluate(self)
     }
 
     /// Returns the number of variables declared.
@@ -58,5 +66,35 @@ impl Dom for Solution {
 
     fn presence(&self, var: VarRef) -> Lit {
         self.data.presences[var]
+    }
+}
+
+/// Denotes expressions that can be evaluated in a solution.
+pub trait Evaluable {
+    /// Type of the value of this expression.
+    ///
+    /// For instance it would be [`IntCst`] for [`VarRef`] and `bool` for [`Lit`].
+    type Value;
+
+    /// Determines the value that the expression has in a solution.
+    ///
+    /// Returns `None`  the value is absent and the value wrapped in `Some(...)` otherwise.
+    fn evaluate(&self, solution: &Solution) -> Option<Self::Value>;
+}
+
+impl<T> Evaluable for T
+where
+    T: VarView + Optional,
+{
+    type Value = <T as VarView>::Value;
+
+    fn evaluate(&self, solution: &Solution) -> Option<Self::Value> {
+        if self.present(solution) {
+            // in a solution it is guaranteed that the domain of any present variable is a singleton,
+            // so we only take the lower bound
+            Some(solution.lb(self))
+        } else {
+            None
+        }
     }
 }

@@ -1,32 +1,28 @@
-use aries::{
-    model::lang::{
-        expr::{eq, neq},
-        hreif::{BoolExpr, Store},
-    },
-    prelude::*,
-};
-use timelines::{Sched, constraints::HasValueAt};
+use aries::{model::lang::BoolExpr, prelude::*};
+use timelines::{IntExp, constraints::HasValueAt, encoder::SchedEncoder};
 
 /// Constraint representing a condition
 pub enum ConditionConstraint {
     HasValue(HasValueAt),
-    Eq(IAtom, IAtom),
-    Neq(IAtom, IAtom),
+    EqZero(IntExp),
+    NeqZero(IntExp),
+    LeqZero(IntExp),
 }
-impl BoolExpr<Sched> for ConditionConstraint {
-    fn enforce_if(&self, l: Lit, ctx: &Sched, store: &mut dyn Store) {
+impl BoolExpr<SchedEncoder> for ConditionConstraint {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
         match self {
-            ConditionConstraint::HasValue(has_value_at) => has_value_at.enforce_if(l, ctx, store),
-            ConditionConstraint::Eq(a, b) => eq(*a, *b).enforce_if(l, ctx, store),
-            ConditionConstraint::Neq(a, b) => neq(*a, *b).enforce_if(l, ctx, store),
+            ConditionConstraint::HasValue(has_value_at) => has_value_at.enforce_if(l, ctx),
+            ConditionConstraint::EqZero(sum) => sum.clone().eq(0).enforce_if(l, ctx),
+            ConditionConstraint::NeqZero(sum) => sum.clone().neq(0).enforce_if(l, ctx),
+            ConditionConstraint::LeqZero(sum) => sum.clone().leq(0).enforce_if(l, ctx),
         }
     }
 
-    fn conj_scope(&self, ctx: &Sched, store: &dyn Store) -> aries::model::lang::hreif::Lits {
+    fn conj_scope(&self, ctx: &SchedEncoder) -> Conjunction {
+        use ConditionConstraint::*;
         match self {
-            ConditionConstraint::HasValue(has_value_at) => has_value_at.conj_scope(ctx, store),
-            ConditionConstraint::Eq(a, b) => eq(*a, *b).conj_scope(ctx, store),
-            ConditionConstraint::Neq(a, b) => neq(*a, *b).conj_scope(ctx, store),
+            HasValue(has_value_at) => has_value_at.conj_scope(ctx),
+            EqZero(sum) | NeqZero(sum) | LeqZero(sum) => sum.conj_scope(ctx),
         }
     }
 }

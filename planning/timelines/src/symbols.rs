@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, collections::BTreeMap, fmt::Debug};
+use std::{borrow::Borrow, collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use aries::core::IntCst;
 
@@ -74,5 +74,29 @@ impl ObjectEncoding {
 
     fn next_object_id(&self) -> IntCst {
         self.objects.len() as IntCst
+    }
+
+    /// Builds a decoder that allows retrieving the object from its ID.
+    ///
+    /// Note: the decoder is heavy to compute but cheap to clone. Best if constructed only once.
+    pub fn decoder(&self) -> ObjectDecoder {
+        let id_to_object: BTreeMap<IntCst, Sym> = self.objects.iter().map(|(obj, id)| (*id, obj.clone())).collect();
+        ObjectDecoder {
+            decoder: Arc::new(id_to_object),
+        }
+    }
+}
+
+/// Mapping from object ID to object names.
+///
+/// Note: This datastructure is cheaply clonable.
+#[derive(Clone)]
+pub struct ObjectDecoder {
+    decoder: Arc<BTreeMap<IntCst, Sym>>,
+}
+
+impl ObjectDecoder {
+    pub fn decode(&self, id: IntCst) -> Option<&Sym> {
+        self.decoder.get(&id)
     }
 }

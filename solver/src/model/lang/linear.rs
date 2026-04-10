@@ -1,9 +1,15 @@
-use num_integer::lcm;
+use num_integer::{div_ceil, div_floor, lcm};
+use smallvec::{SmallVec, smallvec};
 
-use crate::core::{IntCst, Lit, VarRef};
-use crate::model::lang::{IAtom, IVar, ValidityScope};
+use crate::core::state::Evaluable;
+use crate::core::views::{Boundable, Dom, Term, VarView};
+use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
+use crate::model::lang::expr::or;
+use crate::model::lang::{BoolExpr, IAtom, IVar, IntExpr, Store, ValidityScope};
+use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Display};
 
 /* ========================================================================== */
 /*                                 LinearTerm                                 */
@@ -19,7 +25,7 @@ pub struct LinearTerm {
     denom: IntCst,
 }
 
-impl std::fmt::Display for LinearTerm {
+impl Display for LinearTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.factor != 1 {
             if self.factor == -1 {
@@ -322,6 +328,22 @@ impl From<IAtom> for LinearSum {
     }
 }
 
+impl From<SignedVar> for LinearTerm {
+    fn from(value: SignedVar) -> Self {
+        LinearTerm {
+            factor: if value.is_plus() { 1 } else { -1 },
+            var: IVar::new(value.variable()),
+            denom: 1,
+        }
+    }
+}
+
+impl From<SignedVar> for LinearSum {
+    fn from(value: SignedVar) -> Self {
+        LinearSum::from(LinearTerm::from(value))
+    }
+}
+
 impl TryFrom<Atom> for LinearSum {
     type Error = ConversionError;
 
@@ -401,15 +423,65 @@ impl std::ops::Neg for LinearSum {
     }
 }
 
+impl TryFrom<LinearSum> for IAtom {
+    type Error = ();
+
+    fn try_from(value: LinearSum) -> Result<Self, Self::Error> {
+        let value = value.simplify();
+        if value.denom != 1 {
+            return Err(());
+        }
+        let var = if value.terms.is_empty() {
+            IVar::ZERO
+        } else if value.terms.len() == 1 {
+            let term = value.terms[0];
+            debug_assert_eq!(term.denom, 1);
+            if term.factor() == 1 {
+                term.var
+            } else {
+                return Err(());
+            }
+        } else {
+            return Err(());
+        };
+        Ok(var + value.constant)
+    }
+}
+
 use crate::transitive_conversion;
 
 use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
+transitive_conversion!(LinearSum, IVar, VarRef);
+
+impl Evaluable for LinearSum {
+    type Value = QCst;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        let mut sum = QCst::new(self.constant, self.denom);
+        for term in &self.terms {
+            // add the contribution of each term, BUT
+            // we shortcircuit and return None if the term is absent
+            sum += term.evaluate(solution)?;
+        }
+        Some(sum)
+    }
+}
+
+impl Evaluable for LinearTerm {
+    type Value = QCst;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        let var_value = self.var.evaluate(solution)?;
+        Some(QCst::new(self.factor, self.denom) * QCst::from_integer(var_value))
+    }
+}
 
 /* ========================================================================== */
 /*                                  LinearLeq                                 */
 /* ========================================================================== */
 
+#[derive(Clone)]
 pub struct LinearLeq {
     sum: LinearSum,
     ub: IntCst,
@@ -444,54 +516,488 @@ impl From<LinearLeq> for ReifExpr {
                 .or_insert(e.factor);
         }
         ReifExpr::Linear(NFLinearLeq {
-            sum: vars
-                .iter()
-                .map(|(&var, &factor)| NFLinearSumItem { var, factor })
-                .collect(),
+            sum: vars.iter().map(|(&var, &factor)| ScaledVar { var, factor }).collect(),
             upper_bound: value.ub - value.sum.constant,
         })
     }
 }
 
 /* ========================================================================== */
-/*                               NFLinearSumItem                              */
+/*                               ScaledVar                                    */
 /* ========================================================================== */
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct NFLinearSumItem {
+/// A term of the form `a * X` where `X` is an integer variable and `a` is a integer constant.
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct ScaledVar {
+    /// Variable `X` to which the factor is applied
+    ///
+    /// Note that the order is important so that `Ord` considers first the variable when ordering a list.
+    /// This is relied upon when normalizing a linear sum.
     pub var: VarRef,
+    /// Factor `a` by which the variable is multiplied.
     pub factor: IntCst,
 }
 
-impl std::fmt::Display for NFLinearSumItem {
+impl ScaledVar {
+    pub const ZERO: ScaledVar = ScaledVar::new(VarRef::ZERO, 0);
+    pub const fn new(var: VarRef, factor: IntCst) -> Self {
+        Self { var, factor }
+    }
+
+    /// Returns true if the term is always equal to zero.
+    pub fn is_zero(&self) -> bool {
+        self.factor == 0 || self.var == VarRef::ZERO
+    }
+}
+
+impl Display for ScaledVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.factor != 1 {
-            if self.factor == -1 {
-                write!(f, "-")?;
-            } else {
-                write!(f, "{}", self.factor)?;
-            }
+        match self.factor {
+            _ if self.is_zero() => write!(f, "0"),
+            1 => write!(f, "{:?}", self.var),
+            -1 => write!(f, "-{:?}", self.var),
+            _ => write!(f, "{}*{:?}", self.factor, self.var),
         }
-        if self.factor.abs() != 1 && self.var != VarRef::ONE {
-            write!(f, "*")?;
+    }
+}
+
+impl std::fmt::Debug for ScaledVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl From<SignedVar> for ScaledVar {
+    fn from(value: SignedVar) -> Self {
+        Self {
+            var: value.variable(),
+            factor: value.sign(),
         }
-        if self.var != VarRef::ONE {
-            write!(f, "{:?}", self.var)?;
-        } else if self.factor.abs() == 1 {
-            write!(f, "1")?;
+    }
+}
+
+impl VarView for ScaledVar {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
+        let svar = if self.factor >= 0 {
+            SignedVar::plus(self.var)
+        } else {
+            SignedVar::minus(self.var)
+        };
+
+        svar.upper_bound(dom) * self.factor.abs()
+    }
+
+    fn lower_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
+        -(-self).upper_bound(dom)
+    }
+}
+
+impl Boundable for ScaledVar {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        // a*X <= ub
+        // X <= ub/a   (floor gets us the first integer value below)
+        self.var.leq(div_floor(ub, self.factor))
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        // a*X >= lb
+        // X >= lb/a
+        self.var.geq(div_ceil(lb, self.factor))
+    }
+}
+
+impl std::ops::Neg for ScaledVar {
+    type Output = ScaledVar;
+
+    fn neg(self) -> Self::Output {
+        ScaledVar::new(self.var, -self.factor)
+    }
+}
+impl std::ops::Neg for &ScaledVar {
+    type Output = ScaledVar;
+
+    fn neg(self) -> Self::Output {
+        ScaledVar::new(self.var, -self.factor)
+    }
+}
+impl Term for ScaledVar {
+    fn variable(self) -> VarRef {
+        self.var
+    }
+}
+
+/// A term of the form `a * X + b` where `X` is an integer variable and `a` and `b` are integer constants.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LinTerm {
+    scaled_var: ScaledVar,
+    constant: IntCst,
+}
+
+impl LinTerm {
+    const fn new(scaled_var: ScaledVar, constant: IntCst) -> Self {
+        Self { scaled_var, constant }
+    }
+    pub const fn int_cst(constant: IntCst) -> Self {
+        Self::new(ScaledVar::ZERO, constant)
+    }
+
+    pub const ZERO: Self = Self::int_cst(0);
+    pub const TRUE: Self = Self::int_cst(1);
+    pub const FALSE: Self = Self::int_cst(0);
+
+    pub fn eq<Rhs: Into<LinSum>>(&self, other: Rhs) -> LinEq {
+        LinSum::from(*self).eq(other.into())
+    }
+}
+
+impl Debug for LinTerm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.scaled_var.is_zero() {
+            return write!(f, "{}", self.constant);
+        }
+        write!(f, "{:?}", self.scaled_var)?;
+        if self.constant > 0 {
+            write!(f, " + {}", self.constant)?;
+        } else if self.constant < 0 {
+            write!(f, " - {}", self.constant.abs())?;
         }
         Ok(())
     }
 }
 
-impl std::ops::Neg for NFLinearSumItem {
-    type Output = NFLinearSumItem;
+impl VarView for LinTerm {
+    type Value = IntCst;
+
+    fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
+        self.scaled_var.upper_bound(dom) + self.constant
+    }
+
+    fn lower_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
+        self.scaled_var.lower_bound(dom) + self.constant
+    }
+}
+
+impl Boundable for LinTerm {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        // a*X + b <= ub
+        // a*X <= ub -b
+        self.scaled_var.leq(ub - self.constant)
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        // a*X + b >= lb
+        // a*X >= lb -b
+        self.scaled_var.geq(lb - self.constant)
+    }
+}
+impl Term for LinTerm {
+    fn variable(self) -> VarRef {
+        self.scaled_var.variable()
+    }
+}
+
+impl std::ops::Neg for LinTerm {
+    type Output = Self;
 
     fn neg(self) -> Self::Output {
-        NFLinearSumItem {
-            var: self.var,
-            factor: -self.factor,
+        Self::new(-self.scaled_var, -self.constant)
+    }
+}
+impl std::ops::Add<LinTerm> for LinTerm {
+    type Output = LinSum;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        LinSum::from(self) + rhs
+    }
+}
+impl std::ops::Sub<LinTerm> for LinTerm {
+    type Output = LinSum;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        LinSum::from(self) - rhs
+    }
+}
+
+impl From<IntCst> for LinTerm {
+    fn from(value: IntCst) -> Self {
+        LinTerm::int_cst(value)
+    }
+}
+impl From<IAtom> for LinTerm {
+    fn from(value: IAtom) -> Self {
+        Self {
+            scaled_var: ScaledVar::new(value.var.variable(), 1),
+            constant: value.shift,
         }
+    }
+}
+impl From<ScaledVar> for LinTerm {
+    fn from(value: ScaledVar) -> Self {
+        Self::new(value, 0)
+    }
+}
+
+impl TryFrom<LinTerm> for IntCst {
+    type Error = ();
+
+    fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
+        if value.scaled_var.is_zero() {
+            Ok(value.constant)
+        } else {
+            Err(())
+        }
+    }
+}
+
+transitive_conversion!(LinTerm, ScaledVar, SignedVar);
+transitive_conversion!(LinTerm, IAtom, IVar);
+transitive_conversion!(LinTerm, SignedVar, VarRef);
+transitive_conversion!(LinSum, LinTerm, VarRef);
+transitive_conversion!(LinSum, LinTerm, SignedVar);
+transitive_conversion!(LinSum, LinTerm, IAtom);
+transitive_conversion!(LinSum, LinTerm, IVar);
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct LinSum {
+    vars: SmallVec<[ScaledVar; 2]>,
+    constant: IntCst,
+}
+
+impl LinSum {
+    pub fn cst(constant: IntCst) -> Self {
+        Self {
+            vars: SmallVec::new(),
+            constant,
+        }
+    }
+    pub fn zero() -> Self {
+        Self::cst(0)
+    }
+    pub fn eq<Rhs: Into<LinSum>>(self, other: Rhs) -> LinEq {
+        LinEq(self - other)
+    }
+    pub fn neq<Rhs: Into<LinSum>>(self, other: Rhs) -> LinNeq {
+        LinNeq(self - other)
+    }
+    pub fn leq<Rhs: Into<LinSum>>(self, upper_bound: Rhs) -> LinLeq {
+        LinLeq(self - upper_bound)
+    }
+    pub fn geq<Rhs: Into<LinSum>>(self, lower_bound: Rhs) -> LinLeq {
+        LinLeq(lower_bound.into() - self)
+    }
+
+    /// Returns the conjunction of all presence literals of variables appearing in the sum.
+    pub fn conj_scope(&self, dom: impl Dom) -> Conjunction {
+        Conjunction::from_iter(self.vars.iter().map(|sv| dom.presence(sv.var)))
+    }
+}
+
+impl From<LinTerm> for LinSum {
+    fn from(value: LinTerm) -> Self {
+        Self {
+            vars: smallvec![value.scaled_var],
+            constant: value.constant,
+        }
+    }
+}
+impl From<IntCst> for LinSum {
+    fn from(value: IntCst) -> Self {
+        Self::cst(value)
+    }
+}
+
+impl TryFrom<LinSum> for LinTerm {
+    type Error = ();
+
+    fn try_from(value: LinSum) -> Result<Self, Self::Error> {
+        match *value.vars.as_slice() {
+            [] => Ok(LinTerm::int_cst(value.constant)),
+            [single] => Ok(LinTerm::new(single, value.constant)),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<T: Into<Self>> std::ops::AddAssign<T> for LinSum {
+    fn add_assign(&mut self, rhs: T) {
+        let rhs = rhs.into();
+        self.vars.extend_from_slice(&rhs.vars);
+        self.constant += rhs.constant;
+    }
+}
+impl<T: Into<Self>> std::ops::Add<T> for LinSum {
+    type Output = Self;
+
+    fn add(mut self, rhs: T) -> Self::Output {
+        self += rhs;
+        self
+    }
+}
+impl std::ops::Neg for LinSum {
+    type Output = LinSum;
+
+    fn neg(mut self) -> Self::Output {
+        self *= -1;
+        self
+    }
+}
+impl<T: Into<Self>> std::ops::SubAssign<T> for LinSum {
+    fn sub_assign(&mut self, rhs: T) {
+        *self += -rhs.into();
+    }
+}
+impl<T: Into<Self>> std::ops::Sub<T> for LinSum {
+    type Output = Self;
+
+    fn sub(mut self, rhs: T) -> Self::Output {
+        self -= rhs;
+        self
+    }
+}
+impl std::ops::MulAssign<IntCst> for LinSum {
+    fn mul_assign(&mut self, rhs: IntCst) {
+        self.constant *= rhs;
+        self.vars.iter_mut().for_each(|sv| sv.factor *= rhs);
+    }
+}
+impl std::ops::Mul<IntCst> for LinSum {
+    type Output = Self;
+
+    fn mul(mut self, rhs: IntCst) -> Self::Output {
+        self *= rhs;
+        self
+    }
+}
+impl std::ops::Mul<LinSum> for IntCst {
+    type Output = LinSum;
+
+    fn mul(self, mut rhs: LinSum) -> Self::Output {
+        rhs *= self;
+        rhs
+    }
+}
+impl From<&LinSum> for LinearSum {
+    fn from(value: &LinSum) -> Self {
+        let mut out = LinearSum::constant_int(value.constant);
+        for t in &value.vars {
+            out.add_term(LinearTerm::int(t.factor, IVar::new(t.var)));
+        }
+        out
+    }
+}
+
+impl<Ctx: Store> IntExpr<Ctx> for LinSum {
+    fn enforce_eq_if(&self, implicant: Lit, variable: LinTerm, ctx: &mut Ctx) {
+        self.clone().eq(variable).enforce_if(implicant, ctx);
+    }
+}
+
+/// A linear inequality over integer variables.
+///
+/// The expression is true iff the linear sum is lesser than or equal to zero.
+pub struct LinLeq(LinSum);
+
+/// A linear equality over integer variables.
+///
+/// The expression is true iff the linear sum is equal to zero.
+pub struct LinEq(LinSum);
+
+/// A linear disequality over integer variables.
+///
+/// The expression is true iff the linear sum is *not* equal to zero.
+pub struct LinNeq(LinSum);
+
+impl std::ops::Not for LinEq {
+    type Output = LinNeq;
+
+    fn not(self) -> Self::Output {
+        LinNeq(self.0)
+    }
+}
+
+impl std::ops::Not for LinNeq {
+    type Output = LinEq;
+
+    fn not(self) -> Self::Output {
+        LinEq(self.0)
+    }
+}
+
+impl std::ops::Not for LinLeq {
+    type Output = LinLeq;
+
+    fn not(self) -> Self::Output {
+        self.0.geq(1)
+    }
+}
+impl std::ops::Not for &LinEq {
+    type Output = LinNeq;
+
+    fn not(self) -> Self::Output {
+        LinNeq(self.0.clone())
+    }
+}
+impl std::ops::Not for &LinNeq {
+    type Output = LinEq;
+
+    fn not(self) -> Self::Output {
+        LinEq(self.0.clone())
+    }
+}
+
+impl std::ops::Not for &LinLeq {
+    type Output = LinLeq;
+
+    fn not(self) -> Self::Output {
+        self.0.clone().geq(1)
+    }
+}
+
+// TODO: use native implementation
+impl<Ctx: Store> BoolExpr<Ctx> for LinLeq {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+        LinearSum::from(&self.0).leq(0).enforce_if(implicant, ctx);
+    }
+
+    fn conj_scope(&self, ctx: &Ctx) -> crate::prelude::Conjunction {
+        self.0.conj_scope(ctx)
+    }
+}
+
+impl From<LinLeq> for ReifExpr {
+    fn from(value: LinLeq) -> Self {
+        LinearSum::from(&value.0).leq(0).into()
+    }
+}
+
+impl<Ctx: Store> BoolExpr<Ctx> for LinEq {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+        let sum = &self.0;
+        sum.clone().leq(0).enforce_if(implicant, ctx);
+        sum.clone().geq(0).enforce_if(implicant, ctx);
+    }
+
+    fn conj_scope(&self, ctx: &Ctx) -> crate::prelude::Conjunction {
+        self.0.conj_scope(ctx)
+    }
+}
+
+impl<Ctx: Store> BoolExpr<Ctx> for LinNeq {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+        let sum = &self.0;
+        let greater = sum.clone().geq(1).implicant(ctx);
+        let smaller = sum.clone().leq(-1).implicant(ctx);
+        or([greater, smaller]).enforce_if(implicant, ctx);
+    }
+
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        self.0.conj_scope(ctx)
     }
 }
 
@@ -499,9 +1005,9 @@ impl std::ops::Neg for NFLinearSumItem {
 /*                                 NFLinearLeq                                */
 /* ========================================================================== */
 
-#[derive(Eq, PartialEq, Hash, Debug, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone)]
 pub struct NFLinearLeq {
-    pub sum: Vec<NFLinearSumItem>,
+    pub sum: Vec<ScaledVar>,
     pub upper_bound: IntCst,
 }
 
@@ -530,6 +1036,12 @@ impl std::fmt::Display for NFLinearLeq {
             }
         }
         write!(f, " <= {}", self.upper_bound)
+    }
+}
+
+impl Debug for NFLinearLeq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self}")
     }
 }
 
@@ -563,7 +1075,7 @@ impl NFLinearLeq {
                 .into_iter()
                 .filter(|(v, f)| *f != 0 && *v != VarRef::ZERO)
                 .filter(|(v, _)| *v != VarRef::ONE) // Has been grouped into the upper bound
-                .map(|(v, f)| NFLinearSumItem { var: v, factor: f })
+                .map(|(v, f)| ScaledVar { var: v, factor: f })
                 .collect(),
             upper_bound,
         }
@@ -1184,7 +1696,7 @@ mod tests {
         let var1 = VarRef::from_u32(5);
         let var2 = VarRef::from_u32(6);
 
-        let item = |factor: IntCst, var: VarRef| NFLinearSumItem { var, factor };
+        let item = |factor: IntCst, var: VarRef| ScaledVar { var, factor };
 
         let obj = NFLinearLeq {
             sum: vec![

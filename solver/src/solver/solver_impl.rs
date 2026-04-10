@@ -2,10 +2,11 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
-use crate::core::views::Dom;
+use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
 use crate::model::lang::IAtom;
+use crate::model::lang::linear::LinearSum;
 use crate::model::{Constraint, Label, Model, ModelShape};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
@@ -200,8 +201,6 @@ impl<Lbl: Label> Solver<Lbl> {
         }
         match constraint {
             &ReifExpr::Lit(lit) => {
-                let expr_scope = self.model.presence_literal(lit.variable());
-                assert!(self.model.state.implies(scope, expr_scope), "Incompatible scopes");
                 self.add_clause([!enabler, lit], scope)?; // value => lit
                 Ok(())
             }
@@ -460,32 +459,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 for item in &a.rhs {
                     let item_scope = self.model.state.presence(item.var);
                     debug_assert!(self.model.state.implies(item_scope, scope));
-                    // a.lhs >= item.var + item.cst
-                    // a.lhs - item.var >= item.cst
-                    // item.var - a.lhs <= -item.cst
                     let alt_value = self.model.get_tautology_of_scope(item_scope);
-                    if item.var.is_plus() {
-                        assert!(a.lhs.is_plus());
-                        self.post_constraint(&Constraint::HalfReified(
-                            ReifExpr::MaxDiff(DifferenceExpression::new(
-                                item.var.variable(),
-                                a.lhs.variable(),
-                                -item.cst,
-                            )),
-                            alt_value,
-                        ))?;
-                    } else {
-                        assert!(a.lhs.is_minus());
-                        // item.var - a.lhs <= -item.cst
-                        let x = item.var.variable();
-                        let y = a.lhs.variable();
-                        // (-x) - (-y) <= -item.cst
-                        // y - x <= -item.cst
-                        self.post_constraint(&Constraint::HalfReified(
-                            ReifExpr::MaxDiff(DifferenceExpression::new(y, x, -item.cst)),
-                            alt_value,
-                        ))?;
-                    }
+                    // a.lhs >= item.var + item.cst
+                    let constraint = LinearSum::from(a.lhs).geq(LinearSum::from(item.var) + item.cst);
+                    self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
                 }
 
                 let prez = |v: SignedVar| self.model.state.presence(v);
@@ -764,35 +741,8 @@ impl<Lbl: Label> Solver<Lbl> {
         assumptions: &[Lit],
         limit: SearchLimit,
     ) -> Result<Result<Solution, UnsatCore>, Exit> {
-        // make sure brancher has knowledge of all variables.
-        self.brancher.import_vars(&self.model);
-
-        assert_eq!(self.decision_level, DecLvl::ROOT);
-
-        match self.propagate_and_backtrack_to_consistent() {
-            Ok(()) => (),
-            Err(conflict) => {
-                // conflict at root, return empty unsat core
-                debug_assert!(conflict.is_empty());
-                return Ok(Err(Explanation::new()));
-            }
-        };
-        for &lit in assumptions {
-            if let Err(unsat_core) = self.assume_and_propagate(lit) {
-                return Ok(Err(unsat_core));
-            }
-        }
-        match self.search(limit)? {
-            SearchResult::AtSolution => Ok(Ok(self.model.state.extract_solution())),
-            SearchResult::ExternalSolution(s) => Ok(Ok(s)),
-            SearchResult::Unsat(conflict) => {
-                let unsat_core = self
-                    .model
-                    .state
-                    .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
-                Ok(Err(unsat_core))
-            }
-        }
+        // delegate to optimization with a constant objective
+        self.minimize_with_assumptions(VarRef::ZERO, assumptions, limit, |_sol| {})
     }
 
     /// Returns an iterable datastructure for computing all MUS and MCS.
@@ -957,14 +907,54 @@ impl<Lbl: Label> Solver<Lbl> {
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
+
+        let opt_var = if minimize {
+            SignedVar::plus(objective.var.variable())
+        } else {
+            SignedVar::minus(objective.var.variable())
+        };
+        if let Ok(sol) =
+            self.minimize_with_assumptions(opt_var, &[], limit, |sol| on_new_solution(sol.lb(objective), sol))?
+        {
+            Ok(Some((sol.lb(objective), sol)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Solves the minimization problem under the given assumptions.
+    /// In case of unsatisfiability, returns an unsat core (composed of these assumptions).
+    ///
+    /// A callback can be given that will be invoked on each new solution with an improved cost, as soon as it is discovered.
+    ///
+    /// Invariant: the solver must be at the root decision level (meaning that there must be no prior assumptions/decisions on the stack)
+    pub fn minimize_with_assumptions<ObjVar: Boundable<Value = IntCst> + VarView<Value = IntCst>>(
+        &mut self,
+        objective: ObjVar,
+        assumptions: &[Lit],
+        limit: SearchLimit,
+        mut on_new_solution: impl FnMut(&Solution),
+    ) -> Result<Result<Solution, UnsatCore>, Exit> {
+        // make sure brancher has knowledge of all variables.
+        self.brancher.import_vars(&self.model);
+
+        assert_eq!(self.decision_level, DecLvl::ROOT);
+
+        match self.propagate_and_backtrack_to_consistent() {
+            Ok(()) => (),
+            Err(conflict) => {
+                // conflict at root, return empty unsat core
+                debug_assert!(conflict.is_empty());
+                return Ok(Err(Explanation::new()));
+            }
+        };
+        for &lit in assumptions {
+            if let Err(unsat_core) = self.assume_and_propagate(lit) {
+                return Ok(Err(unsat_core));
+            }
+        }
         // best solution found so far
         let mut best = None;
-
-        if self.post_constraints().is_err() || self.propagate().is_err() {
-            // trivially UNSAT
-            return Ok(None);
-        }
-
         loop {
             let sol = match self.search(limit)? {
                 SearchResult::AtSolution => {
@@ -972,29 +962,37 @@ impl<Lbl: Label> Solver<Lbl> {
                     // notify other solvers that we have found a new solution
                     let sol = self.model.state.extract_solution();
                     self.sync.notify_solution_found(sol.clone());
-                    let objective_value = sol.lb(objective);
+                    let objective_value = sol.lb(&objective);
                     if STATS_AT_SOLUTION.get() {
                         println!("*********  New sol: {objective_value} *********");
                         self.print_stats();
                     }
-                    on_new_solution(objective_value, &sol);
+                    on_new_solution(&sol);
                     sol
                 }
                 SearchResult::ExternalSolution(sol) => sol, // a solution was handed to us by another solver
-                SearchResult::Unsat(_conflict) => return Ok(best), // exhausted search space under the current wuality assumptions
+                SearchResult::Unsat(conflict) => {
+                    // exhausted search space under the current quality assumptions
+                    // 1) if we have a solution return it
+                    // 2) otherwise, the problem is unsatisfiable and we return the corresponding UNSAT core
+                    return match best {
+                        Some((_obj, best)) => Ok(Ok(best)),
+                        None => {
+                            let unsat_core = self
+                                .model
+                                .state
+                                .extract_unsat_core_after_conflict(conflict, &mut self.reasoners);
+                            Ok(Err(unsat_core))
+                        }
+                    };
+                }
             };
 
             // determine whether the solution found is an improvement on the previous one (might not be the case if sent by another solver)
-            let objective_value = sol.lb(objective);
+            let objective_value = sol.lb(&objective);
             let is_improvement = match best {
                 None => true,
-                Some((previous_best, _)) => {
-                    if minimize {
-                        objective_value < previous_best
-                    } else {
-                        objective_value > previous_best
-                    }
-                }
+                Some((previous_best, _)) => objective_value < previous_best,
             };
 
             if is_improvement {
@@ -1007,16 +1005,14 @@ impl<Lbl: Label> Solver<Lbl> {
                 // save the best solution
                 best = Some((objective_value, sol));
 
-                // force future solutions to improve on this one
-                let improvement_literal = if minimize {
-                    objective.lt_lit(objective_value)
-                } else {
-                    objective.gt_lit(objective_value)
-                };
+                // literal that forces future solutions to improve on this one
+                let improvement_literal = objective.leq(objective_value - 1);
+
+                // undo any decision and post a new assumption that the objective is improved
                 self.reset_search();
                 match self.assume_and_propagate(improvement_literal) {
                     Ok(_) => {}
-                    Err(_unsat_core) => return Ok(best), // no way to improve this bound
+                    Err(_unsat_core) => return Ok(Ok(best.unwrap().1)), // no way to improve this bound
                 }
             }
         }
@@ -1068,7 +1064,7 @@ impl<Lbl: Label> Solver<Lbl> {
     }
 
     /// Posts an assumptions on a new decision level, run all propagators and returns an `UnsatCore`
-    /// if the assumptions turns out to be incompatibly with previous ones.
+    /// if the assumptions turns out to be incompatible with previous ones.
     ///
     /// If the assumption is accepted returns an `Ok(x)` result where is true if the assumption was not already entailed
     /// (i.e. something changed in the domains).

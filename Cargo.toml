@@ -60,7 +60,7 @@ tokio = { default-features = false, version = "1.49.0", features = [
     "macros",
 ] }
 tokio-stream = { default-features = false, version = "0.1" }
-tracing = { version = "0.1", features = ["release_max_level_debug"] }
+tracing = { version = "0.1", features = ["release_max_level_info"] }
 tracing-subscriber = "0.3"
 transitive = "1.2.0"
 vec_map = "0.8"

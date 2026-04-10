@@ -9,7 +9,7 @@ use aries::core::VarRef;
 use aries::model::Model;
 use aries::model::lang::BVar;
 use aries::model::lang::IVar;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 use aries::solver::SearchLimit;
 use aries::solver::Solver;
 use itertools::Itertools;
@@ -154,7 +154,7 @@ pub(super) fn basic_int_model_3() -> (Model<String>, IVar, IVar, IVar) {
 /// The linear sum is 3\*x + 2\*y with bound 13.
 pub(super) fn basic_lin_model() -> (
     Model<String>,
-    Vec<NFLinearSumItem>,
+    Vec<ScaledVar>,
     IVar,
     IVar,
     IntCst,
@@ -168,11 +168,11 @@ pub(super) fn basic_lin_model() -> (
     let b = 13;
 
     let sum = vec![
-        NFLinearSumItem {
+        ScaledVar {
             var: x.into(),
             factor: c_x,
         },
-        NFLinearSumItem {
+        ScaledVar {
             var: y.into(),
             factor: c_y,
         },
