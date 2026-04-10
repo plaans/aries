@@ -1,6 +1,7 @@
 use crate::{
     model::lang::{
         expr::{And, Leq, Or, or},
+        linear::LinLeq,
         max::{EqMax, EqMin},
         *,
     },
@@ -29,17 +30,29 @@ pub trait BoolExpr<Ctx: Store> {
         let conj_scope = self.conj_scope(ctx);
         ctx.conjunctive_scope(&conj_scope)
     }
+
+    /// Enforce that if the expression is in scope and `l` is true and defined, then the expression should be true.
     fn opt_enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        let scope = self.scope(ctx);
-        let implicant = if scope == ctx.presence(l.variable()) {
+        let expression_scope = self.scope(ctx);
+        let enabler_scope = ctx.presence_literal(l);
+
+        // get the scope of both the expression and the enabler
+        let scope = ctx.conjunctive_scope(&[expression_scope, enabler_scope]);
+
+        let implicant = if scope == enabler_scope {
+            // l already has the right scope so use it directly
             l // TODO: here we should instead test that scope => prez(l)
         } else if ctx.entails(l) {
+            // `l` is always true when defined, so we can use an always true literal in the common scope
             ctx.tautology_of_scope(scope)
         } else {
+            // we need to create a new literal that is true whenever it is defined and l is true.
             let imp = ctx.new_literal(scope);
-            or([imp, !scope]).enforce_if(l, ctx);
+            // if in scope, and l, then imp should be true
+            or([!scope, !l, imp]).enforce(ctx);
             imp
         };
+
         self.enforce_if(implicant, ctx);
     }
 
@@ -116,6 +129,7 @@ crate::impl_reif!(Leq);
 crate::impl_reif!(LinearLeq);
 crate::impl_reif!(EqMax);
 crate::impl_reif!(EqMin);
+crate::impl_reif!(LinLeq);
 
 #[macro_export]
 macro_rules! impl_reif {

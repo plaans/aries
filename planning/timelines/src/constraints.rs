@@ -1,7 +1,7 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, leq, lin_eq, lin_neq, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_leq, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -17,10 +17,13 @@ use crate::{boxes::Segment, effects::EffectOp, *};
 /// maximum end time of tasks, or zero in the absence of tasks.
 ///
 /// It is encorced by default in [`Sched`].
+#[derive(Debug)]
 pub(crate) struct MakespanIsMaxTaskEnd;
 
 impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("MakespanIsMaxTaskEnd");
+        let _span = _span.enter();
         let mut ends = ctx.sched.tasks.iter().map(|t| t.end).collect_vec();
         ends.push(IAtom::ZERO); // default value when no task is present
         EqMax::new(ctx.sched.makespan, ends).enforce_if(l, ctx);
@@ -76,10 +79,13 @@ impl BoolExpr<SchedEncoder> for Mutex {
 /// This requires to conditions
 ///  - that no two assignments have overlapping exclusitivity periods
 ///  - that every step is within an assignment validity period
+#[derive(Debug)]
 pub(crate) struct EffectCoherence;
 
 impl BoolExpr<SchedEncoder> for EffectCoherence {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("EffectCoherence");
+        let _span = _span.enter();
         let sched = ctx.sched.clone();
         for e in sched.effects.iter() {
             // WARN: this is not guarded by the effect presence (assumption is that this is always true in an effect)
@@ -204,6 +210,7 @@ struct StepContributor {
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        ctx.add_assertion(implies(ctx.presence_literal(l), self.prez));
         let _span = tracing::debug_span!("HasValueAt");
         let _span = _span.enter();
         tracing::debug!("{l:?} => {self:?}");
@@ -270,7 +277,9 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             conjuncts.push(geq(self.timepoint, eff.effective_start()).implicant(ctx));
             conjuncts.push(leq(self.timepoint, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
+                // note we use the conjunctive form with bot leq and geq to avoid reification of the equality
+                conjuncts.push(lin_leq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
                 let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
@@ -377,8 +386,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
             // TODO: this reifies the value even though it could be decomposed into the two disjuncts
-            let opt = lin_neq(*x1, *x2).implicant(ctx);
-            disjuncts.push(opt.implicant(ctx));
+            disjuncts.push(lin_leq(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_geq(*x1, *x2).implicant(ctx));
             if disjuncts.tautological() {
                 return;
             }

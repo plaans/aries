@@ -100,6 +100,8 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
         Disjunction::from_iter(self.element.options.iter().map(|a| a.selector)).enforce_if(l, ctx);
 
         for o in &self.element.options {
+            let _span = tracing::debug_span!("Option");
+            let _span = _span.enter();
             // if `a` is the establishers the the variable must have its value
             implies(o.selector, lin_eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
             // TODO: we could do a stronger propagation by ensuring that at least each value in the lhs domain is supported by value in the rhs domains

@@ -2,6 +2,7 @@ use aries::{model::lang::BoolExpr, prelude::*};
 use timelines::{IntExp, constraints::HasValueAt, encoder::SchedEncoder};
 
 /// Constraint representing a condition
+#[derive(Debug)]
 pub enum ConditionConstraint {
     HasValue(HasValueAt),
     EqZero(IntExp),
