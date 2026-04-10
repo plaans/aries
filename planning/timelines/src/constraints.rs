@@ -1,7 +1,7 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, leq, lin_eq, lin_neq, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_neq, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -210,6 +210,7 @@ struct StepContributor {
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        ctx.add_assertion(implies(ctx.presence_literal(l), self.prez));
         let _span = tracing::debug_span!("HasValueAt");
         let _span = _span.enter();
         tracing::debug!("{l:?} => {self:?}");
