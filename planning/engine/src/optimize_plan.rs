@@ -42,7 +42,9 @@ pub enum Relaxation {
 pub enum Objective {
     /// The objective value defined in the domain
     Original,
+    /// Number of actions in the plan
     PlanLength,
+    /// End time of the latest action
     Makespan,
 }
 

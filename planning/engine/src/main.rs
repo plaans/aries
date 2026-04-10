@@ -383,7 +383,7 @@ pub struct Problem {
     /// Path to the PDDL problem file.
     problem: PathBuf,
     /// Path to the PDDL domain file.
-    /// If not specified, we will attempt to automatically infer it based on the plan file.
+    /// If not specified, we will attempt to automatically infer it based on the problem file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
 }
