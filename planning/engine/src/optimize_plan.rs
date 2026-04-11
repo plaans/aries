@@ -8,7 +8,6 @@ use aries::{
 use aries_plan_engine::{
     encode::{
         encoding::{ActionInstance, Encoding, ObjectVar},
-        required_values::RequiredValues,
         tags::{ActionCondition, Tag, format_culprit_set},
         *,
     },
@@ -88,10 +87,6 @@ pub fn encode_plan_optimization_problem(
     let mut sched = timelines::Sched::new(1, objs);
 
     let global_scope = Scope::global(&sched);
-
-    // overapproximation of values required at some point in the problem.
-    // Will be populated as we encounter new conditions, goals, ...
-    let mut required_values = RequiredValues::new();
 
     // associates each variable in the plan to a fresh variable.
     // TODO: presence of the variable
@@ -196,7 +191,7 @@ pub fn encode_plan_optimization_problem(
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
                 let constraint =
-                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
+                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding, true)?;
 
                 let cid = sched.add_constraint(constraint);
                 encoding.constraints_tags.insert(
@@ -221,14 +216,8 @@ pub fn encode_plan_optimization_problem(
         match x.goal_expression {
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
-                    let constraint = condition_to_constraint(
-                        tp,
-                        expr_id,
-                        model,
-                        &mut sched,
-                        &global_scope,
-                        Some(&mut required_values),
-                    )?;
+                    let constraint =
+                        condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding, true)?;
 
                     let cid = sched.add_constraint(constraint);
                     encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
@@ -240,17 +229,11 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    // make it immutable, we will start exploiting and want to guard against any addition
-    let required_values = required_values;
-
     // enforce all elemts of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
+        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
         sched.add_effect(eff);
     }
-    // set all default negative value
-    // The function attempts to only put those that may be useful, based on the required values
-    add_closed_world_negative_effects(&required_values, model, &mut sched);
 
     for (op_id, _op) in lifted_plan.operations.iter().enumerate() {
         let (a, bindings) = &operations_scopes[op_id];
@@ -264,7 +247,7 @@ pub fn encode_plan_optimization_problem(
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
-            let eff = convert_effect(x, true, model, &mut sched, bindings)?;
+            let eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
             // store the effect either in hte global pool or in the predicate specific one
             let is_predicate = model
                 .env
@@ -295,7 +278,14 @@ pub fn encode_plan_optimization_problem(
             let metric = model.metric.unwrap();
             match metric {
                 planx::Metric::Minimize(expr_id) => {
-                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?;
+                    let lin_obj = reify_expression(
+                        expr_id,
+                        Some(sched.horizon),
+                        model,
+                        &mut sched,
+                        &global_scope,
+                        &mut encoding,
+                    )?;
                     flatten_expression(expr_id, lin_obj, model, &mut sched, &global_scope)?
                 }
                 planx::Metric::Maximize(_) => {
@@ -315,6 +305,11 @@ pub fn encode_plan_optimization_problem(
         Objective::Makespan => sched.makespan.into(),
     };
     encoding.set_objective(objective);
+
+    // set all default negative value
+    // The function attempts to only put those that may be useful, based on the required values
+    // Important: this MUST be done last so we have already identified all values that may be required (inside conditions, effect values, goals...)
+    add_closed_world_negative_effects(&encoding.required_values, model, &mut sched);
 
     let tags = encoding.constraints_tags.clone();
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
