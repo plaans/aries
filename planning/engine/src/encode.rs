@@ -88,6 +88,12 @@ pub fn condition_to_constraint(
     let expr = model.env.node(expr);
     let timepoint = reify_timing(tp, model, sched, bindings)?;
     let constraint = match expr.expr() {
+        planx::Expr::Bool(b) => if *b {
+            ConditionExpression::LeqZero(LinSum::zero())
+        } else {
+            ConditionExpression::LeqZero(LinSum::cst(1))
+        }
+        .scoped(bindings.presence),
         planx::Expr::StateVariable(fluent_id, args) => {
             let fluent = model.env.fluents.get(*fluent_id);
             let mut reif_args = Vec::with_capacity(args.len());
@@ -127,6 +133,8 @@ pub fn condition_to_constraint(
         planx::Expr::App(planx::Fun::Or, exprs) => {
             let mut disjuncts = Vec::with_capacity(exprs.len());
             for &expr in exprs {
+                // we create a local scope for each disjunct which is necessary because
+                // the constraint must hold even if a disjunct cannot be evaluated (e.g. no value on the state variable it refers to)
                 let local_scope = sched.model.new_presence_variable(bindings.presence, "").true_lit();
                 let local_bindings = bindings.sub_scope(local_scope);
                 let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding, true)?;
@@ -137,6 +145,8 @@ pub fn condition_to_constraint(
         planx::Expr::App(planx::Fun::And, exprs) => {
             let mut conjuncts = Vec::with_capacity(exprs.len());
             for &expr in exprs {
+                // like for disjunction there is a local scope for each conjunct.
+                // This is needed be cause the expression can be negated (and become a disjunction) for which idenpendent scopes are necessary
                 let local_scope = sched.model.new_presence_variable(bindings.presence, "").true_lit();
                 let local_bindings = bindings.sub_scope(local_scope);
                 let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding, true)?;
