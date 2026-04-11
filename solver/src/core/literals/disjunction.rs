@@ -1,5 +1,6 @@
 use crate::core::literals::Lits;
 use crate::core::*;
+use crate::prelude::Conjunction;
 use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::fmt::{Debug, Formatter};
@@ -189,6 +190,21 @@ impl Deref for Disjunction {
 
     fn deref(&self) -> &Self::Target {
         &self.literals
+    }
+}
+
+impl std::ops::Not for Disjunction {
+    type Output = Conjunction;
+
+    fn not(self) -> Self::Output {
+        Conjunction::from_iter(self.iter().map(|l| !l))
+    }
+}
+impl std::ops::Not for &Disjunction {
+    type Output = Conjunction;
+
+    fn not(self) -> Self::Output {
+        Conjunction::from_iter(self.iter().map(|l| !l))
     }
 }
 

@@ -9,10 +9,9 @@ use aries::{
     core::literals::ConjunctionBuilder,
     model::lang::{
         BoolExpr,
-        expr::{and, eq, lin_eq},
+        expr::{eq, lin_eq},
     },
     prelude::*,
-    reif::ReifExpr,
 };
 use itertools::Itertools;
 use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
@@ -307,14 +306,14 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
             for (a1, a2) in e.state_var.args.iter().zip_eq(overrider.state_var.args.iter()) {
                 override_conditions.push(lin_eq(*a1, *a2).reified(&mut sched.model));
             }
-            let lits = override_conditions.build();
-            let cancelled_by = sched.model.reify(ReifExpr::And(lits.into_lits()));
+            let conjunction = override_conditions.build();
+            let cancelled_by = sched.model.reify(conjunction);
 
             // record the overriden possibility into the conditions for the effect activity
             active.push(!cancelled_by);
         }
         let active = active.build();
-        let active = sched.model.reify(and(active.to_vec())); // TODO: this is innefficient
+        let active = sched.model.reify(active);
 
         if !active.absurd() {
             let mut eff = e.clone();
