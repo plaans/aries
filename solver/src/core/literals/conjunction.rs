@@ -1,5 +1,6 @@
 use crate::core::literals::Lits;
 use crate::core::*;
+use crate::prelude::Disjunction;
 use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
@@ -160,6 +161,22 @@ impl Deref for Conjunction {
 
     fn deref(&self) -> &Self::Target {
         &self.literals
+    }
+}
+
+impl std::ops::Not for Conjunction {
+    type Output = Disjunction;
+
+    fn not(self) -> Self::Output {
+        // note that this could be optimized by reusing the internal vector
+        Disjunction::from_iter(self.iter().map(|l| !l))
+    }
+}
+impl std::ops::Not for &Conjunction {
+    type Output = Disjunction;
+
+    fn not(self) -> Self::Output {
+        Disjunction::from_iter(self.iter().map(|l| !l))
     }
 }
 

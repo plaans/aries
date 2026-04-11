@@ -95,8 +95,13 @@ impl BoolExpr<SchedEncoder> for ConditionConstraint {
                     c.opt_enforce_if(l, ctx);
                 }
             }
-            ConditionExpression::And(condition_constraints) => {
-                todo!()
+            ConditionExpression::And(cs) => {
+                // if enforced all elements must be present
+                Conjunction::from_iter(cs.iter().map(|c| c.scope)).enforce_if(l, ctx);
+                for c in cs {
+                    // constraint must hold if present
+                    c.opt_enforce_if(l, ctx);
+                }
             }
         }
     }

@@ -6,7 +6,7 @@ use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
     model::lang::{
-        expr::{and, eq, or},
+        expr::{eq, or},
         max::EqMax,
     },
 };
@@ -161,7 +161,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
                 for (arg1, arg2) in ass.state_var.args.iter().zip_eq(step.state_var.args.iter()) {
                     conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
                 }
-                let supports = and(conjuncts.build().into_lits().into_boxed_slice()).implicant(ctx);
+                let supports = conjuncts.build().implicant(ctx);
                 support_options.push(supports);
             }
             // if the step it present, then at least one of the assignment must "support it"
@@ -251,7 +251,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 conjuncts.push(lin_eq(*arg1, *arg2).reified(ctx))
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
+                let conjuncts: And = conjuncts.build();
                 let contributes = conjuncts.reified(ctx); // presence should be the same as self.presence?
                 step_contributors.push(StepContributor {
                     contributes,
@@ -282,7 +282,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
+                let conjuncts: And = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 establishers.add_option(establishes, assignment);
             }

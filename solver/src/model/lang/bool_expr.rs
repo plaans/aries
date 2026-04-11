@@ -307,7 +307,7 @@ mod test {
 
         y.opt_enforce_if(Lit::FALSE, &mut model);
 
-        let e = ReifExpr::And(crate::core::literals::Lits::new());
+        let e = Conjunction::tautology();
         e.opt_enforce_if(Lit::TRUE, &mut model);
     }
 }
