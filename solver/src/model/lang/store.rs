@@ -1,7 +1,10 @@
+use std::fmt::Debug;
+
 use crate::{
     core::{state::Evaluable, views::Dom},
     model::Label,
     prelude::*,
+    reasoners::cp::UserPropagator,
     reif::ReifExpr,
 };
 
@@ -18,12 +21,53 @@ pub trait Store: Dom {
     fn conjunctive_scope(&mut self, lits: &[Lit]) -> Lit;
     fn tautology_of_scope(&mut self, scope: Lit) -> Lit;
 
-    /// Adds an assertion on solutions, i.e., an expression that is assumed to always evaluate to true.
+    fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static);
+
+    /// Adds a debug assertion on solutions, i.e., an expression that is assumed to always evaluate to true.
     ///
-    /// At this point, this is a place holder to allow specifying such well-formedness assumptions.
-    /// The objective would be to have an explicit check at the end.
-    fn add_assertion(&mut self, _condition: impl Evaluable<Value = bool>) {
-        // TODO: post a constraint that never propagates but is checked in the solution
+    /// IMPORTANT: the assertion has NO effect on the solving process and only checked when debug assertions are enabled (not in release mode)
+    ///
+    /// TODO: this could be provided on the `Model` it self to be more generally useful
+    #[track_caller]
+    fn add_assertion<Expr: Evaluable<Value = bool> + Debug + Send + Sync + 'static>(&mut self, condition: Expr) {
+        // The assertion is costly to create and evaluate so it is only active when debug assertions are activated
+        if cfg!(debug_assertions) {
+            // a specifying `UserPropagator` that never propagates but provides a method to check that it is satified
+            struct SolutionAssertion {
+                cond: std::sync::Arc<dyn Evaluable<Value = bool> + Send + Sync>,
+                debug: String,
+                source: String,
+            }
+            impl Debug for SolutionAssertion {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.debug_struct("SolutionAssertion")
+                        .field("expression", &self.debug)
+                        .field("source", &self.source)
+                        .finish()
+                }
+            }
+
+            impl UserPropagator for SolutionAssertion {
+                fn get_propagators(&self) -> Vec<crate::reasoners::cp::DynPropagator> {
+                    // no propagators to record, so nothing will happen for this constraint
+                    vec![]
+                }
+
+                fn satisfied(&self, dom: &Domains) -> bool {
+                    // the extract solution step is unnecessarily costly (copying the domains of each assertion to validate)
+                    self.cond.as_ref().evaluate(&dom.extract_solution()) != Some(false)
+                }
+            }
+            let debug = format!("{condition:?}");
+            let caller = std::panic::Location::caller();
+            let source = format!("{}:{}", caller.file(), caller.line());
+            let checker = SolutionAssertion {
+                cond: std::sync::Arc::new(condition),
+                debug,
+                source,
+            };
+            self.enforce_user_propagator(checker);
+        }
     }
 }
 
@@ -69,5 +113,9 @@ where
     }
     fn tautology_of_scope(&mut self, scope: Lit) -> Lit {
         self.get_model_mut().get_tautology_of_scope(scope)
+    }
+
+    fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static) {
+        self.get_model_mut().enforce_user_propagator(propagator);
     }
 }

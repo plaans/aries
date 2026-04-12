@@ -1,11 +1,14 @@
 use std::{collections::BTreeMap, fmt::Display};
 
-use aries::{core::state::Evaluable, model::lang::FAtom, prelude::*};
+use aries::{core::state::Evaluable, prelude::*};
 use itertools::Itertools;
 use planx::ActionRef;
-use timelines::{ConstraintID, Sym, Time, symbols::ObjectDecoder};
+use timelines::{ConstraintID, IntTerm, Sym, Time, symbols::ObjectDecoder};
 
-use crate::{encode::tags::Tag, plans::Operation};
+use crate::{
+    encode::{required_values::RequiredValues, tags::Tag},
+    plans::Operation,
+};
 
 /// Representation of the encoding that allows reconstructing a solution plan from a valid assignment.
 #[derive(Default)]
@@ -13,9 +16,11 @@ pub struct Encoding {
     /// All actions instances that may appear in the plan.
     pub actions: Vec<ActionInstance>,
     /// Variable encoding the objective value (minimization)
-    pub objective: Option<FAtom>,
+    pub objective: Option<LinTerm>,
     /// for each relaxable constraint, stores a constraint tag so that we can later decide if it should be relaxed.
     pub constraints_tags: BTreeMap<ConstraintID, Tag>,
+    /// Tracks the values that may be required in problem.
+    pub required_values: RequiredValues,
 }
 
 impl Encoding {
@@ -24,6 +29,7 @@ impl Encoding {
             actions: vec![],
             objective: None,
             constraints_tags: Default::default(),
+            required_values: RequiredValues::new(),
         }
     }
 
@@ -31,7 +37,7 @@ impl Encoding {
         self.actions.push(instance);
     }
 
-    pub fn set_objective(&mut self, objective: impl Into<FAtom>) {
+    pub fn set_objective(&mut self, objective: impl Into<LinTerm>) {
         self.objective = Some(objective.into())
     }
 
@@ -103,12 +109,12 @@ impl Evaluable for ActionInstance {
 /// A variable whose domain is a subset of the objects in the problem.
 #[derive(Clone)]
 pub struct ObjectVar {
-    var: IAtom,
+    var: IntTerm,
     decoder: ObjectDecoder,
 }
 
 impl ObjectVar {
-    pub fn new(var: impl Into<IAtom>, decoder: &ObjectDecoder) -> Self {
+    pub fn new(var: impl Into<IntTerm>, decoder: &ObjectDecoder) -> Self {
         Self {
             var: var.into(),
             decoder: decoder.clone(),

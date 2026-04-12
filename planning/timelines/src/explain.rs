@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use aries::model::lang::FAtom;
 use aries::prelude::*;
 use aries::{
     backtrack::Backtrack,
@@ -9,7 +8,7 @@ use aries::{
 };
 use itertools::Itertools;
 
-use crate::{ConstraintID, Sched};
+use crate::{ConstraintID, IntExp, IntTerm, Sched};
 
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
@@ -29,6 +28,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let mut trigger = BTreeMap::new();
 
         for (cid, c) in sched.constraints.iter().enumerate() {
+            tracing::debug!("Adding constraint: {c:?}");
             if let Some(tag) = project(cid) {
                 let l = if let Some(l) = trigger.get(&tag) {
                     *l
@@ -64,11 +64,11 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
     }
     ///
     /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
-    pub fn find_optimal(&mut self, obj: FAtom, on_new_solution: impl FnMut(&Solution)) -> Option<Solution> {
+    pub fn find_optimal(&mut self, obj: IntTerm, on_new_solution: impl FnMut(&Solution)) -> Option<Solution> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let res = self
             .solver
-            .minimize_with_assumptions(obj.num, &assumptions, aries::solver::SearchLimit::None, on_new_solution)
+            .minimize_with_assumptions(obj, &assumptions, aries::solver::SearchLimit::None, on_new_solution)
             .unwrap();
         // self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
@@ -102,9 +102,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let max_relaxed_assumptions = self.solver.model.new_ivar(0, assumptions.len() as IntCst, "objective");
         let num_relaxed_assumptions = assumptions
             .iter()
-            .fold(LinearSum::constant_int(num_assumptions), |sum, l| {
-                sum - IVar::new(l.variable())
-            });
+            .fold(IntExp::cst(num_assumptions), |sum, l| sum - l.variable());
         self.solver
             .enforce(num_relaxed_assumptions.leq(max_relaxed_assumptions), []);
 

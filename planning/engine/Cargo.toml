@@ -13,6 +13,8 @@ derive_more = { workspace = true }
 itertools = { workspace = true }
 im = { workspace = true }
 smallvec = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 planx = { path = "../planx" }
 timelines = { package = "aries-timelines", path = "../timelines" }

@@ -7,7 +7,12 @@ use crate::optimize_plan::{self, encode_plan_optimization_problem};
 #[derive(clap::Args, Debug, Clone)]
 pub struct Options {}
 
-pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<bool> {
+pub enum ValidationResult {
+    Valid { objective_value: Option<timelines::IntCst> },
+    Invalid,
+}
+
+pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<ValidationResult> {
     // we frame the problem as an optimization problem with no relaxation,
     // hence the solver is forced to reproduce the plan
     let opt_options = crate::optimize_plan::Options {
@@ -18,11 +23,15 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
 
     if let Some(solution) = solver.check_satisfiability() {
         println!("> Plan is valid");
-        if let Some(objective) = encoding.objective {
-            println!("> Objective: {}", objective.evaluate(&solution).unwrap());
-        }
+        let objective_value = if let Some(objective) = encoding.objective {
+            let objective_value = objective.evaluate(&solution).unwrap();
+            println!("> Objective: {objective_value}",);
+            Some(objective_value)
+        } else {
+            None
+        };
         // sched.print(&solution);
-        Ok(true)
+        Ok(ValidationResult::Valid { objective_value })
     } else {
         println!("Plan is INVALID!!!!");
         for mus in solver.muses() {
@@ -30,6 +39,6 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<boo
             println!("\n{msg}\n");
         }
         println!("Plan is INVALID!!!!");
-        Ok(false)
+        Ok(ValidationResult::Invalid)
     }
 }

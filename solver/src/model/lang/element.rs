@@ -1,6 +1,6 @@
 use crate::{
     model::lang::{
-        expr::{eq, implies},
+        expr::{implies, lin_eq},
         *,
     },
     prelude::*,
@@ -11,11 +11,11 @@ use crate::{
 struct ElementOption {
     /// True if the value is selected (provides the value of the expression)
     selector: Lit,
-    /// Value given to the expression when ths option is selected.
-    value: IAtom,
+    /// Value given to the expression when this option is selected.
+    value: LinTerm,
 }
 
-/// An integer expression that is mimick the `element` constraint.
+/// An integer expression that mimicks the `element` constraint.
 ///
 /// It is composed of a number of options, each of the form `(selector_i, value_i)`
 /// If, for any `i`, `selector_i` is true then the expression is equal to `value_i`.
@@ -33,8 +33,18 @@ impl Element {
         Self::default()
     }
 
+    pub fn build(options: &[(Lit, LinTerm)]) -> Self {
+        Self {
+            options: options
+                .iter()
+                .copied()
+                .map(|(selector, value)| ElementOption { selector, value })
+                .collect(),
+        }
+    }
+
     /// Adds a value option and its selector to the element expresion.
-    pub fn add_option(&mut self, selector: Lit, value: impl Into<IAtom>) {
+    pub fn add_option(&mut self, selector: Lit, value: impl Into<LinTerm>) {
         self.options.push(ElementOption {
             selector,
             value: value.into(),
@@ -43,7 +53,7 @@ impl Element {
 }
 
 impl<Ctx: Store> IntExpr<Ctx> for Element {
-    fn enforce_eq_if(&self, implicant: Lit, value: IAtom, ctx: &mut Ctx) {
+    fn enforce_eq_if(&self, implicant: Lit, value: LinTerm, ctx: &mut Ctx) {
         let constraint = EqElement {
             variable: value,
             element: self.clone(),
@@ -75,12 +85,14 @@ impl<Ctx: Store> IntExpr<Ctx> for Element {
 ///   - exists `(sel_i, val_i) in elements` such that `sel_i` is true
 ///   - forall `(sel_i, val_i) in elements`, `sel_i => (variable == val_i)`
 pub struct EqElement {
-    variable: IAtom,
+    variable: LinTerm,
     element: Element,
 }
 
 impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+        let _span = tracing::debug_span!("EqElement");
+        let _span = _span.enter();
         // make sure that the implicant's scope is large enough
         ctx.add_assertion(implies(ctx.presence_literal(l), ctx.presence_literal(self.variable)));
 
@@ -88,11 +100,12 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
         Disjunction::from_iter(self.element.options.iter().map(|a| a.selector)).enforce_if(l, ctx);
 
         for o in &self.element.options {
+            let _span = tracing::debug_span!("Option");
+            let _span = _span.enter();
             // if `a` is the establishers the the variable must have its value
-            implies(o.selector, eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
+            implies(o.selector, lin_eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
             // TODO: we could do a stronger propagation by ensuring that at least each value in the lhs domain is supported by value in the rhs domains
 
-            ctx.add_assertion(implies(o.selector, ctx.presence_literal(self.variable)));
             ctx.add_assertion(implies(o.selector, ctx.presence_literal(o.value)));
         }
     }

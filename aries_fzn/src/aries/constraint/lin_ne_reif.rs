@@ -2,7 +2,7 @@ use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::BVar;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinGeReif;
@@ -17,17 +17,17 @@ use crate::aries::constraint::OrReif;
 /// `b` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinNeReif {
-    sum: Vec<NFLinearSumItem>,
+    sum: Vec<ScaledVar>,
     b: IntCst,
     r: BVar,
 }
 
 impl LinNeReif {
-    pub fn new(sum: Vec<NFLinearSumItem>, b: IntCst, r: BVar) -> Self {
+    pub fn new(sum: Vec<ScaledVar>, b: IntCst, r: BVar) -> Self {
         Self { sum, b, r }
     }
 
-    pub fn sum(&self) -> &Vec<NFLinearSumItem> {
+    pub fn sum(&self) -> &Vec<ScaledVar> {
         &self.sum
     }
 

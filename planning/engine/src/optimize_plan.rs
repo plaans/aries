@@ -2,13 +2,12 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::{
     core::state::Evaluable,
-    model::lang::{FAtom, Store, linear::LinearSum},
+    model::lang::{IntExpr, Store},
     prelude::*,
 };
 use aries_plan_engine::{
     encode::{
         encoding::{ActionInstance, Encoding, ObjectVar},
-        required_values::RequiredValues,
         tags::{ActionCondition, Tag, format_culprit_set},
         *,
     },
@@ -17,7 +16,9 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
-use timelines::{ConstraintID, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst};
+use timelines::{
+    ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
+};
 
 pub type RelaxableConstraint = Tag;
 
@@ -40,7 +41,9 @@ pub enum Relaxation {
 pub enum Objective {
     /// The objective value defined in the domain
     Original,
+    /// Number of actions in the plan
     PlanLength,
+    /// End time of the latest action
     Makespan,
 }
 
@@ -60,6 +63,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res
     if let Some(solution) = solver.find_optimal(objective, &print) {
         println!("\n> Found optimal solution:");
         print(&solution);
+        // _sched.print(&solution);
     } else {
         println!("No solution !!!!");
         for mus in solver.muses() {
@@ -83,10 +87,6 @@ pub fn encode_plan_optimization_problem(
     let mut sched = timelines::Sched::new(1, objs);
 
     let global_scope = Scope::global(&sched);
-
-    // overapproximation of values required at some point in the problem.
-    // Will be populated as we encounter new conditions, goals, ...
-    let mut required_values = RequiredValues::new();
 
     // associates each variable in the plan to a fresh variable.
     // TODO: presence of the variable
@@ -136,7 +136,7 @@ pub fn encode_plan_optimization_problem(
             };
 
             // incorpare the potential values taken by this operation param into the one of the action
-            let seg = Segment::from(sched.model.int_bounds(arg));
+            let seg = Segment::from(sched.model.bounds(arg));
             actions_instanciations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
@@ -155,7 +155,7 @@ pub fn encode_plan_optimization_problem(
         } else {
             Time::from(op.start)
         };
-        assert_eq!(op.duration, QCst::ZERO, "we use the start as end");
+        assert_eq!(op.duration, 0, "we use the start as end");
         let end = start;
 
         // record a task in `Sched` which
@@ -180,10 +180,10 @@ pub fn encode_plan_optimization_problem(
             prez: bindings.presence,
             start: bindings.start,
             end: bindings.end,
-            arguments: bindings
-                .args
-                .values()
-                .map(|var| ObjectVar::new(*var, &object_decoder))
+            arguments: a
+                .parameters
+                .iter()
+                .map(|param| ObjectVar::new(bindings.args[&param.name], &object_decoder))
                 .collect(),
         });
 
@@ -191,7 +191,7 @@ pub fn encode_plan_optimization_problem(
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
                 let constraint =
-                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
+                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding, true)?;
 
                 let cid = if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
                     sched.add_condition(c)
@@ -220,14 +220,8 @@ pub fn encode_plan_optimization_problem(
         match x.goal_expression {
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
-                    let constraint = condition_to_constraint(
-                        tp,
-                        expr_id,
-                        model,
-                        &mut sched,
-                        &global_scope,
-                        Some(&mut required_values),
-                    )?;
+                    let constraint =
+                        condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding, true)?;
 
                     let cid =
                         if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
@@ -244,17 +238,11 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    // make it immutable, we will start exploiting and want to guard against any addition
-    let required_values = required_values;
-
     // enforce all elemts of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
+        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
         sched.add_effect(eff);
     }
-    // set all default negative value
-    // The function attempts to only put those that may be useful, based on the required values
-    add_closed_world_negative_effects(&required_values, model, &mut sched);
 
     for (op_id, _op) in lifted_plan.operations.iter().enumerate() {
         let (a, bindings) = &operations_scopes[op_id];
@@ -268,7 +256,7 @@ pub fn encode_plan_optimization_problem(
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
-            let eff = convert_effect(x, true, model, &mut sched, bindings)?;
+            let eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
             // store the effect either in hte global pool or in the predicate specific one
             let is_predicate = model
                 .env
@@ -293,33 +281,44 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    let objective: FAtom = match options.objective {
+    let objective: LinTerm = match options.objective {
         Objective::Original if model.metric.is_some() => {
             // TODO: is if let guard when stabilized
             let metric = model.metric.unwrap();
-            let obj = match metric {
+            match metric {
                 planx::Metric::Minimize(expr_id) => {
-                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, &mut sched, &global_scope)?;
+                    let lin_obj = reify_expression(
+                        expr_id,
+                        Some(sched.horizon),
+                        model,
+                        &mut sched,
+                        &global_scope,
+                        &mut encoding,
+                    )?;
                     flatten_expression(expr_id, lin_obj, model, &mut sched, &global_scope)?
                 }
                 planx::Metric::Maximize(_) => {
                     return Message::error("unsupported maximization metric").failed();
                 }
-            };
-            FAtom::new(obj, 1)
+            }
         }
         // use plan-length as default when no metric is specified
         Objective::PlanLength | Objective::Original => {
-            let mut sum = LinearSum::zero();
+            let mut sum = IntExp::zero();
             for (_a, scope) in &operations_scopes {
                 let action_prez = scope.presence;
                 sum += timelines::constraints::bool2int(action_prez, &mut sched.model)
             }
             reify_sum(sum, &mut sched)
         }
-        Objective::Makespan => sched.makespan,
+        Objective::Makespan => sched.makespan.into(),
     };
     encoding.set_objective(objective);
+
+    // set all default negative value
+    // The function attempts to only put those that may be useful, based on the required values
+    // Important: this MUST be done last so we have already identified all values that may be required (inside conditions, effect values, goals...)
+    add_closed_world_negative_effects(&encoding.required_values, model, &mut sched);
 
     let tags = encoding.constraints_tags.clone();
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
@@ -327,13 +326,6 @@ pub fn encode_plan_optimization_problem(
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
 
-fn reify_sum(sum: LinearSum, model: &mut Sched) -> FAtom {
-    let reified: FAtom = model
-        .model
-        .new_fvar(INT_CST_MIN, INT_CST_MAX, sum.denom(), "Sum reif")
-        .into();
-    model.add_constraint(sum.clone().leq(reified));
-    model.add_constraint(sum.geq(reified));
-
-    reified
+fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
+    sum.reify(sum.conj_scope(&model), &mut model.model)
 }

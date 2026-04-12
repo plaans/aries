@@ -1,7 +1,7 @@
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::IVar;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinEq;
@@ -40,11 +40,11 @@ impl<Lbl: Label> Post<Lbl> for Abs {
         let plus_a = self.a;
 
         let sum = vec![
-            NFLinearSumItem {
+            ScaledVar {
                 var: plus_a.into(),
                 factor: 1,
             },
-            NFLinearSumItem {
+            ScaledVar {
                 var: minus_a.into(),
                 factor: 1,
             },

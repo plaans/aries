@@ -2,7 +2,7 @@ use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::BVar;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinLeHalf;
@@ -15,17 +15,17 @@ use crate::aries::constraint::LinLeHalf;
 /// `lb` and `c[i]` constants.
 #[derive(Debug)]
 pub struct LinGeHalf {
-    sum: Vec<NFLinearSumItem>,
+    sum: Vec<ScaledVar>,
     lb: IntCst,
     r: BVar,
 }
 
 impl LinGeHalf {
-    pub fn new(sum: Vec<NFLinearSumItem>, lb: IntCst, r: BVar) -> Self {
+    pub fn new(sum: Vec<ScaledVar>, lb: IntCst, r: BVar) -> Self {
         Self { sum, lb, r }
     }
 
-    pub fn sum(&self) -> &Vec<NFLinearSumItem> {
+    pub fn sum(&self) -> &Vec<ScaledVar> {
         &self.sum
     }
 
