@@ -1,6 +1,7 @@
 pub mod boxes;
 pub mod constraints;
 mod effects;
+pub mod encoder;
 pub mod explain;
 pub mod rational;
 pub mod symbols;
@@ -8,14 +9,15 @@ pub mod tasks;
 pub mod transitions;
 
 use aries::core::state::Evaluable;
+use aries::core::views::Dom;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
+use std::sync::Arc;
 use std::collections::HashMap;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
-use aries::model::lang::hreif::BoolExpr;
 use aries::model::lang::*;
 use aries::prelude::*;
 use aries::solver::Solver;
@@ -24,13 +26,24 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 pub use crate::effects::*;
+use crate::encoder::SchedEncoder;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 use crate::transitions::{TransitionId, Transitions};
 
 pub type Sym = String;
-pub type Time = FAtom;
+
+/// Type of timepoints
+pub type Time = IAtom;
+
+/// Type of simple int expressions (composed of at most one variable)
+pub type IntTerm = aries::prelude::LinTerm;
+
+/// Type of compound integer expressions.
+pub type IntExp = aries::prelude::LinSum;
+
+pub type SymAtom = IntTerm;
 
 /// A fluent is a state function defined as a symbol and a set of parameter and return types.
 ///
@@ -68,12 +81,16 @@ impl Hash for Fluent {
     }
 }
 
-pub type SymAtom = IAtom;
-
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct StateVar {
     pub fluent: Sym,
     pub args: Vec<SymAtom>,
+}
+
+impl Debug for StateVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{:?}", self.fluent, self.args)
+    }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Eq, Ord)]
@@ -82,13 +99,23 @@ pub enum Tag {
     TaskEnd(TaskId),
 }
 
-type Constraint = Box<dyn BoolExpr<Sched>>;
+/// Trait capturing the requirements of constraitns posted to a [`Sched`]
+///
+/// It is automatically derived for any element providing the requirements,
+/// but needed for making the element dyn-compatible.
+pub trait SchedConstraint: BoolExpr<SchedEncoder> + Send + Sync + Debug {}
+impl<C> SchedConstraint for C where C: BoolExpr<SchedEncoder> + Send + Sync + Debug {}
+
+type Constraint = std::sync::Arc<dyn SchedConstraint>;
 pub type ConstraintID = usize;
 
+#[derive(Clone)]
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
     pub time_scale: IntCst,
+    /// temporal separation between events `(1/time_scale)`
+    pub epsilon: IntCst,
     pub origin: Time,
     pub horizon: Time,
     pub makespan: Time,
@@ -100,21 +127,23 @@ pub struct Sched {
 
 impl Sched {
     pub fn new(time_scale: IntCst, objects: ObjectEncoding) -> Self {
+        assert_eq!(time_scale, 1, "Non-integer time is not supported yet");
         let mut model = Model::new();
-        let origin = Time::new(0.into(), time_scale);
-        let horizon = model.new_fvar(0, INT_CST_MAX, time_scale, "horizon").into();
-        let makespan = model.new_fvar(0, INT_CST_MAX, time_scale, "makespan").into();
+        let origin = Time::ZERO;
+        let horizon = model.new_ivar(0, INT_CST_MAX, "horizon").into();
+        let makespan = model.new_ivar(0, INT_CST_MAX, "makespan").into();
         Sched {
             model,
             objects,
             time_scale,
+            epsilon: 1,
             origin,
             horizon,
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
             conditions: Default::default(),
-            constraints: vec![Box::new(MakespanIsMaxTaskEnd), Box::new(EffectCoherence)],
+            constraints: vec![Arc::new(MakespanIsMaxTaskEnd), Arc::new(EffectCoherence)],
         }
     }
 
@@ -127,12 +156,10 @@ impl Sched {
     }
 
     pub fn new_timepoint(&mut self) -> Time {
-        self.model.new_fvar(0, INT_CST_MAX, self.time_scale, "_").into()
+        self.model.new_ivar(0, INT_CST_MAX, "_").into()
     }
     pub fn new_opt_timepoint(&mut self, scope: Lit) -> Time {
-        self.model
-            .new_optional_fvar(0, INT_CST_MAX, self.time_scale, scope, "_")
-            .into()
+        self.model.new_optional_ivar(0, INT_CST_MAX, scope, "_").into()
     }
     pub fn add_condition(&mut self, c: HasValueAt) -> ConstraintID {
         let c_cloned = HasValueAt {
@@ -146,19 +173,28 @@ impl Sched {
         self.conditions.insert(cid, c);
         cid
     }
-    pub fn add_constraint<C: BoolExpr<Sched> + 'static>(&mut self, c: C) -> ConstraintID {
-        self.add_boxed_constraint(Box::new(c))
+    pub fn add_constraint<C: SchedConstraint + 'static>(&mut self, c: C) -> ConstraintID {
+        self.add_boxed_constraint(Arc::new(c))
     }
-    pub fn add_boxed_constraint(&mut self, c: Box<dyn BoolExpr<Sched> + 'static>) -> ConstraintID {
+    pub fn add_boxed_constraint(&mut self, c: Arc<dyn SchedConstraint + 'static>) -> ConstraintID {
         self.constraints.push(c);
         self.constraints.len() - 1
     }
-    pub fn encode(&self) -> Model {
-        let mut encoding = self.model.clone();
-        for c in &self.constraints {
-            c.enforce(self, &mut encoding);
+
+    fn encoder(self) -> SchedEncoder {
+        let store = self.model.clone();
+        SchedEncoder {
+            sched: Arc::new(self),
+            store,
         }
-        encoding
+    }
+
+    pub fn encode(&self) -> Model {
+        let mut encoder = self.clone().encoder();
+        for c in &self.constraints {
+            c.enforce(&mut encoder);
+        }
+        encoder.store
     }
     pub fn gather_transitions(&self) -> Transitions {
         let mut effects: HashMap<Option<TaskId>, Vec<(EffectId, &Effect)>> = HashMap::new();
@@ -223,23 +259,38 @@ impl Sched {
             .tasks
             .iter()
             .filter(|t| sol.eval(t.presence) == Some(true))
-            .sorted_by_cached_key(|t| sol.eval(t.start.num).unwrap());
+            .sorted_by_cached_key(|t| sol.eval(t.start).unwrap());
         for t in sorted_tasks {
-            println!("{}: {}", t.name, sol.eval(t.start.num).unwrap())
+            println!("{}: {}", t.name, sol.eval(t.start).unwrap())
         }
         println!("==== Effects ====");
         for e in self.effects.iter().sorted_by_key(|e| &e.state_var.fluent) {
             if !sol.entails(e.prez) {
+                println!("{:?}", e);
                 continue;
             }
             println!(
-                "{}: [{},{}] {:?} ...[{}]",
+                "{}: [{},{}] {} ...[{}]",
                 e.state_var.fluent,
                 e.transition_start.evaluate(sol).unwrap(),
                 e.transition_end.evaluate(sol).unwrap(),
-                e.operation,
+                match e.operation {
+                    EffectOp::Assign(v) => format!(":= {}", v.evaluate(sol).unwrap()),
+                    EffectOp::Step(v) => format!("+= {}", v.evaluate(sol).unwrap()),
+                },
                 e.mutex_end.evaluate(sol).unwrap(),
             );
         }
+        println!("Horizon: {}", self.horizon.evaluate(sol).unwrap())
+    }
+}
+
+impl Dom for Sched {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.model.upper_bound(svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.model.presence(var)
     }
 }

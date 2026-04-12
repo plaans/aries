@@ -8,20 +8,23 @@ pub mod tags;
 use aries::{
     core::literals::ConjunctionBuilder,
     model::lang::{
-        FAtom,
-        expr::{and, eq},
-        linear::LinearSum,
+        BoolExpr,
+        expr::{eq, lin_eq},
     },
     prelude::*,
-    reif::ReifExpr,
 };
 use itertools::Itertools;
 use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 use timelines::{
-    Effect, EffectOp, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt, symbols::ObjectEncoding,
+    Effect, EffectOp, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt,
+    symbols::ObjectEncoding,
 };
 
-use crate::encode::{constraints::ConditionConstraint, required_values::RequiredValues};
+use crate::encode::{
+    constraints::{ConditionConstraint, ConditionExpression},
+    encoding::Encoding,
+    required_values::RequiredValues,
+};
 
 /// Encode the types and objects in the model
 pub fn types(model: &Model) -> ObjectEncoding {
@@ -44,6 +47,7 @@ pub fn types(model: &Model) -> ObjectEncoding {
 }
 
 /// Scope from convertion function can find the values binded in their environments, (action sart, end, presence, parameters, ...)
+#[derive(Clone)]
 pub struct Scope<'a> {
     pub start: Time,
     pub end: Time,
@@ -61,6 +65,12 @@ impl<'a> Scope<'a> {
             source: None,
         }
     }
+
+    pub fn sub_scope(&self, presence: Lit) -> Scope<'a> {
+        let mut scope = self.clone();
+        scope.presence = presence;
+        scope
+    }
 }
 
 /// Converts the condition `[tp] expr` to a constraint.
@@ -72,16 +82,23 @@ pub fn condition_to_constraint(
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
-    required_values: Option<&mut RequiredValues>,
+    encoding: &mut Encoding,
+    track_required_values: bool,
 ) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
     let timepoint = reify_timing(tp, model, sched, bindings)?;
     let constraint = match expr.expr() {
+        planx::Expr::Bool(b) => if *b {
+            ConditionExpression::LeqZero(LinSum::zero())
+        } else {
+            ConditionExpression::LeqZero(LinSum::cst(1))
+        }
+        .scoped(bindings.presence),
         planx::Expr::StateVariable(fluent_id, args) => {
             let fluent = model.env.fluents.get(*fluent_id);
             let mut reif_args = Vec::with_capacity(args.len());
             for a in args {
-                let a = reify_sym(*a, model, sched, bindings)?;
+                let a = reify_sym(*a, model, sched, bindings, encoding)?;
                 reif_args.push(a);
             }
             let state_var = StateVar {
@@ -90,57 +107,61 @@ pub fn condition_to_constraint(
             };
             let c = HasValueAt {
                 state_var,
-                value: IAtom::TRUE,
+                value: IntTerm::TRUE,
                 timepoint,
                 prez: bindings.presence,
                 source: bindings.source,
             };
-            ConditionConstraint::HasValue(c)
+            ConditionExpression::HasValue(c).scoped(bindings.presence)
         }
         planx::Expr::App(planx::Fun::Not, exprs) if exprs.len() == 1 => {
-            // call recursively to obtain a an expression to negate, we pass None for the required_values has the one that will be parsed is not required
-            let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, None)?;
-            match c {
-                ConditionConstraint::HasValue(mut c) => {
-                    if let Ok(x) = IntCst::try_from(c.value)
-                        && (x == 0 || x == 1)
-                    {
-                        c.value = (1 - x).into(); // negation : 0 -> 1 and 1 -> 0
-                        ConditionConstraint::HasValue(c)
-                    } else {
-                        return expr.todo("unsupported").failed();
-                    }
-                }
-                ConditionConstraint::EqZero(sum) => ConditionConstraint::NeqZero(sum),
-                ConditionConstraint::NeqZero(sum) => ConditionConstraint::EqZero(sum),
-                ConditionConstraint::LeqZero(_) => todo!(),
-            }
+            // call recursively to obtain a an expression to negate,
+            // we do not track the required value there because we will post the negation (and that is the one we want to follow)
+            let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, encoding, false)?;
+            !c
         }
         planx::Expr::App(planx::Fun::Eq, exprs) if exprs.len() == 2 => {
-            let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
-            let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
-            ConditionConstraint::EqZero(e1 - e2)
+            let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
+            let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            ConditionExpression::EqZero(e1 - e2).scoped(bindings.presence)
         }
         planx::Expr::App(planx::Fun::Leq, exprs) if exprs.len() == 2 => {
-            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings)?;
-            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings)?;
-            ConditionConstraint::LeqZero(lhs - rhs)
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            ConditionExpression::LeqZero(lhs - rhs).scoped(bindings.presence)
+        }
+        planx::Expr::App(planx::Fun::Or, exprs) => {
+            let mut disjuncts = Vec::with_capacity(exprs.len());
+            for &expr in exprs {
+                // we create a local scope for each disjunct which is necessary because
+                // the constraint must hold even if a disjunct cannot be evaluated (e.g. no value on the state variable it refers to)
+                let local_scope = sched.model.new_presence_variable(bindings.presence, "").true_lit();
+                let local_bindings = bindings.sub_scope(local_scope);
+                let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding, true)?;
+                disjuncts.push(c);
+            }
+            ConditionExpression::Or(disjuncts).scoped(bindings.presence)
+        }
+        planx::Expr::App(planx::Fun::And, exprs) => {
+            let mut conjuncts = Vec::with_capacity(exprs.len());
+            for &expr in exprs {
+                // like for disjunction there is a local scope for each conjunct.
+                // This is needed be cause the expression can be negated (and become a disjunction) for which idenpendent scopes are necessary
+                let local_scope = sched.model.new_presence_variable(bindings.presence, "").true_lit();
+                let local_bindings = bindings.sub_scope(local_scope);
+                let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding, true)?;
+                conjuncts.push(c);
+            }
+            ConditionExpression::And(conjuncts).scoped(bindings.presence)
         }
         _ => return Err(expr.todo("not supported")),
     };
 
     // update the required values if requested by caller
-    if let Some(reqs) = required_values {
-        match &constraint {
-            ConditionConstraint::HasValue(c) => {
-                // record that someone required such a value
-                let fluent_id = model.env.fluents.get_by_name(&c.state_var.fluent).unwrap();
-                reqs.add(fluent_id, c.value_box(&sched.model).as_ref());
-            }
-            ConditionConstraint::EqZero(_) => {} // TODO: are those handled in reifications?
-            ConditionConstraint::NeqZero(_) => {}
-            ConditionConstraint::LeqZero(_) => {} //TODO
-        }
+    if track_required_values {
+        constraint
+            .constraint
+            .add_required_values(&mut encoding.required_values, model, sched);
     }
     Ok(constraint)
 }
@@ -151,6 +172,7 @@ pub fn convert_effect(
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
+    encoding: &mut Encoding,
 ) -> Res<timelines::Effect> {
     if !effect.universal_quantification.is_empty() || effect.effect_expression.condition.is_some() {
         return model.env.node(effect).todo("Unsupported").failed();
@@ -161,20 +183,26 @@ pub fn convert_effect(
         .state_variable
         .arguments
         .iter()
-        .map(|&arg| reify_sym(arg, model, sched, bindings))
+        .map(|&arg| reify_sym(arg, model, sched, bindings, encoding))
         .try_collect()?;
     let sv = timelines::StateVar {
         fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
         args,
     };
     let op = match x.operation {
-        planx::EffectOp::Assign(v) => EffectOp::Assign(reify_constant(v, model, sched, bindings)?),
-        planx::EffectOp::Increase(v) => EffectOp::Step(reify_constant(v, model, sched, bindings)?),
-        planx::EffectOp::Decrease(v) => EffectOp::Step(-reify_constant(v, model, sched, bindings)?),
+        planx::EffectOp::Assign(v) => {
+            EffectOp::Assign(reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
+        }
+        planx::EffectOp::Increase(v) => {
+            EffectOp::Step(reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
+        }
+        planx::EffectOp::Decrease(v) => {
+            EffectOp::Step(-reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
+        }
     };
     let eff = timelines::Effect {
         transition_start: t,
-        transition_end: if transition_time { t + FAtom::EPSILON } else { t },
+        transition_end: if transition_time { t + sched.epsilon } else { t },
         mutex_end: sched.new_timepoint(),
         state_var: sv,
         operation: op,
@@ -203,7 +231,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
             args,
         };
         // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
-        let mutex_end: Time = sched.model.new_fvar(-1, INT_CST_MAX, sched.time_scale, "_").into();
+        let mutex_end: Time = sched.model.new_ivar(-1, INT_CST_MAX, "_").into();
         let eff = timelines::Effect {
             transition_start: t,
             transition_end: t,
@@ -251,8 +279,8 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
                 // they can be placed at the same timepoit
                 && sched
                     .model
-                    .var_domain(e.transition_end.num)
-                    .overlaps(&sched.model.var_domain(o.transition_end.num)) // TODO: we ignore the denominator here, which may not be correct in temporal planning
+                    .var_domain(e.transition_end)
+                    .overlaps(&sched.model.var_domain(o.transition_end))
                 // they arguments are compatible
                 && e.state_var
                     .args
@@ -286,16 +314,16 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
             override_conditions.push(sched.model.reify(eq(e.transition_start, overrider.transition_start)));
             // overrider must have the same state variable arguments
             for (a1, a2) in e.state_var.args.iter().zip_eq(overrider.state_var.args.iter()) {
-                override_conditions.push(sched.model.reify(eq(*a1, *a2)));
+                override_conditions.push(lin_eq(*a1, *a2).reified(&mut sched.model));
             }
-            let lits = override_conditions.build();
-            let cancelled_by = sched.model.reify(ReifExpr::And(lits.into_lits()));
+            let conjunction = override_conditions.build();
+            let cancelled_by = sched.model.reify(conjunction);
 
             // record the overriden possibility into the conditions for the effect activity
             active.push(!cancelled_by);
         }
         let active = active.build();
-        let active = sched.model.reify(and(active.to_vec())); // TODO: this is innefficient
+        let active = sched.model.reify(active);
 
         if !active.absurd() {
             let mut eff = e.clone();
@@ -306,7 +334,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
     with_set_semantics
 }
 
-pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<FAtom> {
+pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<Time> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
     if *t.delay.numer() == 0 {
         Ok(tp)
@@ -314,7 +342,7 @@ pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Sc
         Message::todo("unsupported non-zero delay").failed()
     }
 }
-pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<FAtom> {
+pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<Time> {
     match t {
         TimeRef::Origin => Ok(sched.origin),
         TimeRef::Horizon => Ok(sched.horizon),
@@ -324,18 +352,41 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
     }
 }
 
-pub fn reify_sym(eid: ExprId, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<SymAtom> {
-    reify_expression(eid, None, model, sched, binding).and_then(|e| flatten_expression(eid, e, model, sched, binding))
+pub fn reify_sym(
+    eid: ExprId,
+    model: &Model,
+    sched: &mut Sched,
+    binding: &Scope,
+    encoding: &mut Encoding,
+) -> Res<SymAtom> {
+    reify_expression(eid, None, model, sched, binding, encoding)
+        .and_then(|e| flatten_expression(eid, e, model, sched, binding))
 }
 
-pub fn reify_constant(e: ExprId, model: &Model, sched: &mut Sched, scope: &Scope) -> Res<IntCst> {
-    let reif = reify_expression(e, None, model, sched, scope)?;
+pub fn reify_constant(
+    e: ExprId,
+    model: &Model,
+    sched: &mut Sched,
+    scope: &Scope,
+    encoding: &mut Encoding,
+) -> Res<IntCst> {
+    let reif = reify_expression(e, None, model, sched, scope, encoding)?;
     let reif = flatten_expression(e, reif, model, sched, scope)?;
     let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
     Ok(cst)
 }
 
-pub type LinExpr = LinearSum;
+pub fn reify_expression_to_term(
+    e: ExprId,
+    time: Option<Time>,
+    model: &Model,
+    sched: &mut Sched,
+    scope: &Scope,
+    encoding: &mut Encoding,
+) -> Res<IntTerm> {
+    let reif = reify_expression(e, time, model, sched, scope, encoding)?;
+    flatten_expression(e, reif, model, sched, scope)
+}
 
 // todo: add required_value!
 pub fn reify_expression(
@@ -344,7 +395,8 @@ pub fn reify_expression(
     model: &Model,
     sched: &mut Sched,
     binding: &Scope,
-) -> Res<LinExpr> {
+    encoding: &mut Encoding,
+) -> Res<IntExp> {
     let e = model.env.node(e);
     use planx::Expr::*;
     match e.expr() {
@@ -384,41 +436,44 @@ pub fn reify_expression(
             let reified_args = args
                 .iter()
                 .map(|&arg| {
-                    reify_expression(arg, Some(time), model, sched, binding)
+                    reify_expression(arg, Some(time), model, sched, binding, encoding)
                         .and_then(|arg_expr| flatten_expression(arg, arg_expr, model, sched, binding))
                 })
-                .collect::<Res<Vec<IAtom>>>()?;
+                .collect::<Res<Vec<IntTerm>>>()?;
             let state_var = StateVar {
                 fluent: fluent.name().to_string(),
                 args: reified_args,
             };
-            let binding = HasValueAt {
+            let reif = HasValueAt {
                 state_var,
                 value: reified_var.into(),
                 timepoint: time,
                 prez: binding.presence,
                 source: binding.source,
             };
-            sched.add_constraint(binding);
+            let reif = ConditionExpression::HasValue(reif).scoped(binding.presence);
+            reif.constraint
+                .add_required_values(&mut encoding.required_values, model, &sched);
+            sched.add_constraint(reif);
             Ok(reified_var.into())
         }
         planx::Expr::App(Fun::Plus, args) => {
-            let mut sum = LinearSum::zero();
+            let mut sum = IntExp::zero();
             for arg in args {
-                sum += reify_expression(*arg, time, model, sched, binding)?;
+                sum += reify_expression(*arg, time, model, sched, binding, encoding)?;
             }
             Ok(sum)
         }
         planx::Expr::App(Fun::Minus, args) if args.len() == 2 => {
-            let mut sum = LinearSum::zero();
-            sum += reify_expression(args[0], time, model, sched, binding)?;
-            sum -= reify_expression(args[1], time, model, sched, binding)?;
+            let mut sum = IntExp::zero();
+            sum += reify_expression(args[0], time, model, sched, binding, encoding)?;
+            sum -= reify_expression(args[1], time, model, sched, binding, encoding)?;
             Ok(sum)
         }
         _ => e.todo(format!("not supported [{e}]")).failed(),
     }
 }
 
-pub fn flatten_expression(eid: ExprId, e: LinExpr, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IAtom> {
-    IAtom::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
+pub fn flatten_expression(eid: ExprId, e: IntExp, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IntTerm> {
+    IntTerm::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
 }

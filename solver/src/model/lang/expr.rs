@@ -1,7 +1,7 @@
-use crate::core::literals::{Disjunction, Lits};
+use crate::core::state::Evaluable;
 use crate::model::lang::alternative::Alternative;
-use crate::model::lang::hreif::{BoolExpr, Store};
-use crate::model::lang::{Atom, FAtom, IAtom, SAtom};
+use crate::model::lang::linear::{LinEq, LinLeq, LinNeq};
+use crate::model::lang::*;
 use crate::model::{Label, Model};
 use crate::prelude::*;
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -50,6 +50,19 @@ pub fn f_geq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
     geq(lhs.num, rhs.num)
 }
 
+pub fn lin_eq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinEq {
+    lhs.into().eq(rhs)
+}
+pub fn lin_neq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinNeq {
+    lhs.into().neq(rhs)
+}
+pub fn lin_leq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().leq(rhs)
+}
+pub fn lin_geq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().geq(rhs)
+}
+
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     let lhs = lhs.into();
     let rhs = rhs.into();
@@ -67,8 +80,8 @@ pub fn neq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Neq {
 pub fn or(disjuncts: impl Into<Disjunction>) -> Or {
     disjuncts.into()
 }
-pub fn and(disjuncts: impl Into<Box<[Lit]>>) -> And {
-    And(disjuncts.into())
+pub fn and(conjuncts: impl Into<Conjunction>) -> And {
+    conjuncts.into()
 }
 pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
     or([!a.into(), b.into()])
@@ -85,44 +98,21 @@ pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl Into
 
 pub type Or = Disjunction;
 
-impl Not for Or {
-    type Output = And;
+impl Evaluable for Disjunction {
+    type Value = bool;
 
-    fn not(self) -> Self::Output {
-        let mut lits = self.into_lits();
-        lits.iter_mut().for_each(|l| *l = !*l);
-        And(lits.into_boxed_slice())
+    fn evaluate(&self, solution: &Solution) -> Option<Self::Value> {
+        if self.iter().any(|l| l.evaluate(solution) == Some(true)) {
+            Some(true)
+        } else if self.iter().any(|l| l.evaluate(solution).is_none()) {
+            None
+        } else {
+            Some(false)
+        }
     }
 }
 
-#[derive(Clone)]
-pub struct And(Box<[Lit]>);
-
-impl Not for And {
-    type Output = Or;
-
-    fn not(self) -> Self::Output {
-        let mut lits = self.0;
-        lits.iter_mut().for_each(|l| *l = !*l);
-        Disjunction::from_vec(lits.to_vec())
-    }
-}
-impl Not for &And {
-    type Output = Or;
-
-    fn not(self) -> Self::Output {
-        Disjunction::from_iter(self.0.iter().map(|&l| !l))
-    }
-}
-
-impl From<And> for ReifExpr {
-    fn from(value: And) -> Self {
-        // (and a b c) <=> (not (or !a !b !c))
-        let negated_literals: Lits = value.0.iter().copied().map(|l| !l).collect();
-        let not_reified = ReifExpr::from(Disjunction::new(negated_literals));
-        !not_reified
-    }
-}
+pub type And = Conjunction;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Leq(IAtom, IAtom);
@@ -244,7 +234,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
 
 impl Eq {
     /// Returns an equivalent *conjunction* of `ReifExpr`
-    fn as_elementary_constraints(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
+    fn as_elementary_constraints<Ctx: Store>(&self, store: &mut Ctx) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {
@@ -299,24 +289,24 @@ impl Eq {
     }
 }
 
-impl<Ctx> BoolExpr<Ctx> for Eq {
-    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
-        let elems = self.as_elementary_constraints(store);
+impl<Ctx: Store> BoolExpr<Ctx> for Eq {
+    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+        let elems = self.as_elementary_constraints(ctx);
         for elem in elems {
-            elem.enforce_if(l, ctx, store);
+            elem.enforce_if(l, ctx);
         }
     }
-    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
-        let elems = self.as_elementary_constraints(store);
+    fn implicant(&self, ctx: &mut Ctx) -> Lit {
+        let elems = self.as_elementary_constraints(ctx);
         if elems.contains(&ReifExpr::Lit(Lit::FALSE)) {
             return Lit::FALSE;
         }
-        let conjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
-        store.get_implicant(and(conjuncts).into())
+        let conjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
+        ctx.get_implicant(and(conjuncts).into())
     }
 
-    fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
-        smallvec::smallvec![store.presence_literal(self.0), store.presence_literal(self.1)]
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
     }
 }
 
@@ -336,7 +326,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Neq {
 
 impl Neq {
     /// Returns an equivalent *disjunction* of `ReifExpr`
-    pub fn as_elementary_disjuncts(&self, store: &dyn Store) -> SmallVec<[ReifExpr; 2]> {
+    pub fn as_elementary_disjuncts<Ctx: Store>(&self, store: &Ctx) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {
@@ -394,21 +384,21 @@ impl Neq {
     }
 }
 
-impl<Ctx> BoolExpr<Ctx> for Neq {
-    fn enforce_if(&self, l: Lit, ctx: &Ctx, store: &mut dyn Store) {
-        let elems = self.as_elementary_disjuncts(store);
-        let disjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
-        or(disjuncts).enforce_if(l, ctx, store);
+impl<Ctx: Store> BoolExpr<Ctx> for Neq {
+    fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
+        let elems = self.as_elementary_disjuncts(ctx);
+        let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
+        or(disjuncts).enforce_if(l, ctx);
     }
-    fn implicant(&self, _ctx: &Ctx, store: &mut dyn Store) -> Lit {
-        let elems = self.as_elementary_disjuncts(store);
+    fn implicant(&self, ctx: &mut Ctx) -> Lit {
+        let elems = self.as_elementary_disjuncts(ctx);
         if elems.contains(&ReifExpr::Lit(Lit::TRUE)) {
             return Lit::TRUE;
         }
-        let disjuncts = elems.into_iter().map(|e| store.get_implicant(e)).collect_vec();
-        store.get_implicant(or(disjuncts).into())
+        let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
+        ctx.get_implicant(or(disjuncts).into())
     }
-    fn conj_scope(&self, _ctx: &Ctx, store: &dyn Store) -> super::hreif::Lits {
-        smallvec::smallvec![store.presence_literal(self.0), store.presence_literal(self.1)]
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
     }
 }
