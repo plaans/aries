@@ -10,6 +10,9 @@ use crate::core::*;
 pub struct SignedVar(u32);
 
 impl SignedVar {
+    /// The canonical representation of the `0` value (note that more may be possible).
+    pub const ZERO: Self = SignedVar::plus(VarRef::ZERO);
+
     #[inline]
     pub const fn from_raw(id: u32) -> Self {
         SignedVar(id)

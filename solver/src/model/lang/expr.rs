@@ -1,4 +1,3 @@
-use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::Evaluable;
 use crate::model::lang::alternative::Alternative;
 use crate::model::lang::linear::{LinEq, LinLeq, LinNeq};
@@ -63,6 +62,12 @@ pub fn lin_leq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
 pub fn lin_geq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
     lhs.into().geq(rhs)
 }
+pub fn lin_lt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().lt(rhs)
+}
+pub fn lin_gt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().gt(rhs)
+}
 
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     let lhs = lhs.into();
@@ -81,8 +86,8 @@ pub fn neq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Neq {
 pub fn or(disjuncts: impl Into<Disjunction>) -> Or {
     disjuncts.into()
 }
-pub fn and(disjuncts: impl Into<Box<[Lit]>>) -> And {
-    And(disjuncts.into())
+pub fn and(conjuncts: impl Into<Conjunction>) -> And {
+    conjuncts.into()
 }
 pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
     or([!a.into(), b.into()])
@@ -99,16 +104,6 @@ pub fn alternative<T: Into<Atom>>(main: impl Into<Atom>, alternatives: impl Into
 
 pub type Or = Disjunction;
 
-impl Not for Or {
-    type Output = And;
-
-    fn not(self) -> Self::Output {
-        let mut lits = self.into_lits();
-        lits.iter_mut().for_each(|l| *l = !*l);
-        And(lits.into_boxed_slice())
-    }
-}
-
 impl Evaluable for Disjunction {
     type Value = bool;
 
@@ -123,34 +118,7 @@ impl Evaluable for Disjunction {
     }
 }
 
-#[derive(Clone)]
-pub struct And(Box<[Lit]>);
-
-impl Not for And {
-    type Output = Or;
-
-    fn not(self) -> Self::Output {
-        let mut lits = self.0;
-        lits.iter_mut().for_each(|l| *l = !*l);
-        Disjunction::from_vec(lits.to_vec())
-    }
-}
-impl Not for &And {
-    type Output = Or;
-
-    fn not(self) -> Self::Output {
-        Disjunction::from_iter(self.0.iter().map(|&l| !l))
-    }
-}
-
-impl From<And> for ReifExpr {
-    fn from(value: And) -> Self {
-        // (and a b c) <=> (not (or !a !b !c))
-        let negated_literals: Lits = value.0.iter().copied().map(|l| !l).collect();
-        let not_reified = ReifExpr::from(Disjunction::new(negated_literals));
-        !not_reified
-    }
-}
+pub type And = Conjunction;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Leq(IAtom, IAtom);

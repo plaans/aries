@@ -1,12 +1,12 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_leq, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
     model::lang::{
-        expr::{and, eq, or},
+        expr::{eq, or},
         max::EqMax,
     },
 };
@@ -161,7 +161,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
                 for (arg1, arg2) in ass.state_var.args.iter().zip_eq(step.state_var.args.iter()) {
                     conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
                 }
-                let supports = and(conjuncts.build().into_lits().into_boxed_slice()).implicant(ctx);
+                let supports = conjuncts.build().implicant(ctx);
                 support_options.push(supports);
             }
             // if the step it present, then at least one of the assignment must "support it"
@@ -175,7 +175,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HasValueAt {
     pub state_var: StateVar,
     pub value: IntTerm,
@@ -251,7 +251,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 conjuncts.push(lin_eq(*arg1, *arg2).reified(ctx))
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
+                let conjuncts: And = conjuncts.build();
                 let contributes = conjuncts.reified(ctx); // presence should be the same as self.presence?
                 step_contributors.push(StepContributor {
                     contributes,
@@ -282,8 +282,9 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
+                let conjuncts: And = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
+                ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
             }
         }
@@ -385,9 +386,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         );
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
-            // TODO: this reifies the value even though it could be decomposed into the two disjuncts
-            disjuncts.push(lin_leq(*x1, *x2).implicant(ctx));
-            disjuncts.push(lin_geq(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_lt(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_gt(*x1, *x2).implicant(ctx));
             if disjuncts.tautological() {
                 return;
             }
@@ -408,8 +408,6 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 }
 
 /// Transforms a boolean into an integer expression
-/// NOte: the implementation is currently incomplete
-#[doc(hidden)]
 pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {

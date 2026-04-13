@@ -10,7 +10,7 @@ use std::{
 use aries::model::{extensions::DomainsExt, lang::Store};
 use aries::prelude::*;
 use aries_plan_engine::{
-    encode::*,
+    encode::{encoding::Encoding, *},
     plans::lifted_plan::{self, LiftedPlan},
 };
 use derive_more::derive::Display;
@@ -20,7 +20,7 @@ use timelines::{ConstraintID, EffectOp, Sched, SymAtom, Task, Time, boxes::Segme
 
 use crate::{
     ctags::{ActionCondition, ActionEffect, CTag, PotentialEffect, Repair},
-    repair::{potential_effects::PotentialEffects, required_values::RequiredValues},
+    repair::potential_effects::PotentialEffects,
 };
 
 #[derive(clap::Args, Debug, Clone)]
@@ -126,6 +126,8 @@ pub fn domain_repair(model: &Model, plan: &LiftedPlan, options: &RepairOptions) 
 }
 
 fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<Repair>> {
+    let mut encoding = Encoding::new();
+
     // ignore all non boolean fluents. The only one we are expecting in classical planning are those for the action costs, which are irrelevant for this use case.
     let ignored = |eff: &planx::Effect| {
         let fluent_id = eff.effect_expression.state_variable.fluent;
@@ -141,10 +143,6 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     let mut sched = timelines::Sched::new(1, objs);
 
     let global_scope = Scope::global(&sched);
-
-    // overapproximation of values required at some point in the problem.
-    // Will be populated as we encounter new conditions, goals, ...
-    let mut required_values = RequiredValues::new();
 
     // associates each variable in the plan to a fresh variable.
     let plan_variables: BTreeMap<&Sym, SymAtom> = plan
@@ -226,8 +224,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let constraint =
-                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
+                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding)?;
+                constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
                 let cid = sched.add_constraint(constraint);
                 constraints_tags.insert(
@@ -252,14 +250,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         match x.goal_expression {
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
-                    let constraint = condition_to_constraint(
-                        tp,
-                        expr_id,
-                        model,
-                        &mut sched,
-                        &global_scope,
-                        Some(&mut required_values),
-                    )?;
+                    let constraint =
+                        condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding)?;
+                    constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
                     let cid = sched.add_constraint(constraint);
                     constraints_tags.insert(cid, CTag::EnforceGoal(gid));
@@ -272,7 +265,6 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     }
 
     // make it immutable, we will start exploiting and want to guard against any addition
-    let required_values = required_values;
     let param_bounds = |action_ref: &Sym, param: &Param| {
         actions_instanciations
             .get(&(action_ref.clone(), param.clone()))
@@ -283,9 +275,12 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     // compute the set of all effects that may be added to each action template
     // be give it the overapproximations of the value potentially required and of the values each action parameter may take to allow
     // eager discarding of useless potential effects.
-    let potential_effects = Arc::new(PotentialEffects::compute(model, &required_values, param_bounds, || {
-        sched.model.new_literal(Lit::TRUE)
-    }));
+    let potential_effects = Arc::new(PotentialEffects::compute(
+        model,
+        &encoding.required_values,
+        param_bounds,
+        || sched.model.new_literal(Lit::TRUE),
+    ));
 
     // for each potential effect, add a (soft constraint) that it is absent
     for (a, pot_effs) in &potential_effects.effs {
@@ -319,8 +314,10 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             let enabler = match &eff.effect_expression.operation {
                 planx::EffectOp::Assign(expr_id) => {
                     // hacky way to determine if the effect is positive (will only work for classical planning)
-                    let imposed_value = reify_constant(*expr_id, model, &mut sched, &global_scope)?;
-                    let possibly_detrimental = required_values
+                    let imposed_value = reify_constant(*expr_id, model, &mut sched, &global_scope, &mut encoding)?;
+                    // note that this work when no required value may come from the effects themselves (ok in STRIPS)
+                    let possibly_detrimental = encoding
+                        .required_values
                         .may_require_value(eff.effect_expression.state_variable.fluent, 1 - imposed_value);
                     if possibly_detrimental {
                         // effect may delete a precondition, it must be relaxable and we tie its presence to a new literal
@@ -344,11 +341,9 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         if ignored(x) {
             continue;
         }
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
+        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
         sched.add_effect(eff);
     }
-    // set all default negative value (the call attempts to only put that may be useful)
-    add_closed_world_negative_effects(&required_values, model, &mut sched);
 
     for (op_id, _op) in plan.operations.iter().enumerate() {
         let (a, bindings) = &operations_scopes[op_id];
@@ -367,7 +362,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 action: a.name.clone(),
                 effect_id: eff_id,
             };
-            let mut eff = convert_effect(x, true, model, &mut sched, bindings)?;
+            let mut eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
             // replace the effect presence by its enabler
             assert_eq!(eff.prez, Lit::TRUE);
             eff.prez = effect_enablers[&aeff];
@@ -386,6 +381,10 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             sched.add_effect(eff);
         }
     }
+
+    // set all default negative value (the call attempts to only put that may be useful)
+    // this must be done last becaue it uses the required values gathered in all previous chapses.
+    add_closed_world_negative_effects(&encoding.required_values, model, &mut sched);
 
     let constraint_to_repair = |cid: ConstraintID| match constraints_tags.get(&cid) {
         Some(ctag) => ctag.to_repair(),
