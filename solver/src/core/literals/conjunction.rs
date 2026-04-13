@@ -91,6 +91,12 @@ impl IntoIterator for Conjunction {
     }
 }
 
+impl From<Lit> for Conjunction {
+    fn from(value: Lit) -> Self {
+        [value].into()
+    }
+}
+
 impl From<Lits> for Conjunction {
     fn from(value: Lits) -> Self {
         Self::new(value)

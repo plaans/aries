@@ -184,10 +184,7 @@ impl<Lbl: Label> Model<Lbl> {
         );
         let empty: &[Lit] = &[];
         let scope = ValidityScope::new(presence_variables.iter().copied(), empty.iter().copied());
-        let scope = scope.to_conjunction(
-            |l| self.shape.conjunctive_scopes.conjuncts(l),
-            |l| self.state.entails(l) && self.state.entailing_level(l) == DecLvl::ROOT,
-        );
+        let scope = scope.to_conjunction(self);
         self.new_conjunctive_presence_variable(scope)
     }
 
@@ -503,10 +500,7 @@ impl<Lbl: Label> Model<Lbl> {
     /// Returns a scope literal, that is true iff the expression is valid.
     pub(crate) fn scope_lit_of(&mut self, expr: &ReifExpr) -> Lit {
         let scope = expr.scope(|var| self.state.presence(var));
-        let scope = scope.to_conjunction(
-            |l| self.shape.conjunctive_scopes.conjuncts(l),
-            |l| self.state.entails(l),
-        );
+        let scope = scope.to_conjunction(self);
         self.new_conjunctive_presence_variable(scope)
     }
 
@@ -525,10 +519,7 @@ impl<Lbl: Label> Model<Lbl> {
             {
                 // compute the scope in which the expression is valid
                 let expr_scope = expr.scope(|var| self.state.presence(var));
-                let expr_scope = expr_scope.to_conjunction(
-                    |l| self.shape.conjunctive_scopes.conjuncts(l),
-                    |l| self.state.entails(l),
-                );
+                let expr_scope = expr_scope.to_conjunction(self);
                 let expr_scope = self.new_conjunctive_presence_variable(expr_scope);
                 self.state.implies(scope, expr_scope)
             },
@@ -572,10 +563,7 @@ impl<Lbl: Label> Model<Lbl> {
 
         // compute the validity scope of the expression, which be larger than the one of the value
         let expression_scope = expr.scope(|var| self.state.presence(var));
-        let expression_scope = expression_scope.to_conjunction(
-            |l| self.shape.conjunctive_scopes.conjuncts(l),
-            |l| self.state.entails(l),
-        );
+        let expression_scope = expression_scope.to_conjunction(self);
         let expression_scope = self.new_conjunctive_presence_variable(expression_scope);
         debug_assert!(
             self.state

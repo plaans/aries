@@ -1,5 +1,8 @@
+use smallvec::SmallVec;
+
 use crate::core::Lit;
 use crate::core::literals::{LitSet, StableLitSet};
+use crate::model::lang::Store;
 
 /// Represents the scope in which a given expression is valid.
 ///
@@ -52,31 +55,47 @@ impl ValidityScope {
     ///  - removing from the resulting set any literal that is guarded
     ///  - removing any tautological (i.e. always true) literal from the set
     ///
-    /// # Parameters
+    /// The `ctx` parameters provides the necessary context to determine:
     ///
-    /// - `flattened`: if the given literal `l` is defined as a conjunction of literals `[l1, l2, ... ln]`,
-    ///   it must return a iterator over them. Returns `None` otherwise.
-    /// - `tautology`: Returns true if the given literal always holds.
-    pub fn to_conjunction<Lits: IntoIterator<Item = Lit>>(
-        &self,
-        flattened: impl Fn(Lit) -> Option<Lits>,
-        tautology: impl Fn(Lit) -> bool,
-    ) -> StableLitSet {
+    ///  - the decomposition of each scope literal
+    ///  - which literals are tautological in the model
+    ///  - which scope literal are implied by another one
+    pub fn to_conjunction<Ctx: Store>(&self, ctx: &Ctx) -> StableLitSet {
         let mut set = LitSet::new();
         for l in self.required_presence.literals() {
-            if let Some(flat) = flattened(l) {
-                for l in flat {
-                    if !tautology(l) {
-                        set.insert(l);
-                    }
+            // decomposes a conjunctive scope into its components
+            // Thus if a scope `p` was defined as `pa & pb`, we would get the [pa, pb]
+            // If the scope was not defined as a conjunction, we would get the conjunction with only `p`
+            //
+            // This allows computing potentially smaller scopes. For instance if `!pa` is in the guards,
+            // the resulting scope would be reduced to `pb` which is only visible if we work on the decomposition.
+            let decomposed_scope = ctx.decompose_scope(l);
+            for l in decomposed_scope {
+                if !ctx.statically_entailed(l) {
+                    set.insert(l);
                 }
-            } else if !tautology(l) {
-                set.insert(l)
             }
         }
-        for &guard in &self.guards {
-            if set.contains(!guard) {
-                set.remove(!guard, &tautology)
+
+        // at this point `set contains a conjunction of literals `p1 & ... & pn`, such that the expression is defined if all are true.
+        //
+        // `self.guards` contains a disjunction of literals `g1 | g2 | ... | gn` such that the expression is defined if any is true.
+        //
+        // For any `pi`, if there is a guard `gj` such that `!pi => gj` then `pi` can be removed from the set.
+        // Proof: `pi` does not play any role in the definition of the expression :
+        //   - if M |= pi`, the required presence become independent of `pi`
+        //   - if M |= !pi` the expression is defined unconditionally
+        //
+        // Thus we can remove from `set` any elemnt `pi` such that !gj => pi` (for any j)
+
+        let mut unecessary_presence_requirements: SmallVec<[Lit; 8]> = Default::default();
+        for &g in &self.guards {
+            unecessary_presence_requirements.push(!g);
+            unecessary_presence_requirements.extend(ctx.statically_implied_by(!g));
+        }
+        for guard in unecessary_presence_requirements {
+            if set.contains(guard) {
+                set.remove(guard, |l| ctx.statically_entailed(l))
             }
         }
         set.into_sorted()
