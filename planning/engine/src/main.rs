@@ -1,9 +1,10 @@
 pub(crate) mod ctags;
+mod generate;
 pub(crate) mod optimize_plan;
 mod repair;
 mod validate;
 
-use std::path::PathBuf;
+use std::{io::IsTerminal, path::PathBuf};
 
 use aries_plan_engine::plans::lifted_plan;
 use clap::*;
@@ -12,6 +13,7 @@ use planx::{
     errors::*,
     pddl::{self, input::Input},
 };
+use timelines::IntCst;
 
 use crate::repair::RepairOptions;
 
@@ -48,9 +50,13 @@ enum Commands {
     Validate(Validate),
     /// Plan optimization: specify an input plan, metrics and relaxation options and get an optmized plan.
     OptimizePlan(OptimizePlan),
+    /// (Finite) planning problem solving (plan generation):
+    /// find a solution plan using, at most, a given finite number of action instances for each template (schema).
+    SolveFinite(SolveFiniteProblem),
     /// Domain repair: proposing fixes of a domain based on a valid plan.
     DomRepair(DomRepair),
     FindDomain(FindDomain),
+    FindProblem(FindProblem),
 }
 
 #[derive(Parser, Debug)]
@@ -70,10 +76,23 @@ pub struct ParseDomain {
 }
 
 /// Find the domain of a problem file, from naming conventions.
+///
+/// The file name is printed on the standard output to enable using a command like:
+///
+///     > my-planner `ape find-domain $PROBLEM_FILE` $PROBLEM_FILE
 #[derive(Parser, Debug)]
 pub struct FindDomain {
     /// Path to the problem file
     problem_file: PathBuf,
+}
+/// Find the problem of a plan file, from naming conventions.
+///
+/// The command works similarly to `find-domain` and prints only the file name on the stdout
+/// to enable nesting in other command.
+#[derive(Parser, Debug)]
+pub struct FindProblem {
+    /// Path to the plan file
+    plan_file: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -88,6 +107,11 @@ pub struct Validate {
     /// The process will exit with error code 1 if the plan is valid.
     #[arg(short, long)]
     invalid: bool,
+    /// If set, the process will exit with error code 1 if the plan's objective value is not the one indicated.
+    ///
+    /// This is primarily intended to enable testing (e.g. that the validator reproduces reference results).
+    #[arg(short, long)]
+    expected_objective: Option<IntCst>,
     #[command(flatten)]
     options: validate::Options,
 }
@@ -102,6 +126,15 @@ pub struct OptimizePlan {
     /// If provided, the optimized plan will be written to this file.
     #[arg(short = 'w', long)]
     output_plan: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SolveFiniteProblem {
+    /// Expanded to provide command line options to get the problem and domain
+    #[command(flatten)]
+    pb: Problem,
+    #[command(flatten)]
+    options: generate::Options,
 }
 
 #[derive(Parser, Debug)]
@@ -123,9 +156,10 @@ fn main() -> Res<()> {
     // set up logger
     let subscriber = tracing_subscriber::fmt()
         .with_timer(tracing_subscriber::fmt::time::Uptime::from(std::time::Instant::now()))
+        .with_ansi(std::io::stdout().is_terminal()) // deactivate color when not printing to a terminal (e.g. redirected to a file)
         // .without_time() // if activated, no time will be printed on logs (useful for counting events with `counts`)
         // .with_thread_ids(true)
-        .with_max_level(args.log_level)
+        .with_max_level(args.log_level) // set max level (not that in release, debug and trace logs are not compiled)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
@@ -133,8 +167,10 @@ fn main() -> Res<()> {
         Commands::Parse(command) => parse(command)?,
         Commands::ParseDomain(command) => parse_domain(command)?,
         Commands::FindDomain(command) => find_domain(command)?,
+        Commands::FindProblem(command) => find_problem(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
+        Commands::SolveFinite(command) => solve_finite_problem(command)?,
         Commands::DomRepair(command) => repair(command)?,
     }
 
@@ -199,6 +235,16 @@ fn find_domain(command: &FindDomain) -> Res<()> {
     }
 }
 
+fn find_problem(command: &FindProblem) -> Res<()> {
+    match pddl::find_problem_of(&command.plan_file) {
+        Ok(path) => {
+            print!("{}", path.display());
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 fn validate_plan(command: &Validate) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
@@ -210,16 +256,27 @@ fn validate_plan(command: &Validate) -> Res<()> {
         println!("\n===== Plan ====\n\n{plan}\n");
     }
 
-    let valid = validate::validate(&model, &plan, &command.options)?;
-    if valid {
-        println!("VALID");
-        if command.invalid {
-            std::process::exit(1);
+    match validate::validate(&model, &plan, &command.options)? {
+        validate::ValidationResult::Valid { objective_value } => {
+            println!("VALID");
+            if command.invalid {
+                std::process::exit(1);
+            }
+            match (command.expected_objective, objective_value) {
+                (Some(_exptected), None) => {
+                    return Message::error("expected an objective value to be computed").failed();
+                }
+                (Some(exptected), Some(computed)) if exptected != computed => {
+                    return Message::error(format!("expected an objective value of {exptected}")).failed();
+                }
+                (_, _) => {}
+            }
         }
-    } else {
-        println!("INVALID");
-        if !command.invalid {
-            std::process::exit(1);
+        validate::ValidationResult::Invalid => {
+            println!("INVALID");
+            if !command.invalid {
+                std::process::exit(1);
+            }
         }
     }
     Ok(())
@@ -247,6 +304,16 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     };
 
     optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref())
+}
+
+fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
+    let (dom, pb) = command.pb.parse()?;
+
+    // processed model (from planx)
+    let model = pddl::build_model(&dom, &pb)?;
+    println!("{model}");
+
+    generate::solve_finite_planning_problem(&model, &command.options)
 }
 
 fn repair(command: &DomRepair) -> Res<()> {
@@ -322,5 +389,40 @@ impl PlanAndProblem {
         let pb = pddl::parse_pddl_problem(Input::from_file(pb)?)?;
         let plan = pddl::parse_plan(Input::from_file(plan)?)?;
         Ok((dom, pb, plan))
+    }
+}
+
+/// Structure that specifies a problem file and (optionnally) a domain file.
+#[derive(::clap::Args, Debug)]
+pub struct Problem {
+    /// Path to the PDDL problem file.
+    problem: PathBuf,
+    /// Path to the PDDL domain file.
+    /// If not specified, we will attempt to automatically infer it based on the problem file.
+    #[arg(short, long)]
+    domain: Option<PathBuf>,
+}
+impl Problem {
+    /// Parses the domain and problem and returns them.
+    /// If the the domain is not specified, the method will attempt to infer
+    /// it from naming conventions.
+    pub fn parse(&self) -> Res<(pddl::Domain, pddl::Problem)> {
+        let pb = &self.problem;
+        if !self.problem.exists() {
+            return Err(Message::error(format!("Problem file does not exist: {}", pb.display())));
+        }
+        let dom = if let Some(dom) = &self.domain {
+            dom
+        } else {
+            &pddl::find_domain_of(pb)?
+        };
+
+        println!("> Domain: {}", dom.display());
+        println!("> Problem: {}", pb.display());
+
+        // raw PDDL model
+        let dom = pddl::parse_pddl_domain(Input::from_file(dom)?)?;
+        let pb = pddl::parse_pddl_problem(Input::from_file(pb)?)?;
+        Ok((dom, pb))
     }
 }

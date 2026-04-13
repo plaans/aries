@@ -1,4 +1,4 @@
-use crate::core::literals::{Disjunction, Lits};
+use crate::core::literals::Disjunction;
 use crate::core::state::{Domains, OptDomain};
 use crate::core::{IntCst, Lit, SignedVar, VarRef, cst_int_to_long};
 use crate::model::lang::ValidityScope;
@@ -7,6 +7,7 @@ use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::model::{Label, Model};
+use crate::prelude::Conjunction;
 use std::fmt::{Debug, Formatter};
 use std::ops::Not;
 
@@ -29,7 +30,7 @@ pub enum ReifExpr {
     EqVal(VarRef, IntCst),
     NeqVal(VarRef, IntCst),
     Or(Disjunction),
-    And(Lits), // TODO: do similar for conjunction
+    And(Conjunction),
     Linear(NFLinearLeq),
     Alternative(NFAlternative),
     EqMax(NFEqMax),
@@ -269,6 +270,14 @@ impl From<Disjunction> for ReifExpr {
         }
     }
 }
+impl From<Conjunction> for ReifExpr {
+    fn from(value: Conjunction) -> Self {
+        // go through a disjunction to reuse the simplications
+        // this may be a bit wasteful and coudl beneift from a direct implementation
+        // (but conjunctions are pretty rare in most problems)
+        !ReifExpr::from(!value)
+    }
+}
 
 impl Not for ReifExpr {
     type Output = Self;
@@ -281,15 +290,8 @@ impl Not for ReifExpr {
             ReifExpr::Neq(a, b) => ReifExpr::Eq(a, b),
             ReifExpr::EqVal(a, b) => ReifExpr::NeqVal(a, b),
             ReifExpr::NeqVal(a, b) => ReifExpr::EqVal(a, b),
-            ReifExpr::Or(lits) => {
-                let mut lits = lits.into_lits();
-                lits.iter_mut().for_each(|l| *l = !*l);
-                ReifExpr::And(lits)
-            }
-            ReifExpr::And(mut lits) => {
-                lits.iter_mut().for_each(|l| *l = !*l);
-                ReifExpr::Or(Disjunction::new(lits))
-            }
+            ReifExpr::Or(lits) => ReifExpr::And(!lits),
+            ReifExpr::And(lits) => ReifExpr::Or(!lits),
             ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
             ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
             ReifExpr::EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),

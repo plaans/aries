@@ -1,13 +1,12 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::And;
-use aries::model::lang::linear::LinearSum;
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
     model::lang::{
-        expr::{and, eq, f_geq, f_leq, f_lt, neq, or},
+        expr::{eq, or},
         max::EqMax,
     },
 };
@@ -18,25 +17,19 @@ use crate::{boxes::Segment, effects::EffectOp, *};
 /// maximum end time of tasks, or zero in the absence of tasks.
 ///
 /// It is encorced by default in [`Sched`].
+#[derive(Debug)]
 pub(crate) struct MakespanIsMaxTaskEnd;
 
 impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
-        assert_eq!(ctx.sched.makespan.denom, ctx.sched.time_scale);
-        let mut ends = ctx
-            .sched
-            .tasks
-            .iter()
-            .map(|t| {
-                assert_eq!(t.end.denom, ctx.sched.time_scale);
-                t.end.num
-            })
-            .collect_vec();
+        let _span = tracing::debug_span!("MakespanIsMaxTaskEnd");
+        let _span = _span.enter();
+        let mut ends = ctx.sched.tasks.iter().map(|t| t.end).collect_vec();
         ends.push(IAtom::ZERO); // default value when no task is present
-        EqMax::new(ctx.sched.makespan.num, ends).enforce_if(l, ctx);
+        EqMax::new(ctx.sched.makespan, ends).enforce_if(l, ctx);
 
         // enforce the horizon to be after the end of all actions
-        f_leq(ctx.sched.makespan, ctx.sched.horizon).enforce_if(l, ctx);
+        leq(ctx.sched.makespan, ctx.sched.horizon).enforce_if(l, ctx);
     }
 
     fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
@@ -72,7 +65,7 @@ impl BoolExpr<SchedEncoder> for Mutex {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
         let t1 = &ctx.sched.tasks[self.0];
         let t2 = &ctx.sched.tasks[self.1];
-        let exclu = exclu_choice(f_leq(t1.end, t2.start), f_leq(t2.end, t1.start));
+        let exclu = exclu_choice(leq(t1.end, t2.start), leq(t2.end, t1.start));
         exclu.opt_enforce_if(l, ctx);
     }
 
@@ -86,19 +79,22 @@ impl BoolExpr<SchedEncoder> for Mutex {
 /// This requires to conditions
 ///  - that no two assignments have overlapping exclusitivity periods
 ///  - that every step is within an assignment validity period
+#[derive(Debug)]
 pub(crate) struct EffectCoherence;
 
 impl BoolExpr<SchedEncoder> for EffectCoherence {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("EffectCoherence");
+        let _span = _span.enter();
         let sched = ctx.sched.clone();
         for e in sched.effects.iter() {
             // WARN: this is not guarded by the effect presence (assumption is that this is always true in an effect)
-            f_leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx);
+            leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx);
             // WARN: this is not guarded by the effect presence (assumption is that that the mutex end has the same scope as the effect)
-            f_leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx);
+            leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx);
 
             // enforce that the horizon is after all effects
-            f_leq(e.mutex_end, ctx.sched.horizon).opt_enforce_if(l, ctx);
+            leq(e.mutex_end, ctx.sched.horizon).opt_enforce_if(l, ctx);
         }
 
         // two phases coherence enforcement (between assignments only):
@@ -118,13 +114,13 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
             };
             let itv1 = IntervalOnStateVariable {
                 state_var: &eff1.state_var,
-                start: eff1.transition_start + FAtom::EPSILON,
+                start: eff1.transition_start + ctx.sched.epsilon,
                 end: eff1.mutex_end,
                 presence: eff1.prez,
             };
             let itv2 = IntervalOnStateVariable {
                 state_var: &eff2.state_var,
-                start: eff2.transition_start + FAtom::EPSILON,
+                start: eff2.transition_start + ctx.sched.epsilon,
                 end: eff2.mutex_end,
                 presence: eff2.prez,
             };
@@ -158,14 +154,14 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
             for ass in compatible_assignemnts {
                 let mut conjuncts = ConjunctionBuilder::new();
                 conjuncts.push(ass.prez);
-                conjuncts.push(f_leq(ass.transition_end, step.transition_start).implicant(ctx));
+                conjuncts.push(leq(ass.transition_end, step.transition_start).implicant(ctx));
                 // note: this forces the `step` interval to exactly match the end of the assignment
-                conjuncts.push(f_leq(ass.mutex_end, step.mutex_end).implicant(ctx));
-                conjuncts.push(f_geq(ass.mutex_end, step.mutex_end).implicant(ctx));
+                conjuncts.push(leq(ass.mutex_end, step.mutex_end).implicant(ctx));
+                conjuncts.push(geq(ass.mutex_end, step.mutex_end).implicant(ctx));
                 for (arg1, arg2) in ass.state_var.args.iter().zip_eq(step.state_var.args.iter()) {
-                    conjuncts.push(eq(*arg1, *arg2).implicant(ctx))
+                    conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
                 }
-                let supports = and(conjuncts.build().into_lits().into_boxed_slice()).implicant(ctx);
+                let supports = conjuncts.build().implicant(ctx);
                 support_options.push(supports);
             }
             // if the step it present, then at least one of the assignment must "support it"
@@ -179,10 +175,10 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HasValueAt {
     pub state_var: StateVar,
-    pub value: IAtom,
+    pub value: IntTerm,
     pub timepoint: Time,
     /// Presence of the condition. Must imply the presence of all variables appearing in it.
     pub prez: Lit,
@@ -197,7 +193,7 @@ impl HasValueAt {
     /// Returns a box capturing when and what may be the value required by this condition.
     pub fn value_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = Vec::with_capacity(self.state_var.args.len() + 2);
-        buff.push(Segment::from(dom.bounds(self.timepoint.num))); // TODO: careful with denom
+        buff.push(Segment::from(dom.bounds(self.timepoint)));
         for arg in &self.state_var.args {
             buff.push(Segment::from(dom.bounds(*arg)));
         }
@@ -209,11 +205,12 @@ impl HasValueAt {
 #[derive(Debug)]
 struct StepContributor {
     contributes: Lit,
-    contribution: IntCst,
+    contribution: IntTerm,
 }
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        ctx.add_assertion(implies(ctx.presence_literal(l), self.prez));
         let _span = tracing::debug_span!("HasValueAt");
         let _span = _span.enter();
         tracing::debug!("{l:?} => {self:?}");
@@ -242,19 +239,19 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             let EffectOp::Step(step) = eff.operation else {
                 continue;
             };
-            if step == 0 {
+            if step == IntTerm::ZERO {
                 continue;
             }
 
             let mut conjuncts = ConjunctionBuilder::new();
             conjuncts.push(eff.prez);
-            conjuncts.push(f_geq(self.timepoint, eff.effective_start()).reified(ctx));
-            conjuncts.push(f_leq(self.timepoint, eff.mutex_end).reified(ctx));
+            conjuncts.push(geq(self.timepoint, eff.effective_start()).reified(ctx));
+            conjuncts.push(leq(self.timepoint, eff.mutex_end).reified(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(eq(*arg1, *arg2).reified(ctx))
+                conjuncts.push(lin_eq(*arg1, *arg2).reified(ctx))
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
+                let conjuncts: And = conjuncts.build();
                 let contributes = conjuncts.reified(ctx); // presence should be the same as self.presence?
                 step_contributors.push(StepContributor {
                     contributes,
@@ -277,14 +274,17 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             }
             let mut conjuncts = ConjunctionBuilder::new();
             conjuncts.push(eff.prez);
-            conjuncts.push(f_geq(self.timepoint, eff.effective_start()).implicant(ctx));
-            conjuncts.push(f_leq(self.timepoint, eff.mutex_end).implicant(ctx));
+            conjuncts.push(geq(self.timepoint, eff.effective_start()).implicant(ctx));
+            conjuncts.push(leq(self.timepoint, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(eq(*arg1, *arg2).implicant(ctx))
+                // note we use the conjunctive form with bot leq and geq to avoid reification of the equality
+                conjuncts.push(lin_leq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = and(conjuncts.build().into_lits().into_boxed_slice()); // TODO: make And = Conjunction
+                let conjuncts: And = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
+                ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
             }
         }
@@ -301,10 +301,16 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let base_var = establishers.reify([self.prez], ctx);
 
                 // and self.value = base_variable + Sum { step contirbutions }
-                let lhs = LinearSum::from(self.value);
-                let mut rhs = LinearSum::from(base_var);
+                let lhs = IntExp::from(self.value);
+                let mut rhs = IntExp::from(base_var);
                 for step in step_contributors {
-                    rhs += bool2int(step.contributes, ctx) * step.contribution;
+                    if let Ok(contribution) = IntCst::try_from(step.contribution) {
+                        rhs += bool2int(step.contributes, ctx) * contribution;
+                    } else {
+                        let value =
+                            Element::build(&[(step.contributes, step.contribution), (!step.contributes, 0.into())]);
+                        rhs += value.reify([self.prez], ctx)
+                    }
                 }
                 lhs.clone().leq(rhs.clone()).enforce(ctx);
                 lhs.geq(rhs).enforce(ctx);
@@ -333,7 +339,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                     let itv_eff = IntervalOnStateVariable {
                         state_var: &eff.state_var,
                         start: eff.transition_start,
-                        end: eff.transition_end - FAtom::EPSILON,
+                        end: eff.transition_end - sched.epsilon,
                         presence: eff.prez,
                     };
                     let exclu = Exclusive {
@@ -380,16 +386,15 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         );
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
-            for opt in neq(*x1, *x2).as_elementary_disjuncts(ctx) {
-                disjuncts.push(opt.implicant(ctx));
-                if disjuncts.tautological() {
-                    return;
-                }
+            disjuncts.push(lin_lt(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_gt(*x1, *x2).implicant(ctx));
+            if disjuncts.tautological() {
+                return;
             }
         }
         // put last as we are more likely to be able to short circuit on the parameters
-        disjuncts.push(f_lt(a.end, b.start).implicant(ctx));
-        disjuncts.push(f_lt(b.end, a.start).implicant(ctx));
+        disjuncts.push(lt(a.end, b.start).implicant(ctx));
+        disjuncts.push(lt(b.end, a.start).implicant(ctx));
         disjuncts.push(!a.presence);
         disjuncts.push(!b.presence);
         if !disjuncts.tautological() {
@@ -403,21 +408,19 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 }
 
 /// Transforms a boolean into an integer expression
-/// NOte: the implementation is currently incomplete
-#[doc(hidden)]
-pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinearSum {
+pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {
         1.into()
     } else if model.entails(!b) {
         0.into()
     } else if is_zero_one && b == b.variable().geq(1) {
-        IVar::new(b.variable()).into()
+        b.variable().into()
     } else if is_zero_one && b == b.variable().leq(0) {
-        LinearSum::constant_int(1) - IVar::new(b.variable()) // TODO: careful, the constant part is optional as well
+        IntExp::cst(1) - b.variable()
     } else {
         let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
         eq(bvar.geq(1), b).enforce(model);
-        LinearSum::from(bvar)
+        IntExp::from(bvar)
     }
 }

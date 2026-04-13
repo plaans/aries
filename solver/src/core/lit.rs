@@ -233,6 +233,14 @@ impl std::ops::Not for Lit {
         self.not()
     }
 }
+impl std::ops::Not for &Lit {
+    type Output = Lit;
+
+    #[inline]
+    fn not(self) -> Self::Output {
+        (*self).not()
+    }
+}
 
 impl From<bool> for Lit {
     fn from(b: bool) -> Self {

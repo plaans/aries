@@ -1,6 +1,7 @@
 use crate::{
     model::lang::{
         expr::{And, Leq, Or, or},
+        linear::LinLeq,
         max::{EqMax, EqMin},
         *,
     },
@@ -22,24 +23,36 @@ pub trait BoolExpr<Ctx: Store> {
     /// Examples:
     ///   - (a < b) would have a conjunctive scope `[prez(a), prez(b)]` as it is only valid when both
     ///     a and b are present. The conjunctive scope is thus the list their presence variable.
-    fn conj_scope(&self, ctx: &Ctx) -> Conjunction; // TODO: should be Conjunction
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction;
 
     /// Return a single literal that is true iff all leterals of the conjunctive scope are true.
     fn scope(&self, ctx: &mut Ctx) -> Lit {
         let conj_scope = self.conj_scope(ctx);
         ctx.conjunctive_scope(&conj_scope)
     }
+
+    /// Enforce that if the expression is in scope and `l` is true and defined, then the expression should be true.
     fn opt_enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-        let scope = self.scope(ctx);
-        let implicant = if scope == ctx.presence(l.variable()) {
+        let expression_scope = self.scope(ctx);
+        let enabler_scope = ctx.presence_literal(l);
+
+        // get the scope of both the expression and the enabler
+        let scope = ctx.conjunctive_scope(&[expression_scope, enabler_scope]);
+
+        let implicant = if scope == enabler_scope {
+            // l already has the right scope so use it directly
             l // TODO: here we should instead test that scope => prez(l)
         } else if ctx.entails(l) {
+            // `l` is always true when defined, so we can use an always true literal in the common scope
             ctx.tautology_of_scope(scope)
         } else {
+            // we need to create a new literal that is true whenever it is defined and l is true.
             let imp = ctx.new_literal(scope);
-            or([imp, !scope]).enforce_if(l, ctx);
+            // if in scope, and l, then imp should be true
+            or([!scope, !l, imp]).enforce(ctx);
             imp
         };
+
         self.enforce_if(implicant, ctx);
     }
 
@@ -95,9 +108,8 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
         let vs = self.scope(|v| ctx.presence_literal(v));
-        // TODO: give flattening context
-        let conj_scope = vs.to_conjunction(|_| Option::<[Lit; 0]>::None, |l| l == Lit::TRUE);
-        Conjunction::from_iter(conj_scope.literals())
+        let conj_scope = vs.to_conjunction(ctx);
+        Conjunction::from_iter(conj_scope.literals()) // TODO: remove conversion when StableLitSet = Conjunction`
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
         if let ReifExpr::Lit(l) = self {
@@ -116,6 +128,7 @@ crate::impl_reif!(Leq);
 crate::impl_reif!(LinearLeq);
 crate::impl_reif!(EqMax);
 crate::impl_reif!(EqMin);
+crate::impl_reif!(LinLeq);
 
 #[macro_export]
 macro_rules! impl_reif {
@@ -293,7 +306,7 @@ mod test {
 
         y.opt_enforce_if(Lit::FALSE, &mut model);
 
-        let e = ReifExpr::And(crate::core::literals::Lits::new());
+        let e = Conjunction::tautology();
         e.opt_enforce_if(Lit::TRUE, &mut model);
     }
 }

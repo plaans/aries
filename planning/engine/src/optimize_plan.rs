@@ -2,13 +2,13 @@ use std::{collections::BTreeMap, time::Instant};
 
 use aries::{
     core::state::Evaluable,
-    model::lang::{FAtom, Store, linear::LinearSum},
+    model::lang::{IntExpr, Store},
     prelude::*,
 };
 use aries_plan_engine::{
     encode::{
+        constraints::{ConditionConstraint, ReificationConstraint},
         encoding::{ActionInstance, Encoding, ObjectVar},
-        required_values::RequiredValues,
         tags::{ActionCondition, Tag, format_culprit_set},
         *,
     },
@@ -16,12 +16,13 @@ use aries_plan_engine::{
 };
 use derive_more::derive::Display;
 use itertools::Itertools;
-use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
-use timelines::{ConstraintID, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver, rational::QCst};
-use aries::core::views::Boundable;
 
 use std::path::Path;
 use std::io::Write;
+use planx::{ActionRef, Goal, Model, Param, Res, SimpleGoal, Sym, errors::*};
+use timelines::{
+    ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
+};
 
 pub type RelaxableConstraint = Tag;
 
@@ -44,7 +45,9 @@ pub enum Relaxation {
 pub enum Objective {
     /// The objective value defined in the domain
     Original,
+    /// Number of actions in the plan
     PlanLength,
+    /// End time of the latest action
     Makespan,
 }
 
@@ -90,6 +93,11 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
             writeln!(file, "{plan_str}")
                 .map_err(Message::from)
                 .title(format!("Cannot write output file {}", path.display()))?;
+    } else {
+        println!("No solution !!!!");
+        for mus in solver.muses() {
+            let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
+            println!("\n{msg}\n");
         }
     }
 
@@ -144,10 +152,6 @@ pub fn encode_plan_optimization_problem(
 
     let global_scope = Scope::global(&sched);
 
-    // overapproximation of values required at some point in the problem.
-    // Will be populated as we encounter new conditions, goals, ...
-    let mut required_values = RequiredValues::new();
-
     // associates each variable in the plan to a fresh variable.
     // TODO: presence of the variable
     let plan_variables: BTreeMap<&Sym, SymAtom> = lifted_plan
@@ -196,7 +200,7 @@ pub fn encode_plan_optimization_problem(
             };
 
             // incorpare the potential values taken by this operation param into the one of the action
-            let seg = Segment::from(sched.model.int_bounds(arg));
+            let seg = Segment::from(sched.model.bounds(arg));
             actions_instanciations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
@@ -215,7 +219,7 @@ pub fn encode_plan_optimization_problem(
         } else {
             Time::from(op.start)
         };
-        assert_eq!(op.duration, QCst::ZERO, "we use the start as end");
+        assert_eq!(op.duration, 0, "we use the start as end");
         let end = start;
 
         // record a task in `Sched` which
@@ -250,8 +254,9 @@ pub fn encode_plan_optimization_problem(
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let constraint =
-                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, Some(&mut required_values))?;
+                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding)?;
+                // update the required values if requested by caller
+                constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
                 let cid = sched.add_constraint(constraint);
                 encoding.constraints_tags.insert(
@@ -273,40 +278,40 @@ pub fn encode_plan_optimization_problem(
 
     // for each goal, add a constraint stating it must hold (the constraint is tagged but not relaxed for domain repair)
     for (gid, x) in model.goals.iter().enumerate() {
-        assert!(x.universal_quantification.is_empty());
-        match x.goal_expression {
-            planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
-                if let Some(tp) = time_interval.as_timestamp() {
-                    let constraint = condition_to_constraint(
-                        tp,
-                        expr_id,
-                        model,
-                        &mut sched,
-                        &global_scope,
-                        Some(&mut required_values),
-                    )?;
-
-                    let cid = sched.add_constraint(constraint);
-                    encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
-                } else {
-                    todo!("durative goal")
-                }
-            }
-            _ => todo!("complex goal"),
-        }
+        let constraint = parse_goal(x, model, &mut sched, &global_scope, &mut encoding)?;
+        constraint.add_required_values(&mut encoding.required_values, model, &sched);
+        let cid = sched.add_constraint(constraint);
+        encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
     }
 
-    // make it immutable, we will start exploiting and want to guard against any addition
-    let required_values = required_values;
+    for pref in model.preferences.iter() {
+        assert!(pref.universal_quantification.is_empty());
+        // parse the goal into an equivalent expression
+        let pref_satisfied = parse_goal(&pref.goal, model, &mut sched, &global_scope, &mut encoding)?;
+
+        // reify the expression into a literal that is true iff the preference is satisfied
+        let reification = sched.model.new_bvar(pref.name.canonical_str()).true_lit();
+        let constraint = ReificationConstraint {
+            reification,
+            constraint: pref_satisfied,
+        };
+
+        constraint.add_required_values(&mut encoding.required_values, model, &sched);
+        sched.add_constraint(constraint);
+
+        // record the association of the preference with the literal
+        encoding
+            .preferences
+            .entry(pref.name.canonical_str().to_string())
+            .or_default()
+            .push(reification);
+    }
 
     // enforce all elements of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope)?;
+        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
         sched.add_effect(eff);
     }
-    // set all default negative value
-    // The function attempts to only put those that may be useful, based on the required values
-    add_closed_world_negative_effects(&required_values, model, &mut sched);
 
     for (op_id, _op) in lifted_plan.operations.iter().enumerate() {
         let (a, bindings) = &operations_scopes[op_id];
@@ -320,8 +325,8 @@ pub fn encode_plan_optimization_problem(
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
-            let eff = convert_effect(x, true, model, &mut sched, bindings)?;
-            // store the effect either in the global pool or in the predicate specific one
+            let eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
+            // store the effect either in hte global pool or in the predicate specific one
             let is_predicate = model
                 .env
                 .fluents
@@ -345,6 +350,48 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
+<<<<<<< HEAD
+=======
+    let objective: LinTerm = match options.objective {
+        Objective::Original if model.metric.is_some() => {
+            // TODO: use if-let-guard when stabilized
+            let metric = model.metric.unwrap();
+            match metric {
+                planx::Metric::Minimize(expr_id) => {
+                    let lin_obj = reify_expression(
+                        expr_id,
+                        Some(sched.horizon),
+                        model,
+                        &mut sched,
+                        &global_scope,
+                        &mut encoding,
+                    )?;
+                    flatten_expression(lin_obj, &mut sched, &global_scope)
+                }
+                planx::Metric::Maximize(_) => {
+                    return Message::error("unsupported maximization metric").failed();
+                }
+            }
+        }
+        // use plan-length as default when no metric is specified
+        Objective::PlanLength | Objective::Original => {
+            let mut sum = IntExp::zero();
+            for (_a, scope) in &operations_scopes {
+                let action_prez = scope.presence;
+                sum += timelines::constraints::bool2int(action_prez, &mut sched.model)
+            }
+            reify_sum(sum, &mut sched)
+        }
+        Objective::Makespan => sched.makespan.into(),
+    };
+    encoding.set_objective(objective);
+
+    // set all default negative value
+    // The function attempts to only put those that may be useful, based on the required values
+    // Important: this MUST be done last so we have already identified all values that may be required (inside conditions, effect values, goals...)
+    add_closed_world_negative_effects(&encoding.required_values, model, &mut sched);
+
+>>>>>>> master
     let tags = encoding.constraints_tags.clone();
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
 
@@ -357,13 +404,44 @@ pub fn encode_plan_optimization_problem(
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
 
-fn reify_sum(sum: LinearSum, model: &mut Sched) -> FAtom {
-    let reified: FAtom = model
-        .model
-        .new_fvar(INT_CST_MIN, INT_CST_MAX, sum.denom(), "Sum reif")
-        .into();
-    model.add_constraint(sum.clone().leq(reified));
-    model.add_constraint(sum.geq(reified));
+fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
+    sum.reify(sum.conj_scope(&model), &mut model.model)
+}
 
-    reified
+/// Parses a goal (possibly quantified) into an equivalent expression
+pub fn parse_goal(
+    goal: &Goal,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<ConditionConstraint> {
+    if !goal.universal_quantification.is_empty() {
+        return model
+            .env
+            .node(goal)
+            .todo("Unsupported universal quantification")
+            .failed();
+    }
+    parse_simple_goal(&goal.goal_expression, model, sched, bindings, encoding)
+}
+
+/// Parses a quantifier-free goal into an equivalent expression
+pub fn parse_simple_goal(
+    goal: &SimpleGoal,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<ConditionConstraint> {
+    match goal {
+        planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
+            if let Some(tp) = time_interval.as_timestamp() {
+                condition_to_constraint(tp, *expr_id, model, sched, bindings, encoding)
+            } else {
+                todo!("durative goal")
+            }
+        }
+        _ => todo!("complex goal"),
+    }
 }

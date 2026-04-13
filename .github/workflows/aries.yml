@@ -50,6 +50,8 @@ jobs:
         run: ./ci/sat.py debug
       - name: Scheduler testing
         run: ./ci/scheduling.py
+      - name: APE validator
+        run: ./ci/ape-val.sh
       - name: GG solving
         run: ./ci/gg.py
       - name: PDDL Solving (PDDL & HDDL)

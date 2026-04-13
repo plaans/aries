@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use aries::core::VarRef;
-use aries::model::lang::linear::NFLinearSumItem;
+use aries::model::lang::linear::ScaledVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -112,7 +112,7 @@ impl Encode for IntLinEq {
             .a
             .iter()
             .zip(self.b.clone())
-            .map(|x| NFLinearSumItem {
+            .map(|x| ScaledVar {
                 var: *translate(x.1),
                 factor: *x.0,
             })

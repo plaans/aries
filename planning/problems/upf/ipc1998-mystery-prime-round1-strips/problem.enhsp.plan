@@ -1,0 +1,5 @@
+(overcome abrasion rest pork uranus venus)
+(feast rest pork lamb alsace quebec)
+(feast rest lamb flounder surrey pennsylvania)
+(feast rest flounder rice pennsylvania alsace)
+(succumb abrasion rest rice uranus venus)

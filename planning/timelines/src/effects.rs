@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    StateVar, TaskId, Time,
+    IntTerm, StateVar, TaskId, Time,
     boxes::{BBox, BoxRef, BoxUniverse, Segment},
 };
 
@@ -38,13 +38,13 @@ pub struct Effect {
 #[derive(Clone, Eq, PartialEq)]
 pub enum EffectOp {
     /// Sets the state variable to an absolute value
-    Assign(IntCst),
+    Assign(IntTerm),
     /// Increase the state variable by a given value (positive or negative)
-    Step(IntCst),
+    Step(IntTerm),
 }
 impl EffectOp {
-    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(1);
-    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(0);
+    pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(IntTerm::TRUE);
+    pub const FALSE_ASSIGNMENT: EffectOp = EffectOp::Assign(IntTerm::FALSE);
 }
 impl Debug for EffectOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -52,8 +52,7 @@ impl Debug for EffectOp {
             EffectOp::Assign(val) => {
                 write!(f, ":= {val:?}")
             }
-            EffectOp::Step(v) if v >= &0 => write!(f, "+= {v:?}"),
-            EffectOp::Step(v) => write!(f, "-= {:?}", -v),
+            EffectOp::Step(v) => write!(f, "+= {v:?}"), // TODO: nicer print of negative constants
         }
     }
 }
@@ -62,8 +61,8 @@ impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{:?}, {:?}] {:?} {:?}",
-            self.transition_start, self.transition_end, self.state_var, self.operation
+            "[{:?}, {:?}] {:?} {:?}  [{:?}]",
+            self.transition_start, self.transition_end, self.state_var, self.operation, self.prez
         )
     }
 }
@@ -85,10 +84,7 @@ impl Effect {
     /// - `[lb(a), ub(a)]` for a in args
     pub(crate) fn affected_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = crate::boxes::Segments::new();
-        buff.push(Segment::new(
-            dom.lb(self.transition_start.num),
-            dom.ub(self.mutex_end.num),
-        )); // TODO: carfeul with denom
+        buff.push(Segment::new(dom.lb(self.transition_start), dom.ub(self.mutex_end)));
         buff.extend(self.args_segments(&dom));
         BBox::new(buff)
     }
@@ -99,12 +95,12 @@ impl Effect {
     /// - `[v, v]` where v is the value in the assignment or step operation
     pub(crate) fn value_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = crate::boxes::Segments::new();
-        let start = dom.lb(self.transition_end.num); // TODO: carerful with denom
-        let end = dom.ub(self.mutex_end.num); // TODO: carerful with denom
+        let start = dom.lb(self.transition_end);
+        let end = dom.ub(self.mutex_end);
         buff.push(Segment::new(start, end));
         buff.extend(self.args_segments(&dom));
         let value_segment = match self.operation {
-            EffectOp::Assign(v) | EffectOp::Step(v) => Segment::point(v),
+            EffectOp::Assign(v) | EffectOp::Step(v) => Segment::from(dom.bounds(v)),
         };
         buff.push(value_segment);
         crate::boxes::BBox::new(buff)
@@ -117,9 +113,9 @@ impl Effect {
     pub(crate) fn transition_box(&self, dom: &impl Dom) -> crate::boxes::BBox {
         let mut buff = crate::boxes::Segments::new();
         buff.push(Segment::new(
-            dom.lb(self.transition_start.num),
-            dom.ub(self.transition_end.num) - 1,
-        )); // TODO: carfeul with denom
+            dom.lb(self.transition_start),
+            dom.ub(self.transition_end) - 1,
+        ));
         buff.extend(self.args_segments(&dom));
         BBox::new(buff)
     }
