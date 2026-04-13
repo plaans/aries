@@ -1,7 +1,7 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_leq, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -299,6 +299,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             if !conjuncts.absurd() {
                 let conjuncts: And = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
+                ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
 
                 if ctx.causal_links.store.get(cl_dest_id).is_none() {
@@ -410,9 +411,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         );
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
-            // TODO: this reifies the value even though it could be decomposed into the two disjuncts
-            disjuncts.push(lin_leq(*x1, *x2).implicant(ctx));
-            disjuncts.push(lin_geq(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_lt(*x1, *x2).implicant(ctx));
+            disjuncts.push(lin_gt(*x1, *x2).implicant(ctx));
             if disjuncts.tautological() {
                 return;
             }
@@ -433,8 +433,6 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 }
 
 /// Transforms a boolean into an integer expression
-/// NOte: the implementation is currently incomplete
-#[doc(hidden)]
 pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {

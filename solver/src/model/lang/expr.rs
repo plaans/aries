@@ -62,6 +62,12 @@ pub fn lin_leq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
 pub fn lin_geq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
     lhs.into().geq(rhs)
 }
+pub fn lin_lt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().lt(rhs)
+}
+pub fn lin_gt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+    lhs.into().gt(rhs)
+}
 
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     let lhs = lhs.into();

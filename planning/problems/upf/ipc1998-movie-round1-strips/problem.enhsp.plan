@@ -1,0 +1,7 @@
+(get_cheese z1)
+(get_dip d1)
+(get_pop p1)
+(get_chips c5)
+(get_crackers k2)
+(rewind_movie)
+(reset_counter)

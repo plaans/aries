@@ -8,7 +8,7 @@ use aries::{
 };
 use itertools::Itertools;
 
-use crate::{ConstraintID, IntExp, IntTerm, Sched};
+use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
@@ -62,10 +62,20 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         self.solver.reset(); // TODO: this should not be needed
         res
     }
-    ///
-    /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
-    pub fn find_optimal(&mut self, obj: IntTerm, on_new_solution: impl FnMut(&Solution)) -> Option<Solution> {
-        let assumptions = self.enablers.keys().copied().collect_vec();
+
+    /// Find an optimal solution with all assumptions enforced.
+    /// The method accepts an additional set of assumptions that will be enforced in all solutions.
+    pub fn find_optimal(
+        &mut self,
+        obj: LinTerm,
+        on_new_solution: impl FnMut(&Solution),
+        under_assumptions: impl Into<Vec<Lit>>,
+    ) -> Option<Solution> {
+        let mut assumptions = under_assumptions.into();
+        // add assumptions for detecting unsatifable constraints
+        for &enabler in self.enablers.keys() {
+            assumptions.push(enabler);
+        }
         let res = self
             .solver
             .minimize_with_assumptions(obj, &assumptions, aries::solver::SearchLimit::None, on_new_solution)

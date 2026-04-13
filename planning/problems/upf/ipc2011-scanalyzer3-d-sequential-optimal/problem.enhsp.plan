@@ -1,0 +1,5 @@
+(analyze_4 seg_in_1a seg_in_1b seg_out_1a seg_out_1b car_in_1a car_in_1b car_out_1a car_out_1b)
+(analyze_4 seg_in_1a seg_in_1b seg_out_1a seg_out_1b car_in_1b car_out_1a car_out_1b car_in_1a)
+(analyze_4 seg_in_1a seg_in_1b seg_out_1a seg_out_1b car_out_1a car_out_1b car_in_1a car_in_1b)
+(analyze_4 seg_in_1a seg_in_1b seg_out_1a seg_out_1b car_out_1b car_in_1a car_in_1b car_out_1a)
+(rotate_4 seg_in_1a seg_in_1b seg_out_1a seg_out_1b car_in_1a car_in_1b car_out_1a car_out_1b)

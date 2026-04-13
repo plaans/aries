@@ -448,7 +448,7 @@ impl TryFrom<LinearSum> for IAtom {
     }
 }
 
-use crate::transitive_conversion;
+use crate::{transitive_conversion, transitive_conversions};
 
 use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
@@ -505,6 +505,7 @@ impl LinearLeq {
     }
 }
 
+// TODO: this is very suboptimal and misses many potential optimizations (e.g. 0 <= 0 should yield Lit::TRUE)
 impl From<LinearLeq> for ReifExpr {
     fn from(value: LinearLeq) -> Self {
         let mut vars = BTreeMap::new();
@@ -576,21 +577,74 @@ impl From<SignedVar> for ScaledVar {
     }
 }
 
-impl VarView for ScaledVar {
+/// A normalized version of [`ScaledVar`] that make operating on bounds more efficient and straightfoward.
+struct ScaledVarImpl {
+    /// Factor, always strictly positive
+    factor: IntCst,
+    /// A signed variable that catpures the original sign of the factor and is [`SignedVar::ZERO`]
+    /// if the the original factor was zero.
+    var: SignedVar,
+}
+impl From<ScaledVar> for ScaledVarImpl {
+    fn from(value: ScaledVar) -> Self {
+        match value.factor.cmp(&0) {
+            std::cmp::Ordering::Less => ScaledVarImpl {
+                factor: value.factor.abs(),
+                var: SignedVar::minus(value.var),
+            },
+            std::cmp::Ordering::Equal => ScaledVarImpl {
+                factor: 1,
+                var: SignedVar::ZERO,
+            },
+            std::cmp::Ordering::Greater => ScaledVarImpl {
+                factor: value.factor,
+                var: SignedVar::plus(value.var),
+            },
+        }
+    }
+}
+
+impl VarView for ScaledVarImpl {
     type Value = IntCst;
 
-    fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
-        let svar = if self.factor >= 0 {
-            SignedVar::plus(self.var)
-        } else {
-            SignedVar::minus(self.var)
-        };
+    fn upper_bound(&self, dom: impl Dom) -> Self::Value {
+        debug_assert!(self.factor > 0);
+        dom.upper_bound(self.var) * self.factor
+    }
 
-        svar.upper_bound(dom) * self.factor.abs()
+    fn lower_bound(&self, dom: impl Dom) -> Self::Value {
+        debug_assert!(self.factor > 0);
+        dom.lower_bound(self.var) * self.factor
+    }
+}
+
+impl Boundable for ScaledVarImpl {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        debug_assert!(self.factor > 0);
+        // a*X <= ub
+        // X <= ub/a   (floor gets us the first integer value below)
+        self.var.leq(div_floor(ub, self.factor))
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        debug_assert!(self.factor > 0);
+        // a*X >= lb
+        // X >= lb/a
+        self.var.geq(div_ceil(lb, self.factor))
+    }
+}
+
+impl VarView for ScaledVar {
+    type Value = IntCst; // TODO: this should be LongCst to avoid possible overflows
+
+    fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
+        ScaledVarImpl::from(*self).upper_bound(dom)
     }
 
     fn lower_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
-        -(-self).upper_bound(dom)
+        ScaledVarImpl::from(*self).lower_bound(dom)
     }
 }
 
@@ -598,21 +652,11 @@ impl Boundable for ScaledVar {
     type Value = IntCst;
 
     fn leq(&self, ub: Self::Value) -> Lit {
-        if self.is_zero() {
-            return Lit::from(0 <= ub);
-        }
-        // a*X <= ub
-        // X <= ub/a   (floor gets us the first integer value below)
-        self.var.leq(div_floor(ub, self.factor))
+        ScaledVarImpl::from(*self).leq(ub)
     }
 
     fn geq(&self, lb: Self::Value) -> Lit {
-        if self.is_zero() {
-            return Lit::from(0 >= lb);
-        }
-        // a*X >= lb
-        // X >= lb/a
-        self.var.geq(div_ceil(lb, self.factor))
+        ScaledVarImpl::from(*self).geq(lb)
     }
 }
 
@@ -756,13 +800,13 @@ impl From<ScaledVar> for LinTerm {
 }
 
 impl TryFrom<LinTerm> for IntCst {
-    type Error = ();
+    type Error = ConversionError;
 
     fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
         if value.scaled_var.is_zero() {
             Ok(value.constant)
         } else {
-            Err(())
+            Err(ConversionError::NotConstant)
         }
     }
 }
@@ -774,6 +818,7 @@ transitive_conversion!(LinSum, LinTerm, VarRef);
 transitive_conversion!(LinSum, LinTerm, SignedVar);
 transitive_conversion!(LinSum, LinTerm, IAtom);
 transitive_conversion!(LinSum, LinTerm, IVar);
+transitive_conversions!(LinSum, LinTerm, IntCst);
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LinSum {
@@ -803,6 +848,14 @@ impl LinSum {
     pub fn geq<Rhs: Into<LinSum>>(self, lower_bound: Rhs) -> LinLeq {
         LinLeq(lower_bound.into() - self)
     }
+    pub fn lt<Rhs: Into<LinSum>>(self, upper_bound: Rhs) -> LinLeq {
+        // a < b <=> a - b < 0 <=> a -b <= -1
+        (self - upper_bound).leq(-1)
+    }
+    pub fn gt<Rhs: Into<LinSum>>(self, lower_bound: Rhs) -> LinLeq {
+        // a > b <=> b < a
+        lower_bound.into().lt(self)
+    }
 
     /// Returns the conjunction of all presence literals of variables appearing in the sum.
     pub fn conj_scope(&self, dom: impl Dom) -> Conjunction {
@@ -831,20 +884,15 @@ impl From<LinTerm> for LinSum {
         }
     }
 }
-impl From<IntCst> for LinSum {
-    fn from(value: IntCst) -> Self {
-        Self::cst(value)
-    }
-}
 
 impl TryFrom<LinSum> for LinTerm {
-    type Error = ();
+    type Error = ConversionError;
 
     fn try_from(value: LinSum) -> Result<Self, Self::Error> {
         match *value.vars.as_slice() {
             [] => Ok(LinTerm::int_cst(value.constant)),
             [single] => Ok(LinTerm::new(single, value.constant)),
-            _ => Err(()),
+            _ => Err(ConversionError::NotVariable),
         }
     }
 }
@@ -929,7 +977,7 @@ impl<Ctx: Store> IntExpr<Ctx> for LinSum {
 /// A linear inequality over integer variables.
 ///
 /// The expression is true iff the linear sum is lesser than or equal to zero.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LinLeq(LinSum);
 
 /// A linear equality over integer variables.

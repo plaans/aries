@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
+    backtrack::DecLvl,
     core::{state::Evaluable, views::Dom},
     model::Label,
     prelude::*,
@@ -18,8 +19,32 @@ pub trait Store: Dom {
     fn get_implicant(&mut self, e: ReifExpr) -> Lit;
     fn add_implies(&mut self, l: Lit, e: ReifExpr);
 
+    /// Given a set of scope literals, return a (possibly new) scope literal that
+    /// exactly represents the intersection of thoses scope.
+    ///
+    /// One can retrieve the intersected scope with [`Store::decompose_scope`].
     fn conjunctive_scope(&mut self, lits: &[Lit]) -> Lit;
+
+    /// Returns a literal that is always true and with scope `scope`.
+    ///
+    /// The purpose of this method is to avoid creating several tautological literals per scope.
     fn tautology_of_scope(&mut self, scope: Lit) -> Lit;
+
+    /// Given a scope literal, returns an equivalent conjunction of scope literals.
+    ///
+    /// This method is the inverse of [`Store::conjunctive_scope`] and allows breaking an intersection scope into its intersected components.
+    /// If the scope is not an interesection scope, it will return the intersection with a single element.
+    fn decompose_scope(&self, scope: Lit) -> Conjunction;
+
+    /// Returns the list of literals that are known to be always implied `l`.
+    ///
+    /// The mehtod may not find all possible implication.
+    ///
+    /// Currently, it will only detect that for implication explicitly declared with [`Domains::add_implication`] (which is only intended for scope literals).
+    fn statically_implied_by(&self, l: Lit) -> impl Iterator<Item = Lit>;
+
+    /// Returns `true` if the literal is tautological in this model (entailed at the root level).
+    fn statically_entailed(&self, l: Lit) -> bool;
 
     fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static);
 
@@ -117,5 +142,23 @@ where
 
     fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static) {
         self.get_model_mut().enforce_user_propagator(propagator);
+    }
+
+    fn decompose_scope(&self, scope: Lit) -> Conjunction {
+        self.get_model()
+            .shape
+            .conjunctive_scopes
+            .conjuncts(scope)
+            .map(Conjunction::from_iter)
+            .unwrap_or(Conjunction::from(scope))
+    }
+
+    fn statically_implied_by(&self, l: Lit) -> impl Iterator<Item = Lit> {
+        self.get_model().state.implied_by(l)
+    }
+
+    fn statically_entailed(&self, l: Lit) -> bool {
+        let m = &self.get_model().state;
+        m.entails(l) && m.entailing_level(l) == DecLvl::ROOT
     }
 }

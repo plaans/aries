@@ -137,6 +137,15 @@ impl Domains {
         self.implications.implies(a, b)
     }
 
+    /// Returns the a set of literals that are knowned to be implied by `lit`.
+    ///
+    /// Note that this method may not given the full set. In particular, in the current implementation
+    /// it would only give the directly implied literals (declared with `add_implication`)
+    /// and not their transitive closure.
+    pub(crate) fn implied_by(&self, lit: Lit) -> impl Iterator<Item = Lit> {
+        self.implications.direct_implications_of(lit)
+    }
+
     /// Returns true if `a` and `b` are known to be exclusive
     pub fn exclusive(&self, a: Lit, b: Lit) -> bool {
         // exclusive: !a || !b
