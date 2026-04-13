@@ -43,7 +43,11 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
 
     let _encoding_time = start.elapsed().as_millis();
 
-    let objective = encoding.objective.unwrap(); //TODO: error message
+    let objective = encoding
+        .objectives
+        .first()
+        .copied()
+        .expect("no objective specified (no default)");
 
     // set the objective to a constant if we are not optimizing
     let solver_objective = if options.optimize { objective } else { 0.into() };
@@ -53,7 +57,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
         println!("{}\n", encoding.plan(sol));
     };
 
-    if let Some(solution) = solver.find_optimal(solver_objective, &print) {
+    if let Some(solution) = solver.find_optimal(solver_objective, &print, []) {
         println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
         print(&solution);
     } else {
@@ -78,7 +82,7 @@ fn encode_finite_planning_problem(
                 optimize_plan::Relaxation::ActionPresence,
                 optimize_plan::Relaxation::StartTime,
             ],
-            objective: options.objective,
+            objectives: vec![options.objective],
         },
     )
 }

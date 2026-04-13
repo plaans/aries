@@ -124,8 +124,8 @@ pub struct OptimizePlan {
     #[command(flatten)]
     options: optimize_plan::Options,
     /// If provided, the optimized plan will be written to this file.
-    #[arg(short = 'w', long)]
-    output_plan: Option<PathBuf>,
+    #[arg(short = 'w', long = "write-plan")]
+    plan_file: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -262,14 +262,10 @@ fn validate_plan(command: &Validate) -> Res<()> {
             if command.invalid {
                 std::process::exit(1);
             }
-            match (command.expected_objective, objective_value) {
-                (Some(_exptected), None) => {
-                    return Message::error("expected an objective value to be computed").failed();
-                }
-                (Some(exptected), Some(computed)) if exptected != computed => {
-                    return Message::error(format!("expected an objective value of {exptected}")).failed();
-                }
-                (_, _) => {}
+            if let Some(expected) = command.expected_objective
+                && expected != objective_value
+            {
+                return Message::error(format!("expected an objective value of {expected}")).failed();
             }
         }
         validate::ValidationResult::Invalid => {
@@ -294,7 +290,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     //  1. None          → no output file
     //  2. existing dir  → create <dir>/<problem_name>.plan
     //  3. file path     → create or overwrite that file
-    let resolved_output: Option<PathBuf> = match &command.output_plan {
+    let resolved_output: Option<PathBuf> = match &command.plan_file {
         None => None,
         Some(path) if path.is_dir() => {
             let filename = format!("{}.plan", pb.problem_name.canonical_str());

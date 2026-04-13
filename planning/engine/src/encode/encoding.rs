@@ -16,7 +16,7 @@ pub struct Encoding {
     /// All actions instances that may appear in the plan.
     pub actions: Vec<ActionInstance>,
     /// Variable encoding the objective value (minimization)
-    pub objective: Vec<LinTerm>,
+    pub objectives: Vec<LinTerm>,
     /// for each relaxable constraint, stores a constraint tag so that we can later decide if it should be relaxed.
     pub constraints_tags: BTreeMap<ConstraintID, Tag>,
     /// Associates each preference name with a list of literals that are true iff the preference hold.
@@ -31,7 +31,7 @@ impl Encoding {
     pub fn new() -> Self {
         Encoding {
             actions: vec![],
-            objective: vec![],
+            objectives: vec![],
             constraints_tags: Default::default(),
             preferences: Default::default(),
             required_values: RequiredValues::new(),
@@ -43,7 +43,7 @@ impl Encoding {
     }
 
     pub fn add_objective(&mut self, objective: impl Into<LinTerm>) {
-        self.objective.push(objective.into())
+        self.objectives.push(objective.into())
     }
 
     /// Extracts the plan corresponding to this solution.

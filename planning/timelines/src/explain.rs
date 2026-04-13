@@ -8,7 +8,7 @@ use aries::{
 };
 use itertools::Itertools;
 
-use crate::{ConstraintID, IntExp, IntTerm, Sched};
+use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
@@ -64,13 +64,14 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
     }
 
     /// Find an optimal solution with all assumptions enforced.
-    /// The method accepts an additional set of assumptions `assumptions` that will be assumed in all solutions.
+    /// The method accepts an additional set of assumptions that will be enforced in all solutions.
     pub fn find_optimal(
         &mut self,
-        obj: FAtom,
+        obj: LinTerm,
         on_new_solution: impl FnMut(&Solution),
-        mut assumptions: Vec<Lit>,
+        under_assumptions: impl Into<Vec<Lit>>,
     ) -> Option<Solution> {
+        let mut assumptions = under_assumptions.into();
         // add assumptions for detecting unsatifable constraints
         for &enabler in self.enablers.keys() {
             assumptions.push(enabler);

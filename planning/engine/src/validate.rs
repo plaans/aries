@@ -8,7 +8,7 @@ use crate::optimize_plan::{self, encode_plan_optimization_problem};
 pub struct Options {}
 
 pub enum ValidationResult {
-    Valid { objective_value: Option<timelines::IntCst> },
+    Valid { objective_value: timelines::IntCst },
     Invalid,
 }
 
@@ -23,13 +23,9 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<Val
 
     if let Some(solution) = solver.check_satisfiability() {
         println!("> Plan is valid");
-        let objective_value = if let Some(objective) = encoding.objective {
-            let objective_value = objective.evaluate(&solution).unwrap();
-            println!("> Objective: {objective_value}",);
-            Some(objective_value)
-        } else {
-            None
-        };
+        let objective = encoding.objectives.first().copied().unwrap();
+        let objective_value = objective.evaluate(&solution).unwrap();
+        println!("> Objective: {objective_value}");
         // _sched.print(&solution);
         Ok(ValidationResult::Valid { objective_value })
     } else {
