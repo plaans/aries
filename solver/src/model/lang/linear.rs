@@ -505,6 +505,7 @@ impl LinearLeq {
     }
 }
 
+// TODO: this is very suboptimal and misses many potential optimizations (e.g. 0 <= 0 should yield Lit::TRUE)
 impl From<LinearLeq> for ReifExpr {
     fn from(value: LinearLeq) -> Self {
         let mut vars = BTreeMap::new();
@@ -840,6 +841,14 @@ impl LinSum {
     pub fn geq<Rhs: Into<LinSum>>(self, lower_bound: Rhs) -> LinLeq {
         LinLeq(lower_bound.into() - self)
     }
+    pub fn lt<Rhs: Into<LinSum>>(self, upper_bound: Rhs) -> LinLeq {
+        // a < b <=> a - b < 0 <=> a -b <= -1
+        (self - upper_bound).leq(-1)
+    }
+    pub fn gt<Rhs: Into<LinSum>>(self, lower_bound: Rhs) -> LinLeq {
+        // a > b <=> b < a
+        lower_bound.into().lt(self)
+    }
 
     /// Returns the conjunction of all presence literals of variables appearing in the sum.
     pub fn conj_scope(&self, dom: impl Dom) -> Conjunction {
@@ -966,7 +975,7 @@ impl<Ctx: Store> IntExpr<Ctx> for LinSum {
 /// A linear inequality over integer variables.
 ///
 /// The expression is true iff the linear sum is lesser than or equal to zero.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LinLeq(LinSum);
 
 /// A linear equality over integer variables.
