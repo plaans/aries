@@ -7,6 +7,7 @@ use aries::{
 };
 use aries_plan_engine::{
     encode::{
+        constraints::{ConditionConstraint, ReificationConstraint},
         encoding::{ActionInstance, Encoding, ObjectVar},
         tags::{ActionCondition, Tag, format_culprit_set},
         *,
@@ -15,7 +16,7 @@ use aries_plan_engine::{
 };
 use derive_more::derive::Display;
 use itertools::Itertools;
-use planx::{ActionRef, Model, Param, Res, Sym, errors::*};
+use planx::{ActionRef, Goal, Model, Param, Res, SimpleGoal, Sym, errors::*};
 use timelines::{
     ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
 };
@@ -212,21 +213,30 @@ pub fn encode_plan_optimization_problem(
     }
     // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
     for (gid, x) in model.goals.iter().enumerate() {
-        assert!(x.universal_quantification.is_empty());
-        match x.goal_expression {
-            planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
-                if let Some(tp) = time_interval.as_timestamp() {
-                    let constraint =
-                        condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding, true)?;
+        let constraint = parse_goal(x, model, &mut sched, &global_scope, &mut encoding)?;
+        let cid = sched.add_constraint(constraint);
+        encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
+    }
 
-                    let cid = sched.add_constraint(constraint);
-                    encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
-                } else {
-                    todo!("durative goal")
-                }
-            }
-            _ => todo!("complex goal"),
-        }
+    for pref in model.preferences.iter() {
+        assert!(pref.universal_quantification.is_empty());
+        // parse the goal into an equivalent expression
+        let pref_satisfied = parse_goal(&pref.goal, model, &mut sched, &global_scope, &mut encoding)?;
+
+        // reify the expression into a literal that is true iff the preference is satisfied
+        let reification = sched.model.new_bvar(pref.name.canonical_str()).true_lit();
+        let constraint = ReificationConstraint {
+            reification,
+            constraint: pref_satisfied,
+        };
+        sched.add_constraint(constraint);
+
+        // record the association of the preference with the literal
+        encoding
+            .preferences
+            .entry(pref.name.canonical_str().to_string())
+            .or_default()
+            .push(reification);
     }
 
     // enforce all elemts of the initial state as effects
@@ -286,7 +296,7 @@ pub fn encode_plan_optimization_problem(
                         &global_scope,
                         &mut encoding,
                     )?;
-                    flatten_expression(expr_id, lin_obj, model, &mut sched, &global_scope)?
+                    flatten_expression(lin_obj, &mut sched, &global_scope)
                 }
                 planx::Metric::Maximize(_) => {
                     return Message::error("unsupported maximization metric").failed();
@@ -319,4 +329,42 @@ pub fn encode_plan_optimization_problem(
 
 fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
     sum.reify(sum.conj_scope(&model), &mut model.model)
+}
+
+/// Parses a goal (possibly quantified) into an equivalent expression
+pub fn parse_goal(
+    goal: &Goal,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<ConditionConstraint> {
+    if !goal.universal_quantification.is_empty() {
+        return model
+            .env
+            .node(goal)
+            .todo("Unsupported universal quantification")
+            .failed();
+    }
+    parse_simple_goal(&goal.goal_expression, model, sched, bindings, encoding)
+}
+
+/// Parses a quantifier-free goal into an equivalent expression
+pub fn parse_simple_goal(
+    goal: &SimpleGoal,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<ConditionConstraint> {
+    match goal {
+        planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
+            if let Some(tp) = time_interval.as_timestamp() {
+                condition_to_constraint(tp, *expr_id, model, sched, bindings, encoding, true)
+            } else {
+                todo!("durative goal")
+            }
+        }
+        _ => todo!("complex goal"),
+    }
 }

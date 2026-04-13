@@ -1,7 +1,7 @@
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_gt, lin_lt, lt};
+use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -175,7 +175,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct HasValueAt {
     pub state_var: StateVar,
     pub value: IntTerm,
@@ -284,6 +284,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             if !conjuncts.absurd() {
                 let conjuncts: And = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
+                ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
             }
         }
@@ -407,8 +408,6 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 }
 
 /// Transforms a boolean into an integer expression
-/// NOte: the implementation is currently incomplete
-#[doc(hidden)]
 pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {

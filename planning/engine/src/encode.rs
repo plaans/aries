@@ -8,7 +8,7 @@ pub mod tags;
 use aries::{
     core::literals::ConjunctionBuilder,
     model::lang::{
-        BoolExpr,
+        BoolExpr, IntExpr,
         expr::{eq, lin_eq},
     },
     prelude::*,
@@ -16,7 +16,8 @@ use aries::{
 use itertools::Itertools;
 use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
 use timelines::{
-    Effect, EffectOp, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time, constraints::HasValueAt,
+    Effect, EffectOp, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    constraints::{HasValueAt, bool2int},
     symbols::ObjectEncoding,
 };
 
@@ -225,7 +226,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
 
     // all state variables that may require a `0` value, which encodes `false` for predicates
     // we will only place a negative effect for those state variables.
-    let req_state_vars = reqs.state_variables(|v| v == 0);
+    let req_state_vars = reqs.state_variables(|v| true || v == 0); // FIXME: reactivate closed world effect filtering
 
     for sv in req_state_vars {
         if model.env.fluents.get(sv.fluent).return_type != planx::Type::Bool {
@@ -370,8 +371,7 @@ pub fn reify_sym(
     binding: &Scope,
     encoding: &mut Encoding,
 ) -> Res<SymAtom> {
-    reify_expression(eid, None, model, sched, binding, encoding)
-        .and_then(|e| flatten_expression(eid, e, model, sched, binding))
+    reify_expression(eid, None, model, sched, binding, encoding).map(|e| flatten_expression(e, sched, binding))
 }
 
 pub fn reify_constant(
@@ -382,7 +382,7 @@ pub fn reify_constant(
     encoding: &mut Encoding,
 ) -> Res<IntCst> {
     let reif = reify_expression(e, None, model, sched, scope, encoding)?;
-    let reif = flatten_expression(e, reif, model, sched, scope)?;
+    let reif = flatten_expression(reif, sched, scope);
     let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
     Ok(cst)
 }
@@ -396,10 +396,9 @@ pub fn reify_expression_to_term(
     encoding: &mut Encoding,
 ) -> Res<IntTerm> {
     let reif = reify_expression(e, time, model, sched, scope, encoding)?;
-    flatten_expression(e, reif, model, sched, scope)
+    Ok(flatten_expression(reif, sched, scope))
 }
 
-// todo: add required_value!
 pub fn reify_expression(
     e: ExprId,
     time: Option<Time>,
@@ -448,7 +447,7 @@ pub fn reify_expression(
                 .iter()
                 .map(|&arg| {
                     reify_expression(arg, Some(time), model, sched, binding, encoding)
-                        .and_then(|arg_expr| flatten_expression(arg, arg_expr, model, sched, binding))
+                        .map(|arg_expr| flatten_expression(arg_expr, sched, binding))
                 })
                 .collect::<Res<Vec<IntTerm>>>()?;
             let state_var = StateVar {
@@ -481,10 +480,24 @@ pub fn reify_expression(
             sum -= reify_expression(args[1], time, model, sched, binding, encoding)?;
             Ok(sum)
         }
+        planx::Expr::ViolationCount(x) => {
+            let sum = if let Some(values) = encoding.preferences.get(x.canonical_str()) {
+                values
+                    .iter()
+                    .fold(LinSum::zero(), |acc, v| acc + bool2int(!v, &mut sched.model))
+            } else {
+                LinSum::zero()
+            };
+            Ok(sum)
+        }
         _ => e.todo(format!("not supported [{e}]")).failed(),
     }
 }
 
-pub fn flatten_expression(eid: ExprId, e: IntExp, model: &Model, _sched: &mut Sched, _binding: &Scope) -> Res<IntTerm> {
-    IntTerm::try_from(e).map_err(|_| model.env.node(eid).todo("cannot be flattened"))
+pub fn flatten_expression(e: IntExp, sched: &mut Sched, binding: &Scope) -> IntTerm {
+    if let Ok(term) = IntTerm::try_from(e.clone()) {
+        term
+    } else {
+        e.reify(binding.presence, &mut sched.model)
+    }
 }

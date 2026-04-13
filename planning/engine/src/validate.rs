@@ -30,7 +30,7 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<Val
         } else {
             None
         };
-        // sched.print(&solution);
+        // _sched.print(&solution);
         Ok(ValidationResult::Valid { objective_value })
     } else {
         println!("Plan is INVALID!!!!");

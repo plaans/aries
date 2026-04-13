@@ -3,14 +3,14 @@ use timelines::{IntExp, constraints::HasValueAt, encoder::SchedEncoder};
 
 use crate::encode::required_values::RequiredValues;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ConditionConstraint {
     pub constraint: ConditionExpression,
     pub scope: Lit,
 }
 
 /// Constraint representing a condition
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ConditionExpression {
     HasValue(HasValueAt),
     EqZero(IntExp),
@@ -88,17 +88,25 @@ impl BoolExpr<SchedEncoder> for ConditionConstraint {
             ConditionExpression::NeqZero(sum) => sum.clone().neq(0).enforce_if(l, ctx),
             ConditionExpression::LeqZero(sum) => sum.clone().leq(0).enforce_if(l, ctx),
             ConditionExpression::Or(condition_constraints) => {
+                let _span = tracing::debug_span!("Or");
+                let _span = _span.enter();
                 // enforce that at least one is present
                 Disjunction::from_iter(condition_constraints.iter().map(|c| c.scope)).enforce_if(l, ctx);
                 for c in condition_constraints {
+                    let _span = tracing::debug_span!("Disjunct");
+                    let _span = _span.enter();
                     // enforce that they are enforced if present
                     c.opt_enforce_if(l, ctx);
                 }
             }
             ConditionExpression::And(cs) => {
+                let _span = tracing::debug_span!("And");
+                let _span = _span.enter();
                 // if enforced all elements must be present
                 Conjunction::from_iter(cs.iter().map(|c| c.scope)).enforce_if(l, ctx);
                 for c in cs {
+                    let _span = tracing::debug_span!("Conjunct");
+                    let _span = _span.enter();
                     // constraint must hold if present
                     c.opt_enforce_if(l, ctx);
                 }
@@ -108,5 +116,27 @@ impl BoolExpr<SchedEncoder> for ConditionConstraint {
 
     fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
         [self.scope].into()
+    }
+}
+
+/// A constraint that enforces a literal to be truee iff the associated expresison is true.
+#[derive(Debug, Clone)]
+pub struct ReificationConstraint {
+    /// A literal that is made true if and only if the constraint holds
+    pub reification: Lit,
+    /// The constraint that is reified
+    pub constraint: ConditionConstraint,
+}
+
+impl BoolExpr<SchedEncoder> for ReificationConstraint {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut SchedEncoder) {
+        let must_hold = Conjunction::from([implicant, self.reification]).reified(ctx);
+        self.constraint.enforce_if(must_hold, ctx);
+        let must_be_violated = Conjunction::from([implicant, !self.reification]).reified(ctx);
+        (!self.constraint.clone()).enforce_if(must_be_violated, ctx);
+    }
+
+    fn conj_scope(&self, ctx: &SchedEncoder) -> Conjunction {
+        ctx.presence_literal(self.reification).into()
     }
 }

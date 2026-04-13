@@ -61,8 +61,8 @@ impl Debug for Effect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "[{:?}, {:?}] {:?} {:?}",
-            self.transition_start, self.transition_end, self.state_var, self.operation
+            "[{:?}, {:?}] {:?} {:?}  [{:?}]",
+            self.transition_start, self.transition_end, self.state_var, self.operation, self.prez
         )
     }
 }
