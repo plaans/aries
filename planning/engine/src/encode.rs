@@ -330,11 +330,16 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
         }
         let active = active.build();
         let active = sched.model.reify(active);
+        debug_assert_eq!(sched.model.presence_literal(active), Lit::TRUE);
 
         if !active.absurd() {
             let mut eff = e.clone();
             eff.prez = active;
             with_set_semantics.push(eff);
+            // record that the `active` is a subscope of `e.prez`
+            // this is useful to allow finer reasoning on the scope of expressions
+            // Its absence may also cause our pedantic checks to fail (because they are overly careful)
+            sched.model.state.add_implication(active, e.prez);
         }
     }
     with_set_semantics
