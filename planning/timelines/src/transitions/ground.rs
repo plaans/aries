@@ -308,7 +308,7 @@ impl<'a> StreamingIterator for TransitionsGroundingsEnumerator<'a> {
                 self.current_transition_index_in_source += 1;
 
                 if self.current_transition_index_in_source < self.transitions.of_source(&self.current.1.source).len()
-                    || self.current.1.next(self.ctx, &self.ctx_empty_source_linterms).is_ok() 
+                    || self.current.1.next(self.ctx, &self.ctx_empty_source_linterms).is_ok()
                 {
                     self.renew_current_transition_grounding();
                 } else if self.current.1.source.map_or(0, |task_id| 1 + task_id.to_int() as usize)

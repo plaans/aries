@@ -102,7 +102,7 @@ fn find_empty_source_linterms(ctx: &SchedEncoder) -> Vec<LinTerm> {
             .iter()
             .enumerate()
             .filter(|&(_cid, c)| c.source.is_none())
-            .flat_map(|(cid, _c)| Transition::Cond(cid).get_args_and_vals(ctx).into_iter())
+            .flat_map(|(cid, _c)| Transition::Cond(cid).get_args_and_vals(ctx).into_iter()),
     )
     .sorted()
     .unique()
@@ -141,11 +141,7 @@ impl<'a> TransitionArgsAndVals<'a> {
         self.0.iter().chain(self.1.iter()).chain(self.2.iter())
     }
     pub fn into_iter(&self) -> impl Iterator<Item = LinTerm> + use<'a> {
-        self.0
-            .iter()
-            .copied()
-            .chain(self.1)
-            .chain(self.2)
+        self.0.iter().copied().chain(self.1).chain(self.2)
     }
     pub fn find_positions_in_source(
         &self,
