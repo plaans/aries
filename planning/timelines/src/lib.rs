@@ -178,9 +178,6 @@ impl Sched {
         }
         encoder.store
     }
-    /*pub fn gather_transitions<'a>(&'a self) -> Transitions<'a> {
-        Transitions::with(self)
-    }*/
 
     pub fn solve(&self) -> Option<Solution> {
         let encoding = self.encode();
