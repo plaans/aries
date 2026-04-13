@@ -8,9 +8,8 @@ use aries_plan_engine::{
         lifted_plan::{LiftedPlan, ObjectOrVariable},
     },
 };
-use derive_more::derive::Display;
-use planx::{Model, Res, Sym, errors::*};
-use timelines::{Sched, explain::ExplainableSolver, transitions::Transitions};
+use planx::{Model, Res, Sym};
+use timelines::{Sched, explain::ExplainableSolver};
 
 use crate::optimize_plan::{self, Objective};
 
@@ -40,54 +39,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
     let plan = &new_empty_lifted_plan(model, BTreeMap::new(), options.max_instances)?;
 
     let start = Instant::now();
-    let (mut solver, encoding, sched) = encode_finite_planning_problem(model, plan, options)?;
-
-    /*let mut transitions = Transitions::from(&sched);
-    transitions.populate_groundings(&sched.effects, &sched.conditions, &sched.model, true);
-    transitions.with_action_instances(&sched.effects, &sched.conditions, &sched.model, &encoding.actions);
-
-    encode_lprelax(&mut solver, &sched.gather_transitions(), &encoding);*/
-
-    /*let _transitions = _sched.generate_transitions();
-    println!("{:?}", _sched.tasks.iter().map(|t| &t.name).enumerate().collect::<Vec<_>>());
-    for transition_id in _transitions.iter_ids() {
-        println!("{:?} ({:?})", transition_id, match transition_id {
-            timelines::transitions::TransitionId::Cond(c_id) => format!("{:?}, {:?}", _sched.conditions.get(c_id).as_ref().unwrap().source, &_sched.conditions.get(c_id).as_ref().unwrap().state_var.fluent),
-            timelines::transitions::TransitionId::Eff(e_id) => format!("{:?}, {:?}", _sched.effects.get(*e_id).source, &_sched.effects.get(*e_id).state_var.fluent),
-            timelines::transitions::TransitionId::CondEff(c_id, e_id) => format!("{:?}, {:?}, {:?}, {:?}", _sched.conditions.get(c_id).as_ref().unwrap().source, &_sched.conditions.get(c_id).as_ref().unwrap().state_var.fluent, _sched.effects.get(*e_id).source, &_sched.effects.get(*e_id).state_var.fluent),
-        });
-        let mut is_object = std::collections::HashMap::<String, Vec<bool>>::new();
-        for fl in model.env.fluents.iter() {
-            is_object.insert(fl.name.canonical_str().to_string(), fl.parameters.iter().map(|p| p.tpe.clone()).chain([fl.return_type.clone()]).map(|tpe| matches!(tpe, planx::Type::User(_))).collect::<Vec<_>>());
-        }
-        let is_object = match transition_id {
-            timelines::transitions::TransitionId::Cond(c_id) =>
-                is_object.get(&_sched.conditions.get(c_id).as_ref().unwrap().state_var.fluent).unwrap(),
-            timelines::transitions::TransitionId::Eff(e_id) =>
-                is_object.get(&_sched.effects.get(*e_id).state_var.fluent).unwrap(),
-            timelines::transitions::TransitionId::CondEff(c_id, _) =>
-                is_object.get(&_sched.conditions.get(c_id).as_ref().unwrap().state_var.fluent).unwrap(),
-        };
-        println!("{:?}",
-            _transitions
-                .groundings_iter(transition_id)
-                .unwrap()
-                .map(|g| g
-                    .iter()
-                    .enumerate()
-                    .map(|(i, x)|
-                        if is_object[i] {
-                            _sched.objects.decoder().decode(*x).cloned().unwrap()
-                        } else {
-                            x.to_string()
-                        }
-                    )
-                    .collect::<Vec<_>>())
-                .collect::<Vec<_>>(),
-        );
-        println!("---");
-    }
-    //println!("{:?}", _transitions);*/
+    let (mut solver, encoding, _sched) = encode_finite_planning_problem(model, plan, options)?;
 
     let _encoding_time = start.elapsed().as_millis();
 
@@ -181,41 +133,3 @@ fn new_empty_lifted_plan(
     }
     Ok(LiftedPlan { operations, variables })
 }
-
-/*pub fn encode_lprelax(
-    solver: &mut ExplainableSolver<RelaxableConstraint>,
-    transitions: &Transitions,
-    encoding: &Encoding,
-) {
-    let mut action_instances = encoding
-        .actions
-        .iter()
-        .map(|a| (a.action_ref.clone(), (a, Vec::<Vec<IntCst>>::new())))
-        .collect::<std::collections::HashMap<_, _>>();
-
-    for (a_name, (a, groundings)) in action_instances.iter_mut() {
-        for (transition_id, groundings) in transitions.iter() {
-            match transition_id {
-                timelines::transitions::TransitionId::Cond(c_id) => {
-
-                }
-                timelines::transitions::TransitionId::Eff(e_id) => todo!(),
-                timelines::transitions::TransitionId::CondEff(c_id, e_id) => todo!(),
-            }
-        }
-        for x in &a.arguments {
-            x.var
-        }
-    }
-
-    for (transition_id, groundings) in transitions.iter() {
-        for a in &action_instances {
-
-        }
-
-        for g in groundings {
-
-        }
-    }
-
-}*/
