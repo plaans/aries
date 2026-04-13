@@ -480,6 +480,18 @@ pub fn reify_expression(
             sum -= reify_expression(args[1], time, model, sched, binding, encoding)?;
             Ok(sum)
         }
+        planx::Expr::App(Fun::Mul, args) if args.len() == 2 => {
+            let a1 = reify_expression(args[0], time, model, sched, binding, encoding)?;
+            let a2 = reify_expression(args[1], time, model, sched, binding, encoding)?;
+            let expr = if let Ok(cst) = IntCst::try_from(a1.clone()) {
+                a2 * cst
+            } else if let Ok(cst) = IntCst::try_from(a2.clone()) {
+                a1 * cst
+            } else {
+                return e.todo("non linear expression is not supported").failed();
+            };
+            Ok(expr)
+        }
         planx::Expr::ViolationCount(x) => {
             let sum = if let Some(values) = encoding.preferences.get(x.canonical_str()) {
                 values

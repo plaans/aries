@@ -448,7 +448,7 @@ impl TryFrom<LinearSum> for IAtom {
     }
 }
 
-use crate::transitive_conversion;
+use crate::{transitive_conversion, transitive_conversions};
 
 use super::{Atom, ConversionError, FAtom};
 transitive_conversion!(LinearSum, LinearTerm, IVar);
@@ -794,13 +794,13 @@ impl From<ScaledVar> for LinTerm {
 }
 
 impl TryFrom<LinTerm> for IntCst {
-    type Error = ();
+    type Error = ConversionError;
 
     fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
         if value.scaled_var.is_zero() {
             Ok(value.constant)
         } else {
-            Err(())
+            Err(ConversionError::NotConstant)
         }
     }
 }
@@ -812,6 +812,7 @@ transitive_conversion!(LinSum, LinTerm, VarRef);
 transitive_conversion!(LinSum, LinTerm, SignedVar);
 transitive_conversion!(LinSum, LinTerm, IAtom);
 transitive_conversion!(LinSum, LinTerm, IVar);
+transitive_conversions!(LinSum, LinTerm, IntCst);
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LinSum {
@@ -877,20 +878,15 @@ impl From<LinTerm> for LinSum {
         }
     }
 }
-impl From<IntCst> for LinSum {
-    fn from(value: IntCst) -> Self {
-        Self::cst(value)
-    }
-}
 
 impl TryFrom<LinSum> for LinTerm {
-    type Error = ();
+    type Error = ConversionError;
 
     fn try_from(value: LinSum) -> Result<Self, Self::Error> {
         match *value.vars.as_slice() {
             [] => Ok(LinTerm::int_cst(value.constant)),
             [single] => Ok(LinTerm::new(single, value.constant)),
-            _ => Err(()),
+            _ => Err(ConversionError::NotVariable),
         }
     }
 }
