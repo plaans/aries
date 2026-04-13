@@ -166,9 +166,15 @@ pub fn condition_to_constraint(
     Ok(constraint)
 }
 
+/// Converts a [`planx::Effect`] into a [`timelines::Effect`]
+///
+/// The effect will have a transition time of [`Sched::epsilon`], with the `transition_time_after`
+/// parameter controlling whether the transition time is before or after the timepoint indicated in the original effect.
+/// Affect at action start/end should hage the transition after (to be available at action.end + epsilon),
+/// while initial effects should have their transition time before (to be available at t=0).
 pub fn convert_effect(
     effect: &planx::Effect,
-    transition_time: bool,
+    transition_time_after: bool,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
@@ -201,8 +207,8 @@ pub fn convert_effect(
         }
     };
     let eff = timelines::Effect {
-        transition_start: t,
-        transition_end: if transition_time { t + sched.epsilon } else { t },
+        transition_start: if transition_time_after { t } else { t - sched.epsilon },
+        transition_end: if transition_time_after { t + sched.epsilon } else { t },
         mutex_end: sched.new_timepoint(),
         state_var: sv,
         operation: op,
