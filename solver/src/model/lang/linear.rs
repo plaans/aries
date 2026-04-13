@@ -576,21 +576,74 @@ impl From<SignedVar> for ScaledVar {
     }
 }
 
-impl VarView for ScaledVar {
+/// A normalized version of [`ScaledVar`] that make operating on bounds more efficient and straightfoward.
+struct ScaledVarImpl {
+    /// Factor, always strictly positive
+    factor: IntCst,
+    /// A signed variable that catpures the original sign of the factor and is [`SignedVar::ZERO`]
+    /// if the the original factor was zero.
+    var: SignedVar,
+}
+impl From<ScaledVar> for ScaledVarImpl {
+    fn from(value: ScaledVar) -> Self {
+        match value.factor.cmp(&0) {
+            std::cmp::Ordering::Less => ScaledVarImpl {
+                factor: value.factor.abs(),
+                var: SignedVar::minus(value.var),
+            },
+            std::cmp::Ordering::Equal => ScaledVarImpl {
+                factor: 1,
+                var: SignedVar::ZERO,
+            },
+            std::cmp::Ordering::Greater => ScaledVarImpl {
+                factor: value.factor,
+                var: SignedVar::plus(value.var),
+            },
+        }
+    }
+}
+
+impl VarView for ScaledVarImpl {
     type Value = IntCst;
 
-    fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
-        let svar = if self.factor >= 0 {
-            SignedVar::plus(self.var)
-        } else {
-            SignedVar::minus(self.var)
-        };
+    fn upper_bound(&self, dom: impl Dom) -> Self::Value {
+        debug_assert!(self.factor > 0);
+        dom.upper_bound(self.var) * self.factor
+    }
 
-        svar.upper_bound(dom) * self.factor.abs()
+    fn lower_bound(&self, dom: impl Dom) -> Self::Value {
+        debug_assert!(self.factor > 0);
+        dom.lower_bound(self.var) * self.factor
+    }
+}
+
+impl Boundable for ScaledVarImpl {
+    type Value = IntCst;
+
+    fn leq(&self, ub: Self::Value) -> Lit {
+        debug_assert!(self.factor > 0);
+        // a*X <= ub
+        // X <= ub/a   (floor gets us the first integer value below)
+        self.var.leq(div_floor(ub, self.factor))
+    }
+
+    fn geq(&self, lb: Self::Value) -> Lit {
+        debug_assert!(self.factor > 0);
+        // a*X >= lb
+        // X >= lb/a
+        self.var.geq(div_ceil(lb, self.factor))
+    }
+}
+
+impl VarView for ScaledVar {
+    type Value = IntCst; // TODO: this should be LongCst to avoid possible overflows
+
+    fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
+        ScaledVarImpl::from(*self).upper_bound(dom)
     }
 
     fn lower_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
-        -(-self).upper_bound(dom)
+        ScaledVarImpl::from(*self).lower_bound(dom)
     }
 }
 
@@ -598,21 +651,11 @@ impl Boundable for ScaledVar {
     type Value = IntCst;
 
     fn leq(&self, ub: Self::Value) -> Lit {
-        if self.is_zero() {
-            return Lit::from(0 <= ub);
-        }
-        // a*X <= ub
-        // X <= ub/a   (floor gets us the first integer value below)
-        self.var.leq(div_floor(ub, self.factor))
+        ScaledVarImpl::from(*self).leq(ub)
     }
 
     fn geq(&self, lb: Self::Value) -> Lit {
-        if self.is_zero() {
-            return Lit::from(0 >= lb);
-        }
-        // a*X >= lb
-        // X >= lb/a
-        self.var.geq(div_ceil(lb, self.factor))
+        ScaledVarImpl::from(*self).geq(lb)
     }
 }
 
