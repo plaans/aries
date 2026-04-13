@@ -1,7 +1,7 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::{collections::BTreeMap, fmt::Debug, time::Instant};
 
 use aries::{
-    core::state::Evaluable,
+    core::{state::Evaluable, views::Boundable},
     model::lang::{IntExpr, Store},
     prelude::*,
 };
@@ -16,7 +16,10 @@ use aries_plan_engine::{
 };
 use derive_more::derive::Display;
 use itertools::Itertools;
+
 use planx::{ActionRef, Goal, Model, Param, Res, SimpleGoal, Sym, errors::*};
+use std::io::Write;
+use std::path::Path;
 use timelines::{
     ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
 };
@@ -28,8 +31,8 @@ pub struct Options {
     #[arg(short, long, num_args(1..))]
     pub relaxation: Vec<Relaxation>,
 
-    #[arg(short, long, default_value("original"))]
-    pub objective: Objective,
+    #[arg(short, long, num_args(1..), default_values(["original"]))]
+    pub objectives: Vec<Objective>,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, PartialOrd, Eq, Ord)]
@@ -48,31 +51,95 @@ pub enum Objective {
     Makespan,
 }
 
-pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options) -> Res<()> {
+pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>) -> Res<()> {
     let start = Instant::now();
+    // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, options)?;
-
     let _encoding_time = start.elapsed().as_millis();
 
-    let objective = encoding.objective.unwrap(); //TODO: error message
+    // Pinning literals from previous phases; grows as objectives are solved
+    let mut phase_assumptions: Vec<Lit> = vec![];
+    let mut last_solution = None;
 
-    let print = |sol: &Solution| {
-        println!("==== Plan (objective: {}) =====", objective.evaluate(sol).unwrap());
-        println!("{}\n", encoding.plan(sol));
+    let print_plan = |sol: &Solution| {
+        println!(
+            "==== Plan (objectives: {:?}) =====\n\n{}",
+            encoding
+                .objectives
+                .iter()
+                .map(move |o| o.evaluate(sol).unwrap())
+                .format(" / "),
+            encoding.plan(sol)
+        );
     };
+    // Solve objectives lexicographically: each phase fixes the previous optimal values
+    for objective in encoding.objectives.iter().copied() {
+        // Minimize objective under normal constraints + previous pinnings
+        let Some(sol) = solver.find_optimal(objective, &print_plan, phase_assumptions.as_slice()) else {
+            println!("No solution !!!!");
+            for mus in solver.muses() {
+                let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
+                println!("\n{msg}\n");
+            }
+            return Ok(());
+        };
 
-    if let Some(solution) = solver.find_optimal(objective, &print) {
-        println!("\n> Found optimal solution:");
-        print(&solution);
-        // _sched.print(&solution);
-    } else {
-        println!("No solution !!!!");
-        for mus in solver.muses() {
-            let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
-            println!("\n{msg}\n");
+        // Pin objective == opt_val for subsequent phases (upper + lower bound)
+        let opt_val = sol.eval(objective).unwrap();
+        phase_assumptions.push(objective.leq(opt_val)); // objective ≤ opt_val
+        phase_assumptions.push(objective.geq(opt_val)); // objective ≥ opt_val
+        last_solution = Some(sol);
+    }
+
+    if let Some(solution) = last_solution {
+        println!("> Found optimal solution\n");
+        print_plan(&solution);
+        let plan_str = encoding.plan(&solution);
+
+        if let Some(path) = output_plan {
+            let mut file = std::fs::File::create(path)
+                .map_err(Message::from)
+                .title(format!("Cannot create output file {}", path.display()))?;
+            writeln!(file, "{plan_str}")
+                .map_err(Message::from)
+                .title(format!("Cannot write output file {}", path.display()))?;
         }
     }
+
     Ok(())
+}
+
+fn build_objective(
+    objective: &Objective,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<LinTerm> {
+    Ok(match objective {
+        Objective::Original if model.metric.is_some() => {
+            // TODO: use if let guard when stabilized
+            let metric = model.metric.unwrap();
+            match metric {
+                planx::Metric::Minimize(expr_id) => {
+                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, sched, bindings, encoding)?;
+                    flatten_expression(lin_obj, sched, bindings)
+                }
+                planx::Metric::Maximize(_) => {
+                    return Message::error("unsupported maximization metric").failed();
+                }
+            }
+        }
+        // Fall back to plan length when no metric is defined in the domain
+        Objective::PlanLength | Objective::Original => {
+            let mut sum = LinSum::zero();
+            for t in sched.tasks.iter() {
+                sum += timelines::constraints::bool2int(t.presence, &mut sched.model);
+            }
+            reify_sum(sum, sched)
+        }
+        Objective::Makespan => sched.makespan.into(),
+    })
 }
 
 pub fn encode_plan_optimization_problem(
@@ -212,7 +279,8 @@ pub fn encode_plan_optimization_problem(
         // store the scopes, we will need them when processing the effects
         operations_scopes.push((a, bindings));
     }
-    // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
+
+    // for each goal, add a constraint stating it must hold (the constraint is tagged but not relaxed for domain repair)
     for (gid, x) in model.goals.iter().enumerate() {
         let constraint = parse_goal(x, model, &mut sched, &global_scope, &mut encoding)?;
         constraint.add_required_values(&mut encoding.required_values, model, &sched);
@@ -243,7 +311,7 @@ pub fn encode_plan_optimization_problem(
             .push(reification);
     }
 
-    // enforce all elemts of the initial state as effects
+    // enforce all elements of the initial state as effects
     for x in &model.init {
         let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
         sched.add_effect(eff);
@@ -286,39 +354,11 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
-    let objective: LinTerm = match options.objective {
-        Objective::Original if model.metric.is_some() => {
-            // TODO: use if-let-guard when stabilized
-            let metric = model.metric.unwrap();
-            match metric {
-                planx::Metric::Minimize(expr_id) => {
-                    let lin_obj = reify_expression(
-                        expr_id,
-                        Some(sched.horizon),
-                        model,
-                        &mut sched,
-                        &global_scope,
-                        &mut encoding,
-                    )?;
-                    flatten_expression(lin_obj, &mut sched, &global_scope)
-                }
-                planx::Metric::Maximize(_) => {
-                    return Message::error("unsupported maximization metric").failed();
-                }
-            }
-        }
-        // use plan-length as default when no metric is specified
-        Objective::PlanLength | Objective::Original => {
-            let mut sum = IntExp::zero();
-            for (_a, scope) in &operations_scopes {
-                let action_prez = scope.presence;
-                sum += timelines::constraints::bool2int(action_prez, &mut sched.model)
-            }
-            reify_sum(sum, &mut sched)
-        }
-        Objective::Makespan => sched.makespan.into(),
-    };
-    encoding.set_objective(objective);
+    // Build all objectives
+    for obj in &options.objectives {
+        let obj = build_objective(obj, model, &mut sched, &global_scope, &mut encoding)?;
+        encoding.add_objective(obj);
+    }
 
     // set all default negative value
     // The function attempts to only put those that may be useful, based on the required values
