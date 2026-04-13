@@ -705,7 +705,7 @@ impl LinTerm {
 
     pub fn ith_value(&self, i: usize, dom: impl crate::core::views::Dom) -> Option<IntCst> {
         let (lb, ub) = dom.bounds(self.scaled_var.var);
-        (i > usize::try_from(ub - lb).unwrap())
+        (i < usize::try_from(ub - lb + 1).unwrap())
             .then(|| self.constant + lb + self.scaled_var.factor * IntCst::try_from(i).unwrap())
     }
 }
