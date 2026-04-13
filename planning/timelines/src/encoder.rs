@@ -11,6 +11,20 @@ pub struct SchedEncoder {
     pub sched: Arc<Sched>,
     /// solver's model that will be populated with all constraints and variables
     pub(crate) store: crate::Model,
+
+    pub(crate) causal_links: CausalLinks,
+}
+impl SchedEncoder {
+    pub fn new(sched: Arc<Sched>, store: crate::Model) -> Self {
+        Self {
+            sched,
+            store,
+            causal_links: CausalLinks {
+                destinations: vec![],
+                store: DirectIdMap::default(),
+            },
+        }
+    }
 }
 
 impl Dom for SchedEncoder {
@@ -32,4 +46,10 @@ impl ModelWrapper for SchedEncoder {
     fn get_model_mut(&mut self) -> &mut crate::Model {
         &mut self.store
     }
+}
+
+pub type ConditionId = usize;
+pub(crate) struct CausalLinks {
+    pub destinations: Vec<HasValueAt>,
+    pub store: DirectIdMap<ConditionId, Vec<(Lit, EffectId)>>,
 }

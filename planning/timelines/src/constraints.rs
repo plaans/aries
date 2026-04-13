@@ -217,6 +217,11 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         // cheap clone to please the borrow checker
         let sched: std::sync::Arc<Sched> = ctx.sched.clone();
 
+        let cl_dest_id = {
+            ctx.causal_links.destinations.push(self.clone());
+            ctx.causal_links.destinations.len() - 1
+        };
+
         let value_box = self.value_box(&*ctx);
 
         // all effects (assign or steps) that may contribute to the value
@@ -232,7 +237,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         //   - condition within activity period, and
         //   - same state variable
         let mut step_contributors = Vec::new();
-        for &eff in &relevant_effects {
+        for (eff_id, &eff) in relevant_effects.iter().enumerate() {
             let _span = tracing::debug_span!("Step");
             let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -257,12 +262,22 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                     contributes,
                     contribution: step,
                 });
+
+                if ctx.causal_links.store.get(cl_dest_id).is_none() {
+                    ctx.causal_links.store.insert(cl_dest_id, vec![(contributes, eff_id)]);
+                } else {
+                    ctx.causal_links
+                        .store
+                        .get_mut(cl_dest_id)
+                        .unwrap()
+                        .push((contributes, eff_id));
+                }
             }
         }
 
         // compute assign establisehrs. Those are exclusive (by effect coherence) so half reification is sufficient
         let mut establishers = Element::new();
-        for &eff in &relevant_effects {
+        for (eff_id, &eff) in relevant_effects.iter().enumerate() {
             let _span = tracing::debug_span!("Establisher");
             let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -285,6 +300,16 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let conjuncts: And = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 establishers.add_option(establishes, assignment);
+
+                if ctx.causal_links.store.get(cl_dest_id).is_none() {
+                    ctx.causal_links.store.insert(cl_dest_id, vec![(establishes, eff_id)]);
+                } else {
+                    ctx.causal_links
+                        .store
+                        .get_mut(cl_dest_id)
+                        .unwrap()
+                        .push((establishes, eff_id));
+                }
             }
         }
 

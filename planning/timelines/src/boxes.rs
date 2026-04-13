@@ -56,6 +56,9 @@ impl Segment {
     pub fn points(&self) -> RangeInclusive<IntCst> {
         self.first..=self.last
     }
+    /*pub fn get_point(&self, idx: usize) -> Option<IntCst> {
+        self.points().nth(idx)
+    }*/
 }
 
 impl From<(IntCst, IntCst)> for Segment {
@@ -136,6 +139,35 @@ impl<'a> BoxRef<'a> {
         let generators = self.dimensions.iter().map(|seg| seg.points()).collect_vec();
         aries::utils::enumerate(generators)
     }
+    /*pub fn points_indexed(self) -> impl StreamingIterator<Item = IndexedStreamElement<Vec<IntCst>>> + use<> {
+        let generators = self.dimensions.iter().map(|seg| seg.points()).collect_vec();
+        aries::utils::enumerate_indexed(generators)
+    }
+
+    pub fn get_point(&self, mut idx: usize) -> Option<Vec<IntCst>> {
+        let mut result = vec![0 as IntCst; self.dimensions.len()];
+        for (val, seg) in result.iter_mut()
+            .zip(self.dimensions.iter())
+            .rev()
+        {
+            let d = seg.points().try_len().unwrap_or_default();
+            if d == 0 { return None; }
+            *val = seg.get_point(idx % d)?;
+            idx /= d;
+        }
+        Some(result)
+    }
+    /*fn get_point_into(&self, mut idx: usize, buf: &mut Vec<IntCst>) -> Option<()> {
+        buf.clear();
+        buf.resize(self.dimensions.len(), 0);
+        for (val, seg) in buf.iter_mut().zip(self.dimensions.iter()).rev() {
+            let d = seg.points().try_len().unwrap_or_default();
+            if d == 0 { return None; }
+            *val = seg.get_point(idx % d)?;
+            idx /= d;
+        }
+        Some(())
+    }*/*/
 }
 
 /// A set of homoneous tagged boxes (all of same dimension) each with a particular tag.

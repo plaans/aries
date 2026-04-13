@@ -14,7 +14,6 @@ use constraints::*;
 use core::fmt::Debug;
 use core::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
@@ -26,11 +25,10 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 pub use crate::effects::*;
-use crate::encoder::SchedEncoder;
+use crate::encoder::{ConditionId, SchedEncoder};
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
-use crate::transitions::Transitions;
 
 pub type Sym = String;
 
@@ -81,7 +79,7 @@ impl Hash for Fluent {
     }
 }
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct StateVar {
     pub fluent: Sym,
     pub args: Vec<SymAtom>,
@@ -121,7 +119,6 @@ pub struct Sched {
     pub makespan: Time,
     pub tasks: Tasks,
     pub effects: Effects,
-    conditions: DirectIdMap<ConstraintID, HasValueAt>,
     constraints: Vec<Constraint>,
 }
 
@@ -142,7 +139,6 @@ impl Sched {
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
-            conditions: Default::default(),
             constraints: vec![Arc::new(MakespanIsMaxTaskEnd), Arc::new(EffectCoherence)],
         }
     }
@@ -161,18 +157,7 @@ impl Sched {
     pub fn new_opt_timepoint(&mut self, scope: Lit) -> Time {
         self.model.new_optional_ivar(0, INT_CST_MAX, scope, "_").into()
     }
-    pub fn add_condition(&mut self, c: HasValueAt) -> ConstraintID {
-        let c_cloned = HasValueAt {
-            state_var: c.state_var.clone(),
-            value: c.value,
-            timepoint: c.timepoint,
-            prez: c.prez,
-            source: c.source,
-        };
-        let cid = self.add_constraint(c_cloned);
-        self.conditions.insert(cid, c);
-        cid
-    }
+
     pub fn add_constraint<C: SchedConstraint + 'static>(&mut self, c: C) -> ConstraintID {
         self.add_boxed_constraint(Arc::new(c))
     }
@@ -183,10 +168,7 @@ impl Sched {
 
     fn encoder(self) -> SchedEncoder {
         let store = self.model.clone();
-        SchedEncoder {
-            sched: Arc::new(self),
-            store,
-        }
+        SchedEncoder::new(Arc::new(self), store)
     }
 
     pub fn encode(&self) -> Model {
@@ -196,9 +178,9 @@ impl Sched {
         }
         encoder.store
     }
-    pub fn generate_transitions(&self) -> Transitions {
-        Transitions::new_ground(&self.effects, &self.conditions, &self.model)
-    }
+    /*pub fn gather_transitions<'a>(&'a self) -> Transitions<'a> {
+        Transitions::with(self)
+    }*/
 
     pub fn solve(&self) -> Option<Solution> {
         let encoding = self.encode();

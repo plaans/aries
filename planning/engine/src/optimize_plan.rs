@@ -166,6 +166,7 @@ pub fn encode_plan_optimization_problem(
             start,
             end,
             presence,
+            args: args.values().copied().collect_vec(),
         });
         let bindings = Scope {
             start,
@@ -193,11 +194,7 @@ pub fn encode_plan_optimization_problem(
                 let constraint =
                     condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding, true)?;
 
-                let cid = if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
-                    sched.add_condition(c)
-                } else {
-                    sched.add_constraint(constraint)
-                };
+                let cid = sched.add_constraint(constraint);
                 encoding.constraints_tags.insert(
                     cid,
                     Tag::Support {
@@ -223,12 +220,7 @@ pub fn encode_plan_optimization_problem(
                     let constraint =
                         condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding, true)?;
 
-                    let cid =
-                        if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
-                            sched.add_condition(c)
-                        } else {
-                            sched.add_constraint(constraint)
-                        };
+                    let cid = sched.add_constraint(constraint);
                     encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
                 } else {
                     todo!("durative goal")

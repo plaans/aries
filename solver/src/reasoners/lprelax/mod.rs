@@ -371,7 +371,7 @@ impl LpRelax {
                         .dual_columns()
                         .iter()
                         .enumerate()
-                        .filter(|(col , _)| *col != obj_col.index())
+                        .filter(|(col, _)| *col != obj_col.index())
                         .filter_map(|(col, &rc)| (rc != 0.).then_some((LpCol::from(col), rc, sol.columns()[col])))
                         .collect::<Vec<_>>();
 
@@ -405,10 +405,8 @@ impl LpRelax {
                 }
             }
             match self.get_sense() {
-                Some(LpOptimSense::Minimise) =>
-                    reason.push(LpLit::geq(obj_col, obj_incumbent_bound)),
-                Some(LpOptimSense::Maximise) =>
-                    reason.push(LpLit::leq(obj_col, obj_incumbent_bound)),
+                Some(LpOptimSense::Minimise) => reason.push(LpLit::geq(obj_col, obj_incumbent_bound)),
+                Some(LpOptimSense::Maximise) => reason.push(LpLit::leq(obj_col, obj_incumbent_bound)),
                 None => unreachable!(),
             };
             reason
@@ -426,12 +424,10 @@ impl LpRelax {
         }
         self.set_lplit(
             match self.get_sense() {
-                    Some(LpOptimSense::Minimise) =>
-                        LpLit::geq(obj_col, float_as_ceil_int_cst(optim_obj_val)),
-                    Some(LpOptimSense::Maximise) =>
-                        LpLit::leq(obj_col, float_as_floor_int_cst(optim_obj_val)),
-                    None => unreachable!(),
-                },
+                Some(LpOptimSense::Minimise) => LpLit::geq(obj_col, float_as_ceil_int_cst(optim_obj_val)),
+                Some(LpOptimSense::Maximise) => LpLit::leq(obj_col, float_as_floor_int_cst(optim_obj_val)),
+                None => unreachable!(),
+            },
             LpEventCause::ReducedCostStrengthtening(reason.clone()),
             model,
         )?;

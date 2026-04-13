@@ -211,6 +211,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             start,
             end,
             presence,
+            args: args.values().copied().collect_vec(),
         });
 
         let bindings = Scope {
@@ -227,11 +228,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 let constraint =
                     condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding, true)?;
 
-                let cid = if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
-                    sched.add_condition(c)
-                } else {
-                    sched.add_constraint(constraint)
-                };
+                let cid = sched.add_constraint(constraint);
                 constraints_tags.insert(
                     cid,
                     CTag::Support {
@@ -257,12 +254,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                     let constraint =
                         condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding, true)?;
 
-                    let cid =
-                        if let aries_plan_engine::encode::constraints::ConditionConstraint::HasValue(c) = constraint {
-                            sched.add_condition(c)
-                        } else {
-                            sched.add_constraint(constraint)
-                        };
+                    let cid = sched.add_constraint(constraint);
                     constraints_tags.insert(cid, CTag::EnforceGoal(gid));
                 } else {
                     todo!()

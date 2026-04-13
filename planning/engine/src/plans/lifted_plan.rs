@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt::Display};
 
+use aries::core::QCst;
 use itertools::Itertools;
 use planx::{Model, Res, Sym};
 use timelines::IntCst;

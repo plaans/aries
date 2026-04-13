@@ -6,7 +6,7 @@ use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
 use crate::model::lang::expr::or;
 use crate::model::lang::{BoolExpr, IAtom, IVar, IntExpr, Store, ValidityScope};
-use crate::prelude::Conjunction;
+use crate::prelude::{Conjunction, DomainsExt};
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
@@ -657,6 +657,12 @@ impl LinTerm {
 
     pub fn eq<Rhs: Into<LinSum>>(&self, other: Rhs) -> LinEq {
         LinSum::from(*self).eq(other.into())
+    }
+
+    pub fn ith_value(&self, i: usize, dom: impl crate::core::views::Dom) -> Option<IntCst> {
+        let (lb, ub) = dom.bounds(self.scaled_var.var);
+        (i > usize::try_from(ub - lb).unwrap())
+            .then(|| self.constant + lb + self.scaled_var.factor * IntCst::try_from(i).unwrap())
     }
 }
 
