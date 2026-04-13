@@ -191,8 +191,9 @@ pub fn encode_plan_optimization_problem(
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let constraint =
-                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding, true)?;
+                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding)?;
+                // update the required values if requested by caller
+                constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
                 let cid = sched.add_constraint(constraint);
                 encoding.constraints_tags.insert(
@@ -214,6 +215,7 @@ pub fn encode_plan_optimization_problem(
     // for each goal, add a constraint stating it must hold (the constriant is tagged but not relaxed for domain repair)
     for (gid, x) in model.goals.iter().enumerate() {
         let constraint = parse_goal(x, model, &mut sched, &global_scope, &mut encoding)?;
+        constraint.add_required_values(&mut encoding.required_values, model, &sched);
         let cid = sched.add_constraint(constraint);
         encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
     }
@@ -229,6 +231,8 @@ pub fn encode_plan_optimization_problem(
             reification,
             constraint: pref_satisfied,
         };
+
+        constraint.add_required_values(&mut encoding.required_values, model, &sched);
         sched.add_constraint(constraint);
 
         // record the association of the preference with the literal
@@ -284,7 +288,7 @@ pub fn encode_plan_optimization_problem(
 
     let objective: LinTerm = match options.objective {
         Objective::Original if model.metric.is_some() => {
-            // TODO: is if let guard when stabilized
+            // TODO: use if-let-guard when stabilized
             let metric = model.metric.unwrap();
             match metric {
                 planx::Metric::Minimize(expr_id) => {
@@ -360,7 +364,7 @@ pub fn parse_simple_goal(
     match goal {
         planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
             if let Some(tp) = time_interval.as_timestamp() {
-                condition_to_constraint(tp, *expr_id, model, sched, bindings, encoding, true)
+                condition_to_constraint(tp, *expr_id, model, sched, bindings, encoding)
             } else {
                 todo!("durative goal")
             }

@@ -224,8 +224,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let constraint =
-                    condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding, true)?;
+                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding)?;
+                constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
                 let cid = sched.add_constraint(constraint);
                 constraints_tags.insert(
@@ -251,7 +251,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
                 if let Some(tp) = time_interval.as_timestamp() {
                     let constraint =
-                        condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding, true)?;
+                        condition_to_constraint(tp, expr_id, model, &mut sched, &global_scope, &mut encoding)?;
+                    constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
                     let cid = sched.add_constraint(constraint);
                     constraints_tags.insert(cid, CTag::EnforceGoal(gid));

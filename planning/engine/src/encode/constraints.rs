@@ -1,3 +1,5 @@
+use std::ops::Not;
+
 use aries::{core::views::Dom, model::lang::BoolExpr, prelude::*};
 use timelines::{IntExp, constraints::HasValueAt, encoder::SchedEncoder};
 
@@ -7,6 +9,14 @@ use crate::encode::required_values::RequiredValues;
 pub struct ConditionConstraint {
     pub constraint: ConditionExpression,
     pub scope: Lit,
+}
+
+impl ConditionConstraint {
+    /// Records all fluents values that may be needed in evaluating the condition.
+    /// This is used notably for pruning unecessary effects (in the closed world assumption step)
+    pub fn add_required_values(&self, required_values: &mut RequiredValues, model: &planx::Model, dom: &impl Dom) {
+        self.constraint.add_required_values(required_values, model, dom);
+    }
 }
 
 /// Constraint representing a condition
@@ -28,15 +38,22 @@ impl ConditionExpression {
         }
     }
 
-    pub fn add_required_values(&self, required_values: &mut RequiredValues, model: &planx::Model, dom: impl Dom) {
+    /// Records all fluents values that may be needed in evaluating the condition.
+    /// This is used notably for pruning unecessary effects (in the closed world assumption step)
+    pub fn add_required_values(&self, required_values: &mut RequiredValues, model: &planx::Model, dom: &impl Dom) {
         use ConditionExpression::*;
         match &self {
             HasValue(c) => {
                 // record that someone required such a value
                 let fluent_id = model.env.fluents.get_by_name(&c.state_var.fluent).unwrap();
-                required_values.add(fluent_id, c.value_box(&dom).as_ref());
+                required_values.add(fluent_id, c.value_box(dom).as_ref());
             }
-            EqZero(_) | NeqZero(_) | LeqZero(_) | Or(_) | And(_) => {} // already tracked when parsing.
+            EqZero(_) | NeqZero(_) | LeqZero(_) => {} // already tracked when reifying the subexpressions (necessarily done when reifying)
+            Or(subs) | And(subs) => {
+                // add required values for all subexpressions
+                subs.iter()
+                    .for_each(|c| c.add_required_values(required_values, model, dom));
+            }
         }
     }
 }
@@ -126,6 +143,19 @@ pub struct ReificationConstraint {
     pub reification: Lit,
     /// The constraint that is reified
     pub constraint: ConditionConstraint,
+}
+
+impl ReificationConstraint {
+    /// Records all fluents values that may be needed in evaluating the condition.
+    /// This is used notably for pruning unecessary effects (in the closed world assumption step)
+    pub fn add_required_values(&self, required_values: &mut RequiredValues, model: &planx::Model, dom: &impl Dom) {
+        // add the required values for both the original and its negation
+        self.constraint.add_required_values(required_values, model, dom);
+        self.constraint
+            .clone()
+            .not()
+            .add_required_values(required_values, model, dom);
+    }
 }
 
 impl BoolExpr<SchedEncoder> for ReificationConstraint {

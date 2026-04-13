@@ -76,7 +76,8 @@ impl<'a> Scope<'a> {
 
 /// Converts the condition `[tp] expr` to a constraint.
 ///
-/// If the `required_values` parameters is non empty, then the function will update it to reflect the state variable values possibly required by this expresion.
+/// IMPORTANT: the expression may requires some values that should be identified with [`ConditionConstraint::add_required_values`] method.
+/// Failure to do so means that some effects may incorrectly be optimized away because they are deemed useless.
 pub fn condition_to_constraint(
     tp: Timestamp,
     expr: ExprId,
@@ -84,7 +85,6 @@ pub fn condition_to_constraint(
     sched: &mut Sched,
     bindings: &Scope,
     encoding: &mut Encoding,
-    track_required_values: bool,
 ) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
     let timepoint = reify_timing(tp, model, sched, bindings)?;
@@ -118,7 +118,7 @@ pub fn condition_to_constraint(
         planx::Expr::App(planx::Fun::Not, exprs) if exprs.len() == 1 => {
             // call recursively to obtain a an expression to negate,
             // we do not track the required value there because we will post the negation (and that is the one we want to follow)
-            let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, encoding, false)?;
+            let c = condition_to_constraint(tp, exprs[0], model, sched, bindings, encoding)?;
             !c
         }
         planx::Expr::App(planx::Fun::Eq, exprs) if exprs.len() == 2 => {
@@ -138,7 +138,7 @@ pub fn condition_to_constraint(
                 // the constraint must hold even if a disjunct cannot be evaluated (e.g. no value on the state variable it refers to)
                 let local_scope = sched.model.new_presence_variable(bindings.presence, "").true_lit();
                 let local_bindings = bindings.sub_scope(local_scope);
-                let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding, true)?;
+                let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding)?;
                 disjuncts.push(c);
             }
             ConditionExpression::Or(disjuncts).scoped(bindings.presence)
@@ -150,7 +150,7 @@ pub fn condition_to_constraint(
                 // This is needed be cause the expression can be negated (and become a disjunction) for which idenpendent scopes are necessary
                 let local_scope = sched.model.new_presence_variable(bindings.presence, "").true_lit();
                 let local_bindings = bindings.sub_scope(local_scope);
-                let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding, true)?;
+                let c = condition_to_constraint(tp, expr, model, sched, &local_bindings, encoding)?;
                 conjuncts.push(c);
             }
             ConditionExpression::And(conjuncts).scoped(bindings.presence)
@@ -159,11 +159,6 @@ pub fn condition_to_constraint(
     };
 
     // update the required values if requested by caller
-    if track_required_values {
-        constraint
-            .constraint
-            .add_required_values(&mut encoding.required_values, model, sched);
-    }
     Ok(constraint)
 }
 
@@ -226,7 +221,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
 
     // all state variables that may require a `0` value, which encodes `false` for predicates
     // we will only place a negative effect for those state variables.
-    let req_state_vars = reqs.state_variables(|v| true || v == 0); // FIXME: reactivate closed world effect filtering
+    let req_state_vars = reqs.state_variables(|v| v == 0);
 
     for sv in req_state_vars {
         if model.env.fluents.get(sv.fluent).return_type != planx::Type::Bool {
