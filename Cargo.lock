@@ -135,7 +135,6 @@ dependencies = [
  "env_param",
  "format_num",
  "hashbrown 0.16.1",
- "highs",
  "itertools 0.14.0",
  "lru",
  "num-integer",
@@ -256,6 +255,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
+ "aries_lprelax",
  "clap 4.5.54",
  "lp_parser_rs",
  "num-traits",
@@ -270,6 +270,17 @@ dependencies = [
  "aries",
  "env_param",
  "itertools 0.14.0",
+]
+
+[[package]]
+name = "aries_lprelax"
+version = "0.1.0"
+dependencies = [
+ "aries",
+ "env_param",
+ "highs",
+ "itertools 0.14.0",
+ "smallvec",
 ]
 
 [[package]]

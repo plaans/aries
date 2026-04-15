@@ -1,10 +1,10 @@
 mod types;
 
-use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
-use crate::core::literals::ConjunctionBuilder;
-use crate::core::state::{DomainsSnapshot, Explanation, InferenceCause};
-use crate::prelude::{Domains, DomainsExt, IntCst, Lit, VarRef};
-use crate::reasoners::{Contradiction, ReasonerId, Theory};
+use aries::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
+use aries::core::literals::ConjunctionBuilder;
+use aries::core::state::{DomainsSnapshot, Explanation, InferenceCause};
+use aries::prelude::{Domains, DomainsExt, IntCst, Lit, VarRef};
+use aries::reasoners::{Contradiction, ReasonerId, Theory};
 
 use std::collections::HashMap;
 
@@ -31,7 +31,7 @@ enum LpEventCause {
     ReducedCostStrengthtening(Vec<LpLit>),
 }
 
-type ModelEvent = crate::core::state::Event;
+type ModelEvent = aries::core::state::Event;
 
 #[derive(Copy, Clone)]
 struct ModelUpdateCause(EventIndex);
@@ -103,24 +103,6 @@ impl Clone for LpRelax {
         }
     }
 }
-impl Default for LpRelax {
-    fn default() -> Self {
-        let lpprob = LpProblem::default();
-
-        Self {
-            id: ReasonerId::LpRelax,
-            model_events: ObsTrailCursor::default(),
-            trail: Trail::default(),
-            lpprob: lpprob.clone(),
-            lpoptim: None,
-            lpmodel_cached: new_lpmodel(lpprob, None),
-            lit_impliers: HashMap::default(),
-            lplit_impliers: HashMap::default(),
-            stats: Stats::default(),
-            config: LpRelaxConfig::default(),
-        }
-    }
-}
 fn new_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>) -> LpModel {
     let mut lpmodel = lpprob.try_optimise(sense.unwrap_or(LpOptimSense::Minimise)).unwrap();
 
@@ -149,10 +131,33 @@ fn cache_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>, obj_col: Option
     lpmodel_cached.set_option("threads", 1); // solve on 1 thread
     lpmodel_cached.set_option("iis_strategy", 14); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
 }
-impl LpRelax {
-    #[allow(dead_code)]
-    fn with_config(config: LpRelaxConfig) -> Self {
+impl Default for LpRelax {
+    fn default() -> Self {
+        let lpprob = LpProblem::default();
         Self {
+            id: ReasonerId::Extra(0),
+            model_events: ObsTrailCursor::default(),
+            trail: Trail::default(),
+            lpprob: lpprob.clone(),
+            lpoptim: None,
+            lpmodel_cached: new_lpmodel(lpprob, None),
+            lit_impliers: HashMap::default(),
+            lplit_impliers: HashMap::default(),
+            stats: Stats::default(),
+            config: LpRelaxConfig::default(),
+        }
+    }
+}
+impl LpRelax {
+    pub fn new(id: u8) -> Self {
+        Self {
+            id: ReasonerId::Extra(id),
+            ..Default::default()
+        }
+    }
+    pub fn with_config(id: u8, config: LpRelaxConfig) -> Self {
+        Self {
+            id: ReasonerId::Extra(id),
             config,
             ..Default::default()
         }
@@ -474,9 +479,9 @@ impl LpRelax {
                 s => panic!("Unknown highs status {s:?}"),
             }
         }
-        Contradiction::Explanation(Explanation {
-            lits: conjunction_builder.build().to_vec(),
-        })
+        let mut expl = Explanation::new();
+        expl.extend(conjunction_builder.build());
+        Contradiction::Explanation(expl)
     }
 }
 
@@ -578,16 +583,15 @@ impl Backtrack for LpRelax {
 
 #[cfg(test)]
 pub mod test {
-    use crate::backtrack::Backtrack;
-    use crate::core::IntCst;
-    use crate::core::state::Cause;
-    use crate::core::state::Explanation;
-    use crate::prelude::Domains;
-    use crate::reasoners::Contradiction;
-    use crate::reasoners::Theory;
-    use crate::reasoners::lprelax::LpRelax;
-    use crate::reasoners::lprelax::LpRelaxConfig;
-    use crate::reasoners::lprelax::types::*;
+    use crate::types::*;
+    use crate::{LpRelax, LpRelaxConfig};
+    use aries::backtrack::Backtrack;
+    use aries::core::IntCst;
+    use aries::core::state::Cause;
+    use aries::core::state::Explanation;
+    use aries::prelude::Domains;
+    use aries::reasoners::Contradiction;
+    use aries::reasoners::Theory;
 
     #[test]
     fn test_trail_backtrack() {
@@ -598,9 +602,12 @@ pub mod test {
 
         model.add_implication(var2.leq(5), var3.leq(5));
 
-        let mut theory = LpRelax::with_config(LpRelaxConfig {
-            no_propagation_skips: true,
-        });
+        let mut theory = LpRelax::with_config(
+            0,
+            LpRelaxConfig {
+                no_propagation_skips: true,
+            },
+        );
 
         let col2 = theory.add_column(Some(0.), Some(10.));
         let col3 = theory.add_column(Some(0.), Some(10.));
@@ -672,9 +679,12 @@ pub mod test {
         let avar = model.new_var(0, 1);
         let bvar = model.new_var(0, 1);
 
-        let mut theory = LpRelax::with_config(LpRelaxConfig {
-            no_propagation_skips: true,
-        });
+        let mut theory = LpRelax::with_config(
+            0,
+            LpRelaxConfig {
+                no_propagation_skips: true,
+            },
+        );
 
         let acol = theory.add_column(Some(0.), Some(1.));
         let bcol = theory.add_column(Some(0.), Some(1.));

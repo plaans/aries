@@ -1,11 +1,10 @@
-use crate::core::{INT_CST_MAX, INT_CST_MIN};
-use crate::prelude::{IntCst, Lit, VarRef};
+use aries::core::{INT_CST_MAX, INT_CST_MIN};
+use aries::prelude::{IntCst, Lit, VarRef};
 
 pub use highs::Col as LpCol;
-//pub(crate) use highs::Problem as LpProblem;
-pub(crate) use highs::Iis as LpIis;
-pub(crate) use highs::Model as LpModel;
-pub(crate) use highs::RowProblem as LpProblem;
+pub use highs::Iis as LpIis;
+pub use highs::Model as LpModel;
+pub use highs::RowProblem as LpProblem;
 pub use highs::Sense as LpOptimSense;
 
 use smallvec::{SmallVec, smallvec};
@@ -57,8 +56,8 @@ impl LpLit {
     }
     pub fn from_model_lit(col: LpCol, lit: Lit) -> Self {
         let (tpe, val) = match lit.relation() {
-            crate::core::Relation::Gt => (LpLitType::LB, -lit.ub_value()),
-            crate::core::Relation::Leq => (LpLitType::UB, lit.ub_value()),
+            aries::core::Relation::Gt => (LpLitType::LB, -lit.ub_value()),
+            aries::core::Relation::Leq => (LpLitType::UB, lit.ub_value()),
         };
         Self { col, tpe, val }
     }

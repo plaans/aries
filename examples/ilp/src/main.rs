@@ -3,8 +3,8 @@ mod problem;
 use anyhow::*;
 use aries::model::extensions::Shaped;
 use aries::prelude::*;
-use aries::reasoners::lprelax::{new_default_lit_implier, new_default_lplit_implier};
 use aries::solver::{Exit, SearchLimit};
+use aries_lprelax::{LpRelax, new_default_lit_implier, new_default_lplit_implier};
 use clap::Parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -63,37 +63,25 @@ fn main() -> Result<()> {
 }
 
 fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver {
-    let mut solver = Solver::new(model);
+    let extra_reasoners: Vec<Box<dyn aries::reasoners::Theory>> = if use_lp_relax {
+        let mut lprelax = LpRelax::new(0);
 
-    if use_lp_relax {
         let mut var_name_to_col_map = HashMap::new();
 
         for (name, (lb, ub)) in &problem.vars {
-            let col = solver
-                .reasoners
-                .lprelax
-                .add_column(Some((*lb).into()), Some((*ub).into()));
+            let col = lprelax.add_column(Some((*lb).into()), Some((*ub).into()));
 
-            let var = solver.get_var(name).unwrap();
+            let var = model.get_var(name).unwrap();
             var_name_to_col_map.insert(name.clone(), col);
 
-            solver
-                .reasoners
-                .lprelax
-                .register_lit_implier(var, new_default_lit_implier(var, col));
-            solver
-                .reasoners
-                .lprelax
-                .register_lplit_implier(col, new_default_lplit_implier(var, col));
+            lprelax.register_lit_implier(var, new_default_lit_implier(var, col));
+            lprelax.register_lplit_implier(col, new_default_lplit_implier(var, col));
         }
         for (row_coefs, lb, ub) in problem.constrs.values() {
             let row_coefs = row_coefs
                 .iter()
                 .map(|(name, coef)| (*var_name_to_col_map.get(name).unwrap(), (*coef).into()));
-            solver
-                .reasoners
-                .lprelax
-                .add_row(row_coefs, Some((*lb).into()), Some((*ub).into()));
+            lprelax.add_row(row_coefs, Some((*lb).into()), Some((*ub).into()));
         }
 
         if let Some((obj_name, obj_coefs)) = &problem.obj {
@@ -101,28 +89,25 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
                 .iter()
                 .map(|(name, coef)| (*var_name_to_col_map.get(name).unwrap(), (*coef).into()));
 
-            let obj_var = solver.get_var(obj_name).unwrap();
-            let obj_col = solver.reasoners.lprelax.add_objective_column(
+            let obj_var = model.get_var(obj_name).unwrap();
+            let obj_col = lprelax.add_objective_column(
                 obj_var,
                 obj_coefs,
                 match problem.sense {
-                    lp_parser_rs::model::Sense::Minimize => aries::reasoners::lprelax::LpOptimSense::Minimise,
-                    lp_parser_rs::model::Sense::Maximize => aries::reasoners::lprelax::LpOptimSense::Maximise,
+                    lp_parser_rs::model::Sense::Minimize => aries_lprelax::LpOptimSense::Minimise,
+                    lp_parser_rs::model::Sense::Maximize => aries_lprelax::LpOptimSense::Maximise,
                 },
             );
 
-            solver
-                .reasoners
-                .lprelax
-                .register_lit_implier(obj_var, new_default_lit_implier(obj_var, obj_col));
-            solver
-                .reasoners
-                .lprelax
-                .register_lplit_implier(obj_col, new_default_lplit_implier(obj_var, obj_col));
+            lprelax.register_lit_implier(obj_var, new_default_lit_implier(obj_var, obj_col));
+            lprelax.register_lplit_implier(obj_col, new_default_lplit_implier(obj_var, obj_col));
         }
-    }
+        vec![Box::new(lprelax)]
+    } else {
+        vec![]
+    };
 
-    solver
+    Solver::with_extra_reasoners(model, extra_reasoners)
 }
 
 fn solve(problem: &IlpProblem, solver: &mut Solver) -> Result<Option<(i32, Solution)>, Exit> {

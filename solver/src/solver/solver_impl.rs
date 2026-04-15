@@ -125,6 +125,21 @@ impl<Lbl: Label> Solver<Lbl> {
             sync: Synchro::new(),
         }
     }
+    pub fn with_extra_reasoners(
+        model: Model<Lbl>,
+        extra_reasoners: Vec<Box<dyn crate::reasoners::Theory>>,
+    ) -> Solver<Lbl> {
+        let mut res = Self::new(model);
+        assert!(
+            extra_reasoners
+                .iter()
+                .map(|r| r.identity())
+                .all(|rid| matches!(rid, ReasonerId::Extra(_)))
+        );
+        assert!(extra_reasoners.iter().map(|r| r.identity()).all_unique());
+        res.reasoners.extra = extra_reasoners;
+        res
+    }
 
     pub fn set_brancher(&mut self, brancher: impl SearchControl<Lbl> + 'static + Send) {
         self.brancher = Box::new(brancher)

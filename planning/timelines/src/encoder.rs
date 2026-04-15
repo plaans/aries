@@ -14,10 +14,7 @@ pub struct SchedEncoder {
 }
 impl SchedEncoder {
     pub fn new(sched: Arc<Sched>, store: crate::Model) -> Self {
-        Self {
-            sched,
-            store,
-        }
+        Self { sched, store }
     }
 }
 
