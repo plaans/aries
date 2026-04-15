@@ -301,13 +301,16 @@ impl Transitions {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (Transition, Option<TaskId>)> {
-        // impl StreamingIterator<Item = (Transition, Option<TaskId>)> {
+    pub fn iter(&self) -> impl Iterator<Item = ((TransitionId, Transition), Option<TaskId>)> {
         std::iter::chain(
-            self.of_empty_source.iter().map(|trid| (self.store[*trid], None)),
-            self.of_concrete_source
+            self.of_empty_source
                 .iter()
-                .flat_map(move |(task_id, trids)| trids.iter().map(move |trid| (self.store[*trid], Some(task_id)))),
+                .map(|trid| ((*trid, self.store[*trid]), None)),
+            self.of_concrete_source.iter().flat_map(move |(task_id, trids)| {
+                trids
+                    .iter()
+                    .map(move |trid| ((*trid, self.store[*trid]), Some(task_id)))
+            }),
         )
     }
     pub fn iter_groundings<'a>(&'a self, ctx: &'a SchedEncoder) -> ground::TransitionsGroundingsEnumerator<'a> {

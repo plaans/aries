@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use crate::TaskId;
 use crate::encoder::SchedEncoder;
-use crate::transitions::{Transition, Transitions, find_empty_source_linterms};
+use crate::transitions::{Transition, TransitionId, Transitions, find_empty_source_linterms};
 
 fn points_compatible(points1: &[IntCst], points2: &[IntCst], index_mapping: &[Option<usize>]) -> bool {
     index_mapping
@@ -23,6 +23,7 @@ fn get_linterm_dim(linterm: &LinTerm, ctx: &SchedEncoder) -> usize {
 pub type TransitionGroundingId = Vec<usize>;
 #[derive(Debug)]
 pub struct TransitionGrounding {
+    pub transition_id: TransitionId,
     pub transition: Transition,
     pub assignment: Vec<IntCst>,
     indices: TransitionGroundingId,
@@ -32,6 +33,7 @@ pub struct TransitionGrounding {
 
 impl TransitionGrounding {
     fn default(
+        transition_id: TransitionId,
         transition: Transition,
         source: Option<TaskId>,
         ctx: &SchedEncoder,
@@ -62,6 +64,7 @@ impl TransitionGrounding {
         };
 
         Self {
+            transition_id,
             transition,
             assignment,
             indices,
@@ -244,7 +247,7 @@ pub struct TransitionsGroundingsEnumerator<'a> {
     // transitions: &'a Transitions,
     ctx: &'a SchedEncoder,
     ctx_empty_source_linterms: Vec<LinTerm>,
-    ctx_lifted_iter: Box<dyn Iterator<Item = (Transition, Option<TaskId>)> + 'a>,
+    ctx_lifted_iter: Box<dyn Iterator<Item = ((TransitionId, Transition), Option<TaskId>)> + 'a>,
 
     current: Option<(TransitionGrounding, SourceGrounding)>,
     is_started: bool,
@@ -254,9 +257,9 @@ impl<'a> TransitionsGroundingsEnumerator<'a> {
     pub fn new(transitions: &'a Transitions, ctx: &'a SchedEncoder) -> Self {
         let ctx_empty_source_linterms = Vec::from_iter(find_empty_source_linterms(ctx));
         let mut ctx_lifted_iter = Box::new(transitions.iter());
-        let current = if let Some((transition, source)) = ctx_lifted_iter.next() {
+        let current = if let Some(((transition_id, transition), source)) = ctx_lifted_iter.next() {
             Some((
-                TransitionGrounding::default(transition, source, ctx, &ctx_empty_source_linterms),
+                TransitionGrounding::default(transition_id, transition, source, ctx, &ctx_empty_source_linterms),
                 SourceGrounding::default(source, ctx, &ctx_empty_source_linterms),
             ))
         } else {
@@ -315,13 +318,14 @@ impl<'a> StreamingIterator for TransitionsGroundingsEnumerator<'a> {
                     .is_ok()
                 {
                     *current_transition_grounding = TransitionGrounding::default(
+                        current_transition_grounding.transition_id,
                         current_transition_grounding.transition,
                         current_source_grounding.source,
                         self.ctx,
                         &self.ctx_empty_source_linterms,
                     );
                 } else {
-                    let Some((transition, source)) = self.ctx_lifted_iter.next() else {
+                    let Some(((transition_id, transition), source)) = self.ctx_lifted_iter.next() else {
                         self.current = None;
                         self.is_finished = true;
                         return;
@@ -332,8 +336,13 @@ impl<'a> StreamingIterator for TransitionsGroundingsEnumerator<'a> {
                     );
                     *current_source_grounding =
                         SourceGrounding::default(source, self.ctx, &self.ctx_empty_source_linterms);
-                    *current_transition_grounding =
-                        TransitionGrounding::default(transition, source, self.ctx, &self.ctx_empty_source_linterms);
+                    *current_transition_grounding = TransitionGrounding::default(
+                        transition_id,
+                        transition,
+                        source,
+                        self.ctx,
+                        &self.ctx_empty_source_linterms,
+                    );
                 }
             }
             if self.current_is_compatible() {
