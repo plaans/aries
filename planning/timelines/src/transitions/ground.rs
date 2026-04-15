@@ -285,12 +285,12 @@ impl<'a> TransitionsGroundingsEnumerator<'a> {
     }
 
     fn current_is_compatible(&self) -> bool {
-        if let Some((current_transition_grounding, current_source_grounding)) = self.current.as_ref() {
+        if let Some((current_tr_gr, current_src_gr)) = self.current.as_ref() {
             // TODO: check whether source grounding is trivially impossible. If so, early return false.
             points_compatible(
-                &current_transition_grounding.assignment,
-                &current_source_grounding.assignment,
-                &current_transition_grounding.positions_in_source,
+                &current_tr_gr.assignment,
+                &current_src_gr.assignment,
+                &current_tr_gr.positions_in_source,
             )
         } else {
             false
@@ -310,17 +310,17 @@ impl<'a> StreamingIterator for TransitionsGroundingsEnumerator<'a> {
             return;
         }
         loop {
-            let (current_transition_grounding, current_source_grounding) = self.current.as_mut().unwrap();
+            let (current_tr_gr, current_src_gr) = self.current.as_mut().unwrap();
 
-            if current_transition_grounding.advance(self.ctx).is_err() {
-                if current_source_grounding
+            if current_tr_gr.advance(self.ctx).is_err() {
+                if current_src_gr
                     .advance(self.ctx, &self.ctx_empty_source_linterms)
                     .is_ok()
                 {
-                    *current_transition_grounding = TransitionGrounding::default(
-                        current_transition_grounding.transition_id,
-                        current_transition_grounding.transition,
-                        current_source_grounding.source,
+                    *current_tr_gr = TransitionGrounding::default(
+                        current_tr_gr.transition_id,
+                        current_tr_gr.transition,
+                        current_src_gr.source,
                         self.ctx,
                         &self.ctx_empty_source_linterms,
                     );
@@ -330,13 +330,9 @@ impl<'a> StreamingIterator for TransitionsGroundingsEnumerator<'a> {
                         self.is_finished = true;
                         return;
                     };
-                    debug_assert!(
-                        transition != current_transition_grounding.transition
-                            || source != current_source_grounding.source
-                    );
-                    *current_source_grounding =
-                        SourceGrounding::default(source, self.ctx, &self.ctx_empty_source_linterms);
-                    *current_transition_grounding = TransitionGrounding::default(
+                    debug_assert!(transition != current_tr_gr.transition || source != current_src_gr.source);
+                    *current_src_gr = SourceGrounding::default(source, self.ctx, &self.ctx_empty_source_linterms);
+                    *current_tr_gr = TransitionGrounding::default(
                         transition_id,
                         transition,
                         source,
