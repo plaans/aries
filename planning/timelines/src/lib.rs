@@ -6,7 +6,6 @@ pub mod explain;
 pub mod rational;
 pub mod symbols;
 pub mod tasks;
-pub mod transitions;
 
 use aries::core::state::Evaluable;
 use aries::core::views::Dom;
@@ -25,7 +24,7 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 pub use crate::effects::*;
-use crate::encoder::{ConditionId, SchedEncoder};
+use crate::encoder::SchedEncoder;
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
