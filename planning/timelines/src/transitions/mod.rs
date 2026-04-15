@@ -159,14 +159,17 @@ impl<'a> TransitionArgsAndVals<'a> {
                 .0
                 .iter()
                 .map(|&linterm| {
-                    (!linterm.is_scaled_var_zero()).then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+                    (!linterm.is_scaled_var_zero())
+                        .then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
                 })
                 .collect_vec();
             let valfrom_pos = self.1.map(|linterm| {
-                (!linterm.is_scaled_var_zero()).then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+                (!linterm.is_scaled_var_zero())
+                    .then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
             });
             let valto_pos = self.2.map(|linterm| {
-                (!linterm.is_scaled_var_zero()).then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+                (!linterm.is_scaled_var_zero())
+                    .then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
             });
             (args_pos, valfrom_pos, valto_pos)
         } else {
