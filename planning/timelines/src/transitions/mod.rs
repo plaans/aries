@@ -307,8 +307,7 @@ impl Transitions {
                 .flat_map(move |(task_id, trids)| trids.iter().map(move |trid| (self.store[*trid], Some(task_id)))),
         )
     }
-    pub fn iter_groundings<'a>(&'a self, ctx: &'a SchedEncoder,
-    ) -> Result<ground::TransitionsGroundingsEnumerator<'a>, ()> {
+    pub fn iter_groundings<'a>(&'a self, ctx: &'a SchedEncoder) -> ground::TransitionsGroundingsEnumerator<'a> {
         ground::TransitionsGroundingsEnumerator::new(self, ctx)
     }
 }

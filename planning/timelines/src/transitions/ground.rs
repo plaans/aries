@@ -1,68 +1,36 @@
 use aries::core::views::Term;
 use aries::prelude::*;
 use aries::utils::StreamingIterator;
-use idmap::intid::IntegerId;
+
 use itertools::Itertools;
 
 use crate::TaskId;
 use crate::encoder::SchedEncoder;
 use crate::transitions::{Transition, Transitions, find_empty_source_linterms};
 
-fn points_compatible(points1: &[IntCst], points2: &[IntCst], index_mapping: &[usize]) -> bool {
+fn points_compatible(points1: &[IntCst], points2: &[IntCst], index_mapping: &[Option<usize>]) -> bool {
     index_mapping
         .iter()
-        .filter_map(|&i| Some((points1[i], points2.get(i)?)))
-        .all_equal()
+        .enumerate()
+        .filter_map(|(i, &mapped_i)| mapped_i.map(|mapped_i| (i, mapped_i)))
+        .all(|(i, mapped_i)| points1[i] == points2[mapped_i])
 }
 fn get_linterm_dim(linterm: &LinTerm, ctx: &SchedEncoder) -> usize {
     let (lb, ub) = ctx.store.bounds(linterm.variable());
     usize::try_from(ub - lb + 1).unwrap()
 }
 
-pub type LinTermGroundingIndex = usize;
-pub type LinTermGroundingId = usize;
-
-pub struct LinTermGrounding {
-    pub linterm: LinTerm,
-    pub assignment: IntCst,
-    pub id: LinTermGroundingId,
-}
-
-pub type TransitionGroundingIndex = Vec<usize>;
-pub type TransitionGroundingId = usize;
-
+pub type TransitionGroundingId = Vec<usize>;
+#[derive(Debug)]
 pub struct TransitionGrounding {
     pub transition: Transition,
     pub assignment: Vec<IntCst>,
-    pub id: TransitionGroundingId,
-    pub(crate) indices: TransitionGroundingIndex,
-    pub(crate) dims: Vec<usize>,
-    pub(crate) positions_in_source: Vec<usize>,
+    indices: TransitionGroundingId,
+    dims: Vec<usize>,
+    positions_in_source: Vec<Option<usize>>,
 }
 
 impl TransitionGrounding {
-    pub fn to_linterm_groundings(&self, ctx: &SchedEncoder) -> Vec<LinTermGrounding> {
-        self.transition
-            .get_args_and_vals(ctx)
-            .into_iter()
-            .enumerate()
-            .map(|(i, linterm)| LinTermGrounding {
-                linterm,
-                assignment: self.assignment[i],
-                id: self.indices[i],
-            })
-            .collect_vec()
-    }
-    pub fn flat_index(&self) -> usize {
-        let mut res = 0;
-        let mut factor = 1;
-        for (&i, &d) in self.indices.iter().zip(self.dims.iter()).rev() {
-            res += i * factor;
-            factor *= d;
-        }
-        res
-    }
-
     fn default(
         transition: Transition,
         source: Option<TaskId>,
@@ -96,27 +64,16 @@ impl TransitionGrounding {
         Self {
             transition,
             assignment,
-            id: 0,
             indices,
             dims,
             positions_in_source,
         }
     }
-    fn ith_linterm(&self, i: usize, ctx: &SchedEncoder) -> Option<LinTerm> {
-        let args_and_vals = self.transition.get_args_and_vals(ctx);
-        if i < args_and_vals.args().len() {
-            Some(args_and_vals.args()[i])
-        } else if i == args_and_vals.args().len() && args_and_vals.valfrom().is_some() {
-            args_and_vals.valfrom()
-        } else if (i == args_and_vals.args().len() && args_and_vals.valto().is_some())
-            || i == args_and_vals.args().len() + 1
-        {
-            args_and_vals.valto()
-        } else {
-            None
+
+    fn advance(&mut self, ctx: &SchedEncoder) -> Result<(), ()> {
+        if self.indices.is_empty() {
+            return Err(());
         }
-    }
-    fn next(&mut self, ctx: &SchedEncoder) -> Result<(), ()> {
         let mut i = self.indices.len() - 1;
         loop {
             if self.indices[i] == self.dims[i] - 1 {
@@ -139,17 +96,61 @@ impl TransitionGrounding {
             }
         }
     }
+
+    fn ith_linterm(&self, i: usize, ctx: &SchedEncoder) -> Option<LinTerm> {
+        let args_and_vals = self.transition.get_args_and_vals(ctx);
+        if i < args_and_vals.args().len() {
+            Some(args_and_vals.args()[i])
+        } else if i == args_and_vals.args().len() && args_and_vals.valfrom().is_some() {
+            args_and_vals.valfrom()
+        } else if (i == args_and_vals.args().len() && args_and_vals.valto().is_some())
+            || i == args_and_vals.args().len() + 1
+        {
+            args_and_vals.valto()
+        } else {
+            None
+        }
+    }
+
+    pub fn id(&self) -> usize {
+        let mut res = 0;
+        let mut factor = 1;
+        for (&i, &d) in self.indices.iter().zip(self.dims.iter()).rev() {
+            res += i * factor;
+            factor *= d;
+        }
+        res
+    }
+
+    pub fn to_linterm_groundings(&self, ctx: &SchedEncoder) -> Vec<LinTermGrounding> {
+        self.transition
+            .get_args_and_vals(ctx)
+            .into_iter()
+            .enumerate()
+            .map(|(i, linterm)| LinTermGrounding {
+                linterm,
+                assignment: self.assignment[i],
+                id: self.indices[i],
+            })
+            .collect_vec()
+    }
 }
 
-pub type SourceGroundingIndex = Vec<usize>;
-pub type SourceGroundingId = usize;
+pub type LinTermGroundingId = usize;
+#[derive(Debug)]
+pub struct LinTermGrounding {
+    pub linterm: LinTerm,
+    pub assignment: IntCst,
+    pub id: LinTermGroundingId,
+}
 
+pub type SourceGroundingId = Vec<usize>;
+#[derive(Debug)]
 pub struct SourceGrounding {
     pub source: Option<TaskId>,
     pub assignment: Vec<IntCst>,
-    pub id: SourceGroundingId,
-    pub(crate) indices: SourceGroundingIndex,
-    pub(crate) dims: Vec<usize>,
+    indices: SourceGroundingId,
+    dims: Vec<usize>,
 }
 impl SourceGrounding {
     fn default(source: Option<TaskId>, ctx: &SchedEncoder, ctx_empty_source_linterms: &Vec<LinTerm>) -> Self {
@@ -184,19 +185,15 @@ impl SourceGrounding {
         Self {
             source,
             assignment,
-            id: 0,
             indices,
             dims,
         }
     }
-    fn ith_linterm(&self, i: usize, ctx: &SchedEncoder, ctx_empty_source_linterms: &[LinTerm]) -> Option<LinTerm> {
-        if let Some(task_id) = self.source {
-            ctx.sched.tasks[task_id].args.get(i).copied()
-        } else {
-            ctx_empty_source_linterms.get(i).copied()
+
+    fn advance(&mut self, ctx: &SchedEncoder, ctx_empty_source_linterms: &[LinTerm]) -> Result<(), ()> {
+        if self.indices.is_empty() {
+            return Err(());
         }
-    }
-    fn next(&mut self, ctx: &SchedEncoder, ctx_empty_source_linterms: &[LinTerm]) -> Result<(), ()> {
         let mut i = self.indices.len() - 1;
         loop {
             if self.indices[i] == self.dims[i] - 1 {
@@ -223,69 +220,78 @@ impl SourceGrounding {
             }
         }
     }
+
+    fn ith_linterm(&self, i: usize, ctx: &SchedEncoder, ctx_empty_source_linterms: &[LinTerm]) -> Option<LinTerm> {
+        if let Some(task_id) = self.source {
+            ctx.sched.tasks[task_id].args.get(i).copied()
+        } else {
+            ctx_empty_source_linterms.get(i).copied()
+        }
+    }
+
+    pub fn id(&self) -> usize {
+        let mut res = 0;
+        let mut factor = 1;
+        for (&i, &d) in self.indices.iter().zip(self.dims.iter()).rev() {
+            res += i * factor;
+            factor *= d;
+        }
+        res
+    }
 }
 
 pub struct TransitionsGroundingsEnumerator<'a> {
-    transitions: &'a Transitions,
+    // transitions: &'a Transitions,
     ctx: &'a SchedEncoder,
     ctx_empty_source_linterms: Vec<LinTerm>,
+    ctx_lifted_iter: Box<dyn Iterator<Item = (Transition, Option<TaskId>)> + 'a>,
 
-    current: (TransitionGrounding, SourceGrounding),
-    current_transition_index_in_source: usize,
-
+    current: Option<(TransitionGrounding, SourceGrounding)>,
     is_started: bool,
     is_finished: bool,
 }
 impl<'a> TransitionsGroundingsEnumerator<'a> {
-    pub fn new(transitions: &'a Transitions, ctx: &'a SchedEncoder) -> Result<Self, ()> {
+    pub fn new(transitions: &'a Transitions, ctx: &'a SchedEncoder) -> Self {
         let ctx_empty_source_linterms = Vec::from_iter(find_empty_source_linterms(ctx));
+        let mut ctx_lifted_iter = Box::new(transitions.iter());
+        let current = if let Some((transition, source)) = ctx_lifted_iter.next() {
+            Some((
+                TransitionGrounding::default(transition, source, ctx, &ctx_empty_source_linterms),
+                SourceGrounding::default(source, ctx, &ctx_empty_source_linterms),
+            ))
+        } else {
+            None
+        };
+        let is_started = false;
+        let is_finished = current.is_none();
 
-        let transition = *transitions
-            .store
-            .get(*transitions.of_empty_source.first().ok_or(())?)
-            .ok_or(())?;
-
-        let current = (
-            TransitionGrounding::default(transition, None, ctx, &ctx_empty_source_linterms),
-            SourceGrounding::default(None, ctx, &ctx_empty_source_linterms),
-        );
-
-        Ok(Self {
-            transitions,
+        let mut res = Self {
+            // transitions,
             ctx,
             ctx_empty_source_linterms,
+            ctx_lifted_iter,
             current,
-            current_transition_index_in_source: 0,
-            is_started: true,
-            is_finished: false,
-        })
+            is_started,
+            is_finished,
+        };
+        while !res.is_finished && !res.current_is_compatible() {
+            res.advance();
+        }
+        res.is_started = false;
+        res
     }
 
-    fn renew_current_transition_grounding(&mut self) {
-        let transition = self.transitions.store
-            [self.transitions.of_source(&self.current.1.source)[self.current_transition_index_in_source]];
-        self.current.0 = TransitionGrounding::default(
-            transition,
-            self.current.1.source,
-            self.ctx,
-            &self.ctx_empty_source_linterms,
-        );
-    }
-    fn renew_current_source_grounding(&mut self) {
-        let source = if let Some(task_id) = self.current.1.source {
-            Some(TaskId::from_int(1 + task_id.to_int()))
+    fn current_is_compatible(&self) -> bool {
+        if let Some((current_transition_grounding, current_source_grounding)) = self.current.as_ref() {
+            // TODO: check whether source grounding is trivially impossible. If so, early return false.
+            points_compatible(
+                &current_transition_grounding.assignment,
+                &current_source_grounding.assignment,
+                &current_transition_grounding.positions_in_source,
+            )
         } else {
-            Some(TaskId::from_int(0))
-        };
-        self.current.1 = SourceGrounding::default(source, self.ctx, &self.ctx_empty_source_linterms);
-    }
-    fn is_compatible(&self) -> bool {
-        points_compatible(
-            &self.current.0.assignment,
-            &self.current.1.assignment,
-            &self.current.0.positions_in_source,
-        )
-        // TODO: also check whether grounding is trivially impossible
+            false
+        }
     }
 }
 
@@ -298,44 +304,45 @@ impl<'a> StreamingIterator for TransitionsGroundingsEnumerator<'a> {
         }
         if !self.is_started {
             self.is_started = true;
-            if self.is_compatible() {
-                debug_assert!(self.current.0.id == 0 && self.current.1.id == 0);
-                return;
-            }
+            return;
         }
         loop {
-            if self.current.0.next(self.ctx).is_err() {
-                self.current_transition_index_in_source += 1;
+            let (current_transition_grounding, current_source_grounding) = self.current.as_mut().unwrap();
 
-                if self.current_transition_index_in_source < self.transitions.of_source(&self.current.1.source).len()
-                    || self.current.1.next(self.ctx, &self.ctx_empty_source_linterms).is_ok()
+            if current_transition_grounding.advance(self.ctx).is_err() {
+                if current_source_grounding
+                    .advance(self.ctx, &self.ctx_empty_source_linterms)
+                    .is_ok()
                 {
-                    self.renew_current_transition_grounding();
-                } else if self.current.1.source.map_or(0, |task_id| 1 + task_id.to_int() as usize)
-                    < self.transitions.of_concrete_source.len()
-                {
-                    self.current_transition_index_in_source = 0;
-
-                    self.renew_current_source_grounding();
-                    self.renew_current_transition_grounding();
+                    *current_transition_grounding = TransitionGrounding::default(
+                        current_transition_grounding.transition,
+                        current_source_grounding.source,
+                        self.ctx,
+                        &self.ctx_empty_source_linterms,
+                    );
                 } else {
-                    self.is_finished = true;
-                    return;
+                    let Some((transition, source)) = self.ctx_lifted_iter.next() else {
+                        self.current = None;
+                        self.is_finished = true;
+                        return;
+                    };
+                    debug_assert!(
+                        transition != current_transition_grounding.transition
+                            || source != current_source_grounding.source
+                    );
+                    *current_source_grounding =
+                        SourceGrounding::default(source, self.ctx, &self.ctx_empty_source_linterms);
+                    *current_transition_grounding =
+                        TransitionGrounding::default(transition, source, self.ctx, &self.ctx_empty_source_linterms);
                 }
             }
-            if self.is_compatible() {
-                self.current.0.id += 1;
-                self.current.1.id += 1;
+            if self.current_is_compatible() {
                 return;
             }
         }
     }
 
     fn get(&self) -> Option<&Self::Item> {
-        if self.is_finished || !self.is_started {
-            None
-        } else {
-            Some(&self.current)
-        }
+        self.current.as_ref()
     }
 }
