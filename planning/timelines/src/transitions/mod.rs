@@ -67,7 +67,7 @@ impl Transition {
             Transition::Eff(e_id) => {
                 let valto = match effects.get(*e_id).operation {
                     crate::EffectOp::Assign(linterm) => linterm,
-                    crate::EffectOp::Step(linterm) => linterm,
+                    crate::EffectOp::Step(_) => todo!(),
                 };
                 (None, Some(valto))
             }
@@ -104,6 +104,7 @@ fn find_empty_source_linterms(ctx: &SchedEncoder) -> Vec<LinTerm> {
             .filter(|&(_cid, c)| c.source.is_none())
             .flat_map(|(cid, _c)| Transition::Cond(cid).get_args_and_vals(ctx).into_iter()),
     )
+    .filter(|linterm| !linterm.is_scaled_var_zero())
     .sorted()
     .unique()
     .collect_vec()
@@ -119,10 +120,12 @@ fn find_empty_source_linterms(ctx: &SchedEncoder) -> Vec<LinTerm> {
             )
             .flatten()
         )
+        .filter(|linterm| !linterm.is_const())
     )*/
 }
 
 pub struct TransitionArgsAndVals<'a>(&'a Vec<LinTerm>, Option<LinTerm>, Option<LinTerm>);
+pub type TransitionArgsAndValsPositionInSource = (Vec<Option<usize>>, Option<Option<usize>>, Option<Option<usize>>);
 
 impl<'a> TransitionArgsAndVals<'a> {
     pub fn args(&self) -> &'a Vec<LinTerm> {
@@ -148,21 +151,23 @@ impl<'a> TransitionArgsAndVals<'a> {
         source: Option<TaskId>,
         ctx: &SchedEncoder,
         ctx_empty_source_linterms: &[LinTerm],
-    ) -> (Vec<usize>, Option<usize>, Option<usize>) {
+    ) -> TransitionArgsAndValsPositionInSource {
         let tasks = &ctx.sched.tasks;
 
         if let Some(task_id) = source {
             let args_pos = self
                 .0
                 .iter()
-                .map(|&linterm| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+                .map(|&linterm| {
+                    (!linterm.is_scaled_var_zero()).then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+                })
                 .collect_vec();
-            let valfrom_pos = self
-                .1
-                .map(|linterm| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap());
-            let valto_pos = self
-                .1
-                .map(|linterm| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap());
+            let valfrom_pos = self.1.map(|linterm| {
+                (!linterm.is_scaled_var_zero()).then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+            });
+            let valto_pos = self.2.map(|linterm| {
+                (!linterm.is_scaled_var_zero()).then(|| tasks[task_id].args.iter().position(|&lt| linterm == lt).unwrap())
+            });
             (args_pos, valfrom_pos, valto_pos)
         } else {
             // TODO OPTIMIZATION: treat this case differently ! (empty_source_linterms may much larger than the args and vals).
@@ -170,14 +175,14 @@ impl<'a> TransitionArgsAndVals<'a> {
             let args_pos = self
                 .0
                 .iter()
-                .map(|&linterm| ctx_empty_source_linterms.iter().position(|&lt| linterm == lt).unwrap())
+                .map(|&linterm| ctx_empty_source_linterms.iter().position(|&lt| linterm == lt))
                 .collect_vec();
             let valfrom_pos = self
                 .1
-                .map(|linterm| ctx_empty_source_linterms.iter().position(|&lt| linterm == lt).unwrap());
+                .map(|linterm| ctx_empty_source_linterms.iter().position(|&lt| linterm == lt));
             let valto_pos = self
-                .1
-                .map(|linterm| ctx_empty_source_linterms.iter().position(|&lt| linterm == lt).unwrap());
+                .2
+                .map(|linterm| ctx_empty_source_linterms.iter().position(|&lt| linterm == lt));
             (args_pos, valfrom_pos, valto_pos)
         }
     }
@@ -186,33 +191,20 @@ impl<'a> TransitionArgsAndVals<'a> {
 pub type TransitionId = usize;
 
 pub struct Transitions {
-    store: Vec<Transition>,
-    of_empty_source: Vec<TransitionId>,
-    of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>>,
-    //of_effect: DirectIdMap<EffectId, TransitionId>,
-    //of_condition: DirectIdMap<ConditionId, TransitionId>,
+    pub store: Vec<Transition>,
+    pub of_empty_source: Vec<TransitionId>,
+    pub of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>>,
+    //pub of_condition: DirectIdMap<ConditionId, TransitionId>,
+    //pub of_effect: DirectIdMap<EffectId, TransitionId>,
 }
 impl Transitions {
-    pub fn of_source(&self, source: &Option<TaskId>) -> &Vec<TransitionId> {
-        match source {
-            None => &self.of_empty_source,
-            Some(task_id) => &self.of_concrete_source[task_id],
-        }
-    }
     pub fn from(ctx: &SchedEncoder) -> Self {
         let mut store = vec![];
         let mut of_empty_source = vec![];
         let mut of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>> = DirectIdMap::default();
-        let mut of_effect: DirectIdMap<EffectId, TransitionId> = DirectIdMap::default();
         let mut of_condition: DirectIdMap<ConditionId, TransitionId> = DirectIdMap::default();
+        let mut of_effect: DirectIdMap<EffectId, TransitionId> = DirectIdMap::default();
 
-        let effs_by_source = {
-            let mut res = HashMap::<Option<TaskId>, Vec<(EffectId, &Effect)>>::new();
-            for (eid, e) in ctx.sched.effects.iter().enumerate() {
-                res.entry(e.source).or_default().push((eid, e));
-            }
-            res
-        };
         let conds_by_source = {
             let mut res = HashMap::<Option<TaskId>, Vec<(ConditionId, &HasValueAt)>>::new();
             for (cid, c) in ctx.causal_links.destinations.iter().enumerate() {
@@ -220,26 +212,32 @@ impl Transitions {
             }
             res
         };
+        let effs_by_source = {
+            let mut res = HashMap::<Option<TaskId>, Vec<(EffectId, &Effect)>>::new();
+            for (eid, e) in ctx.sched.effects.iter().enumerate() {
+                res.entry(e.source).or_default().push((eid, e));
+            }
+            res
+        };
 
         for (src, cs) in &conds_by_source {
-            if src.is_none() {
-                continue;
-            }
-            while let Some(es) = effs_by_source.get(src) {
-                for (cid, c) in cs {
-                    for (eid, e) in es {
+            if src.is_some() && effs_by_source.contains_key(src) {
+                for (eid, e) in effs_by_source.get(src).unwrap() {
+                    for (cid, c) in cs {
                         debug_assert!(e.source == c.source);
+
                         if e.state_var == c.state_var && e.prez == c.prez {
                             let tr = Transition::CondEff(*cid, *eid);
-                            let tid = store.len();
+                            let trid = store.len();
                             store.push(tr);
 
-                            of_concrete_source
-                                .get_mut(src.unwrap())
-                                .get_or_insert(&mut vec![])
-                                .push(tid);
-                            of_condition.insert(*cid, tid);
-                            of_effect.insert(*eid, tid);
+                            if of_concrete_source.contains_key(src.unwrap()) {
+                                of_concrete_source.get_mut(src.unwrap()).unwrap().push(trid);
+                            } else {
+                                of_concrete_source.insert(src.unwrap(), vec![trid]);
+                            };
+                            of_condition.insert(*cid, trid);
+                            of_effect.insert(*eid, trid);
                         }
                     }
                 }
@@ -249,18 +247,17 @@ impl Transitions {
                     continue;
                 }
                 let tr = Transition::Cond(*cid);
-                let tid = store.len();
+                let trid = store.len();
                 store.push(tr);
 
                 if src.is_none() {
-                    of_empty_source.push(tid);
+                    of_empty_source.push(trid);
+                } else if of_concrete_source.contains_key(src.unwrap()) {
+                    of_concrete_source.get_mut(src.unwrap()).unwrap().push(trid);
                 } else {
-                    of_concrete_source
-                        .get_mut(src.unwrap())
-                        .get_or_insert(&mut vec![])
-                        .push(tid);
+                    of_concrete_source.insert(src.unwrap(), vec![trid]);
                 }
-                of_condition.insert(*cid, tid);
+                of_condition.insert(*cid, trid);
             }
         }
 
@@ -270,18 +267,17 @@ impl Transitions {
                     continue;
                 }
                 let tr = Transition::Eff(*eid);
-                let tid = store.len();
+                let trid = store.len();
                 store.push(tr);
 
                 if src.is_none() {
-                    of_empty_source.push(tid);
+                    of_empty_source.push(trid);
+                } else if of_concrete_source.contains_key(src.unwrap()) {
+                    of_concrete_source.get_mut(src.unwrap()).unwrap().push(trid);
                 } else {
-                    of_concrete_source
-                        .get_mut(src.unwrap())
-                        .get_or_insert(&mut vec![])
-                        .push(tid);
+                    of_concrete_source.insert(src.unwrap(), vec![trid]);
                 }
-                of_effect.insert(*eid, tid);
+                of_effect.insert(*eid, trid);
             }
         }
 
@@ -289,14 +285,29 @@ impl Transitions {
             store,
             of_empty_source,
             of_concrete_source,
-            // of_effect,
             // of_condition,
+            // of_effect,
         }
     }
 
-    pub fn groundings_iterator<'a>(
-        &'a self,
-        ctx: &'a SchedEncoder,
+    #[allow(dead_code)]
+    fn of_source(&self, source: &Option<TaskId>) -> Option<&Vec<TransitionId>> {
+        match source {
+            None => Some(&self.of_empty_source),
+            Some(task_id) => self.of_concrete_source.get(task_id),
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Transition, Option<TaskId>)> {
+        // impl StreamingIterator<Item = (Transition, Option<TaskId>)> {
+        std::iter::chain(
+            self.of_empty_source.iter().map(|trid| (self.store[*trid], None)),
+            self.of_concrete_source
+                .iter()
+                .flat_map(move |(task_id, trids)| trids.iter().map(move |trid| (self.store[*trid], Some(task_id)))),
+        )
+    }
+    pub fn iter_groundings<'a>(&'a self, ctx: &'a SchedEncoder,
     ) -> Result<ground::TransitionsGroundingsEnumerator<'a>, ()> {
         ground::TransitionsGroundingsEnumerator::new(self, ctx)
     }

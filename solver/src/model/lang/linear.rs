@@ -708,11 +708,15 @@ impl LinTerm {
         (i < usize::try_from(ub - lb + 1).unwrap())
             .then(|| self.constant + lb + self.scaled_var.factor * IntCst::try_from(i).unwrap())
     }
+
+    pub fn is_scaled_var_zero(&self) -> bool {
+        self.scaled_var.is_zero()
+    }
 }
 
 impl Debug for LinTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.scaled_var.is_zero() {
+        if self.is_scaled_var_zero() {
             return write!(f, "{}", self.constant);
         }
         write!(f, "{:?}", self.scaled_var)?;
