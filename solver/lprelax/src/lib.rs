@@ -149,15 +149,8 @@ impl Default for LpRelax {
     }
 }
 impl LpRelax {
-    pub fn new(id: u8) -> Self {
+    pub fn with_config(config: LpRelaxConfig) -> Self {
         Self {
-            id: ReasonerId::Extra(id),
-            ..Default::default()
-        }
-    }
-    pub fn with_config(id: u8, config: LpRelaxConfig) -> Self {
-        Self {
-            id: ReasonerId::Extra(id),
             config,
             ..Default::default()
         }
@@ -603,7 +596,6 @@ pub mod test {
         model.add_implication(var2.leq(5), var3.leq(5));
 
         let mut theory = LpRelax::with_config(
-            0,
             LpRelaxConfig {
                 no_propagation_skips: true,
             },
@@ -680,7 +672,6 @@ pub mod test {
         let bvar = model.new_var(0, 1);
 
         let mut theory = LpRelax::with_config(
-            0,
             LpRelaxConfig {
                 no_propagation_skips: true,
             },

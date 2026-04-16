@@ -64,7 +64,7 @@ fn main() -> Result<()> {
 
 fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver {
     let extra_reasoners: Vec<Box<dyn aries::reasoners::Theory>> = if use_lp_relax {
-        let mut lprelax = LpRelax::new(0);
+        let mut lprelax = LpRelax::default();
 
         let mut var_name_to_col_map = HashMap::new();
 
