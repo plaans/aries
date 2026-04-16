@@ -103,7 +103,7 @@ pub fn condition_to_constraint(
                 reif_args.push(a);
             }
             let state_var = StateVar {
-                fluent: fluent.name().to_string(),
+                fluent: fluent.name().canonical_str().to_string(),
                 args: reif_args,
             };
             let c = HasValueAt {
@@ -193,7 +193,7 @@ pub fn convert_effect(
         .map(|&arg| reify_sym(arg, model, sched, bindings, encoding))
         .try_collect()?;
     let sv = timelines::StateVar {
-        fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
+        fluent: model.env.fluents.get(x.state_variable.fluent).name().canonical_str().to_string(),
         args,
     };
     let op = match x.operation {
@@ -234,7 +234,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
         }
         let args: Vec<SymAtom> = sv.params.0.into_iter().map(SymAtom::from).collect_vec();
         let sv = timelines::StateVar {
-            fluent: model.env.fluents.get(sv.fluent).name().to_string(),
+            fluent: model.env.fluents.get(sv.fluent).name().canonical_str().to_string(),
             args,
         };
         // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
@@ -451,7 +451,7 @@ pub fn reify_expression(
                 })
                 .collect::<Res<Vec<IntTerm>>>()?;
             let state_var = StateVar {
-                fluent: fluent.name().to_string(),
+                fluent: fluent.name().canonical_str().to_string(),
                 args: reified_args,
             };
             let reif = HasValueAt {
