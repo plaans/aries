@@ -114,31 +114,26 @@ pub struct Solver<Lbl> {
 }
 impl<Lbl: Label> Solver<Lbl> {
     pub fn new(model: Model<Lbl>) -> Solver<Lbl> {
-        Solver {
-            model,
-            next_unposted_constraint: 0,
-            brancher: default_brancher(),
-            reasoners: Reasoners::new(),
-            decision_level: DecLvl::ROOT,
-            last_assumption_level: DecLvl::ROOT,
-            stats: Default::default(),
-            sync: Synchro::new(),
-        }
+        Self::with_extra_reasoners(model, vec![])
     }
+
     pub fn with_extra_reasoners(
         model: Model<Lbl>,
         extra_reasoners: Vec<Box<dyn crate::reasoners::Theory>>,
     ) -> Solver<Lbl> {
-        let mut res = Self::new(model);
-        assert!(
-            extra_reasoners
-                .iter()
-                .map(|r| r.identity())
-                .all(|rid| matches!(rid, ReasonerId::Extra(_)))
-        );
-        assert!(extra_reasoners.iter().map(|r| r.identity()).all_unique());
-        res.reasoners.extra = extra_reasoners;
-        res
+        let reasoners = Reasoners::with_extra(extra_reasoners);
+        let stats = Stats::with_reasoners(&reasoners);
+
+        Solver {
+            model,
+            next_unposted_constraint: 0,
+            brancher: default_brancher(),
+            reasoners,
+            decision_level: DecLvl::ROOT,
+            last_assumption_level: DecLvl::ROOT,
+            stats,
+            sync: Synchro::new(),
+        }
     }
 
     pub fn set_brancher(&mut self, brancher: impl SearchControl<Lbl> + 'static + Send) {
@@ -196,7 +191,7 @@ impl<Lbl: Label> Solver<Lbl> {
             Constraint::Propagator(user_propagator) => {
                 // black-box propagator, there is nothing we can do except posting it to the CP solver
                 for prop in user_propagator.get_propagators() {
-                    self.reasoners.cp.add_propagator(prop);
+                    self.reasoners.cp().add_propagator(prop);
                 }
                 return Ok(());
             }
@@ -224,19 +219,19 @@ impl<Lbl: Label> Solver<Lbl> {
                 let rhs_add = diff.ub;
                 let lhs = diff.b;
                 self.reasoners
-                    .diff
+                    .diff()
                     .add_half_reified_edge(enabler, rhs, lhs, rhs_add, &self.model.state);
                 Ok(())
             }
             ReifExpr::Eq(a, b) => {
-                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                let lit = self.reasoners.eq().add_edge(*a, *b, &mut self.model);
                 if lit != enabler {
                     self.add_clause([!enabler, lit], scope)?; // value => lit
                 }
                 Ok(())
             }
             ReifExpr::Neq(a, b) => {
-                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
+                let lit = !self.reasoners.eq().add_edge(*a, *b, &mut self.model);
                 if lit != enabler {
                     self.add_clause([!enabler, lit], scope)?; // value => lit
                 }
@@ -245,7 +240,7 @@ impl<Lbl: Label> Solver<Lbl> {
             ReifExpr::EqVal(a, b) => {
                 let (lb, ub) = self.model.state.bounds(*a);
                 let lit = if (lb..=ub).contains(b) {
-                    self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
+                    self.reasoners.eq().add_val_edge(*a, *b, &mut self.model)
                 } else {
                     Lit::FALSE
                 };
@@ -255,7 +250,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::NeqVal(a, b) => {
-                let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
+                let lit = !self.reasoners.eq().add_val_edge(*a, *b, &mut self.model);
                 if lit != enabler {
                     self.add_clause([!enabler, lit], scope)?; // value => lit
                 }
@@ -345,7 +340,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
                 if !handled {
                     self.reasoners
-                        .cp
+                        .cp()
                         .add_half_reif_linear_constraint(&lin, enabler, &self.model.state);
 
                     let doms = &mut self.model.state; // convenient alias
@@ -385,7 +380,9 @@ impl<Lbl: Label> Solver<Lbl> {
                             };
                             // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
                             // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
-                            self.reasoners.diff.add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
+                            self.reasoners
+                                .diff()
+                                .add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
                         }
                     }
                 }
@@ -432,7 +429,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 let prez = |v: VarRef| self.model.state.presence_literal(v);
 
                 // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                self.reasoners.cp().add_propagator(AtLeastOneGeq {
                     scope,
                     lhs: SignedVar::plus(a.main),
                     elements: a
@@ -446,7 +443,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 // -ub(-main) <-   min_i { -ub(-var_i) + cst_i | prez_i }
                 // -ub(-main) <- - max_i {  ub(-var_i) + cst_i | prez_i }
                 //  ub(-main) <-   max_i {  ub(-var_i) + cst_i | prez_i }
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                self.reasoners.cp().add_propagator(AtLeastOneGeq {
                     scope,
                     lhs: SignedVar::minus(a.main),
                     elements: a
@@ -483,7 +480,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 let prez = |v: SignedVar| self.model.state.presence(v);
 
                 // POST  OR_i  (prez(rhs[i])  &&  rhs[i] >= lhs)    [scope: prez(lhs)]
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
+                self.reasoners.cp().add_propagator(AtLeastOneGeq {
                     scope,
                     lhs: a.lhs,
                     elements: a
@@ -497,7 +494,7 @@ impl<Lbl: Label> Solver<Lbl> {
             }
             ReifExpr::EqMul(eq_mul) => {
                 self.reasoners
-                    .cp
+                    .cp()
                     .add_half_reified_mul_constraint(eq_mul, enabler, &self.model.state);
                 Ok(())
             }
@@ -506,7 +503,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.model.entails(enabler),
                     "Unsupported half reified eqvarmullit constraints."
                 );
-                self.reasoners.cp.add_eq_var_mul_lit_constraint(mul);
+                self.reasoners.cp().add_eq_var_mul_lit_constraint(mul);
                 Ok(())
             }
         }
@@ -523,7 +520,7 @@ impl<Lbl: Label> Solver<Lbl> {
         if propagatable.is_empty() {
             return self.model.state.set(!scope, Cause::Encoding).map(|_| ());
         }
-        self.reasoners.sat.add_clause_scoped(propagatable.literals(), scope);
+        self.reasoners.sat().add_clause_scoped(propagatable.literals(), scope);
         Ok(())
     }
 
@@ -684,7 +681,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
                     if let Some(dl) = self.backtrack_level_for_clause(&clause) {
                         self.restore(dl);
-                        self.reasoners.sat.add_clause(&clause);
+                        self.reasoners.sat().add_clause(&clause);
                     } else {
                         return Ok(sat);
                     }
@@ -840,7 +837,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         return Err(Exit::Interrupted);
                     }
                     InputSignal::LearnedClause(cl) => {
-                        self.reasoners.sat.add_forgettable_clause(cl.literals());
+                        self.reasoners.sat().add_forgettable_clause(cl.literals());
                         requires_new_propagation = true;
                     }
                     InputSignal::SolutionFound(assignment) => {
@@ -1190,10 +1187,10 @@ impl<Lbl: Label> Solver<Lbl> {
                 // clauses with a single literal are tautologies and can be given to the dedicated reasoner
                 // note: a possible optimization would also be to not backjump to the root (always the case with a such clauses)
                 // but instead to the first level where imposing it would not result in a conflict
-                self.reasoners.tautologies.add_tautology(expl.clause.literals()[0])
+                self.reasoners.tautologies().add_tautology(expl.clause.literals()[0])
             } else {
                 // add clause to sat solver, making sure the asserted literal is set to true
-                self.reasoners.sat.add_learnt_clause(expl.clause.literals());
+                self.reasoners.sat().add_learnt_clause(expl.clause.literals());
             }
 
             true
@@ -1275,16 +1272,16 @@ impl<Lbl: Label> Solver<Lbl> {
             let num_events_at_start = self.model.state.num_events();
 
             debug_assert_eq!(
-                self.reasoners.writers().iter().next(),
+                self.reasoners.writers.get().iter().next(),
                 Some(&ReasonerId::Sat),
                 "SAT propagator should propagate first to ensure none of its invariant are violated by others."
             );
             // propagate all theories
-            for &i in self.reasoners.writers() {
+            for &i in self.reasoners.writers.get() {
                 let trail_size = self.model.state.trail().len() as u64;
                 let theory_propagation_start = StartCycleCount::now();
                 self.stats[i].propagation_loops += 1;
-                let th = self.reasoners.reasoner_mut(i);
+                let th = self.reasoners.theories.get_mut(i);
 
                 match th.propagate(&mut self.model.state) {
                     Ok(()) => (),
@@ -1330,7 +1327,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn print_stats(&self) {
         println!("{}", self.stats);
-        for (i, th) in self.reasoners.theories() {
+        for (i, th) in self.reasoners.iter() {
             println!("====== {i} =====");
             th.print_stats();
         }
@@ -1351,8 +1348,8 @@ impl<Lbl> Backtrack for Solver<Lbl> {
         assert_eq!(self.model.save_state(), n);
         assert_eq!(self.brancher.save_state(), n);
 
-        for w in self.reasoners.writers() {
-            let th = self.reasoners.reasoner_mut(*w);
+        for w in self.reasoners.writers.get() {
+            let th = self.reasoners.theories.get_mut(*w);
             assert_eq!(th.save_state(), n);
         }
         n
@@ -1363,7 +1360,7 @@ impl<Lbl> Backtrack for Solver<Lbl> {
             let n = self.decision_level.to_int();
             assert_eq!(self.model.num_saved(), n);
             assert_eq!(self.brancher.num_saved(), n);
-            for (_, th) in self.reasoners.theories() {
+            for (_, th) in self.reasoners.iter() {
                 assert_eq!(th.num_saved(), n);
             }
             true
@@ -1383,8 +1380,8 @@ impl<Lbl> Backtrack for Solver<Lbl> {
         }
         self.model.restore(saved_id);
         self.brancher.restore(saved_id);
-        for w in self.reasoners.writers() {
-            let th = self.reasoners.reasoner_mut(*w);
+        for w in self.reasoners.writers.get() {
+            let th = self.reasoners.theories.get_mut(*w);
             th.restore(saved_id);
         }
         debug_assert_eq!(self.current_decision_level(), saved_id);

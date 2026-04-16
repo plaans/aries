@@ -595,11 +595,9 @@ pub mod test {
 
         model.add_implication(var2.leq(5), var3.leq(5));
 
-        let mut theory = LpRelax::with_config(
-            LpRelaxConfig {
-                no_propagation_skips: true,
-            },
-        );
+        let mut theory = LpRelax::with_config(LpRelaxConfig {
+            no_propagation_skips: true,
+        });
 
         let col2 = theory.add_column(Some(0.), Some(10.));
         let col3 = theory.add_column(Some(0.), Some(10.));
@@ -671,11 +669,9 @@ pub mod test {
         let avar = model.new_var(0, 1);
         let bvar = model.new_var(0, 1);
 
-        let mut theory = LpRelax::with_config(
-            LpRelaxConfig {
-                no_propagation_skips: true,
-            },
-        );
+        let mut theory = LpRelax::with_config(LpRelaxConfig {
+            no_propagation_skips: true,
+        });
 
         let acol = theory.add_column(Some(0.), Some(1.));
         let bcol = theory.add_column(Some(0.), Some(1.));
