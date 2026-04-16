@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aries::prelude::*;
+use aries::utils::StreamingIterator;
 use aries::{
     backtrack::Backtrack,
     model::lang::*,
@@ -8,6 +9,7 @@ use aries::{
 };
 use itertools::Itertools;
 
+//use crate::transitions::Transitions;
 use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
@@ -43,6 +45,35 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 c.enforce(&mut encoding);
             }
         }
+
+        /*let transitions = Transitions::from(&encoding);
+        println!("{:?}", transitions.store);
+        println!("---");
+        println!("{:?}", transitions.of_empty_source);
+        println!("{:?}", transitions.of_concrete_source);
+        println!("---");
+        for tr in &transitions.store {
+            match tr {
+                crate::transitions::Transition::Cond(cid) => {
+                    println!("{:?} {:?}", tr, encoding.causal_links.destinations[*cid])
+                }
+                crate::transitions::Transition::Eff(eid) => println!("{:?} {:?}", tr, encoding.sched.effects[*eid]),
+                crate::transitions::Transition::CondEff(cid, eid) => println!(
+                    "{:?} {:?} {:?}",
+                    tr, encoding.causal_links.destinations[*cid], encoding.sched.effects[*eid]
+                ),
+            }
+        }
+        println!("---");
+        let mut grounder = transitions.iter_groundings(&encoding);
+        while let Some(gr) = grounder.next() {
+            println!("{:?}", gr.0);
+            println!("{:?}", gr.1);
+            println!("--")
+        }
+        println!("---");
+        panic!();*/
+
         let solver = Solver::new(encoding.store);
         Self {
             solver,

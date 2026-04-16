@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::backtrack::Backtrack;
 use crate::core::Lit;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
@@ -24,6 +26,7 @@ pub enum ReasonerId {
     Cp,
     Eq(u16),
     Tautologies,
+    Extra(u8),
 }
 
 impl ReasonerId {
@@ -35,6 +38,7 @@ impl ReasonerId {
 impl Display for ReasonerId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use ReasonerId::*;
+        let mut _extra_str = String::new();
         write!(
             f,
             "{}",
@@ -44,12 +48,13 @@ impl Display for ReasonerId {
                 Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
+                Extra(i) => { _extra_str = format!("Extra({i})"); &_extra_str }
             }
         )
     }
 }
 
-pub trait Theory: Backtrack + Send + 'static {
+pub trait Theory: Backtrack + Send {
     fn identity(&self) -> ReasonerId;
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction>;
@@ -87,7 +92,7 @@ impl From<Explanation> for Contradiction {
 ///
 /// SAT should always be first because we should not allow anything to happen between
 /// the moment a clause is learned and the moment it is is propagated.
-pub(crate) const REASONERS: [ReasonerId; 5] = [
+const MAIN_REASONERS: [ReasonerId; 5] = [
     ReasonerId::Sat,
     ReasonerId::Tautologies,
     ReasonerId::Diff,
@@ -95,52 +100,149 @@ pub(crate) const REASONERS: [ReasonerId; 5] = [
     ReasonerId::Cp,
 ];
 
-/// A set of inference modules for constraint propagation.
-#[derive(Clone)]
-pub struct Reasoners {
+pub(crate) struct ReasonersTheories {
     pub sat: SatSolver,
     pub diff: StnTheory,
     pub eq: SplitEqTheory,
     pub cp: Cp,
     pub tautologies: Tautologies,
+    pub extra: Vec<Box<dyn Theory>>,
 }
-impl Reasoners {
+impl Clone for ReasonersTheories {
+    fn clone(&self) -> Self {
+        Self {
+            sat: self.sat.clone(),
+            diff: self.diff.clone(),
+            eq: self.eq.clone(),
+            cp: self.cp.clone(),
+            tautologies: self.tautologies.clone(),
+            extra: self.extra.iter().map(|th| th.clone_box()).collect(),
+        }
+    }
+}
+impl ReasonersTheories {
     pub fn new() -> Self {
-        Reasoners {
+        ReasonersTheories {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
             eq: Default::default(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
+            extra: vec![],
         }
     }
+    pub fn with_extra(extra: Vec<Box<dyn Theory>>) -> Self {
+        assert!(
+            extra
+                .iter()
+                .map(|r| r.identity())
+                .all(|rid| matches!(rid, ReasonerId::Extra(_)))
+        );
+        assert!(extra.iter().map(|r| r.identity()).all_unique());
 
-    pub fn reasoner(&self, id: ReasonerId) -> &dyn Theory {
+        ReasonersTheories {
+            sat: SatSolver::new(ReasonerId::Sat),
+            diff: StnTheory::new(Default::default()),
+            eq: Default::default(),
+            cp: Cp::new(ReasonerId::Cp),
+            tautologies: Tautologies::default(),
+            extra,
+        }
+    }
+    pub fn get(&self, id: ReasonerId) -> &dyn Theory {
         match id {
             ReasonerId::Sat => &self.sat,
             ReasonerId::Diff => &self.diff,
             ReasonerId::Eq(_) => &self.eq,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
+            ReasonerId::Extra(id) => self.extra.get(id as usize).unwrap().as_ref(),
         }
     }
-
-    pub fn reasoner_mut(&mut self, id: ReasonerId) -> &mut dyn Theory {
+    pub fn get_mut(&mut self, id: ReasonerId) -> &mut dyn Theory {
         match id {
             ReasonerId::Sat => &mut self.sat,
             ReasonerId::Diff => &mut self.diff,
             ReasonerId::Eq(_) => &mut self.eq,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
+            ReasonerId::Extra(id) => self.extra.get_mut(id as usize).unwrap().as_mut(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ReasonersWriters {
+    writers: Vec<ReasonerId>,
+}
+impl ReasonersWriters {
+    pub fn new() -> Self {
+        Self {
+            writers: MAIN_REASONERS.to_vec(),
+        }
+    }
+    pub fn with_extra(extra: &Vec<Box<dyn Theory>>) -> Self {
+        assert!(
+            extra
+                .iter()
+                .map(|r| r.identity())
+                .all(|rid| matches!(rid, ReasonerId::Extra(_)))
+        );
+        assert!(extra.iter().map(|r| r.identity()).all_unique());
+
+        Self {
+            writers: MAIN_REASONERS
+                .into_iter()
+                .chain(extra.iter().map(|r| r.identity()))
+                .collect(),
+        }
+    }
+    pub fn get(&self) -> &[ReasonerId] {
+        &self.writers
+    }
+}
+
+/// A set of inference modules for constraint propagation.
+#[derive(Clone)]
+pub struct Reasoners {
+    pub(crate) writers: ReasonersWriters,
+    pub(crate) theories: ReasonersTheories,
+}
+impl Reasoners {
+    pub fn new() -> Self {
+        Self {
+            writers: ReasonersWriters::new(),
+            theories: ReasonersTheories::new(),
+        }
+    }
+    pub fn with_extra(extra: Vec<Box<dyn Theory>>) -> Self {
+        Self {
+            writers: ReasonersWriters::with_extra(&extra),
+            theories: ReasonersTheories::with_extra(extra),
         }
     }
 
-    pub fn writers(&self) -> &'static [ReasonerId] {
-        &REASONERS
+    pub fn sat(&mut self) -> &mut SatSolver {
+        &mut self.theories.sat
+    }
+    pub fn diff(&mut self) -> &mut StnTheory {
+        &mut self.theories.diff
+    }
+    pub fn eq(&mut self) -> &mut SplitEqTheory {
+        &mut self.theories.eq
+    }
+    pub fn cp(&mut self) -> &mut Cp {
+        &mut self.theories.cp
+    }
+    pub fn tautologies(&mut self) -> &mut Tautologies {
+        &mut self.theories.tautologies
+    }
+    pub fn extra(&mut self) -> &mut [Box<dyn Theory>] {
+        &mut self.theories.extra
     }
 
-    pub fn theories(&self) -> impl Iterator<Item = (ReasonerId, &dyn Theory)> + '_ {
-        self.writers().iter().map(|w| (*w, self.reasoner(*w)))
+    pub fn iter(&self) -> impl Iterator<Item = (ReasonerId, &dyn Theory)> + '_ {
+        self.writers.get().iter().map(|w| (*w, self.theories.get(*w)))
     }
 }
 
@@ -152,7 +254,8 @@ impl Default for Reasoners {
 
 impl Explainer for Reasoners {
     fn explain(&mut self, cause: InferenceCause, literal: Lit, model: &DomainsSnapshot, explanation: &mut Explanation) {
-        self.reasoner_mut(cause.writer)
+        self.theories
+            .get_mut(cause.writer)
             .explain(literal, cause, model, explanation)
     }
 }

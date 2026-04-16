@@ -2,6 +2,7 @@
 
 members = [
     "solver",
+    "solver/lprelax",
     "bench/data",
     "bench/bench",
     "env_param",

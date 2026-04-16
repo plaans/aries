@@ -238,12 +238,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_ilp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries",
+ "aries_lprelax",
+ "clap 4.5.54",
+ "lp_parser_rs",
+ "num-traits",
+ "varisat-dimacs",
+ "varisat-formula",
+]
+
+[[package]]
 name = "aries_knapsack"
 version = "0.1.0"
 dependencies = [
  "aries",
  "env_param",
- "itertools",
+ "itertools 0.14.0",
+]
+
+[[package]]
+name = "aries_lprelax"
+version = "0.1.0"
+dependencies = [
+ "aries",
+ "env_param",
+ "highs",
+ "itertools 0.14.0",
+ "smallvec",
 ]
 
 [[package]]

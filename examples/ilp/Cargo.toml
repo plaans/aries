@@ -1,0 +1,18 @@
+[package]
+name = "aries_ilp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { workspace = true }
+anyhow = { workspace = true }
+aries = { path = "../../solver" }
+aries_lprelax = { path = "../../solver/lprelax" }
+varisat-dimacs = "0.2.2"
+varisat-formula = "0.2.2"
+lp_parser_rs = "3.4.0"
+num-traits = "0.2.19"
+
+[[bin]]
+name = "aries-ilp"
+path = "src/main.rs"
