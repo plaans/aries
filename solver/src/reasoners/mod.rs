@@ -38,6 +38,7 @@ impl ReasonerId {
 impl Display for ReasonerId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use ReasonerId::*;
+        let mut _extra_str = String::new();
         write!(
             f,
             "{}",
@@ -47,7 +48,7 @@ impl Display for ReasonerId {
                 Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
-                Extra(_i) => stringify!(format!("Extra{_i}")),
+                Extra(i) => { _extra_str = format!("Extra({i})"); &_extra_str }
             }
         )
     }
