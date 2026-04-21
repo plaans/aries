@@ -62,9 +62,7 @@ impl SExpr {
     }
 
     pub fn is_atom(&self, expected_atom: &str) -> bool {
-        self.as_atom()
-            .map(|a| a.canonical_str() == expected_atom)
-            .unwrap_or(false)
+        self.as_atom().map(|a| a == expected_atom).unwrap_or(false)
     }
 
     /// If this s-expression is the application of the function `function_name`, returns
@@ -74,14 +72,14 @@ impl SExpr {
     /// use planx::pddl::{input::Input, sexpr::parse};
     /// let sexpr = parse(Input::from_string("(add 1 2)")).unwrap();
     /// let args = sexpr.as_application("add").unwrap(); // returns the list equivalent of [1, 2]
-    /// assert_eq!(args[0].as_atom().unwrap().canonical_str(), "1");
-    /// assert_eq!(args[1].as_atom().unwrap().canonical_str(), "2");
+    /// assert_eq!(args[0].as_atom().unwrap(), "1");
+    /// assert_eq!(args[1].as_atom().unwrap(), "2");
     /// ```
     pub fn as_application(&self, function_name: &str) -> Option<&[SExpr]> {
         match self {
             SExpr::Atom(_) => None,
             SExpr::List(l) => match l.list.as_slice() {
-                [SExpr::Atom(head), rest @ ..] if head.canonical_str() == function_name => Some(rest),
+                [SExpr::Atom(head), rest @ ..] if head == function_name => Some(rest),
                 _ => None,
             },
         }
@@ -164,7 +162,7 @@ impl<'a> ListIter<'a> {
                 let sexpr = sexpr
                     .as_atom()
                     .ok_or_else(|| sexpr.invalid(format!("Expected atom `{expected}`")))?;
-                if sexpr.canonical_str() == expected {
+                if sexpr == expected {
                     Ok(())
                 } else {
                     Err(sexpr.invalid(format!("Expected the atom `{expected}`")))
@@ -412,7 +410,7 @@ mod tests {
         formats_as("(a b); \"(a b)\"", "(a b)");
         formats_as("(a \"b \n c\" d)", "(a \"b \n c\" d)");
         formats_as("(a \"b ; c\" d)", "(a \"b ; c\" d)");
-        formats_as("(A \"b ; C\" d)", "(A \"b ; C\" d)");
+        formats_as("(A \"b ; C\" d)", "(a \"b ; c\" d)"); // output is normalized to lowercase
     }
 
     #[test]

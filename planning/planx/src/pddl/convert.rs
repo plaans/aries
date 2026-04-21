@@ -49,7 +49,7 @@ impl Bindings {
 fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
     let mut types = UserTypes::with_top_type("object");
     for tpe in &dom.types {
-        if tpe.symbol.canonical_str() == "object" {
+        if tpe.symbol == "object" {
             continue; // already added as the top type
         }
         match tpe.tpe.as_slice() {
@@ -82,7 +82,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
 
     for func in &dom.functions {
         let parameters = parse_parameters(&func.args, &model.env.types).msg(&model.env)?;
-        let tpe = match func.tpe.as_ref().map(|t| t.canonical_str()) {
+        let tpe = match func.tpe.as_ref().map(|t| t.as_str()) {
             None | Some("number") => Type::REAL,
             Some(name) => {
                 let user_type = model.env.types.get_user_type(name).msg(&model.env)?;
@@ -553,13 +553,13 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
     }
 
     let expr = match sexpr {
-        SExpr::Atom(atom) if atom.canonical_str() == "?duration" => Expr::Duration,
+        SExpr::Atom(atom) if atom == "?duration" => Expr::Duration,
         SExpr::Atom(atom) => match bindings.get(atom) {
             Ok(x) => x,
             Err(err) => {
-                if let Some(number) = parse_number(atom.canonical_str()) {
+                if let Some(number) = parse_number(atom.as_str()) {
                     Expr::Real(number)
-                } else if let Some(fluent_id) = env.fluents.get_by_name(atom.canonical_str()) {
+                } else if let Some(fluent_id) = env.fluents.get_by_name(atom) {
                     // this occurs case when a state variable is called without a parameter list
                     // for instance   (increase total-fuel 1)
                     // we emit the state variable without checking the args as any error should be caught when type checking anyway
@@ -572,26 +572,26 @@ fn parse(sexpr: &SExpr, env: &mut Environment, bindings: &Rc<Bindings>) -> Resul
         SExpr::List(l) => {
             let mut l = l.iter();
             let f = l.pop_atom()?.clone();
-            if let Some(f) = env.fluents.get_by_name(f.canonical_str()) {
+            if let Some(f) = env.fluents.get_by_name(&f) {
                 let args = parse_args(l, env, bindings)?;
                 Expr::StateVariable(f, args)
             } else if let Some(f) = parse_function(&f) {
                 let args = parse_args(l, env, bindings)?;
                 Expr::App(f, args)
-            } else if f.canonical_str() == "total-time" {
+            } else if f == "total-time" {
                 if let Some(x) = l.next() {
                     return Err(x.invalid("Unexpected argument to total-time"));
                 }
                 Expr::Makespan
-            } else if f.canonical_str() == "is-violated" {
+            } else if f == "is-violated" {
                 let id = l.pop_atom()?;
                 Expr::ViolationCount(id.into())
-            } else if f.canonical_str() == "exists" || f.canonical_str() == "forall" {
+            } else if f == "exists" || f == "forall" {
                 let vars = parse_var_list(l.pop()?, env)?;
                 let expr = l.pop()?;
                 let bindings = Rc::new(Bindings::stacked(&vars, bindings));
                 let expr = parse(expr, env, &bindings)?; // TODO
-                match f.canonical_str() {
+                match f.as_str() {
                     "forall" => Expr::Forall(vars, expr),
                     "exists" => Expr::Exists(vars, expr),
                     _ => unreachable!(),
@@ -650,7 +650,7 @@ pub fn parse_unquantified_goal(
     } else if let Some([tp, g]) = sexpr.as_application("within") {
         let tp = tp
             .as_atom()
-            .and_then(|n| parse_number(n.canonical_str()))
+            .and_then(|n| parse_number(n.as_str()))
             .ok_or(tp.invalid("expected number"))?;
         let g = parse(g, env, bindings)?;
         Ok(SimpleGoal::at(tp, g))
@@ -758,13 +758,13 @@ fn parse_number(decimal_str: &str) -> Option<RealValue> {
 
 fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {
     num.as_atom()
-        .and_then(|e| parse_number(e.canonical_str()))
+        .and_then(|e| parse_number(e.as_str()))
         .ok_or(num.invalid("expected number"))
 }
 
 /// Parses a timestamp as one of start, end or absolute time (2, 32.3, ...)
 fn parse_timestamp(tp: &SExpr) -> Result<Timestamp, Message> {
-    let timestamp = match tp.as_atom().map(|a| a.canonical_str()) {
+    let timestamp = match tp.as_atom().map(|a| a.as_str()) {
         Some("start") => Some(Timestamp::from(TimeRef::ActionStart)),
         Some("end") => Some(Timestamp::from(TimeRef::ActionEnd)),
         Some(other) => parse_number(other).map(|number| Timestamp::new(TimeRef::Origin, number)),
@@ -778,10 +778,10 @@ fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
         .as_list_iter()
         .ok_or_else(|| sexpr.invalid("not a temporally qalified expression"))?;
     let first = items.pop_atom()?;
-    let interval = match first.canonical_str() {
+    let interval = match first.as_str() {
         "at" => {
             let second = items.pop_atom()?;
-            match second.canonical_str() {
+            match second.as_str() {
                 "start" => TimeInterval::at(TimeRef::ActionStart),
                 "end" => TimeInterval::at(TimeRef::ActionEnd),
                 _ => return Err(second.invalid("expected `start` or `end`")),
@@ -811,7 +811,7 @@ fn parse_timed(
 }
 
 fn parse_function(sym: &Sym) -> Option<Fun> {
-    match sym.canonical_str() {
+    match sym.as_str() {
         "+" => Some(Fun::Plus),
         "-" => Some(Fun::Minus),
         "/" => Some(Fun::Div),
