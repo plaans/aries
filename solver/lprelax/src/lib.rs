@@ -175,6 +175,10 @@ impl LpRelax {
         float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1)
     }
 
+    pub fn add_column_01(&mut self) -> LpCol {
+        self.add_column(Some(0.), Some(1.))
+    }
+
     pub fn add_column(&mut self, lb: Option<FloatCst>, ub: Option<FloatCst>) -> LpCol {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
@@ -242,6 +246,12 @@ impl LpRelax {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         assert!(self.lplit_impliers.insert(col, func).is_none());
+    }
+    pub fn has_implier_registered_for_lit(&self, var: VarRef) -> bool {
+        self.lit_impliers.contains_key(&var)
+    }
+    pub fn has_implier_registered_for_lplit(&self, col: LpCol) -> bool {
+        self.lplit_impliers.contains_key(&col)
     }
     fn get_implied_lplits(&self, lit: Lit) -> Option<impl IntoIterator<Item = LpLit> + use<>> {
         self.lit_impliers.get(&lit.variable()).and_then(|func| func(lit))

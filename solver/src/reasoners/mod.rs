@@ -48,7 +48,10 @@ impl Display for ReasonerId {
                 Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
-                Extra(i) => { _extra_str = format!("Extra({i})"); &_extra_str }
+                Extra(i) => {
+                    _extra_str = format!("Extra({i})");
+                    &_extra_str
+                }
             }
         )
     }

@@ -10,6 +10,7 @@ edition = "2024"
 itertools = { workspace = true }
 tracing = { workspace = true }
 aries = { path = "../../solver" }
+aries_lprelax = { path = "../../solver/lprelax" }
 env_param = { path = "../../env_param" }
 idmap = { workspace = true }
 smallvec = { workspace = true }
