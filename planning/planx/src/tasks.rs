@@ -123,7 +123,7 @@ impl TaskNet {
     pub fn add(&mut self, task: Subtask, env: &Environment) -> Res<SubtaskId> {
         let id = SubtaskId(self.next_id);
         if let Some(ref_new) = &task.ref_name {
-            if let Some(prev_task) = self.get_by_ref(ref_new.canonical_str()) {
+            if let Some(prev_task) = self.get_by_ref(ref_new) {
                 return Err(ref_new
                     .invalid("task ID is already used")
                     .info(env / prev_task, "previous usage"));
@@ -140,13 +140,15 @@ impl TaskNet {
 
     pub fn get_id_by_ref(&self, name: &Sym) -> Res<SubtaskId> {
         self.name_to_id
-            .get(name.canonical_str())
+            .get(name)
             .copied()
             .ok_or_else(|| name.invalid("unknown task name"))
     }
 
-    pub fn get_by_ref(&self, name: &str) -> Option<&Subtask> {
-        self.name_to_id.get(name).map(|tid| self.tasks.get(tid).unwrap())
+    pub fn get_by_ref(&self, name: impl AsRef<str>) -> Option<&Subtask> {
+        self.name_to_id
+            .get(name.as_ref())
+            .map(|tid| self.tasks.get(tid).unwrap())
     }
 
     pub fn get(&self, id: SubtaskId) -> Option<&Subtask> {

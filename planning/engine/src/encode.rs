@@ -32,16 +32,12 @@ pub fn types(model: &Model) -> ObjectEncoding {
     let t = &model.env.types;
     let o = &model.env.objects;
     ObjectEncoding::build(
-        t.top_user_type().name.canonical_str().to_string(),
-        |c| {
-            t.subtypes(Sym::from(c.as_str()))
-                .map(|st| st.canonical_str().to_string())
-                .collect_vec()
-        },
+        t.top_user_type().name.to_string(),
+        |c| t.subtypes(Sym::from(c.as_str())).map(|st| st.to_string()).collect_vec(),
         |c| {
             o.of_type(c.as_str())
-                .map(|o| o.name().canonical_str().to_string())
-                .sorted() // sorting is unecessary but may be useful to group together similar objects in the absence of typing
+                .map(|o| o.name().to_string())
+                .sorted() // sorting is unnecessary but may be useful to group together similar objects in the absence of typing
                 .collect_vec()
         },
     )
@@ -103,7 +99,7 @@ pub fn condition_to_constraint(
                 reif_args.push(a);
             }
             let state_var = StateVar {
-                fluent: fluent.name().canonical_str().to_string(),
+                fluent: fluent.name().to_string(),
                 args: reif_args,
             };
             let c = HasValueAt {
@@ -193,7 +189,7 @@ pub fn convert_effect(
         .map(|&arg| reify_sym(arg, model, sched, bindings, encoding))
         .try_collect()?;
     let sv = timelines::StateVar {
-        fluent: model.env.fluents.get(x.state_variable.fluent).name().canonical_str().to_string(),
+        fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
         args,
     };
     let op = match x.operation {
@@ -234,7 +230,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
         }
         let args: Vec<SymAtom> = sv.params.0.into_iter().map(SymAtom::from).collect_vec();
         let sv = timelines::StateVar {
-            fluent: model.env.fluents.get(sv.fluent).name().canonical_str().to_string(),
+            fluent: model.env.fluents.get(sv.fluent).name().to_string(),
             args,
         };
         // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
@@ -423,13 +419,13 @@ pub fn reify_expression(
         planx::Expr::Object(object) => {
             let id = sched
                 .objects
-                .object_id(object.name().canonical_str())
+                .object_id(object.name().as_str())
                 .ok_or_else(|| e.invalid("Object has no associated value"))?;
             Ok(id.into())
         }
         planx::Expr::Param(param) => binding
             .args
-            .get(param.name().canonical_str())
+            .get(param.name())
             .copied()
             .map(|id| id.into())
             .ok_or_else(|| param.name().invalid("unknown parameter")),
@@ -451,7 +447,7 @@ pub fn reify_expression(
                 })
                 .collect::<Res<Vec<IntTerm>>>()?;
             let state_var = StateVar {
-                fluent: fluent.name().canonical_str().to_string(),
+                fluent: fluent.name().to_string(),
                 args: reified_args,
             };
             let reif = HasValueAt {
@@ -493,7 +489,7 @@ pub fn reify_expression(
             Ok(expr)
         }
         planx::Expr::ViolationCount(x) => {
-            let sum = if let Some(values) = encoding.preferences.get(x.canonical_str()) {
+            let sum = if let Some(values) = encoding.preferences.get(x.as_str()) {
                 values
                     .iter()
                     .fold(LinSum::zero(), |acc, v| acc + bool2int(!v, &mut sched.model))

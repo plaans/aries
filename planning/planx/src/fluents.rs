@@ -65,8 +65,11 @@ impl Fluents {
         self.fluents.get(id).unwrap()
     }
 
-    pub fn get_by_name(&self, name: &str) -> Option<FluentId> {
-        self.fluents.iter().find(|&(_id, f)| name == &f.name).map(|(id, _)| id)
+    pub fn get_by_name(&self, name: impl AsRef<str>) -> Option<FluentId> {
+        self.fluents
+            .iter()
+            .find(|&(_id, f)| name.as_ref() == &f.name)
+            .map(|(id, _)| id)
     }
 
     pub fn add_fluent(
@@ -82,7 +85,7 @@ impl Fluents {
             return_type,
             source,
         };
-        if let Some(other) = self.get_by_name(fluent.name().canonical_str()) {
+        if let Some(other) = self.get_by_name(fluent.name()) {
             let other_sym = self.fluents.get(other).unwrap().name().clone();
             Err(FluentError::DuplicateFluent(fluent.name.clone(), other_sym))
         } else {

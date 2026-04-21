@@ -74,7 +74,7 @@ pub fn parse_lifted_plan(plan: &planx::pddl::Plan, model: &Model) -> Res<LiftedP
                     )));
                 }
                 ObjectOrVariable::Ground(obj)
-            } else if arg.canonical_str().starts_with("?") {
+            } else if arg.as_str().starts_with("?") {
                 // variable: compute its as the most specific between its previous one and the parameter of the action
                 let prev_type = variables.get(arg).unwrap_or(&top_type);
                 let planx::Type::User(new_type) = param.tpe() else {

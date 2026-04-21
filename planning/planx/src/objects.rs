@@ -91,6 +91,6 @@ impl Objects {
     }
 
     pub fn of_type<'a>(&'a self, tpe: &'a str) -> impl Iterator<Item = Object> + 'a {
-        self.iter().filter(move |o| o.tpe.name.canonical_str() == tpe)
+        self.iter().filter(move |o| o.tpe.name == tpe)
     }
 }
