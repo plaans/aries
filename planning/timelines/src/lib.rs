@@ -3,6 +3,7 @@ pub mod constraints;
 mod effects;
 pub mod encoder;
 pub mod explain;
+pub mod ext;
 pub mod rational;
 pub mod symbols;
 mod tasks;
