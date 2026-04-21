@@ -1,8 +1,14 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use aries::model::lang::ModelWrapper;
 
 use crate::*;
+
+pub type ConditionId = usize;
+pub(crate) struct CausalLinks {
+    pub destinations: Vec<HasValueAt>,
+    pub store: DirectIdMap<ConditionId, BTreeMap<EffectId, Lit>>,
+}
 
 /// Structure that provide all the context for encoding the scheduling problem
 /// into a CSP.
@@ -11,10 +17,24 @@ pub struct SchedEncoder {
     pub sched: Arc<Sched>,
     /// solver's model that will be populated with all constraints and variables
     pub(crate) store: crate::Model,
+
+    /// Conditions (specific interpretation of `HasValueAt`) with their candidate supporter effects
+    /// and corresponding activation / presence literals (for the causal link / support relation).
+    pub(crate) causal_links: CausalLinks,
+
+    pub(crate) ext: Option<ext::SchedEncoderExt>,
 }
 impl SchedEncoder {
     pub fn new(sched: Arc<Sched>, store: crate::Model) -> Self {
-        Self { sched, store }
+        Self {
+            sched,
+            store,
+            causal_links: CausalLinks {
+                destinations: vec![],
+                store: DirectIdMap::default(),
+            },
+            ext: None,
+        }
     }
 }
 

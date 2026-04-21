@@ -6,7 +6,7 @@ use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
 use crate::model::lang::expr::or;
 use crate::model::lang::{BoolExpr, IAtom, IVar, IntExpr, Store, ValidityScope};
-use crate::prelude::{Conjunction, DomainsExt};
+use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
@@ -703,20 +703,20 @@ impl LinTerm {
         LinSum::from(*self).eq(other.into())
     }
 
-    pub fn ith_value(&self, i: usize, dom: impl crate::core::views::Dom) -> Option<IntCst> {
-        let (lb, ub) = dom.bounds(self.scaled_var.var);
-        (i < usize::try_from(ub - lb + 1).unwrap())
-            .then(|| self.constant + lb + self.scaled_var.factor * IntCst::try_from(i).unwrap())
+    pub fn factor(&self) -> IntCst {
+        self.scaled_var.factor
     }
-
-    pub fn is_scaled_var_zero(&self) -> bool {
+    pub fn cst(&self) -> IntCst {
+        self.constant
+    }
+    pub fn is_cst(&self) -> bool {
         self.scaled_var.is_zero()
     }
 }
 
 impl Debug for LinTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_scaled_var_zero() {
+        if self.is_cst() {
             return write!(f, "{}", self.constant);
         }
         write!(f, "{:?}", self.scaled_var)?;

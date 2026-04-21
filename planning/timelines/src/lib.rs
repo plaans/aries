@@ -5,7 +5,7 @@ pub mod encoder;
 pub mod explain;
 pub mod rational;
 pub mod symbols;
-pub mod tasks;
+mod tasks;
 
 use aries::core::state::Evaluable;
 use aries::core::views::Dom;

@@ -21,7 +21,7 @@ pub struct Task {
     /// Time reference at which the task must end
     pub end: Time,
     /// Arguments of the task
-    pub args: Vec<LinTerm>,
+    pub args: Vec<IntTerm>,
     /// Presence of the task, true iff it appears in the solution
     pub presence: Lit,
 }

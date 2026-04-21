@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
@@ -217,13 +219,18 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         // cheap clone to please the borrow checker
         let sched: std::sync::Arc<Sched> = ctx.sched.clone();
 
+        let cl_dest_id = {
+            ctx.causal_links.destinations.push(self.clone());
+            ctx.causal_links.destinations.len() - 1
+        };
+
         let value_box = self.value_box(&*ctx);
 
         // all effects (assign or steps) that may contribute to the value
         let relevant_effects = sched
             .effects
             .potentially_supporting_effects(&self.state_var.fluent, value_box.as_ref())
-            .map(|eff_id| &sched.effects[eff_id])
+            .map(|eff_id| (eff_id, &sched.effects[eff_id]))
             .collect_vec();
 
         // gather all step effects that may contribute and
@@ -232,7 +239,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         //   - condition within activity period, and
         //   - same state variable
         let mut step_contributors = Vec::new();
-        for (_, &eff) in relevant_effects.iter().enumerate() {
+        for &(eff_id, eff) in &relevant_effects {
             let _span = tracing::debug_span!("Step");
             let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -257,12 +264,21 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                     contributes,
                     contribution: step,
                 });
+
+                if ctx.causal_links.store.get(cl_dest_id).is_none() {
+                    ctx.causal_links.store.insert(cl_dest_id, BTreeMap::new());
+                }
+                ctx.causal_links
+                    .store
+                    .get_mut(cl_dest_id)
+                    .unwrap()
+                    .insert(eff_id, contributes);
             }
         }
 
         // compute assign establisehrs. Those are exclusive (by effect coherence) so half reification is sufficient
         let mut establishers = Element::new();
-        for (_, &eff) in relevant_effects.iter().enumerate() {
+        for &(eff_id, eff) in &relevant_effects {
             let _span = tracing::debug_span!("Establisher");
             let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -286,6 +302,15 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
+
+                if ctx.causal_links.store.get(cl_dest_id).is_none() {
+                    ctx.causal_links.store.insert(cl_dest_id, BTreeMap::new());
+                }
+                ctx.causal_links
+                    .store
+                    .get_mut(cl_dest_id)
+                    .unwrap()
+                    .insert(eff_id, establishes);
             }
         }
 
