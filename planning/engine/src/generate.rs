@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
 use aries::{core::state::Evaluable, prelude::*};
 use aries_plan_engine::{
@@ -28,9 +28,13 @@ pub struct Options {
     #[arg(short, long, default_value("original"))]
     pub objective: Objective,
 
-    /// If set, the planner will try tro find the optimal solution
+    /// If set, the planner will try to find the optimal solution
     #[arg(long)]
     pub optimize: bool,
+
+    /// If provided, the final plan will be written to this file.
+    #[arg(short = 'w', long = "write-plan")]
+    plan_file: Option<PathBuf>,
 }
 
 pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()> {
@@ -60,6 +64,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
     if let Some(solution) = solver.find_optimal(solver_objective, &print, []) {
         println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
         print(&solution);
+        encoding.plan(&solution).write_to_file(options.plan_file.as_ref())?;
     } else {
         println!("No solution !!!!");
     }

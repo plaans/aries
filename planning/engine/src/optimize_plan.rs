@@ -18,7 +18,6 @@ use derive_more::derive::Display;
 use itertools::Itertools;
 
 use planx::{ActionRef, Goal, Model, Param, Res, SimpleGoal, Sym, errors::*};
-use std::io::Write;
 use std::path::Path;
 use timelines::{
     ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
@@ -94,16 +93,8 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
     if let Some(solution) = last_solution {
         println!("> Found optimal solution\n");
         print_plan(&solution);
-        let plan_str = encoding.plan(&solution);
-
-        if let Some(path) = output_plan {
-            let mut file = std::fs::File::create(path)
-                .map_err(Message::from)
-                .title(format!("Cannot create output file {}", path.display()))?;
-            writeln!(file, "{plan_str}")
-                .map_err(Message::from)
-                .title(format!("Cannot write output file {}", path.display()))?;
-        }
+        let plan = encoding.plan(&solution);
+        plan.write_to_file(output_plan)?;
     }
 
     Ok(())
