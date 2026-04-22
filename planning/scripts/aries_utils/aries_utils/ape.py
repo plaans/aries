@@ -151,7 +151,7 @@ class ApeRunner:
 
             return ape_result
 
-        except subprocess.TimeoutExpired as e:
+        except subprocess.TimeoutExpired as _:
             print(f"\n{'=' * 60}")
             print(f"APE COMMAND TIMEOUT after {timeout}s")
             print(f"{'=' * 60}")

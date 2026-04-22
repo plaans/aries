@@ -44,7 +44,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install GNU parallel
         run: sudo apt-get update && sudo apt-get install parallel
-      - name: Install uv and set the Python version
+      - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: Get problems from LFS
         run: git lfs pull
@@ -52,8 +52,6 @@ jobs:
         run: uv run --no-project ./ci/sat.py debug
       - name: Scheduler testing
         run: uv run --no-project ./ci/scheduling.py
-      - name: APE validator and plan optimizer
-        run: uv run ./ci/ape-val.py
       - name: GG solving
         run: uv run --no-project ./ci/gg.py
       - name: PDDL Solving (PDDL & HDDL)
@@ -178,6 +176,12 @@ jobs:
         run: ./planning/ext/init.sh
       - name: PDDL Parsing all IPC problems
         run: just ci-pddl-parse-all
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: APE validator and plan optimizer
+        run: just ci-ape-val-opt
+      - name: APE solver
+        run: just ci-ape-solve 15 # increase the timeout to avoid flaky tests
 
   tests:
     # Meta-job that only requires all test-jobs to pass

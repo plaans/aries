@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+VAL_PATH = "planning/ext/val-pddl"
+
 
 @dataclass
 class ValidationResult:
@@ -29,7 +31,7 @@ def extract_plan_quality(val_output: str) -> Optional[str]:
 
 
 def validate_plan(
-    domain_file: Path, problem_file: Path, plan_file: Path, val_path: str = "val"
+    domain_file: Path, problem_file: Path, plan_file: Path, val_path: str = VAL_PATH
 ) -> ValidationResult:
     """
     Validate a PDDL plan using VAL.

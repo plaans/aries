@@ -43,17 +43,18 @@ def main():
                 print("VALIDATION FAILED: VAL reports plan is invalid")
                 print(f"{'=' * 60}")
                 print(f"\nCommand: {pddl_val} {domain_file} {problem_file} {plan_file}")
-                print(f"\nOutput:")
+                print("\nOutput:")
                 print(result.stdout)
                 if result.stderr:
-                    print(f"\nStderr:")
+                    print("\nStderr:")
                     print(result.stderr)
                 print(f"\nReturn code: {result.returncode}")
-                print(f"\nTo reproduce:")
+                print("\nTo reproduce:")
                 print(f"  {pddl_val} {domain_file} {problem_file} {plan_file}")
                 sys.exit(1)
 
             plan_quality = result.plan_quality
+            assert plan_quality is not None
             print(f"VAL plan quality: {plan_quality}")
 
             # Validate with APE (error reporting handled by ApeRunner)
