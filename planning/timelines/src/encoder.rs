@@ -21,8 +21,6 @@ pub struct SchedEncoder {
     /// Conditions (specific interpretation of `HasValueAt`) with their candidate supporter effects
     /// and corresponding activation / presence literals (for the causal link / support relation).
     pub(crate) causal_links: CausalLinks,
-
-    pub(crate) ext: Option<ext::SchedEncoderExt>,
 }
 impl SchedEncoder {
     pub fn new(sched: Arc<Sched>, store: crate::Model) -> Self {
@@ -33,7 +31,6 @@ impl SchedEncoder {
                 destinations: vec![],
                 store: DirectIdMap::default(),
             },
-            ext: None,
         }
     }
 }
