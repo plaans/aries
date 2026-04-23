@@ -6,25 +6,96 @@ use std::collections::BTreeSet;
 
 use crate::{IntTerm, encoder::SchedEncoder};
 
-use aries::{
-    core::views::Term,
-    prelude::{DomainsExt, IntCst},
-};
+use aries::core::views::{Dom, Term};
+use aries::model::lang::ModelWrapper;
+use aries::prelude::*;
 
 pub(crate) use ground::*;
 pub(crate) use transitions::*;
 
 pub struct SchedEncoderExt {
+    pub(crate) main: std::sync::Arc<SchedEncoder>,
     pub(crate) transitions: Transitions,
     pub(crate) empty_source_terms: Vec<IntTerm>,
+    pub(crate) lprelax: Option<aries_lprelax::LpRelax>,
 }
+
+impl Dom for SchedEncoderExt {
+    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.main.upper_bound(svar)
+    }
+
+    fn presence(&self, var: VarRef) -> Lit {
+        self.main.presence(var)
+    }
+}
+impl ModelWrapper for SchedEncoderExt {
+    type Lbl = String;
+
+    fn get_model(&self) -> &crate::Model {
+        self.main.get_model()
+    }
+
+    fn get_model_mut(&mut self) -> &mut crate::Model {
+        std::sync::Arc::get_mut(&mut self.main).unwrap().get_model_mut()
+    }
+}
+
 impl SchedEncoderExt {
-    pub fn new(sched_encoder: &SchedEncoder) -> Self {
-        let empty_source_terms = find_empty_source_terms(sched_encoder);
+    pub fn new(sched_encoder: std::sync::Arc<SchedEncoder>) -> Self {
+        let empty_source_terms = find_empty_source_terms(&sched_encoder);
         Self {
-            transitions: Transitions::from(sched_encoder, &empty_source_terms),
+            main: sched_encoder.clone(),
+            transitions: Transitions::from(&sched_encoder, &empty_source_terms),
             empty_source_terms,
+            lprelax: None,
         }
+    }
+
+    pub fn iter_transition_groundings(
+        &self,
+        transition_id: TransitionId,
+    ) -> Option<impl StreamingIterator<Item = TransitionGrounding>> {
+        ground::TransitionGroundingsIter::new(transition_id, self)
+    }
+
+    pub fn iter_source_groundings(&self, source_id: SourceId) -> impl StreamingIterator<Item = SourceGrounding> {
+        ground::SourceGroundingsIter::new(source_id, self).filter(|src_gr| !src_gr.absurd(self))
+    }
+
+    pub fn iter_source_groundings_containing_transition_grounding(
+        &self,
+        transition_grounding: &TransitionGrounding,
+    ) -> Option<impl StreamingIterator<Item = SourceGrounding>> {
+        let source_id = self
+            .transitions
+            .get(transition_grounding.transition_id)?
+            .get_source_id(&self.main);
+        Some(
+            self.iter_source_groundings(source_id)
+                .filter(move |src_gr| src_gr.contains(transition_grounding, self).unwrap()),
+        )
+    }
+
+    pub fn get_source_terms(&self, source_id: SourceId) -> &[IntTerm] {
+        if let Some(task_id) = source_id {
+            &self.main.sched.tasks[task_id].args
+        } else {
+            &self.empty_source_terms
+        }
+    }
+    pub fn get_terms_values_from_idvec<'a>(
+        &self,
+        terms_idvec: impl Iterator<Item = (&'a IntTerm, usize)>,
+    ) -> Vec<IntCst> {
+        terms_idvec
+            .map(|(term, id)| self.get_term_value_from_id(term, id).unwrap())
+            .collect()
+    }
+    pub fn get_term_value_from_id(&self, term: &IntTerm, id: usize) -> Option<IntCst> {
+        let (lb, ub) = self.main.bounds(term.variable());
+        (id < usize::try_from(ub - lb + 1).unwrap())
+            .then(|| term.cst() + lb + term.factor() * IntCst::try_from(id).unwrap())
     }
 }
 
@@ -48,21 +119,4 @@ fn find_empty_source_terms(ctx: &SchedEncoder) -> Vec<IntTerm> {
     )
     .into_iter()
     .collect()
-}
-
-pub(crate) fn terms_values_from_ids<'a>(
-    terms: impl Iterator<Item = &'a IntTerm>,
-    ids: &[usize],
-    ctx: &'a SchedEncoder,
-) -> Vec<IntCst> {
-    terms
-        .enumerate()
-        .map(|(i, term)| term_value_from_id(term, ids[i], ctx).unwrap())
-        .collect()
-}
-
-pub(crate) fn term_value_from_id(term: &IntTerm, id: usize, ctx: &SchedEncoder) -> Option<IntCst> {
-    let (lb, ub) = ctx.bounds(term.variable());
-    (id < usize::try_from(ub - lb + 1).unwrap())
-        .then(|| term.cst() + lb + term.factor() * IntCst::try_from(id).unwrap())
 }
