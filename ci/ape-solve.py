@@ -122,7 +122,12 @@ def main():
                     ape.find_domain(problem_file), problem_file, out
                 )
                 if not validation.is_valid:
-                    print("APE returned an invalid plan")
+                    print("========== Planner output ==========")
+                    print(result.stdout)
+                    print("========== Validator output ==========")
+                    print(validation.stdout)
+                    print("\n!!!! APE returned an invalid plan !!!!\n")
+                    print(f"Command: {" ".join(result.command)}")
                     exit(1)
                 solved += 1
 
@@ -135,8 +140,7 @@ def main():
                 )
             else:
                 print("  ⚠️  No plan found (may be unsolvable or timeout)")
-                if args.verbose:
-                    print(result.stdout)
+                print(result.stdout)
 
         except Exception as e:
             print(f"  ✗ Failed: {e}")
@@ -167,8 +171,12 @@ def main():
             print(f"    Error: {error}")
         return 1
 
-    print("All problems solved successfully! ✓")
-    return 0
+    if solved == len(problems_data):
+        print("All problems solved successfully! ✓")
+        return 0
+    else:
+        print("Some unsolved problems")
+        return 1
 
 
 def load_problems_from_toml(toml_path: Path) -> list:

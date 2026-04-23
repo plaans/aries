@@ -6,7 +6,7 @@ use timelines::IntCst;
 
 use crate::plans::Operation;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LiftedPlan {
     /// A set of operations: actions instances with arguments, start times and durations
     pub operations: Vec<Operation<ObjectOrVariable>>,

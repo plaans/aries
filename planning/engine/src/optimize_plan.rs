@@ -9,7 +9,7 @@ use aries_plan_engine::{
     encode::{
         constraints::{ConditionConstraint, ReificationConstraint},
         encoding::{ActionInstance, Encoding, ObjectVar},
-        tags::{ActionCondition, Tag, format_culprit_set},
+        tags::{ActionCondition, OperatorId, Tag, format_culprit_set},
         *,
     },
     plans::lifted_plan::{self, LiftedPlan},
@@ -17,11 +17,9 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 
-use planx::{ActionRef, Goal, Model, Param, Res, SimpleGoal, Sym, errors::*};
+use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, Sym, Type, errors::*};
 use std::path::Path;
-use timelines::{
-    ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, boxes::Segment, explain::ExplainableSolver,
-};
+use timelines::{ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
 
 pub type RelaxableConstraint = Tag;
 
@@ -53,7 +51,7 @@ pub enum Objective {
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
-    let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, options)?;
+    let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
     let _encoding_time = start.elapsed().as_millis();
 
     // Pinning literals from previous phases; grows as objectives are solved
@@ -133,9 +131,29 @@ fn build_objective(
     })
 }
 
+/// Creates a variable for a parameter with a given type and scope.
+fn create_param_variable(var_name: &Sym, var_type: &Type, scope: Lit, sched: &mut Sched) -> Res<SymAtom> {
+    let Type::User(var_type) = var_type else {
+        return var_name.todo("Unsupported parameter type").failed();
+    };
+    let Some(var_type) = var_type.to_single_type() else {
+        return var_name.todo("Unsupported parameter type (union type)").failed();
+    };
+    let type_bounds = sched
+        .objects
+        .domain_of_type(var_type.name.as_str())
+        .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
+    let var: SymAtom = sched
+        .model
+        .new_optional_ivar(type_bounds.first, type_bounds.last, scope, var_name)
+        .into();
+    Ok::<_, Message>(var)
+}
+
 pub fn encode_plan_optimization_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
+    free_actions: BTreeMap<ActionRef, u32>,
     options: &Options,
 ) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
     let mut encoding = Encoding::new();
@@ -153,25 +171,14 @@ pub fn encode_plan_optimization_problem(
         .variables
         .iter()
         .map(|(var_name, var_type)| {
-            let type_bounds = sched
-                .objects
-                .domain_of_type(var_type.name.as_str())
-                .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
-            let var: SymAtom = sched
-                .model
-                .new_ivar(type_bounds.first, type_bounds.last, var_name)
-                .into();
-            Ok::<_, Message>((var_name, var))
+            create_param_variable(var_name, &var_type.clone().into(), Lit::TRUE, &mut sched).map(|var| (var_name, var))
         })
         .try_collect()?;
 
     // associates each operation of the plan to its scope (binding of parameters, start/end, ...)
     let mut operations_scopes = Vec::with_capacity(lifted_plan.operations.len());
 
-    // associates each action in the model with an overapproximation of the values taken by its parameters.
-    let mut actions_instantiations: BTreeMap<(ActionRef, Param), Segment> = Default::default();
-
-    // initial processing of all operations
+    // initial processing of all operations in the plan
     // we create its scope (binding of timepoints, params, ...) and process its conditions
     // Effects are deferred to a later point
     for (op_id, op) in lifted_plan.operations.iter().enumerate() {
@@ -193,13 +200,6 @@ pub fn encode_plan_optimization_problem(
                 // variable parameter, retrieve the variable we created for it
                 lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
             };
-
-            // incorporate the potential values taken by this operation param into the one of the action
-            let seg = Segment::from(sched.model.bounds(arg));
-            actions_instantiations
-                .entry((a.name.clone(), param.clone()))
-                .or_insert(seg)
-                .union(&seg);
 
             // add argument to the bindings
             args.insert(&param.name, arg);
@@ -246,10 +246,81 @@ pub fn encode_plan_optimization_problem(
                 .collect(),
         });
 
+        // store the scopes, we will need them when processing the effects
+        operations_scopes.push((a, bindings, OperatorId::FromPlan(op_id)));
+    }
+
+    // create all free actions. These will be pushed to `operation_scopes` and after this step will be indistinguishable from actions in the plan.
+    for (action_name, n) in free_actions {
+        for instance in 0..n {
+            let a = model
+                .actions
+                .get_action(&action_name)
+                .ok_or_else(|| action_name.invalid("cannot find corresponding action"))?;
+
+            // free actions are optional
+            let presence = sched.model.new_literal(Lit::TRUE);
+
+            // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
+
+            // Create all arguments, that shared the same scope `presence` as the action
+            let mut args = im::OrdMap::new();
+            for param in a.parameters.iter() {
+                let arg = create_param_variable(&param.name, param.tpe(), presence, &mut sched)?;
+                args.insert(&param.name, arg);
+            }
+            let start = sched.new_opt_timepoint(presence);
+            if a.duration != Duration::Instantaneous {
+                return a.name.todo("Unsupported non-instantaneous action").failed();
+            }
+            let end = start;
+
+            // record a task in `Sched` which
+            //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
+            //  - make the scheduler aware of the tasks when computing the makespan.
+            let task_id = sched.add_task(Task {
+                name: a.name.to_string(),
+                start,
+                end,
+                presence,
+            });
+            let bindings = Scope {
+                start,
+                end,
+                presence,
+                args,
+                source: Some(task_id),
+            };
+            // add the action to the encoding so we can retrieve it later
+            encoding.add_action(ActionInstance {
+                action_ref: a.name.clone(),
+                prez: bindings.presence,
+                start: bindings.start,
+                end: bindings.end,
+                arguments: a
+                    .parameters
+                    .iter()
+                    .map(|param| ObjectVar::new(bindings.args[&param.name], &object_decoder))
+                    .collect(),
+            });
+
+            // store the scopes, we will need them when processing the effects
+            operations_scopes.push((
+                a,
+                bindings,
+                OperatorId::FreeInsertion {
+                    action_name: a.name.clone(),
+                    instance,
+                },
+            ));
+        }
+    }
+
+    for (a, bindings, op_id) in &operations_scopes {
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
             if let Some(tp) = c.interval.as_timestamp() {
-                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, &bindings, &mut encoding)?;
+                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, bindings, &mut encoding)?;
                 // update the required values if requested by caller
                 constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
@@ -257,7 +328,7 @@ pub fn encode_plan_optimization_problem(
                 encoding.constraints_tags.insert(
                     cid,
                     Tag::Support {
-                        operator_id: op_id,
+                        operator_id: op_id.clone(),
                         cond: ActionCondition {
                             action: a.name.clone(),
                             condition_id: cond_id,
@@ -266,9 +337,6 @@ pub fn encode_plan_optimization_problem(
                 );
             }
         }
-
-        // store the scopes, we will need them when processing the effects
-        operations_scopes.push((a, bindings));
     }
 
     // for each goal, add a constraint stating it must hold (the constraint is tagged but not relaxed for domain repair)
@@ -308,9 +376,7 @@ pub fn encode_plan_optimization_problem(
         sched.add_effect(eff);
     }
 
-    for (op_id, _op) in lifted_plan.operations.iter().enumerate() {
-        let (a, bindings) = &operations_scopes[op_id];
-
+    for (a, bindings, _op_id) in &operations_scopes {
         // vec to accumulate all effects of the action.
         // these will then be post-processed to match the set-based semantics of PDDL (add-after-delete, ...)
         let mut action_effects = Vec::with_capacity(16);
