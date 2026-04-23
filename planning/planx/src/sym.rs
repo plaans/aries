@@ -6,7 +6,15 @@ use std::{
     fmt::{Debug, Display},
 };
 
-/// Symbol in the model, possibly annotate with its origin (file/line)
+/// Symbol in the model, possibly annotated with its origin (file/line).
+///
+/// A symbol is *case-insensitive* all representation will use a canonical (lower-case) form.
+/// In particular all comparisons are made with respect to the case
+/// The only way to get the original (case-sensitive) form is with the [`Sym::non_canonical_str`] method.
+/// This default make sure that we do not mistakenly hand out a non-normalized view of the symbol.
+///
+/// Important: for convenience, the type implements equality comparison with `str` but comparing against a non-normalized `str` is
+/// a logic error and will panic when debug assertions are enabled.
 #[derive(Clone)]
 pub struct Sym {
     /// Canonical view of the symbol (e.g. lower cased for PDDL)
@@ -26,8 +34,19 @@ impl Sym {
         }
     }
 
-    pub fn canonical_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
+        self.canonical_str()
+    }
+    fn canonical_str(&self) -> &str {
         self.symbol.as_str()
+    }
+
+    pub fn non_canonical_str(&self) -> &str {
+        if let Some(span) = self.span.as_ref() {
+            span.str()
+        } else {
+            self.symbol.as_str()
+        }
     }
 }
 
@@ -63,6 +82,17 @@ impl From<&Sym> for Sym {
     }
 }
 
+impl From<Sym> for String {
+    fn from(value: Sym) -> Self {
+        value.canonical_str().to_string()
+    }
+}
+impl From<&Sym> for String {
+    fn from(value: &Sym) -> Self {
+        value.canonical_str().to_string()
+    }
+}
+
 impl Spanned for Sym {
     fn span(&self) -> Option<&Span> {
         self.span.as_ref()
@@ -76,29 +106,30 @@ impl Debug for Sym {
 }
 impl Display for Sym {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let view = if let Some(span) = self.span.as_ref() {
-            span.str()
-        } else {
-            self.symbol.as_str()
-        };
-        write!(f, "{}", view)
+        write!(f, "{}", self.canonical_str())
     }
 }
 
 impl PartialEq for Sym {
     fn eq(&self, other: &Self) -> bool {
-        self.symbol == other.symbol
+        self.canonical_str() == other.canonical_str()
     }
 }
 
 impl PartialEq<str> for Sym {
     fn eq(&self, other: &str) -> bool {
+        debug_assert_eq!(other, &other.to_lowercase(), "Non normalized string for comparison");
         self.canonical_str() == other
     }
 }
 impl PartialEq<Sym> for str {
     fn eq(&self, other: &Sym) -> bool {
-        self == other.canonical_str()
+        other == self
+    }
+}
+impl PartialEq<&str> for Sym {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
     }
 }
 

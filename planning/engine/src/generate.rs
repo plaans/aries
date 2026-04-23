@@ -109,7 +109,7 @@ fn new_empty_lifted_plan(
 
             for param in a.parameters.iter() {
                 let name = Sym::with_source(
-                    format!("{}.{}.{}", a.name.canonical_str(), aid, param.name().canonical_str()),
+                    format!("{}.{}.{}", a.name, aid, param.name()),
                     param.name().span_or_default(),
                 );
                 let tpe = if let planx::Type::User(tpe) = param.tpe() {

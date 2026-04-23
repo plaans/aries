@@ -293,7 +293,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let resolved_output: Option<PathBuf> = match &command.plan_file {
         None => None,
         Some(path) if path.is_dir() => {
-            let filename = format!("{}.plan", pb.problem_name.canonical_str());
+            let filename = format!("{}.plan", pb.problem_name);
             Some(path.join(filename))
         }
         Some(path) => Some(path.clone()),

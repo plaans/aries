@@ -395,7 +395,7 @@ pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<Ty
     let mut untyped: Vec<Sym> = Vec::with_capacity(args.len());
     while !input.is_empty() {
         let next = input.pop_atom()?;
-        if next.canonical_str() == "-" {
+        if next == "-" {
             if untyped.is_empty() {
                 // ingore a dash `-` if there is no variables to type.
                 // This is a work-around for non-standard PDDL syntax like belox (absent from IPC but present in FD benchmarks)
@@ -475,13 +475,13 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
             .as_list_iter()
             .ok_or_else(|| current.invalid("expected a property list"))?;
 
-        match property.pop_atom()?.canonical_str() {
+        match property.pop_atom()?.as_str() {
             ":requirements" => {
                 for feature in property {
                     let feature = feature
                         .as_atom()
                         .ok_or_else(|| feature.invalid("Expected feature name but got list"))?;
-                    let f = PddlFeature::from_str(feature.canonical_str()).map_err(|e| feature.invalid(e))?;
+                    let f = PddlFeature::from_str(feature.as_str()).map_err(|e| feature.invalid(e))?;
 
                     res.features.push(f);
                 }
@@ -490,7 +490,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                 for pred in property {
                     let mut pred = pred.as_list_iter().ok_or_else(|| pred.invalid("Expected a list"))?;
                     let name = pred.pop_atom()?.clone();
-                    if name.canonical_str() == "=" && res.features.contains(&PddlFeature::Equality) {
+                    if name == "=" && res.features.contains(&PddlFeature::Equality) {
                         println!(
                             "{}",
                             name.invalid("Ignoring predicate declaration that is redundant with `:equality` feature.")
@@ -546,7 +546,7 @@ fn read_domain(dom: SExpr) -> std::result::Result<Domain, Message> {
                 while !property.is_empty() {
                     let key_expr = property.pop_atom()?;
                     let value = property.pop().tag(key_expr, "No value associated to arg", None)?;
-                    match key_expr.canonical_str() {
+                    match key_expr.as_str() {
                         ":parameters" => {
                             if !args.is_empty() {
                                 return Err(key_expr.invalid("Duplicated ':parameters' tag is not allowed"));
@@ -676,7 +676,7 @@ fn parse_task_network(mut key_values: ListIter) -> R<TaskNetwork> {
     let mut tn = TaskNetwork::default();
     while !key_values.is_empty() {
         let key = key_values.pop_atom()?;
-        match key.canonical_str() {
+        match key.as_str() {
             ":ordered-tasks" | ":ordered-subtasks" => {
                 if !tn.ordered_tasks.is_empty() {
                     return Err(key.invalid("More than one set of ordered tasks."));
@@ -872,7 +872,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
         let mut property = current
             .as_list_iter()
             .ok_or_else(|| current.invalid("Expected a list"))?;
-        match property.pop_atom()?.canonical_str() {
+        match property.pop_atom()?.as_str() {
             ":requirements" => {} // HACK: ignore requirements in problem (umtranslog, IPC 2002)
             ":objects" => {
                 let objects = consume_typed_symbols(&mut property)?;
@@ -898,7 +898,7 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
             }
             ":metric" => {
                 let qualifier = property.pop_atom()?;
-                match qualifier.canonical_str() {
+                match qualifier.as_str() {
                     "minimize" => res.metric = Some(Metric::Minimize(property.pop().cloned()?)),
                     "maximize" => res.metric = Some(Metric::Maximize(property.pop().cloned()?)),
                     _ => return Err(qualifier.invalid("expected `maximize` or `minimize")),

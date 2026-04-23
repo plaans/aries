@@ -164,11 +164,11 @@ pub fn encode_plan_optimization_problem(
         .map(|(var_name, var_type)| {
             let type_bounds = sched
                 .objects
-                .domain_of_type(var_type.name.canonical_str())
+                .domain_of_type(var_type.name.as_str())
                 .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
             let var: SymAtom = sched
                 .model
-                .new_ivar(type_bounds.first, type_bounds.last, var_name.canonical_str())
+                .new_ivar(type_bounds.first, type_bounds.last, var_name)
                 .into();
             Ok::<_, Message>((var_name, var))
         })
@@ -178,11 +178,11 @@ pub fn encode_plan_optimization_problem(
     let mut operations_scopes = Vec::with_capacity(lifted_plan.operations.len());
 
     // associates each action in the model with an overapproximation of the values taken by its parameters.
-    let mut actions_instanciations: BTreeMap<(ActionRef, Param), Segment> = Default::default();
+    let mut actions_instantiations: BTreeMap<(ActionRef, Param), Segment> = Default::default();
 
     // initial processing of all operations
     // we create its scope (binding of timepoints, params, ...) and process its conditions
-    // Effects are defered to a later point
+    // Effects are deferred to a later point
     for (op_id, op) in lifted_plan.operations.iter().enumerate() {
         // corresponding action in the model
         let a = model
@@ -197,15 +197,15 @@ pub fn encode_plan_optimization_problem(
                 // ground parameter, get the corresponding object constant
                 lifted_plan::ObjectOrVariable::Ground(object) => sched
                     .objects
-                    .object_atom(object.name().canonical_str())
+                    .object_atom(object.name().as_str())
                     .ok_or_else(|| object.name().invalid("unknown object"))?,
                 // variable parameter, retrieve the variable we created for it
                 lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
             };
 
-            // incorpare the potential values taken by this operation param into the one of the action
+            // incorporate the potential values taken by this operation param into the one of the action
             let seg = Segment::from(sched.model.bounds(arg));
-            actions_instanciations
+            actions_instantiations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
                 .union(&seg);
@@ -295,7 +295,7 @@ pub fn encode_plan_optimization_problem(
         let pref_satisfied = parse_goal(&pref.goal, model, &mut sched, &global_scope, &mut encoding)?;
 
         // reify the expression into a literal that is true iff the preference is satisfied
-        let reification = sched.model.new_bvar(pref.name.canonical_str()).true_lit();
+        let reification = sched.model.new_bvar(&pref.name).true_lit();
         let constraint = ReificationConstraint {
             reification,
             constraint: pref_satisfied,
@@ -307,7 +307,7 @@ pub fn encode_plan_optimization_problem(
         // record the association of the preference with the literal
         encoding
             .preferences
-            .entry(pref.name.canonical_str().to_string())
+            .entry(pref.name.to_string())
             .or_default()
             .push(reification);
     }
@@ -331,7 +331,7 @@ pub fn encode_plan_optimization_problem(
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
             let eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
-            // store the effect either in hte global pool or in the predicate specific one
+            // store the effect either in the global pool or in the predicate specific one
             let is_predicate = model
                 .env
                 .fluents

@@ -151,11 +151,11 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         .map(|(var_name, var_type)| {
             let type_bounds = sched
                 .objects
-                .domain_of_type(var_type.name.canonical_str())
+                .domain_of_type(var_type.name.as_str())
                 .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
             let var: SymAtom = sched
                 .model
-                .new_ivar(type_bounds.first, type_bounds.last, var_name.canonical_str())
+                .new_ivar(type_bounds.first, type_bounds.last, var_name)
                 .into();
             Ok::<_, Message>((var_name, var))
         })
@@ -164,8 +164,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
     // associates each operation of the plan to its scope (binding of parameters, start/end, ...)
     let mut operations_scopes = Vec::with_capacity(plan.operations.len());
 
-    // associates each action in the model with an overapproximation of the values taken by its parameters.
-    let mut actions_instanciations: BTreeMap<(ActionRef, Param), Segment> = Default::default();
+    // associates each action in the model with an over-approximation of the values taken by its parameters.
+    let mut actions_instantiations: BTreeMap<(ActionRef, Param), Segment> = Default::default();
 
     // initial processing of all operations
     // we create its scope (binding of timepoints, params, ...) and process its conditions
@@ -184,7 +184,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 // ground parameter, get the corresponding object constant
                 lifted_plan::ObjectOrVariable::Ground(object) => sched
                     .objects
-                    .object_atom(object.name().canonical_str())
+                    .object_atom(object.name().as_str())
                     .ok_or_else(|| object.name().invalid("unknown object"))?,
                 // variable parameter, retrieve the variable we created for it
                 lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
@@ -192,7 +192,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
             // incorpare the potential values taken by this operation param into the one of the action
             let seg = Segment::from(sched.model.bounds(arg));
-            actions_instanciations
+            actions_instantiations
                 .entry((a.name.clone(), param.clone()))
                 .or_insert(seg)
                 .union(&seg);
@@ -267,7 +267,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
     // make it immutable, we will start exploiting and want to guard against any addition
     let param_bounds = |action_ref: &Sym, param: &Param| {
-        actions_instanciations
+        actions_instantiations
             .get(&(action_ref.clone(), param.clone()))
             .copied()
             .unwrap_or(Segment::empty())

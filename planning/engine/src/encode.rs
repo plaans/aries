@@ -32,16 +32,12 @@ pub fn types(model: &Model) -> ObjectEncoding {
     let t = &model.env.types;
     let o = &model.env.objects;
     ObjectEncoding::build(
-        t.top_user_type().name.canonical_str().to_string(),
-        |c| {
-            t.subtypes(Sym::from(c.as_str()))
-                .map(|st| st.canonical_str().to_string())
-                .collect_vec()
-        },
+        t.top_user_type().name.to_string(),
+        |c| t.subtypes(Sym::from(c.as_str())).map(|st| st.to_string()).collect_vec(),
         |c| {
             o.of_type(c.as_str())
-                .map(|o| o.name().canonical_str().to_string())
-                .sorted() // sorting is unecessary but may be useful to group together similar objects in the absence of typing
+                .map(|o| o.name().to_string())
+                .sorted() // sorting is unnecessary but may be useful to group together similar objects in the absence of typing
                 .collect_vec()
         },
     )
@@ -423,13 +419,13 @@ pub fn reify_expression(
         planx::Expr::Object(object) => {
             let id = sched
                 .objects
-                .object_id(object.name().canonical_str())
+                .object_id(object.name().as_str())
                 .ok_or_else(|| e.invalid("Object has no associated value"))?;
             Ok(id.into())
         }
         planx::Expr::Param(param) => binding
             .args
-            .get(param.name().canonical_str())
+            .get(param.name())
             .copied()
             .map(|id| id.into())
             .ok_or_else(|| param.name().invalid("unknown parameter")),
@@ -493,7 +489,7 @@ pub fn reify_expression(
             Ok(expr)
         }
         planx::Expr::ViolationCount(x) => {
-            let sum = if let Some(values) = encoding.preferences.get(x.canonical_str()) {
+            let sum = if let Some(values) = encoding.preferences.get(x.as_str()) {
                 values
                     .iter()
                     .fold(LinSum::zero(), |acc, v| acc + bool2int(!v, &mut sched.model))
