@@ -66,6 +66,14 @@ ci-pddl-parse-all filter="d":
         target/ci/pddl-parser  $f > /dev/null
     done
 
+# Attempts to validate and optimize all the plan files it can find the planning/problems/upf. Fails if an inconsistency is detected
+ci-ape-val-opt:
+    uv run ci/ape-val.py
+
+# Checks that all problems marked are as solvable are indeed solved within their max-depth
+ci-ape-solve timeout="5":
+    uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
+
 bench-jsp name timeout="10":
     #!/usr/bin/env bash
     set -e  # stop on first error

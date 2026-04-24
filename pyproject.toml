@@ -1,0 +1,11 @@
+[project]
+name = "aries"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [ "aries_utils" ]
+
+[tool.uv.sources]
+aries_utils = { workspace = true }
+
+[tool.uv.workspace]
+members = ["planning/scripts/aries_utils"]

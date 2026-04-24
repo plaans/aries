@@ -19,7 +19,8 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<Val
         relaxation: vec![], // no relaxation
         objectives: vec![optimize_plan::Objective::Original],
     };
-    let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, &opt_options)?;
+    let (mut solver, encoding, _sched) =
+        encode_plan_optimization_problem(model, plan, Default::default(), &opt_options)?;
 
     if let Some(solution) = solver.check_satisfiability() {
         println!("> Plan is valid");
