@@ -234,7 +234,6 @@ pub fn encode_plan_optimization_problem(
             start,
             end,
             presence,
-            args: args.values().copied().collect_vec(),
         });
         let bindings = Scope {
             start,

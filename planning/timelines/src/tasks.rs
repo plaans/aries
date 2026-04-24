@@ -20,14 +20,12 @@ pub struct Task {
     pub start: Time,
     /// Time reference at which the task must end
     pub end: Time,
-    /// Arguments of the task
-    pub args: Vec<IntTerm>,
     /// Presence of the task, true iff it appears in the solution
     pub presence: Lit,
 }
 impl Debug for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{:?},{:?}] {:?}{:?}", self.start, self.end, self.name, self.args)?;
+        write!(f, "[{:?},{:?}] {:?}", self.start, self.end, self.name)?;
         Ok(())
     }
 }

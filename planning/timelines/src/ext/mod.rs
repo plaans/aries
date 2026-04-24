@@ -4,6 +4,7 @@ pub mod transitions;
 
 use std::collections::BTreeSet;
 
+use crate::TaskId;
 use crate::{IntTerm, encoder::SchedEncoder};
 
 use aries::core::views::{Dom, Term};
@@ -11,12 +12,17 @@ use aries::model::lang::ModelWrapper;
 use aries::prelude::*;
 
 pub(crate) use ground::*;
+use idmap::DirectIdMap;
 pub(crate) use transitions::*;
 
 pub struct SchedEncoderExt {
     pub(crate) main: std::sync::Arc<SchedEncoder>,
+    
     pub(crate) transitions: Transitions,
-    pub(crate) empty_source_terms: Vec<IntTerm>,
+
+    empty_source_terms: Vec<IntTerm>,
+    concrete_source_terms: DirectIdMap<TaskId, Vec<IntTerm>>,
+    
     pub(crate) lprelax: Option<aries_lprelax::LpRelax>,
 }
 
@@ -43,11 +49,13 @@ impl ModelWrapper for SchedEncoderExt {
 
 impl SchedEncoderExt {
     pub fn new(sched_encoder: std::sync::Arc<SchedEncoder>) -> Self {
-        let empty_source_terms = find_empty_source_terms(&sched_encoder);
+        let empty_source_terms = collect_empty_source_terms(&sched_encoder);
+        let concrete_source_terms = collect_concrete_source_terms(&sched_encoder);
         Self {
             main: sched_encoder.clone(),
-            transitions: Transitions::from(&sched_encoder, &empty_source_terms),
+            transitions: Transitions::from(&sched_encoder, &empty_source_terms, &concrete_source_terms),
             empty_source_terms,
+            concrete_source_terms,
             lprelax: None,
         }
     }
@@ -79,7 +87,7 @@ impl SchedEncoderExt {
 
     pub fn get_source_terms(&self, source_id: SourceId) -> &[IntTerm] {
         if let Some(task_id) = source_id {
-            &self.main.sched.tasks[task_id].args
+            &self.concrete_source_terms[task_id]
         } else {
             &self.empty_source_terms
         }
@@ -97,9 +105,7 @@ impl SchedEncoderExt {
         (id < usize::try_from(ub - lb + 1).unwrap())
             .then(|| term.cst() + lb + term.factor() * IntCst::try_from(id).unwrap())
     }
-}
-
-fn find_empty_source_terms(ctx: &SchedEncoder) -> Vec<IntTerm> {
+fn collect_empty_source_terms(ctx: &SchedEncoder) -> Vec<IntTerm> {
     BTreeSet::from_iter(
         std::iter::chain(
             ctx.sched
@@ -119,4 +125,28 @@ fn find_empty_source_terms(ctx: &SchedEncoder) -> Vec<IntTerm> {
     )
     .into_iter()
     .collect()
+}
+
+fn collect_concrete_source_terms(ctx: &SchedEncoder) -> DirectIdMap<TaskId, Vec<IntTerm>> {
+    let mut res = DirectIdMap::<TaskId, BTreeSet<IntTerm>>::new();
+
+    for (_, e) in ctx.sched.effects.iter().enumerate() {
+        if let Some(task_id) = e.source {
+            if !res.contains_key(task_id) {
+                res.insert(task_id, BTreeSet::new());
+            }
+            res.get_mut(task_id).unwrap().extend(&e.state_var.args);
+        }
+    }
+    for (_, c) in ctx.causal_links.destinations.iter().enumerate() {
+        if let Some(task_id) = c.source {
+            if !res.contains_key(task_id) {
+                res.insert(task_id, BTreeSet::new());
+            }
+            res.get_mut(task_id).unwrap().extend(&c.state_var.args);
+        }
+    }
+
+    let res = DirectIdMap::from_iter(res.into_iter().map(|(task_id, set)| (task_id, Vec::from_iter(set))));
+    res
 }

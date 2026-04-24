@@ -255,7 +255,7 @@ impl Transitions {
             .and_then(|v| v.get(term_index).copied()?)
     }
 
-    pub fn from(ctx: &SchedEncoder, empty_source_terms: &Vec<IntTerm>) -> Self {
+    pub fn from(ctx: &SchedEncoder, empty_source_terms: &Vec<IntTerm>, concrete_source_terms: &DirectIdMap<TaskId, Vec<IntTerm>>) -> Self {
         let mut store = vec![];
         let mut of_empty_source = vec![];
         let mut of_concrete_source = DirectIdMap::<TaskId, SmallVec<[TransitionId; 6]>>::default();
@@ -273,7 +273,7 @@ impl Transitions {
                 let src_terms = if src_id.is_none() {
                     empty_source_terms
                 } else {
-                    &ctx.sched.tasks[src_id.unwrap()].args
+                    concrete_source_terms.get(src_id.unwrap()).unwrap()
                 };
                 transition_terms_indices_in_source.push(
                     tr.get_terms(ctx)

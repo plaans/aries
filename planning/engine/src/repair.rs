@@ -211,7 +211,6 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             start,
             end,
             presence,
-            args: args.values().copied().collect_vec(),
         });
 
         let bindings = Scope {
