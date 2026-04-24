@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fmt::Debug, time::Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Debug,
+    time::Instant,
+};
 
 use aries::{
     core::{state::Evaluable, views::Boundable},
@@ -221,7 +225,7 @@ pub fn encode_plan_optimization_problem(
         //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
         //  - make the scheduler aware of the tasks when computing the makespan.
         let task_id = sched.add_task(Task {
-            name: format!("op{op_id}"),
+            name: op.action_ref.to_string(),
             start,
             end,
             presence,
@@ -424,6 +428,27 @@ pub fn encode_plan_optimization_problem(
 
     let tags = encoding.constraints_tags.clone();
     let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
+
+    // gather all free actions, grouped by action template
+    let equiv = operations_scopes
+        .iter()
+        .filter_map(|(_, scope, id)| match id {
+            OperatorId::FromPlan(_) => None,
+            OperatorId::FreeInsertion { action_name, .. } => {
+                scope.source.map(move |task_id| (action_name.clone(), task_id))
+            }
+        })
+        .into_group_map();
+    // For each action template, take the IDs of its free instances. Those are interchangeable (nothing differentiates them beside variable names)
+    let equiv = equiv
+        .values()
+        .map(|class| BTreeSet::from_iter(class.iter().copied()))
+        .collect_vec();
+    // Add symmetry breaking constraint over the equivalent actions
+    sched.add_constraint(timelines::constraints::symmetry::SymmetryBreaking::new(
+        timelines::constraints::symmetry::SymmetryBreakingKind::default(),
+        equiv,
+    ));
 
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }

@@ -1,3 +1,5 @@
+pub mod symmetry;
+
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
@@ -16,7 +18,7 @@ use crate::{boxes::Segment, effects::EffectOp, *};
 /// Constraint that enforces the [`Sched::makespan`] variable to be equal to the
 /// maximum end time of tasks, or zero in the absence of tasks.
 ///
-/// It is encorced by default in [`Sched`].
+/// It is enforced by default in [`Sched`].
 #[derive(Debug)]
 pub(crate) struct MakespanIsMaxTaskEnd;
 
@@ -77,7 +79,7 @@ impl BoolExpr<SchedEncoder> for Mutex {
 /// Ensures all effects are coherent (enforced by default in [`Sched`]).
 ///
 /// This requires to conditions
-///  - that no two assignments have overlapping exclusitivity periods
+///  - that no two assignments have overlapping exclusivity periods
 ///  - that every step is within an assignment validity period
 #[derive(Debug)]
 pub(crate) struct EffectCoherence;
@@ -223,8 +225,10 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         let relevant_effects = sched
             .effects
             .potentially_supporting_effects(&self.state_var.fluent, value_box.as_ref())
-            .map(|eff_id| &sched.effects[eff_id])
+            .map(|eff_id| (eff_id, &sched.effects[eff_id]))
             .collect_vec();
+
+        let mut supports = Vec::new();
 
         // gather all step effects that may contribute and
         // create a literal that it is true iff it does contribute
@@ -232,7 +236,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         //   - condition within activity period, and
         //   - same state variable
         let mut step_contributors = Vec::new();
-        for &eff in &relevant_effects {
+        for &(eff_id, eff) in &relevant_effects {
             let _span = tracing::debug_span!("Step");
             let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -257,12 +261,13 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                     contributes,
                     contribution: step,
                 });
+                supports.push((eff_id, contributes));
             }
         }
 
         // compute assign establisehrs. Those are exclusive (by effect coherence) so half reification is sufficient
         let mut establishers = Element::new();
-        for &eff in &relevant_effects {
+        for &(eff_id, eff) in &relevant_effects {
             let _span = tracing::debug_span!("Establisher");
             let _span = _span.enter();
             debug_assert_eq!(self.state_var.fluent, eff.state_var.fluent);
@@ -286,8 +291,11 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
+                supports.push((eff_id, establishes));
             }
         }
+
+        ctx.causal_links.add_new_condition_participants(self.source, supports);
 
         {
             let _span = tracing::debug_span!("main");
