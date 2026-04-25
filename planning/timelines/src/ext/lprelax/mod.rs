@@ -48,9 +48,8 @@ type CausalLinksOutflowPure = BTreeMap<TransitionId, BTreeSet<TransitionId>>;
 type CausalLinksOutflowPureGround =
     BTreeMap<(TransitionId, TransitionGroundingIdFlat), BTreeMap<TransitionId, BTreeSet<TransitionGroundingIdFlat>>>;
 type IntTermsGroundDecompLeq1 = BTreeMap<IntTerm, BTreeSet<TermGroundingId>>;
-type IntTermsGroundDecompSources = BTreeMap<(IntTerm, SourceId, SourceGroundingIdFlat), BTreeSet<TermGroundingId>>;
-type IntTermsGroundDecompTransitions =
-    BTreeMap<(IntTerm, TransitionId, TransitionGroundingIdFlat), BTreeSet<TermGroundingId>>;
+type IntTermsGroundDecompSources = BTreeMap<(IntTerm, TermGroundingId), BTreeMap<SourceId, BTreeSet<SourceGroundingIdFlat>>>;
+type IntTermsGroundDecompTransitions = BTreeMap<(IntTerm, TermGroundingId), BTreeMap<TransitionId, BTreeSet<TransitionGroundingIdFlat>>>;
 
 #[derive(Debug)]
 pub(crate) struct LpRelaxEncoding;
@@ -210,9 +209,11 @@ impl LpRelaxEncodingData {
 
                     for term_gr in src_gr.to_term_groundings(ctx) {
                         self.terms_ground_decomp_sources
-                            .entry((term_gr.term, src_gr.source_id, src_gr_idflat))
+                            .entry((term_gr.term, term_gr.assignment_id))
                             .or_default()
-                            .insert(term_gr.assignment_id);
+                            .entry(src_id)
+                            .or_default()
+                            .insert(src_gr_idflat);
 
                         self.terms_ground_decomp_leq1
                             .entry(term_gr.term)
@@ -228,9 +229,11 @@ impl LpRelaxEncodingData {
 
                         for term_gr in tr_gr.to_term_groundings(ctx) {
                             self.terms_ground_decomp_transitions
-                                .entry((term_gr.term, tr_gr.transition_id, tr_gr_idflat))
+                                .entry((term_gr.term, term_gr.assignment_id))
                                 .or_default()
-                                .insert(term_gr.assignment_id);
+                                .entry(tr_gr.transition_id)
+                                .or_default()
+                                .insert(tr_gr_idflat);
 
                             self.terms_ground_decomp_leq1
                                 .entry(term_gr.term)
@@ -292,13 +295,10 @@ impl LpRelaxEncodingData {
                 Some(0.),
             ));
 
-            self.col_tags.entry(ColTag::PresenceSource(src_id)).or_insert_with(|| {
-                if src_id.is_none() {
-                    _lprelax.add_column(Some(1.), Some(1.))
-                } else {
-                    _lprelax.add_column_01()
-                }
-            });
+            self.col_tags
+                .entry(ColTag::PresenceSource(src_id))
+                .or_insert_with(|| _lprelax.add_column_01());
+
             assert!(
                 self.col_tags
                     .insert(ColTag::PresenceTransition(tr_id), _lprelax.add_column_01())
@@ -364,30 +364,34 @@ impl LpRelaxEncodingData {
             }
         }
 
-        for (&(term, src_id, src_gr), term_gr_ids) in &self.terms_ground_decomp_sources {
-            let row = (
-                Some(0.),
-                term_gr_ids
-                    .iter()
-                    .map(|&term_gr_id| (ColTag::TermGround(term, term_gr_id), 1.))
-                    .chain([(ColTag::PresenceSourceGround(src_id, src_gr), -1.)])
-                    .collect(),
-                Some(0.),
-            );
-            self.rows.push(row);
+        for (&(term, term_gr_id), src_grs) in &self.terms_ground_decomp_sources {
+            for (&src_id, src_gr_ids) in src_grs {
+                let row = (
+                    Some(0.),
+                    src_gr_ids
+                        .iter()
+                        .map(|&src_gr_id| (ColTag::PresenceSourceGround(src_id, src_gr_id), 1.))
+                        .chain([(ColTag::TermGround(term, term_gr_id), -1.)])
+                        .collect(),
+                    Some(0.),
+                );
+                self.rows.push(row);                
+            }
         }
 
-        for (&(term, tr_id, tr_gr_idflat), term_gr_ids) in &self.terms_ground_decomp_transitions {
-            let row = (
-                Some(0.),
-                term_gr_ids
-                    .iter()
-                    .map(|&term_gr_id| (ColTag::TermGround(term, term_gr_id), 1.))
-                    .chain([(ColTag::PresenceTransitionGround(tr_id, tr_gr_idflat), -1.)])
-                    .collect(),
-                Some(0.),
-            );
-            self.rows.push(row);
+        for (&(term, term_gr_id), tr_grs) in &self.terms_ground_decomp_transitions {
+            for (&tr_id, tr_gr_ids) in tr_grs {
+                let row = (
+                    Some(0.),
+                    tr_gr_ids
+                        .iter()
+                        .map(|&tr_gr_id| (ColTag::PresenceTransitionGround(tr_id, tr_gr_id), 1.))
+                        .chain([(ColTag::TermGround(term, term_gr_id), -1.)])
+                        .collect(),
+                    Some(0.),
+                );
+                self.rows.push(row);                
+            }
         }
 
         for &(tr1_id, tr2_id) in &self.causal_links {
@@ -416,13 +420,12 @@ impl LpRelaxEncodingData {
         }
 
         for &(tr1_id, tr2_id) in &self.causal_links {
-            // FIXME ??
-            if self.col_tags.contains_key(&ColTag::CausalLink(tr2_id, tr1_id)) {
+            if self.col_tags.contains_key(&ColTag::CausalLink(tr1_id, tr2_id)) && self.col_tags.contains_key(&ColTag::CausalLink(tr2_id, tr1_id)){
                 let row = (
                     None,
                     vec![
                         (ColTag::CausalLink(tr1_id, tr2_id), 1.),
-                        (ColTag::PresenceTransition(tr2_id), 1.),
+                        (ColTag::CausalLink(tr2_id, tr1_id), 1.),
                     ],
                     Some(1.),
                 );
@@ -557,36 +560,48 @@ impl LpRelaxEncodingData {
 
         let mut presence_lits_and_cols = BTreeMap::<Lit, BTreeSet<usize>>::new();
         for &(src_id, tr_id) in &self.presences {
-            let (p, col) = if let Some(src_id) = src_id {
-                let p = ctx.main.sched.tasks[src_id].presence;
-                let col = *self.col_tags.get(&ColTag::PresenceSource(Some(src_id))).unwrap();
-                (p, col)
+            let p = if let Some(src_id) = src_id {
+                ctx.main.sched.tasks[src_id].presence
             } else {
-                let p = ctx.transitions.get(tr_id).unwrap().get_prez(&ctx.main);
-                let col = *self.col_tags.get(&ColTag::PresenceTransition(tr_id)).unwrap();
-                (p, col)
+                Lit::TRUE
             };
+            let col = *self.col_tags.get(&ColTag::PresenceSource(src_id)).unwrap();
+            presence_lits_and_cols.entry(p).or_default().insert(col.index());
+
+            let p = ctx.transitions.get(tr_id).unwrap().get_prez(&ctx.main);
+            let col = *self.col_tags.get(&ColTag::PresenceTransition(tr_id)).unwrap();
             presence_lits_and_cols.entry(p).or_default().insert(col.index());
         }
         for (p, cols) in presence_lits_and_cols {
-            let p = p.variable();
+            if p.tautological() {
+                for col in &cols {
+                    lprelax.add_row([(LpCol::from(*col), 1.)], Some(1.), None);
+                }
+            } else if p.absurd() {
+                for col in &cols {
+                    lprelax.add_row([(LpCol::from(*col), 1.)], None, Some(1.));
+                }
+            } else {
+                let p = p.variable();
+                assert!(p != VarRef::ZERO);
 
-            for col in &cols {
-                let col = LpCol::from(*col);
+                for col in &cols {
+                    let col = LpCol::from(*col);
 
-                lprelax.register_lplit_implier(col, new_default_lplit_implier(p, col));
+                    lprelax.register_lplit_implier(col, new_default_lplit_implier(p, col));
+                }
+                lprelax.register_lit_implier(
+                    p,
+                    std::sync::Arc::new(move |lit: Lit| {
+                        assert_eq!(lit.variable(), p);
+                        Some(
+                            cols.iter()
+                                .map(|&col| LpLit::from_model_lit(LpCol::from(col), lit))
+                                .collect(),
+                        )
+                    }),
+                );
             }
-            lprelax.register_lit_implier(
-                p,
-                std::sync::Arc::new(move |lit: Lit| {
-                    assert_eq!(lit.variable(), p);
-                    Some(
-                        cols.iter()
-                            .map(|&col| LpLit::from_model_lit(LpCol::from(col), lit))
-                            .collect(),
-                    )
-                }),
-            );
         }
 
         for (&term, term_gr_ids) in &self.terms_ground_decomp_leq1 {
@@ -594,6 +609,7 @@ impl LpRelaxEncodingData {
                 continue;
             }
             let var = term.variable();
+            assert!(var != VarRef::ZERO);
 
             let mappings: Vec<(LpCol, IntCst)> = term_gr_ids
                 .iter()
@@ -629,7 +645,11 @@ impl LpRelaxEncodingData {
                     col,
                     std::sync::Arc::new(move |lplit: LpLit| {
                         assert_eq!(lplit.col, col);
-                        Some(smallvec::smallvec![var.geq(val), var.leq(val)])
+                        if lplit.tpe == LpLitType::LB && lplit.val == 1 {
+                            Some(smallvec::smallvec![var.geq(val), var.leq(val)])
+                        } else {
+                            None
+                        }
                     }),
                 );
             }
@@ -657,6 +677,8 @@ impl LpRelaxEncodingData {
                 (Transition::CondEff(_, _), Transition::Eff(_)) => None,
                 _ => unreachable!(),
             } {
+                debug_assert!(s.variable() != VarRef::ZERO);
+
                 lprelax.register_lit_implier(s, new_default_lit_implier(s, col));
                 lprelax.register_lplit_implier(col, new_default_lplit_implier(s, col));
             }

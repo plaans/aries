@@ -17,12 +17,12 @@ pub(crate) use transitions::*;
 
 pub struct SchedEncoderExt {
     pub(crate) main: std::sync::Arc<SchedEncoder>,
-    
+
     pub(crate) transitions: Transitions,
 
     empty_source_terms: Vec<IntTerm>,
     concrete_source_terms: DirectIdMap<TaskId, Vec<IntTerm>>,
-    
+
     pub(crate) lprelax: Option<aries_lprelax::LpRelax>,
 }
 
@@ -130,7 +130,7 @@ fn collect_empty_source_terms(ctx: &SchedEncoder) -> Vec<IntTerm> {
 fn collect_concrete_source_terms(ctx: &SchedEncoder) -> DirectIdMap<TaskId, Vec<IntTerm>> {
     let mut res = DirectIdMap::<TaskId, BTreeSet<IntTerm>>::new();
 
-    for (_, e) in ctx.sched.effects.iter().enumerate() {
+    for e in ctx.sched.effects.iter() {
         if let Some(task_id) = e.source {
             if !res.contains_key(task_id) {
                 res.insert(task_id, BTreeSet::new());
@@ -138,7 +138,7 @@ fn collect_concrete_source_terms(ctx: &SchedEncoder) -> DirectIdMap<TaskId, Vec<
             res.get_mut(task_id).unwrap().extend(&e.state_var.args);
         }
     }
-    for (_, c) in ctx.causal_links.destinations.iter().enumerate() {
+    for c in ctx.causal_links.destinations.iter() {
         if let Some(task_id) = c.source {
             if !res.contains_key(task_id) {
                 res.insert(task_id, BTreeSet::new());
@@ -147,6 +147,5 @@ fn collect_concrete_source_terms(ctx: &SchedEncoder) -> DirectIdMap<TaskId, Vec<
         }
     }
 
-    let res = DirectIdMap::from_iter(res.into_iter().map(|(task_id, set)| (task_id, Vec::from_iter(set))));
-    res
+    DirectIdMap::from_iter(res.into_iter().map(|(task_id, set)| (task_id, Vec::from_iter(set))))
 }
