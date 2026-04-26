@@ -94,7 +94,7 @@ impl Actions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Duration {
     /// Action is instantaneous (duration of 0 meaning start = end)
     Instantaneous,

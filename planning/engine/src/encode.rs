@@ -44,7 +44,7 @@ pub fn types(model: &Model) -> ObjectEncoding {
 }
 
 /// Scope from convertion function can find the values binded in their environments, (action sart, end, presence, parameters, ...)
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Scope<'a> {
     pub start: Time,
     pub end: Time,

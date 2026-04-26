@@ -1,3 +1,5 @@
+pub mod symmetry;
+
 use std::collections::BTreeMap;
 
 use aries::core::literals::ConjunctionBuilder;
@@ -18,7 +20,7 @@ use crate::{boxes::Segment, effects::EffectOp, *};
 /// Constraint that enforces the [`Sched::makespan`] variable to be equal to the
 /// maximum end time of tasks, or zero in the absence of tasks.
 ///
-/// It is encorced by default in [`Sched`].
+/// It is enforced by default in [`Sched`].
 #[derive(Debug)]
 pub(crate) struct MakespanIsMaxTaskEnd;
 
@@ -79,7 +81,7 @@ impl BoolExpr<SchedEncoder> for Mutex {
 /// Ensures all effects are coherent (enforced by default in [`Sched`]).
 ///
 /// This requires to conditions
-///  - that no two assignments have overlapping exclusitivity periods
+///  - that no two assignments have overlapping exclusivity periods
 ///  - that every step is within an assignment validity period
 #[derive(Debug)]
 pub(crate) struct EffectCoherence;
@@ -233,6 +235,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             .map(|eff_id| (eff_id, &sched.effects[eff_id]))
             .collect_vec();
 
+        let mut supports = Vec::new();
+
         // gather all step effects that may contribute and
         // create a literal that it is true iff it does contribute
         //   - effect is present, and
@@ -264,15 +268,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                     contributes,
                     contribution: step,
                 });
-
-                if ctx.causal_links.store.get(cl_dest_id).is_none() {
-                    ctx.causal_links.store.insert(cl_dest_id, BTreeMap::new());
-                }
-                ctx.causal_links
-                    .store
-                    .get_mut(cl_dest_id)
-                    .unwrap()
-                    .insert(eff_id, contributes);
+                supports.push((eff_id, contributes));
             }
         }
 
@@ -302,17 +298,11 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
-
-                if ctx.causal_links.store.get(cl_dest_id).is_none() {
-                    ctx.causal_links.store.insert(cl_dest_id, BTreeMap::new());
-                }
-                ctx.causal_links
-                    .store
-                    .get_mut(cl_dest_id)
-                    .unwrap()
-                    .insert(eff_id, establishes);
+                supports.push((eff_id, establishes));
             }
         }
+
+        ctx.causal_links.add_new_condition_participants(self.source, supports);
 
         {
             let _span = tracing::debug_span!("main");

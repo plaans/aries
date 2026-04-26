@@ -25,7 +25,7 @@ use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
 pub use crate::effects::*;
-use crate::encoder::SchedEncoder;
+use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
@@ -168,7 +168,11 @@ impl Sched {
 
     fn encoder(self) -> SchedEncoder {
         let store = self.model.clone();
-        SchedEncoder::new(Arc::new(self), store)
+        SchedEncoder {
+            sched: Arc::new(self),
+            store,
+            causal_links: CausalLinks::default(),
+        }
     }
 
     pub fn encode(&self) -> Model {
