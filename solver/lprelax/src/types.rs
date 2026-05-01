@@ -96,16 +96,16 @@ impl LpLit {
     }
 }
 
-pub type LitImplierFn = std::sync::Arc<dyn Fn(Lit) -> Option<SmallVec<[LpLit; 4]>> + Send + Sync>;
-pub type LpLitImplierFn = std::sync::Arc<dyn Fn(LpLit) -> Option<SmallVec<[Lit; 4]>> + Send + Sync>;
+pub type LitImplicationsFn = std::sync::Arc<dyn Fn(Lit) -> Option<SmallVec<[LpLit; 4]>> + Send + Sync>;
+pub type LpLitImplicationsFn = std::sync::Arc<dyn Fn(LpLit) -> Option<SmallVec<[Lit; 4]>> + Send + Sync>;
 
-pub fn new_default_lit_implier(var: VarRef, col: LpCol) -> LitImplierFn {
+pub fn default_lit_implications(var: VarRef, col: LpCol) -> LitImplicationsFn {
     std::sync::Arc::new(move |lit: Lit| {
         assert_eq!(lit.variable(), var);
         Some(smallvec![LpLit::from_model_lit(col, lit)])
     })
 }
-pub fn new_default_lplit_implier(var: VarRef, col: LpCol) -> LpLitImplierFn {
+pub fn default_lplit_implications(var: VarRef, col: LpCol) -> LpLitImplicationsFn {
     std::sync::Arc::new(move |lplit: LpLit| {
         assert_eq!(lplit.col, col);
         Some(smallvec![lplit.into_model_lit(var)])

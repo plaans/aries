@@ -78,8 +78,8 @@ pub struct LpRelax {
     lpmodel_cached: LpModel,
     lpoptim: Option<LpRelaxOptim>,
 
-    lit_impliers: HashMap<VarRef, LitImplierFn>, //RefMap<VarRef, LitImplierFn>,
-    lplit_impliers: HashMap<LpCol, LpLitImplierFn>, //RefMap<usize, LpLitImplierFn>,
+    lit_implications: HashMap<VarRef, LitImplicationsFn>, //RefMap<VarRef, LitImplicationsFn>,
+    lplit_implications: HashMap<LpCol, LpLitImplicationsFn>, //RefMap<usize, LpLitImplicationsFn>,
 
     stats: Stats,
     config: LpRelaxConfig,
@@ -96,8 +96,8 @@ impl Clone for LpRelax {
             lpprob: self.lpprob.clone(),
             lpmodel_cached: new_lpmodel(self.lpprob.clone(), self.get_sense()),
             lpoptim: self.lpoptim.clone(),
-            lit_impliers: self.lit_impliers.clone(),
-            lplit_impliers: self.lplit_impliers.clone(),
+            lit_implications: self.lit_implications.clone(),
+            lplit_implications: self.lplit_implications.clone(),
             stats: self.stats.clone(),
             config: self.config.clone(),
         }
@@ -141,8 +141,8 @@ impl Default for LpRelax {
             lpprob: lpprob.clone(),
             lpoptim: None,
             lpmodel_cached: new_lpmodel(lpprob, None),
-            lit_impliers: HashMap::default(),
-            lplit_impliers: HashMap::default(),
+            lit_implications: HashMap::default(),
+            lplit_implications: HashMap::default(),
             stats: Stats::default(),
             config: LpRelaxConfig::default(),
         }
@@ -185,6 +185,32 @@ impl LpRelax {
         let lb = lb.unwrap_or(FloatCst::MIN);
         let ub = ub.unwrap_or(FloatCst::MAX);
         self.lpprob.add_column(0., lb..ub)
+    }
+
+    pub fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
+        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        let mut res = false;
+
+        let old_lb = self.get_column_lower_bound(col);
+        let lb = if let Some(lb) = lb
+            && old_lb < float_as_exact_int_cst(lb)
+        {
+            res = true;
+            float_as_exact_int_cst(lb)
+        } else {
+            old_lb
+        };
+        let old_ub = self.get_column_upper_bound(col);
+        let ub = if let Some(ub) = ub
+            && float_as_exact_int_cst(ub) < old_ub
+        {
+            res = true;
+            float_as_exact_int_cst(ub)
+        } else {
+            old_ub
+        };
+        self.lpprob.change_column_bounds(col, lb..ub);
+        res
     }
 
     pub fn add_row<ITEM: std::borrow::Borrow<(LpCol, FloatCst)>, I: IntoIterator<Item = ITEM>>(
@@ -237,27 +263,27 @@ impl LpRelax {
         self.lpoptim.as_ref().map(|lpoptim| lpoptim.sense)
     }
 
-    pub fn register_lit_implier(&mut self, var: VarRef, func: LitImplierFn) {
+    pub fn set_lit_implications(&mut self, var: VarRef, func: LitImplicationsFn) {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
-        assert!(self.lit_impliers.insert(var, func).is_none());
+        assert!(self.lit_implications.insert(var, func).is_none());
     }
-    pub fn register_lplit_implier(&mut self, col: LpCol, func: LpLitImplierFn) {
+    pub fn set_lplit_implications(&mut self, col: LpCol, func: LpLitImplicationsFn) {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
-        assert!(self.lplit_impliers.insert(col, func).is_none());
+        assert!(self.lplit_implications.insert(col, func).is_none());
     }
-    pub fn has_implier_registered_for_lit(&self, var: VarRef) -> bool {
-        self.lit_impliers.contains_key(&var)
+    /*pub fn has_lit_implications(&self, var: VarRef) -> bool {
+        self.lit_implications.contains_key(&var)
     }
-    pub fn has_implier_registered_for_lplit(&self, col: LpCol) -> bool {
-        self.lplit_impliers.contains_key(&col)
+    pub fn has_lplit_implications(&self, col: LpCol) -> bool {
+        self.lplit_implications.contains_key(&col)
+    }*/
+    fn compute_implied_lplits(&self, lit: Lit) -> Option<impl IntoIterator<Item = LpLit> + use<>> {
+        self.lit_implications.get(&lit.variable()).and_then(|func| func(lit))
     }
-    fn get_implied_lplits(&self, lit: Lit) -> Option<impl IntoIterator<Item = LpLit> + use<>> {
-        self.lit_impliers.get(&lit.variable()).and_then(|func| func(lit))
-    }
-    fn get_implied_lits(&self, lplit: LpLit) -> Option<impl IntoIterator<Item = Lit> + use<>> {
-        self.lplit_impliers.get(&lplit.col).and_then(|func| func(lplit))
+    fn compute_implied_lits(&self, lplit: LpLit) -> Option<impl IntoIterator<Item = Lit> + use<>> {
+        self.lplit_implications.get(&lplit.col).and_then(|func| func(lplit))
     }
 
     fn set_lplit(&mut self, lplit: LpLit, cause: LpEventCause, model: &mut Domains) -> Result<(), Contradiction> {
@@ -290,7 +316,7 @@ impl LpRelax {
             let lpevent_index = self.trail.push(LpEvent::new(lplit, prev_lplit, cause));
 
             if !cause_is_main_model {
-                (Some(lpevent_index), self.get_implied_lits(lplit))
+                (Some(lpevent_index), self.compute_implied_lits(lplit))
             } else {
                 (Some(lpevent_index), None)
             }
@@ -327,7 +353,7 @@ impl LpRelax {
             {
                 continue;
             }
-            if let Some(lplits) = self.get_implied_lplits(lit) {
+            if let Some(lplits) = self.compute_implied_lplits(lit) {
                 for lplit in lplits.into_iter() {
                     self.set_lplit(lplit, LpEventCause::MainModel(lit), model)?;
                 }
@@ -443,13 +469,16 @@ impl LpRelax {
     }
 
     fn build_contradiction(&self, iis: LpIis) -> Contradiction {
+        /*for row in iis.rows() {
+            println!("{row:?}");
+        }*/
         let mut conjunction_builder = ConjunctionBuilder::new();
 
         for &(col, status) in iis.columns() {
             match status {
                 highs::HighsIisBoundStatus::Lower => {
                     let lplit = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
-                    if let Some(lits) = self.get_implied_lits(lplit) {
+                    if let Some(lits) = self.compute_implied_lits(lplit) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
@@ -457,7 +486,7 @@ impl LpRelax {
                 }
                 highs::HighsIisBoundStatus::Upper => {
                     let lplit = LpLit::leq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1));
-                    if let Some(lits) = self.get_implied_lits(lplit) {
+                    if let Some(lits) = self.compute_implied_lits(lplit) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
@@ -467,13 +496,13 @@ impl LpRelax {
                 highs::HighsIisBoundStatus::Free => {
                     // i.e. equal, i.e. both Lower and Upper
                     let lplit_lb = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
-                    if let Some(lits) = self.get_implied_lits(lplit_lb) {
+                    if let Some(lits) = self.compute_implied_lits(lplit_lb) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
                     }
                     let lplit_ub = LpLit::leq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1));
-                    if let Some(lits) = self.get_implied_lits(lplit_ub) {
+                    if let Some(lits) = self.compute_implied_lits(lplit_ub) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
@@ -544,7 +573,7 @@ impl Theory for LpRelax {
             LpEventCause::MainModel(model_lit) => add_to_explanation(*model_lit),
             LpEventCause::ReducedCostStrengthtening(reason) => {
                 for &lplit in reason {
-                    let lits = self.get_implied_lits(lplit).unwrap();
+                    let lits = self.compute_implied_lits(lplit).unwrap();
 
                     let mut lits_not_empty = false;
                     for lit in lits {
@@ -564,7 +593,7 @@ impl Theory for LpRelax {
         println!("# lp runs: {}", self.stats.lpruns);
         println!("# lp runs time: {:.6} s", self.stats.lpruns_time.as_secs_f64());
         //println!("# time spent changing column bounds: {} s", self.stats.lp_bounds_change_time.as_secs_f64());
-        //println!("# time spent computing implied lits: {:.6} s", self.stats.impliers_time.as_secs_f64());
+        //println!("# time spent computing implied lits: {:.6} s", self.stats.implications_time.as_secs_f64());
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -612,11 +641,11 @@ pub mod test {
         let col2 = theory.add_column(Some(0.), Some(10.));
         let col3 = theory.add_column(Some(0.), Some(10.));
 
-        theory.register_lit_implier(var2, new_default_lit_implier(var2, col2));
-        theory.register_lplit_implier(col2, new_default_lplit_implier(var2, col2));
+        theory.set_lit_implications(var2, default_lit_implications(var2, col2));
+        theory.set_lplit_implications(col2, default_lplit_implications(var2, col2));
 
-        theory.register_lit_implier(var3, new_default_lit_implier(var3, col3));
-        theory.register_lplit_implier(col3, new_default_lplit_implier(var3, col3));
+        theory.set_lit_implications(var3, default_lit_implications(var3, col3));
+        theory.set_lplit_implications(col3, default_lplit_implications(var3, col3));
 
         let assert_col_bounds = |theory: &mut LpRelax, col: LpCol, col_bounds: (IntCst, IntCst)| {
             assert_eq!(
@@ -686,11 +715,11 @@ pub mod test {
         let acol = theory.add_column(Some(0.), Some(1.));
         let bcol = theory.add_column(Some(0.), Some(1.));
 
-        theory.register_lit_implier(avar, new_default_lit_implier(avar, acol));
-        theory.register_lplit_implier(acol, new_default_lplit_implier(avar, acol));
+        theory.set_lit_implications(avar, default_lit_implications(avar, acol));
+        theory.set_lplit_implications(acol, default_lplit_implications(avar, acol));
 
-        theory.register_lit_implier(bvar, new_default_lit_implier(bvar, bcol));
-        theory.register_lplit_implier(bcol, new_default_lplit_implier(bvar, bcol));
+        theory.set_lit_implications(bvar, default_lit_implications(bvar, bcol));
+        theory.set_lplit_implications(bcol, default_lplit_implications(bvar, bcol));
 
         theory.add_row([(acol, 1.), (bcol, 1.)], Some(1.), None);
 

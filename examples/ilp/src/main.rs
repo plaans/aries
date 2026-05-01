@@ -4,7 +4,7 @@ use anyhow::*;
 use aries::model::extensions::Shaped;
 use aries::prelude::*;
 use aries::solver::{Exit, SearchLimit};
-use aries_lprelax::{LpRelax, new_default_lit_implier, new_default_lplit_implier};
+use aries_lprelax::{LpRelax, default_lit_implications, default_lplit_implications};
 use clap::Parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -74,8 +74,8 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
             let var = model.get_var(name).unwrap();
             var_name_to_col_map.insert(name.clone(), col);
 
-            lprelax.register_lit_implier(var, new_default_lit_implier(var, col));
-            lprelax.register_lplit_implier(col, new_default_lplit_implier(var, col));
+            lprelax.add_lit_implications(var, default_lit_implications(var, col));
+            lprelax.add_lplit_implications(col, default_lplit_implications(var, col));
         }
         for (row_coefs, lb, ub) in problem.constrs.values() {
             let row_coefs = row_coefs
@@ -99,8 +99,8 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
                 },
             );
 
-            lprelax.register_lit_implier(obj_var, new_default_lit_implier(obj_var, obj_col));
-            lprelax.register_lplit_implier(obj_col, new_default_lplit_implier(obj_var, obj_col));
+            lprelax.add_lit_implications(obj_var, default_lit_implications(obj_var, obj_col));
+            lprelax.add_lplit_implications(obj_col, default_lplit_implications(obj_var, obj_col));
         }
         vec![Box::new(lprelax)]
     } else {
