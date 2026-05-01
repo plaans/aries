@@ -8,6 +8,7 @@ use aries_lprelax::{LpRelax, default_lit_implications, default_lplit_implication
 use clap::Parser;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crate::problem::IlpProblem;
 
@@ -22,6 +23,10 @@ struct Cli {
     /// Don't use LP relaxation
     #[arg(long, default_value_t = false)]
     no_lprelax: bool,
+
+    /// Timeout (seconds)
+    #[arg(long, short)]
+    timeout: Option<u64>,
 }
 
 fn main() -> Result<()> {
@@ -31,16 +36,22 @@ fn main() -> Result<()> {
     let use_lprelax = !cli.no_lprelax;
 
     let problem = match &cli.file.extension().and_then(std::ffi::OsStr::to_str) {
-        Some("mps") => todo!(), // IlpProblem::from_mps(&input_file)?,
+        Some("mps") => IlpProblem::from_mps(&input_file)?,
         Some("lp") => IlpProblem::from_lp(&input_file)?,
         _ => return Err(anyhow::anyhow!("Input file needs to be .mps or .lp")),
     };
-    //println!("{:#?}", problem);
+    // println!("{:#?}", problem);
 
     let model = problem.encode_model()?;
 
     let mut solver = make_solver(&problem, model, use_lprelax);
-    let res = solve(&problem, &mut solver)?;
+
+    let limit = if let Some(timeout) = cli.timeout {
+        SearchLimit::Deadline(Instant::now() + Duration::from_secs(timeout))
+    } else {
+        SearchLimit::None
+    };
+    let res = solve(&problem, &mut solver, limit)?;
 
     solver.print_stats();
     //solver.model.print_state();
@@ -55,8 +66,10 @@ fn main() -> Result<()> {
         sol.sort();
 
         for (col_name, val) in &sol {
-            println!("{:?} = {}", col_name, val)
+            println!("{:?} = {}", col_name, val);
         }
+    } else {
+        println!("No solution !");
     }
 
     Ok(())
@@ -74,8 +87,8 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
             let var = model.get_var(name).unwrap();
             var_name_to_col_map.insert(name.clone(), col);
 
-            lprelax.add_lit_implications(var, default_lit_implications(var, col));
-            lprelax.add_lplit_implications(col, default_lplit_implications(var, col));
+            lprelax.set_lit_implications(var, default_lit_implications(var, col));
+            lprelax.set_lplit_implications(col, default_lplit_implications(var, col));
         }
         for (row_coefs, lb, ub) in problem.constrs.values() {
             let row_coefs = row_coefs
@@ -99,8 +112,8 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
                 },
             );
 
-            lprelax.add_lit_implications(obj_var, default_lit_implications(obj_var, obj_col));
-            lprelax.add_lplit_implications(obj_col, default_lplit_implications(obj_var, obj_col));
+            lprelax.set_lit_implications(obj_var, default_lit_implications(obj_var, obj_col));
+            lprelax.set_lplit_implications(obj_col, default_lplit_implications(obj_var, obj_col));
         }
         vec![Box::new(lprelax)]
     } else {
@@ -110,11 +123,7 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
     Solver::with_extra_reasoners(model, extra_reasoners)
 }
 
-fn solve(problem: &IlpProblem, solver: &mut Solver) -> Result<Option<(i32, Solution)>, Exit> {
-    let limit = SearchLimit::None;
-    //let limit = SearchLimit::Deadline(Instant::now() + Duration::from_secs(15));
-    //let limit = SearchLimit::NumConflicts(10000);
-
+fn solve(problem: &IlpProblem, solver: &mut Solver, limit: SearchLimit) -> Result<Option<(i32, Solution)>, Exit> {
     if let Some((obj_name, _)) = &problem.obj {
         match problem.sense {
             lp_parser_rs::model::Sense::Minimize => solver.minimize_with_callback(
