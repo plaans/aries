@@ -52,7 +52,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             c.enforce(&mut encoding);
             Solver::with_extra_reasoners(encoding.main.store.clone(), vec![Box::new(encoding.lprelax.unwrap())])
         };
-        
+
         Self {
             solver,
             enablers: assumptions_map,
