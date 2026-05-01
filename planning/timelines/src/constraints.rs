@@ -1,7 +1,5 @@
 pub mod symmetry;
 
-use std::collections::BTreeMap;
-
 use aries::core::literals::ConjunctionBuilder;
 use aries::model::lang::element::Element;
 use aries::model::lang::exclusive_choice::exclu_choice;
@@ -221,11 +219,6 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
         // cheap clone to please the borrow checker
         let sched: std::sync::Arc<Sched> = ctx.sched.clone();
 
-        let cl_dest_id = {
-            ctx.causal_links.destinations.push(self.clone());
-            ctx.causal_links.destinations.len() - 1
-        };
-
         let value_box = self.value_box(&*ctx);
 
         // all effects (assign or steps) that may contribute to the value
@@ -302,7 +295,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             }
         }
 
-        ctx.causal_links.add_new_condition_participants(self.source, supports);
+        ctx.causal_links.add_new_condition_participants(self.clone(), supports);
 
         {
             let _span = tracing::debug_span!("main");
