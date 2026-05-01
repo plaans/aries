@@ -469,9 +469,6 @@ impl LpRelax {
     }
 
     fn build_contradiction(&self, iis: LpIis) -> Contradiction {
-        /*for row in iis.rows() {
-            println!("{row:?}");
-        }*/
         let mut conjunction_builder = ConjunctionBuilder::new();
 
         for &(col, status) in iis.columns() {
@@ -556,7 +553,7 @@ impl Theory for LpRelax {
 
     fn explain(
         &mut self,
-        _literal: Lit,
+        literal: Lit,
         context: InferenceCause,
         model: &DomainsSnapshot,
         out_explanation: &mut Explanation,
@@ -568,6 +565,12 @@ impl Theory for LpRelax {
         debug_assert_eq!(context.writer, self.identity());
 
         let ModelUpdateCause(lpevent_index) = ModelUpdateCause::from(context.payload);
+
+        debug_assert!(
+            self.compute_implied_lits(self.trail.get_event(lpevent_index).new_lplit)
+                .map(|lits| lits.into_iter().any(|l| l == literal))
+                .unwrap_or_default()
+        );
 
         match &self.trail.get_event(lpevent_index).cause {
             LpEventCause::MainModel(model_lit) => add_to_explanation(*model_lit),
