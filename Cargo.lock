@@ -256,6 +256,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
+ "aries-bench-data",
  "aries_lprelax",
  "clap 4.5.54",
  "lp_parser_rs",
