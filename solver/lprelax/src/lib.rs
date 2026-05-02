@@ -111,7 +111,7 @@ fn new_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>) -> LpModel {
     //lpmodel.set_option("time_limit", 2.0); // stop after 2 seconds
     lpmodel.set_option("parallel", "off"); // use 1 core
     lpmodel.set_option("threads", 1); // solve on 1 thread
-    lpmodel.set_option("iis_strategy", 14); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
+    lpmodel.set_option("iis_strategy", 0); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
 
     lpmodel
 }
@@ -129,7 +129,7 @@ fn cache_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>, obj_col: Option
     //lpmodel_cached.set_option("time_limit", 2.0); // stop after 2 seconds
     lpmodel_cached.set_option("parallel", "off"); // use 1 core
     lpmodel_cached.set_option("threads", 1); // solve on 1 thread
-    lpmodel_cached.set_option("iis_strategy", 14); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
+    lpmodel_cached.set_option("iis_strategy", 0); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
 }
 impl Default for LpRelax {
     fn default() -> Self {
