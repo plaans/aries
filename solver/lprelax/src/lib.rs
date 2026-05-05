@@ -184,6 +184,8 @@ impl LpRelax {
 
         let lb = lb.unwrap_or(FloatCst::MIN);
         let ub = ub.unwrap_or(FloatCst::MAX);
+        assert!(lb <= ub);
+
         self.lpprob.add_column(0., lb..ub)
     }
 
@@ -209,6 +211,8 @@ impl LpRelax {
         } else {
             old_ub
         };
+        assert!(lb <= ub);
+        
         self.lpprob.change_column_bounds(col, lb..ub);
         res
     }
