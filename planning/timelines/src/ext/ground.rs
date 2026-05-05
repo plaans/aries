@@ -5,20 +5,23 @@ pub use aries::utils::StreamingIterator;
 use smallvec::SmallVec;
 
 use crate::IntTerm;
-use crate::ext::{SchedEncoderExt, Source, Transition};
+use crate::ext::{SchedEncoderExt, Source, TransitionId, TransitionRef};
 
-impl Transition {
-    pub fn iter_groundings(&self, ctx: &SchedEncoderExt) -> impl StreamingIterator<Item = TransitionTermsGround> {
+impl TransitionId {
+    pub fn iter_groundings<'a>(
+        &'a self,
+        ctx: &'a SchedEncoderExt,
+    ) -> impl StreamingIterator<Item = TransitionTermsGround<'a>> {
         TransitionTermsGroundIter::new(*self, ctx)
     }
 }
 
-impl SchedEncoderExt {
+impl<'a> SchedEncoderExt<'a> {
     pub fn iter_transition_groundings(
-        &self,
-        transition: Transition,
-    ) -> impl StreamingIterator<Item = TransitionTermsGround> {
-        TransitionTermsGroundIter::new(transition, self)
+        &'a self,
+        transition_id: TransitionId,
+    ) -> impl StreamingIterator<Item = TransitionTermsGround<'a>> {
+        TransitionTermsGroundIter::new(transition_id, self)
     }
 
     pub fn iter_source_groundings(&self, source: Source) -> impl StreamingIterator<Item = SourceTermsGround> {
@@ -29,11 +32,14 @@ impl SchedEncoderExt {
         &self,
         transition_grounding: &TransitionTermsGround,
     ) -> impl StreamingIterator<Item = SourceTermsGround> {
-        let source = transition_grounding.transition.get_source(&self.main);
+        let source = transition_grounding.transition_ref.get_source();
         self.iter_source_groundings(source)
             .filter(move |src_gr| src_gr.contains(transition_grounding, self))
     }
 }
+
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TermGroundId(pub usize);
 
 struct FlattenableGround<Id: From<usize>, const N: usize> {
     pub idvec: SmallVec<[TermGroundId; N]>,
@@ -75,9 +81,6 @@ impl<Id: From<usize>, const N: usize> FlattenableGround<Id, N> {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TermGroundId(pub usize);
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TransitionTermsGroundId(pub usize);
 impl From<usize> for TransitionTermsGroundId {
@@ -116,16 +119,17 @@ impl TermGround {
     }
 }
 
-pub struct TransitionTermsGround {
-    pub transition: Transition,
+pub struct TransitionTermsGround<'a> {
+    pub transition_id: TransitionId,
+    pub transition_ref: TransitionRef<'a>,
     flattenable: FlattenableGround<TransitionTermsGroundId, 6>,
     assignment: SmallVec<[IntCst; 6]>,
 }
-impl TransitionTermsGround {
-    pub fn idvec(&self) -> &[TermGroundId] {
+impl<'a> TransitionTermsGround<'a> {
+    pub fn get_idvec(&self) -> &[TermGroundId] {
         &self.flattenable.idvec
     }
-    pub fn id(&self) -> TransitionTermsGroundId {
+    pub fn get_id(&self) -> TransitionTermsGroundId {
         self.flattenable.id
     }
 
@@ -135,39 +139,44 @@ impl TransitionTermsGround {
             .map(|term_grounding| term_grounding.assignment(ctx))
             .collect();
     }
-    pub fn assignment(&self) -> &[IntCst] {
+    pub fn get_assignment(&self) -> &[IntCst] {
         &self.assignment
     }
     pub fn to_term_groundings(&self, ctx: &SchedEncoderExt) -> impl Iterator<Item = TermGround> {
-        self.transition
-            .get_terms(&ctx.main)
-            .iter()
+        self.transition_ref
+            .iter_terms()
             .zip(self.flattenable.idvec.iter())
-            .map(|(term, id)| TermGround::from(term, *id, ctx))
+            .map(|(term, &id)| TermGround::from(term, id, ctx))
     }
 
-    pub fn default(transition: Transition, ctx: &SchedEncoderExt) -> Self {
-        let n = transition.get_terms(&ctx.main).len();
-        Self::from(transition, std::iter::repeat_n(TermGroundId::default(), n), ctx)
+    pub fn default(transition_id: TransitionId, ctx: &'a SchedEncoderExt) -> Self {
+        let transition_ref = transition_id.as_ref(ctx);
+        let n = transition_ref.terms_len();
+        Self::from(transition_id, std::iter::repeat_n(TermGroundId::default(), n), ctx)
     }
-    pub fn from(transition: Transition, idvec: impl Iterator<Item = TermGroundId>, ctx: &SchedEncoderExt) -> Self {
+    pub fn from(
+        transition_id: TransitionId,
+        idvec: impl Iterator<Item = TermGroundId>,
+        ctx: &'a SchedEncoderExt,
+    ) -> Self {
+        let transition_ref = transition_id.as_ref(ctx);
         let flattenable = FlattenableGround::from(
             idvec,
-            transition.get_terms(&ctx.main).iter().map(|term| {
+            transition_ref.iter_terms().map(|term| {
                 let (lb_inner, ub_inner) = ctx.bounds(term.variable());
                 usize::try_from(ub_inner - lb_inner + 1).unwrap()
             }),
         );
-        let assignment = transition
-            .get_terms(&ctx.main)
-            .iter()
+        let assignment = transition_ref
+            .iter_terms()
             .zip(flattenable.idvec.iter())
             .map(|(term, id)| TermGround::from(term, *id, ctx))
             .map(|term_grounding| term_grounding.assignment(ctx))
             .collect();
 
         Self {
-            transition,
+            transition_id,
+            transition_ref,
             flattenable,
             assignment,
         }
@@ -180,11 +189,11 @@ pub struct SourceTermsGround {
     assignment: SmallVec<[IntCst; 6]>,
 }
 
-impl SourceTermsGround {
-    pub fn idvec(&self) -> &[TermGroundId] {
+impl<'a> SourceTermsGround {
+    pub fn get_idvec(&self) -> &[TermGroundId] {
         &self.flattenable.idvec
     }
-    pub fn id(&self) -> SourceTermsGroundId {
+    pub fn get_id(&self) -> SourceTermsGroundId {
         self.flattenable.id
     }
 
@@ -194,7 +203,7 @@ impl SourceTermsGround {
             .map(|term_grounding| term_grounding.assignment(ctx))
             .collect();
     }
-    pub fn assignment(&self) -> &[IntCst] {
+    pub fn get_assignment(&self) -> &[IntCst] {
         &self.assignment
     }
     pub fn to_term_groundings(&self, ctx: &SchedEncoderExt) -> impl Iterator<Item = TermGround> {
@@ -231,29 +240,37 @@ impl SourceTermsGround {
         }
     }
 
-    pub fn to_transition_grounding(&self, transition: Transition, ctx: &SchedEncoderExt) -> TransitionTermsGround {
-        debug_assert!(self.source == transition.get_source(&ctx.main));
+    pub fn to_transition_grounding(
+        &'a self,
+        transition_id: TransitionId,
+        ctx: &'a SchedEncoderExt,
+    ) -> TransitionTermsGround<'a> {
+        let transition_ref = transition_id.as_ref(ctx);
+        debug_assert!(self.source == transition_ref.get_source());
         let id = ctx
             .transitions
-            .get_transition_terms_positions_in_source_terms(&transition)
+            .get_transition_terms_positions_in_source_terms(&transition_id)
             .unwrap()
             .map(|i| match i {
                 Some(i) => self.flattenable.idvec[i],
                 None => TermGroundId::default(),
             });
-        TransitionTermsGround::from(transition, id, ctx)
+        TransitionTermsGround::from(transition_id, id, ctx)
     }
-    pub fn to_transitions_groundings(&self, ctx: &SchedEncoderExt) -> impl Iterator<Item = TransitionTermsGround> {
+    pub fn to_transitions_groundings(
+        &'a self,
+        ctx: &'a SchedEncoderExt,
+    ) -> impl Iterator<Item = TransitionTermsGround<'a>> {
         ctx.transitions
             .get_for_source(&self.source)
             .map(|&tr| self.to_transition_grounding(tr, ctx))
     }
 
     pub fn contains(&self, transition_grounding: &TransitionTermsGround, ctx: &SchedEncoderExt) -> bool {
-        debug_assert!(self.source == transition_grounding.transition.get_source(&ctx.main));
+        debug_assert!(self.source == transition_grounding.transition_ref.get_source());
 
         ctx.transitions
-            .get_transition_terms_positions_in_source_terms(&transition_grounding.transition)
+            .get_transition_terms_positions_in_source_terms(&transition_grounding.transition_id)
             .unwrap()
             .enumerate()
             .filter_map(|(j, i)| i.map(|i| (j, i)))
@@ -266,25 +283,25 @@ impl SourceTermsGround {
 }
 
 pub struct TransitionTermsGroundIter<'a> {
-    ctx: &'a SchedEncoderExt,
-    // transition: Transition,
-    current: Option<TransitionTermsGround>,
+    ctx: &'a SchedEncoderExt<'a>,
+    // transition_id: Transition_id,
+    current: Option<TransitionTermsGround<'a>>,
     is_started: bool,
 }
 
 impl<'a> TransitionTermsGroundIter<'a> {
-    pub fn new(transition: Transition, ctx: &'a SchedEncoderExt) -> Self {
+    pub fn new(transition_id: TransitionId, ctx: &'a SchedEncoderExt) -> Self {
         Self {
             ctx,
-            // transition,
-            current: Some(TransitionTermsGround::default(transition, ctx)),
+            // transition_id,
+            current: Some(TransitionTermsGround::default(transition_id, ctx)),
             is_started: false,
         }
     }
 }
 
 impl<'a> StreamingIterator for TransitionTermsGroundIter<'a> {
-    type Item = TransitionTermsGround;
+    type Item = TransitionTermsGround<'a>;
 
     fn advance(&mut self) {
         if !self.is_started {
@@ -320,7 +337,7 @@ impl<'a> StreamingIterator for TransitionTermsGroundIter<'a> {
 }
 
 pub struct SourceTermsGroundIter<'a> {
-    ctx: &'a SchedEncoderExt,
+    ctx: &'a SchedEncoderExt<'a>,
     // source: SourceId,
     current: Option<SourceTermsGround>,
     is_started: bool,

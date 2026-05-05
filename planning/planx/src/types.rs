@@ -258,7 +258,7 @@ impl UserTypes {
 }
 
 #[derive(Clone, Copy)]
-pub struct IntInterval(Option<IntValue>, Option<IntValue>);
+pub struct IntInterval(pub Option<IntValue>, pub Option<IntValue>);
 
 impl IntInterval {
     pub const FULL: IntInterval = IntInterval(None, None);

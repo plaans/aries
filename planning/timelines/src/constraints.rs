@@ -177,7 +177,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HasValueAt {
     pub state_var: StateVar,
     pub value: IntTerm,

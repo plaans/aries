@@ -46,7 +46,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
 
         // let solver = Solver::new(encoding.store);
         let solver = {
-            let mut encoding = crate::ext::SchedEncoderExt::new(std::sync::Arc::new(encoding));
+            let mut encoding = crate::ext::SchedEncoderExt::new(&mut encoding);
             let c = std::sync::Arc::new(crate::ext::lprelax::LpRelaxEncoding);
             tracing::debug!("Adding constraint: {c:?}");
             c.enforce(&mut encoding);
