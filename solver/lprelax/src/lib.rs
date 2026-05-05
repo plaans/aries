@@ -212,7 +212,7 @@ impl LpRelax {
             old_ub
         };
         assert!(lb <= ub);
-        
+
         self.lpprob.change_column_bounds(col, lb..ub);
         res
     }
@@ -512,6 +512,28 @@ impl LpRelax {
                 s => panic!("Unknown highs status {s:?}"),
             }
         }
+
+        // Supplement with literals (if any) implied by the current bounds of columns marked as MaybeInConflict:
+        // their participation in the infeasibility is uncertain, but including their bounds
+        // keeps the explanation sound at the cost of potentially adding unnecessary literals.
+        for i in 0..self.num_columns() {
+            let col = LpCol::from(i);
+            if iis.contains_column_maybe(&col) {
+                let lplit_lb = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
+                if let Some(lits) = self.compute_implied_lits(lplit_lb) {
+                    for lit in lits {
+                        conjunction_builder.push(lit);
+                    }
+                }
+                let lplit_ub = LpLit::leq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1));
+                if let Some(lits) = self.compute_implied_lits(lplit_ub) {
+                    for lit in lits {
+                        conjunction_builder.push(lit);
+                    }
+                }
+            }
+        }
+
         let mut expl = Explanation::new();
         expl.extend(conjunction_builder.build());
         Contradiction::Explanation(expl)
