@@ -489,8 +489,7 @@ impl LpRelax {
                         }
                     }
                 }
-                //highs::HighsIisBoundStatus::Boxed | highs::HighsIisBoundStatus::Free => {
-                highs::HighsIisBoundStatus::Free => {
+                highs::HighsIisBoundStatus::Boxed => {
                     // i.e. equal, i.e. both Lower and Upper
                     let lplit_lb = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
                     if let Some(lits) = self.compute_implied_lits(lplit_lb) {
@@ -505,6 +504,7 @@ impl LpRelax {
                         }
                     }
                 }
+                highs::HighsIisBoundStatus::Free => (),
                 s => panic!("Unknown highs status {s:?}"),
             }
         }
