@@ -12,7 +12,9 @@ use aries::core::state::Evaluable;
 use aries::core::views::Dom;
 use constraints::*;
 use core::fmt::Debug;
-use core::hash::{Hash, Hasher};
+use core::hash::Hash;
+use smallvec::SmallVec;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use aries::core::INT_CST_MAX;
@@ -24,6 +26,7 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries::model::Model<Sym>;
+use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
@@ -43,7 +46,34 @@ pub type IntExp = aries::prelude::LinSum;
 
 pub type SymAtom = IntTerm;
 
-/// A fluent is a state function defined as a symbol and a set of parameter and return types.
+#[derive(Clone, Debug)]
+pub struct FluentParam {
+    pub range: Segment,
+    // pub numeric: bool,
+}
+#[derive(Clone, Debug, Default)]
+pub struct FluentsEncoding {
+    store: BTreeMap<Sym, usize>,
+    params: Vec<SmallVec<[FluentParam; 6]>>,
+}
+impl FluentsEncoding {
+    pub fn add(&mut self, name: Sym, params: &[FluentParam]) -> bool {
+        if self.store.contains_key(&name) {
+            return false;
+        }
+        let n = self.params.len();
+        self.store.insert(name, n);
+        self.params.push(params.into());
+        true
+    }
+    pub fn get_params(&self, name: &Sym) -> Option<&[FluentParam]> {
+        self.store.get(name).map(|&i| self.params[i].as_slice())
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (&Sym, &[FluentParam])> {
+        self.store.iter().map(|(sym, &i)| (sym, self.params[i].as_slice()))
+    }
+}
+/*/// A fluent is a state function defined as a symbol and a set of parameter and return types.
 ///
 /// For instance `at: Robot -> Location -> Bool` is the state function with symbol `at`
 /// that accepts two parameters of type `Robot` and `Location`.
@@ -77,7 +107,7 @@ impl Hash for Fluent {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.sym.hash(state);
     }
-}
+}*/
 
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct StateVar {
@@ -111,6 +141,7 @@ pub type ConstraintID = usize;
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
+    pub fluents: FluentsEncoding,
     pub time_scale: IntCst,
     /// temporal separation between events `(1/time_scale)`
     pub epsilon: IntCst,
@@ -123,7 +154,7 @@ pub struct Sched {
 }
 
 impl Sched {
-    pub fn new(time_scale: IntCst, objects: ObjectEncoding) -> Self {
+    pub fn new(time_scale: IntCst, objects: ObjectEncoding, fluents: FluentsEncoding) -> Self {
         assert_eq!(time_scale, 1, "Non-integer time is not supported yet");
         let mut model = Model::new();
         let origin = Time::ZERO;
@@ -132,6 +163,7 @@ impl Sched {
         Sched {
             model,
             objects,
+            fluents,
             time_scale,
             epsilon: 1,
             origin,

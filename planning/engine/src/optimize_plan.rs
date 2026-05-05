@@ -164,8 +164,9 @@ pub fn encode_plan_optimization_problem(
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
     let objs = types(model);
+    let fluents = fluents(model, &objs)?;
     let object_decoder = objs.decoder();
-    let mut sched = timelines::Sched::new(1, objs);
+    let mut sched = timelines::Sched::new(1, objs, fluents);
 
     let global_scope = Scope::global(&sched);
 

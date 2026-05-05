@@ -14,9 +14,11 @@ use aries::{
     prelude::*,
 };
 use itertools::Itertools;
-use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, Type, errors::Spanned};
+use smallvec::SmallVec;
 use timelines::{
-    Effect, EffectOp, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    boxes::Segment,
     constraints::{HasValueAt, bool2int},
     symbols::ObjectEncoding,
 };
@@ -41,6 +43,50 @@ pub fn types(model: &Model) -> ObjectEncoding {
                 .collect_vec()
         },
     )
+}
+
+pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> {
+    let mut res = FluentsEncoding::default();
+
+    for f in model.env.fluents.iter() {
+        let params = {
+            let mut res = SmallVec::<[FluentParam; 6]>::new();
+            for tpe in f.parameters.iter().map(|p| &p.tpe).chain([&f.return_type]) {
+                res.push(FluentParam {
+                    range: type_range(tpe, objects)?,
+                });
+            }
+            res
+        };
+        res.add(f.name().to_string(), &params);
+    }
+    Ok(res)
+}
+
+fn type_range(param_type: &Type, objects: &ObjectEncoding) -> Res<Segment> {
+    match param_type {
+        Type::Bool => Ok(Segment::new(0, 1)),
+        Type::Int(int_interval) => Ok(Segment::new(
+            int_interval
+                .0
+                .map(|x| IntCst::try_from(x).unwrap())
+                .unwrap_or(INT_CST_MIN),
+            int_interval
+                .1
+                .map(|x| IntCst::try_from(x).unwrap())
+                .unwrap_or(INT_CST_MAX),
+        )),
+        Type::Real => Ok(Segment::all()),
+        Type::User(var_type) => {
+            let Some(var_type) = var_type.to_single_type() else {
+                return Err(Message::error("Unsupported parameter type (union type)"));
+            };
+            let range = objects
+                .domain_of_type(var_type.name.as_str())
+                .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
+            Ok(Segment::new(range.first, range.last))
+        }
+    }
 }
 
 /// Scope from convertion function can find the values binded in their environments, (action sart, end, presence, parameters, ...)

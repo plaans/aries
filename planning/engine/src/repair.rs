@@ -140,7 +140,8 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
     let objs = types(model);
-    let mut sched = timelines::Sched::new(1, objs);
+    let fluents = fluents(model, &objs)?;
+    let mut sched = timelines::Sched::new(1, objs, fluents);
 
     let global_scope = Scope::global(&sched);
 
