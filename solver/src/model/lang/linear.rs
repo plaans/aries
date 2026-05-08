@@ -3,7 +3,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
-use crate::core::{IntCst, Lit, QCst, SignedVar, VarRef};
+use crate::core::{IntCst, Lit, LongCst, QCst, SignedVar, VarRef, cst_long_to_int};
 use crate::model::lang::expr::or;
 use crate::model::lang::{BoolExpr, IAtom, IVar, IntExpr, Store, ValidityScope};
 use crate::prelude::Conjunction;
@@ -975,6 +975,14 @@ impl From<&LinSum> for LinearSum {
 impl<Ctx: Store> IntExpr<Ctx> for LinSum {
     fn enforce_eq_if(&self, implicant: Lit, variable: LinTerm, ctx: &mut Ctx) {
         self.clone().eq(variable).enforce_if(implicant, ctx);
+    }
+    fn bounds(&self, ctx: &Ctx) -> (IntCst, IntCst) {
+        let (mut lb, mut ub) = (self.constant as LongCst, self.constant as LongCst);
+        for scaled_var in &self.vars {
+            lb += scaled_var.lower_bound(ctx) as LongCst;
+            ub += scaled_var.upper_bound(ctx) as LongCst;
+        }
+        (cst_long_to_int(lb), cst_long_to_int(ub))
     }
 }
 

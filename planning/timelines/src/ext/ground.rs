@@ -1,3 +1,4 @@
+use aries::core::{INT_CST_MAX, INT_CST_MIN, LongCst};
 use aries::core::views::Term;
 use aries::prelude::{DomainsExt, IntCst};
 pub use aries::utils::StreamingIterator;
@@ -47,9 +48,16 @@ struct FlattenableGround<Id: From<usize>, const N: usize> {
     pub id: Id,
 }
 impl<Id: From<usize>, const N: usize> FlattenableGround<Id, N> {
-    fn from(idvec: impl Iterator<Item = TermGroundId>, dims: impl Iterator<Item = usize>) -> Self {
+    fn from(idvec: impl Iterator<Item = TermGroundId>, bounds: impl Iterator<Item = (IntCst, IntCst)>) -> Self {
         let idvec = idvec.collect::<SmallVec<_>>();
-        let dims = dims.collect::<SmallVec<_>>();
+        let dims = bounds
+            .inspect(|&(lb, ub)| {
+                debug_assert!(lb > INT_CST_MIN);
+                debug_assert!(ub < INT_CST_MAX);
+                debug_assert!(((ub as LongCst) - (lb as LongCst) + 1) < (INT_CST_MAX as LongCst));
+            })
+            .map(|(lb, ub)| usize::try_from(ub - lb + 1).unwrap())
+            .collect::<SmallVec<_>>();
         debug_assert!(idvec.len() == dims.len());
         debug_assert!(
             idvec
@@ -106,10 +114,13 @@ impl TermGround {
         Self::from(term, TermGroundId::default(), ctx)
     }
     pub fn from(term: IntTerm, id: TermGroundId, ctx: &SchedEncoderExt) -> Self {
-        debug_assert!({
+        {
             let (lb_inner, ub_inner) = ctx.bounds(term.variable());
-            id.0 <= usize::try_from(ub_inner - lb_inner + 1).unwrap()
-        });
+            debug_assert!(lb_inner > INT_CST_MIN);
+            debug_assert!(ub_inner < INT_CST_MAX);
+            debug_assert!(((ub_inner as LongCst) - (lb_inner as LongCst) + 1) < (INT_CST_MAX as LongCst));
+            debug_assert!(id.0 < usize::try_from(ub_inner - lb_inner + 1).unwrap());
+        }
         Self { term, id }
     }
     pub fn assignment(&self, ctx: &SchedEncoderExt) -> IntCst {
@@ -162,10 +173,7 @@ impl<'a> TransitionTermsGround<'a> {
         let transition_ref = transition_id.as_ref(ctx);
         let flattenable = FlattenableGround::from(
             idvec,
-            transition_ref.iter_terms().map(|term| {
-                let (lb_inner, ub_inner) = ctx.bounds(term.variable());
-                usize::try_from(ub_inner - lb_inner + 1).unwrap()
-            }),
+            transition_ref.iter_terms().map(|term| ctx.bounds(term.variable())),
         );
         let assignment = transition_ref
             .iter_terms()
@@ -220,10 +228,7 @@ impl<'a> SourceTermsGround {
     pub fn from(source: Source, idvec: impl Iterator<Item = TermGroundId>, ctx: &SchedEncoderExt) -> Self {
         let flattenable = FlattenableGround::from(
             idvec,
-            ctx.get_source_terms(&source).iter().map(|term| {
-                let (lb_inner, ub_inner) = ctx.bounds(term.variable());
-                usize::try_from(ub_inner - lb_inner + 1).unwrap()
-            }),
+            ctx.get_source_terms(&source).iter().map(|term| ctx.bounds(term.variable())),
         );
         let assignment = ctx
             .get_source_terms(&source)
