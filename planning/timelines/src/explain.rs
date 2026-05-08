@@ -6,9 +6,12 @@ use aries::{
     model::lang::*,
     solver::{Solver, musmcs::MusMcs},
 };
+use env_param::EnvParam;
 use itertools::Itertools;
 
 use crate::{ConstraintID, IntExp, Sched};
+
+static ARIES_USE_LPRELAX: EnvParam<bool> = EnvParam::new("ARIES_USE_LPRELAX", "false");
 
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
@@ -44,13 +47,14 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
         }
 
-        // let solver = Solver::new(encoding.store);
-        let solver = {
+        let solver = if ARIES_USE_LPRELAX.get() {
             let mut encoding = crate::ext::SchedEncoderExt::new(&mut encoding);
             let c = std::sync::Arc::new(crate::ext::lprelax::LpRelaxEncoding);
             tracing::debug!("Adding constraint: {c:?}");
             c.enforce(&mut encoding);
             Solver::with_extra_reasoners(encoding.main.store.clone(), vec![Box::new(encoding.lprelax.unwrap())])
+        } else {
+            Solver::new(encoding.store)
         };
 
         Self {
