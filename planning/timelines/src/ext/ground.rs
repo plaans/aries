@@ -279,7 +279,7 @@ impl<'a> SourceTermsGround {
             .unwrap()
             .enumerate()
             .filter_map(|(j, i)| i.map(|i| (j, i)))
-            .all(|(j, i)| self.flattenable.idvec[j] == transition_grounding.flattenable.idvec[i])
+            .all(|(j, i)| self.get_assignment()[j] == transition_grounding.get_assignment()[i])
     }
 
     pub fn absurd(&self, _ctx: &SchedEncoderExt) -> bool {
