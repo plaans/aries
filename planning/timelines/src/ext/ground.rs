@@ -104,17 +104,9 @@ pub struct TermGround {
 }
 impl TermGround {
     pub fn default(term: IntTerm, ctx: &SchedEncoderExt) -> Self {
-        debug_assert!(
-            !term.is_cst(),
-            "Should not be any case when a constant term is considered."
-        );
         Self::from(term, TermGroundId::default(), ctx)
     }
     pub fn from(term: IntTerm, id: TermGroundId, ctx: &SchedEncoderExt) -> Self {
-        debug_assert!(
-            !term.is_cst(),
-            "Should not be any case when a constant term is considered."
-        );
         {
             let (lb_inner, ub_inner) = ctx.bounds(term.variable());
             debug_assert!(lb_inner > INT_CST_MIN);
