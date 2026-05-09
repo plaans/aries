@@ -66,6 +66,9 @@ impl Presences {
             .insert(src_grounding.get_id());
 
         for term_grounding in src_grounding.to_term_groundings(ctx) {
+            if term_grounding.term.is_cst() {
+                continue
+            }
             self.ground_terms
                 .entry(term_grounding.term)
                 .or_default()
@@ -94,6 +97,9 @@ impl Presences {
             .insert(src_grounding.get_id());
 
         for term_grounding in tr_grounding.to_term_groundings(ctx) {
+            if term_grounding.term.is_cst() {
+                continue
+            }
             self.ground_terms
                 .entry(term_grounding.term)
                 .or_default()
