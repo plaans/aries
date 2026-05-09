@@ -1,21 +1,14 @@
-use aries::core::{INT_CST_MAX, INT_CST_MIN, LongCst};
 use aries::core::views::Term;
+use aries::core::{INT_CST_MAX, INT_CST_MIN, LongCst};
 use aries::prelude::{DomainsExt, IntCst};
 pub use aries::utils::StreamingIterator;
 
 use smallvec::SmallVec;
 
 use crate::IntTerm;
-use crate::ext::{SchedEncoderExt, Source, TransitionId, TransitionRef};
-
-impl TransitionId {
-    pub fn iter_groundings<'a>(
-        &'a self,
-        ctx: &'a SchedEncoderExt,
-    ) -> impl StreamingIterator<Item = TransitionTermsGround<'a>> {
-        TransitionTermsGroundIter::new(*self, ctx)
-    }
-}
+use crate::ext::SchedEncoderExt;
+use crate::ext::encoder::Source;
+use crate::ext::transition::{TransitionId, TransitionRef};
 
 impl<'a> SchedEncoderExt<'a> {
     pub fn iter_transition_groundings(
@@ -111,9 +104,17 @@ pub struct TermGround {
 }
 impl TermGround {
     pub fn default(term: IntTerm, ctx: &SchedEncoderExt) -> Self {
+        debug_assert!(
+            !term.is_cst(),
+            "Should not be any case when a constant term is considered."
+        );
         Self::from(term, TermGroundId::default(), ctx)
     }
     pub fn from(term: IntTerm, id: TermGroundId, ctx: &SchedEncoderExt) -> Self {
+        debug_assert!(
+            !term.is_cst(),
+            "Should not be any case when a constant term is considered."
+        );
         {
             let (lb_inner, ub_inner) = ctx.bounds(term.variable());
             debug_assert!(lb_inner > INT_CST_MIN);
@@ -161,7 +162,7 @@ impl<'a> TransitionTermsGround<'a> {
     }
 
     pub fn default(transition_id: TransitionId, ctx: &'a SchedEncoderExt) -> Self {
-        let transition_ref = transition_id.as_ref(ctx);
+        let transition_ref = ctx.get_transition(transition_id);
         let n = transition_ref.terms_len();
         Self::from(transition_id, std::iter::repeat_n(TermGroundId::default(), n), ctx)
     }
@@ -170,7 +171,7 @@ impl<'a> TransitionTermsGround<'a> {
         idvec: impl Iterator<Item = TermGroundId>,
         ctx: &'a SchedEncoderExt,
     ) -> Self {
-        let transition_ref = transition_id.as_ref(ctx);
+        let transition_ref = ctx.get_transition(transition_id);
         let flattenable = FlattenableGround::from(
             idvec,
             transition_ref.iter_terms().map(|term| ctx.bounds(term.variable())),
@@ -228,7 +229,9 @@ impl<'a> SourceTermsGround {
     pub fn from(source: Source, idvec: impl Iterator<Item = TermGroundId>, ctx: &SchedEncoderExt) -> Self {
         let flattenable = FlattenableGround::from(
             idvec,
-            ctx.get_source_terms(&source).iter().map(|term| ctx.bounds(term.variable())),
+            ctx.get_source_terms(&source)
+                .iter()
+                .map(|term| ctx.bounds(term.variable())),
         );
         let assignment = ctx
             .get_source_terms(&source)
@@ -250,10 +253,9 @@ impl<'a> SourceTermsGround {
         transition_id: TransitionId,
         ctx: &'a SchedEncoderExt,
     ) -> TransitionTermsGround<'a> {
-        let transition_ref = transition_id.as_ref(ctx);
+        let transition_ref = ctx.get_transition(transition_id);
         debug_assert!(self.source == transition_ref.get_source());
         let id = ctx
-            .transitions
             .get_transition_terms_positions_in_source_terms(&transition_id)
             .unwrap()
             .map(|i| match i {
@@ -266,16 +268,14 @@ impl<'a> SourceTermsGround {
         &'a self,
         ctx: &'a SchedEncoderExt,
     ) -> impl Iterator<Item = TransitionTermsGround<'a>> {
-        ctx.transitions
-            .get_for_source(&self.source)
-            .map(|&tr| self.to_transition_grounding(tr, ctx))
+        ctx.get_transitions_of_source(&self.source)
+            .map(|tr_id| self.to_transition_grounding(tr_id, ctx))
     }
 
     pub fn contains(&self, transition_grounding: &TransitionTermsGround, ctx: &SchedEncoderExt) -> bool {
         debug_assert!(self.source == transition_grounding.transition_ref.get_source());
 
-        ctx.transitions
-            .get_transition_terms_positions_in_source_terms(&transition_grounding.transition_id)
+        ctx.get_transition_terms_positions_in_source_terms(&transition_grounding.transition_id)
             .unwrap()
             .enumerate()
             .filter_map(|(j, i)| i.map(|i| (j, i)))

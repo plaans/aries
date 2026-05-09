@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use aries::core::VarRef;
 use aries::core::views::Term;
-use idmap::intid::IntegerId;
 use itertools::Itertools;
 
 use aries::model::lang::BoolExpr;
@@ -11,11 +10,13 @@ use aries::utils::StreamingIterator;
 
 use aries_lprelax::*;
 
+use crate::IntTerm;
+use crate::ext::SchedEncoderExt;
+use crate::ext::encoder::Source;
 use crate::ext::ground::{
     SourceTermsGround, SourceTermsGroundId, TermGround, TermGroundId, TransitionTermsGround, TransitionTermsGroundId,
 };
-use crate::ext::{SchedEncoderExt, Source, TransitionId};
-use crate::{IntTerm, TaskId};
+use crate::ext::transition::TransitionId;
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 enum ColTag {
@@ -55,8 +56,8 @@ struct Presences {
 impl Presences {
     /// Registers a (lifted) transition and its (lifted) source, as well as an "active" literal of
     /// the main CSP model indicating whether the source is active (present).
-    pub fn add_lifted_transition_and_source(&mut self, src: Source, tr: TransitionId, src_active: Lit) {
-        self.lifted_transitions_and_sources.push((src, tr, src_active));
+    pub fn add_lifted_transition_and_source(&mut self, src: Source, tr_id: TransitionId, src_active: Lit) {
+        self.lifted_transitions_and_sources.push((src, tr_id, src_active));
     }
     /// Registers a grounding of a source.
     pub fn add_ground_source(&mut self, src_grounding: &SourceTermsGround, ctx: &SchedEncoderExt) {
@@ -67,7 +68,7 @@ impl Presences {
 
         for term_grounding in src_grounding.to_term_groundings(ctx) {
             if term_grounding.term.is_cst() {
-                continue
+                continue;
             }
             self.ground_terms
                 .entry(term_grounding.term)
@@ -98,7 +99,7 @@ impl Presences {
 
         for term_grounding in tr_grounding.to_term_groundings(ctx) {
             if term_grounding.term.is_cst() {
-                continue
+                continue;
             }
             self.ground_terms
                 .entry(term_grounding.term)
@@ -144,15 +145,15 @@ struct Supports {
 }
 impl Supports {
     /// Registers a (lifted) support relation between two (appropriate) (lifted) transitions.
-    pub fn add_lifted(&mut self, tr1: TransitionId, tr2: TransitionId, active: Option<Lit>) {
-        debug_assert!(!matches!(tr1, TransitionId::Cond(_)));
+    pub fn add_lifted(&mut self, tr1_id: TransitionId, tr2_id: TransitionId, active: Option<Lit>) {
+        debug_assert!(!matches!(tr1_id, TransitionId::Cond(_)));
 
-        self.lifted.insert((tr1, tr2), active);
+        self.lifted.insert((tr1_id, tr2_id), active);
 
-        self.lifted_inflow.entry(tr2).or_default().insert(tr1);
+        self.lifted_inflow.entry(tr2_id).or_default().insert(tr1_id);
 
-        if matches!(tr2, TransitionId::Eff(_) | TransitionId::CondEff(_, _)) {
-            self.lifted_pure_outflow.entry(tr1).or_default().insert(tr2);
+        if matches!(tr2_id, TransitionId::Eff(_) | TransitionId::CondEff(_, _)) {
+            self.lifted_pure_outflow.entry(tr1_id).or_default().insert(tr2_id);
         }
     }
     /// Registers a grounding of support relation.
@@ -223,46 +224,44 @@ struct LpRelaxEncodingData {
     tags_exprs: Vec<TagsExpr>,
 }
 
-fn iter_sources(ctx: &SchedEncoderExt) -> impl Iterator<Item = Source> {
-    std::iter::chain(
-        [None],
-        ctx.main
-            .sched
-            .tasks
-            .iter()
-            .enumerate()
-            .map(|(task_id, _)| Some(TaskId::from_int(u32::try_from(task_id).unwrap()))),
-    )
-}
 fn iter_supports(ctx: &SchedEncoderExt) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
     let supports_from_ctx_encoded_causal_links = ctx.main.causal_links.get_links().map(|cl| {
-        let tr1 = *ctx.transitions.get_for_effect(cl.eff_id).unwrap();
-        let tr2 = *ctx.transitions.get_for_condition(cl.cond_id).unwrap();
-        debug_assert!(tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent);
-        ((tr1, tr2), Some(cl.active))
+        let tr1_id = ctx.get_transition_of_effect(cl.eff_id).unwrap();
+        let tr2_id = ctx.get_transition_of_condition(cl.cond_id).unwrap();
+        debug_assert!(
+            ctx.get_transition(tr1_id).get_state_var().fluent == ctx.get_transition(tr2_id).get_state_var().fluent
+        );
+        ((tr1_id, tr2_id), Some(cl.active))
     });
-    let known_effects_iter = || { ctx.iter_effects().0 };
-    let default_initial_effects_iter = || { ctx.transitions.iter_default_initial_effects() };
+    let known_effects_iter = || ctx.iter_nondefault_effects();
+    let default_initial_effects_iter = || ctx.iter_default_effects();
 
-    let supports_from_known_effects_to_others = known_effects_iter().enumerate().flat_map(move |(eff1_id, _)| {
-        let tr1 = *ctx.transitions.get_for_effect(eff1_id).unwrap();
-        let to_other_known_effects = known_effects_iter().enumerate().flat_map(move |(eff2_id, _)| {
-            let tr2 = *ctx.transitions.get_for_effect(eff2_id).unwrap();
-            if tr1 == tr2 {
+    let supports_from_known_effects_to_others = known_effects_iter().flat_map(move |(eff1_id, _)| {
+        let tr1_id = ctx.get_transition_of_effect(eff1_id).unwrap();
+        #[allow(clippy::let_and_return)]
+        let to_other_known_effects = known_effects_iter().flat_map(move |(eff2_id, _)| {
+            let tr2_id = ctx.get_transition_of_effect(eff2_id).unwrap();
+            if tr1_id == tr2_id {
                 return None;
             }
-            if matches!(tr2, TransitionId::CondEff(_, _)) {
+            if matches!(tr2_id, TransitionId::CondEff(_, _)) {
                 return None;
             }
-            debug_assert!(matches!(tr2, TransitionId::Eff(_)));
-            if tr2.as_ref(ctx).get_source().is_none() {
-                return None;
-            }
-            if tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent {
-                if tr1.as_ref(ctx).get_args().iter().zip(tr2.as_ref(ctx).get_args().iter()).any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst()) {
+            debug_assert!(matches!(tr2_id, TransitionId::Eff(_)));
+
+            let (tr1, tr2) = (ctx.get_transition(tr1_id), ctx.get_transition(tr2_id));
+            tr2.get_source()?;
+
+            if tr1.get_state_var().fluent == tr2.get_state_var().fluent {
+                if tr1
+                    .get_args()
+                    .iter()
+                    .zip(tr2.get_args().iter())
+                    .any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst())
+                {
                     return None;
                 }
-                Some(((tr1, tr2), None))
+                Some(((tr1_id, tr2_id), None))
             } else {
                 None
             }
@@ -270,40 +269,59 @@ fn iter_supports(ctx: &SchedEncoderExt) -> impl Iterator<Item = ((TransitionId, 
         to_other_known_effects
     });
     let supports_from_default_initial_effects = default_initial_effects_iter().flat_map(move |(eff1_id, _)| {
-        let tr1 = *ctx.transitions.get_for_effect(eff1_id).unwrap();
-        debug_assert!(tr1.as_ref(ctx).iter_terms().all(|term| term.is_cst()));
-        let to_conds = ctx.iter_conditions().enumerate().filter_map(move |(cond_id, _)| {
-            let tr2 = *ctx.transitions.get_for_condition(cond_id).unwrap();
-            debug_assert!(tr1 != tr2);
-            if tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent {
-                if tr1.as_ref(ctx).get_args().iter().zip(tr2.as_ref(ctx).get_args().iter()).any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst()) {
+        let tr1_id = ctx.get_transition_of_effect(eff1_id).unwrap();
+        debug_assert!(ctx.get_transition(tr1_id).iter_terms().all(|term| term.is_cst()));
+        let to_conds = ctx.iter_conditions().filter_map(move |(cond_id, _)| {
+            let tr2_id = ctx.get_transition_of_condition(cond_id).unwrap();
+            debug_assert!(tr1_id != tr2_id);
+
+            if ctx.get_transition(tr1_id).get_state_var().fluent == ctx.get_transition(tr2_id).get_state_var().fluent {
+                if ctx
+                    .get_transition(tr1_id)
+                    .get_args()
+                    .iter()
+                    .zip(ctx.get_transition(tr2_id).get_args().iter())
+                    .any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst())
+                {
                     return None;
                 }
-                if tr1.as_ref(ctx).get_valto().unwrap().is_cst() && tr2.as_ref(ctx).get_valfrom().map(|t| t.is_cst() && tr1.as_ref(ctx).get_valto().unwrap().cst() != t.cst()).unwrap_or_default() {
+                if ctx.get_transition(tr1_id).get_valto().unwrap().is_cst()
+                    && ctx
+                        .get_transition(tr2_id)
+                        .get_valfrom()
+                        .map(|t| t.is_cst() && ctx.get_transition(tr1_id).get_valto().unwrap().cst() != t.cst())
+                        .unwrap_or_default()
+                {
                     return None;
                 }
-                Some(((tr1, tr2), None))
+                Some(((tr1_id, tr2_id), None))
             } else {
                 None
             }
         });
-        let to_known_effects = known_effects_iter().enumerate().flat_map(move |(eff2_id, _)| {
-            let tr2 = *ctx.transitions.get_for_effect(eff2_id).unwrap();
-            if tr1 == tr2 {
+        let to_known_effects = known_effects_iter().flat_map(move |(eff2_id, _)| {
+            let tr2_id = ctx.get_transition_of_effect(eff2_id).unwrap();
+            if tr1_id == tr2_id {
                 return None;
             }
-            if matches!(tr2, TransitionId::CondEff(_, _)) {
+            if matches!(tr2_id, TransitionId::CondEff(_, _)) {
                 return None;
             }
-            debug_assert!(matches!(tr2, TransitionId::Eff(_)));
-            if tr2.as_ref(ctx).get_source().is_none() {
-                return None;
-            }
-            if tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent {
-                if tr1.as_ref(ctx).get_args().iter().zip(tr2.as_ref(ctx).get_args().iter()).any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst()) {
+            debug_assert!(matches!(tr2_id, TransitionId::Eff(_)));
+
+            ctx.get_transition(tr2_id).get_source()?;
+
+            if ctx.get_transition(tr1_id).get_state_var().fluent == ctx.get_transition(tr2_id).get_state_var().fluent {
+                if ctx
+                    .get_transition(tr1_id)
+                    .get_args()
+                    .iter()
+                    .zip(ctx.get_transition(tr2_id).get_args().iter())
+                    .any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst())
+                {
                     return None;
                 }
-                Some(((tr1, tr2), None))
+                Some(((tr1_id, tr2_id), None))
             } else {
                 None
             }
@@ -314,10 +332,15 @@ fn iter_supports(ctx: &SchedEncoderExt) -> impl Iterator<Item = ((TransitionId, 
     supports_from_ctx_encoded_causal_links
         .chain(supports_from_known_effects_to_others)
         .chain(supports_from_default_initial_effects)
-        .inspect(|((tr1, tr2), _)| {
-            debug_assert!(tr1 != tr2, "{:?} --- {:?}", tr1.as_ref(ctx), tr2.as_ref(ctx));
-            debug_assert!(!matches!(tr1, TransitionId::Cond(_)));
-            debug_assert!(!matches!(tr2, TransitionId::Eff(_)) || tr2.as_ref(ctx).get_source().is_some());
+        .inspect(|&((tr1_id, tr2_id), _)| {
+            debug_assert!(
+                tr1_id != tr2_id,
+                "{:?} --- {:?}",
+                ctx.get_transition(tr1_id),
+                ctx.get_transition(tr2_id)
+            );
+            debug_assert!(!matches!(tr1_id, TransitionId::Cond(_)));
+            debug_assert!(!matches!(tr2_id, TransitionId::Eff(_)) || ctx.get_transition(tr2_id).get_source().is_some());
         })
 }
 
@@ -325,12 +348,10 @@ impl LpRelaxEncodingData {
     fn collect_relations(&mut self, ctx: &mut SchedEncoderExt) {
         // Collect lifted presences of transitions and sources,
         // as well as the relations between groundings of transitions, sources, and terms appearing in them.
-        for src in iter_sources(ctx) {
-            for &tr in ctx.transitions.get_for_source(&src) {
-                let src_active = src
-                    .map(|task_id| ctx.main.sched.tasks[task_id].presence)
-                    .unwrap_or(Lit::TRUE);
-                self.presences.add_lifted_transition_and_source(src, tr, src_active);
+        for src in ctx.iter_sources() {
+            for tr_id in ctx.get_transitions_of_source(&src) {
+                let src_active = ctx.get_source(&src).map(|task| task.presence).unwrap_or(Lit::TRUE);
+                self.presences.add_lifted_transition_and_source(src, tr_id, src_active);
 
                 let mut src_groundings_iter = ctx.iter_source_groundings(src);
                 while let Some(src_grounding) = src_groundings_iter.next() {
@@ -348,16 +369,16 @@ impl LpRelaxEncodingData {
         // which is not the case in our main definition of causal links.
         // In this specific case where the support is between two effects,
         // the "active" literal is None (as this doesn't correspond to a causal link in the main CSP model).
-        for ((tr1, tr2), active) in iter_supports(ctx) {
-            self.supports.add_lifted(tr1, tr2, active);
+        for ((tr1_id, tr2_id), active) in iter_supports(ctx) {
+            self.supports.add_lifted(tr1_id, tr2_id, active);
 
-            let mut src1_groundings_iter = ctx.iter_source_groundings(tr1.as_ref(ctx).get_source());
+            let mut src1_groundings_iter = ctx.iter_source_groundings(ctx.get_transition(tr1_id).get_source());
             while let Some(src1_gr) = src1_groundings_iter.next() {
-                let tr1_grounding = src1_gr.to_transition_grounding(tr1, ctx);
+                let tr1_grounding = src1_gr.to_transition_grounding(tr1_id, ctx);
 
-                let mut src2_groundings_iter = ctx.iter_source_groundings(tr2.as_ref(ctx).get_source());
+                let mut src2_groundings_iter = ctx.iter_source_groundings(ctx.get_transition(tr2_id).get_source());
                 while let Some(src2_gr) = src2_groundings_iter.next() {
-                    let tr2_grounding = src2_gr.to_transition_grounding(tr2, ctx);
+                    let tr2_grounding = src2_gr.to_transition_grounding(tr2_id, ctx);
 
                     if self.supports.ground_is_valid(&tr1_grounding, &tr2_grounding) {
                         self.supports.add_ground(&tr1_grounding, &tr2_grounding);
@@ -381,14 +402,14 @@ impl LpRelaxEncodingData {
         };
 
         // A transition is active (i.e. present) iff its source is
-        for &(src, tr, _) in &self.presences.lifted_transitions_and_sources {
+        for &(src, tr_id, _) in &self.presences.lifted_transitions_and_sources {
             add_tags_expr(TagsExpr::Eq(
-                vec![ColTag::PresenceTransition(tr)],
+                vec![ColTag::PresenceTransition(tr_id)],
                 vec![ColTag::PresenceSource(src)],
             ));
 
             add_column_01(ColTag::PresenceSource(src));
-            add_column_01(ColTag::PresenceTransition(tr));
+            add_column_01(ColTag::PresenceTransition(tr_id));
         }
 
         // A source is active iff one of its groundings is.
@@ -408,23 +429,23 @@ impl LpRelaxEncodingData {
 
         // A transition is active iff one of its groundings is
         // A ground transition is active iff one of its source's compatible groundings is.
-        for (&tr, grs) in &self.presences.ground_transitions {
+        for (&tr_id, grs) in &self.presences.ground_transitions {
             add_tags_expr(TagsExpr::Eq(
-                vec![ColTag::PresenceTransition(tr)],
+                vec![ColTag::PresenceTransition(tr_id)],
                 grs.keys()
-                    .map(|&tr_grounding_id| ColTag::PresenceTransitionGround(tr, tr_grounding_id))
+                    .map(|&tr_grounding_id| ColTag::PresenceTransitionGround(tr_id, tr_grounding_id))
                     .collect(),
             ));
 
             for &tr_grounding_id in grs.keys() {
-                add_column_01(ColTag::PresenceTransitionGround(tr, tr_grounding_id));
+                add_column_01(ColTag::PresenceTransitionGround(tr_id, tr_grounding_id));
             }
 
             for (&tr_grounding_id, src_groundings_ids) in grs {
-                let src = tr.as_ref(ctx).get_source();
+                let src = ctx.get_transition(tr_id).get_source();
 
                 add_tags_expr(TagsExpr::Eq(
-                    vec![ColTag::PresenceTransitionGround(tr, tr_grounding_id)],
+                    vec![ColTag::PresenceTransitionGround(tr_id, tr_grounding_id)],
                     src_groundings_ids
                         .iter()
                         .map(|&src_grounding_id| ColTag::PresenceSourceGround(src, src_grounding_id))
@@ -466,46 +487,46 @@ impl LpRelaxEncodingData {
 
         // A grounding of a term is active iff a transition grounding using it is active
         for (&(term, term_grounding_id), tr_groundings) in &self.presences.ground_terms_transitions {
-            for (&tr, tr_groundings_ids) in tr_groundings {
+            for (&tr_id, tr_groundings_ids) in tr_groundings {
                 add_tags_expr(TagsExpr::Eq(
                     vec![ColTag::TermGround(term, term_grounding_id)],
                     tr_groundings_ids
                         .iter()
-                        .map(|&tr_grounding_id| ColTag::PresenceTransitionGround(tr, tr_grounding_id))
+                        .map(|&tr_grounding_id| ColTag::PresenceTransitionGround(tr_id, tr_grounding_id))
                         .collect(),
                 ));
             }
         }
 
         // If a support is active, then both its transitions must be active
-        for &(tr1, tr2) in self.supports.lifted.keys() {
+        for &(tr1_id, tr2_id) in self.supports.lifted.keys() {
             add_tags_expr(TagsExpr::Leq(
-                vec![ColTag::Support(tr1, tr2)],
-                vec![ColTag::PresenceTransition(tr1)],
+                vec![ColTag::Support(tr1_id, tr2_id)],
+                vec![ColTag::PresenceTransition(tr1_id)],
             ));
             add_tags_expr(TagsExpr::Leq(
-                vec![ColTag::Support(tr1, tr2)],
-                vec![ColTag::PresenceTransition(tr2)],
+                vec![ColTag::Support(tr1_id, tr2_id)],
+                vec![ColTag::PresenceTransition(tr2_id)],
             ));
 
-            add_column_01(ColTag::Support(tr1, tr2));
+            add_column_01(ColTag::Support(tr1_id, tr2_id));
         }
 
         // A transition1 supporting transition2 cannot be supported by transition2
         // (i.e. forbid trivial cycles)
         // NOTE: REQUIRES all initial effects (notably initial negative / default effects).
         //       Without that, the in-flow constraint (see below) would be incorrect!
-        for (&tr2, tr1s) in &self.supports.lifted_inflow {
-            for &tr1 in tr1s {
+        for (&tr2_id, tr1s) in &self.supports.lifted_inflow {
+            for &tr1_id in tr1s {
                 if self
                     .supports
                     .lifted_inflow
-                    .get(&tr1)
-                    .is_some_and(|set| set.contains(&tr2))
+                    .get(&tr1_id)
+                    .is_some_and(|set| set.contains(&tr2_id))
                 {
                     add_tags_expr(TagsExpr::Leq1(vec![
-                        ColTag::Support(tr1, tr2),
-                        ColTag::Support(tr2, tr1),
+                        ColTag::Support(tr1_id, tr2_id),
+                        ColTag::Support(tr2_id, tr1_id),
                     ]));
                 }
             }
@@ -513,77 +534,93 @@ impl LpRelaxEncodingData {
 
         // A support is active iff one of its groundings is
         // If a ground support is active, then its terms' groundings must be active
-        for (&(tr1, tr2), trs_groundings_ids) in &self.supports.ground {
+        for (&(tr1_id, tr2_id), trs_groundings_ids) in &self.supports.ground {
             add_tags_expr(TagsExpr::Eq(
-                vec![ColTag::Support(tr1, tr2)],
+                vec![ColTag::Support(tr1_id, tr2_id)],
                 trs_groundings_ids
                     .iter()
                     .map(|&(tr1_grounding_id, tr2_grounding_id)| {
-                        ColTag::SupportGround(tr1, tr2, tr1_grounding_id, tr2_grounding_id)
+                        ColTag::SupportGround(tr1_id, tr2_id, tr1_grounding_id, tr2_grounding_id)
                     })
                     .collect(),
             ));
 
             for &(tr1_grounding_id, tr2_grounding_id) in trs_groundings_ids {
                 add_tags_expr(TagsExpr::Leq(
-                    vec![ColTag::SupportGround(tr1, tr2, tr1_grounding_id, tr2_grounding_id)],
-                    vec![ColTag::PresenceTransitionGround(tr1, tr1_grounding_id)],
+                    vec![ColTag::SupportGround(
+                        tr1_id,
+                        tr2_id,
+                        tr1_grounding_id,
+                        tr2_grounding_id,
+                    )],
+                    vec![ColTag::PresenceTransitionGround(tr1_id, tr1_grounding_id)],
                 ));
                 add_tags_expr(TagsExpr::Leq(
-                    vec![ColTag::SupportGround(tr1, tr2, tr1_grounding_id, tr2_grounding_id)],
-                    vec![ColTag::PresenceTransitionGround(tr2, tr2_grounding_id)],
+                    vec![ColTag::SupportGround(
+                        tr1_id,
+                        tr2_id,
+                        tr1_grounding_id,
+                        tr2_grounding_id,
+                    )],
+                    vec![ColTag::PresenceTransitionGround(tr2_id, tr2_grounding_id)],
                 ));
 
-                add_column_01(ColTag::SupportGround(tr1, tr2, tr1_grounding_id, tr2_grounding_id));
+                add_column_01(ColTag::SupportGround(
+                    tr1_id,
+                    tr2_id,
+                    tr1_grounding_id,
+                    tr2_grounding_id,
+                ));
             }
         }
 
         // A transition is present iff it is supported by another one
         // (Note that effect transitions are allowed to be supported too,
         // by transitions on the same state fluent and any value)
-        for (&tr2, tr1s) in &self.supports.lifted_inflow {
+        for (&tr2_id, tr1_ids) in &self.supports.lifted_inflow {
             add_tags_expr(TagsExpr::Eq(
-                vec![ColTag::PresenceTransition(tr2)],
-                tr1s.iter().map(|&tr1| ColTag::Support(tr1, tr2)).collect(),
+                vec![ColTag::PresenceTransition(tr2_id)],
+                tr1_ids.iter().map(|&tr1_id| ColTag::Support(tr1_id, tr2_id)).collect(),
             ));
         }
 
         // A ground transition is present iff it is supported by another (compatible) one.
         // Same remark on effect transitions as above.
-        for (&(tr2, tr2_grounding_id), tr1s) in &self.supports.ground_inflow {
+        for (&(tr2_id, tr2_grounding_id), tr1s) in &self.supports.ground_inflow {
             add_tags_expr(TagsExpr::Eq(
                 tr1s.iter()
-                    .flat_map(|(&tr1, tr1_groundings_ids)| {
+                    .flat_map(|(&tr1_id, tr1_groundings_ids)| {
                         tr1_groundings_ids.iter().map(move |&tr1_grounding_id| {
-                            ColTag::SupportGround(tr1, tr2, tr1_grounding_id, tr2_grounding_id)
+                            ColTag::SupportGround(tr1_id, tr2_id, tr1_grounding_id, tr2_grounding_id)
                         })
                     })
                     .collect(),
-                vec![ColTag::PresenceTransitionGround(tr2, tr2_grounding_id)],
+                vec![ColTag::PresenceTransitionGround(tr2_id, tr2_grounding_id)],
             ));
         }
 
         // If a (non-condition) transition is present,
         // then it can support at most one Eff or CondEff transition.
-        for (&tr1, tr2s) in &self.supports.lifted_pure_outflow {
+        for (&tr1_id, tr2_ids) in &self.supports.lifted_pure_outflow {
             add_tags_expr(TagsExpr::Leq(
-                tr2s.iter().map(|&tr2| ColTag::Support(tr1, tr2)).collect(),
-                vec![ColTag::PresenceTransition(tr1)],
+                tr2_ids.iter().map(|&tr2_id| ColTag::Support(tr1_id, tr2_id)).collect(),
+                vec![ColTag::PresenceTransition(tr1_id)],
             ));
         }
 
         // If a ground (non-condition) transition is present,
         // then it can support at most one (compatible) Eff or CondEff transition.
-        for (&(tr1, tr1_grounding_id), tr2s) in &self.supports.ground_pure_outflow {
+        for (&(tr1_id, tr1_grounding_id), tr2_ids) in &self.supports.ground_pure_outflow {
             add_tags_expr(TagsExpr::Leq(
-                tr2s.iter()
-                    .flat_map(|(&tr2, tr2_groundings_ids)| {
+                tr2_ids
+                    .iter()
+                    .flat_map(|(&tr2_id, tr2_groundings_ids)| {
                         tr2_groundings_ids.iter().map(move |&tr2_grounding_id| {
-                            ColTag::SupportGround(tr1, tr2, tr1_grounding_id, tr2_grounding_id)
+                            ColTag::SupportGround(tr1_id, tr2_id, tr1_grounding_id, tr2_grounding_id)
                         })
                     })
                     .collect(),
-                vec![ColTag::PresenceTransitionGround(tr1, tr1_grounding_id)],
+                vec![ColTag::PresenceTransitionGround(tr1_id, tr1_grounding_id)],
             ));
         }
 
@@ -627,15 +664,15 @@ impl LpRelaxEncodingData {
         let mut lprelax = ctx.lprelax.take().unwrap();
 
         let mut presence_lits_and_cols = BTreeMap::<Lit, BTreeSet<usize>>::new();
-        for &(src, tr, src_active) in &self.presences.lifted_transitions_and_sources {
+        for &(src, tr_id, src_active) in &self.presences.lifted_transitions_and_sources {
             presence_lits_and_cols
                 .entry(src_active)
                 .or_default()
                 .insert(self.col_tags.get(&ColTag::PresenceSource(src)).unwrap().index());
             presence_lits_and_cols
-                .entry(tr.as_ref(ctx).get_prez())
+                .entry(ctx.get_transition(tr_id).get_prez())
                 .or_default()
-                .insert(self.col_tags.get(&ColTag::PresenceTransition(tr)).unwrap().index());
+                .insert(self.col_tags.get(&ColTag::PresenceTransition(tr_id)).unwrap().index());
         }
         // Bind lifted presence columns of the LP with corresponding literals in the main CSP.
         for (p, cols) in presence_lits_and_cols {
@@ -727,12 +764,12 @@ impl LpRelaxEncodingData {
         }
 
         // Bind lifted support columns of the LP with corresponding literals in the main CSP.
-        for (&(tr1, tr2), &s) in &self.supports.lifted {
+        for (&(tr1_id, tr2_id), &s) in &self.supports.lifted {
             if let Some(s) = s {
                 let s = s.variable();
                 debug_assert!(s != VarRef::ZERO);
 
-                let col = *self.col_tags.get(&ColTag::Support(tr1, tr2)).unwrap();
+                let col = *self.col_tags.get(&ColTag::Support(tr1_id, tr2_id)).unwrap();
 
                 lprelax.set_lit_implications(s, default_lit_implications(s, col));
                 lprelax.set_lplit_implications(col, default_lplit_implications(s, col));
@@ -745,8 +782,8 @@ impl LpRelaxEncodingData {
     #[allow(unused)]
     fn print(&self, ctx: &SchedEncoderExt) {
         println!("## Transitions");
-        for (tr_id, _) in ctx.transitions.iter() {
-            println!("{:?} ==== {:?}", tr_id, tr_id.as_ref(ctx));
+        for (tr_id, tr) in ctx.iter_transitions() {
+            println!("{:?} ==== {:?}", tr_id, tr);
         }
         println!("## Columns");
         for (col_tag, col) in self.col_tags.iter() {
@@ -778,6 +815,7 @@ impl<'a> BoolExpr<SchedEncoderExt<'a>> for LpRelaxEncoding {
         enc.collect_relations(ctx);
         enc.build_cols_and_rows(ctx);
         enc.bind_to_main_model(ctx);
+        // enc.print(ctx);
 
         assert!(ctx.lprelax.is_some());
     }

@@ -49,7 +49,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
 
         let solver = if ARIES_USE_LPRELAX.get() {
             let mut encoding = crate::ext::SchedEncoderExt::new(&mut encoding);
-            let c = std::sync::Arc::new(crate::ext::lprelax::LpRelaxEncoding);
+            let c = std::sync::Arc::new(crate::ext::LpRelaxEncoding);
             tracing::debug!("Adding constraint: {c:?}");
             c.enforce(&mut encoding);
             Solver::with_extra_reasoners(encoding.main.store.clone(), vec![Box::new(encoding.lprelax.unwrap())])

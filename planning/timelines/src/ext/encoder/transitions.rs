@@ -1,224 +1,36 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use aries::core::{INT_CST_MAX, IntCst};
-use aries::prelude::Lit;
+use aries::prelude::*;
 use aries::utils::StreamingIterator;
 use idmap::DirectIdMap;
 use smallvec::SmallVec;
 
-use crate::constraints::HasValueAt;
 use crate::encoder::{CondId, SchedEncoder};
-use crate::ext::{SchedEncoderExt, Source};
+use crate::ext::transition::TransitionId;
 use crate::{Effect, EffectId, IntTerm, StateVar, Sym, TaskId};
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TransitionId {
-    Cond(CondId),
-    Eff(EffectId),
-    /// A condition and effect sharing the same source, presence literal, and state variable.
-    CondEff(CondId, EffectId),
-}
-
-impl TransitionId {
-    pub fn as_ref<'a>(self, ctx: &'a SchedEncoderExt) -> TransitionRef<'a> {
-        match self {
-            TransitionId::Cond(c_id) => TransitionRef::Cond(ctx.get_condition(c_id)),
-            TransitionId::Eff(e_id) => TransitionRef::Eff(ctx.get_effect(e_id)),
-            TransitionId::CondEff(c_id, e_id) => TransitionRef::CondEff(ctx.get_condition(c_id), ctx.get_effect(e_id)),
-        }
-    }
-}
-
-#[derive(PartialEq, Eq)]
-pub enum TransitionRef<'a> {
-    Cond(&'a HasValueAt),
-    Eff(&'a Effect),
-    CondEff(&'a HasValueAt, &'a Effect),
-}
-impl<'a> TransitionRef<'a> {
-    pub fn get_condition(&self) -> Option<&'a HasValueAt> {
-        match self {
-            TransitionRef::Eff(_) => None,
-            TransitionRef::Cond(c) | TransitionRef::CondEff(c, _) => Some(c),
-        }
-    }
-    pub fn get_effect(&self) -> Option<&'a Effect> {
-        match self {
-            TransitionRef::Cond(_) => None,
-            TransitionRef::Eff(e) | TransitionRef::CondEff(_, e) => Some(e),
-        }
-    }
-    pub fn get_source(&self) -> Source {
-        match self {
-            TransitionRef::Cond(c) => c.source,
-            TransitionRef::Eff(e) => e.source,
-            TransitionRef::CondEff(c, e) => {
-                debug_assert!(c.source == e.source);
-                c.source
-            }
-        }
-    }
-    pub fn get_prez(&self) -> Lit {
-        match self {
-            TransitionRef::Cond(c) => c.prez,
-            TransitionRef::Eff(e) => e.prez,
-            TransitionRef::CondEff(c, e) => {
-                debug_assert!(c.prez == e.prez);
-                c.prez
-            }
-        }
-    }
-    pub fn get_state_var(&self) -> &'a StateVar {
-        match self {
-            TransitionRef::Cond(c) => &c.state_var,
-            TransitionRef::Eff(e) => &e.state_var,
-            TransitionRef::CondEff(c, e) => {
-                debug_assert!(c.state_var == e.state_var);
-                &c.state_var
-            }
-        }
-    }
-    pub fn get_args(&self) -> &'a [IntTerm] {
-        &self.get_state_var().args
-    }
-    pub fn get_valfrom(&self) -> Option<&IntTerm> {
-        self.get_condition().map(|c| &c.value)
-    }
-    pub fn get_valto(&self) -> Option<&IntTerm> {
-        self.get_effect().map(|e| match &e.operation {
-            crate::EffectOp::Assign(term) => term,
-            crate::EffectOp::Step(_) => todo!(),
-        })
-    }
-    pub fn get_terms(&self) -> (&'a [IntTerm], Option<&IntTerm>, Option<&IntTerm>) {
-        debug_assert!(self.get_valfrom().is_some() || self.get_valto().is_some());
-        (self.get_args(), self.get_valfrom(), self.get_valto())
-    }
-    pub fn terms_len(&self) -> usize {
-        self.get_args().len() + self.get_valfrom().is_some() as usize + self.get_valto().is_some() as usize
-    }
-    pub fn get_term(&self, i: usize) -> &IntTerm {
-        if i == self.get_args().len() + 1 {
-            self.get_valto().unwrap()
-        } else if i == self.get_args().len() {
-            self.get_valfrom().unwrap()
-        } else {
-            &self.get_args()[i]
-        }
-    }
-    pub fn get_valfrom_idx(&self) -> Option<usize> {
-        match self {
-            TransitionRef::Cond(_) => Some(self.get_args().len()),
-            TransitionRef::Eff(_) => None,
-            TransitionRef::CondEff(_, _) => Some(self.get_args().len()),
-        }
-    }
-    pub fn get_valto_idx(&self) -> Option<usize> {
-        match self {
-            TransitionRef::Cond(_) => None,
-            TransitionRef::Eff(_) => Some(self.get_args().len()),
-            TransitionRef::CondEff(_, _) => Some(self.get_args().len() + 1),
-        }
-    }
-    /*pub fn terms_iter(&self) -> impl Iterator<Item = &IntTerm> {
-        self.args().iter().chain(self.valfrom()).chain(self.valto())
-    }*/
-    pub fn iter_terms(&self) -> impl Iterator<Item = IntTerm> + use<'_> {
-        self.get_args()
-            .iter()
-            .copied()
-            .chain(self.get_valfrom().copied())
-            .chain(self.get_valto().copied())
-    }
-}
-
-impl<'a> std::fmt::Debug for TransitionRef<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{:?}]({:?}: {:?}->{:?})",
-            self.get_source(),
-            self.get_state_var(),
-            self.get_valfrom(),
-            self.get_valto(),
-        )
-    }
-}
 
 type TransitionIndex = usize;
 
-pub struct Transitions {
-    store: Vec<TransitionId>,
+pub(crate) struct Transitions {
+    pub store: Vec<TransitionId>,
 
-    of_condition: DirectIdMap<CondId, TransitionIndex>,
-    of_effect: DirectIdMap<EffectId, TransitionIndex>,
-    of_empty_source: Vec<TransitionIndex>,
-    of_concrete_source: DirectIdMap<TaskId, SmallVec<[TransitionIndex; 6]>>,
+    pub of_condition: DirectIdMap<CondId, TransitionIndex>,
+    pub of_effect: DirectIdMap<EffectId, TransitionIndex>,
+    pub of_empty_source: Vec<TransitionIndex>,
+    pub of_concrete_source: DirectIdMap<TaskId, SmallVec<[TransitionIndex; 6]>>,
 
-    default_initial_effects: Vec<Effect>,
-    first_default_initial_effect_id: EffectId,
+    pub default_initial_effects: Vec<Effect>,
+    pub first_default_initial_effect_id: EffectId,
 
-    empty_source_transitions_terms: Vec<IntTerm>,
-    concrete_source_transitions_terms: DirectIdMap<TaskId, Vec<IntTerm>>,
+    pub empty_source_transitions_terms: Vec<IntTerm>,
+    pub concrete_source_transitions_terms: DirectIdMap<TaskId, Vec<IntTerm>>,
     /// For each transition, stores the indices of its (non-constant) terms in
     /// the collection (vector) of all terms appearing in this and and "sibling" transitions,
     /// to prevent from recomputing them too often later.
-    transition_terms_indices_in_source: BTreeMap<TransitionId, SmallVec<[Option<usize>; 6]>>,
+    pub transition_terms_indices_in_source: BTreeMap<TransitionId, SmallVec<[Option<usize>; 6]>>,
 }
 
 impl Transitions {
-    pub fn get_default_initial_effects(&self) -> (EffectId, &[Effect]) {
-        (self.first_default_initial_effect_id, &self.default_initial_effects)
-    }
-    pub fn iter_default_initial_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
-        self.default_initial_effects
-            .iter()
-            .enumerate()
-            .map(|(i, e)| (self.first_default_initial_effect_id + i, e))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (TransitionId, Source)> {
-        std::iter::chain(
-            self.of_empty_source.iter().map(|tr_id| (self.store[*tr_id], None)),
-            self.of_concrete_source
-                .iter()
-                .flat_map(move |(task_id, tr_ids)| tr_ids.iter().map(move |tr_id| (self.store[*tr_id], Some(task_id)))),
-        )
-    }
-
-    pub fn get_for_condition(&self, condition_id: CondId) -> Option<&TransitionId> {
-        self.of_condition.get(condition_id).map(|&tr_id| &self.store[tr_id])
-    }
-    pub fn get_for_effect(&self, effect_id: EffectId) -> Option<&TransitionId> {
-        self.of_effect.get(effect_id).map(|&tr_id| &self.store[tr_id])
-    }
-    pub fn get_for_source(&self, source: &Source) -> impl Iterator<Item = &TransitionId> {
-        match source {
-            None => Some(self.of_empty_source.iter()),
-            Some(task_id) => self.of_concrete_source.get(task_id).map(|v| v.iter()),
-        }
-        .unwrap_or([].iter())
-        .map(|&tr_id| &self.store[tr_id])
-    }
-
-    pub fn get_source_terms(&self, source: &Source) -> &[IntTerm] {
-        source
-            .map(|task_id| &self.concrete_source_transitions_terms[task_id])
-            .unwrap_or(&self.empty_source_transitions_terms)
-    }
-
-    /// Returns the position of the transition's terms within the source's terms
-    /// (i.e. the collection of all terms appearing in the source's transitions).
-    /// None corresponds to a constant term.
-    pub fn get_transition_terms_positions_in_source_terms(
-        &self,
-        transition_id: &TransitionId,
-    ) -> Option<impl Iterator<Item = Option<usize>>> {
-        self.transition_terms_indices_in_source
-            .get(transition_id)
-            .map(|v| v.iter().copied())
-    }
-
     pub fn new(ctx: &mut SchedEncoder) -> Self {
         let mut store = vec![];
         let mut of_condition = DirectIdMap::default();
@@ -271,15 +83,15 @@ impl Transitions {
         );
         for (src, cs) in source_conds_iter {
             for &(cond_id, _) in cs {
-                let tr_id = store.len();
-                of_condition.insert(cond_id, tr_id);
+                let tr_index = store.len();
+                of_condition.insert(cond_id, tr_index);
                 if let Some(task_id) = src {
                     if !of_concrete_source.contains_key(task_id) {
                         of_concrete_source.insert(task_id, SmallVec::new());
                     }
-                    of_concrete_source.get_mut(task_id).unwrap().push(tr_id);
+                    of_concrete_source.get_mut(task_id).unwrap().push(tr_index);
                 } else {
-                    of_empty_source.push(tr_id);
+                    of_empty_source.push(tr_index);
                 }
                 store.push(TransitionId::Cond(cond_id));
             }
@@ -306,9 +118,9 @@ impl Transitions {
                     for &(cond_id, c) in cs {
                         if e.state_var == c.state_var && e.prez == c.prez {
                             // Change the previously inserted Cond transition into a CondEff
-                            let tr_id = *of_condition.get(cond_id).unwrap();
-                            of_effect.insert(eff_id, tr_id);
-                            store[tr_id] = TransitionId::CondEff(cond_id, eff_id);
+                            let tr_index = *of_condition.get(cond_id).unwrap();
+                            of_effect.insert(eff_id, tr_index);
+                            store[tr_index] = TransitionId::CondEff(cond_id, eff_id);
 
                             compatible_conds_found += 1;
                         }
@@ -318,15 +130,15 @@ impl Transitions {
 
                 // Add a new Eff transition if the effect doesn't correspond to a CondEff
                 if compatible_conds_found == 0 {
-                    let tr_id = store.len();
-                    of_effect.insert(eff_id, tr_id);
+                    let tr_index = store.len();
+                    of_effect.insert(eff_id, tr_index);
                     if let Some(task_id) = src {
                         if !of_concrete_source.contains_key(task_id) {
                             of_concrete_source.insert(task_id, SmallVec::new());
                         }
-                        of_concrete_source.get_mut(task_id).unwrap().push(tr_id);
+                        of_concrete_source.get_mut(task_id).unwrap().push(tr_index);
                     } else {
-                        of_empty_source.push(tr_id);
+                        of_empty_source.push(tr_index);
                     }
                     store.push(TransitionId::Eff(eff_id));
                 }
@@ -380,9 +192,9 @@ impl Transitions {
                 });
 
                 let eff_id = of_effect.len();
-                let tr_id = store.len();
-                of_effect.insert(eff_id, tr_id);
-                of_empty_source.push(tr_id);
+                let tr_index = store.len();
+                of_effect.insert(eff_id, tr_index);
+                of_empty_source.push(tr_index);
                 store.push(TransitionId::Eff(eff_id));
             }
         }
