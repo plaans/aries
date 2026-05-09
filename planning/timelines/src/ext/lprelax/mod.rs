@@ -229,64 +229,90 @@ fn iter_sources(ctx: &SchedEncoderExt) -> impl Iterator<Item = Source> {
     )
 }
 fn iter_supports(ctx: &SchedEncoderExt) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
-    let eff_ids_pairs = ctx
-        .main
-        .sched
-        .effects
-        .iter()
-        .chain(&ctx.default_initial_effects)
-        .enumerate()
-        .flat_map(|(eff1_id, _)| {
-            ctx.main
-                .sched
-                .effects
-                .iter()
-                .chain(&ctx.default_initial_effects)
-                .enumerate()
-                .map(move |(eff2_id, _)| (eff1_id, eff2_id))
-        });
-    std::iter::chain(
-        ctx.main.causal_links.get_links().map(|cl| {
-            let tr1 = *ctx.transitions.get_for_effect(cl.eff_id).unwrap();
-            let tr2 = *ctx.transitions.get_for_condition(cl.cond_id).unwrap();
-            debug_assert!(tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent);
-            ((tr1, tr2), Some(cl.active))
-        }),
-        eff_ids_pairs.filter_map(|(eff1_id, eff2_id)| {
-            let tr1 = *ctx.transitions.get_for_effect(eff1_id).unwrap();
+    let supports_from_ctx_encoded_causal_links = ctx.main.causal_links.get_links().map(|cl| {
+        let tr1 = *ctx.transitions.get_for_effect(cl.eff_id).unwrap();
+        let tr2 = *ctx.transitions.get_for_condition(cl.cond_id).unwrap();
+        debug_assert!(tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent);
+        ((tr1, tr2), Some(cl.active))
+    });
+    let known_effects_iter = || { ctx.iter_effects().0 };
+    let default_initial_effects_iter = || { ctx.transitions.iter_default_initial_effects() };
+
+    let supports_from_known_effects_to_others = known_effects_iter().enumerate().flat_map(move |(eff1_id, _)| {
+        let tr1 = *ctx.transitions.get_for_effect(eff1_id).unwrap();
+        let to_other_known_effects = known_effects_iter().enumerate().flat_map(move |(eff2_id, _)| {
             let tr2 = *ctx.transitions.get_for_effect(eff2_id).unwrap();
+            if tr1 == tr2 {
+                return None;
+            }
             if matches!(tr2, TransitionId::CondEff(_, _)) {
                 return None;
             }
             debug_assert!(matches!(tr2, TransitionId::Eff(_)));
-            if tr1 == tr2 {
-                //    || tr1.get_source(&ctx.main) != tr2.get_source(&ctx.main)
-                //{
-                return None;
-            }
-            if tr1.as_ref(ctx).get_source().is_none() && tr2.as_ref(ctx).get_source().is_none() {
+            if tr2.as_ref(ctx).get_source().is_none() {
                 return None;
             }
             if tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent {
+                if tr1.as_ref(ctx).get_args().iter().zip(tr2.as_ref(ctx).get_args().iter()).any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst()) {
+                    return None;
+                }
                 Some(((tr1, tr2), None))
             } else {
                 None
             }
-        }),
-    )
-    .filter(|((tr1, tr2), _)| {
-        if tr1 == tr2 {
-            false
-        } else if tr1.as_ref(ctx).get_source().is_none() && matches!(tr1, TransitionId::Cond(_)) {
-            // The transition is from the "final" or "end" action (i.e. it is a goal condition).
-            false
-        } else if tr2.as_ref(ctx).get_source().is_none() && matches!(tr2, TransitionId::Eff(_)) {
-            // The transition is from the "initial" or "start" action (i.e. it is an initial effect).
-            false
-        } else {
-            true
-        }
-    })
+        });
+        to_other_known_effects
+    });
+    let supports_from_default_initial_effects = default_initial_effects_iter().flat_map(move |(eff1_id, _)| {
+        let tr1 = *ctx.transitions.get_for_effect(eff1_id).unwrap();
+        debug_assert!(tr1.as_ref(ctx).iter_terms().all(|term| term.is_cst()));
+        let to_conds = ctx.iter_conditions().enumerate().filter_map(move |(cond_id, _)| {
+            let tr2 = *ctx.transitions.get_for_condition(cond_id).unwrap();
+            debug_assert!(tr1 != tr2);
+            if tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent {
+                if tr1.as_ref(ctx).get_args().iter().zip(tr2.as_ref(ctx).get_args().iter()).any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst()) {
+                    return None;
+                }
+                if tr1.as_ref(ctx).get_valto().unwrap().is_cst() && tr2.as_ref(ctx).get_valfrom().map(|t| t.is_cst() && tr1.as_ref(ctx).get_valto().unwrap().cst() != t.cst()).unwrap_or_default() {
+                    return None;
+                }
+                Some(((tr1, tr2), None))
+            } else {
+                None
+            }
+        });
+        let to_known_effects = known_effects_iter().enumerate().flat_map(move |(eff2_id, _)| {
+            let tr2 = *ctx.transitions.get_for_effect(eff2_id).unwrap();
+            if tr1 == tr2 {
+                return None;
+            }
+            if matches!(tr2, TransitionId::CondEff(_, _)) {
+                return None;
+            }
+            debug_assert!(matches!(tr2, TransitionId::Eff(_)));
+            if tr2.as_ref(ctx).get_source().is_none() {
+                return None;
+            }
+            if tr1.as_ref(ctx).get_state_var().fluent == tr2.as_ref(ctx).get_state_var().fluent {
+                if tr1.as_ref(ctx).get_args().iter().zip(tr2.as_ref(ctx).get_args().iter()).any(|(t1, t2)| t1.is_cst() && t2.is_cst() && t1.cst() != t2.cst()) {
+                    return None;
+                }
+                Some(((tr1, tr2), None))
+            } else {
+                None
+            }
+        });
+        std::iter::chain(to_conds, to_known_effects)
+    });
+
+    supports_from_ctx_encoded_causal_links
+        .chain(supports_from_known_effects_to_others)
+        .chain(supports_from_default_initial_effects)
+        .inspect(|((tr1, tr2), _)| {
+            debug_assert!(tr1 != tr2, "{:?} --- {:?}", tr1.as_ref(ctx), tr2.as_ref(ctx));
+            debug_assert!(!matches!(tr1, TransitionId::Cond(_)));
+            debug_assert!(!matches!(tr2, TransitionId::Eff(_)) || tr2.as_ref(ctx).get_source().is_some());
+        })
 }
 
 impl LpRelaxEncodingData {
