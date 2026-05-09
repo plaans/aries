@@ -55,22 +55,26 @@ pub struct FluentParam {
 pub struct FluentsEncoding {
     store: BTreeMap<Sym, usize>,
     params: Vec<SmallVec<[FluentParam; 6]>>,
+    returns: Vec<FluentParam>,
 }
 impl FluentsEncoding {
-    pub fn add(&mut self, name: Sym, params: &[FluentParam]) -> bool {
+    pub fn add(&mut self, name: Sym, params: &[FluentParam], r#return: FluentParam) -> bool {
         if self.store.contains_key(&name) {
             return false;
         }
         let n = self.params.len();
         self.store.insert(name, n);
         self.params.push(params.into());
+        self.returns.push(r#return);
         true
     }
     pub fn get_params(&self, name: &Sym) -> Option<&[FluentParam]> {
         self.store.get(name).map(|&i| self.params[i].as_slice())
     }
-    pub fn iter(&self) -> impl Iterator<Item = (&Sym, &[FluentParam])> {
-        self.store.iter().map(|(sym, &i)| (sym, self.params[i].as_slice()))
+    pub fn iter(&self) -> impl Iterator<Item = (&Sym, &[FluentParam], &FluentParam)> {
+        self.store
+            .iter()
+            .map(|(sym, &i)| (sym, self.params[i].as_slice(), &self.returns[i]))
     }
 }
 /*/// A fluent is a state function defined as a symbol and a set of parameter and return types.

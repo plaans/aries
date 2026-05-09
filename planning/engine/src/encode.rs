@@ -50,15 +50,19 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
 
     for f in model.env.fluents.iter() {
         let params = {
-            let mut res = SmallVec::<[FluentParam; 6]>::new();
-            for tpe in f.parameters.iter().map(|p| &p.tpe).chain([&f.return_type]) {
-                res.push(FluentParam {
+            let mut ps = SmallVec::<[FluentParam; 6]>::new();
+            for tpe in f.parameters.iter().map(|p| &p.tpe) {
+                ps.push(FluentParam {
                     range: type_range(tpe, objects)?,
                 });
             }
-            res
+            ps
         };
-        res.add(f.name().to_string(), &params);
+        let r#return = FluentParam {
+            range: type_range(&f.return_type, objects)?,
+        };
+
+        res.add(f.name().to_string(), &params, r#return);
     }
     Ok(res)
 }
