@@ -741,6 +741,22 @@ impl LpRelaxEncodingData {
 
         ctx.lprelax = Some(lprelax);
     }
+
+    #[allow(unused)]
+    fn print(&self, ctx: &SchedEncoderExt) {
+        println!("## Transitions");
+        for (tr_id, _) in ctx.transitions.iter() {
+            println!("{:?} ==== {:?}", tr_id, tr_id.as_ref(ctx));
+        }
+        println!("## Columns");
+        for (col_tag, col) in self.col_tags.iter() {
+            println!("{col:?} {col_tag:?}");
+        }
+        println!("## Rows");
+        for (i, r) in self.tags_exprs.iter().enumerate() {
+            println!("Row({i}) {r:?}");
+        }
+    }
 }
 
 #[derive(Debug)]
