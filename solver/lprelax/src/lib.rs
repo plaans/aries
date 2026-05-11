@@ -1,3 +1,5 @@
+mod bindings;
+mod lplit;
 mod types;
 
 use aries::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
@@ -6,8 +8,9 @@ use aries::core::state::{DomainsSnapshot, Explanation, InferenceCause};
 use aries::prelude::{Domains, DomainsExt, IntCst, Lit, VarRef};
 use aries::reasoners::{Contradiction, ReasonerId, Theory};
 
-use std::collections::HashMap;
-
+use bindings::LpRelaxBindings;
+pub use bindings::{LitToLpLitsBindingFn, LpLitToLitsBindingFn};
+pub use lplit::*;
 pub use types::*;
 
 #[derive(Debug, Clone)]
@@ -48,16 +51,9 @@ impl From<ModelUpdateCause> for u32 {
 }
 
 #[derive(Default, Clone)]
-struct Stats {
+struct LpRelaxStats {
     pub lpruns: u64,
     pub lpruns_time: std::time::Duration,
-}
-
-#[derive(Clone)]
-struct LpRelaxOptim {
-    pub col: LpCol,
-    pub var: VarRef,
-    pub sense: LpOptimSense,
 }
 
 #[derive(Default, Clone)]
@@ -65,60 +61,29 @@ pub struct LpRelaxConfig {
     no_propagation_skips: bool,
 }
 
-/// TODO: Improve highs API:
-/// - Change RowProblem and try_optimise such that no conversion to ColProblem needs to take place
-/// - Avoid having to clone lpprob only to move its allocated vectors(' pointers) to the C API. Tackling this naively could result in dangling pointers.
-pub struct LpRelax {
-    id: ReasonerId,
+fn new_lpmodel(lpprob: LpProblem, sense: Option<LpObjectiveSense>) -> LpModel {
+    let mut lpmodel = lpprob
+        .try_optimise(sense.unwrap_or(LpObjectiveSense::Minimise))
+        .unwrap();
 
-    model_events: ObsTrailCursor<ModelEvent>,
-    trail: Trail<LpEvent>,
-
-    lpprob: LpProblem,
-    lpmodel_cached: LpModel,
-    lpoptim: Option<LpRelaxOptim>,
-
-    lit_implications: HashMap<VarRef, LitImplicationsFn>, //RefMap<VarRef, LitImplicationsFn>,
-    lplit_implications: HashMap<LpCol, LpLitImplicationsFn>, //RefMap<usize, LpLitImplicationsFn>,
-
-    stats: Stats,
-    config: LpRelaxConfig,
-}
-unsafe impl Send for LpRelax {}
-unsafe impl Sync for LpRelax {}
-
-impl Clone for LpRelax {
-    fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            model_events: self.model_events.clone(),
-            trail: self.trail.clone(),
-            lpprob: self.lpprob.clone(),
-            lpmodel_cached: new_lpmodel(self.lpprob.clone(), self.get_sense()),
-            lpoptim: self.lpoptim.clone(),
-            lit_implications: self.lit_implications.clone(),
-            lplit_implications: self.lplit_implications.clone(),
-            stats: self.stats.clone(),
-            config: self.config.clone(),
-        }
-    }
-}
-fn new_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>) -> LpModel {
-    let mut lpmodel = lpprob.try_optimise(sense.unwrap_or(LpOptimSense::Minimise)).unwrap();
-
-    lpmodel.set_sense(sense.unwrap_or(LpOptimSense::Minimise));
+    lpmodel.set_sense(sense.unwrap_or(LpObjectiveSense::Minimise));
 
     //lpmodel.set_option("time_limit", 2.0); // stop after 2 seconds
     lpmodel.set_option("parallel", "off"); // use 1 core
     lpmodel.set_option("threads", 1); // solve on 1 thread
-    lpmodel.set_option("iis_strategy", 0); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
+    lpmodel.set_option("iis_strategy", 10); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
 
     lpmodel
 }
-fn cache_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>, obj_col: Option<LpCol>, lpmodel_cached: &mut LpModel) {
+fn cache_lpmodel(
+    lpprob: LpProblem,
+    sense: Option<LpObjectiveSense>,
+    obj_col: Option<LpCol>,
+    lpmodel_cached: &mut LpModel,
+) {
     lpmodel_cached.overwrite(lpprob).unwrap();
 
-    lpmodel_cached.set_sense(sense.unwrap_or(LpOptimSense::Minimise));
+    lpmodel_cached.set_sense(sense.unwrap_or(LpObjectiveSense::Minimise));
 
     /*for col in all_cols {
         lpmodel_cached.change_column_cost(col, 0.);
@@ -129,37 +94,51 @@ fn cache_lpmodel(lpprob: LpProblem, sense: Option<LpOptimSense>, obj_col: Option
     //lpmodel_cached.set_option("time_limit", 2.0); // stop after 2 seconds
     lpmodel_cached.set_option("parallel", "off"); // use 1 core
     lpmodel_cached.set_option("threads", 1); // solve on 1 thread
-    lpmodel_cached.set_option("iis_strategy", 0); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
+    lpmodel_cached.set_option("iis_strategy", 10); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
 }
-impl Default for LpRelax {
+
+#[derive(Clone)]
+struct LpRelaxObjective {
+    pub col: LpCol,
+    pub var: VarRef,
+    pub sense: LpObjectiveSense,
+}
+
+struct LpRelaxState {
+    model_events: ObsTrailCursor<ModelEvent>,
+    trail: Trail<LpEvent>,
+
+    lpprob: LpProblem,
+    lpmodel_cached: LpModel,
+    lpobjective: Option<LpRelaxObjective>,
+}
+impl Clone for LpRelaxState {
+    fn clone(&self) -> Self {
+        Self {
+            model_events: self.model_events.clone(),
+            trail: self.trail.clone(),
+            lpprob: self.lpprob.clone(),
+            lpmodel_cached: new_lpmodel(self.lpprob.clone(), self.get_objective_sense()),
+            lpobjective: self.lpobjective.clone(),
+        }
+    }
+}
+impl Default for LpRelaxState {
     fn default() -> Self {
         let lpprob = LpProblem::default();
         Self {
-            id: ReasonerId::Extra(0),
             model_events: ObsTrailCursor::default(),
             trail: Trail::default(),
             lpprob: lpprob.clone(),
-            lpoptim: None,
+            lpobjective: None,
             lpmodel_cached: new_lpmodel(lpprob, None),
-            lit_implications: HashMap::default(),
-            lplit_implications: HashMap::default(),
-            stats: Stats::default(),
-            config: LpRelaxConfig::default(),
         }
     }
 }
-impl LpRelax {
-    pub fn with_config(config: LpRelaxConfig) -> Self {
-        Self {
-            config,
-            ..Default::default()
-        }
-    }
-
+impl LpRelaxState {
     fn num_rows(&self) -> usize {
         self.lpprob.num_rows()
     }
-
     fn num_columns(&self) -> usize {
         self.lpprob.num_cols()
     }
@@ -168,18 +147,13 @@ impl LpRelax {
         (0..self.lpprob.num_cols()).map(LpCol::from).collect()
     }
 
-    pub fn get_column_lower_bound(&self, col: LpCol) -> IntCst {
+    fn get_column_lower_bound(&self, col: LpCol) -> IntCst {
         float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0)
     }
-    pub fn get_column_upper_bound(&self, col: LpCol) -> IntCst {
+    fn get_column_upper_bound(&self, col: LpCol) -> IntCst {
         float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1)
     }
-
-    pub fn add_column_01(&mut self) -> LpCol {
-        self.add_column(Some(0.), Some(1.))
-    }
-
-    pub fn add_column(&mut self, lb: Option<FloatCst>, ub: Option<FloatCst>) -> LpCol {
+    fn add_column(&mut self, lb: Option<FloatCst>, ub: Option<FloatCst>) -> LpCol {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         let lb = lb.unwrap_or(FloatCst::MIN);
@@ -188,8 +162,7 @@ impl LpRelax {
 
         self.lpprob.add_column(0., lb..ub)
     }
-
-    pub fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
+    fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
         let mut res = false;
 
@@ -216,8 +189,7 @@ impl LpRelax {
         self.lpprob.change_column_bounds(col, lb..ub);
         res
     }
-
-    pub fn add_row<ITEM: std::borrow::Borrow<(LpCol, FloatCst)>, I: IntoIterator<Item = ITEM>>(
+    fn add_row<ITEM: std::borrow::Borrow<(LpCol, FloatCst)>, I: IntoIterator<Item = ITEM>>(
         &mut self,
         row_coefs: I,
         lb: Option<FloatCst>,
@@ -230,16 +202,16 @@ impl LpRelax {
         self.lpprob.add_row(lb..ub, row_coefs)
     }
 
-    pub fn add_objective_column<I: IntoIterator<Item = (LpCol, FloatCst)>>(
+    fn add_objective_column<I: IntoIterator<Item = (LpCol, FloatCst)>>(
         &mut self,
         var: VarRef,
         coefs: I,
-        sense: LpOptimSense,
+        sense: LpObjectiveSense,
     ) -> LpCol {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
-        assert!(self.lpoptim.is_none());
+        assert!(self.lpobjective.is_none());
 
-        self.lpoptim = Some(LpRelaxOptim {
+        self.lpobjective = Some(LpRelaxObjective {
             col: self.add_column(None::<FloatCst>, None::<FloatCst>),
             var,
             sense,
@@ -251,103 +223,207 @@ impl LpRelax {
         self.get_objective_column().unwrap()
     }
 
-    pub fn get_objective_current_bound(&self) -> Option<IntCst> {
-        self.get_sense().map(|sense| match sense {
-            LpOptimSense::Maximise => self.get_column_upper_bound(self.get_objective_column().unwrap()),
-            LpOptimSense::Minimise => self.get_column_lower_bound(self.get_objective_column().unwrap()),
+    fn get_objective_current_bound(&self) -> Option<IntCst> {
+        self.get_objective_sense().map(|sense| match sense {
+            LpObjectiveSense::Maximise => self.get_column_upper_bound(self.get_objective_column().unwrap()),
+            LpObjectiveSense::Minimise => self.get_column_lower_bound(self.get_objective_column().unwrap()),
         })
     }
-    pub fn get_objective_column(&self) -> Option<LpCol> {
-        self.lpoptim.as_ref().map(|lpoptim| lpoptim.col)
+    fn get_objective_column(&self) -> Option<LpCol> {
+        self.lpobjective.as_ref().map(|lpoptim| lpoptim.col)
     }
-    pub fn get_objective_var(&self) -> Option<VarRef> {
-        self.lpoptim.as_ref().map(|lpoptim| lpoptim.var)
+    fn get_objective_var(&self) -> Option<VarRef> {
+        self.lpobjective.as_ref().map(|lpoptim| lpoptim.var)
     }
-    pub fn get_sense(&self) -> Option<LpOptimSense> {
-        self.lpoptim.as_ref().map(|lpoptim| lpoptim.sense)
-    }
-
-    pub fn set_lit_implications(&mut self, var: VarRef, func: LitImplicationsFn) {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
-
-        assert!(self.lit_implications.insert(var, func).is_none());
-    }
-    pub fn set_lplit_implications(&mut self, col: LpCol, func: LpLitImplicationsFn) {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
-
-        assert!(self.lplit_implications.insert(col, func).is_none());
-    }
-    /*pub fn has_lit_implications(&self, var: VarRef) -> bool {
-        self.lit_implications.contains_key(&var)
-    }
-    pub fn has_lplit_implications(&self, col: LpCol) -> bool {
-        self.lplit_implications.contains_key(&col)
-    }*/
-    fn compute_implied_lplits(&self, lit: Lit) -> Option<impl IntoIterator<Item = LpLit> + use<>> {
-        self.lit_implications.get(&lit.variable()).and_then(|func| func(lit))
-    }
-    fn compute_implied_lits(&self, lplit: LpLit) -> Option<impl IntoIterator<Item = Lit> + use<>> {
-        self.lplit_implications.get(&lplit.col).and_then(|func| func(lplit))
+    fn get_objective_sense(&self) -> Option<LpObjectiveSense> {
+        self.lpobjective.as_ref().map(|lpoptim| lpoptim.sense)
     }
 
-    fn set_lplit(&mut self, lplit: LpLit, cause: LpEventCause, model: &mut Domains) -> Result<(), Contradiction> {
-        if let (Some(lpevent_index), Some(implied_lits)) = self._set_lplit(lplit, cause) {
+    fn set_lplit(
+        &mut self,
+        lplit: LpLit,
+        cause: LpEventCause,
+        model: &mut Domains,
+        identity: ReasonerId,
+        bindings: &LpRelaxBindings,
+    ) -> Result<(), Contradiction> {
+        debug_assert!(identity == ReasonerId::Extra(0));
+
+        let (lp_event_index, implied_lits) = {
+            let prev_lplit = match lplit.tpe {
+                LpLitType::GEQ => LpLit::geq(lplit.col, self.get_column_lower_bound(lplit.col)),
+                LpLitType::LEQ => LpLit::leq(lplit.col, self.get_column_upper_bound(lplit.col)),
+            };
+            let bounds = match lplit.tpe {
+                LpLitType::GEQ => lplit.val..self.get_column_upper_bound(lplit.col),
+                LpLitType::LEQ => self.get_column_lower_bound(lplit.col)..lplit.val,
+            };
+            if lplit.strictly_entails(prev_lplit) && bounds.start <= bounds.end {
+                self.lpprob.change_column_bounds(lplit.col, bounds);
+
+                let cause_is_main_model = matches!(cause, LpEventCause::MainModel(_));
+                let lpevent_index = self.trail.push(LpEvent::new(lplit, prev_lplit, cause));
+
+                if !cause_is_main_model {
+                    (Some(lpevent_index), bindings.compute_implied_lits(lplit))
+                } else {
+                    (Some(lpevent_index), None)
+                }
+            } else {
+                (None, None)
+            }
+        };
+
+        if let (Some(lpevent_index), Some(implied_lits)) = (lp_event_index, implied_lits) {
             for lit in implied_lits {
-                if let Err(invalid) = model.set(lit, self.identity().cause(ModelUpdateCause(lpevent_index))) {
+                if let Err(invalid) = model.set(lit, identity.cause(ModelUpdateCause(lpevent_index))) {
                     return Err(Contradiction::InvalidUpdate(invalid));
                 }
             }
         }
         Ok(())
     }
-    fn _set_lplit(
-        &mut self,
-        lplit: LpLit,
-        cause: LpEventCause,
-    ) -> (Option<EventIndex>, Option<impl IntoIterator<Item = Lit> + use<>>) {
-        let prev_lplit = match lplit.tpe {
-            LpLitType::LB => LpLit::geq(lplit.col, self.get_column_lower_bound(lplit.col)),
-            LpLitType::UB => LpLit::leq(lplit.col, self.get_column_upper_bound(lplit.col)),
-        };
-        let bounds = match lplit.tpe {
-            LpLitType::LB => lplit.val..self.get_column_upper_bound(lplit.col),
-            LpLitType::UB => self.get_column_lower_bound(lplit.col)..lplit.val,
-        };
-        if lplit.strictly_entails(prev_lplit) && bounds.start <= bounds.end {
-            self.lpprob.change_column_bounds(lplit.col, bounds);
-
-            let cause_is_main_model = matches!(cause, LpEventCause::MainModel(_));
-            let lpevent_index = self.trail.push(LpEvent::new(lplit, prev_lplit, cause));
-
-            if !cause_is_main_model {
-                (Some(lpevent_index), self.compute_implied_lits(lplit))
-            } else {
-                (Some(lpevent_index), None)
-            }
-        } else {
-            (None, None)
-        }
-    }
-
     fn set_backtrack_point(&mut self) -> DecLvl {
         self.trail.save_state()
     }
     fn undo_to_last_backtrack_point(&mut self) {
         self.trail.restore_last_with(|ev| {
             let bounds = match ev.new_lplit.tpe {
-                LpLitType::LB => {
+                LpLitType::GEQ => {
                     ev.prev_lplit.val..float_as_exact_int_cst(self.lpprob.get_column_bounds(ev.new_lplit.col).1)
                 }
-                LpLitType::UB => {
+                LpLitType::LEQ => {
                     float_as_exact_int_cst(self.lpprob.get_column_bounds(ev.new_lplit.col).0)..ev.prev_lplit.val
                 }
             };
             self.lpprob.change_column_bounds(ev.new_lplit.col, bounds);
         });
     }
+    fn try_solve_cached_lpmodel(
+        &mut self,
+        stats: &mut LpRelaxStats,
+    ) -> Result<Result<highs::Solution, highs::Iis>, highs::HighsStatus> {
+        // TODO: Warm-start with the same basis and basic variables as in solution obtained at a previous decision level.
+        //       Indeed, it is still likely to be primal feasible.
+        //       No need to keep track of it for backtracking (just don't use warm-starting right after backtracking).
+
+        let time = std::time::Instant::now();
+
+        let res = self.lpmodel_cached.try_solve_mut();
+
+        stats.lpruns_time += time.elapsed();
+        stats.lpruns += 1;
+
+        res
+    }
+}
+
+/// TODO: Improve highs API:
+/// - Change RowProblem and try_optimise such that no conversion to ColProblem needs to take place
+/// - Avoid having to clone lpprob only to move its allocated vectors(' pointers) to the C API. Tackling this naively could result in dangling pointers.
+#[derive(Clone)]
+pub struct LpRelax {
+    id: ReasonerId,
+
+    state: LpRelaxState,
+    bindings: LpRelaxBindings,
+
+    stats: LpRelaxStats,
+    config: LpRelaxConfig,
+}
+unsafe impl Send for LpRelax {}
+unsafe impl Sync for LpRelax {}
+
+impl Default for LpRelax {
+    fn default() -> Self {
+        Self {
+            id: ReasonerId::Extra(0),
+            state: LpRelaxState::default(),
+            bindings: LpRelaxBindings::default(),
+            stats: LpRelaxStats::default(),
+            config: LpRelaxConfig::default(),
+        }
+    }
+}
+impl LpRelax {
+    pub fn with_config(config: LpRelaxConfig) -> Self {
+        Self {
+            config,
+            ..Default::default()
+        }
+    }
+    pub fn num_rows(&self) -> usize {
+        self.state.num_rows()
+    }
+    pub fn num_columns(&self) -> usize {
+        self.state.num_columns()
+    }
+    pub fn get_column_lower_bound(&self, col: LpCol) -> IntCst {
+        self.state.get_column_lower_bound(col)
+    }
+    pub fn get_column_upper_bound(&self, col: LpCol) -> IntCst {
+        self.state.get_column_upper_bound(col)
+    }
+
+    pub fn add_column_01(&mut self) -> LpCol {
+        self.add_column(Some(0.), Some(1.))
+    }
+
+    pub fn add_column(&mut self, lb: Option<FloatCst>, ub: Option<FloatCst>) -> LpCol {
+        self.state.add_column(lb, ub)
+    }
+
+    pub fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
+        self.state.tighten_column(col, lb, ub)
+    }
+
+    pub fn add_row<ITEM: std::borrow::Borrow<(LpCol, FloatCst)>, I: IntoIterator<Item = ITEM>>(
+        &mut self,
+        row_coefs: I,
+        lb: Option<FloatCst>,
+        ub: Option<FloatCst>,
+    ) {
+        self.state.add_row(row_coefs, lb, ub);
+    }
+
+    pub fn add_objective_column<I: IntoIterator<Item = (LpCol, FloatCst)>>(
+        &mut self,
+        var: VarRef,
+        coefs: I,
+        sense: LpObjectiveSense,
+    ) -> LpCol {
+        self.state.add_objective_column(var, coefs, sense)
+    }
+
+    pub fn get_objective_column(&self) -> Option<LpCol> {
+        self.state.get_objective_column()
+    }
+    pub fn get_objective_var(&self) -> Option<VarRef> {
+        self.state.get_objective_var()
+    }
+    pub fn get_objective_sense(&self) -> Option<LpObjectiveSense> {
+        self.state.get_objective_sense()
+    }
+
+    pub fn add_var_half_binding(&mut self, var: VarRef, func: std::sync::Arc<LitToLpLitsBindingFn>) {
+        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        self.bindings.add_lit_to_lplits_binding(var, func);
+    }
+    pub fn add_col_half_binding(&mut self, col: LpCol, func: std::sync::Arc<LpLitToLitsBindingFn>) {
+        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        self.bindings.add_lplit_to_lits_binding(col, func);
+    }
+    pub fn add_var_half_binding_default(&mut self, var: VarRef, col: LpCol) {
+        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        self.bindings.add_lit_to_lplits_binding_default(var, col);
+    }
+    pub fn add_col_half_binding_default(&mut self, col: LpCol, var: VarRef) {
+        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        self.bindings.add_lplit_to_lits_binding_default(var, col);
+    }
 
     fn process_model_events(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        while let Some(model_event) = self.model_events.pop(model.trail()) {
+        while let Some(model_event) = self.state.model_events.pop(model.trail()) {
             let lit = model_event.new_literal();
 
             // Ignore model events that originate from us (this reasoner),
@@ -357,34 +433,30 @@ impl LpRelax {
             {
                 continue;
             }
-            if let Some(lplits) = self.compute_implied_lplits(lit) {
-                for lplit in lplits.into_iter() {
-                    self.set_lplit(lplit, LpEventCause::MainModel(lit), model)?;
+            if let Some(lplits) = self.bindings.compute_implied_lplits(lit) {
+                for lplit in lplits {
+                    self.state.set_lplit(
+                        lplit,
+                        LpEventCause::MainModel(lit),
+                        model,
+                        self.identity(),
+                        &self.bindings,
+                    )?
                 }
             }
         }
         Ok(())
     }
 
-    fn try_solve_cached_lpmodel(&mut self) -> Result<Result<highs::Solution, highs::Iis>, highs::HighsStatus> {
-        // TODO: Warm-start with the same basis and basic variables as in solution obtained at a previous decision level.
-        //       Indeed, it is still likely to be primal feasible.
-        //       No need to keep track of it for backtracking (just don't use warm-starting right after backtracking).
-
-        let time = std::time::Instant::now();
-
-        let res = self.lpmodel_cached.try_solve_mut();
-
-        self.stats.lpruns_time += time.elapsed();
-        self.stats.lpruns += 1;
-
-        res
-    }
-
     fn check_feasibility(&mut self) -> Result<(), Contradiction> {
-        cache_lpmodel(self.lpprob.clone(), self.get_sense(), None, &mut self.lpmodel_cached);
+        cache_lpmodel(
+            self.state.lpprob.clone(),
+            self.get_objective_sense(),
+            None,
+            &mut self.state.lpmodel_cached,
+        );
 
-        match self.try_solve_cached_lpmodel() {
+        match self.state.try_solve_cached_lpmodel(&mut self.stats) {
             Ok(Err(iis)) => Err(self.build_contradiction(iis)),
             _ => Ok(()),
         }
@@ -396,13 +468,13 @@ impl LpRelax {
 
         let Some((optim_obj_val, nz_reduced_costs)) = {
             cache_lpmodel(
-                self.lpprob.clone(),
-                self.get_sense(),
+                self.state.lpprob.clone(),
+                self.get_objective_sense(),
                 Some(obj_col),
-                &mut self.lpmodel_cached,
+                &mut self.state.lpmodel_cached,
             );
 
-            match self.try_solve_cached_lpmodel() {
+            match self.state.try_solve_cached_lpmodel(&mut self.stats) {
                 Ok(Ok(sol)) => {
                     let opt_obj_val = sol.columns()[obj_col.index()];
                     let nz_reduced_costs = sol
@@ -425,7 +497,7 @@ impl LpRelax {
         };
 
         // Skip if the optimal objective computed above is too close to the incumbent (previous best known objective value).
-        let obj_incumbent_bound = self.get_objective_current_bound().unwrap();
+        let obj_incumbent_bound = self.state.get_objective_current_bound().unwrap();
         let obj_diff = FloatCst::from(obj_incumbent_bound) - optim_obj_val;
         if !self.config.no_propagation_skips && (obj_diff).abs() < 1. {
             return Ok(());
@@ -442,9 +514,9 @@ impl LpRelax {
                     unreachable!();
                 }
             }
-            match self.get_sense() {
-                Some(LpOptimSense::Minimise) => reason.push(LpLit::geq(obj_col, obj_incumbent_bound)),
-                Some(LpOptimSense::Maximise) => reason.push(LpLit::leq(obj_col, obj_incumbent_bound)),
+            match self.get_objective_sense() {
+                Some(LpObjectiveSense::Minimise) => reason.push(LpLit::geq(obj_col, obj_incumbent_bound)),
+                Some(LpObjectiveSense::Maximise) => reason.push(LpLit::leq(obj_col, obj_incumbent_bound)),
                 None => unreachable!(),
             };
             reason
@@ -458,36 +530,47 @@ impl LpRelax {
             } else {
                 unreachable!();
             };
-            self.set_lplit(lplit, LpEventCause::ReducedCostStrengthtening(reason.clone()), model)?;
+            self.state.set_lplit(
+                lplit,
+                LpEventCause::ReducedCostStrengthtening(reason.clone()),
+                model,
+                self.identity(),
+                &self.bindings,
+            )?;
         }
-        self.set_lplit(
-            match self.get_sense() {
-                Some(LpOptimSense::Minimise) => LpLit::geq(obj_col, float_as_ceil_int_cst(optim_obj_val)),
-                Some(LpOptimSense::Maximise) => LpLit::leq(obj_col, float_as_floor_int_cst(optim_obj_val)),
+        self.state.set_lplit(
+            match self.get_objective_sense() {
+                Some(LpObjectiveSense::Minimise) => LpLit::geq(obj_col, float_as_ceil_int_cst(optim_obj_val)),
+                Some(LpObjectiveSense::Maximise) => LpLit::leq(obj_col, float_as_floor_int_cst(optim_obj_val)),
                 None => unreachable!(),
             },
             LpEventCause::ReducedCostStrengthtening(reason.clone()),
             model,
+            self.identity(),
+            &self.bindings,
         )?;
         Ok(())
     }
 
     fn build_contradiction(&self, iis: LpIis) -> Contradiction {
+        /*for r in iis.rows() {
+            println!("{r:?}");
+        }*/
         let mut conjunction_builder = ConjunctionBuilder::new();
 
         for &(col, status) in iis.columns() {
             match status {
                 highs::HighsIisBoundStatus::Lower => {
-                    let lplit = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
-                    if let Some(lits) = self.compute_implied_lits(lplit) {
+                    let lplit = LpLit::geq(col, self.state.get_column_lower_bound(col));
+                    if let Some(lits) = self.bindings.compute_implied_lits(lplit) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
                     }
                 }
                 highs::HighsIisBoundStatus::Upper => {
-                    let lplit = LpLit::leq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1));
-                    if let Some(lits) = self.compute_implied_lits(lplit) {
+                    let lplit = LpLit::leq(col, self.state.get_column_upper_bound(col));
+                    if let Some(lits) = self.bindings.compute_implied_lits(lplit) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
@@ -495,14 +578,14 @@ impl LpRelax {
                 }
                 highs::HighsIisBoundStatus::Boxed => {
                     // i.e. equal, i.e. both Lower and Upper
-                    let lplit_lb = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
-                    if let Some(lits) = self.compute_implied_lits(lplit_lb) {
+                    let lplit_lb = LpLit::geq(col, self.state.get_column_lower_bound(col));
+                    if let Some(lits) = self.bindings.compute_implied_lits(lplit_lb) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
                     }
-                    let lplit_ub = LpLit::leq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1));
-                    if let Some(lits) = self.compute_implied_lits(lplit_ub) {
+                    let lplit_ub = LpLit::leq(col, self.state.get_column_upper_bound(col));
+                    if let Some(lits) = self.bindings.compute_implied_lits(lplit_ub) {
                         for lit in lits {
                             conjunction_builder.push(lit);
                         }
@@ -519,14 +602,14 @@ impl LpRelax {
         for i in 0..self.num_columns() {
             let col = LpCol::from(i);
             if iis.contains_column_maybe(&col) {
-                let lplit_lb = LpLit::geq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0));
-                if let Some(lits) = self.compute_implied_lits(lplit_lb) {
+                let lplit_lb = LpLit::geq(col, self.state.get_column_lower_bound(col));
+                if let Some(lits) = self.bindings.compute_implied_lits(lplit_lb) {
                     for lit in lits {
                         conjunction_builder.push(lit);
                     }
                 }
-                let lplit_ub = LpLit::leq(col, float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1));
-                if let Some(lits) = self.compute_implied_lits(lplit_ub) {
+                let lplit_ub = LpLit::leq(col, self.state.get_column_upper_bound(col));
+                if let Some(lits) = self.bindings.compute_implied_lits(lplit_ub) {
                     for lit in lits {
                         conjunction_builder.push(lit);
                     }
@@ -547,20 +630,20 @@ impl Theory for LpRelax {
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         if !self.config.no_propagation_skips
-            && (self.num_columns() == 0 || (self.num_rows() == 0 && self.lpoptim.is_none()))
+            && (self.num_columns() == 0 || (self.num_rows() == 0 && self.state.lpobjective.is_none()))
         {
             return Ok(());
         }
 
-        let processed_model_updates = self.model_events.num_pending(model.trail());
+        let processed_model_updates = self.state.model_events.num_pending(model.trail());
         self.process_model_events(model)?;
 
         if !self.config.no_propagation_skips && processed_model_updates > 0 {
             return Ok(());
         }
         if !self.config.no_propagation_skips
-            && self.trail.saved_states.len() > 1
-            && self.trail.saved_states[self.trail.num_saved() as usize - 1] == self.trail.trail.len()
+            && self.state.trail.saved_states.len() > 1
+            && self.state.trail.saved_states[self.state.trail.num_saved() as usize - 1] == self.state.trail.trail.len()
         {
             return Ok(());
         }
@@ -570,7 +653,7 @@ impl Theory for LpRelax {
         }
         // TODO: allow propagation after a backtrack.
 
-        if self.lpoptim.is_some() {
+        if self.state.lpobjective.is_some() {
             self.propagate_reduced_costs_strengthtening(model)
         } else {
             self.check_feasibility()
@@ -585,7 +668,7 @@ impl Theory for LpRelax {
         out_explanation: &mut Explanation,
     ) {
         let mut add_to_explanation = |l: Lit| {
-            debug_assert!(model.entails(l), "{:?} {:#?}", l, self.trail.trail);
+            debug_assert!(model.entails(l), "{:?} {:#?}", l, self.state.trail.trail);
             out_explanation.push(l);
         };
         debug_assert_eq!(context.writer, self.identity());
@@ -593,16 +676,17 @@ impl Theory for LpRelax {
         let ModelUpdateCause(lpevent_index) = ModelUpdateCause::from(context.payload);
 
         debug_assert!(
-            self.compute_implied_lits(self.trail.get_event(lpevent_index).new_lplit)
+            self.bindings
+                .compute_implied_lits(self.state.trail.get_event(lpevent_index).new_lplit)
                 .map(|lits| lits.into_iter().any(|l| l == literal))
                 .unwrap_or_default()
         );
 
-        match &self.trail.get_event(lpevent_index).cause {
+        match &self.state.trail.get_event(lpevent_index).cause {
             LpEventCause::MainModel(model_lit) => add_to_explanation(*model_lit),
             LpEventCause::ReducedCostStrengthtening(reason) => {
                 for &lplit in reason {
-                    let lits = self.compute_implied_lits(lplit).unwrap();
+                    let lits = self.bindings.compute_implied_lits(lplit).unwrap();
 
                     let mut lits_not_empty = false;
                     for lit in lits {
@@ -632,19 +716,19 @@ impl Theory for LpRelax {
 
 impl Backtrack for LpRelax {
     fn save_state(&mut self) -> DecLvl {
-        self.set_backtrack_point()
+        self.state.set_backtrack_point()
     }
     fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
+        self.state.trail.num_saved()
     }
     fn restore_last(&mut self) {
-        self.undo_to_last_backtrack_point();
+        self.state.undo_to_last_backtrack_point();
     }
 }
 
 #[cfg(test)]
 pub mod test {
-    use crate::types::*;
+    use crate::LpCol;
     use crate::{LpRelax, LpRelaxConfig};
     use aries::backtrack::Backtrack;
     use aries::core::IntCst;
@@ -670,11 +754,11 @@ pub mod test {
         let col2 = theory.add_column(Some(0.), Some(10.));
         let col3 = theory.add_column(Some(0.), Some(10.));
 
-        theory.set_lit_implications(var2, default_lit_implications(var2, col2));
-        theory.set_lplit_implications(col2, default_lplit_implications(var2, col2));
+        theory.add_var_half_binding_default(var2, col2);
+        theory.add_col_half_binding_default(col2, var2);
 
-        theory.set_lit_implications(var3, default_lit_implications(var3, col3));
-        theory.set_lplit_implications(col3, default_lplit_implications(var3, col3));
+        theory.add_var_half_binding_default(var3, col3);
+        theory.add_col_half_binding_default(col3, var3);
 
         let assert_col_bounds = |theory: &mut LpRelax, col: LpCol, col_bounds: (IntCst, IntCst)| {
             assert_eq!(
@@ -744,11 +828,11 @@ pub mod test {
         let acol = theory.add_column(Some(0.), Some(1.));
         let bcol = theory.add_column(Some(0.), Some(1.));
 
-        theory.set_lit_implications(avar, default_lit_implications(avar, acol));
-        theory.set_lplit_implications(acol, default_lplit_implications(avar, acol));
+        theory.add_var_half_binding_default(avar, acol);
+        theory.add_col_half_binding_default(acol, avar);
 
-        theory.set_lit_implications(bvar, default_lit_implications(bvar, bcol));
-        theory.set_lplit_implications(bcol, default_lplit_implications(bvar, bcol));
+        theory.add_var_half_binding_default(bvar, bcol);
+        theory.add_col_half_binding_default(bcol, bvar);
 
         theory.add_row([(acol, 1.), (bcol, 1.)], Some(1.), None);
 

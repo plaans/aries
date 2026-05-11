@@ -4,7 +4,7 @@ use aries::model::extensions::Shaped;
 use aries::prelude::*;
 use aries::solver::{Exit, SearchLimit};
 use aries_bench_data::IntermediateResult;
-use aries_lprelax::{LpRelax, default_lit_implications, default_lplit_implications};
+use aries_lprelax::LpRelax;
 use clap::Parser;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -188,8 +188,8 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
             let var = model.get_var(name).unwrap();
             var_name_to_col_map.insert(name.clone(), col);
 
-            lprelax.set_lit_implications(var, default_lit_implications(var, col));
-            lprelax.set_lplit_implications(col, default_lplit_implications(var, col));
+            lprelax.add_var_half_binding_default(var, col);
+            lprelax.add_col_half_binding_default(col, var);
         }
         for (row_coefs, lb, ub) in problem.constrs.values() {
             let row_coefs = row_coefs
@@ -208,13 +208,13 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
                 obj_var,
                 obj_coefs,
                 match problem.sense {
-                    lp_parser_rs::model::Sense::Minimize => aries_lprelax::LpOptimSense::Minimise,
-                    lp_parser_rs::model::Sense::Maximize => aries_lprelax::LpOptimSense::Maximise,
+                    lp_parser_rs::model::Sense::Minimize => aries_lprelax::LpObjectiveSense::Minimise,
+                    lp_parser_rs::model::Sense::Maximize => aries_lprelax::LpObjectiveSense::Maximise,
                 },
             );
 
-            lprelax.set_lit_implications(obj_var, default_lit_implications(obj_var, obj_col));
-            lprelax.set_lplit_implications(obj_col, default_lplit_implications(obj_var, obj_col));
+            lprelax.add_var_half_binding_default(obj_var, obj_col);
+            lprelax.add_col_half_binding_default(obj_col, obj_var);
         }
         vec![Box::new(lprelax)]
     } else {

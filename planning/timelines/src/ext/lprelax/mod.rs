@@ -689,17 +689,15 @@ impl LpRelaxEncodingData {
                 assert!(p != VarRef::ZERO);
 
                 for &col in &cols {
-                    lprelax.set_lplit_implications(LpCol::from(col), default_lplit_implications(p, LpCol::from(col)));
+                    lprelax.add_col_half_binding_default(LpCol::from(col), p);
                 }
-                lprelax.set_lit_implications(
+                lprelax.add_var_half_binding(
                     p,
                     std::sync::Arc::new(move |lit: Lit| {
                         assert_eq!(lit.variable(), p);
-                        Some(
-                            cols.iter()
-                                .map(|&col| LpLit::from_model_lit(LpCol::from(col), lit))
-                                .collect(),
-                        )
+                        cols.iter()
+                            .map(|&col| LpLit::from_model_lit(LpCol::from(col), lit))
+                            .collect()
                     }),
                 );
             }
@@ -726,22 +724,17 @@ impl LpRelaxEncodingData {
                 }
                 res
             };
-            lprelax.set_lit_implications(
+            lprelax.add_var_half_binding(
                 var,
                 std::sync::Arc::new(move |lit: Lit| {
                     assert_eq!(lit.variable(), var);
-                    let implied_lplits = mappings
+                    mappings
                         .iter()
                         .filter_map(|&(col, val)| {
                             (lit.entails(var.lt(val)) || lit.entails(var.gt(val)))
                                 .then_some(LpLit::leq(LpCol::from(col), 0))
                         })
-                        .collect_vec();
-                    if !implied_lplits.is_empty() {
-                        Some(implied_lplits.into())
-                    } else {
-                        None
-                    }
+                        .collect()
                 }),
             );
 
@@ -749,14 +742,14 @@ impl LpRelaxEncodingData {
                 let col = *self.col_tags.get(&ColTag::TermGround(term, term_grounding_id)).unwrap();
                 let val = TermGround::from(term, term_grounding_id, ctx).assignment(ctx);
 
-                lprelax.set_lplit_implications(
+                lprelax.add_col_half_binding(
                     col,
                     std::sync::Arc::new(move |lplit: LpLit| {
                         assert_eq!(lplit.col, col);
-                        if lplit.tpe == LpLitType::LB && lplit.val == 1 {
-                            Some(smallvec::smallvec![var.geq(val), var.leq(val)])
+                        if lplit.tpe == LpLitType::GEQ && lplit.val == 1 {
+                            smallvec::smallvec![var.geq(val), var.leq(val)]
                         } else {
-                            None
+                            Default::default()
                         }
                     }),
                 );
@@ -771,8 +764,8 @@ impl LpRelaxEncodingData {
 
                 let col = *self.col_tags.get(&ColTag::Support(tr1_id, tr2_id)).unwrap();
 
-                lprelax.set_lit_implications(s, default_lit_implications(s, col));
-                lprelax.set_lplit_implications(col, default_lplit_implications(s, col));
+                lprelax.add_var_half_binding_default(s, col);
+                lprelax.add_col_half_binding_default(col, s);
             }
         }
 
