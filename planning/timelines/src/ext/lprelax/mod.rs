@@ -146,6 +146,7 @@ struct Supports {
 impl Supports {
     /// Registers a (lifted) support relation between two (appropriate) (lifted) transitions.
     pub fn add_lifted(&mut self, tr1_id: TransitionId, tr2_id: TransitionId, active: Option<Lit>) {
+        debug_assert!(!self.lifted.contains_key(&(tr1_id, tr2_id)));
         debug_assert!(!matches!(tr1_id, TransitionId::Cond(_)));
 
         self.lifted.insert((tr1_id, tr2_id), active);
@@ -215,6 +216,12 @@ enum TagsExpr {
     Leq(Vec<ColTag>, Vec<ColTag>),
     Leq1(Vec<ColTag>),
 }
+
+#[derive(Debug, Default)]
+struct LpRelaxEncodingDataStats {
+    total_encoding_time: std::time::Duration,
+}
+
 #[derive(Debug, Default)]
 struct LpRelaxEncodingData {
     presences: Presences,
@@ -222,6 +229,8 @@ struct LpRelaxEncodingData {
 
     col_tags: BTreeMap<ColTag, LpCol>,
     tags_exprs: Vec<TagsExpr>,
+
+    stats: LpRelaxEncodingDataStats,
 }
 
 fn iter_supports(ctx: &SchedEncoderExt) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
@@ -772,8 +781,24 @@ impl LpRelaxEncodingData {
         ctx.lprelax = Some(lprelax);
     }
 
+    fn run(&mut self, ctx: &mut SchedEncoderExt) {
+        let time_start = std::time::Instant::now();
+        self.collect_relations(ctx);
+        self.build_cols_and_rows(ctx);
+        self.bind_to_main_model(ctx);
+        self.stats.total_encoding_time = time_start.elapsed();
+    }
+
     #[allow(unused)]
-    fn print(&self, ctx: &SchedEncoderExt) {
+    fn print_stats(&self) {
+        println!("# LpRelax Encoding");
+        println!("## Stats");
+        println!("total time: {:6?}", self.stats.total_encoding_time.as_secs_f64());
+    }
+
+    #[allow(unused)]
+    fn print_encoding(&self, ctx: &SchedEncoderExt) {
+        println!("# LpRelax Encoding");
         println!("## Transitions");
         for (tr_id, tr) in ctx.iter_transitions() {
             println!("{:?} ==== {:?}", tr_id, tr);
@@ -805,10 +830,10 @@ impl<'a> BoolExpr<SchedEncoderExt<'a>> for LpRelaxEncoding {
         ctx.lprelax = Some(LpRelax::default());
 
         let mut enc = LpRelaxEncodingData::default();
-        enc.collect_relations(ctx);
-        enc.build_cols_and_rows(ctx);
-        enc.bind_to_main_model(ctx);
-        // enc.print(ctx);
+        enc.run(ctx);
+
+        //enc.print_encoding(ctx);
+        enc.print_stats();
 
         assert!(ctx.lprelax.is_some());
     }
