@@ -62,7 +62,9 @@ pub struct LpRelaxConfig {
 }
 impl Default for LpRelaxConfig {
     fn default() -> Self {
-        Self { use_propagation_skips: true }
+        Self {
+            use_propagation_skips: true,
+        }
     }
 }
 
@@ -139,6 +141,16 @@ impl LpRelaxState {
 
         self.lpmodel.add_column(0., lb..ub, []).unwrap()
     }
+    fn add_columns(&mut self, lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)]) -> Vec<LpCol> {
+        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+
+        let lbs_ubs = Vec::from_iter(
+            lbs_ubs
+                .into_iter()
+                .map(|(lb, ub)| (lb.unwrap_or(FloatCst::MIN), ub.unwrap_or(FloatCst::MAX))),
+        );
+        self.lpmodel.add_columns(&lbs_ubs).unwrap()
+    }
     fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
         let mut res = false;
@@ -178,8 +190,30 @@ impl LpRelaxState {
         let ub: f64 = ub.unwrap_or(FloatCst::MAX);
         let num_columns = self.num_columns();
         self.lpmodel
-            .add_row(lb..ub, row_coefs.inspect(|(col, _)| assert!(col.index() < num_columns)))
+            .add_row(
+                lb..ub,
+                row_coefs.inspect(|(col, _)| debug_assert!(col.index() < num_columns)),
+            )
             .unwrap()
+    }
+    fn add_rows(
+        &mut self,
+        rows_coefs: &[Vec<(LpCol, FloatCst)>],
+        lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)],
+    ) -> Vec<LpRow> {
+        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        debug_assert!(
+            rows_coefs
+                .iter()
+                .all(|row_coefs| row_coefs.iter().all(|(col, _)| col.index() < self.num_columns()))
+        );
+
+        let lbs_ubs: Vec<_> = lbs_ubs
+            .into_iter()
+            .map(|(lb, ub)| (lb.unwrap_or(FloatCst::MIN), ub.unwrap_or(FloatCst::MAX)))
+            .collect();
+
+        self.lpmodel.add_rows(&lbs_ubs, &rows_coefs).unwrap()
     }
 
     fn add_objective_column(
@@ -359,6 +393,10 @@ impl LpRelax {
         self.state.add_column(lb, ub)
     }
 
+    pub fn add_columns(&mut self, lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)]) -> Vec<LpCol> {
+        self.state.add_columns(lbs_ubs)
+    }
+
     pub fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
         self.state.tighten_column(col, lb, ub)
     }
@@ -370,6 +408,14 @@ impl LpRelax {
         ub: Option<FloatCst>,
     ) -> LpRow {
         self.state.add_row(row_coefs, lb, ub)
+    }
+
+    pub fn add_rows(
+        &mut self,
+        rows_coefs: &[Vec<(LpCol, FloatCst)>],
+        lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)],
+    ) -> Vec<LpRow> {
+        self.state.add_rows(rows_coefs, lbs_ubs)
     }
 
     pub fn add_objective_column(

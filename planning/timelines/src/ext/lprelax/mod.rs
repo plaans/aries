@@ -406,8 +406,9 @@ impl LpRelaxEncodingData {
         let mut add_tags_expr = |tags_expr: TagsExpr| {
             self.tags_exprs.push(tags_expr);
         };
-        let mut add_column_01 = |col_tag: ColTag| {
-            self.col_tags.entry(col_tag).or_insert_with(|| lprelax.add_column_01());
+        let mut col_tags_local = BTreeSet::new();
+        let mut add_col_tag = |col_tag: ColTag| {
+            col_tags_local.insert(col_tag);
         };
 
         // A transition is active (i.e. present) iff its source is
@@ -417,8 +418,8 @@ impl LpRelaxEncodingData {
                 vec![ColTag::PresenceSource(src)],
             ));
 
-            add_column_01(ColTag::PresenceSource(src));
-            add_column_01(ColTag::PresenceTransition(tr_id));
+            add_col_tag(ColTag::PresenceSource(src));
+            add_col_tag(ColTag::PresenceTransition(tr_id));
         }
 
         // A source is active iff one of its groundings is.
@@ -432,7 +433,7 @@ impl LpRelaxEncodingData {
             ));
 
             for &src_grounding_id in src_groundings_ids {
-                add_column_01(ColTag::PresenceSourceGround(src, src_grounding_id));
+                add_col_tag(ColTag::PresenceSourceGround(src, src_grounding_id));
             }
         }
 
@@ -447,7 +448,7 @@ impl LpRelaxEncodingData {
             ));
 
             for &tr_grounding_id in grs.keys() {
-                add_column_01(ColTag::PresenceTransitionGround(tr_id, tr_grounding_id));
+                add_col_tag(ColTag::PresenceTransitionGround(tr_id, tr_grounding_id));
             }
 
             for (&tr_grounding_id, src_groundings_ids) in grs {
@@ -462,7 +463,7 @@ impl LpRelaxEncodingData {
                 ));
 
                 for &src_grounding_id in src_groundings_ids {
-                    add_column_01(ColTag::PresenceSourceGround(src, src_grounding_id));
+                    add_col_tag(ColTag::PresenceSourceGround(src, src_grounding_id));
                 }
             }
         }
@@ -477,7 +478,7 @@ impl LpRelaxEncodingData {
             ));
 
             for &term_grounding_id in term_groundings_ids {
-                add_column_01(ColTag::TermGround(term, term_grounding_id));
+                add_col_tag(ColTag::TermGround(term, term_grounding_id));
             }
         }
 
@@ -518,7 +519,7 @@ impl LpRelaxEncodingData {
                 vec![ColTag::PresenceTransition(tr2_id)],
             ));
 
-            add_column_01(ColTag::Support(tr1_id, tr2_id));
+            add_col_tag(ColTag::Support(tr1_id, tr2_id));
         }
 
         // A transition1 supporting transition2 cannot be supported by transition2
@@ -574,7 +575,7 @@ impl LpRelaxEncodingData {
                     vec![ColTag::PresenceTransitionGround(tr2_id, tr2_grounding_id)],
                 ));
 
-                add_column_01(ColTag::SupportGround(
+                add_col_tag(ColTag::SupportGround(
                     tr1_id,
                     tr2_id,
                     tr1_grounding_id,
@@ -633,7 +634,19 @@ impl LpRelaxEncodingData {
             ));
         }
 
+        // Create columns for the accumulated tags:
+        let col_tags_local = Vec::from_iter(col_tags_local.into_iter());
+        let cols_and_col_tags = lprelax
+            .add_columns(&vec![(Some(0.), Some(1.)); col_tags_local.len()])
+            .into_iter()
+            .zip(col_tags_local.into_iter())
+            .collect_vec();
+        for (col, col_tag) in cols_and_col_tags {
+            self.col_tags.insert(col_tag, col);
+        }
+
         // Add all rows to the LP problem.
+        let (mut rows_coefs, mut lbs_ubs) = (vec![], vec![]);
         for tags_expr in &self.tags_exprs {
             let (row_coefs, lb, ub) = match tags_expr {
                 TagsExpr::Eq(lhs, rhs) => (
@@ -660,8 +673,10 @@ impl LpRelaxEncodingData {
                     Some(1.),
                 ),
             };
-            lprelax.add_row(row_coefs.into_iter(), lb, ub);
+            rows_coefs.push(row_coefs);
+            lbs_ubs.push((lb, ub));
         }
+        lprelax.add_rows(&rows_coefs, &lbs_ubs);
 
         ctx.lprelax = Some(lprelax);
     }
