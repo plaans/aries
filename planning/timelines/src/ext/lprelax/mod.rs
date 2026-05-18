@@ -219,7 +219,9 @@ enum TagsExpr {
 
 #[derive(Debug, Default)]
 struct LpRelaxEncodingDataStats {
-    total_encoding_time: std::time::Duration,
+    collect_relations_time: std::time::Duration,
+    build_problem_time: std::time::Duration,
+    total_time: std::time::Duration,
 }
 
 #[derive(Debug, Default)]
@@ -797,18 +799,32 @@ impl LpRelaxEncodingData {
     }
 
     fn run(&mut self, ctx: &mut SchedEncoderExt) {
-        let time_start = std::time::Instant::now();
+        let t0 = std::time::Instant::now();
         self.collect_relations(ctx);
+        self.stats.collect_relations_time = t0.elapsed();
+
+        let t1 = std::time::Instant::now();
         self.build_cols_and_rows(ctx);
+        self.stats.build_problem_time = t1.elapsed();
+
         self.bind_to_main_model(ctx);
-        self.stats.total_encoding_time = time_start.elapsed();
+
+        self.stats.total_time = t0.elapsed();
     }
 
     #[allow(unused)]
     fn print_stats(&self) {
         println!("# LpRelax Encoding");
         println!("## Stats");
-        println!("total time: {:6?}", self.stats.total_encoding_time.as_secs_f64());
+        println!(
+            "collect_relations time: {:6?}",
+            self.stats.collect_relations_time.as_secs_f64()
+        );
+        println!(
+            "build_cols_and_rows time: {:6?}",
+            self.stats.build_problem_time.as_secs_f64()
+        );
+        println!("total time: {:6?}", self.stats.total_time.as_secs_f64());
     }
 
     #[allow(unused)]
