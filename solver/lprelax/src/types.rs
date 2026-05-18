@@ -1,9 +1,10 @@
 use aries::prelude::{INT_CST_MAX, INT_CST_MIN, IntCst};
 
 pub type LpCol = highs::Col;
+pub type LpRow = highs::Row;
+pub type LpSolution = highs::Solution;
 pub type LpIis = highs::Iis;
 pub type LpModel = highs::Model;
-pub type LpProblem = highs::RowProblem;
 pub type LpObjectiveSense = highs::Sense;
 
 pub type FloatCst = f64;

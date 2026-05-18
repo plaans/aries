@@ -651,7 +651,7 @@ impl LpRelaxEncodingData {
                     Some(1.),
                 ),
             };
-            lprelax.add_row(row_coefs, lb, ub);
+            lprelax.add_row(row_coefs.into_iter(), lb, ub);
         }
 
         ctx.lprelax = Some(lprelax);

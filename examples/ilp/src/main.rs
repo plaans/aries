@@ -212,7 +212,6 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
                     lp_parser_rs::model::Sense::Maximize => aries_lprelax::LpObjectiveSense::Maximise,
                 },
             );
-
             lprelax.add_var_half_binding_default(obj_var, obj_col);
             lprelax.add_col_half_binding_default(obj_col, obj_var);
         }

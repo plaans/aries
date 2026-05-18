@@ -56,45 +56,14 @@ struct LpRelaxStats {
     pub lpruns_time: std::time::Duration,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct LpRelaxConfig {
-    no_propagation_skips: bool,
+    use_propagation_skips: bool,
 }
-
-fn new_lpmodel(lpprob: LpProblem, sense: Option<LpObjectiveSense>) -> LpModel {
-    let mut lpmodel = lpprob
-        .try_optimise(sense.unwrap_or(LpObjectiveSense::Minimise))
-        .unwrap();
-
-    lpmodel.set_sense(sense.unwrap_or(LpObjectiveSense::Minimise));
-
-    //lpmodel.set_option("time_limit", 2.0); // stop after 2 seconds
-    lpmodel.set_option("parallel", "off"); // use 1 core
-    lpmodel.set_option("threads", 1); // solve on 1 thread
-    lpmodel.set_option("iis_strategy", 10); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
-
-    lpmodel
-}
-fn cache_lpmodel(
-    lpprob: LpProblem,
-    sense: Option<LpObjectiveSense>,
-    obj_col: Option<LpCol>,
-    lpmodel_cached: &mut LpModel,
-) {
-    lpmodel_cached.overwrite(lpprob).unwrap();
-
-    lpmodel_cached.set_sense(sense.unwrap_or(LpObjectiveSense::Minimise));
-
-    /*for col in all_cols {
-        lpmodel_cached.change_column_cost(col, 0.);
-    }*/
-    if let Some(obj_col) = obj_col {
-        lpmodel_cached.change_column_cost(obj_col, 1.);
+impl Default for LpRelaxConfig {
+    fn default() -> Self {
+        Self { use_propagation_skips: true }
     }
-    //lpmodel_cached.set_option("time_limit", 2.0); // stop after 2 seconds
-    lpmodel_cached.set_option("parallel", "off"); // use 1 core
-    lpmodel_cached.set_option("threads", 1); // solve on 1 thread
-    lpmodel_cached.set_option("iis_strategy", 10); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
 }
 
 #[derive(Clone)]
@@ -108,50 +77,58 @@ struct LpRelaxState {
     model_events: ObsTrailCursor<ModelEvent>,
     trail: Trail<LpEvent>,
 
-    lpprob: LpProblem,
-    lpmodel_cached: LpModel,
+    lpmodel: LpModel,
     lpobjective: Option<LpRelaxObjective>,
 }
 impl Clone for LpRelaxState {
     fn clone(&self) -> Self {
+        let mut lpmodel = self.lpmodel.clone();
+        set_lpmodel_options(&mut lpmodel);
+
         Self {
             model_events: self.model_events.clone(),
             trail: self.trail.clone(),
-            lpprob: self.lpprob.clone(),
-            lpmodel_cached: new_lpmodel(self.lpprob.clone(), self.get_objective_sense()),
+            lpmodel,
             lpobjective: self.lpobjective.clone(),
         }
     }
 }
+fn set_lpmodel_options(lpmodel: &mut LpModel) {
+    //lpmodel.set_option("time_limit", 2.0); // stop after 2 seconds
+    lpmodel.set_option("parallel", "off"); // use 1 core
+    lpmodel.set_option("threads", 1); // solve on 1 thread
+    lpmodel.set_option("iis_strategy", 0); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
+}
 impl Default for LpRelaxState {
     fn default() -> Self {
-        let lpprob = LpProblem::default();
+        let mut lpmodel = LpModel::default(LpObjectiveSense::Minimise);
+        set_lpmodel_options(&mut lpmodel);
+
         Self {
             model_events: ObsTrailCursor::default(),
             trail: Trail::default(),
-            lpprob: lpprob.clone(),
+            lpmodel,
             lpobjective: None,
-            lpmodel_cached: new_lpmodel(lpprob, None),
         }
     }
 }
 impl LpRelaxState {
     fn num_rows(&self) -> usize {
-        self.lpprob.num_rows()
+        self.lpmodel.num_rows()
     }
     fn num_columns(&self) -> usize {
-        self.lpprob.num_cols()
+        self.lpmodel.num_columns()
     }
     #[allow(dead_code)]
     fn columns(&self) -> Vec<LpCol> {
-        (0..self.lpprob.num_cols()).map(LpCol::from).collect()
+        (0..self.lpmodel.num_columns()).map(LpCol::from).collect()
     }
 
     fn get_column_lower_bound(&self, col: LpCol) -> IntCst {
-        float_as_exact_int_cst(self.lpprob.get_column_bounds(col).0)
+        float_as_exact_int_cst(self.lpmodel.get_column_bounds(col).0)
     }
     fn get_column_upper_bound(&self, col: LpCol) -> IntCst {
-        float_as_exact_int_cst(self.lpprob.get_column_bounds(col).1)
+        float_as_exact_int_cst(self.lpmodel.get_column_bounds(col).1)
     }
     fn add_column(&mut self, lb: Option<FloatCst>, ub: Option<FloatCst>) -> LpCol {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
@@ -160,7 +137,7 @@ impl LpRelaxState {
         let ub = ub.unwrap_or(FloatCst::MAX);
         assert!(lb <= ub);
 
-        self.lpprob.add_column(0., lb..ub)
+        self.lpmodel.add_column(0., lb..ub, []).unwrap()
     }
     fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
@@ -186,26 +163,29 @@ impl LpRelaxState {
         };
         assert!(lb <= ub);
 
-        self.lpprob.change_column_bounds(col, lb..ub);
+        self.lpmodel.change_column_bounds(col, lb..ub);
         res
     }
-    fn add_row<ITEM: std::borrow::Borrow<(LpCol, FloatCst)>, I: IntoIterator<Item = ITEM>>(
+    fn add_row(
         &mut self,
-        row_coefs: I,
+        row_coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         lb: Option<FloatCst>,
         ub: Option<FloatCst>,
-    ) {
+    ) -> LpRow {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         let lb = lb.unwrap_or(FloatCst::MIN);
-        let ub = ub.unwrap_or(FloatCst::MAX);
-        self.lpprob.add_row(lb..ub, row_coefs)
+        let ub: f64 = ub.unwrap_or(FloatCst::MAX);
+        let num_columns = self.num_columns();
+        self.lpmodel
+            .add_row(lb..ub, row_coefs.inspect(|(col, _)| assert!(col.index() < num_columns)))
+            .unwrap()
     }
 
-    fn add_objective_column<I: IntoIterator<Item = (LpCol, FloatCst)>>(
+    fn add_objective_column(
         &mut self,
         var: VarRef,
-        coefs: I,
+        coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         sense: LpObjectiveSense,
     ) -> LpCol {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
@@ -216,9 +196,16 @@ impl LpRelaxState {
             var,
             sense,
         });
-        let factors = coefs.into_iter().chain([(self.get_objective_column().unwrap(), -1.)]);
+        self.lpmodel
+            .change_column_cost(self.get_objective_column().unwrap(), 1.);
 
-        self.add_row(factors, Some(0.), Some(0.));
+        let factors = coefs
+            .into_iter()
+            .chain([(self.get_objective_column().unwrap(), -1.)])
+            .collect::<Vec<_>>();
+
+        self.add_row(factors.into_iter(), Some(0.), Some(0.));
+        self.lpmodel.set_sense(sense);
 
         self.get_objective_column().unwrap()
     }
@@ -259,7 +246,7 @@ impl LpRelaxState {
                 LpLitType::LEQ => self.get_column_lower_bound(lplit.col)..lplit.val,
             };
             if lplit.strictly_entails(prev_lplit) && bounds.start <= bounds.end {
-                self.lpprob.change_column_bounds(lplit.col, bounds);
+                self.lpmodel.change_column_bounds(lplit.col, bounds);
 
                 let cause_is_main_model = matches!(cause, LpEventCause::MainModel(_));
                 let lpevent_index = self.trail.push(LpEvent::new(lplit, prev_lplit, cause));
@@ -287,29 +274,28 @@ impl LpRelaxState {
         self.trail.save_state()
     }
     fn undo_to_last_backtrack_point(&mut self) {
+        self.lpmodel.clear_solver().unwrap();
+
         self.trail.restore_last_with(|ev| {
             let bounds = match ev.new_lplit.tpe {
                 LpLitType::GEQ => {
-                    ev.prev_lplit.val..float_as_exact_int_cst(self.lpprob.get_column_bounds(ev.new_lplit.col).1)
+                    ev.prev_lplit.val..float_as_exact_int_cst(self.lpmodel.get_column_bounds(ev.new_lplit.col).1)
                 }
                 LpLitType::LEQ => {
-                    float_as_exact_int_cst(self.lpprob.get_column_bounds(ev.new_lplit.col).0)..ev.prev_lplit.val
+                    float_as_exact_int_cst(self.lpmodel.get_column_bounds(ev.new_lplit.col).0)..ev.prev_lplit.val
                 }
             };
-            self.lpprob.change_column_bounds(ev.new_lplit.col, bounds);
+            self.lpmodel.change_column_bounds(ev.new_lplit.col, bounds);
         });
     }
-    fn try_solve_cached_lpmodel(
-        &mut self,
-        stats: &mut LpRelaxStats,
-    ) -> Result<Result<highs::Solution, highs::Iis>, highs::HighsStatus> {
-        // TODO: Warm-start with the same basis and basic variables as in solution obtained at a previous decision level.
-        //       Indeed, it is still likely to be primal feasible.
-        //       No need to keep track of it for backtracking (just don't use warm-starting right after backtracking).
-
+    fn solve_or_iis(&mut self, stats: &mut LpRelaxStats) -> Result<Result<LpSolution, LpIis>, highs::HighsStatus> {
         let time = std::time::Instant::now();
 
-        let res = self.lpmodel_cached.try_solve_mut();
+        let res = self.lpmodel.solve_or_iis();
+
+        if res.is_err() {
+            self.lpmodel.clear_solver().unwrap();
+        }
 
         stats.lpruns_time += time.elapsed();
         stats.lpruns += 1;
@@ -377,19 +363,19 @@ impl LpRelax {
         self.state.tighten_column(col, lb, ub)
     }
 
-    pub fn add_row<ITEM: std::borrow::Borrow<(LpCol, FloatCst)>, I: IntoIterator<Item = ITEM>>(
+    pub fn add_row(
         &mut self,
-        row_coefs: I,
+        row_coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         lb: Option<FloatCst>,
         ub: Option<FloatCst>,
-    ) {
-        self.state.add_row(row_coefs, lb, ub);
+    ) -> LpRow {
+        self.state.add_row(row_coefs, lb, ub)
     }
 
-    pub fn add_objective_column<I: IntoIterator<Item = (LpCol, FloatCst)>>(
+    pub fn add_objective_column(
         &mut self,
         var: VarRef,
-        coefs: I,
+        coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         sense: LpObjectiveSense,
     ) -> LpCol {
         self.state.add_objective_column(var, coefs, sense)
@@ -449,14 +435,7 @@ impl LpRelax {
     }
 
     fn check_feasibility(&mut self) -> Result<(), Contradiction> {
-        cache_lpmodel(
-            self.state.lpprob.clone(),
-            self.get_objective_sense(),
-            None,
-            &mut self.state.lpmodel_cached,
-        );
-
-        match self.state.try_solve_cached_lpmodel(&mut self.stats) {
+        match self.state.solve_or_iis(&mut self.stats) {
             Ok(Err(iis)) => Err(self.build_contradiction(iis)),
             _ => Ok(()),
         }
@@ -467,14 +446,7 @@ impl LpRelax {
             .expect("Reduced costs strengthtening requires an objective.");
 
         let Some((optim_obj_val, nz_reduced_costs)) = {
-            cache_lpmodel(
-                self.state.lpprob.clone(),
-                self.get_objective_sense(),
-                Some(obj_col),
-                &mut self.state.lpmodel_cached,
-            );
-
-            match self.state.try_solve_cached_lpmodel(&mut self.stats) {
+            match self.state.solve_or_iis(&mut self.stats) {
                 Ok(Ok(sol)) => {
                     let opt_obj_val = sol.columns()[obj_col.index()];
                     let nz_reduced_costs = sol
@@ -499,7 +471,7 @@ impl LpRelax {
         // Skip if the optimal objective computed above is too close to the incumbent (previous best known objective value).
         let obj_incumbent_bound = self.state.get_objective_current_bound().unwrap();
         let obj_diff = FloatCst::from(obj_incumbent_bound) - optim_obj_val;
-        if !self.config.no_propagation_skips && (obj_diff).abs() < 1. {
+        if self.config.use_propagation_skips && (obj_diff).abs() < 1. {
             return Ok(());
         }
 
@@ -601,7 +573,7 @@ impl LpRelax {
         // keeps the explanation sound at the cost of potentially adding unnecessary literals.
         for i in 0..self.num_columns() {
             let col = LpCol::from(i);
-            if iis.contains_column_maybe(&col) {
+            if iis.contains_column_maybe(col) {
                 let lplit_lb = LpLit::geq(col, self.state.get_column_lower_bound(col));
                 if let Some(lits) = self.bindings.compute_implied_lits(lplit_lb) {
                     for lit in lits {
@@ -629,35 +601,38 @@ impl Theory for LpRelax {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        if !self.config.no_propagation_skips
-            && (self.num_columns() == 0 || (self.num_rows() == 0 && self.state.lpobjective.is_none()))
-        {
-            return Ok(());
-        }
+        let model_updates_to_process = self.state.model_events.num_pending(model.trail());
 
-        let processed_model_updates = self.state.model_events.num_pending(model.trail());
-        self.process_model_events(model)?;
+        if model_updates_to_process > 0 {
+            self.process_model_events(model)?;
+        }
+        if model_updates_to_process == 0 || !self.config.use_propagation_skips {
 
-        if !self.config.no_propagation_skips && processed_model_updates > 0 {
-            return Ok(());
-        }
-        if !self.config.no_propagation_skips
-            && self.state.trail.saved_states.len() > 1
-            && self.state.trail.saved_states[self.state.trail.num_saved() as usize - 1] == self.state.trail.trail.len()
-        {
-            return Ok(());
-        }
+            if self.config.use_propagation_skips
+                && (self.num_columns() == 0 || (self.num_rows() == 0 && self.state.lpobjective.is_none()))
+            {
+                return Ok(());
+            }
 
-        if !self.config.no_propagation_skips && self.current_decision_level() > DecLvl::ROOT {
-            return Ok(());
-        }
-        // TODO: allow propagation after a backtrack.
+            /*if !self.config.no_propagation_skips
+                && self.state.trail.saved_states.len() > 1
+                && self.state.trail.saved_states[self.state.trail.num_saved() as usize - 1] == self.state.trail.trail.len()
+            {
+                return Ok(());
+            }*/
 
-        if self.state.lpobjective.is_some() {
-            self.propagate_reduced_costs_strengthtening(model)
-        } else {
-            self.check_feasibility()
+            // TODO: allow propagation after a backtrack.
+            if self.config.use_propagation_skips && self.current_decision_level() > DecLvl::ROOT {
+                return Ok(());
+            }
+
+            if self.state.lpobjective.is_some() {
+                return self.propagate_reduced_costs_strengthtening(model);
+            } else {
+                return self.check_feasibility();
+            }
         }
+        Ok(())
     }
 
     fn explain(
@@ -748,7 +723,7 @@ pub mod test {
         model.add_implication(var2.leq(5), var3.leq(5));
 
         let mut theory = LpRelax::with_config(LpRelaxConfig {
-            no_propagation_skips: true,
+            use_propagation_skips: false,
         });
 
         let col2 = theory.add_column(Some(0.), Some(10.));
@@ -822,7 +797,7 @@ pub mod test {
         let bvar = model.new_var(0, 1);
 
         let mut theory = LpRelax::with_config(LpRelaxConfig {
-            no_propagation_skips: true,
+            use_propagation_skips: false,
         });
 
         let acol = theory.add_column(Some(0.), Some(1.));
@@ -834,7 +809,7 @@ pub mod test {
         theory.add_var_half_binding_default(bvar, bcol);
         theory.add_col_half_binding_default(bcol, bvar);
 
-        theory.add_row([(acol, 1.), (bcol, 1.)], Some(1.), None);
+        theory.add_row([(acol, 1.), (bcol, 1.)].into_iter(), Some(1.), None);
 
         let _ = model.set_ub(avar, 0, Cause::Decision).unwrap();
         let _ = model.set_ub(bvar, 0, Cause::Decision).unwrap();
