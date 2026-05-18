@@ -126,6 +126,9 @@ pub struct OptimizePlan {
     /// If provided, the optimized plan will be written to this file.
     #[arg(short = 'w', long = "write-plan")]
     plan_file: Option<PathBuf>,
+    /// Generate explanations about the optimal plan. Accepts one or more explanation types.
+    #[arg(short, long, num_args(1..))]
+    explain: Vec<optimize_plan::Explanation>,
 }
 
 #[derive(Parser, Debug)]
@@ -299,7 +302,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         Some(path) => Some(path.clone()),
     };
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref())
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain)
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {

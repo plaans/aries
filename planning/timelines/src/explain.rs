@@ -85,6 +85,29 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         res.ok()
     }
 
+    /// Find an optimal solution using only the given assumptions, without automatically adding
+    /// enablers. This allows callers to selectively activate/deactivate individual constraints
+    /// (e.g., specific goals or preferences) for sensitivity analysis.
+    pub fn find_optimal_with_assumptions(
+        &mut self,
+        obj: LinTerm,
+        on_new_solution: impl FnMut(&Solution),
+        assumptions: &[Lit],
+    ) -> Option<Solution> {
+        let res = self
+            .solver
+            .minimize_with_assumptions(obj, assumptions, aries::solver::SearchLimit::None, on_new_solution)
+            .unwrap();
+        self.solver.reset();
+        res.ok()
+    }
+
+    /// Returns the map of enabler literals to their constraint tags,
+    /// allowing callers to inspect which constraints are available for relaxation.
+    pub fn enablers(&self) -> &BTreeMap<Lit, T> {
+        &self.enablers
+    }
+
     /// Returns an iterator over all MUS and MCS in the model.
     pub fn explain_unsat<'x>(&'x mut self) -> impl Iterator<Item = MusMcs<T>> + 'x {
         let assumptions = self.enablers.keys().copied().collect_vec();
