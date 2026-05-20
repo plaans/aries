@@ -85,9 +85,8 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         res.ok()
     }
 
-    /// Find an optimal solution using only the given assumptions, without automatically adding
-    /// enablers. This allows callers to selectively activate/deactivate individual constraints
-    /// (e.g., specific goals or preferences) for sensitivity analysis.
+    /// Like `find_optimal`, but does NOT auto-add enablers.
+    /// Callers control exactly which constraints are active (for sensitivity analysis).
     pub fn find_optimal_with_assumptions(
         &mut self,
         obj: LinTerm,
@@ -102,10 +101,43 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         res.ok()
     }
 
-    /// Returns the map of enabler literals to their constraint tags,
-    /// allowing callers to inspect which constraints are available for relaxation.
+    /// Returns enabler-literal-to-tag map for inspecting available soft constraints.
     pub fn enablers(&self) -> &BTreeMap<Lit, T> {
         &self.enablers
+    }
+
+    /// Permanently enforces literals as hard constraints (irreversible).
+    pub fn enforce_permanent(&mut self, lits: &[Lit]) {
+        for &lit in lits {
+            self.solver.enforce(lit, []);
+        }
+    }
+
+    /// MUS/MCS enumeration with a filter: enablers matching `relaxable` are soft,
+    /// the rest are permanently enforced. `extra` adds more relaxable assumptions.
+    /// Irreversible — solver cannot be reused for optimization after this call.
+    pub fn explain_unsat_with_filter<'x>(
+        &'x mut self,
+        relaxable: impl Fn(&T) -> bool,
+        extra: &BTreeMap<Lit, T>,
+    ) -> impl Iterator<Item = MusMcs<T>> + 'x {
+        let mut assumptions: Vec<Lit> = Vec::new();
+        let mut projection_map: BTreeMap<Lit, T> = BTreeMap::new();
+        for (lit, tag) in &self.enablers {
+            if relaxable(tag) {
+                assumptions.push(*lit);
+                projection_map.insert(*lit, tag.clone());
+            } else {
+                self.solver.enforce(*lit, []);
+            }
+        }
+        for (&lit, tag) in extra {
+            assumptions.push(lit);
+            projection_map.insert(lit, tag.clone());
+        }
+        self.solver
+            .mus_and_mcs_enumerator(&assumptions)
+            .map(move |mm| mm.project(|l| projection_map.get(l).cloned()))
     }
 
     /// Returns an iterator over all MUS and MCS in the model.

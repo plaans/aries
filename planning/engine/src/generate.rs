@@ -40,7 +40,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
     let plan = LiftedPlan::default();
 
     let start = Instant::now();
-    let (mut solver, encoding, _sched) = encode_finite_planning_problem(model, &plan, options)?;
+    let (mut solver, encoding, _sched, _plan_cost_obj) = encode_finite_planning_problem(model, &plan, options)?;
 
     let _encoding_time = start.elapsed().as_millis();
 
@@ -72,7 +72,7 @@ fn encode_finite_planning_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
     options: &Options,
-) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
+) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched, Option<LinTerm>)> {
     // TODO: make specific function.
     // - ability to specify explanations vocabulary via RelaxableConstraint (Tag), including removing (pre)conditions (like in domain repair).
 

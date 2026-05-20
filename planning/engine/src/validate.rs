@@ -19,7 +19,7 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<Val
         relaxation: vec![], // no relaxation
         objectives: vec![optimize_plan::Objective::Original],
     };
-    let (mut solver, encoding, _sched) =
+    let (mut solver, encoding, _sched, _plan_cost_obj) =
         encode_plan_optimization_problem(model, plan, Default::default(), &opt_options)?;
 
     if let Some(solution) = solver.check_satisfiability() {

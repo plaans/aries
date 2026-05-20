@@ -8,6 +8,7 @@ use aries::{
     core::{state::Evaluable, views::Boundable},
     model::lang::{IntExpr, Store},
     prelude::*,
+    solver::musmcs::MusMcs,
 };
 use aries_plan_engine::{
     encode::{
@@ -61,13 +62,17 @@ pub enum Explanation {
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>, explanations: &[Explanation]) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
-    let (mut solver, encoding, sched) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
+    let (mut solver, encoding, sched, plan_cost_obj) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
     let _encoding_time = start.elapsed().as_millis();
 
     // Pinning literals from previous phases; grows as objectives are solved
     let mut phase_assumptions: Vec<Lit> = vec![];
     // Snapshot of phase_assumptions *before* the last objective is pinned,
     // used by explanations so they can relax individual goals/preferences from the final phase.
+    // NOTE: with multiple objectives, prior phases remain fixed during explanations. This means
+    // the "cost without bound" analysis could be over-constrained if a prior objective prevents
+    // finding a feasible solution. Consider whether all phase_assumptions should be released
+    // for that analysis in the multi-objective case.
     let mut prior_phase_assumptions: Vec<Lit> = vec![];
     let mut last_solution = None;
 
@@ -105,8 +110,8 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
     if let Some(solution) = last_solution {
         println!("> Found optimal solution\n");
         print_plan(&solution);
-        let plan = encoding.plan(&solution);
-        plan.write_to_file(output_plan)?;
+        let fmt_plan = encoding.plan(&solution);
+        fmt_plan.write_to_file(output_plan)?;
 
         // Post-optimization sensitivity analysis for each requested explanation type
         for explanation in explanations {
@@ -119,6 +124,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
                         &sched,
                         &solution,
                         &prior_phase_assumptions,
+                        plan_cost_obj,
                     );
                 }
             }
@@ -185,7 +191,7 @@ pub fn encode_plan_optimization_problem(
     lifted_plan: &LiftedPlan,
     free_actions: BTreeMap<ActionRef, u32>,
     options: &Options,
-) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
+) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched, Option<LinTerm>)> {
     let mut encoding = Encoding::new();
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
@@ -476,7 +482,28 @@ pub fn encode_plan_optimization_problem(
         equiv,
     ));
 
-    Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
+    // Build a plan cost objective (sum of total-cost step effects) for sensitivity analysis.
+    let plan_cost_obj = {
+        let mut sum = IntExp::zero();
+        let mut found = false;
+        for eff in sched.effects.iter() {
+            if eff.state_var.fluent == "total-cost" {
+                if let EffectOp::Step(step_val) = eff.operation {
+                    if let Ok(cost) = IntCst::try_from(step_val) {
+                        sum += timelines::constraints::bool2int(eff.prez, &mut sched.model) * cost;
+                        found = true;
+                    }
+                }
+            }
+        }
+        if found {
+            Some(reify_sum(sum, &mut sched))
+        } else {
+            None
+        }
+    };
+
+    Ok((sched.explainable_solver(constraint_to_repair), encoding, sched, plan_cost_obj))
 }
 
 fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
@@ -526,6 +553,19 @@ pub fn parse_simple_goal(
 
 fn noop(_: &Solution) {}
 
+/// Renders a constraint tag as a human-readable string for explanation output.
+fn format_tag(tag: &Tag, model: &Model) -> String {
+    match tag {
+        Tag::EnforceGoal(i) => {
+            let g = &model.goals[*i];
+            format!("goal: {}", &model.env / g)
+        }
+        Tag::Support { operator_id: _, cond } => format!("support({}, cond #{})", cond.action, cond.condition_id),
+        Tag::CostBound => "cost bound".to_string(),
+        Tag::EnforcePreference(name) => name.clone(),
+    }
+}
+
 /// Computes the plan cost by summing all active `total-cost` step effects in the solution.
 fn compute_plan_cost(sched: &Sched, solution: &Solution) -> Option<IntCst> {
     let mut total: IntCst = 0;
@@ -543,9 +583,9 @@ fn compute_plan_cost(sched: &Sched, solution: &Solution) -> Option<IntCst> {
     found.then_some(total)
 }
 
-/// For each violated preference in the optimal plan, explains:
-/// 1. The marginal utility gain if this preference alone were enforced.
-/// 2. Whether enforcing it is feasible within the current cost bound, and if not, what the extra cost would be.
+/// For each violated preference in the optimal plan, uses MUS/MCS analysis to explain:
+/// - MUS: which constraints conflict with enforcing the preference
+/// - MCS: what to relax to make the preference satisfiable
 fn explain_preference_enforcement(
     solver: &mut ExplainableSolver<Tag>,
     encoding: &Encoding,
@@ -553,20 +593,20 @@ fn explain_preference_enforcement(
     sched: &Sched,
     optimal_solution: &Solution,
     phase_assumptions: &[Lit],
+    plan_cost_obj: Option<LinTerm>,
 ) {
+    const MAX_RESULTS_PER_PREF: usize = 5;
+
     if encoding.preferences.is_empty() {
         return;
     }
-
-    let enablers = solver.enablers();
-    let all_enabler_lits: Vec<Lit> = enablers.keys().copied().collect();
 
     let obj = encoding.objectives[0];
     let optimal_obj_val = optimal_solution.eval(obj).unwrap();
     let optimal_plan_cost = compute_plan_cost(sched, optimal_solution);
 
     // Classify each preference as satisfied or violated in the optimal solution
-    let mut satisfied = Vec::new();
+    let mut satisfied_entries: Vec<(String, Vec<Lit>, String)> = Vec::new();
     let mut unsatisfied = Vec::new();
 
     for (name, lits) in &encoding.preferences {
@@ -577,7 +617,7 @@ fn explain_preference_enforcement(
             .unwrap_or_else(|| name.clone());
 
         if is_satisfied {
-            satisfied.push(display);
+            satisfied_entries.push((name.clone(), lits.clone(), display));
         } else {
             unsatisfied.push((name.clone(), lits.clone(), display));
         }
@@ -590,8 +630,8 @@ fn explain_preference_enforcement(
     }
     println!();
 
-    for name in &satisfied {
-        println!("  [satisfied] {}", name);
+    for (_, _, display) in &satisfied_entries {
+        println!("  [satisfied] {}", display);
     }
     for (_, _, display) in &unsatisfied {
         println!("  [violated]  {}", display);
@@ -602,104 +642,188 @@ fn explain_preference_enforcement(
         return;
     }
 
-    // Literals of preferences already satisfied in the optimal plan — kept enforced during what-if analyses
-    let satisfied_pref_lits: Vec<Lit> = encoding
-        .preferences
-        .values()
-        .flat_map(|lits| lits.iter())
-        .filter(|lit| optimal_solution.entails(**lit))
-        .copied()
-        .collect();
+    // Fix prior phase objectives permanently (this is the final step, solver won't be reused)
+    solver.enforce_permanent(phase_assumptions);
 
-    // Enablers that are not goal-enforcement — used when we want to keep all non-goal constraints active
-    let non_goal_enabler_lits: Vec<Lit> = enablers
-        .iter()
-        .filter(|(_, tag)| !matches!(tag, Tag::EnforceGoal(_)))
-        .map(|(lit, _)| *lit)
-        .collect();
+    println!("\n===== Explanation: Why can't I satisfy each violated preference? =====\n");
 
-    // Literals of violated preferences, needed to explicitly negate them during marginal utility computation
-    let unsatisfied_pref_lits: Vec<(&str, Vec<Lit>)> = unsatisfied
-        .iter()
-        .map(|(name, lits, _)| (name.as_str(), lits.clone()))
-        .collect();
+    for (name, pref_lits, display) in &unsatisfied {
+        println!("--- Preference '{}': {} ---\n", name, display);
 
-    println!("\n===== Explanation: What happens if I enforce an unsatisfied preference? =====\n");
-
-    for (name, lits, display) in &unsatisfied {
-        println!("Preference '{}': {}", name, display);
-
-        // 1. Marginal utility: force only this preference while negating all other violated ones,
-        //    so we measure the isolated impact of satisfying this single preference.
-        let mut marginal_assumptions: Vec<Lit> = phase_assumptions.to_vec();
-        marginal_assumptions.extend(&non_goal_enabler_lits);
-        marginal_assumptions.extend(&satisfied_pref_lits);
-        marginal_assumptions.extend(lits);
-        for (other_name, other_lits) in &unsatisfied_pref_lits {
-            if *other_name != name.as_str() {
-                for lit in other_lits {
-                    marginal_assumptions.push(!*lit);
-                }
+        // Extra relaxable assumptions: the forced preference + all satisfied preferences.
+        // Goals (e.g. total-cost <= N) are relaxable via enablers; supports stay hard.
+        let mut extra = BTreeMap::new();
+        for &lit in pref_lits {
+            extra.insert(lit, Tag::EnforcePreference(name.clone()));
+        }
+        for (sat_name, sat_lits, _) in &satisfied_entries {
+            for &lit in sat_lits {
+                extra.insert(lit, Tag::EnforcePreference(sat_name.clone()));
             }
         }
-        if let Some(marginal_sol) =
-            solver.find_optimal_with_assumptions(obj, noop, &marginal_assumptions)
-        {
-            let marginal_obj = marginal_sol.eval(obj).unwrap();
-            let utility_gain = optimal_obj_val - marginal_obj;
-            println!("  Utility gain: {} (objective: {} → {})", utility_gain, optimal_obj_val, marginal_obj);
+
+        // MARCO enumerates MUS (conflicts) and MCS (resolutions) over goals + preferences
+        let results: Vec<_> = solver
+            .explain_unsat_with_filter(
+                |t| matches!(t, Tag::EnforceGoal(_)),
+                &extra,
+            )
+            .take(MAX_RESULTS_PER_PREF)
+            .collect();
+
+        let muses: Vec<_> = results
+            .iter()
+            .filter_map(|r| match r {
+                MusMcs::Mus(s) => Some(s),
+                _ => None,
+            })
+            .collect();
+        // Exclude trivial MCS that only say "don't enforce the preference itself"
+        let mcses: Vec<_> = results
+            .iter()
+            .filter_map(|r| match r {
+                MusMcs::Mcs(s) => Some(s),
+                _ => None,
+            })
+            .filter(|mcs| {
+                !(mcs.len() == 1 && mcs.iter().all(|t| matches!(t, Tag::EnforcePreference(n) if n == name)))
+            })
+            .collect();
+
+        if muses.is_empty() && mcses.is_empty() {
+            println!("  Preference is satisfiable under all current constraints.\n");
+            continue;
         }
 
-        // 2. Feasibility under cost bound: enforce all constraints (including goals) plus this preference.
-        //    If a solution exists, the preference can be satisfied without exceeding the optimal cost.
-        let mut assumptions_with_bound: Vec<Lit> = phase_assumptions.to_vec();
-        assumptions_with_bound.extend(&all_enabler_lits);
-        assumptions_with_bound.extend(&satisfied_pref_lits);
-        assumptions_with_bound.extend(lits);
-
-        let constrained_solution =
-            solver.find_optimal_with_assumptions(obj, noop, &assumptions_with_bound);
-
-        match constrained_solution {
-            Some(sol) => {
-                let forced_plan_cost = compute_plan_cost(sched, &sol);
-                println!("  Cost bound: respected");
-                if let (Some(forced_cost), Some(opt_cost)) = (forced_plan_cost, optimal_plan_cost) {
-                    println!("  Plan cost: {} (optimal: {})", forced_cost, opt_cost);
-                }
-                println!("  Resulting plan:\n{}", encoding.plan(&sol));
+        // 1. Show conflicts (MUS): which sets of constraints are mutually incompatible
+        if !muses.is_empty() {
+            println!("  Conflicts:\n");
+            for mus in &muses {
+                let tags: Vec<_> = mus.iter().map(|t| format_tag(t, model)).collect();
+                println!("    - {}", tags.join(" + "));
             }
-            None => {
-                println!("  Cost bound: VIOLATED");
+            println!();
+        }
 
-                // Cost bound violated: re-solve without goal enablers to find the actual cost of enforcing this preference
-                let mut assumptions_relaxed: Vec<Lit> = phase_assumptions.to_vec();
-                assumptions_relaxed.extend(&non_goal_enabler_lits);
-                assumptions_relaxed.extend(&satisfied_pref_lits);
-                assumptions_relaxed.extend(lits);
+        // 2. Show possible resolutions (MCS): what to relax to satisfy this preference
+        let resolutions: Vec<Vec<String>> = mcses
+            .iter()
+            .map(|mcs| {
+                mcs.iter()
+                    .filter(|t| !matches!(t, Tag::EnforcePreference(n) if n == name))
+                    .map(|t| format_tag(t, model))
+                    .collect()
+            })
+            .filter(|v: &Vec<String>| !v.is_empty())
+            .collect();
+        if !resolutions.is_empty() {
+            println!("  Possible resolutions (relax one set to satisfy '{}'):\n", name);
+            for (i, items) in resolutions.iter().enumerate() {
+                println!("    #{}: relax {}", i + 1, items.join(", "));
+            }
+            println!();
+        }
 
-                let relaxed_solution =
-                    solver.find_optimal_with_assumptions(obj, noop, &assumptions_relaxed);
+        // Phase 1: enforce the preference within the cost bound, minimizing the metric.
+        // All enablers (including goal constraints) are kept active.
+        let all_enabler_lits: Vec<Lit> = solver.enablers().keys().copied().collect();
+        let mut assumptions_bounded: Vec<Lit> = all_enabler_lits.clone();
+        assumptions_bounded.extend(pref_lits);
 
-                match relaxed_solution {
-                    Some(sol) => {
-                        let forced_plan_cost = compute_plan_cost(sched, &sol);
-                        if let (Some(forced_cost), Some(opt_cost)) =
-                            (forced_plan_cost, optimal_plan_cost)
-                        {
-                            println!(
-                                "  Plan cost without bound: {} (optimal: {}, exceeds by: {})",
-                                forced_cost, opt_cost, forced_cost - opt_cost
-                            );
-                        }
-                        println!("  Resulting plan:\n{}", encoding.plan(&sol));
+        let bounded_sol = solver.find_optimal_with_assumptions(obj, noop, &assumptions_bounded);
+
+        if let Some(ref sol) = bounded_sol {
+            println!("  Within cost bound:");
+            print_enforcement_result(sol, obj, optimal_obj_val, optimal_plan_cost, sched, encoding, name, &satisfied_entries, &unsatisfied);
+        }
+
+        // Phase 2 (fallback): relax the cost bound, minimize plan cost (not metric).
+        // Satisfied preferences are forced so we answer "minimum extra budget to ADD
+        // this preference" rather than "cheapest plan satisfying only this preference".
+        if bounded_sol.is_none() {
+            println!("  Infeasible within cost bound.");
+            if let Some(cost_obj) = plan_cost_obj {
+                let mut assumptions_unbounded: Vec<Lit> = solver.enablers().iter()
+                    .filter(|(_, tag)| !matches!(tag, Tag::EnforceGoal(_)))
+                    .map(|(lit, _)| *lit)
+                    .collect();
+                assumptions_unbounded.extend(pref_lits);
+                for (_, sat_lits, _) in &satisfied_entries {
+                    assumptions_unbounded.extend(sat_lits);
+                }
+
+                println!("  Relaxing cost bound (minimizing plan cost):");
+                if let Some(sol) = solver.find_optimal_with_assumptions(cost_obj, noop, &assumptions_unbounded) {
+                    let new_cost = compute_plan_cost(sched, &sol);
+                    if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
+                        println!("    Minimum plan cost: {} (optimal: {}, extra cost: {:+})", fc, oc, fc - oc);
                     }
-                    None => {
-                        println!("  Infeasible even without cost bound.");
-                    }
+                    let new_obj = sol.eval(obj).unwrap();
+                    println!("    Objective: {} (optimal: {}, penalty: {:+})", new_obj, optimal_obj_val, new_obj - optimal_obj_val);
+                    print_preference_changes(&sol, name, &satisfied_entries, &unsatisfied);
+                    println!("    Resulting plan:\n{}", encoding.plan(&sol));
+                } else {
+                    println!("    Structurally infeasible: cannot be satisfied even without a cost bound.");
                 }
             }
         }
         println!();
+    }
+}
+
+/// Prints the result of enforcing a preference: decision (relaxed/gained), objective, plan cost, and plan.
+fn print_enforcement_result(
+    sol: &Solution,
+    obj: LinTerm,
+    optimal_obj_val: IntCst,
+    optimal_plan_cost: Option<IntCst>,
+    sched: &Sched,
+    encoding: &Encoding,
+    forced_pref: &str,
+    satisfied_entries: &[(String, Vec<Lit>, String)],
+    unsatisfied: &[(String, Vec<Lit>, String)],
+) {
+    print_preference_changes(sol, forced_pref, satisfied_entries, unsatisfied);
+    let new_obj = sol.eval(obj).unwrap();
+    let new_cost = compute_plan_cost(sched, sol);
+    println!("    Objective: {} (optimal: {}, penalty: {:+})", new_obj, optimal_obj_val, new_obj - optimal_obj_val);
+    if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
+        println!("    Plan cost: {} (optimal: {}, extra cost: {:+})", fc, oc, fc - oc);
+    }
+    println!("    Resulting plan:\n{}", encoding.plan(sol));
+}
+
+/// Compares preference status between enforcement and optimal solutions to show trade-offs.
+fn print_preference_changes(
+    sol: &Solution,
+    forced_pref: &str,
+    satisfied_entries: &[(String, Vec<Lit>, String)],
+    unsatisfied: &[(String, Vec<Lit>, String)],
+) {
+    let mut newly_violated = Vec::new();
+    let mut newly_satisfied = Vec::new();
+    for (sat_name, sat_lits, _) in satisfied_entries {
+        let now_sat = sat_lits.iter().all(|lit| sol.entails(*lit));
+        if !now_sat {
+            newly_violated.push(sat_name.as_str());
+        }
+    }
+    for (unsat_name, unsat_lits, _) in unsatisfied {
+        if unsat_name == forced_pref {
+            continue;
+        }
+        let now_sat = unsat_lits.iter().all(|lit| sol.entails(*lit));
+        if now_sat {
+            newly_satisfied.push(unsat_name.as_str());
+        }
+    }
+    if !newly_violated.is_empty() || !newly_satisfied.is_empty() {
+        println!("    Decision:");
+        if !newly_violated.is_empty() {
+            println!("      Relaxed: {}", newly_violated.join(", "));
+        }
+        if !newly_satisfied.is_empty() {
+            println!("      Also gained: {}", newly_satisfied.join(", "));
+        }
     }
 }

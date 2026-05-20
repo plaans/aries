@@ -12,7 +12,7 @@ pub enum OperatorId {
     FreeInsertion { action_name: planx::Sym, instance: u32 },
 }
 
-/// Tag for a cosntraint imposed in the scheduling model
+/// Tag for a constraint imposed in the scheduling model
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Tag {
     /// Constraint enforcing the i-th goal
@@ -22,6 +22,10 @@ pub enum Tag {
         operator_id: OperatorId,
         cond: ActionCondition,
     },
+    /// Upper bound on the objective value
+    CostBound,
+    /// Soft constraint requiring a named preference to hold; relaxable in MUS/MCS analysis
+    EnforcePreference(String),
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -66,6 +70,15 @@ pub fn format_culprit_set(mut msg: Message, culprits: &BTreeSet<Tag>, model: &Mo
                 let cond_expr = action.conditions[cond.condition_id].cond;
                 let annot = model.env.node(cond_expr).info("unsatisfiable condition");
                 msg = msg.snippet(annot).show(cond.action.span.as_ref().unwrap());
+            }
+            Tag::CostBound => {
+                msg = msg.title("Cost bound exceeded");
+            }
+            Tag::EnforcePreference(name) => {
+                if let Some(pref) = model.preferences.iter().find(|p| p.name.to_string() == *name) {
+                    let annot = model.env.node(&pref.goal).error("Enforced preference");
+                    msg = msg.snippet(annot);
+                }
             }
         }
     }
