@@ -22,7 +22,7 @@ use aries_plan_engine::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 
-use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, Sym, Type, errors::*};
+use planx::{ActionRef, Duration, Expr, ExprId, FluentId, Goal, Model, Res, SimpleGoal, Sym, Type, errors::*};
 use std::path::Path;
 use timelines::{ConstraintID, EffectOp, IntExp, IntTerm, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
 
@@ -376,11 +376,16 @@ pub fn encode_plan_optimization_problem(
     }
 
     // for each goal, add a constraint stating it must hold (the constraint is tagged but not relaxed for domain repair)
+    let total_cost_fluent = model.env.fluents.get_by_name("total-cost");
     for (gid, x) in model.goals.iter().enumerate() {
         let constraint = parse_goal(x, model, &mut sched, &global_scope, &mut encoding)?;
         constraint.add_required_values(&mut encoding.required_values, model, &sched);
         let cid = sched.add_constraint(constraint);
-        encoding.constraints_tags.insert(cid, Tag::EnforceGoal(gid));
+        let tag = match total_cost_fluent {
+            Some(fid) if goal_references_fluent(&x.goal_expression, &model.env, fid) => Tag::CostBound,
+            _ => Tag::EnforceGoal(gid),
+        };
+        encoding.constraints_tags.insert(cid, tag);
     }
 
     for pref in model.preferences.iter() {
@@ -508,6 +513,31 @@ pub fn encode_plan_optimization_problem(
 
 fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
     sum.reify(sum.conj_scope(&model), &mut model.model)
+}
+
+fn expr_references_fluent(env: &planx::Environment, expr_id: ExprId, target: FluentId) -> bool {
+    match (env / expr_id).expr() {
+        Expr::StateVariable(fid, args) => {
+            *fid == target || args.iter().any(|a| expr_references_fluent(env, *a, target))
+        }
+        Expr::App(_, args) => args.iter().any(|a| expr_references_fluent(env, *a, target)),
+        Expr::Exists(_, inner) | Expr::Forall(_, inner) => expr_references_fluent(env, *inner, target),
+        _ => false,
+    }
+}
+
+fn goal_references_fluent(goal: &SimpleGoal, env: &planx::Environment, target: FluentId) -> bool {
+    match goal {
+        SimpleGoal::HoldsDuring(_, expr) => expr_references_fluent(env, *expr, target),
+        SimpleGoal::SometimeDuring(_, expr) => expr_references_fluent(env, *expr, target),
+        SimpleGoal::AtMostOnceDuring(_, expr) => expr_references_fluent(env, *expr, target),
+        SimpleGoal::SometimeBefore { when, then } | SimpleGoal::SometimeAfter { when, then } => {
+            expr_references_fluent(env, *when, target) || expr_references_fluent(env, *then, target)
+        }
+        SimpleGoal::AlwaysWithin { when, then, .. } => {
+            expr_references_fluent(env, *when, target) || expr_references_fluent(env, *then, target)
+        }
+    }
 }
 
 /// Parses a goal (possibly quantified) into an equivalent expression
@@ -665,7 +695,7 @@ fn explain_preference_enforcement(
         // MARCO enumerates MUS (conflicts) and MCS (resolutions) over goals + preferences
         let results: Vec<_> = solver
             .explain_unsat_with_filter(
-                |t| matches!(t, Tag::EnforceGoal(_)),
+                |t| matches!(t, Tag::EnforceGoal(_) | Tag::CostBound),
                 &extra,
             )
             .take(MAX_RESULTS_PER_PREF)
@@ -744,7 +774,7 @@ fn explain_preference_enforcement(
             println!("  Infeasible within cost bound.");
             if let Some(cost_obj) = plan_cost_obj {
                 let mut assumptions_unbounded: Vec<Lit> = solver.enablers().iter()
-                    .filter(|(_, tag)| !matches!(tag, Tag::EnforceGoal(_)))
+                    .filter(|(_, tag)| !matches!(tag, Tag::CostBound))
                     .map(|(lit, _)| *lit)
                     .collect();
                 assumptions_unbounded.extend(pref_lits);
