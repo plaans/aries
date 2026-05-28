@@ -425,6 +425,7 @@ pub(crate) fn interactive_preference_enforcement(
     // If not, we use MUS/MCS analysis to explain WHY and offer resolutions,
     // then let the user drop conflicting preferences and try again.
     // =====================================================================
+    let mut skip_to_phase2 = false;
     loop {
         if selected_indices.is_empty() {
             break;
@@ -436,27 +437,22 @@ pub(crate) fn interactive_preference_enforcement(
             .collect();
 
         // Feasibility probe: clone solver to avoid side effects, use all enablers
-        // EXCEPT cost bound (to test pure structural feasibility)
+        // INCLUDING cost bound (to test feasibility within the budget).
         let mut probe = solver.clone();
-        let enablers_no_cost: Vec<Lit> = probe
-            .enablers()
-            .iter()
-            .filter(|(_, tag)| !matches!(tag, Tag::CostBound))
-            .map(|(lit, _)| *lit)
-            .collect();
-        let mut assumptions_no_cost = enablers_no_cost;
-        assumptions_no_cost.extend(&selected_pref_lits);
+        let all_enabler_lits_probe: Vec<Lit> = probe.enablers().keys().copied().collect();
+        let mut assumptions_with_cost = all_enabler_lits_probe;
+        assumptions_with_cost.extend(&selected_pref_lits);
 
         if probe
-            .find_optimal_with_assumptions(obj, noop, &assumptions_no_cost)
+            .find_optimal_with_assumptions(obj, noop, &assumptions_with_cost)
             .is_some()
         {
-            // Selection is feasible — proceed to Phase 1/2
+            // Selection is feasible within the cost bound — proceed to Phase 1
             break;
         }
 
-        // --- Selection is infeasible: explain via MUS/MCS ---
-        println!("\nThe selected preferences cannot all be enforced simultaneously.\n");
+        // --- Selection is infeasible within cost bound: explain via MUS/MCS ---
+        println!("\nThe selected preferences cannot all be enforced within the cost bound.\n");
 
         // Set up MUS/MCS analysis: add selected + satisfied preferences as extra assumptions
         // so the MARCO algorithm can identify which subsets conflict.
@@ -638,12 +634,12 @@ pub(crate) fn interactive_preference_enforcement(
         }
         println!();
 
-        // --- Prompt user to apply a resolution or drop preferences manually ---
+        // --- Prompt user to apply a resolution, drop preferences, or relax the cost bound ---
         let has_resolutions = !resolutions.is_empty();
         let prompt = if has_resolutions {
-            "Apply a resolution (R1, R2, ...) or drop manually (preference numbers)? ('q' to quit): "
+            "Apply a resolution (R1, R2, ...), drop manually (numbers), 'p' to proceed ignoring cost bound, 'q' to quit: "
         } else {
-            "Which preferences do you want to DROP from your selection? (numbers, 'all' to cancel, 'q' to quit): "
+            "Drop preferences (numbers, 'all'), 'p' to proceed ignoring cost bound, 'q' to quit: "
         };
 
         let user_input = match read_interactive_input(prompt) {
@@ -652,6 +648,12 @@ pub(crate) fn interactive_preference_enforcement(
         };
         metrics.steps += 1;
         let trimmed = user_input.trim();
+
+        // Handle "proceed ignoring cost bound" — skip to Phase 2
+        if trimmed == "p" || trimmed == "proceed" {
+            skip_to_phase2 = true;
+            break;
+        }
 
         // Handle resolution selection (e.g. "R1", "R2")
         if has_resolutions && trimmed.to_lowercase().starts_with('r') {
@@ -788,6 +790,7 @@ pub(crate) fn interactive_preference_enforcement(
     // All enablers (including CostBound) are active, plus the preference
     // literals for the selected set. If the solver finds a solution, it means
     // we can enforce the preferences without exceeding the original budget.
+    // Skipped when the user chose 'p' (proceed ignoring cost bound).
     // =====================================================================
     let selected_pref_lits: Vec<Lit> = selected_indices
         .iter()
@@ -799,39 +802,37 @@ pub(crate) fn interactive_preference_enforcement(
         .collect();
     let selected_names_display = selected_names.join(", ");
 
-    let all_enabler_lits: Vec<Lit> = solver.enablers().keys().copied().collect();
-    let mut assumptions_bounded = all_enabler_lits.clone();
-    assumptions_bounded.extend(&selected_pref_lits);
+    let mut latest_solution: Option<Solution> = None;
 
-    println!("\n===== Phase 1: Enforce {{ {} }} within cost bound =====\n", selected_names_display);
+    if !skip_to_phase2 {
+        let all_enabler_lits: Vec<Lit> = solver.enablers().keys().copied().collect();
+        let mut assumptions_bounded = all_enabler_lits;
+        assumptions_bounded.extend(&selected_pref_lits);
 
-    let bounded_sol = solver.find_optimal_with_assumptions(obj, noop, &assumptions_bounded);
+        println!("\n===== Phase 1: Enforce {{ {} }} within cost bound =====\n", selected_names_display);
 
-    if let Some(ref sol) = bounded_sol {
-        print_preference_status(sol, &entries, &selected_indices);
-        let new_obj = sol.eval(obj).unwrap();
-        let new_cost = compute_plan_cost(sched, sol);
-        println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
-        if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
-            println!("    Plan cost: {}", format_cost_delta(fc, oc));
+        let bounded_sol = solver.find_optimal_with_assumptions(obj, noop, &assumptions_bounded);
+
+        if let Some(ref sol) = bounded_sol {
+            print_preference_status(sol, &entries, &selected_indices);
+            let new_obj = sol.eval(obj).unwrap();
+            let new_cost = compute_plan_cost(sched, sol);
+            println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
+            if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
+                println!("    Plan cost: {}", format_cost_delta(fc, oc));
+            }
+            print_preference_changes(sol, &selected_names, &satisfied_tuples, &unsatisfied_tuples);
+            println!("    Resulting plan:\n{}", encoding.plan(sol));
         }
-        print_preference_changes(sol, &selected_names, &satisfied_tuples, &unsatisfied_tuples);
-        println!("    Resulting plan:\n{}", encoding.plan(sol));
+
+        latest_solution = bounded_sol;
     }
 
-    // Save the Phase 1 result. If Phase 1 succeeded, this holds the solution;
-    // if it failed (None), Phase 2 below may fill it in. After both phases,
-    // we use this to determine which preferences are still violated and
-    // whether the user can add more or must start fresh.
-    let mut latest_solution = bounded_sol;
-
     // =====================================================================
-    // Phase 2 (fallback): Relax cost bound and minimize plan cost
+    // Phase 2: Relax cost bound and minimize plan cost
     //
-    // If Phase 1 failed, the selected preferences can't be enforced within
-    // the original budget. We remove the CostBound enabler and optimize
-    // for plan cost instead, finding the cheapest plan that still satisfies
-    // the selected preferences.
+    // Entered when Phase 1 failed or when the user chose 'p' (proceed
+    // ignoring cost bound) during conflict resolution.
     // =====================================================================
     if latest_solution.is_none() {
         println!("  Infeasible within cost bound.");
