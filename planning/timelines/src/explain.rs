@@ -15,6 +15,15 @@ pub struct ExplainableSolver<T> {
     enablers: BTreeMap<Lit, T>,
 }
 
+impl<T: Clone> Clone for ExplainableSolver<T> {
+    fn clone(&self) -> Self {
+        Self {
+            solver: self.solver.clone(),
+            enablers: self.enablers.clone(),
+        }
+    }
+}
+
 impl<T: Ord + Clone> ExplainableSolver<T> {
     /// Creates a new explainability oriented solver where constraints are partitioned into:
     ///

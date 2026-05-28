@@ -1,4 +1,5 @@
 pub(crate) mod ctags;
+pub(crate) mod explain_preferences;
 mod generate;
 pub(crate) mod optimize_plan;
 mod repair;
