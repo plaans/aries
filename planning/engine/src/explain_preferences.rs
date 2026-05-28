@@ -332,12 +332,39 @@ pub(crate) fn interactive_preference_enforcement(
         violated_display.join(", ")
     );
 
+    // Tracks every user input and the final outcome for experimental metrics.
+    // Printed automatically when the function exits via the Drop impl,
+    // regardless of which return/break path is taken.
+    #[derive(Clone, Copy)]
+    enum Outcome { Accepted, AllSatisfied, GaveUp, Cancelled, Exhausted }
+    impl std::fmt::Display for Outcome {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Outcome::Accepted => write!(f, "accepted"),
+                Outcome::AllSatisfied => write!(f, "all-satisfied"),
+                Outcome::GaveUp => write!(f, "gave-up"),
+                Outcome::Cancelled => write!(f, "cancelled"),
+                Outcome::Exhausted => write!(f, "exhausted"),
+            }
+        }
+    }
+    struct InteractionMetrics { steps: usize, outcome: Outcome }
+    impl Drop for InteractionMetrics {
+        fn drop(&mut self) {
+            if self.steps > 0 {
+                println!("\nInteraction steps: {} (outcome: {})", self.steps, self.outcome);
+            }
+        }
+    }
+    let mut metrics = InteractionMetrics { steps: 0, outcome: Outcome::Cancelled };
+
     // --- Prompt user to select which violated preferences to enforce ---
     let mut selected_indices: Vec<usize> = loop {
         let input = match read_interactive_input("Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ") {
             Some(input) => input,
             None => return,
         };
+        metrics.steps += 1;
 
         match parse_selection(&input, entries.len()) {
             Ok(SelectionInput::Cancel) => return,
@@ -400,8 +427,7 @@ pub(crate) fn interactive_preference_enforcement(
     // =====================================================================
     loop {
         if selected_indices.is_empty() {
-            println!("No preferences remain to enforce.");
-            return;
+            break;
         }
 
         let selected_pref_lits: Vec<Lit> = selected_indices
@@ -624,6 +650,7 @@ pub(crate) fn interactive_preference_enforcement(
             Some(input) => input,
             None => return,
         };
+        metrics.steps += 1;
         let trimmed = user_input.trim();
 
         // Handle resolution selection (e.g. "R1", "R2")
@@ -654,8 +681,7 @@ pub(crate) fn interactive_preference_enforcement(
                         println!("  Note: {} may also be affected", res.side_effects.join(", "));
                     }
                     if selected_indices.is_empty() {
-                        println!("\nAll selected preferences were dropped. Nothing left to enforce.");
-                        return;
+                        println!("\nAll selected preferences were dropped.");
                     }
                     continue;
                 }
@@ -666,10 +692,10 @@ pub(crate) fn interactive_preference_enforcement(
 
         // Handle manual drop by preference numbers
         match parse_selection(trimmed, selected_indices.len()) {
-            Ok(SelectionInput::Cancel) => return,
+            Ok(SelectionInput::Cancel) => { metrics.outcome = Outcome::GaveUp; return; }
             Ok(SelectionInput::All) => {
+                selected_indices.clear();
                 println!("All preferences dropped.");
-                return;
             }
             Ok(SelectionInput::Indices(to_drop)) => {
                 let mut to_drop_sorted = to_drop;
@@ -681,8 +707,7 @@ pub(crate) fn interactive_preference_enforcement(
                     selected_indices.remove(drop_pos);
                 }
                 if selected_indices.is_empty() {
-                    println!("\nAll selected preferences were dropped. Nothing left to enforce.");
-                    return;
+                    println!("\nAll selected preferences were dropped.");
                 }
             }
             Err(e) => {
@@ -690,6 +715,71 @@ pub(crate) fn interactive_preference_enforcement(
                 continue;
             }
         }
+    }
+
+    // If all preferences were dropped during conflict resolution,
+    // offer a new selection instead of terminating.
+    if selected_indices.is_empty() {
+        loop {
+            let input = match read_interactive_input(
+                "\nWhat next? (n = new selection, q = quit): ",
+            ) {
+                Some(input) => input,
+                None => return,
+            };
+            metrics.steps += 1;
+            match input.trim() {
+                "q" | "quit" => { metrics.outcome = Outcome::Exhausted; return; }
+                "n" | "new" => break,
+                _ => println!("  Enter 'n' or 'q'."),
+            }
+        }
+
+        println!();
+        for (i, entry) in entries.iter().enumerate() {
+            let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
+            let marker = if entry.is_satisfied { " " } else { "*" };
+            println!("  {}{:>2}. [{}] {}", marker, i + 1, status, entry.display);
+        }
+        println!("\nViolated preferences: {}\n", violated_display.join(", "));
+
+        selected_indices = loop {
+            let sel_input = match read_interactive_input(
+                "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
+            ) {
+                Some(input) => input,
+                None => return,
+            };
+            metrics.steps += 1;
+            match parse_selection(&sel_input, entries.len()) {
+                Ok(SelectionInput::Cancel) => return,
+                Ok(SelectionInput::All) => break violated_indices.clone(),
+                Ok(SelectionInput::Indices(idx)) => {
+                    let non_violated: Vec<usize> = idx
+                        .iter()
+                        .filter(|i| !violated_indices.contains(i))
+                        .copied()
+                        .collect();
+                    if !non_violated.is_empty() {
+                        let names: Vec<String> = non_violated
+                            .iter()
+                            .map(|&i| format!("{} ({})", i + 1, entries[i].name))
+                            .collect();
+                        println!(
+                            "  Already satisfied, cannot select: {}. Try again.",
+                            names.join(", ")
+                        );
+                        continue;
+                    }
+                    break idx;
+                }
+                Err(e) => {
+                    println!("  Error: {}. Try again.", e);
+                    continue;
+                }
+            }
+        };
+        continue; // back to outer loop with new selection
     }
 
     // =====================================================================
@@ -812,6 +902,7 @@ pub(crate) fn interactive_preference_enforcement(
     // If every preference is satisfied, there's nothing left to explore
     if latest_solution.is_some() && still_violated.is_empty() {
         println!("\nAll preferences are now satisfied.");
+        metrics.outcome = Outcome::AllSatisfied;
         break;
     }
 
@@ -836,8 +927,9 @@ pub(crate) fn interactive_preference_enforcement(
             Some(input) => input,
             None => return,
         };
+        metrics.steps += 1;
         match input.trim() {
-            "q" | "quit" => return,
+            "q" | "quit" => { metrics.outcome = Outcome::Accepted; return; }
             "a" | "add" if can_add_more => break 'a',
             "n" | "new" => break 'n',
             _ => {
@@ -880,6 +972,7 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
+            metrics.steps += 1;
             match parse_selection(&sel_input, entries.len()) {
                 Ok(SelectionInput::Cancel) => return,
                 Ok(SelectionInput::All) => break still_violated.clone(),
@@ -932,6 +1025,7 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
+            metrics.steps += 1;
             match parse_selection(&sel_input, entries.len()) {
                 Ok(SelectionInput::Cancel) => return,
                 Ok(SelectionInput::All) => break violated_indices.clone(),
