@@ -375,6 +375,22 @@ pub(crate) fn interactive_preference_enforcement(
     solver.enforce_permanent(phase_assumptions);
 
     // =====================================================================
+    // Outer interaction loop: select → resolve conflicts → enforce → repeat
+    //
+    // After producing a plan, the user can:
+    //   (a) add more preferences to enforce (cumulative — keeps the previously
+    //       enforced ones and extends the set with new picks),
+    //   (n) start a new selection from scratch (forgets all previous enforcements),
+    //   (q) accept the current plan and quit.
+    //
+    // Each iteration runs the full pipeline: conflict detection → Phase 1/2 → results.
+    // The solver state is NOT permanently modified by preference enforcement (only
+    // phase_assumptions are permanent); preferences are passed as ephemeral assumptions,
+    // so each iteration naturally starts clean.
+    // =====================================================================
+    loop {
+
+    // =====================================================================
     // Conflict detection and resolution loop
     //
     // We check if the selected set of preferences is jointly feasible
@@ -713,6 +729,12 @@ pub(crate) fn interactive_preference_enforcement(
         println!("    Resulting plan:\n{}", encoding.plan(sol));
     }
 
+    // Save the Phase 1 result. If Phase 1 succeeded, this holds the solution;
+    // if it failed (None), Phase 2 below may fill it in. After both phases,
+    // we use this to determine which preferences are still violated and
+    // whether the user can add more or must start fresh.
+    let mut latest_solution = bounded_sol;
+
     // =====================================================================
     // Phase 2 (fallback): Relax cost bound and minimize plan cost
     //
@@ -721,7 +743,7 @@ pub(crate) fn interactive_preference_enforcement(
     // for plan cost instead, finding the cheapest plan that still satisfies
     // the selected preferences.
     // =====================================================================
-    if bounded_sol.is_none() {
+    if latest_solution.is_none() {
         println!("  Infeasible within cost bound.");
         if let Some(cost_obj) = plan_cost_obj {
             let mut assumptions_unbounded: Vec<Lit> = solver
@@ -743,9 +765,204 @@ pub(crate) fn interactive_preference_enforcement(
                 println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
                 print_preference_changes(&sol, &selected_names, &satisfied_tuples, &unsatisfied_tuples);
                 println!("    Resulting plan:\n{}", encoding.plan(&sol));
+                latest_solution = Some(sol);
             } else {
                 println!("    Structurally infeasible: cannot be satisfied even without a cost bound.");
             }
         }
     }
+
+    // =====================================================================
+    // Continuation: add more preferences, start fresh, or accept and quit
+    //
+    // After Phase 1/2, we check which preferences are still violated in
+    // the produced plan. If there are none, the user has achieved full
+    // satisfaction and we exit. Otherwise, we offer three options:
+    //   (a) Add more — cumulative: keep the currently enforced set and
+    //       pick additional violated preferences to enforce on top.
+    //   (n) New selection — forget all previous enforcements and start
+    //       from scratch with the original violated preferences list.
+    //   (q) Quit — accept the current plan as-is.
+    //
+    // After (a) or (n), selected_indices is updated and the outer loop
+    // repeats: conflict detection → Phase 1/2 → continuation.
+    // =====================================================================
+
+    // Find preferences that are violated in the latest plan AND are not
+    // already in the enforced set. These are candidates for "add more".
+    let still_violated: Vec<usize> = if let Some(ref sol) = latest_solution {
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(i, e)| {
+                !selected_indices.contains(i)
+                    && !e.lits.iter().all(|lit| sol.entails(*lit))
+            })
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        // Both phases failed — no solution to evaluate, nothing to add to
+        Vec::new()
+    };
+
+    // "Add more" is only possible if we have a plan and there are still
+    // violated preferences the user hasn't selected yet.
+    let can_add_more = latest_solution.is_some() && !still_violated.is_empty();
+
+    // If every preference is satisfied, there's nothing left to explore
+    if latest_solution.is_some() && still_violated.is_empty() {
+        println!("\nAll preferences are now satisfied.");
+        break;
+    }
+
+    // Show which preferences remain violated so the user can decide
+    if can_add_more {
+        println!("\nStill violated:");
+        for &idx in &still_violated {
+            println!("  {:>2}. {}", idx + 1, entries[idx].display);
+        }
+    }
+
+    // Prompt the user for their next action.
+    // The loop keeps asking until a valid option is given.
+    // `break 'a'` / `break 'n'` return a char literal from the loop.
+    let action: char = loop {
+        let prompt = if can_add_more {
+            "\nWhat next? (a = add more, n = new selection, q = accept and quit): "
+        } else {
+            "\nWhat next? (n = new selection, q = quit): "
+        };
+        let input = match read_interactive_input(prompt) {
+            Some(input) => input,
+            None => return,
+        };
+        match input.trim() {
+            "q" | "quit" => return,
+            "a" | "add" if can_add_more => break 'a',
+            "n" | "new" => break 'n',
+            _ => {
+                if can_add_more {
+                    println!("  Enter 'a', 'n', or 'q'.");
+                } else {
+                    println!("  Enter 'n' or 'q'.");
+                }
+            }
+        }
+    };
+
+    if action == 'a' {
+        // --- Add more (cumulative) ---
+        // The user keeps the already-enforced preferences and picks
+        // additional ones from those still violated in the latest plan.
+        // After selection, the new picks are appended to selected_indices
+        // and the outer loop re-runs conflict detection + Phase 1/2
+        // with the combined set.
+        let enforced_display = selected_indices
+            .iter()
+            .map(|&i| entries[i].name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        println!(
+            "\nSelect additional preferences to enforce (currently enforcing: {}):\n",
+            enforced_display
+        );
+        for &idx in &still_violated {
+            println!("  *{:>2}. [violated] {}", idx + 1, entries[idx].display);
+        }
+        println!();
+
+        // Selection loop: same logic as the initial selection but only
+        // allows picking from still_violated (not already-enforced or satisfied)
+        let new_picks: Vec<usize> = loop {
+            let sel_input = match read_interactive_input(
+                "Which preferences to add? ('q' to accept current plan): ",
+            ) {
+                Some(input) => input,
+                None => return,
+            };
+            match parse_selection(&sel_input, entries.len()) {
+                Ok(SelectionInput::Cancel) => return,
+                Ok(SelectionInput::All) => break still_violated.clone(),
+                Ok(SelectionInput::Indices(idx)) => {
+                    // Reject indices that aren't in still_violated
+                    let invalid: Vec<usize> = idx
+                        .iter()
+                        .filter(|i| !still_violated.contains(i))
+                        .copied()
+                        .collect();
+                    if !invalid.is_empty() {
+                        let names: Vec<String> = invalid
+                            .iter()
+                            .map(|&i| format!("{} ({})", i + 1, entries[i].name))
+                            .collect();
+                        println!("  Not available: {}. Try again.", names.join(", "));
+                        continue;
+                    }
+                    break idx;
+                }
+                Err(e) => {
+                    println!("  Error: {}. Try again.", e);
+                    continue;
+                }
+            }
+        };
+        // Extend (not replace) — the previously enforced preferences stay
+        selected_indices.extend(new_picks);
+    } else {
+        // --- New selection (from scratch) ---
+        // Forget all previous enforcements and show the original preference
+        // overview. The user selects from the originally-violated preferences
+        // as if starting the interaction for the first time.
+        // Since preferences are enforced via ephemeral assumptions (not
+        // permanent solver constraints), the solver state is already clean.
+        selected_indices.clear();
+        println!();
+        for (i, entry) in entries.iter().enumerate() {
+            let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
+            let marker = if entry.is_satisfied { " " } else { "*" };
+            println!("  {}{:>2}. [{}] {}", marker, i + 1, status, entry.display);
+        }
+        println!("\nViolated preferences: {}\n", violated_display.join(", "));
+
+        // Same selection loop as the initial one at the start of the function
+        selected_indices = loop {
+            let sel_input = match read_interactive_input(
+                "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
+            ) {
+                Some(input) => input,
+                None => return,
+            };
+            match parse_selection(&sel_input, entries.len()) {
+                Ok(SelectionInput::Cancel) => return,
+                Ok(SelectionInput::All) => break violated_indices.clone(),
+                Ok(SelectionInput::Indices(idx)) => {
+                    let non_violated: Vec<usize> = idx
+                        .iter()
+                        .filter(|i| !violated_indices.contains(i))
+                        .copied()
+                        .collect();
+                    if !non_violated.is_empty() {
+                        let names: Vec<String> = non_violated
+                            .iter()
+                            .map(|&i| format!("{} ({})", i + 1, entries[i].name))
+                            .collect();
+                        println!(
+                            "  Already satisfied, cannot select: {}. Try again.",
+                            names.join(", ")
+                        );
+                        continue;
+                    }
+                    break idx;
+                }
+                Err(e) => {
+                    println!("  Error: {}. Try again.", e);
+                    continue;
+                }
+            }
+        };
+    }
+    // After (a) or (n), selected_indices has been updated.
+    // The outer loop continues: conflict detection → Phase 1/2 → back here.
+
+    } // end outer interaction loop
 }
