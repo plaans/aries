@@ -6,3 +6,10 @@ edition = "2024"
 
 [dependencies]
 itertools = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "grounding"
+harness = false
