@@ -110,7 +110,7 @@ fn results_from_dir(directory: &str) -> Result<Vec<Rc<SolveResult>>> {
     }
 
     // Sort results by problem ID
-    results.sort_by(|a, b| a.problem.id().cmp(&b.problem.id()));
+    results.sort_by_key(|a| a.problem.id());
     Ok(results)
 }
 

@@ -57,7 +57,7 @@ impl ContiguousSymbols {
     }
 
     pub fn size(self) -> u32 {
-        (self.after_last - self.first).max(0) as u32
+        (self.after_last - self.first) as u32
     }
 
     /// Returns the first and last element of these instances.

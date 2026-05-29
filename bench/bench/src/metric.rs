@@ -74,8 +74,8 @@ impl Metric for Ipc {
     fn compute(&self, result: &SolveResult, all_results_for_pb: &ProblemResults) -> Self::T {
         let best = all_results_for_pb
             .results
-            .iter()
-            .filter_map(|(_s, r)| r.objective_value)
+            .values()
+            .filter_map(|r| r.objective_value)
             .min();
         let Some(best) = best else {
             return 0.0;
