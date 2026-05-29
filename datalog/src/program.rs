@@ -123,10 +123,7 @@ mod test {
 
         prog.run();
 
-        at.stable
-            .borrow()
-            .rows()
-            .for_each(|row| println!("at{row:?}"));
+        at.stable.borrow().rows().for_each(|row| println!("at{row:?}"));
 
         move_applicable
             .stable

@@ -21,8 +21,6 @@ fn ground(num_locs: u32, num_bots: u32) -> usize {
         at.add([r, 1]);
     }
 
-
-
     use Arg::*;
 
     let move_applicable = prog.new_predicate(3);

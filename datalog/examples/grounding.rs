@@ -73,8 +73,5 @@ fn main() {
     at.extract().rows().for_each(|row| println!("at{row:?}"));
 
     println!("\n == applicable actions ==\n");
-    move_applicable
-        .extract()
-        .rows()
-        .for_each(|row| println!("move{row:?}"));
+    move_applicable.extract().rows().for_each(|row| println!("move{row:?}"));
 }

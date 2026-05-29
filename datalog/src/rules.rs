@@ -45,10 +45,7 @@ impl Rule {
 
 impl Rule {
     /// Decomposes a rule into simpler inference steps.
-    pub(crate) fn decompose(
-        &self,
-        mut new_var: impl FnMut(usize) -> VarTable,
-    ) -> Vec<Box<dyn RuleStep>> {
+    pub(crate) fn decompose(&self, mut new_var: impl FnMut(usize) -> VarTable) -> Vec<Box<dyn RuleStep>> {
         let mut out: Vec<Box<dyn RuleStep>> = Vec::new();
         let Rule { head, mut body } = self.clone();
 
@@ -56,12 +53,7 @@ impl Rule {
             // combine the first two atoms into a single one, on a synthetic predicate
             let pat1 = body.remove(0);
             let pat2 = body.remove(0);
-            let vars = pat1
-                .args
-                .vars()
-                .chain(pat2.args.vars())
-                .unique()
-                .collect_vec();
+            let vars = pat1.args.vars().chain(pat2.args.vars()).unique().collect_vec();
             // TODO: retain only those appearing in head or the rest of the body
             let temp_var = new_var(vars.len());
             let temp_atom = RuleAtom {
@@ -385,10 +377,7 @@ impl<'pat, const N: usize> PatternN<'pat, N> {
             .all(|(pat, sym)| pat < 0 || (pat as u32) == sym)
     }
 
-    pub fn find_matches<'me>(
-        &'me self,
-        dataset: &'me [[Sym; N]],
-    ) -> impl Iterator<Item = &'me [Sym; N]> + 'me {
+    pub fn find_matches<'me>(&'me self, dataset: &'me [[Sym; N]]) -> impl Iterator<Item = &'me [Sym; N]> + 'me {
         dataset.iter().filter(|row| self.matches(row))
     }
 

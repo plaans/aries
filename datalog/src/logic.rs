@@ -93,9 +93,7 @@ impl Table {
     /// Creates a new table from a flattened vector of rows.
     pub fn new_from_flat(num_columns: usize, data: Vec<Sym>) -> Table {
         match num_columns {
-            0 => panic!(
-                "Table with no columns in not supported (due to unnatural flattened representation)"
-            ),
+            0 => panic!("Table with no columns in not supported (due to unnatural flattened representation)"),
             1 => Table::new(Self::into_chunks::<1>(data)),
             2 => Table::new(Self::into_chunks::<2>(data)),
             3 => Table::new(Self::into_chunks::<3>(data)),
