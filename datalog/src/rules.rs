@@ -357,9 +357,27 @@ impl Pattern {
     /// Gets an arity-specialized version.
     fn compiled<'me, const N: usize>(&'me self) -> PatternN<'me, N> {
         assert_eq!(self.pattern.len(), N);
+        let pattern = self.pattern.first_chunk().unwrap();
+        // smallest/biggest matches, by replacing variables by the smallest/biggest symbols
+        let min = pattern.map(|p| {
+            if let Some(_var) = Self::as_var(p) {
+                Sym::MIN
+            } else {
+                p as Sym
+            }
+        });
+        let max = pattern.map(|p| {
+            if let Some(_var) = Self::as_var(p) {
+                Sym::MAX
+            } else {
+                p as Sym
+            }
+        });
         PatternN {
-            pattern: self.pattern.first_chunk().unwrap(),
+            pattern,
             equalities: self.equalities.as_slice(),
+            min,
+            max,
         }
     }
 
@@ -397,6 +415,11 @@ impl<T: AsRef<[Arg]>> From<T> for Pattern {
 struct PatternN<'pat, const N: usize> {
     pattern: &'pat [i32; N],
     equalities: &'pat [[usize; 2]],
+    // smallest/biggest rows that may match this pattern
+    // These bounds will be tight if the variables are all at the end of the pattern.
+    // In that case, the symbols at the start can be used as an index into the table.
+    min: [Sym; N],
+    max: [Sym; N],
 }
 impl<'pat, const N: usize> PatternN<'pat, N> {
     /// Returns true if the pattern matches the row.
@@ -414,6 +437,13 @@ impl<'pat, const N: usize> PatternN<'pat, N> {
     }
 
     pub fn find_matches<'me>(&'me self, dataset: &'me [[Sym; N]]) -> impl Iterator<Item = &'me [Sym; N]> + 'me {
+        // drop all elements that are smaller than the smallest match
+        let first_possible_match = dataset.partition_point(|row| row < &self.min);
+        let dataset = &dataset[first_possible_match..];
+        // drop all elements that are bigger that the biggest match
+        let after_last_possible_match = dataset.partition_point(|row| row <= &self.max);
+        let dataset = &dataset[..after_last_possible_match];
+        // match all remaining elements
         dataset.iter().filter(|row| self.matches(row))
     }
 
@@ -444,7 +474,7 @@ mod test {
 
     #[test]
     fn test_pattern() {
-        let table = [
+        let mut table = [
             [1, 2, 1],
             [1, 2, 2],
             [1, 2, 3],
@@ -464,6 +494,7 @@ mod test {
             [1, 3, 5],
             [1, 3, 6],
         ];
+        table.sort();
 
         use Arg::*;
 
