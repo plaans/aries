@@ -176,6 +176,9 @@ impl Join {
     }
 
     pub fn run(&self, table1: &Table, table2: &Table, out: &mut TableBuff<Sym>) {
+        if table1.is_empty() || table2.is_empty() {
+            return;
+        }
         let empty_bindings = (0..self.num_vars).map(|_| Sym::MAX).collect_vec();
         let binding = self.pattern1.all_bindings(table1, &empty_bindings);
         for partial_binding in binding.rows() {
