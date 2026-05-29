@@ -109,12 +109,23 @@ impl Table {
     }
 
     /// Extends this table with the rows of another table.
-    pub(crate) fn extend(&mut self, other: &Table) {
-        assert_eq!(self.num_columns, other.num_columns);
-        let mut base = std::mem::take(&mut self.data);
-        base.extend_from_slice(&other.data);
-        let mut table = Table::new_from_flat(self.num_columns, base);
-        std::mem::swap(&mut table.data, &mut self.data);
+    fn merge(&mut self, recent: Table) {
+        assert_eq!(self.num_columns, recent.num_columns);
+        let data = std::mem::take(&mut self.data);
+        let data = match self.num_columns {
+            1 => crate::merge::merge_unique(Self::into_chunks::<1>(data), Self::into_chunks(recent.data))
+                .into_flattened(),
+            2 => crate::merge::merge_unique(Self::into_chunks::<2>(data), Self::into_chunks(recent.data))
+                .into_flattened(),
+            3 => crate::merge::merge_unique(Self::into_chunks::<3>(data), Self::into_chunks(recent.data))
+                .into_flattened(),
+            4 => crate::merge::merge_unique(Self::into_chunks::<4>(data), Self::into_chunks(recent.data))
+                .into_flattened(),
+            5 => crate::merge::merge_unique(Self::into_chunks::<5>(data), Self::into_chunks(recent.data))
+                .into_flattened(),
+            _ => todo!(),
+        };
+        self.data = data
     }
 
     /// Returns a view of all rows, with a size known at compile time.
@@ -267,7 +278,9 @@ impl VarTable {
 
     pub(crate) fn process(&self) {
         // move recent to stable
-        self.stable.borrow_mut().extend(&self.recent.borrow());
+        let mut recent = Table::new_empty(self.recent.borrow().num_columns);
+        std::mem::swap(&mut recent, &mut self.recent.borrow_mut());
+        self.stable.borrow_mut().merge(recent);
 
         // create table of the elements to add (sorted with no duplicates)
         let mut new = self.to_add.borrow_mut().move_to_table();

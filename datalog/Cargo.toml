@@ -13,3 +13,6 @@ criterion = { workspace = true }
 [[bench]]
 name = "grounding"
 harness = false
+
+[[bin]]
+name = "grounding_benchmark"
