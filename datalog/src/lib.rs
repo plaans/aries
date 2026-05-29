@@ -1,11 +1,11 @@
 #![warn(missing_docs)]
-//#![warn(rustdoc::missing_crate_level_docs)]
 #![doc = include_str!("../README.md")]
-mod logic;
+
 pub(crate) mod merge;
 mod program;
 mod rules;
+mod tables;
 
-pub use crate::logic::*;
 pub use crate::program::*;
 pub use crate::rules::*;
+pub use crate::tables::*;
