@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    cmp::Reverse,
+    collections::{HashMap, HashSet},
+};
 
 use itertools::Itertools;
 
@@ -44,10 +47,40 @@ impl Rule {
 }
 
 impl Rule {
+    /// Optimizes a rule by reordering the atoms of the body for more efficient evaluation
+    fn optimize(&mut self) {
+        // extract body and replace with empty vec
+        // we will move back all its elements in an order that is better suited for evaluation
+        let mut body = std::mem::take(&mut self.body);
+
+        while !body.is_empty() {
+            // vars that are already bound by patterns in the current body (self.body)
+            // when evaluating any of the remaining atoms in `body`, those vars will be already bound to a constant
+            let bound_vars: HashSet<_> = self.body.iter().flat_map(|p| p.args.vars()).collect();
+
+            // priority of an atom, determined by:
+            //  - minimal number of free variables (highest priority)
+            //  - maximal number of bound variables (tie breaking)
+            let priority = |atom: &&RuleAtom| {
+                let num_free_vars = atom.args.vars().unique().filter(|v| !bound_vars.contains(v)).count();
+                let num_vars = atom.args.vars().unique().count();
+                (num_free_vars, Reverse(num_vars))
+            };
+
+            // select the atom with highest priority and move it to the body
+            let min_index = body.iter().position_min_by_key(priority).unwrap();
+            let min = body.remove(min_index);
+            self.body.push(min);
+        }
+    }
+
     /// Decomposes a rule into simpler inference steps.
     pub(crate) fn decompose(&self, mut new_var: impl FnMut(usize) -> VarTable) -> Vec<Box<dyn RuleStep>> {
         let mut out: Vec<Box<dyn RuleStep>> = Vec::new();
-        let Rule { head, mut body } = self.clone();
+
+        let mut rule = self.clone();
+        rule.optimize();
+        let Rule { head, mut body } = rule;
 
         while body.len() > 2 {
             // combine the first two atoms into a single one, on a synthetic predicate

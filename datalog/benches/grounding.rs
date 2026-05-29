@@ -52,7 +52,8 @@ fn ground(num_locs: u32, num_bots: u32) -> usize {
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("ground 10/2", |b| b.iter(|| ground(black_box(10), black_box(2))));
     c.bench_function("ground 30/5", |b| b.iter(|| ground(black_box(30), black_box(5))));
-    // c.bench_function("ground 100/20", |b| b.iter(|| ground(black_box(100), black_box(20))));
+    c.bench_function("ground 100/20", |b| b.iter(|| ground(black_box(100), black_box(20))));
+    c.bench_function("ground 500/40", |b| b.iter(|| ground(black_box(500), black_box(40))));
 }
 
 criterion_group!(benches, criterion_benchmark);
