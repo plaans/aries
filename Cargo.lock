@@ -161,6 +161,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-datalog"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+]
+
+[[package]]
 name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [

@@ -2,6 +2,7 @@
 
 members = [
     "solver",
+    "datalog",
     "bench/data",
     "bench/bench",
     "env_param",
