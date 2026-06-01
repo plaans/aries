@@ -332,9 +332,23 @@ pub(crate) fn interactive_preference_enforcement(
         violated_display.join(", ")
     );
 
-    // Tracks every user input and the final outcome for experimental metrics.
-    // Printed automatically when the function exits via the Drop impl,
-    // regardless of which return/break path is taken.
+    // =====================================================================
+    // Interaction metrics (for experimental comparison of strategies)
+    //
+    //   steps   — total user inputs (valid or not). Measures effort.
+    //   outcome — how the session ended:
+    //     Accepted     — user saw a plan and accepted it (normal exit).
+    //     AllSatisfied — the optimized plan satisfies ALL preferences,
+    //                    including unselected ones (side-effect of forcing
+    //                    a subset that steers the solver to a good region).
+    //     GaveUp       — user quit during conflict resolution, before any
+    //                    plan was produced.
+    //     Cancelled    — stdin closed (Ctrl-D). Default if no other is set.
+    //     Exhausted    — user resolved conflicts until no preferences
+    //                    remained, then quit instead of re-selecting.
+    //
+    // Uses Drop to print automatically on any exit path.
+    // =====================================================================
     #[derive(Clone, Copy)]
     enum Outcome { Accepted, AllSatisfied, GaveUp, Cancelled, Exhausted }
     impl std::fmt::Display for Outcome {
@@ -356,6 +370,8 @@ pub(crate) fn interactive_preference_enforcement(
             }
         }
     }
+    // Default outcome is Cancelled — overwritten if the user reaches a
+    // meaningful exit point.
     let mut metrics = InteractionMetrics { steps: 0, outcome: Outcome::Cancelled };
 
     // --- Prompt user to select which violated preferences to enforce ---
@@ -364,7 +380,7 @@ pub(crate) fn interactive_preference_enforcement(
             Some(input) => input,
             None => return,
         };
-        metrics.steps += 1;
+        metrics.steps += 1; // [any outcome] (user picks which violated preferences to enforce)
 
         match parse_selection(&input, entries.len()) {
             Ok(SelectionInput::Cancel) => return,
@@ -646,7 +662,7 @@ pub(crate) fn interactive_preference_enforcement(
             Some(input) => input,
             None => return,
         };
-        metrics.steps += 1;
+        metrics.steps += 1; // [GaveUp|Exhausted] (user resolves a conflict: drop, apply resolution, proceed, or quit)
         let trimmed = user_input.trim();
 
         // Handle "proceed ignoring cost bound" — skip to Phase 2
@@ -694,6 +710,7 @@ pub(crate) fn interactive_preference_enforcement(
 
         // Handle manual drop by preference numbers
         match parse_selection(trimmed, selected_indices.len()) {
+            // [GaveUp] (user abandoned during conflict resolution without producing a plan)
             Ok(SelectionInput::Cancel) => { metrics.outcome = Outcome::GaveUp; return; }
             Ok(SelectionInput::All) => {
                 selected_indices.clear();
@@ -729,8 +746,9 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
-            metrics.steps += 1;
+            metrics.steps += 1; // [Exhausted] (user decides whether to re-select or quit after dropping all preferences)
             match input.trim() {
+                // [Exhausted] (all preferences dropped and user quits)
                 "q" | "quit" => { metrics.outcome = Outcome::Exhausted; return; }
                 "n" | "new" => break,
                 _ => println!("  Enter 'n' or 'q'."),
@@ -752,7 +770,7 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
-            metrics.steps += 1;
+            metrics.steps += 1; // [Exhausted→retry] (user re-selects preferences after previous selection was fully dropped)
             match parse_selection(&sel_input, entries.len()) {
                 Ok(SelectionInput::Cancel) => return,
                 Ok(SelectionInput::All) => break violated_indices.clone(),
@@ -903,6 +921,7 @@ pub(crate) fn interactive_preference_enforcement(
     // If every preference is satisfied, there's nothing left to explore
     if latest_solution.is_some() && still_violated.is_empty() {
         println!("\nAll preferences are now satisfied.");
+        // [AllSatisfied] (plan satisfies all preferences, including unselected ones — side-effect of optimization)
         metrics.outcome = Outcome::AllSatisfied;
         break;
     }
@@ -928,8 +947,9 @@ pub(crate) fn interactive_preference_enforcement(
             Some(input) => input,
             None => return,
         };
-        metrics.steps += 1;
+        metrics.steps += 1; // [Accepted] (user decides next action after seeing the plan: add more, new selection, or accept)
         match input.trim() {
+            // [Accepted] (user saw a plan and accepted it)
             "q" | "quit" => { metrics.outcome = Outcome::Accepted; return; }
             "a" | "add" if can_add_more => break 'a',
             "n" | "new" => break 'n',
@@ -973,7 +993,7 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
-            metrics.steps += 1;
+            metrics.steps += 1; // [Accepted|AllSatisfied] (user picks additional preferences to enforce on top of current ones)
             match parse_selection(&sel_input, entries.len()) {
                 Ok(SelectionInput::Cancel) => return,
                 Ok(SelectionInput::All) => break still_violated.clone(),
@@ -1026,7 +1046,7 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
-            metrics.steps += 1;
+            metrics.steps += 1; // [Accepted|AllSatisfied] (user starts fresh and picks preferences from scratch)
             match parse_selection(&sel_input, entries.len()) {
                 Ok(SelectionInput::Cancel) => return,
                 Ok(SelectionInput::All) => break violated_indices.clone(),
