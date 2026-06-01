@@ -108,7 +108,7 @@ fn parse_selection(input: &str, max_index: usize) -> Result<SelectionInput, Stri
 }
 
 /// Print a prompt and read one line from stdin.
-/// Returns None if stdin is not a terminal (piped input).
+/// Returns None if stdin is not a terminal, on EOF (Ctrl-D), or on I/O error.
 fn read_interactive_input(prompt: &str) -> Option<String> {
     if !io::stdin().is_terminal() {
         return None;
@@ -116,7 +116,11 @@ fn read_interactive_input(prompt: &str) -> Option<String> {
     print!("{}", prompt);
     io::stdout().flush().ok();
     let mut input = String::new();
-    io::stdin().read_line(&mut input).ok()?;
+    let bytes_read = io::stdin().read_line(&mut input).ok()?;
+    if bytes_read == 0 {
+        println!();
+        return None;
+    }
     Some(input)
 }
 
