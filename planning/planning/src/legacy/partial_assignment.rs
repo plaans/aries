@@ -1,7 +1,7 @@
-use crate::core::views::Term;
-use crate::core::{IntCst, Lit, SignedVar, VarRef};
-use crate::model::lang::{Atom, Cst, FAtom, IAtom, Rational, SAtom};
-use crate::model::symbols::{SymId, TypedSym};
+use aries::core::views::Term;
+use aries::core::{IntCst, Lit, SignedVar, VarRef};
+use aries::model::lang::{Atom, Cst, FAtom, IAtom, Rational, SAtom};
+use aries::model::symbols::{SymId, TypedSym};
 use std::collections::HashMap;
 
 /// Extension trait to allow the evaluation of expressions based on a partial assignment of variables.
@@ -73,7 +73,11 @@ impl PartialAssignmentBuilder {
 
     fn add_var(&mut self, var: VarRef, val: IntCst) -> Result<(), InvalidAssignment> {
         if let Some(prev) = self.values.get(&var).copied() {
-            if val == prev { Ok(()) } else { Err(InvalidAssignment) }
+            if val == prev {
+                Ok(())
+            } else {
+                Err(InvalidAssignment)
+            }
         } else {
             self.values.insert(var, val);
             Ok(())
@@ -151,9 +155,9 @@ impl Default for PartialAssignmentBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::Model;
-    use crate::model::extensions::partial_assignment::{PartialAssignment, PartialAssignmentBuilder};
-    use crate::model::lang::{Atom, Cst};
+    use super::*;
+    use aries::model::lang::{Atom, Cst};
+    use aries::model::Model;
 
     #[test]
     fn test_partial_assignment() {

@@ -7,7 +7,6 @@
 mod disjunction;
 mod domains_ext;
 mod format;
-pub mod partial_assignment;
 
 pub use disjunction::*;
 pub use domains_ext::*;

@@ -5,12 +5,11 @@ use crate::chronicles::{
     Chronicle, ChronicleLabel, ChronicleTemplate, Condition, Container, Effect, EffectOp, Problem, StateVar, Sub,
     Substitute, Substitution, Time, VarType, TIME_SCALE,
 };
+use crate::legacy::*;
 use aries::core::views::Term;
-use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
-use aries::model::extensions::partial_assignment::{PartialAssignment, PartialAssignmentBuilder};
-use aries::model::lang::linear::LinearSum;
 use aries::model::lang::{Atom, Cst, FAtom, IAtom, Rational};
 use aries::model::Model;
+use aries::prelude::*;
 use aries::solver::{SearchLimit, Solver};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
