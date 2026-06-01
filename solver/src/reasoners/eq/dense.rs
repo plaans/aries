@@ -933,7 +933,7 @@ mod tests {
     use crate::backtrack::{Backtrack, EventIndex};
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
     use crate::core::{IntCst, Lit, VarRef};
-    use crate::model::lang::expr::eq;
+    use crate::model::lang::expr::lin_eq;
     use crate::model::symbols::SymbolTable;
     use crate::model::types::TypeHierarchy;
     use crate::model::{Label, Model};
@@ -1166,19 +1166,17 @@ mod tests {
         let symbols = SymbolTable::from(vec![("obj", vec!["alice", "bob", "chloe"])]);
         let symbols = Arc::new(symbols);
 
-        let obj = symbols.types.id_of("obj").unwrap();
-
         let mut model: Model<S> = Model::new_with_symbols(symbols.clone());
 
         let vars = ["V", "W", "X", "Y", "Z"]
-            .map(|var_name| model.new_sym_var(obj, var_name))
+            .map(|var_name| model.new_ivar(1, 5, var_name))
             .iter()
             .copied()
             .collect_vec();
 
         for (xi, x) in vars.iter().copied().enumerate() {
             for &y in &vars[xi..] {
-                model.reify(eq(x, y));
+                model.reif(&lin_eq(x, y));
             }
         }
 
@@ -1205,12 +1203,8 @@ mod tests {
         let objects = ["alice", "bob", "chloe", "donald", "elon"];
         let num_objects = rng.random_range(1..5);
         let objects = objects[0..num_objects].to_vec();
-        let symbols = SymbolTable::from(vec![("obj", objects.clone())]);
-        let symbols = Arc::new(symbols);
 
-        let obj = symbols.types.id_of("obj").unwrap();
-
-        let mut model: Model<String> = Model::new_with_symbols(symbols.clone());
+        let mut model: Model<String> = Model::new();
 
         let num_scopes = rng.random_range(0..3);
         let scopes = (0..=num_scopes)
@@ -1232,13 +1226,13 @@ mod tests {
             let scope = scopes[scope_id];
             let var_name = format!("x{i}");
             println!("  {var_name} [{scope_id}]  in {:?}", &objects);
-            let var = model.new_optional_sym_var(obj, scope, var_name);
+            let var = model.new_optional_ivar(1, num_objects as IntCst, scope, var_name);
             vars.push(var)
         }
 
         for (xi, x) in vars.iter().copied().enumerate() {
             for &y in &vars[xi..] {
-                model.reify(eq(x, y));
+                model.reif(&lin_eq(x, y));
             }
         }
 

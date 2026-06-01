@@ -6,8 +6,6 @@
 
 mod disjunction;
 mod domains_ext;
-mod format;
 
 pub use disjunction::*;
 pub use domains_ext::*;
-pub use format::*;

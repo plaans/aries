@@ -1,12 +1,12 @@
 use crate::core::*;
-use crate::model::ModelShape;
 use crate::model::label::Label;
-use crate::model::lang::{Atom, FAtom, IAtom, IVar, Kind, SAtom, Type};
+use crate::model::lang::{FAtom, IAtom, IVar, Kind, SAtom, Type};
 use crate::model::symbols::{SymId, SymbolTable};
 use crate::model::types::TypeId;
+use crate::model::ModelShape;
 use crate::reif::{DifferenceExpression, ReifExpr};
-use crate::utils::Fmt;
 use crate::utils::input::Sym;
+use crate::utils::Fmt;
 
 pub trait Shaped<Lbl>
 where
@@ -44,6 +44,16 @@ where
 
     fn get_reified_expr(&self, lit: Lit) -> Option<&ReifExpr> {
         self.get_shape().expressions.original_full(lit)
+    }
+}
+impl<Lbl: Label> Shaped<Lbl> for Model<Lbl> {
+    fn get_shape(&self) -> &ModelShape<Lbl> {
+        &self.shape
+    }
+}
+impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
+    fn get_shape(&self) -> &ModelShape<Lbl> {
+        self.model.get_shape()
     }
 }
 

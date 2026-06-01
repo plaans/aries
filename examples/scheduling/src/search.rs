@@ -3,7 +3,6 @@ mod greedy;
 use crate::problem::{Encoding, OperationId};
 use crate::search::SearchStrategy::Custom;
 use crate::search::greedy::EstBrancher;
-use aries::model::extensions::Shaped;
 use aries::prelude::*;
 use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
@@ -102,7 +101,7 @@ pub fn get_solver(mut base_solver: Solver, strategy: &SearchStrategy, pb: &Encod
         .model
         .state
         .variables()
-        .filter_map(|v| match base_solver.model.get_label(v) {
+        .filter_map(|v| match base_solver.model.shape.labels.get(v) {
             Some(&Var::Prec(_, _)) => Some(v.geq(1)),
             Some(&Var::Presence(_)) => Some(v.geq(1)),
             _ => None,

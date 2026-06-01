@@ -32,6 +32,7 @@ pub enum ReifExpr {
     Or(Disjunction),
     And(Conjunction),
     Linear(NFLinearLeq),
+    // TODO: add LinearEq and LinearNeq, and subsume in specialized Variants
     Alternative(NFAlternative),
     EqMax(NFEqMax),
     EqMul(EqMul),

@@ -4,9 +4,9 @@ use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::views::{Boundable, Dom, VarView};
 use crate::core::*;
-use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
+use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::model::lang::linear::LinearSum;
-use crate::model::{Constraint, Label, Model, ModelShape};
+use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
@@ -1023,9 +1023,9 @@ impl<Lbl: Label> Solver<Lbl> {
         assert!(self.all_constraints_posted());
         self.save_state();
         log_dec!(
-            "decision: {:?} -- {}     dom:{:?}",
+            "decision: {:?} -- {:?}     dom:{:?}",
             self.decision_level,
-            self.model.fmt(decision),
+            decision,
             self.model.bounds(decision.variable())
         );
         let res = self.model.state.decide(decision);
@@ -1199,7 +1199,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         " CONFLICT {:?} (size: {})  >  {}",
                         self.decision_level,
                         conflict.clause.len(),
-                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(" | ")
+                        conflict.literals().iter().map(|l| format!("{:?}", l)).format(" | ")
                     );
                     self.sync.notify_learnt(&conflict.clause);
                     if self.add_conflicting_clause_and_backtrack(&conflict) {
@@ -1384,12 +1384,6 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             stats: self.stats.clone(),
             sync: self.sync.clone(),
         }
-    }
-}
-
-impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        self.model.get_shape()
     }
 }
 

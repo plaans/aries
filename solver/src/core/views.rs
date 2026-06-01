@@ -1,4 +1,4 @@
-use crate::{model::lang::Atom, prelude::*};
+use crate::prelude::*;
 
 pub trait Dom {
     fn upper_bound(&self, svar: SignedVar) -> IntCst;
@@ -146,10 +146,5 @@ impl<T: Into<VarRef>> Term for T {
 impl Term for IAtom {
     fn variable(self) -> VarRef {
         self.var.variable()
-    }
-}
-impl Term for Atom {
-    fn variable(self) -> VarRef {
-        self.variable()
     }
 }

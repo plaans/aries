@@ -8,7 +8,7 @@ use crate::core::literals::StableLitSet;
 use crate::core::state::*;
 use crate::core::views::Dom;
 use crate::core::*;
-use crate::model::extensions::{DomainsExt, Shaped};
+use crate::model::extensions::DomainsExt;
 use crate::model::label::{Label, VariableLabels};
 use crate::model::lang::expr::or;
 use crate::model::lang::reification::Reification;
@@ -364,36 +364,6 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
-    #[doc(hidden)]
-    pub fn unifiable(&self, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
-        let a = a.into();
-        let b = b.into();
-        if a.kind() != b.kind() {
-            false
-        } else {
-            let (l1, u1) = self.int_bounds(a);
-            let (l2, u2) = self.int_bounds(b);
-            let disjoint = u1 < l2 || u2 < l1;
-            !disjoint
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn unifiable_seq<A: Into<Atom> + Copy, B: Into<Atom> + Copy>(&self, a: &[A], b: &[B]) -> bool {
-        if a.len() != b.len() {
-            false
-        } else {
-            for (a, b) in a.iter().zip(b.iter()) {
-                let a = (*a).into();
-                let b = (*b).into();
-                if !self.unifiable(a, b) {
-                    return false;
-                }
-            }
-            true
-        }
-    }
-
     /// Interns the given expression and returns an equivalent literal.
     /// The returned literal is *optional* and defined such that it is
     /// present iff the expression is valid (typically meaning that all
@@ -404,6 +374,14 @@ impl<Lbl: Label> Model<Lbl> {
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
         let decomposed = expr.decompose(self);
         self.reify_core(decomposed, false)
+    }
+    // TODO: replace reify with this one
+    pub fn reif<'a, Expr: BoolExpr<Self> + 'a, NotExpr>(&mut self, expr: &'a Expr) -> Lit
+    where
+        &'a Expr: std::ops::Not<Output = NotExpr>,
+        NotExpr: BoolExpr<Self>,
+    {
+        expr.reified(self)
     }
 
     /// Returns a new literal that, if set to true, will force the given expression to be true.
@@ -617,22 +595,24 @@ impl<Lbl: Label> Model<Lbl> {
 
     // =========== Formatting ==============
 
-    pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
-        let atom = atom.into();
-        crate::model::extensions::fmt(atom, self)
-    }
+    // pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
+    //     let atom = atom.into();
+    //     crate::model::extensions::fmt(atom, self)
+    // }
 
     pub fn print_state(&self) {
         for v in self.state.variables() {
             let prez = format!("[{:?}]", self.presence_literal(v));
             let v_str = format!("{v:?}");
-            print!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
-            if let Some(lbl) = self.get_label(v) {
-                println!("    {lbl:?}");
-            } else {
-                println!()
-            }
+            println!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
         }
+    }
+
+    /// Temporaly place holder to facilitate refactoring
+    /// TODO: remove
+    #[doc(hidden)]
+    pub fn fmt(&self, var: impl Debug) -> impl std::fmt::Display {
+        format!("{var:?}")
     }
 }
 
@@ -667,11 +647,5 @@ impl<Lbl> Backtrack for Model<Lbl> {
 
     fn restore(&mut self, saved_id: DecLvl) {
         self.state.restore(saved_id);
-    }
-}
-
-impl<Lbl: Label> Shaped<Lbl> for Model<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        &self.shape
     }
 }

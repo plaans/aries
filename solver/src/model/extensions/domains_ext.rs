@@ -2,9 +2,8 @@ use crate::core::state::{FixedDomain, IntDomain, OptDomain, RangeDomain};
 use crate::core::views::{Dom, Term, VarView};
 use crate::core::*;
 use crate::model::lang::linear::LinearSum;
-use crate::model::lang::{Atom, Cst, IAtom, Rational, SAtom};
+use crate::model::lang::{IAtom, SAtom};
 use crate::model::symbols::SymId;
-use crate::model::symbols::TypedSym;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait DomainsExt: Dom {
@@ -75,39 +74,12 @@ pub trait DomainsExt: Dom {
         self.var_domain(atom.into()).as_singleton()
     }
 
-    fn evaluate(&self, atom: Atom) -> Option<Cst> {
-        match atom {
-            Atom::Bool(b) => self.value_of(b).map(Cst::Bool),
-            Atom::Int(i) => self.var_domain(i).as_singleton().map(Cst::Int),
-            Atom::Fixed(f) => self
-                .var_domain(f.num)
-                .as_singleton()
-                .map(|i| Cst::Fixed(Rational::new(i, f.denom))),
-            Atom::Sym(s) => self.sym_value_of(s).map(|sym| Cst::Sym(TypedSym::new(sym, s.tpe()))),
-        }
-    }
-
     /// Returns the value of a boolean atom if it as a set value.
     /// Return None otherwise meaning the value con be
     ///  - either true or false
     ///  - neither true nor false (empty domain)
     fn boolean_value_of(&self, bool_atom: impl Into<Lit>) -> Option<bool> {
         self.value_of(bool_atom.into())
-    }
-
-    /// Return an integer view of the domain of any kind of atom.
-    fn int_bounds(&self, atom: impl Into<Atom>) -> (IntCst, IntCst) {
-        let atom = atom.into();
-        match atom {
-            Atom::Bool(atom) => match self.boolean_value_of(atom) {
-                Some(true) => (1, 1),
-                Some(false) => (0, 0),
-                None => (0, 1),
-            },
-            Atom::Int(atom) => self.bounds(atom),
-            Atom::Fixed(atom) => self.bounds(atom.num),
-            Atom::Sym(atom) => self.bounds(atom.int_view()),
-        }
     }
 }
 

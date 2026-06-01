@@ -3,7 +3,7 @@ use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
 use crate::core::state::{Conflict, Event, Explainer, IntDomain};
-use crate::model::extensions::{DomainsExt, Shaped};
+use crate::model::extensions::DomainsExt;
 use crate::model::{Label, Model};
 use crate::prelude::*;
 use crate::solver::search::{Decision, SearchControl};
@@ -106,7 +106,7 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
 
     fn priority(&self, variable: VarRef, model: &Model<Lbl>) -> u8 {
         self.heuristic
-            .decision_stage(variable, model.get_label(variable), model)
+            .decision_stage(variable, model.shape.labels.get(variable), model)
     }
 
     pub fn import_vars(&mut self, model: &Model<Lbl>) {

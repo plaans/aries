@@ -157,13 +157,11 @@ mod test {
         core::views::{Dom, Term},
         model::{
             Label,
-            extensions::DomainsExt,
             lang::{
-                Atom, IAtom,
-                expr::{lt, neq},
+                IAtom,
+                expr::{lin_neq, lt},
             },
         },
-        solver::{SearchLimit, Solver},
     };
 
     use super::*;
@@ -190,7 +188,7 @@ mod test {
 
     impl<Ctx: Store> BoolExpr<Ctx> for Different {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-            neq(self.0, self.1).opt_enforce_if(l, ctx);
+            lin_neq(self.0, self.1).opt_enforce_if(l, ctx);
         }
 
         fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
@@ -236,7 +234,7 @@ mod test {
                 for i in ints {
                     print!("  {i:?}: ");
                     if sol.present(*i) == Some(true) {
-                        println!("{:?}", sol.evaluate(Atom::from(*i)).unwrap());
+                        println!("{:?}", sol.value_of(*i).unwrap());
                     } else {
                         println!("-");
                     }

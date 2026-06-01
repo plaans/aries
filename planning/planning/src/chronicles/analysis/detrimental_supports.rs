@@ -1,7 +1,8 @@
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::{EffectOp, Fluent, Problem};
+use crate::legacy::*;
 use aries::core::Lit;
-use aries::model::lang::{Atom, SAtom};
+use aries::model::lang::SAtom;
 use aries::model::symbols::{SymId, TypedSym};
 use aries::model::types::TypeId;
 use itertools::Itertools;

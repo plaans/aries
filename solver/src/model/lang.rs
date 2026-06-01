@@ -1,8 +1,6 @@
 pub mod alternative;
-mod atom;
 mod bool_expr;
 mod boolean;
-mod cst;
 pub mod element;
 pub mod exclusive_choice;
 pub mod expr;
@@ -19,11 +17,8 @@ mod validity_scope;
 mod variables;
 
 pub use crate::core::Lit;
-pub use atom::Atom;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
-#[doc(hidden)]
-pub use cst::Cst;
 #[doc(hidden)]
 pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
@@ -165,43 +160,4 @@ macro_rules! transitive_conversion {
             }
         }
     };
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    type Model = crate::model::Model<&'static str>;
-
-    fn check(m: &Model, x: impl Into<Atom>, result: &str) {
-        assert_eq!(m.fmt(x).to_string(), result);
-    }
-
-    #[test]
-    #[ignore] // TODO: fix syntax printing
-    fn test_syntax() {
-        let mut m = Model::new();
-
-        let a = m.new_ivar(0, 10, "a");
-        check(&m, a, "a");
-
-        let b = m.new_ivar(0, 10, "b");
-
-        let x = b + 1;
-        check(&m, x, "(+ b 1)");
-
-        let x = b - 1;
-        check(&m, x, "(- b 1)");
-
-        let x = x + 1;
-        check(&m, x, "b");
-
-        // let x = m.leq(a + 1, 6);
-        // check(&m, x, "(<= (+ a 1) 6)");
-        //
-        // let x = m.eq(a - 3, b);
-        // check(&m, x, "(= (- a 3) b)");
-        //
-        // let x = m.implies(true, x);
-        // check(&m, x, "(or false (= (- a 3) b))")
-    }
 }

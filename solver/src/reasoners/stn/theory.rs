@@ -1135,8 +1135,8 @@ mod tests {
         let b = s.add_timepoint(0, 10);
 
         let assert_bounds = |stn: &Stn, a_lb, a_ub, b_lb, b_ub| {
-            assert_eq!(stn.model.int_bounds(IVar::new(a)), (a_lb, a_ub));
-            assert_eq!(stn.model.int_bounds(IVar::new(b)), (b_lb, b_ub));
+            assert_eq!(stn.model.bounds(a), (a_lb, a_ub));
+            assert_eq!(stn.model.bounds(b), (b_lb, b_ub));
         };
 
         assert_bounds(s, 0, 10, 0, 10);
@@ -1163,8 +1163,8 @@ mod tests {
         let b = s.add_timepoint(0, 10);
 
         let assert_bounds = |stn: &Stn, a_lb, a_ub, b_lb, b_ub| {
-            assert_eq!(stn.model.int_bounds(IVar::new(a)), (a_lb, a_ub));
-            assert_eq!(stn.model.int_bounds(IVar::new(b)), (b_lb, b_ub));
+            assert_eq!(stn.model.bounds(a), (a_lb, a_ub));
+            assert_eq!(stn.model.bounds(b), (b_lb, b_ub));
         };
 
         assert_bounds(s, 0, 10, 0, 10);
@@ -1288,14 +1288,14 @@ mod tests {
         stn.propagate_all()?;
         for (i, (_prez, var)) in vars.iter().enumerate() {
             let i: IntCst = i.try_into().unwrap();
-            assert_eq!(stn.model.int_bounds(*var), (i, 20));
+            assert_eq!(stn.model.bounds(*var), (i, 20));
         }
         stn.model.state.set_ub(vars[5].1, 4, Cause::Decision)?;
         stn.propagate_all()?;
         for (i, (_prez, var)) in vars.iter().enumerate() {
             let i: IntCst = i.try_into().unwrap();
             if i <= 4 {
-                assert_eq!(stn.model.int_bounds(*var), (i, 20));
+                assert_eq!(stn.model.bounds(*var), (i, 20));
             } else {
                 assert_eq!(stn.model.state.present(*var), Some(false))
             }

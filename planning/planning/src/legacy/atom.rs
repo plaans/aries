@@ -186,8 +186,39 @@ impl TryFrom<Atom> for Variable {
         })
     }
 }
+impl TryFrom<Atom> for LinearSum {
+    type Error = ConversionError;
+
+    fn try_from(value: Atom) -> Result<Self, Self::Error> {
+        match value {
+            Atom::Int(i) => Ok(LinearSum::from(i)),
+            Atom::Fixed(f) => Ok(LinearSum::from(f)),
+            _ => Err(ConversionError::TypeError),
+        }
+    }
+}
+impl Term for Atom {
+    fn variable(self) -> VarRef {
+        self.variable()
+    }
+}
+
+// impl Evaluable for Atom {
+//     type Value = Cst;
+
+//     fn evaluate(&self, solution: &aries::prelude::Solution) -> Option<Self::Value> {
+//         Atom::Bool(b) => self.value_of(b).map(Cst::Bool),
+//         Atom::Int(i) => self.var_domain(i).as_singleton().map(Cst::Int),
+//         Atom::Fixed(f) => self
+//             .var_domain(f.num)
+//             .as_singleton()
+//             .map(|i| Cst::Fixed(Rational::new(i, f.denom))),
+//         Atom::Sym(s) => self.sym_value_of(s).map(|sym| Cst::Sym(TypedSym::new(sym, s.tpe()))),
+//     }
+// }
 
 use crate::transitive_conversions;
+use aries::core::state::Evaluable;
 use fixed::Rational;
 use std::{
     convert::{TryFrom, TryInto},
