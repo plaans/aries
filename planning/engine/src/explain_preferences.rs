@@ -49,6 +49,52 @@ enum SelectionInput {
     Cancel,
 }
 
+// =====================================================================
+// Interaction metrics (for experimental comparison of strategies)
+//
+//   steps   — total user inputs (valid or not). Measures effort.
+//   outcome — how the session ended:
+//     Accepted     — user saw a plan and accepted it (normal exit).
+//     AllSatisfied — the optimized plan satisfies ALL preferences,
+//                    including unselected ones (side-effect of forcing
+//                    a subset that steers the solver to a good region).
+//     GaveUp       — user quit during conflict resolution, before any
+//                    plan was produced.
+//     Cancelled    — stdin closed (Ctrl-D). Default if no other is set.
+//     Exhausted    — user resolved conflicts until no preferences
+//                    remained, then quit instead of re-selecting.
+//
+// Uses Drop to print automatically on any exit path.
+// =====================================================================
+
+#[derive(Clone, Copy)]
+enum Outcome { Accepted, AllSatisfied, GaveUp, Cancelled, Exhausted }
+
+impl std::fmt::Display for Outcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Outcome::Accepted => write!(f, "accepted"),
+            Outcome::AllSatisfied => write!(f, "all-satisfied"),
+            Outcome::GaveUp => write!(f, "gave-up"),
+            Outcome::Cancelled => write!(f, "cancelled"),
+            Outcome::Exhausted => write!(f, "exhausted"),
+        }
+    }
+}
+
+struct InteractionMetrics { steps: usize, outcome: Outcome }
+
+/// Post-plan user action: add more preferences or start a new selection.
+enum Action { Add, New }
+
+impl Drop for InteractionMetrics {
+    fn drop(&mut self) {
+        if self.steps > 0 {
+            println!("\nInteraction steps: {} (outcome: {})", self.steps, self.outcome);
+        }
+    }
+}
+
 /// Parse a user input string into a selection of indices.
 /// Accepts comma/space-separated numbers, ranges (e.g. "1-3"), "all", or quit keywords.
 fn parse_selection(input: &str, max_index: usize) -> Result<SelectionInput, String> {
@@ -104,6 +150,56 @@ fn parse_selection(input: &str, max_index: usize) -> Result<SelectionInput, Stri
         Ok(SelectionInput::Cancel)
     } else {
         Ok(SelectionInput::Indices(indices.into_iter().collect()))
+    }
+}
+
+/// Print the numbered preference list with satisfaction status.
+fn print_preference_list(entries: &[PreferenceEntry]) {
+    for (i, entry) in entries.iter().enumerate() {
+        let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
+        let marker = if entry.is_satisfied { " " } else { "*" };
+        println!("  {}{:>2}. [{}] {}", marker, i + 1, status, entry.display);
+    }
+}
+
+/// Prompt the user to select violated preferences to enforce.
+/// Returns None if the user cancels (quit / Ctrl-D), Some(indices) otherwise.
+fn prompt_violated_selection(
+    entries: &[PreferenceEntry],
+    violated_indices: &[usize],
+    prompt: &str,
+    steps: &mut usize,
+) -> Option<Vec<usize>> {
+    let violated_set: BTreeSet<usize> = violated_indices.iter().copied().collect();
+    loop {
+        let input = read_interactive_input(prompt)?;
+        *steps += 1;
+        match parse_selection(&input, entries.len()) {
+            Ok(SelectionInput::Cancel) => return None,
+            Ok(SelectionInput::All) => return Some(violated_indices.to_vec()),
+            Ok(SelectionInput::Indices(idx)) => {
+                let non_violated: Vec<usize> = idx
+                    .iter()
+                    .filter(|i| !violated_set.contains(i))
+                    .copied()
+                    .collect();
+                if !non_violated.is_empty() {
+                    let names: Vec<String> = non_violated
+                        .iter()
+                        .map(|&i| format!("{} ({})", i + 1, entries[i].name))
+                        .collect();
+                    println!(
+                        "  Already satisfied, cannot select: {}. Try again.",
+                        names.join(", ")
+                    );
+                    continue;
+                }
+                return Some(idx);
+            }
+            Err(e) => {
+                println!("  Error: {}. Try again.", e);
+            }
+        }
     }
 }
 
@@ -204,26 +300,18 @@ fn print_preference_status(sol: &Solution, entries: &[PreferenceEntry], selected
 fn print_preference_changes(
     sol: &Solution,
     forced_prefs: &[&str],
-    satisfied_entries: &[(String, Vec<Lit>, String)],
-    unsatisfied: &[(String, Vec<Lit>, String)],
+    entries: &[PreferenceEntry],
 ) {
     let mut newly_violated = Vec::new();
     let mut newly_satisfied = Vec::new();
-    // Check if any originally-satisfied preference is now violated (side-effect of enforcement)
-    for (sat_name, sat_lits, _) in satisfied_entries {
-        let now_sat = sat_lits.iter().all(|lit| sol.entails(*lit));
-        if !now_sat {
-            newly_violated.push(sat_name.as_str());
-        }
-    }
-    // Check if any non-selected violated preference became satisfied as a bonus
-    for (unsat_name, unsat_lits, _) in unsatisfied {
-        if forced_prefs.contains(&unsat_name.as_str()) {
-            continue; // skip the ones we explicitly enforced
-        }
-        let now_sat = unsat_lits.iter().all(|lit| sol.entails(*lit));
-        if now_sat {
-            newly_satisfied.push(unsat_name.as_str());
+    for entry in entries {
+        let now_sat = entry.lits.iter().all(|lit| sol.entails(*lit));
+        if entry.is_satisfied && !now_sat {
+            // Originally satisfied, now violated (side-effect of enforcement)
+            newly_violated.push(entry.name.as_str());
+        } else if !entry.is_satisfied && now_sat && !forced_prefs.contains(&entry.name.as_str()) {
+            // Originally violated, now satisfied, and not explicitly enforced (bonus)
+            newly_satisfied.push(entry.name.as_str());
         }
     }
     if !newly_violated.is_empty() || !newly_satisfied.is_empty() {
@@ -315,12 +403,7 @@ pub(crate) fn interactive_preference_enforcement(
         .map(|(i, _)| i)
         .collect();
 
-    // Print each preference with its status; violated ones are marked with '*'
-    for (i, entry) in entries.iter().enumerate() {
-        let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
-        let marker = if entry.is_satisfied { " " } else { "*" };
-        println!("  {}{:>2}. [{}] {}", marker, i + 1, status, entry.display);
-    }
+    print_preference_list(&entries);
 
     if violated_indices.is_empty() {
         println!("\nAll preferences are satisfied.");
@@ -336,87 +419,20 @@ pub(crate) fn interactive_preference_enforcement(
         violated_display.join(", ")
     );
 
-    // =====================================================================
-    // Interaction metrics (for experimental comparison of strategies)
-    //
-    //   steps   — total user inputs (valid or not). Measures effort.
-    //   outcome — how the session ended:
-    //     Accepted     — user saw a plan and accepted it (normal exit).
-    //     AllSatisfied — the optimized plan satisfies ALL preferences,
-    //                    including unselected ones (side-effect of forcing
-    //                    a subset that steers the solver to a good region).
-    //     GaveUp       — user quit during conflict resolution, before any
-    //                    plan was produced.
-    //     Cancelled    — stdin closed (Ctrl-D). Default if no other is set.
-    //     Exhausted    — user resolved conflicts until no preferences
-    //                    remained, then quit instead of re-selecting.
-    //
-    // Uses Drop to print automatically on any exit path.
-    // =====================================================================
-    #[derive(Clone, Copy)]
-    enum Outcome { Accepted, AllSatisfied, GaveUp, Cancelled, Exhausted }
-    impl std::fmt::Display for Outcome {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                Outcome::Accepted => write!(f, "accepted"),
-                Outcome::AllSatisfied => write!(f, "all-satisfied"),
-                Outcome::GaveUp => write!(f, "gave-up"),
-                Outcome::Cancelled => write!(f, "cancelled"),
-                Outcome::Exhausted => write!(f, "exhausted"),
-            }
-        }
-    }
-    struct InteractionMetrics { steps: usize, outcome: Outcome }
-    impl Drop for InteractionMetrics {
-        fn drop(&mut self) {
-            if self.steps > 0 {
-                println!("\nInteraction steps: {} (outcome: {})", self.steps, self.outcome);
-            }
-        }
-    }
-    // Default outcome is Cancelled — overwritten if the user reaches a
-    // meaningful exit point.
+    // Default outcome is Cancelled — overwritten if the user reaches a meaningful exit point.
     let mut metrics = InteractionMetrics { steps: 0, outcome: Outcome::Cancelled };
 
     // --- Prompt user to select which violated preferences to enforce ---
-    let mut selected_indices: Vec<usize> = loop {
-        let input = match read_interactive_input("Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ") {
-            Some(input) => input,
-            None => return,
-        };
-        metrics.steps += 1; // [any outcome] (user picks which violated preferences to enforce)
-
-        match parse_selection(&input, entries.len()) {
-            Ok(SelectionInput::Cancel) => return,
-            Ok(SelectionInput::All) => break violated_indices.clone(),
-            Ok(SelectionInput::Indices(idx)) => {
-                // Reject selection of already-satisfied preferences
-                let non_violated: Vec<usize> = idx.iter().filter(|i| !violated_indices.contains(i)).copied().collect();
-                if !non_violated.is_empty() {
-                    let names: Vec<String> = non_violated.iter().map(|&i| format!("{} ({})", i + 1, entries[i].name)).collect();
-                    println!("  Already satisfied, cannot select: {}. Try again.", names.join(", "));
-                    continue;
-                }
-                break idx;
-            }
-            Err(e) => {
-                println!("  Error: {}. Try again.", e);
-                continue;
-            }
-        }
+    // [any outcome] (user picks which violated preferences to enforce)
+    let mut selected_indices = match prompt_violated_selection(
+        &entries,
+        &violated_indices,
+        "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
+        &mut metrics.steps,
+    ) {
+        Some(idx) => idx,
+        None => return,
     };
-
-    // Pre-compute tuples for print_preference_changes (which tracks status flips)
-    let satisfied_tuples: Vec<(String, Vec<Lit>, String)> = entries
-        .iter()
-        .filter(|e| e.is_satisfied)
-        .map(|e| (e.name.clone(), e.lits.clone(), e.display.clone()))
-        .collect();
-    let unsatisfied_tuples: Vec<(String, Vec<Lit>, String)> = entries
-        .iter()
-        .filter(|e| !e.is_satisfied)
-        .map(|e| (e.name.clone(), e.lits.clone(), e.display.clone()))
-        .collect();
 
     // Lock in the phase assumptions (goals, supports) permanently so they can't be relaxed
     solver.enforce_permanent(phase_assumptions);
@@ -454,6 +470,10 @@ pub(crate) fn interactive_preference_enforcement(
         let selected_pref_lits: Vec<Lit> = selected_indices
             .iter()
             .flat_map(|&i| entries[i].lits.iter().copied())
+            .collect();
+        let selected_names: BTreeSet<String> = selected_indices
+            .iter()
+            .map(|&i| entries[i].name.clone())
             .collect();
 
         // Feasibility probe: clone solver to avoid side effects, use all enablers
@@ -496,11 +516,7 @@ pub(crate) fn interactive_preference_enforcement(
         // MUS and MCS entries for each selected preference, ensuring every preference
         // gets adequate coverage in the explanations.
         const PER_PREF_LIMIT: usize = 2;
-        let selected_names_for_collection: BTreeSet<String> = selected_indices
-            .iter()
-            .map(|&i| entries[i].name.clone())
-            .collect();
-        let mut mus_count_per_pref: BTreeMap<String, usize> = selected_names_for_collection
+        let mut mus_count_per_pref: BTreeMap<String, usize> = selected_names
             .iter()
             .map(|n| (n.clone(), 0))
             .collect();
@@ -515,7 +531,7 @@ pub(crate) fn interactive_preference_enforcement(
                 MusMcs::Mus(s) => {
                     // Count which selected preferences this MUS covers
                     let involved: Vec<&String> = s.iter().filter_map(|t| match t {
-                        Tag::EnforcePreference(name) if selected_names_for_collection.contains(name) => Some(name),
+                        Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name),
                         _ => None,
                     }).collect();
                     // Skip if all involved preferences already have enough MUS entries
@@ -529,7 +545,7 @@ pub(crate) fn interactive_preference_enforcement(
                 }
                 MusMcs::Mcs(s) => {
                     let involved: Vec<&String> = s.iter().filter_map(|t| match t {
-                        Tag::EnforcePreference(name) if selected_names_for_collection.contains(name) => Some(name),
+                        Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name),
                         _ => None,
                     }).collect();
                     let dominated = involved.iter().all(|n| mcs_count_per_pref[n.as_str()] >= PER_PREF_LIMIT);
@@ -566,7 +582,7 @@ pub(crate) fn interactive_preference_enforcement(
                         let label = format_tag(t, model);
                         // Annotate non-selected preferences so the user knows they weren't chosen
                         match t {
-                            Tag::EnforcePreference(name) if !selected_names_for_collection.contains(name) => {
+                            Tag::EnforcePreference(name) if !selected_names.contains(name.as_str()) => {
                                 format!("{} (satisfied)", label)
                             }
                             _ => label,
@@ -585,7 +601,7 @@ pub(crate) fn interactive_preference_enforcement(
                     let tags: Vec<_> = mus.iter().filter(|t| !matches!(t, Tag::CostBound)).map(|t| {
                         let label = format_tag(t, model);
                         match t {
-                            Tag::EnforcePreference(name) if !selected_names_for_collection.contains(name) => {
+                            Tag::EnforcePreference(name) if !selected_names.contains(name.as_str()) => {
                                 format!("{} (satisfied)", label)
                             }
                             _ => label,
@@ -602,11 +618,6 @@ pub(crate) fn interactive_preference_enforcement(
         // --- Display resolutions (MCS) ---
         // Each MCS is a minimal set of assumptions to drop to restore feasibility.
         // We separate tags into "to_drop" (selected preferences) and "side_effects" (other tags).
-        let selected_names_set: BTreeSet<&str> = selected_indices
-            .iter()
-            .map(|&i| entries[i].name.as_str())
-            .collect();
-
         struct Resolution {
             to_drop: Vec<String>,
             side_effects: Vec<String>,
@@ -619,7 +630,7 @@ pub(crate) fn interactive_preference_enforcement(
                 for tag in mcs.iter() {
                     let label = format_tag(tag, model);
                     match tag {
-                        Tag::EnforcePreference(name) if selected_names_set.contains(name.as_str()) => {
+                        Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => {
                             to_drop.push(label);
                         }
                         _ => {
@@ -677,35 +688,37 @@ pub(crate) fn interactive_preference_enforcement(
 
         // Handle resolution selection (e.g. "R1", "R2")
         if has_resolutions && trimmed.to_lowercase().starts_with('r') {
-            if let Ok(r_idx) = trimmed[1..].trim().parse::<usize>() {
-                if r_idx >= 1 && r_idx <= resolutions.len() {
-                    let res = &resolutions[r_idx - 1];
-                    // Drop the selected preferences that the MCS says to remove
-                    let prefs_to_drop: BTreeSet<&str> = mcses[r_idx - 1]
-                        .iter()
-                        .filter_map(|tag| match tag {
-                            Tag::EnforcePreference(name) if selected_names_set.contains(name.as_str()) => {
-                                Some(name.as_str())
+            if let Some(after_r) = trimmed.get(1..) {
+                if let Ok(r_idx) = after_r.trim().parse::<usize>() {
+                    if r_idx >= 1 && r_idx <= resolutions.len() {
+                        let res = &resolutions[r_idx - 1];
+                        // Drop the selected preferences that the MCS says to remove
+                        let prefs_to_drop: BTreeSet<&str> = mcses[r_idx - 1]
+                            .iter()
+                            .filter_map(|tag| match tag {
+                                Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => {
+                                    Some(name.as_str())
+                                }
+                                _ => None,
+                            })
+                            .collect();
+
+                        selected_indices.retain(|&i| {
+                            let keep = !prefs_to_drop.contains(entries[i].name.as_str());
+                            if !keep {
+                                println!("  Dropped: {}", entries[i].display);
                             }
-                            _ => None,
-                        })
-                        .collect();
+                            keep
+                        });
 
-                    selected_indices.retain(|&i| {
-                        let keep = !prefs_to_drop.contains(entries[i].name.as_str());
-                        if !keep {
-                            println!("  Dropped: {}", entries[i].display);
+                        if !res.side_effects.is_empty() {
+                            println!("  Note: {} may also be affected", res.side_effects.join(", "));
                         }
-                        keep
-                    });
-
-                    if !res.side_effects.is_empty() {
-                        println!("  Note: {} may also be affected", res.side_effects.join(", "));
+                        if selected_indices.is_empty() {
+                            println!("\nAll selected preferences were dropped.");
+                        }
+                        continue;
                     }
-                    if selected_indices.is_empty() {
-                        println!("\nAll selected preferences were dropped.");
-                    }
-                    continue;
                 }
             }
             println!("  Invalid resolution. Select a single resolution (e.g. R1) or drop preferences by number.");
@@ -760,48 +773,18 @@ pub(crate) fn interactive_preference_enforcement(
         }
 
         println!();
-        for (i, entry) in entries.iter().enumerate() {
-            let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
-            let marker = if entry.is_satisfied { " " } else { "*" };
-            println!("  {}{:>2}. [{}] {}", marker, i + 1, status, entry.display);
-        }
+        print_preference_list(&entries);
         println!("\nViolated preferences: {}\n", violated_display.join(", "));
 
-        selected_indices = loop {
-            let sel_input = match read_interactive_input(
-                "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
-            ) {
-                Some(input) => input,
-                None => return,
-            };
-            metrics.steps += 1; // [Exhausted→retry] (user re-selects preferences after previous selection was fully dropped)
-            match parse_selection(&sel_input, entries.len()) {
-                Ok(SelectionInput::Cancel) => return,
-                Ok(SelectionInput::All) => break violated_indices.clone(),
-                Ok(SelectionInput::Indices(idx)) => {
-                    let non_violated: Vec<usize> = idx
-                        .iter()
-                        .filter(|i| !violated_indices.contains(i))
-                        .copied()
-                        .collect();
-                    if !non_violated.is_empty() {
-                        let names: Vec<String> = non_violated
-                            .iter()
-                            .map(|&i| format!("{} ({})", i + 1, entries[i].name))
-                            .collect();
-                        println!(
-                            "  Already satisfied, cannot select: {}. Try again.",
-                            names.join(", ")
-                        );
-                        continue;
-                    }
-                    break idx;
-                }
-                Err(e) => {
-                    println!("  Error: {}. Try again.", e);
-                    continue;
-                }
-            }
+        // [Exhausted→retry] (user re-selects preferences after previous selection was fully dropped)
+        selected_indices = match prompt_violated_selection(
+            &entries,
+            &violated_indices,
+            "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
+            &mut metrics.steps,
+        ) {
+            Some(idx) => idx,
+            None => return,
         };
         continue; // back to outer loop with new selection
     }
@@ -818,11 +801,11 @@ pub(crate) fn interactive_preference_enforcement(
         .iter()
         .flat_map(|&i| entries[i].lits.iter().copied())
         .collect();
-    let selected_names: Vec<&str> = selected_indices
+    let selected_names_list: Vec<&str> = selected_indices
         .iter()
         .map(|&i| entries[i].name.as_str())
         .collect();
-    let selected_names_display = selected_names.join(", ");
+    let selected_names_display = selected_names_list.join(", ");
 
     let mut latest_solution: Option<Solution> = None;
 
@@ -843,7 +826,7 @@ pub(crate) fn interactive_preference_enforcement(
             if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
                 println!("    Plan cost: {}", format_cost_delta(fc, oc));
             }
-            print_preference_changes(sol, &selected_names, &satisfied_tuples, &unsatisfied_tuples);
+            print_preference_changes(sol, &selected_names_list, &entries);
             println!("    Resulting plan:\n{}", encoding.plan(sol));
         }
 
@@ -876,7 +859,7 @@ pub(crate) fn interactive_preference_enforcement(
                 }
                 let new_obj = sol.eval(obj).unwrap();
                 println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
-                print_preference_changes(&sol, &selected_names, &satisfied_tuples, &unsatisfied_tuples);
+                print_preference_changes(&sol, &selected_names_list, &entries);
                 println!("    Resulting plan:\n{}", encoding.plan(&sol));
                 latest_solution = Some(sol);
             } else {
@@ -903,12 +886,13 @@ pub(crate) fn interactive_preference_enforcement(
 
     // Find preferences that are violated in the latest plan AND are not
     // already in the enforced set. These are candidates for "add more".
+    let selected_set: BTreeSet<usize> = selected_indices.iter().copied().collect();
     let still_violated: Vec<usize> = if let Some(ref sol) = latest_solution {
         entries
             .iter()
             .enumerate()
             .filter(|(i, e)| {
-                !selected_indices.contains(i)
+                !selected_set.contains(i)
                     && !e.lits.iter().all(|lit| sol.entails(*lit))
             })
             .map(|(i, _)| i)
@@ -938,10 +922,7 @@ pub(crate) fn interactive_preference_enforcement(
         }
     }
 
-    // Prompt the user for their next action.
-    // The loop keeps asking until a valid option is given.
-    // `break 'a'` / `break 'n'` return a char literal from the loop.
-    let action: char = loop {
+    let action = loop {
         let prompt = if can_add_more {
             "\nWhat next? (a = add more, n = new selection, q = accept and quit): "
         } else {
@@ -955,8 +936,8 @@ pub(crate) fn interactive_preference_enforcement(
         match input.trim() {
             // [Accepted] (user saw a plan and accepted it)
             "q" | "quit" => { metrics.outcome = Outcome::Accepted; return; }
-            "a" | "add" if can_add_more => break 'a',
-            "n" | "new" => break 'n',
+            "a" | "add" if can_add_more => break Action::Add,
+            "n" | "new" => break Action::New,
             _ => {
                 if can_add_more {
                     println!("  Enter 'a', 'n', or 'q'.");
@@ -967,7 +948,7 @@ pub(crate) fn interactive_preference_enforcement(
         }
     };
 
-    if action == 'a' {
+    if matches!(action, Action::Add) {
         // --- Add more (cumulative) ---
         // The user keeps the already-enforced preferences and picks
         // additional ones from those still violated in the latest plan.
@@ -990,6 +971,7 @@ pub(crate) fn interactive_preference_enforcement(
 
         // Selection loop: same logic as the initial selection but only
         // allows picking from still_violated (not already-enforced or satisfied)
+        let still_violated_set: BTreeSet<usize> = still_violated.iter().copied().collect();
         let new_picks: Vec<usize> = loop {
             let sel_input = match read_interactive_input(
                 "Which preferences to add? ('q' to accept current plan): ",
@@ -1005,7 +987,7 @@ pub(crate) fn interactive_preference_enforcement(
                     // Reject indices that aren't in still_violated
                     let invalid: Vec<usize> = idx
                         .iter()
-                        .filter(|i| !still_violated.contains(i))
+                        .filter(|i| !still_violated_set.contains(i))
                         .copied()
                         .collect();
                     if !invalid.is_empty() {
@@ -1035,49 +1017,18 @@ pub(crate) fn interactive_preference_enforcement(
         // permanent solver constraints), the solver state is already clean.
         selected_indices.clear();
         println!();
-        for (i, entry) in entries.iter().enumerate() {
-            let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
-            let marker = if entry.is_satisfied { " " } else { "*" };
-            println!("  {}{:>2}. [{}] {}", marker, i + 1, status, entry.display);
-        }
+        print_preference_list(&entries);
         println!("\nViolated preferences: {}\n", violated_display.join(", "));
 
-        // Same selection loop as the initial one at the start of the function
-        selected_indices = loop {
-            let sel_input = match read_interactive_input(
-                "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
-            ) {
-                Some(input) => input,
-                None => return,
-            };
-            metrics.steps += 1; // [Accepted|AllSatisfied] (user starts fresh and picks preferences from scratch)
-            match parse_selection(&sel_input, entries.len()) {
-                Ok(SelectionInput::Cancel) => return,
-                Ok(SelectionInput::All) => break violated_indices.clone(),
-                Ok(SelectionInput::Indices(idx)) => {
-                    let non_violated: Vec<usize> = idx
-                        .iter()
-                        .filter(|i| !violated_indices.contains(i))
-                        .copied()
-                        .collect();
-                    if !non_violated.is_empty() {
-                        let names: Vec<String> = non_violated
-                            .iter()
-                            .map(|&i| format!("{} ({})", i + 1, entries[i].name))
-                            .collect();
-                        println!(
-                            "  Already satisfied, cannot select: {}. Try again.",
-                            names.join(", ")
-                        );
-                        continue;
-                    }
-                    break idx;
-                }
-                Err(e) => {
-                    println!("  Error: {}. Try again.", e);
-                    continue;
-                }
-            }
+        // [Accepted|AllSatisfied] (user starts fresh and picks preferences from scratch)
+        selected_indices = match prompt_violated_selection(
+            &entries,
+            &violated_indices,
+            "Which violated preferences do you want to enforce? (e.g. 2,4 or 1-3 or 'all', 'q' to quit): ",
+            &mut metrics.steps,
+        ) {
+            Some(idx) => idx,
+            None => return,
         };
     }
     // After (a) or (n), selected_indices has been updated.
