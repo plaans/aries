@@ -6,5 +6,8 @@ pub use model_impl::*;
 
 pub mod extensions;
 pub mod lang;
+
+#[doc(hidden)]
 pub mod symbols;
+#[doc(hidden)]
 pub mod types;

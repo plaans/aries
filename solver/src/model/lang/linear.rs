@@ -576,6 +576,13 @@ impl From<SignedVar> for ScaledVar {
         }
     }
 }
+impl std::ops::Mul<i32> for VarRef {
+    type Output = ScaledVar;
+
+    fn mul(self, rhs: i32) -> Self::Output {
+        ScaledVar::new(self, rhs)
+    }
+}
 
 /// A normalized version of [`ScaledVar`] that make operating on bounds more efficient and straightfoward.
 struct ScaledVarImpl {
@@ -792,6 +799,17 @@ impl From<ScaledVar> for LinTerm {
         Self::new(value, 0)
     }
 }
+impl TryFrom<LinTerm> for ScaledVar {
+    type Error = ConversionError;
+
+    fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
+        if value.constant == 0 {
+            Ok(value.scaled_var)
+        } else {
+            Err(ConversionError::NotPure)
+        }
+    }
+}
 
 impl TryFrom<LinTerm> for IntCst {
     type Error = ConversionError;
@@ -813,6 +831,7 @@ transitive_conversion!(LinSum, LinTerm, SignedVar);
 transitive_conversion!(LinSum, LinTerm, IAtom);
 transitive_conversion!(LinSum, LinTerm, IVar);
 transitive_conversions!(LinSum, LinTerm, IntCst);
+transitive_conversions!(LinSum, LinTerm, ScaledVar);
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct LinSum {

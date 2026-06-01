@@ -3,7 +3,6 @@
 //!
 //! - [DisjunctionExt] allows querying the value of a disjunction,
 //!   whether it is currently unit, ...
-//! - [AssignmentExt] provides methods to query the value of expressions.
 
 mod disjunction;
 mod domains_ext;

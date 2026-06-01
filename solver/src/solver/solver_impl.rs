@@ -2,12 +2,12 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
-use crate::core::views::{Boundable, Dom, Term, VarView};
+use crate::core::views::{Boundable, Dom, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
-use crate::model::lang::IAtom;
 use crate::model::lang::linear::LinearSum;
 use crate::model::{Constraint, Label, Model, ModelShape};
+use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -866,7 +866,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn minimize(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.minimize_with_callback(objective, |_, _| (), limit)
@@ -874,7 +874,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn minimize_with_callback(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
@@ -883,7 +883,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn maximize(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.maximize_with_callback(objective, |_, _| (), limit)
@@ -891,7 +891,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn maximize_with_callback(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
@@ -900,7 +900,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     fn optimize_with(
         &mut self,
-        objective: IAtom,
+        objective: LinTerm,
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
@@ -908,11 +908,7 @@ impl<Lbl: Label> Solver<Lbl> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
 
-        let opt_var = if minimize {
-            SignedVar::plus(objective.var.variable())
-        } else {
-            SignedVar::minus(objective.var.variable())
-        };
+        let opt_var = if minimize { objective } else { -objective };
         if let Ok(sol) =
             self.minimize_with_assumptions(opt_var, &[], limit, |sol| on_new_solution(sol.lb(objective), sol))?
         {

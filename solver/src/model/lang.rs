@@ -22,12 +22,15 @@ pub use crate::core::Lit;
 pub use atom::Atom;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
+#[doc(hidden)]
 pub use cst::Cst;
+#[doc(hidden)]
 pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
 pub use int_expr::IntExpr;
 pub use linear::{LinearLeq, LinearSum, LinearTerm};
 pub use store::{ModelWrapper, Store};
+#[doc(hidden)]
 pub use sym::{SAtom, SVar};
 pub use validity_scope::*;
 pub use variables::Variable;
@@ -35,6 +38,7 @@ pub use variables::Variable;
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};
 use crate::model::types::TypeId;
 
+#[doc(hidden)]
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub enum Type {
     Sym(TypeId),
@@ -74,6 +78,7 @@ impl Type {
     };
 }
 
+#[doc(hidden)]
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum Kind {
     Bool,

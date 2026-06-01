@@ -150,6 +150,7 @@ impl<Lbl: Label> Model<Lbl> {
         Self::new_with_symbols(Arc::new(SymbolTable::empty()))
     }
 
+    #[doc(hidden)]
     pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         Model {
             shape: ModelShape::new_with_symbols(symbols),
@@ -279,14 +280,21 @@ impl<Lbl: Label> Model<Lbl> {
         BVar::new(dvar)
     }
 
+    pub fn new_variable(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
+        self.state.new_var(lb, ub)
+    }
+
+    #[doc(hidden)]
     pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Lbl>) -> IVar {
         self.create_ivar(lb, ub, None, label)
     }
 
+    #[doc(hidden)]
     pub fn new_fvar(&mut self, num_lb: IntCst, num_ub: IntCst, denom: IntCst, label: impl Into<Lbl>) -> FVar {
         let ivar = self.new_ivar(num_lb, num_ub, label);
         FVar::new(ivar, denom)
     }
+    #[doc(hidden)]
     pub fn new_optional_fvar(
         &mut self,
         num_lb: IntCst,
@@ -299,6 +307,7 @@ impl<Lbl: Label> Model<Lbl> {
         FVar::new(ivar, denom)
     }
 
+    #[doc(hidden)]
     pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> IVar {
         self.create_ivar(lb, ub, Some(presence), label)
     }
@@ -314,10 +323,12 @@ impl<Lbl: Label> Model<Lbl> {
         IVar::new(dvar)
     }
 
+    #[doc(hidden)]
     pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Lbl>) -> SVar {
         self.create_sym_var(tpe, None, label)
     }
 
+    #[doc(hidden)]
     pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<Lbl>) -> SVar {
         self.create_sym_var(tpe, Some(presence.into()), label)
     }

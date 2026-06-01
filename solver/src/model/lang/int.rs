@@ -17,6 +17,8 @@ impl Debug for IVar {
 
 impl IVar {
     pub const ZERO: IVar = IVar(VarRef::ZERO);
+
+    #[doc(hidden)]
     pub const ONE: IVar = IVar(VarRef::ONE);
 
     pub const fn new(dvar: VarRef) -> Self {

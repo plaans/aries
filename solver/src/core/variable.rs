@@ -28,6 +28,7 @@ impl VarRef {
     ///
     /// For efficiency reasons, this special case is not treated separately from the other variables, and it is the responsibility
     /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is `[1,1]`.
+    #[doc(hidden)]
     pub const ONE: VarRef = VarRef::from_u32(1);
 
     pub fn leq(self, i: IntCst) -> Lit {
