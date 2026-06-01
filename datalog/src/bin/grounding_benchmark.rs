@@ -1,9 +1,14 @@
 //! A simple binary for performance analysis and some integration tests.
 
+use std::time::Instant;
+
 use aries_datalog::*;
 
 fn main() {
-    ground(1000, 40);
+    let start = Instant::now();
+    let instances = ground(1001, 100);
+    println!("Instances: {instances}");
+    println!("Runtime: {}s", start.elapsed().as_secs_f32());
 }
 
 fn ground(num_locs: u32, num_bots: u32) -> usize {
