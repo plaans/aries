@@ -25,7 +25,7 @@ pub trait BoolExpr<Ctx: Store> {
     ///     a and b are present. The conjunctive scope is thus the list their presence variable.
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction;
 
-    /// Return a single literal that is true iff all leterals of the conjunctive scope are true.
+    /// Return a single literal that is true if and only if all literals of the conjunctive scope are true.
     fn scope(&self, ctx: &mut Ctx) -> Lit {
         let conj_scope = self.conj_scope(ctx);
         ctx.conjunctive_scope(&conj_scope)
@@ -120,17 +120,6 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
     }
 }
 
-// Derive `impl BoolExpr<_>` for Expression convertible to `ReifExpr`
-crate::impl_reif!(Lit);
-crate::impl_reif!(Or);
-crate::impl_reif!(And);
-crate::impl_reif!(Leq);
-crate::impl_reif!(LinearLeq);
-crate::impl_reif!(EqMax);
-crate::impl_reif!(EqMin);
-crate::impl_reif!(LinLeq);
-
-#[macro_export]
 macro_rules! impl_reif {
     ($A: ty) => {
         impl<Ctx: Store> BoolExpr<Ctx> for $A
@@ -151,6 +140,16 @@ macro_rules! impl_reif {
         }
     };
 }
+
+// Derive `impl BoolExpr<_>` for Expression convertible to `ReifExpr`
+impl_reif!(Lit);
+impl_reif!(Or);
+impl_reif!(And);
+impl_reif!(Leq);
+impl_reif!(LinearLeq);
+impl_reif!(EqMax);
+impl_reif!(EqMin);
+impl_reif!(LinLeq);
 
 #[cfg(test)]
 mod test {
