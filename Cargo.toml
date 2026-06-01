@@ -2,6 +2,7 @@
 
 members = [
     "solver",
+    "datalog",
     "bench/data",
     "bench/bench",
     "env_param",
@@ -29,6 +30,7 @@ async-trait = "0.1"
 bumpalo = { version = "3.19" }
 clap = { version = "4.5", features = ["derive"] }
 comfy-table = "7.0"
+criterion = "0.5.1"
 crossbeam-channel = "0.5"
 derivative = "2.2"
 derive_builder = "0.20"
