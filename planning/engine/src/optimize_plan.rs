@@ -58,7 +58,7 @@ pub enum Explanation {
     InteractiveEnforcePreferences,
 }
 
-pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>, explanations: &[Explanation]) -> Res<()> {
+pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>, explanations: &[Explanation], simulate: Option<crate::simulate_preferences::Strategy>) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, sched, plan_cost_obj) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
@@ -116,15 +116,28 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
         for explanation in explanations {
             match explanation {
                 Explanation::InteractiveEnforcePreferences => {
-                    crate::explain_preferences::interactive_preference_enforcement(
-                        &mut solver,
-                        &encoding,
-                        model,
-                        &sched,
-                        &solution,
-                        &prior_phase_assumptions,
-                        plan_cost_obj,
-                    );
+                    if let Some(strategy) = simulate {
+                        crate::simulate_preferences::simulate_preference_enforcement(
+                            &mut solver.clone(),
+                            &encoding,
+                            model,
+                            &sched,
+                            &solution,
+                            &prior_phase_assumptions,
+                            plan_cost_obj,
+                            strategy,
+                        );
+                    } else {
+                        crate::explain_preferences::interactive_preference_enforcement(
+                            &mut solver,
+                            &encoding,
+                            model,
+                            &sched,
+                            &solution,
+                            &prior_phase_assumptions,
+                            plan_cost_obj,
+                        );
+                    }
                 }
             }
         }

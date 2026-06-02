@@ -25,18 +25,18 @@ use planx::{Model, SimpleGoal};
 use timelines::{EffectOp, IntTerm, Sched, explain::ExplainableSolver};
 
 /// No-op callback for `find_optimal_with_assumptions` (we only need the solution).
-fn noop(_: &Solution) {}
+pub(crate) fn noop(_: &Solution) {}
 
 /// One preference from the PDDL model, with its solver literals and
 /// its satisfaction status in the original optimal plan.
-struct PreferenceEntry {
-    name: String,
+pub(crate) struct PreferenceEntry {
+    pub(crate) name: String,
     /// Solver literals that must all hold for this preference to be satisfied.
-    lits: Vec<Lit>,
+    pub(crate) lits: Vec<Lit>,
     /// Human-readable display string (e.g. "pref0: at(pkg1, loca)").
-    display: String,
+    pub(crate) display: String,
     /// Whether this preference is satisfied in the original optimal solution.
-    is_satisfied: bool,
+    pub(crate) is_satisfied: bool,
 }
 
 /// Parsed result of user input when selecting preferences or dropping them.
@@ -54,13 +54,9 @@ enum SelectionInput {
 //
 //   steps   — total user inputs (valid or not). Measures effort.
 //   outcome — how the session ended:
-//     Accepted     — user saw a plan and accepted it (normal exit).
-//     AllSatisfied — the optimized plan satisfies ALL preferences,
-//                    including unselected ones (side-effect of forcing
-//                    a subset that steers the solver to a good region).
-//     GaveUp       — user quit during conflict resolution, before any
-//                    plan was produced.
-//     Cancelled    — stdin closed (Ctrl-D). Default if no other is set.
+//     Accepted     — session ended with a plan (normal exit, or all
+//                    preferences satisfied automatically).
+//     Cancelled    — user quit or stdin closed before producing a plan.
 //     Exhausted    — user resolved conflicts until no preferences
 //                    remained, then quit instead of re-selecting.
 //
@@ -68,14 +64,12 @@ enum SelectionInput {
 // =====================================================================
 
 #[derive(Clone, Copy)]
-enum Outcome { Accepted, AllSatisfied, GaveUp, Cancelled, Exhausted }
+pub(crate) enum Outcome { Accepted, Cancelled, Exhausted }
 
 impl std::fmt::Display for Outcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Outcome::Accepted => write!(f, "accepted"),
-            Outcome::AllSatisfied => write!(f, "all-satisfied"),
-            Outcome::GaveUp => write!(f, "gave-up"),
             Outcome::Cancelled => write!(f, "cancelled"),
             Outcome::Exhausted => write!(f, "exhausted"),
         }
@@ -154,7 +148,7 @@ fn parse_selection(input: &str, max_index: usize) -> Result<SelectionInput, Stri
 }
 
 /// Print the numbered preference list with satisfaction status.
-fn print_preference_list(entries: &[PreferenceEntry]) {
+pub(crate) fn print_preference_list(entries: &[PreferenceEntry]) {
     for (i, entry) in entries.iter().enumerate() {
         let status = if entry.is_satisfied { "satisfied" } else { "VIOLATED" };
         let marker = if entry.is_satisfied { " " } else { "*" };
@@ -221,7 +215,7 @@ fn read_interactive_input(prompt: &str) -> Option<String> {
 }
 
 /// Convert a solver `Tag` into a human-readable label for conflict/resolution display.
-fn format_tag(tag: &Tag, model: &Model) -> String {
+pub(crate) fn format_tag(tag: &Tag, model: &Model) -> String {
     match tag {
         Tag::EnforceGoal(goal_idx) => {
             let goal = &model.goals[*goal_idx];
@@ -234,7 +228,7 @@ fn format_tag(tag: &Tag, model: &Model) -> String {
 }
 
 /// Compute the total plan cost by summing all present `total-cost` step effects.
-fn compute_plan_cost(sched: &Sched, solution: &Solution) -> Option<IntCst> {
+pub(crate) fn compute_plan_cost(sched: &Sched, solution: &Solution) -> Option<IntCst> {
     let mut total: IntCst = 0;
     let mut found = false;
     for eff in sched.effects.iter() {
@@ -251,7 +245,7 @@ fn compute_plan_cost(sched: &Sched, solution: &Solution) -> Option<IntCst> {
 }
 
 /// Format a value with its delta from a baseline (e.g. "8 (base: 7, +1 extra)").
-fn format_cost_delta(new_val: IntCst, base_val: IntCst) -> String {
+pub(crate) fn format_cost_delta(new_val: IntCst, base_val: IntCst) -> String {
     let delta = new_val - base_val;
     if delta > 0 {
         format!("{} (base: {}, +{} extra)", new_val, base_val, delta)
@@ -275,7 +269,7 @@ fn format_cost_delta(new_val: IntCst, base_val: IntCst) -> String {
 ///   | no        | no             | yes            | gained    | bonus: not requested but now satisfied
 ///   | no        | yes            | no             | RELAXED   | side effect: had to sacrifice this one
 ///   | no        | no             | no             | violated  | was and remains violated (not selected)
-fn print_preference_status(sol: &Solution, entries: &[PreferenceEntry], selected_indices: &[usize]) {
+pub(crate) fn print_preference_status(sol: &Solution, entries: &[PreferenceEntry], selected_indices: &[usize]) {
     let selected_set: BTreeSet<usize> = selected_indices.iter().copied().collect();
     println!("    Preference status in resulting plan:\n");
     for (i, entry) in entries.iter().enumerate() {
@@ -297,7 +291,7 @@ fn print_preference_status(sol: &Solution, entries: &[PreferenceEntry], selected
 
 /// Print a summary of which preferences changed status compared to the original plan.
 /// Only shows preferences whose satisfaction flipped (newly relaxed or newly gained).
-fn print_preference_changes(
+pub(crate) fn print_preference_changes(
     sol: &Solution,
     forced_prefs: &[&str],
     entries: &[PreferenceEntry],
@@ -323,6 +317,341 @@ fn print_preference_changes(
             println!("      Also gained: {}", newly_satisfied.join(", "));
         }
     }
+}
+
+// =====================================================================
+// Shared pipeline helpers (used by both interactive and simulated modes)
+// =====================================================================
+
+/// Build preference entries from the encoding and model, tagged with satisfaction status.
+pub(crate) fn build_preference_entries(
+    encoding: &Encoding,
+    model: &Model,
+    optimal_solution: &Solution,
+) -> Vec<PreferenceEntry> {
+    encoding
+        .preferences
+        .iter()
+        .map(|(name, lits)| {
+            let is_satisfied = lits.iter().all(|lit| optimal_solution.entails(*lit));
+            let pref = model.preferences.iter().find(|p| p.name.to_string() == *name);
+            let display = pref
+                .map(|p| {
+                    let expr_str = match &p.goal.goal_expression {
+                        SimpleGoal::HoldsDuring(_, expr_id)
+                        | SimpleGoal::SometimeDuring(_, expr_id)
+                        | SimpleGoal::AtMostOnceDuring(_, expr_id) => {
+                            format!("{}", &model.env / *expr_id)
+                        }
+                        _ => format!("{}", &model.env / &p.goal),
+                    };
+                    format!("{}: {}", p.name, expr_str)
+                })
+                .unwrap_or_else(|| name.clone());
+            PreferenceEntry {
+                name: name.clone(),
+                lits: lits.clone(),
+                display,
+                is_satisfied,
+            }
+        })
+        .collect()
+}
+
+/// Test whether the selected preferences are jointly feasible within the cost bound.
+pub(crate) fn probe_feasibility(
+    solver: &ExplainableSolver<Tag>,
+    obj: LinTerm,
+    selected_pref_lits: &[Lit],
+) -> bool {
+    let mut probe = solver.clone();
+    let all_enabler_lits: Vec<Lit> = probe.enablers().keys().copied().collect();
+    let mut assumptions = all_enabler_lits;
+    assumptions.extend(selected_pref_lits);
+    probe.find_optimal_with_assumptions(obj, noop, &assumptions).is_some()
+}
+
+/// Collected MUS (conflicts) and MCS (resolutions) from the MARCO algorithm.
+pub(crate) struct MusMcsResult {
+    pub muses: Vec<BTreeSet<Tag>>,
+    pub mcses: Vec<BTreeSet<Tag>>,
+}
+
+/// Run MUS/MCS analysis with per-preference coverage limits.
+pub(crate) fn collect_mus_mcs(
+    solver: &ExplainableSolver<Tag>,
+    entries: &[PreferenceEntry],
+    selected_indices: &[usize],
+    selected_names: &BTreeSet<String>,
+) -> MusMcsResult {
+    let mut explain_solver = solver.clone();
+    let mut extra = BTreeMap::new();
+    for &idx in selected_indices {
+        for &lit in &entries[idx].lits {
+            extra.insert(lit, Tag::EnforcePreference(entries[idx].name.clone()));
+        }
+    }
+    for entry in entries.iter().filter(|e| e.is_satisfied) {
+        for &lit in &entry.lits {
+            extra.insert(lit, Tag::EnforcePreference(entry.name.clone()));
+        }
+    }
+
+    const PER_PREF_LIMIT: usize = 2;
+    let mut mus_count_per_pref: BTreeMap<String, usize> = selected_names
+        .iter()
+        .map(|n| (n.clone(), 0))
+        .collect();
+    let mut mcs_count_per_pref: BTreeMap<String, usize> = mus_count_per_pref.clone();
+    let mut muses: Vec<BTreeSet<Tag>> = Vec::new();
+    let mut mcses: Vec<BTreeSet<Tag>> = Vec::new();
+    for result in explain_solver.explain_unsat_with_filter(
+        |t| matches!(t, Tag::EnforceGoal(_) | Tag::CostBound),
+        &extra,
+    ) {
+        match &result {
+            MusMcs::Mus(s) => {
+                let involved: Vec<&String> = s.iter().filter_map(|t| match t {
+                    Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name),
+                    _ => None,
+                }).collect();
+                let dominated = involved.iter().all(|n| mus_count_per_pref[n.as_str()] >= PER_PREF_LIMIT);
+                if !dominated {
+                    for n in &involved {
+                        *mus_count_per_pref.get_mut(n.as_str()).unwrap() += 1;
+                    }
+                    muses.push(s.clone());
+                }
+            }
+            MusMcs::Mcs(s) => {
+                let involved: Vec<&String> = s.iter().filter_map(|t| match t {
+                    Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name),
+                    _ => None,
+                }).collect();
+                let dominated = involved.iter().all(|n| mcs_count_per_pref[n.as_str()] >= PER_PREF_LIMIT);
+                if !dominated {
+                    for n in &involved {
+                        *mcs_count_per_pref.get_mut(n.as_str()).unwrap() += 1;
+                    }
+                    mcses.push(s.clone());
+                }
+            }
+        }
+        let all_mus_covered = mus_count_per_pref.values().all(|&c| c >= PER_PREF_LIMIT);
+        let all_mcs_covered = mcs_count_per_pref.values().all(|&c| c >= PER_PREF_LIMIT);
+        if all_mus_covered && all_mcs_covered {
+            break;
+        }
+    }
+    MusMcsResult { muses, mcses }
+}
+
+/// Display MCS resolutions: each MCS is a minimal set of assumptions to drop
+/// to restore feasibility. Tags are split into "to_drop" (selected preferences)
+/// and "side_effects" (goals, cost bound, satisfied preferences).
+pub(crate) fn display_resolutions(
+    mcses: &[BTreeSet<Tag>],
+    selected_names: &BTreeSet<String>,
+    model: &Model,
+) -> usize {
+    struct Resolution {
+        to_drop: Vec<String>,
+        side_effects: Vec<String>,
+    }
+    let resolutions: Vec<Resolution> = mcses
+        .iter()
+        .map(|mcs| {
+            let mut to_drop = Vec::new();
+            let mut side_effects = Vec::new();
+            for tag in mcs.iter() {
+                let label = format_tag(tag, model);
+                match tag {
+                    Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => {
+                        to_drop.push(label);
+                    }
+                    _ => {
+                        side_effects.push(label);
+                    }
+                }
+            }
+            Resolution { to_drop, side_effects }
+        })
+        .filter(|r| !r.to_drop.is_empty() || !r.side_effects.is_empty())
+        .collect();
+
+    if !resolutions.is_empty() {
+        println!("  Proposed resolutions:\n");
+        for (i, res) in resolutions.iter().enumerate() {
+            let mut parts = Vec::new();
+            if !res.to_drop.is_empty() {
+                parts.push(format!("drop {}", res.to_drop.join(", ")));
+            }
+            if !res.side_effects.is_empty() {
+                parts.push(format!("relax {}", res.side_effects.join(", ")));
+            }
+            println!("    R{}: {}", i + 1, parts.join("; "));
+        }
+        println!();
+    }
+    resolutions.len()
+}
+
+/// Display MUS conflicts, split into structural (incompatible) vs budget (exceed cost bound).
+pub(crate) fn display_conflicts(
+    muses: &[BTreeSet<Tag>],
+    selected_names: &BTreeSet<String>,
+    model: &Model,
+) {
+    if muses.is_empty() {
+        return;
+    }
+    let has_cost_bound = |mus: &BTreeSet<Tag>| mus.iter().any(|t| matches!(t, Tag::CostBound));
+    let structural: Vec<_> = muses.iter().filter(|m| !has_cost_bound(m)).collect();
+    let budget: Vec<_> = muses.iter().filter(|m| has_cost_bound(m)).collect();
+    let mut conflict_num = 1;
+    if !structural.is_empty() {
+        println!("  Structural conflicts (incompatible preferences):\n");
+        for mus in &structural {
+            let tags: Vec<_> = mus.iter().map(|t| {
+                let label = format_tag(t, model);
+                match t {
+                    Tag::EnforcePreference(name) if !selected_names.contains(name.as_str()) => {
+                        format!("{} (satisfied)", label)
+                    }
+                    _ => label,
+                }
+            }).collect();
+            println!("    C{}: {}", conflict_num, tags.join(" + "));
+            conflict_num += 1;
+        }
+        println!();
+    }
+    if !budget.is_empty() {
+        println!("  Budget conflicts (exceed cost bound):\n");
+        for mus in &budget {
+            let tags: Vec<_> = mus.iter().filter(|t| !matches!(t, Tag::CostBound)).map(|t| {
+                let label = format_tag(t, model);
+                match t {
+                    Tag::EnforcePreference(name) if !selected_names.contains(name.as_str()) => {
+                        format!("{} (satisfied)", label)
+                    }
+                    _ => label,
+                }
+            }).collect();
+            let verb = if tags.len() > 1 { "exceed" } else { "exceeds" };
+            println!("    C{}: {} {} cost bound", conflict_num, tags.join(" + "), verb);
+            conflict_num += 1;
+        }
+        println!();
+    }
+}
+
+/// Run Phase 1: enforce selected preferences within the original cost bound.
+/// Returns the solution if feasible.
+pub(crate) fn run_phase1(
+    solver: &mut ExplainableSolver<Tag>,
+    encoding: &Encoding,
+    sched: &Sched,
+    entries: &[PreferenceEntry],
+    selected_indices: &[usize],
+    selected_pref_lits: &[Lit],
+    obj: LinTerm,
+    optimal_obj_val: IntCst,
+    optimal_plan_cost: Option<IntCst>,
+) -> Option<Solution> {
+    let selected_names_list: Vec<&str> = selected_indices
+        .iter()
+        .map(|&i| entries[i].name.as_str())
+        .collect();
+    let selected_names_display = selected_names_list.join(", ");
+
+    let all_enabler_lits: Vec<Lit> = solver.enablers().keys().copied().collect();
+    let mut assumptions_bounded = all_enabler_lits;
+    assumptions_bounded.extend(selected_pref_lits);
+
+    println!("\n===== Phase 1: Enforce {{ {} }} within cost bound =====\n", selected_names_display);
+
+    let bounded_sol = solver.find_optimal_with_assumptions(obj, noop, &assumptions_bounded);
+
+    if let Some(ref sol) = bounded_sol {
+        print_preference_status(sol, entries, selected_indices);
+        let new_obj = sol.eval(obj).unwrap();
+        let new_cost = compute_plan_cost(sched, sol);
+        println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
+        if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
+            println!("    Plan cost: {}", format_cost_delta(fc, oc));
+        }
+        print_preference_changes(sol, &selected_names_list, entries);
+        println!("    Resulting plan:\n{}", encoding.plan(sol));
+    }
+
+    bounded_sol
+}
+
+/// Run Phase 2: relax cost bound and minimize plan cost.
+/// Returns the solution if feasible.
+pub(crate) fn run_phase2(
+    solver: &mut ExplainableSolver<Tag>,
+    encoding: &Encoding,
+    sched: &Sched,
+    entries: &[PreferenceEntry],
+    selected_indices: &[usize],
+    selected_pref_lits: &[Lit],
+    obj: LinTerm,
+    optimal_obj_val: IntCst,
+    optimal_plan_cost: Option<IntCst>,
+    plan_cost_obj: IntTerm,
+) -> Option<Solution> {
+    let selected_names_list: Vec<&str> = selected_indices
+        .iter()
+        .map(|&i| entries[i].name.as_str())
+        .collect();
+
+    println!("  Infeasible within cost bound.");
+
+    let mut assumptions_unbounded: Vec<Lit> = solver
+        .enablers()
+        .iter()
+        .filter(|(_, tag)| !matches!(tag, Tag::CostBound))
+        .map(|(lit, _)| *lit)
+        .collect();
+    assumptions_unbounded.extend(selected_pref_lits);
+
+    println!("\n===== Phase 2: Relaxing cost bound (minimizing plan cost) =====\n");
+    if let Some(sol) = solver.find_optimal_with_assumptions(plan_cost_obj, noop, &assumptions_unbounded) {
+        print_preference_status(&sol, entries, selected_indices);
+        let new_cost = compute_plan_cost(sched, &sol);
+        if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
+            println!("    Plan cost: {}", format_cost_delta(fc, oc));
+        }
+        let new_obj = sol.eval(obj).unwrap();
+        println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
+        print_preference_changes(&sol, &selected_names_list, entries);
+        println!("    Resulting plan:\n{}", encoding.plan(&sol));
+        Some(sol)
+    } else {
+        println!("    Structurally infeasible: cannot be satisfied even without a cost bound.");
+        None
+    }
+}
+
+/// Compute which preferences are still violated in the latest solution
+/// and are not in the currently selected set.
+pub(crate) fn compute_still_violated(
+    entries: &[PreferenceEntry],
+    selected_indices: &[usize],
+    solution: &Solution,
+) -> Vec<usize> {
+    let selected_set: BTreeSet<usize> = selected_indices.iter().copied().collect();
+    entries
+        .iter()
+        .enumerate()
+        .filter(|(i, e)| {
+            !selected_set.contains(i)
+                && !e.lits.iter().all(|lit| solution.entails(*lit))
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// Main entry point: interactive preference enforcement loop.
@@ -360,33 +689,7 @@ pub(crate) fn interactive_preference_enforcement(
     let optimal_plan_cost = compute_plan_cost(sched, optimal_solution);
 
     // --- Build preference entries with satisfaction status ---
-    let entries: Vec<PreferenceEntry> = encoding
-        .preferences
-        .iter()
-        .map(|(name, lits)| {
-            let is_satisfied = lits.iter().all(|lit| optimal_solution.entails(*lit));
-            let pref = model.preferences.iter().find(|p| p.name.to_string() == *name);
-            let display = pref
-                .map(|p| {
-                    let expr_str = match &p.goal.goal_expression {
-                        SimpleGoal::HoldsDuring(_, expr_id)
-                        | SimpleGoal::SometimeDuring(_, expr_id)
-                        | SimpleGoal::AtMostOnceDuring(_, expr_id) => {
-                            format!("{}", &model.env / *expr_id)
-                        }
-                        _ => format!("{}", &model.env / &p.goal),
-                    };
-                    format!("{}: {}", p.name, expr_str)
-                })
-                .unwrap_or_else(|| name.clone());
-            PreferenceEntry {
-                name: name.clone(),
-                lits: lits.clone(),
-                display,
-                is_satisfied,
-            }
-        })
-        .collect();
+    let entries = build_preference_entries(encoding, model, optimal_solution);
 
     // --- Display initial preference overview ---
     println!("\n===== Preference satisfaction (interactive mode) =====\n");
@@ -476,187 +779,20 @@ pub(crate) fn interactive_preference_enforcement(
             .map(|&i| entries[i].name.clone())
             .collect();
 
-        // Feasibility probe: clone solver to avoid side effects, use all enablers
-        // INCLUDING cost bound (to test feasibility within the budget).
-        let mut probe = solver.clone();
-        let all_enabler_lits_probe: Vec<Lit> = probe.enablers().keys().copied().collect();
-        let mut assumptions_with_cost = all_enabler_lits_probe;
-        assumptions_with_cost.extend(&selected_pref_lits);
-
-        if probe
-            .find_optimal_with_assumptions(obj, noop, &assumptions_with_cost)
-            .is_some()
-        {
-            // Selection is feasible within the cost bound — proceed to Phase 1
+        if probe_feasibility(solver, obj, &selected_pref_lits) {
             break;
         }
 
         // --- Selection is infeasible within cost bound: explain via MUS/MCS ---
         println!("\nThe selected preferences cannot all be enforced within the cost bound.\n");
 
-        // Set up MUS/MCS analysis: add selected + satisfied preferences as extra assumptions
-        // so the MARCO algorithm can identify which subsets conflict.
-        let mut explain_solver = solver.clone();
-        let mut extra = BTreeMap::new();
-        for &idx in &selected_indices {
-            for &lit in &entries[idx].lits {
-                extra.insert(lit, Tag::EnforcePreference(entries[idx].name.clone()));
-            }
-        }
-        // Also include satisfied preferences — they may appear in conflicts
-        // (enforcing a violated pref may conflict with an already-satisfied one)
-        for entry in entries.iter().filter(|e| e.is_satisfied) {
-            for &lit in &entry.lits {
-                extra.insert(lit, Tag::EnforcePreference(entry.name.clone()));
-            }
-        }
+        let mus_mcs = collect_mus_mcs(solver, &entries, &selected_indices, &selected_names);
+        let muses = mus_mcs.muses;
+        let mcses = mus_mcs.mcses;
 
-        // Collect MUS (conflicts) and MCS (resolutions) with per-preference limits.
-        // Instead of a global cap (e.g. "first 5"), we collect up to PER_PREF_LIMIT
-        // MUS and MCS entries for each selected preference, ensuring every preference
-        // gets adequate coverage in the explanations.
-        const PER_PREF_LIMIT: usize = 2;
-        let mut mus_count_per_pref: BTreeMap<String, usize> = selected_names
-            .iter()
-            .map(|n| (n.clone(), 0))
-            .collect();
-        let mut mcs_count_per_pref: BTreeMap<String, usize> = mus_count_per_pref.clone();
-        let mut muses: Vec<BTreeSet<Tag>> = Vec::new();
-        let mut mcses: Vec<BTreeSet<Tag>> = Vec::new();
-        for result in explain_solver.explain_unsat_with_filter(
-            |t| matches!(t, Tag::EnforceGoal(_) | Tag::CostBound),
-            &extra,
-        ) {
-            match &result {
-                MusMcs::Mus(s) => {
-                    // Count which selected preferences this MUS covers
-                    let involved: Vec<&String> = s.iter().filter_map(|t| match t {
-                        Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name),
-                        _ => None,
-                    }).collect();
-                    // Skip if all involved preferences already have enough MUS entries
-                    let dominated = involved.iter().all(|n| mus_count_per_pref[n.as_str()] >= PER_PREF_LIMIT);
-                    if !dominated {
-                        for n in &involved {
-                            *mus_count_per_pref.get_mut(n.as_str()).unwrap() += 1;
-                        }
-                        muses.push(s.clone());
-                    }
-                }
-                MusMcs::Mcs(s) => {
-                    let involved: Vec<&String> = s.iter().filter_map(|t| match t {
-                        Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name),
-                        _ => None,
-                    }).collect();
-                    let dominated = involved.iter().all(|n| mcs_count_per_pref[n.as_str()] >= PER_PREF_LIMIT);
-                    if !dominated {
-                        for n in &involved {
-                            *mcs_count_per_pref.get_mut(n.as_str()).unwrap() += 1;
-                        }
-                        mcses.push(s.clone());
-                    }
-                }
-            }
-            // Stop once every selected preference has enough MUS and MCS entries
-            let all_mus_covered = mus_count_per_pref.values().all(|&c| c >= PER_PREF_LIMIT);
-            let all_mcs_covered = mcs_count_per_pref.values().all(|&c| c >= PER_PREF_LIMIT);
-            if all_mus_covered && all_mcs_covered {
-                break;
-            }
-        }
+        display_conflicts(&muses, &selected_names, model);
 
-        // --- Display conflicts (MUS), split into structural vs budget ---
-        // Structural: preferences that are mutually incompatible regardless of cost.
-        // Budget: preferences that could coexist but their combined cost exceeds the bound.
-        if !muses.is_empty() {
-            let has_cost_bound = |mus: &BTreeSet<Tag>| mus.iter().any(|t| matches!(t, Tag::CostBound));
-            let structural: Vec<_> = muses.iter().filter(|m| !has_cost_bound(m)).collect();
-            let budget: Vec<_> = muses.iter().filter(|m| has_cost_bound(m)).collect();
-
-            let mut conflict_num = 1;
-
-            if !structural.is_empty() {
-                println!("  Structural conflicts (incompatible preferences):\n");
-                for mus in &structural {
-                    let tags: Vec<_> = mus.iter().map(|t| {
-                        let label = format_tag(t, model);
-                        // Annotate non-selected preferences so the user knows they weren't chosen
-                        match t {
-                            Tag::EnforcePreference(name) if !selected_names.contains(name.as_str()) => {
-                                format!("{} (satisfied)", label)
-                            }
-                            _ => label,
-                        }
-                    }).collect();
-                    println!("    C{}: {}", conflict_num, tags.join(" + "));
-                    conflict_num += 1;
-                }
-                println!();
-            }
-
-            if !budget.is_empty() {
-                println!("  Budget conflicts (exceed cost bound):\n");
-                for mus in &budget {
-                    // Filter out CostBound tag — it's implicit in the "exceed cost bound" phrasing
-                    let tags: Vec<_> = mus.iter().filter(|t| !matches!(t, Tag::CostBound)).map(|t| {
-                        let label = format_tag(t, model);
-                        match t {
-                            Tag::EnforcePreference(name) if !selected_names.contains(name.as_str()) => {
-                                format!("{} (satisfied)", label)
-                            }
-                            _ => label,
-                        }
-                    }).collect();
-                    let verb = if tags.len() > 1 { "exceed" } else { "exceeds" };
-                    println!("    C{}: {} {} cost bound", conflict_num, tags.join(" + "), verb);
-                    conflict_num += 1;
-                }
-                println!();
-            }
-        }
-
-        // --- Display resolutions (MCS) ---
-        // Each MCS is a minimal set of assumptions to drop to restore feasibility.
-        // We separate tags into "to_drop" (selected preferences) and "side_effects" (other tags).
-        struct Resolution {
-            to_drop: Vec<String>,
-            side_effects: Vec<String>,
-        }
-        let resolutions: Vec<Resolution> = mcses
-            .iter()
-            .map(|mcs| {
-                let mut to_drop = Vec::new();
-                let mut side_effects = Vec::new();
-                for tag in mcs.iter() {
-                    let label = format_tag(tag, model);
-                    match tag {
-                        Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => {
-                            to_drop.push(label);
-                        }
-                        _ => {
-                            side_effects.push(label);
-                        }
-                    }
-                }
-                Resolution { to_drop, side_effects }
-            })
-            .filter(|r| !r.to_drop.is_empty() || !r.side_effects.is_empty())
-            .collect();
-
-        if !resolutions.is_empty() {
-            println!("  Proposed resolutions:\n");
-            for (i, res) in resolutions.iter().enumerate() {
-                let mut parts = Vec::new();
-                if !res.to_drop.is_empty() {
-                    parts.push(format!("drop {}", res.to_drop.join(", ")));
-                }
-                if !res.side_effects.is_empty() {
-                    parts.push(format!("relax {}", res.side_effects.join(", ")));
-                }
-                println!("    R{}: {}", i + 1, parts.join("; "));
-            }
-            println!();
-        }
+        let num_resolutions = display_resolutions(&mcses, &selected_names, model);
 
         // Show currently selected preferences for reference during drop interaction
         println!("  Currently selected preferences:\n");
@@ -666,7 +802,7 @@ pub(crate) fn interactive_preference_enforcement(
         println!();
 
         // --- Prompt user to apply a resolution, drop preferences, or relax the cost bound ---
-        let has_resolutions = !resolutions.is_empty();
+        let has_resolutions = num_resolutions > 0;
         let prompt = if has_resolutions {
             "Apply a resolution (R1, R2, ...), drop manually (numbers), 'p' to proceed ignoring cost bound, 'q' to quit: "
         } else {
@@ -677,7 +813,7 @@ pub(crate) fn interactive_preference_enforcement(
             Some(input) => input,
             None => return,
         };
-        metrics.steps += 1; // [GaveUp|Exhausted] (user resolves a conflict: drop, apply resolution, proceed, or quit)
+        metrics.steps += 1; // [Cancelled|Exhausted] (user resolves a conflict: drop, apply resolution, proceed, or quit)
         let trimmed = user_input.trim();
 
         // Handle "proceed ignoring cost bound" — skip to Phase 2
@@ -690,8 +826,7 @@ pub(crate) fn interactive_preference_enforcement(
         if has_resolutions && trimmed.to_lowercase().starts_with('r') {
             if let Some(after_r) = trimmed.get(1..) {
                 if let Ok(r_idx) = after_r.trim().parse::<usize>() {
-                    if r_idx >= 1 && r_idx <= resolutions.len() {
-                        let res = &resolutions[r_idx - 1];
+                    if r_idx >= 1 && r_idx <= num_resolutions {
                         // Drop the selected preferences that the MCS says to remove
                         let prefs_to_drop: BTreeSet<&str> = mcses[r_idx - 1]
                             .iter()
@@ -711,8 +846,12 @@ pub(crate) fn interactive_preference_enforcement(
                             keep
                         });
 
-                        if !res.side_effects.is_empty() {
-                            println!("  Note: {} may also be affected", res.side_effects.join(", "));
+                        let side_effects: Vec<String> = mcses[r_idx - 1].iter()
+                            .filter(|tag| !matches!(tag, Tag::EnforcePreference(name) if selected_names.contains(name.as_str())))
+                            .map(|tag| format_tag(tag, model))
+                            .collect();
+                        if !side_effects.is_empty() {
+                            println!("  Note: {} may also be affected", side_effects.join(", "));
                         }
                         if selected_indices.is_empty() {
                             println!("\nAll selected preferences were dropped.");
@@ -727,8 +866,8 @@ pub(crate) fn interactive_preference_enforcement(
 
         // Handle manual drop by preference numbers
         match parse_selection(trimmed, selected_indices.len()) {
-            // [GaveUp] (user abandoned during conflict resolution without producing a plan)
-            Ok(SelectionInput::Cancel) => { metrics.outcome = Outcome::GaveUp; return; }
+            // [Cancelled] (user abandoned during conflict resolution without producing a plan)
+            Ok(SelectionInput::Cancel) => { metrics.outcome = Outcome::Cancelled; return; }
             Ok(SelectionInput::All) => {
                 selected_indices.clear();
                 println!("All preferences dropped.");
@@ -789,116 +928,32 @@ pub(crate) fn interactive_preference_enforcement(
         continue; // back to outer loop with new selection
     }
 
-    // =====================================================================
-    // Phase 1: Enforce selected preferences within the original cost bound
-    //
-    // All enablers (including CostBound) are active, plus the preference
-    // literals for the selected set. If the solver finds a solution, it means
-    // we can enforce the preferences without exceeding the original budget.
-    // Skipped when the user chose 'p' (proceed ignoring cost bound).
-    // =====================================================================
     let selected_pref_lits: Vec<Lit> = selected_indices
         .iter()
         .flat_map(|&i| entries[i].lits.iter().copied())
         .collect();
-    let selected_names_list: Vec<&str> = selected_indices
-        .iter()
-        .map(|&i| entries[i].name.as_str())
-        .collect();
-    let selected_names_display = selected_names_list.join(", ");
 
     let mut latest_solution: Option<Solution> = None;
 
     if !skip_to_phase2 {
-        let all_enabler_lits: Vec<Lit> = solver.enablers().keys().copied().collect();
-        let mut assumptions_bounded = all_enabler_lits;
-        assumptions_bounded.extend(&selected_pref_lits);
-
-        println!("\n===== Phase 1: Enforce {{ {} }} within cost bound =====\n", selected_names_display);
-
-        let bounded_sol = solver.find_optimal_with_assumptions(obj, noop, &assumptions_bounded);
-
-        if let Some(ref sol) = bounded_sol {
-            print_preference_status(sol, &entries, &selected_indices);
-            let new_obj = sol.eval(obj).unwrap();
-            let new_cost = compute_plan_cost(sched, sol);
-            println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
-            if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
-                println!("    Plan cost: {}", format_cost_delta(fc, oc));
-            }
-            print_preference_changes(sol, &selected_names_list, &entries);
-            println!("    Resulting plan:\n{}", encoding.plan(sol));
-        }
-
-        latest_solution = bounded_sol;
+        latest_solution = run_phase1(
+            solver, encoding, sched, &entries, &selected_indices,
+            &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost,
+        );
     }
 
-    // =====================================================================
-    // Phase 2: Relax cost bound and minimize plan cost
-    //
-    // Entered when Phase 1 failed or when the user chose 'p' (proceed
-    // ignoring cost bound) during conflict resolution.
-    // =====================================================================
     if latest_solution.is_none() {
-        println!("  Infeasible within cost bound.");
         if let Some(cost_obj) = plan_cost_obj {
-            let mut assumptions_unbounded: Vec<Lit> = solver
-                .enablers()
-                .iter()
-                .filter(|(_, tag)| !matches!(tag, Tag::CostBound))
-                .map(|(lit, _)| *lit)
-                .collect();
-            assumptions_unbounded.extend(&selected_pref_lits);
-
-            println!("\n===== Phase 2: Relaxing cost bound (minimizing plan cost) =====\n");
-            if let Some(sol) = solver.find_optimal_with_assumptions(cost_obj, noop, &assumptions_unbounded) {
-                print_preference_status(&sol, &entries, &selected_indices);
-                let new_cost = compute_plan_cost(sched, &sol);
-                if let (Some(fc), Some(oc)) = (new_cost, optimal_plan_cost) {
-                    println!("    Plan cost: {}", format_cost_delta(fc, oc));
-                }
-                let new_obj = sol.eval(obj).unwrap();
-                println!("    Objective: {}", format_cost_delta(new_obj, optimal_obj_val));
-                print_preference_changes(&sol, &selected_names_list, &entries);
-                println!("    Resulting plan:\n{}", encoding.plan(&sol));
-                latest_solution = Some(sol);
-            } else {
-                println!("    Structurally infeasible: cannot be satisfied even without a cost bound.");
-            }
+            latest_solution = run_phase2(
+                solver, encoding, sched, &entries, &selected_indices,
+                &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost, cost_obj,
+            );
         }
     }
 
-    // =====================================================================
-    // Continuation: add more preferences, start fresh, or accept and quit
-    //
-    // After Phase 1/2, we check which preferences are still violated in
-    // the produced plan. If there are none, the user has achieved full
-    // satisfaction and we exit. Otherwise, we offer three options:
-    //   (a) Add more — cumulative: keep the currently enforced set and
-    //       pick additional violated preferences to enforce on top.
-    //   (n) New selection — forget all previous enforcements and start
-    //       from scratch with the original violated preferences list.
-    //   (q) Quit — accept the current plan as-is.
-    //
-    // After (a) or (n), selected_indices is updated and the outer loop
-    // repeats: conflict detection → Phase 1/2 → continuation.
-    // =====================================================================
-
-    // Find preferences that are violated in the latest plan AND are not
-    // already in the enforced set. These are candidates for "add more".
-    let selected_set: BTreeSet<usize> = selected_indices.iter().copied().collect();
     let still_violated: Vec<usize> = if let Some(ref sol) = latest_solution {
-        entries
-            .iter()
-            .enumerate()
-            .filter(|(i, e)| {
-                !selected_set.contains(i)
-                    && !e.lits.iter().all(|lit| sol.entails(*lit))
-            })
-            .map(|(i, _)| i)
-            .collect()
+        compute_still_violated(&entries, &selected_indices, sol)
     } else {
-        // Both phases failed — no solution to evaluate, nothing to add to
         Vec::new()
     };
 
@@ -909,8 +964,7 @@ pub(crate) fn interactive_preference_enforcement(
     // If every preference is satisfied, there's nothing left to explore
     if latest_solution.is_some() && still_violated.is_empty() {
         println!("\nAll preferences are now satisfied.");
-        // [AllSatisfied] (plan satisfies all preferences, including unselected ones — side-effect of optimization)
-        metrics.outcome = Outcome::AllSatisfied;
+        metrics.outcome = Outcome::Accepted;
         break;
     }
 
@@ -979,7 +1033,7 @@ pub(crate) fn interactive_preference_enforcement(
                 Some(input) => input,
                 None => return,
             };
-            metrics.steps += 1; // [Accepted|AllSatisfied] (user picks additional preferences to enforce on top of current ones)
+            metrics.steps += 1; // [Accepted] (user picks additional preferences to enforce on top of current ones)
             match parse_selection(&sel_input, entries.len()) {
                 Ok(SelectionInput::Cancel) => return,
                 Ok(SelectionInput::All) => break still_violated.clone(),
@@ -1020,7 +1074,7 @@ pub(crate) fn interactive_preference_enforcement(
         print_preference_list(&entries);
         println!("\nViolated preferences: {}\n", violated_display.join(", "));
 
-        // [Accepted|AllSatisfied] (user starts fresh and picks preferences from scratch)
+        // [Accepted] (user starts fresh and picks preferences from scratch)
         selected_indices = match prompt_violated_selection(
             &entries,
             &violated_indices,

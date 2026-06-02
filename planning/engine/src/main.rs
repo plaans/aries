@@ -3,6 +3,7 @@ pub(crate) mod explain_preferences;
 mod generate;
 pub(crate) mod optimize_plan;
 mod repair;
+pub(crate) mod simulate_preferences;
 mod validate;
 
 use std::{io::IsTerminal, path::PathBuf};
@@ -130,6 +131,10 @@ pub struct OptimizePlan {
     /// Generate explanations about the optimal plan. Accepts one or more explanation types.
     #[arg(short, long, num_args(1..))]
     explain: Vec<optimize_plan::Explanation>,
+    /// Replace interactive input with an automated simulation strategy.
+    /// Requires -e interactive-enforce-preferences.
+    #[arg(long)]
+    simulate: Option<simulate_preferences::Strategy>,
 }
 
 #[derive(Parser, Debug)]
@@ -303,7 +308,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         Some(path) => Some(path.clone()),
     };
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain)
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate)
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
