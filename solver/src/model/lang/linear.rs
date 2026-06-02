@@ -563,10 +563,10 @@ impl From<SignedVar> for ScaledVar {
         }
     }
 }
-impl std::ops::Mul<i32> for VarRef {
+impl std::ops::Mul<IntCst> for VarRef {
     type Output = ScaledVar;
 
-    fn mul(self, rhs: i32) -> Self::Output {
+    fn mul(self, rhs: IntCst) -> Self::Output {
         ScaledVar::new(self, rhs)
     }
 }

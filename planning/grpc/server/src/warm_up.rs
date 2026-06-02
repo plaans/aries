@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use aries::{ core::IntCst};
+use aries::core::IntCst;
 use aries_planning::chronicles::{plan::ActionInstance, Problem, TIME_SCALE};
 use aries_planning::legacy::*;
 use unified_planning as up;
