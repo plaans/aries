@@ -1,15 +1,16 @@
-use crate::collections::id_map::IdMap;
-use crate::core::{IntCst, u32_to_cst};
-use crate::create_ref_type;
-use crate::model::types::{TypeHierarchy, TypeId};
+use crate::legacy::*;
 use anyhow::*;
+use aries::collections::id_map::IdMap;
+use aries::core::{u32_to_cst, IntCst};
+use aries::create_ref_type;
+use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
-use crate::collections::ref_store::RefVec;
-use crate::utils::input::Sym;
+use aries::collections::ref_store::RefVec;
+use aries::utils::input::Sym;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to
@@ -238,7 +239,7 @@ impl PartialEq for TypedSym {
         self.sym == other.sym
     }
 }
-impl Eq for TypedSym {}
+impl std::cmp::Eq for TypedSym {}
 
 impl Hash for TypedSym {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -267,8 +268,7 @@ impl From<TypedSym> for SymId {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::model::types::TypeHierarchy;
-    use crate::utils::enumerate;
+    use aries::utils::enumerate;
     use streaming_iterator::StreamingIterator;
 
     #[test]

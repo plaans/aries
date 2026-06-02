@@ -329,7 +329,10 @@ mod tests {
         let x3 = solver.model.new_ivar(0, 10, "x3");
 
         let soft_constraints = [lt(x0, x1), lt(x1, x2), lt(x2, x0), lt(x0, x2), lt(x3, 5), geq(x3, 5)];
-        let soft_reiflits = soft_constraints.iter().map(|sc| solver.half_reify(*sc)).collect_vec();
+        let soft_reiflits = soft_constraints
+            .iter()
+            .map(|sc| solver.half_reify(sc.clone()))
+            .collect_vec();
 
         let marco = Marco::with(
             soft_reiflits.iter().copied(),

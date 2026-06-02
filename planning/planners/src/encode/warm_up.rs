@@ -4,8 +4,8 @@ use aries::model::lang::expr::*;
 use aries_planning::chronicles::constraints::Table;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
-use aries_planning::legacy::eq;
 use aries_planning::legacy::*;
+use aries_planning::legacy::{eq, geq, leq};
 use itertools::Itertools;
 use num_rational::Ratio;
 use std::collections::BTreeMap;
@@ -119,7 +119,7 @@ pub fn add_flexible_same_plan_constraints(pb: &mut FiniteProblem, plan: &[Action
                 .name
                 .iter()
                 .skip(1) // Skip the chronicle name (e.g., "move")
-                .map(|p| pb.model.get_type(p.variable()).unwrap())
+                .map(|p| p.tpe())
                 .collect_vec();
             (action, types)
         })

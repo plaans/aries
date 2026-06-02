@@ -1,33 +1,39 @@
 #![allow(clippy::comparison_chain)]
+use std::sync::Arc;
+
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use crate::legacy::*;
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{BVar, IAtom, IVar, SAtom};
-use aries::model::symbols::SymId;
+use aries::model::lang::BVar;
 use aries::model::Model;
+use aries::prelude::*;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,
+    symbols: Arc<SymbolTable>,
 }
 
 impl<'a> Printer<'a> {
     /// Prints the problem's chronicles to standard output (template and non-template)
     pub fn print_problem(pb: &Problem) {
+        let me = Printer {
+            model: &pb.context.model,
+            symbols: pb.context.symbols.clone(),
+        };
         for c in &pb.chronicles {
-            Self::print_chronicle(&c.chronicle, &pb.context.model);
+            me.chronicle(&c.chronicle);
         }
         for c in &pb.templates {
-            Self::print_chronicle(&c.chronicle, &pb.context.model);
+            me.chronicle(&c.chronicle);
         }
     }
 
-    pub fn print_chronicle(ch: &Chronicle, model: &Model<VarLabel>) {
-        let printer = Printer { model };
-        printer.chronicle(ch)
-    }
+    // pub fn print_chronicle(ch: &Chronicle, model: &Model<VarLabel>) {
+    //     let printer = Printer { model };
+    //     printer.chronicle(ch)
+    // }
 
     fn chronicle(&self, ch: &Chronicle) {
         match ch.kind {
@@ -106,21 +112,6 @@ impl<'a> Printer<'a> {
         println!()
     }
 
-    pub fn print_reif_constraints(constraints: &[aries::model::Constraint], model: &Model<VarLabel>) {
-        for c in constraints.iter() {
-            Self::print_reif_constraint(c, model);
-        }
-    }
-
-    pub fn print_reif_constraint(constraint: &aries::model::Constraint, model: &Model<VarLabel>) {
-        let printer = Printer { model };
-        printer.reif_constraint(constraint);
-    }
-
-    fn reif_constraint(&self, constraint: &aries::model::Constraint) {
-        println!("{constraint}");
-    }
-
     fn list(&self, l: &[impl Into<Atom> + Copy]) {
         for (i, e) in l.iter().enumerate() {
             if i != 0 {
@@ -188,7 +179,7 @@ impl<'a> Printer<'a> {
         }
     }
     fn sym(&self, s: SymId) {
-        print!("{}", self.model.shape.symbols.symbol(s))
+        print!("{}", self.symbols.symbol(s))
     }
 
     fn lit(&self, l: Lit) {

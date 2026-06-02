@@ -7,7 +7,6 @@ use crate::chronicles::{
 };
 use crate::legacy::*;
 use aries::core::views::Term;
-use aries::model::lang::{FAtom, IAtom, Rational};
 use aries::model::Model;
 use aries::prelude::*;
 use aries::solver::{SearchLimit, Solver};
@@ -261,7 +260,7 @@ fn extract_constraints(
     // if there is not already an end variable, create a new one
     if action_fixed_duration.is_some() {
         let end_var_lbl = Container::Template(ch_id).var(VarType::ChronicleEnd);
-        let end_timepoint = pb.context.model.new_optional_fvar(
+        let end_timepoint = pb.context.new_optional_fvar(
             0,
             INT_CST_MAX,
             ch.chronicle.start.denom,

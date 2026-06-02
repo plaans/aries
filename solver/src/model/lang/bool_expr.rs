@@ -1,6 +1,6 @@
 use crate::{
     model::lang::{
-        expr::{And, Leq, Or, or},
+        expr::{And, Or, or},
         linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
         *,
@@ -145,8 +145,6 @@ macro_rules! impl_reif {
 impl_reif!(Lit);
 impl_reif!(Or);
 impl_reif!(And);
-impl_reif!(Leq);
-impl_reif!(LinearLeq);
 impl_reif!(EqMax);
 impl_reif!(EqMin);
 impl_reif!(LinLeq);

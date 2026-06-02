@@ -1,9 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
-use aries::model::lang::linear::LinearSum;
 use aries::model::lang::*;
-use aries::model::symbols::{SymId, SymbolTable};
-use aries::model::types::{TypeHierarchy, TypeId};
 use aries::utils::enumerate;
 use aries::utils::input::Sym;
 use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
@@ -587,15 +584,14 @@ impl<'a> ChronicleFactory<'a> {
         let name = name.into();
 
         let tpe = tpe.into();
-        let tpe = from_upf_type(tpe.as_ref(), &self.context.model.get_symbol_table().types)
+        let tpe = from_upf_type(tpe.as_ref(), &self.context.get_symbol_table().types)
             .with_context(|| format!("Unknown argument type: {tpe}"))?;
         let label = self.container / VarType::Parameter(name.to_string());
         let arg: Variable = match tpe {
-            Type::Sym(tpe) => self.context.model.new_optional_sym_var(tpe, presence, label).into(),
+            Type::Sym(tpe) => self.context.new_optional_sym_var(tpe, presence, label).into(),
             Type::Int { lb, ub } => self.context.model.new_optional_ivar(lb, ub, presence, label).into(),
             Type::Fixed(denom) => self
                 .context
-                .model
                 .new_optional_fvar(INT_CST_MIN, INT_CST_MAX, denom, presence, label)
                 .into(),
             Type::Bool => self.context.model.new_optional_bvar(presence, label).into(),
@@ -627,10 +623,9 @@ impl<'a> ChronicleFactory<'a> {
         self.create_optional_timepoint(vartype, self.chronicle.presence)
     }
     fn create_optional_timepoint(&mut self, vartype: VarType, presence: Lit) -> FAtom {
-        let tp =
-            self.context
-                .model
-                .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), presence, self.container / vartype);
+        let tp = self
+            .context
+            .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), presence, self.container / vartype);
         self.variables.push(tp.into());
         FAtom::from(tp)
     }
@@ -712,11 +707,11 @@ impl<'a> ChronicleFactory<'a> {
     fn add_initial_state(&mut self, init_state: &[Assignment], fluents: &[up::Fluent]) -> Result<(), Error> {
         let mut explicit_init_facts = Vec::with_capacity(init_state.len());
         for init_assignment in init_state {
-            explicit_init_facts.push(read_init_fact(init_assignment, &self.context.model.shape.symbols)?)
+            explicit_init_facts.push(read_init_fact(init_assignment, &self.context.symbols)?)
         }
 
         for up_fluent in fluents {
-            let symbols = self.context.model.get_symbol_table();
+            let symbols = self.context.get_symbol_table();
             let fluent_sym = symbols
                 .id(&up_fluent.name)
                 .with_context(|| format!("Unknown symbol: {}", up_fluent.name))?;
@@ -778,7 +773,7 @@ impl<'a> ChronicleFactory<'a> {
     fn add_init_fact(&mut self, fluent: Arc<Fluent>, args: &[SymId], value: Atom) -> anyhow::Result<()> {
         let args = args
             .iter()
-            .map(|&sym| SAtom::new_constant(sym, self.context.model.get_symbol_table().type_of(sym)))
+            .map(|&sym| SAtom::new_constant(sym, self.context.get_symbol_table().type_of(sym)))
             .collect();
         let sv = StateVar { fluent, args };
 
@@ -859,7 +854,6 @@ impl<'a> ChronicleFactory<'a> {
         let var: Variable = match tpe {
             Type::Sym(tpe) => self
                 .context
-                .model
                 .new_optional_sym_var(tpe, self.chronicle.presence, self.container / var_type)
                 .into(),
             Type::Int { lb, ub } => self
@@ -869,7 +863,6 @@ impl<'a> ChronicleFactory<'a> {
                 .into(),
             Type::Fixed(denom) => self
                 .context
-                .model
                 .new_optional_fvar(
                     INT_CST_MIN,
                     INT_CST_MAX,
@@ -982,7 +975,7 @@ impl<'a> ChronicleFactory<'a> {
         let start = self.create_timepoint(VarType::TaskStart(task_index));
         let end = self.create_timepoint(VarType::TaskEnd(task_index));
         let mut task_name: Vec<Atom> = Vec::with_capacity(subtask.parameters.len() + 1);
-        let head = str_to_symbol(&subtask.task_name, &self.context.model.shape.symbols)?;
+        let head = str_to_symbol(&subtask.task_name, &self.context.symbols)?;
         task_name.push(Atom::Sym(head));
         for param in &subtask.parameters {
             let param = self.reify(param, None)?;
@@ -1129,7 +1122,7 @@ impl<'a> ChronicleFactory<'a> {
         match kind(expr)? {
             Constant => {
                 let atom = expr.atom.as_ref().context("Malformed protobuf: expected an atom")?;
-                read_atom(atom, self.context.model.get_symbol_table()).with_context(|| format!("Unknown atom {atom:?}"))
+                read_atom(atom, self.context.get_symbol_table()).with_context(|| format!("Unknown atom {atom:?}"))
             }
             Parameter => {
                 ensure!(expr.atom.is_some(), "Parameter should have an atom");
@@ -1380,7 +1373,7 @@ impl<'a> ChronicleFactory<'a> {
     fn read_fluent_symbol(&self, expr: &Expression) -> Result<Arc<Fluent>, Error> {
         ensure!(kind(expr)? == ExpressionKind::FluentSymbol);
 
-        match read_atom(expr.atom.as_ref().unwrap(), self.context.model.get_symbol_table())? {
+        match read_atom(expr.atom.as_ref().unwrap(), self.context.get_symbol_table())? {
             Atom::Sym(SAtom::Cst(sym)) => self.context.get_fluent(sym.sym).cloned().context("Unknown fluent"),
             x => bail!("Not a symbol {x:?}"),
         }
@@ -1439,7 +1432,7 @@ fn read_action(
     variables.push(prez_var.into());
     let prez = prez_var.true_lit();
 
-    let start = context.model.new_optional_fvar(
+    let start = context.new_optional_fvar(
         0,
         INT_CST_MAX,
         TIME_SCALE.get(),
@@ -1460,7 +1453,7 @@ fn read_action(
                 // a duration constraint is added later in the function for more complex durations
                 start + dur
             } else {
-                let end = context.model.new_optional_fvar(
+                let end = context.new_optional_fvar(
                     0,
                     INT_CST_MAX,
                     TIME_SCALE.get(),
@@ -1480,7 +1473,6 @@ fn read_action(
         context
             .typed_sym(
                 context
-                    .model
                     .get_symbol_table()
                     .id(base_name)
                     .ok_or_else(|| base_name.invalid("Unknown action"))?,
@@ -1557,7 +1549,6 @@ fn read_activity(
         context
             .typed_sym(
                 context
-                    .model
                     .get_symbol_table()
                     .id(base_name)
                     .ok_or_else(|| base_name.invalid("Unknown action"))?,
@@ -1621,7 +1612,7 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
     variables.push(prez_var.into());
     let prez = prez_var.true_lit();
 
-    let start = context.model.new_optional_fvar(
+    let start = context.new_optional_fvar(
         0,
         INT_CST_MAX,
         TIME_SCALE.get(),
@@ -1634,7 +1625,7 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
     let end: FAtom = if method.subtasks.is_empty() {
         start // no subtasks, the method is instantaneous
     } else {
-        let end = context.model.new_optional_fvar(
+        let end = context.new_optional_fvar(
             0,
             INT_CST_MAX,
             TIME_SCALE.get(),
@@ -1651,7 +1642,6 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
         context
             .typed_sym(
                 context
-                    .model
                     .get_symbol_table()
                     .id(base_name)
                     .ok_or_else(|| base_name.invalid("Unknown action"))?,
@@ -1685,7 +1675,7 @@ fn read_method(container: Container, method: &up::Method, context: &mut Ctx) -> 
         .as_ref()
         .with_context(|| format!("Missing achieved task in method: {}", &method.name))?;
     let mut task_name: Vec<Atom> = Vec::with_capacity(achieved_task.parameters.len() + 1);
-    let head = str_to_symbol(&achieved_task.task_name, &factory.context.model.shape.symbols)?;
+    let head = str_to_symbol(&achieved_task.task_name, &factory.context.symbols)?;
     task_name.push(head.into());
     for param in &achieved_task.parameters {
         let param = factory.reify(param, None)?;

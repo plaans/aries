@@ -1,7 +1,7 @@
 use crate::core::views::{Boundable, Term, VarView};
 use crate::core::*;
 use crate::model::lang::ConversionError;
-use crate::model::lang::linear::LinearTerm;
+use crate::model::lang::linear::ScaledVar;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;
@@ -253,10 +253,10 @@ impl std::ops::Sub<IntCst> for IVar {
 }
 
 impl std::ops::Mul<IntCst> for IVar {
-    type Output = LinearTerm;
+    type Output = ScaledVar;
 
     fn mul(self, rhs: IntCst) -> Self::Output {
-        LinearTerm::int(rhs, self)
+        ScaledVar::new(self.0, rhs)
     }
 }
 

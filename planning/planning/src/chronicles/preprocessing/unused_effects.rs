@@ -1,7 +1,6 @@
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Condition, Effect, EffectOp, Problem, VarLabel};
 use crate::legacy::*;
-use aries::model::lang::FAtom;
 use aries::model::Model;
 use std::cmp::Ordering;
 

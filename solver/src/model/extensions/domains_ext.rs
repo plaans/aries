@@ -1,9 +1,7 @@
-use crate::core::state::{FixedDomain, IntDomain, OptDomain, RangeDomain};
+use crate::core::state::{OptDomain, RangeDomain};
 use crate::core::views::{Dom, Term, VarView};
 use crate::core::*;
-use crate::model::lang::linear::LinearSum;
-use crate::model::lang::{IAtom, SAtom};
-use crate::model::symbols::SymId;
+use crate::model::lang::IAtom;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait DomainsExt: Dom {
@@ -50,20 +48,6 @@ pub trait DomainsExt: Dom {
         self.boolean_value_of(self.presence_literal(atom))
     }
 
-    /// Returns the fixed-point domain of the linear sum.
-    /// Can also be used with a FAtom.
-    fn f_domain(&self, sum: impl Into<LinearSum>) -> FixedDomain {
-        let sum: LinearSum = sum.into();
-        let (lb, ub) = sum
-            .terms()
-            .iter()
-            .fold((sum.constant(), sum.constant()), |(lb, ub), t| {
-                let (l, u) = self.bounds(t.var());
-                (lb + l * t.factor(), ub + u * t.factor())
-            });
-        FixedDomain::new(IntDomain::new(lb, ub), sum.denom())
-    }
-
     /// Returns the domain of an optional integer expression.
     fn opt_domain_of(&self, atom: impl Into<IAtom>) -> OptDomain {
         let atom = atom.into();
@@ -74,10 +58,6 @@ pub trait DomainsExt: Dom {
             Some(false) => OptDomain::Absent,
             None => OptDomain::Unknown(lb, ub),
         }
-    }
-
-    fn sym_value_of(&self, atom: impl Into<SAtom>) -> Option<SymId> {
-        self.var_domain(atom.into()).as_singleton()
     }
 
     /// Returns the value of a boolean atom if it as a set value.

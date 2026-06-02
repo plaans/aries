@@ -10,9 +10,6 @@ use crate::legacy::*;
 use crate::parsing::sexpr::SExpr;
 use anyhow::{bail, Context, Result};
 use aries::core::*;
-use aries::model::lang::linear::LinearSum;
-use aries::model::symbols::SymbolTable;
-use aries::model::types::TypeHierarchy;
 use aries::utils::input::{ErrLoc, Loc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
@@ -162,7 +159,6 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
     // Transforms atoms of an s-expression into the corresponding representation for chronicles
     let as_model_atom_no_borrow = |atom: &sexpr::SAtom, context: &Ctx| -> Result<SAtom> {
         let atom = context
-            .model
             .get_symbol_table()
             .id(atom.canonical_str())
             .ok_or_else(|| atom.invalid("Unknown atom"))?;
@@ -175,7 +171,7 @@ pub fn pddl_to_chronicles(dom: &pddl::Domain, prob: &pddl::Problem) -> Result<Pb
         //  - `(and (= sv1 v1) (= sv2 = v2))`
         //  - `(= sv1 v1)`
         //  - `()`
-        let goals = read_conjunction(goal, as_model_atom, context.model.get_symbol_table(), &context)?;
+        let goals = read_conjunction(goal, as_model_atom, context.get_symbol_table(), &context)?;
         for TermLoc(goal, loc) in goals {
             match goal {
                 Term::Binding(sv, value) => init_ch.conditions.push(Condition {
@@ -256,7 +252,7 @@ fn read_init(
     if closed_world {
         // closed world, every predicate that is not given a true value should be given a false value
         // to do this, we rely on the classical classical planning state
-        let state_desc = World::new(context.model.get_symbol_table().clone(), &context.fluents)?;
+        let state_desc = World::new(context.get_symbol_table().clone(), &context.fluents)?;
         let mut s = state_desc.make_new_state();
         for init in initial_facts {
             let pred = read_sv(init, &state_desc)?;
@@ -309,18 +305,13 @@ fn read_chronicle_template(
     let prez_var = context.model.new_bvar(c / VarType::Presence);
     params.push(prez_var.into());
     let prez = prez_var.true_lit();
-    let start = context
-        .model
-        .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), prez, c / VarType::ChronicleStart);
+    let start = context.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), prez, c / VarType::ChronicleStart);
     params.push(start.into());
     let start = FAtom::from(start);
     let end: FAtom = match pddl.kind() {
         ChronicleKind::Problem => panic!("unsupported case"),
         ChronicleKind::Method | ChronicleKind::DurativeAction => {
-            let end =
-                context
-                    .model
-                    .new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), prez, c / VarType::ChronicleEnd);
+            let end = context.new_optional_fvar(0, INT_CST_MAX, TIME_SCALE.get(), prez, c / VarType::ChronicleEnd);
             params.push(end.into());
             end.into()
         }
@@ -334,7 +325,6 @@ fn read_chronicle_template(
         context
             .typed_sym(
                 context
-                    .model
                     .get_symbol_table()
                     .id(base_name)
                     .ok_or_else(|| base_name.invalid("Unknown atom"))?,
@@ -345,14 +335,11 @@ fn read_chronicle_template(
     for arg in pddl.parameters() {
         let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
         let tpe = context
-            .model
             .get_symbol_table()
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
-        let arg = context
-            .model
-            .new_optional_sym_var(tpe, prez, c / VarType::Parameter(arg.symbol.to_string()));
+        let arg = context.new_optional_sym_var(tpe, prez, c / VarType::Parameter(arg.symbol.to_string()));
         params.push(arg.into());
         name.push(arg.into());
     }
@@ -366,7 +353,6 @@ fn read_chronicle_template(
             Some(i) => Ok(name[i + 1]),
             None => {
                 let atom = context
-                    .model
                     .get_symbol_table()
                     .id(atom.canonical_str())
                     .ok_or_else(|| atom.invalid("Unknown atom"))?;
@@ -413,7 +399,7 @@ fn read_chronicle_template(
         if pddl.kind() != ChronicleKind::Action && pddl.kind() != ChronicleKind::DurativeAction {
             return Err(eff.invalid("Unexpected instantaneous effect").into());
         }
-        let effects = read_conjunction(eff, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+        let effects = read_conjunction(eff, as_chronicle_atom, context.get_symbol_table(), context)?;
         for TermLoc(term, loc) in effects {
             match term {
                 Term::Binding(sv, val) => ch.effects.push(Effect {
@@ -483,7 +469,7 @@ fn read_chronicle_template(
 
     // TODO : check if work around still needed
     for cond in pddl.preconditions() {
-        let conditions = read_conjunction(cond, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+        let conditions = read_conjunction(cond, as_chronicle_atom, context.get_symbol_table(), context)?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {
@@ -701,14 +687,11 @@ fn read_task_network(
     for arg in &tn.parameters {
         let tpe = arg.tpe.as_ref().unwrap_or(&top_type);
         let tpe = context
-            .model
             .get_symbol_table()
             .types
             .id_of(tpe)
             .ok_or_else(|| tpe.invalid("Unknown atom"))?;
-        let arg = context
-            .model
-            .new_optional_sym_var(tpe, presence, c / VarType::Parameter(arg.symbol.to_string()));
+        let arg = context.new_optional_sym_var(tpe, presence, c / VarType::Parameter(arg.symbol.to_string()));
         if let Some(new_variables) = &mut new_variables {
             new_variables.push(arg.into());
         }
@@ -740,14 +723,14 @@ fn read_task_network(
         let task_name = task_name.iter().map(|satom| Atom::from(*satom)).collect();
 
         // create timepoints for the subtask
-        let start = context.model.new_optional_fvar(
+        let start = context.new_optional_fvar(
             0,
             INT_CST_MAX,
             TIME_SCALE.get(),
             presence,
             c / VarType::TaskStart(task_id),
         );
-        let end = context.model.new_optional_fvar(
+        let end = context.new_optional_fvar(
             0,
             INT_CST_MAX,
             TIME_SCALE.get(),
@@ -803,7 +786,7 @@ fn read_task_network(
     for c in &tn.constraints {
         // treat constraints exactly as we treat preconditions
         let as_chronicle_atom = |x: &sexpr::SAtom| as_chronicle_atom(x, context);
-        let conditions = read_conjunction(c, as_chronicle_atom, context.model.get_symbol_table(), context)?;
+        let conditions = read_conjunction(c, as_chronicle_atom, context.get_symbol_table(), context)?;
         for TermLoc(term, _) in conditions {
             match term {
                 Term::Binding(sv, val) => {

@@ -126,7 +126,6 @@ dependencies = [
  "itertools",
  "lru",
  "num-integer",
- "num-rational",
  "rand",
  "smallvec",
  "streaming-iterator",
@@ -244,6 +243,7 @@ dependencies = [
  "aries",
  "env_param",
  "itertools",
+ "num-rational",
 ]
 
 [[package]]
@@ -282,6 +282,8 @@ dependencies = [
  "env_param",
  "fixedbitset",
  "itertools",
+ "num-integer",
+ "num-rational",
  "pathfinding",
  "regex",
  "smallvec",

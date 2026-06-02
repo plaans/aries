@@ -9,10 +9,9 @@ use aries::core::state::Conflict;
 use aries::core::*;
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::expr::*;
-use aries::model::lang::FAtom;
 use aries_planning::chronicles::*;
-use aries_planning::legacy::eq;
 use aries_planning::legacy::*;
+use aries_planning::legacy::{eq, geq, leq};
 use itertools::Itertools;
 
 /// Parameter that activates additional constraints for borrow patterns.

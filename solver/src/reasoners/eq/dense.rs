@@ -934,20 +934,16 @@ mod tests {
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
     use crate::core::{IntCst, Lit, VarRef};
     use crate::model::lang::expr::lin_eq;
-    use crate::model::symbols::SymbolTable;
-    use crate::model::types::TypeHierarchy;
     use crate::model::{Label, Model};
     use crate::reasoners::eq::dense::InferenceCause;
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
     use crate::reasoners::{Contradiction, Theory};
     use crate::solver::search::random::RandomChoice;
     use crate::solver::{SearchLimit, Solver};
-    use crate::utils::input::Sym;
     use itertools::Itertools;
     use rand::prelude::SmallRng;
     use rand::{Rng, SeedableRng};
     use std::collections::{HashMap, HashSet};
-    use std::sync::Arc;
 
     #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
     struct Pair {
@@ -1147,26 +1143,10 @@ mod tests {
     }
 
     type S = &'static str;
-    impl From<Vec<(S, Vec<S>)>> for SymbolTable {
-        fn from(value: Vec<(S, Vec<S>)>) -> Self {
-            let types = value.iter().map(|e| (Sym::new(e.0), None)).collect_vec();
-            let types = TypeHierarchy::new(types).unwrap();
-            let mut instances = Vec::new();
-            for tpe in value {
-                for instance in tpe.1 {
-                    instances.push((Sym::from(instance), Sym::from(tpe.0)))
-                }
-            }
-            SymbolTable::new(types, instances).unwrap()
-        }
-    }
 
     #[test]
     fn test_model() {
-        let symbols = SymbolTable::from(vec![("obj", vec!["alice", "bob", "chloe"])]);
-        let symbols = Arc::new(symbols);
-
-        let mut model: Model<S> = Model::new_with_symbols(symbols.clone());
+        let mut model: Model<S> = Model::new();
 
         let vars = ["V", "W", "X", "Y", "Z"]
             .map(|var_name| model.new_ivar(1, 5, var_name))

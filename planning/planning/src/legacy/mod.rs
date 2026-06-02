@@ -3,20 +3,30 @@
 mod atom;
 mod cst;
 mod expr;
+mod fixed;
 mod format;
+mod linear_rational;
 mod partial_assignment;
-
-pub use aries::model::lang::{ConversionError, FAtom, FVar, Kind, Rational, SAtom, SVar, Type, Variable};
-pub use aries::model::symbols::*;
-pub use aries::model::types::*;
-use aries::model::Model;
-
-use aries::prelude::DomainsExt;
+mod sym;
+mod symbols;
+mod types;
+mod variables;
 pub use atom::*;
 pub use cst::*;
 pub use expr::*;
+pub use fixed::*;
 pub use format::*;
+pub use linear_rational::*;
 pub use partial_assignment::*;
+pub use sym::*;
+pub use symbols::*;
+pub use types::*;
+pub use variables::*;
+
+pub use aries::model::lang::ConversionError;
+use aries::model::Model;
+
+use aries::prelude::DomainsExt;
 
 pub fn unifiable<L>(model: &Model<L>, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
     let a = a.into();

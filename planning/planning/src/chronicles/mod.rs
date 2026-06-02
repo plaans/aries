@@ -5,15 +5,15 @@ pub mod plan;
 pub mod preprocessing;
 pub mod printer;
 
+use aries::core::views::Term;
 pub use concrete::*;
 
 use self::constraints::Table;
 use crate::chronicles::preprocessing::action_rolling::RollCompilation;
 use crate::legacy::*;
 use aries::core::{IntCst, INT_CST_MAX};
-use aries::model::lang::{FAtom, IAtom, Type, Variable};
-use aries::model::symbols::{SymId, SymbolTable, TypedSym};
 use aries::model::Model;
+use aries::prelude::*;
 use aries::utils::input::Sym;
 use env_param::EnvParam;
 use std::fmt::{Debug, Display, Formatter};
@@ -79,19 +79,18 @@ pub struct Ctx {
     makespan_ub: FAtom,
     /// A reification of the final value of a state variable to optimize, if any.
     metric_final_value: Option<IAtom>,
+    pub symbols: Arc<SymbolTable>,
 }
 
 impl Ctx {
     pub fn new(symbols: Arc<SymbolTable>, fluents: Vec<Fluent>) -> Self {
-        let mut model = Model::new_with_symbols(symbols);
+        let mut model = Model::new();
 
         let origin = FAtom::new(IAtom::ZERO, TIME_SCALE.get());
-        let horizon = model
-            .new_fvar(0, INT_CST_MAX, TIME_SCALE.get(), Container::Base / VarType::Horizon)
-            .into();
-        let makespan_ub = model
-            .new_fvar(0, INT_CST_MAX, TIME_SCALE.get(), Container::Base / VarType::Makespan)
-            .into();
+        let horizon = model.new_ivar(0, INT_CST_MAX, Container::Base / VarType::Horizon);
+        let horizon = FVar::new(horizon, TIME_SCALE.get()).into();
+        let makespan_ub = model.new_ivar(0, INT_CST_MAX, Container::Base / VarType::Makespan);
+        let makespan_ub = FVar::new(makespan_ub, TIME_SCALE.get()).into();
 
         Ctx {
             model,
@@ -100,7 +99,43 @@ impl Ctx {
             horizon,
             makespan_ub,
             metric_final_value: None,
+            symbols,
         }
+    }
+
+    pub fn new_fvar(&mut self, num_lb: IntCst, num_ub: IntCst, denom: IntCst, label: impl Into<VarLabel>) -> FVar {
+        let ivar = self.model.new_ivar(num_lb, num_ub, label);
+        FVar::new(ivar, denom)
+    }
+    pub fn new_optional_fvar(
+        &mut self,
+        num_lb: IntCst,
+        num_ub: IntCst,
+        denom: IntCst,
+        presence: Lit,
+        label: impl Into<VarLabel>,
+    ) -> FVar {
+        let ivar = self.model.new_optional_ivar(num_lb, num_ub, presence, label);
+        FVar::new(ivar, denom)
+    }
+    pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<VarLabel>) -> SVar {
+        self.create_sym_var(tpe, None, label)
+    }
+
+    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<VarLabel>) -> SVar {
+        self.create_sym_var(tpe, Some(presence.into()), label)
+    }
+
+    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<VarLabel>) -> SVar {
+        let instances = self.symbols.instances_of_type(tpe);
+        let presence = presence.unwrap_or(Lit::TRUE);
+        // get the lower and upper bounds, defaulting to an empty interval if there are no values.
+        let (lb, ub) = instances
+            .bounds()
+            .map(|(lb, ub)| (usize::from(lb) as IntCst, usize::from(ub) as IntCst))
+            .unwrap_or((0, -1));
+        let dvar = self.model.new_optional_ivar(lb, ub, presence, label).variable();
+        SVar::new(dvar, tpe)
     }
 
     pub fn origin(&self) -> FAtom {
@@ -128,7 +163,7 @@ impl Ctx {
     pub fn typed_sym(&self, sym: SymId) -> TypedSym {
         TypedSym {
             sym,
-            tpe: self.model.get_type_of(sym),
+            tpe: self.get_type_of(sym),
         }
     }
 
@@ -312,6 +347,7 @@ pub enum VarType {
 
 #[derive(Clone)]
 pub struct FiniteProblem {
+    pub symbols: Arc<SymbolTable>,
     pub model: Model<VarLabel>,
     pub origin: Time,
     /// Timepoint after which the state is not allowed to change

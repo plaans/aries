@@ -1,8 +1,8 @@
-use crate::core::views::VarView;
-use crate::core::*;
-use crate::model::lang::{ConversionError, IAtom, IVar};
-use crate::model::symbols::{SymId, TypedSym};
-use crate::model::types::TypeId;
+use crate::legacy::*;
+use aries::core::state::Evaluable;
+use aries::core::views::VarView;
+use aries::core::*;
+use aries::model::lang::{ConversionError, IAtom, IVar};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
@@ -42,6 +42,14 @@ impl VarView for SAtom {
 
     fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
         SymId::from(self.int_view().lower_bound(dom) as usize)
+    }
+}
+
+impl Evaluable for SAtom {
+    type Value = SymId;
+
+    fn evaluate(&self, solution: &aries::prelude::Solution) -> Option<Self::Value> {
+        self.int_view().evaluate(solution).map(|v| SymId::from(v as usize))
     }
 }
 

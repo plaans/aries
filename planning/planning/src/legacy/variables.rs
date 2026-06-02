@@ -1,6 +1,5 @@
-use crate::core::*;
-use crate::model::lang::variables::Variable::*;
-use crate::model::lang::{BVar, ConversionError, FVar, IVar, Kind, SVar};
+use crate::legacy::*;
+use aries::{model::lang::BVar, prelude::*};
 use std::convert::TryFrom;
 
 /// Contains a variable of any type
@@ -11,6 +10,8 @@ pub enum Variable {
     Fixed(FVar),
     Sym(SVar),
 }
+
+use Variable::*;
 
 impl Variable {
     pub fn kind(self) -> Kind {

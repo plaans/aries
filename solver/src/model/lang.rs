@@ -4,7 +4,6 @@ mod boolean;
 pub mod element;
 pub mod exclusive_choice;
 pub mod expr;
-mod fixed;
 mod int;
 mod int_expr;
 pub mod linear; // TODO: make pub(crate)
@@ -12,72 +11,17 @@ pub mod max;
 pub mod mul;
 pub mod reification;
 mod store;
-mod sym;
 mod validity_scope;
-mod variables;
 
 pub use crate::core::Lit;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
-pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
 pub use int_expr::IntExpr;
-pub use linear::{LinearLeq, LinearSum, LinearTerm};
 pub use store::{ModelWrapper, Store};
-pub use sym::{SAtom, SVar};
 pub use validity_scope::*;
-pub use variables::Variable;
 
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};
-use crate::model::types::TypeId;
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub enum Type {
-    Sym(TypeId),
-    Int {
-        lb: IntCst,
-        ub: IntCst,
-    },
-    /// A fixed-point numeral, parameterized with its denominator.
-    Fixed(IntCst),
-    Bool,
-}
-
-impl Type {
-    pub fn is_numeric(&self) -> bool {
-        match self {
-            Type::Sym(_) | Type::Bool => false,
-            Type::Int { .. } | Type::Fixed(_) => true,
-        }
-    }
-}
-
-impl From<Type> for Kind {
-    fn from(tpe: Type) -> Self {
-        match tpe {
-            Type::Sym(_) => Kind::Sym,
-            Type::Int { .. } => Kind::Int,
-            Type::Fixed(denum) => Kind::Fixed(denum),
-            Type::Bool => Kind::Bool,
-        }
-    }
-}
-
-impl Type {
-    pub const UNBOUNDED_INT: Type = Type::Int {
-        lb: INT_CST_MIN,
-        ub: INT_CST_MAX,
-    };
-}
-
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
-pub enum Kind {
-    Bool,
-    Int,
-    /// A fixed-point numeral, parameterized with its denominator.
-    Fixed(IntCst),
-    Sym,
-}
 
 #[derive(Debug)]
 pub enum ConversionError {
@@ -104,7 +48,6 @@ impl std::fmt::Display for ConversionError {
         }
     }
 }
-
 impl std::error::Error for ConversionError {}
 
 impl From<ConversionError> for String {

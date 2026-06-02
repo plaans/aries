@@ -4,7 +4,7 @@ use crate::encode::warm_up::{
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
-use crate::search::{ForwardSearcher, ManualCausalSearch};
+use crate::search::ForwardSearcher;
 use crate::Solver;
 use anyhow::Result;
 use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
@@ -22,6 +22,7 @@ use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::Shaped;
 use env_param::EnvParam;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -205,6 +206,7 @@ pub fn solve(
     let default_best_cost = INT_CST_MAX + 1;
     let metadata = preprocess(&mut base_problem);
     let init_pb = FiniteProblem {
+        symbols: Arc::new(base_problem.context.get_symbol_table().clone()),
         model: base_problem.context.model.clone(),
         origin: base_problem.context.origin(),
         horizon: base_problem.context.horizon(),
@@ -459,12 +461,9 @@ impl Strat {
     }
 }
 
-fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Brancher<VarLabel> {
+fn causal_brancher(_problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Brancher<VarLabel> {
     use aries::solver::search::combinators::CombinatorExt;
     let branching_literals: Vec<Lit> = encoding.tags.iter().map(|&(_, l)| l).collect();
-
-    // manual strategy that lets the user select branches on the command line
-    let causal = ManualCausalSearch::new(problem, encoding);
 
     // conflict directed search on tagged literals only
     let mut conflict = Box::new(ConflictBasedBrancher::new(branching_literals.clone()));
@@ -483,7 +482,7 @@ fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Bran
     let act: Box<ActivityBrancher<VarLabel>> =
         Box::new(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic));
     let lexical = Box::new(Lexical::with_min());
-    let strat = causal.clone_to_box().and_then(conflict).and_then(act).and_then(lexical);
+    let strat = conflict.clone_to_box().and_then(act).and_then(lexical);
 
     strat.with_restarts(50, 1.3)
 }

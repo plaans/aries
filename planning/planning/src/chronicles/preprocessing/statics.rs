@@ -35,7 +35,7 @@ pub fn statics_as_tables(pb: &mut Problem) {
             println!("Transforming static state functions as table constraints:");
             first = false;
         }
-        let sf_name = pb.context.model.get_symbol(target_fluent.sym).to_string();
+        let sf_name = pb.context.get_symbol(target_fluent.sym).to_string();
         println!(" - {sf_name}");
 
         // table that will collect all possible tuples for the state variable

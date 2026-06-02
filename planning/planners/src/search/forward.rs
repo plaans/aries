@@ -9,7 +9,6 @@ use aries::model::lang::IVar;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
-use aries_planning::legacy::*;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -48,7 +47,7 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
             .iter()
             .all(|refinement| !model.entails(refinement.presence))
     });
-    pending.min_by_key(|t| model.f_domain(t.details.start).num.lb)
+    pending.min_by_key(|t| model.lb(t.details.start))
 }
 
 /// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
@@ -89,10 +88,7 @@ fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Optio
     let pendings = presents.filter(|&ch| branching_variables(ch, model).next().is_some());
     let pendings: Vec<_> = pendings.collect();
     // println!("{pendings:?}");
-    pendings
-        .iter()
-        .copied()
-        .min_by_key(|ch| model.f_domain(ch.chronicle.start).num.lb)
+    pendings.iter().copied().min_by_key(|ch| model.lb(ch.chronicle.start))
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.

@@ -3,10 +3,9 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::collections::ref_store::RefMap;
 use crate::core::literals::StableLitSet;
 use crate::core::state::*;
-use crate::core::views::Dom;
+use crate::core::views::{Dom, Term};
 use crate::core::*;
 use crate::model::extensions::DomainsExt;
 use crate::model::label::{Label, VariableLabels};
@@ -14,8 +13,6 @@ use crate::model::lang::expr::or;
 use crate::model::lang::reification::Reification;
 use crate::model::lang::*;
 use crate::model::model_impl::scopes::Scopes;
-use crate::model::symbols::SymbolTable;
-use crate::model::types::TypeId;
 use crate::reasoners::cp::UserPropagator;
 use crate::reif::{ReifExpr, Reifiable};
 
@@ -44,8 +41,6 @@ impl std::fmt::Display for Constraint {
 /// Defines the structure of a model: variables names, types, relations, ...
 #[derive(Clone)]
 pub struct ModelShape<Lbl> {
-    pub symbols: Arc<SymbolTable>,
-    pub types: RefMap<VarRef, Type>,
     pub expressions: Reification,
     pub constraints: Vec<Constraint>,
     pub labels: VariableLabels<Lbl>,
@@ -54,13 +49,7 @@ pub struct ModelShape<Lbl> {
 
 impl<Lbl: Label> ModelShape<Lbl> {
     pub fn new() -> Self {
-        Self::new_with_symbols(Arc::new(SymbolTable::empty()))
-    }
-
-    pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         ModelShape {
-            symbols,
-            types: Default::default(),
             expressions: Default::default(),
             constraints: Default::default(),
             labels: Default::default(),
@@ -77,9 +66,6 @@ impl<Lbl: Label> ModelShape<Lbl> {
             [var] => Some(var),
             _ => panic!("More than one variable with label: {label:?}"),
         }
-    }
-    fn set_type(&mut self, var: VarRef, typ: Type) {
-        self.types.insert(var, typ);
     }
     fn add_half_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
         let c = Constraint::HalfReified(expr, value);
@@ -148,13 +134,8 @@ pub struct Model<Lbl> {
 
 impl<Lbl: Label> Model<Lbl> {
     pub fn new() -> Self {
-        Self::new_with_symbols(Arc::new(SymbolTable::empty()))
-    }
-
-    #[doc(hidden)]
-    pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         Model {
-            shape: ModelShape::new_with_symbols(symbols),
+            shape: ModelShape::new(),
             state: Domains::new(),
         }
     }
@@ -173,7 +154,6 @@ impl<Lbl: Label> Model<Lbl> {
         self.state.add_implication(lit, scope);
         let var = lit.variable();
         self.shape.set_label(var, label);
-        self.shape.set_type(var, Type::Bool);
         BVar::new(var)
     }
 
@@ -205,7 +185,6 @@ impl<Lbl: Label> Model<Lbl> {
             .unwrap_or_else(|| {
                 let var = self.state.new_optional_var(1, 1, scope);
                 let lit = var.geq(1);
-                self.shape.set_type(var, Type::Bool);
                 self.shape.conjunctive_scopes.set_tautology_of_scope(scope, lit);
                 lit
             })
@@ -242,7 +221,6 @@ impl<Lbl: Label> Model<Lbl> {
                 // NOTE: we cannot use `Lit::FALSE` directly because we need to uniquely identify
                 //       the literal as the conjunction of the other two in some corner cases.
                 let l = self.state.new_var(0, 0).geq(1);
-                self.shape.set_type(l.variable(), Type::Bool);
                 Some(l)
             } else {
                 None // no simplification found, proceed
@@ -257,7 +235,6 @@ impl<Lbl: Label> Model<Lbl> {
             // - `l => v1`, `l => v2`, ...
             // - `l | !v1 | !v2 | ... | !vn`
             let l = self.state.new_var(0, 1).geq(1);
-            self.shape.set_type(l.variable(), Type::Bool);
             let mut clause = vec![l];
             for v_i in set.literals() {
                 self.state.add_implication(l, v_i);
@@ -277,7 +254,6 @@ impl<Lbl: Label> Model<Lbl> {
             self.state.new_var(0, 1)
         };
         self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Bool);
         BVar::new(dvar)
     }
 
@@ -316,24 +292,6 @@ impl<Lbl: Label> Model<Lbl> {
     }
 
     #[doc(hidden)]
-    pub fn new_fvar(&mut self, num_lb: IntCst, num_ub: IntCst, denom: IntCst, label: impl Into<Lbl>) -> FVar {
-        let ivar = self.new_ivar(num_lb, num_ub, label);
-        FVar::new(ivar, denom)
-    }
-    #[doc(hidden)]
-    pub fn new_optional_fvar(
-        &mut self,
-        num_lb: IntCst,
-        num_ub: IntCst,
-        denom: IntCst,
-        presence: Lit,
-        label: impl Into<Lbl>,
-    ) -> FVar {
-        let ivar = self.new_optional_ivar(num_lb, num_ub, presence, label);
-        FVar::new(ivar, denom)
-    }
-
-    #[doc(hidden)]
     pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> IVar {
         self.create_ivar(lb, ub, Some(presence), label)
     }
@@ -341,32 +299,7 @@ impl<Lbl: Label> Model<Lbl> {
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Lbl>) -> IVar {
         let dvar = self.new_optional_variable(lb, ub, presence.unwrap_or(Lit::TRUE));
         self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Int { lb, ub });
         IVar::new(dvar)
-    }
-
-    #[doc(hidden)]
-    pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Lbl>) -> SVar {
-        self.create_sym_var(tpe, None, label)
-    }
-
-    #[doc(hidden)]
-    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<Lbl>) -> SVar {
-        self.create_sym_var(tpe, Some(presence.into()), label)
-    }
-
-    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<Lbl>) -> SVar {
-        let instances = self.shape.symbols.instances_of_type(tpe);
-        let presence = presence.unwrap_or(Lit::TRUE);
-        // get the lower and upper bounds, defaulting to an empty interval if there are no values.
-        let (lb, ub) = instances
-            .bounds()
-            .map(|(lb, ub)| (usize::from(lb) as IntCst, usize::from(ub) as IntCst))
-            .unwrap_or((0, -1));
-        let dvar = self.new_optional_variable(lb, ub, presence);
-        self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Sym(tpe));
-        SVar::new(dvar, tpe)
     }
 
     /// Interns the given expression and returns an equivalent literal.
@@ -466,7 +399,6 @@ impl<Lbl: Label> Model<Lbl> {
                 self.get_tautology_of_scope(scope)
             } else {
                 let var = self.state.new_optional_var(0, 1, scope);
-                self.shape.set_type(var, Type::Bool);
                 var.geq(1)
             };
             self.shape.expressions.intern_full_as(expr.clone(), lit);
@@ -483,7 +415,6 @@ impl<Lbl: Label> Model<Lbl> {
         } else {
             let scope = self.scope_lit_of(&expr);
             let var = self.state.new_optional_var(0, 1, scope);
-            self.shape.set_type(var, Type::Bool);
             let lit = var.geq(1);
             self.shape.expressions.intern_half_as(expr.clone(), lit);
             self.shape.add_half_reification_constraint(lit, expr);
@@ -597,6 +528,11 @@ impl<Lbl: Label> Model<Lbl> {
         if l1 != l2 {
             self.shape.add_reification_constraint(l1, ReifExpr::Lit(l2))
         }
+    }
+
+    #[doc(hidden)]
+    pub fn get_label(&self, var: impl Term) -> Option<&Lbl> {
+        self.shape.labels.get(var.variable())
     }
 
     // =========== Formatting ==============

@@ -10,12 +10,12 @@ use crate::solver::{init_solver, Metric};
 use crate::Model;
 use anyhow::{Context, Result};
 use aries::core::state::Conflict;
+use aries::core::views::Term;
 use aries::core::*;
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
 use aries::model::lang::{expr::*, IVar};
-use aries::model::lang::{FAtom, FVar, IAtom, Variable};
+use aries::prelude::*;
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::*;
@@ -132,9 +132,21 @@ pub fn instantiate(
             }
             Variable::Fixed(f) => {
                 let (lb, ub) = pb.model.bounds(f.num);
-                pb.model.new_optional_fvar(lb, ub, f.denom, prez_lit, label).into()
+                let ivar = pb.model.new_optional_ivar(lb, ub, prez_lit, label);
+                FVar::new(ivar, f.denom).into()
             }
-            Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
+            Variable::Sym(s) => {
+                // copy of Ctx::new_optional_sym_var
+
+                let instances = pb.symbols.instances_of_type(s.tpe);
+                // get the lower and upper bounds, defaulting to an empty interval if there are no values.
+                let (lb, ub) = instances
+                    .bounds()
+                    .map(|(lb, ub)| (usize::from(lb) as IntCst, usize::from(ub) as IntCst))
+                    .unwrap_or((0, -1));
+                let dvar = pb.model.new_optional_ivar(lb, ub, prez_lit, label).variable();
+                SVar::new(dvar, s.tpe).into()
+            }
         };
         sub.add(v, fresh)?;
     }
@@ -480,13 +492,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let eff_mutex_ends: HashMap<EffID, FVar> = assigns
         .iter()
         .map(|(eff_id, prez, _)| {
-            let var = solver.model.new_optional_fvar(
+            let var = solver.model.new_optional_ivar(
                 ORIGIN * TIME_SCALE.get(),
                 HORIZON.get() * TIME_SCALE.get(),
-                TIME_SCALE.get(),
                 *prez,
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
             );
+            let var = FVar::new(var, TIME_SCALE.get());
             (*eff_id, var)
         })
         .collect();

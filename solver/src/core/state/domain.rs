@@ -1,8 +1,5 @@
-use crate::{
-    core::{INT_CST_MAX, INT_CST_MIN, IntCst, LongCst, cst_int_to_long},
-    model::lang::Rational,
-};
-use std::fmt::{Display, Formatter};
+use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst, LongCst, cst_int_to_long};
+use std::fmt::Formatter;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct RangeDomain<Value: Ord> {
@@ -117,53 +114,6 @@ impl std::fmt::Debug for OptDomain {
             OptDomain::Unknown(lb, ub) if lb == ub => write!(f, "?[{lb}]"),
             OptDomain::Unknown(lb, ub) => write!(f, "?[{lb}, {ub}]"),
             OptDomain::Absent => write!(f, "_"),
-        }
-    }
-}
-
-/// Domain of a fixed-point expression.
-pub struct FixedDomain {
-    pub num: IntDomain,
-    pub denom: IntCst,
-}
-
-impl FixedDomain {
-    pub fn new(num: IntDomain, denom: IntCst) -> FixedDomain {
-        FixedDomain { num, denom }
-    }
-
-    pub fn is_bound(&self) -> bool {
-        self.num.is_singleton()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.num.is_empty()
-    }
-
-    pub fn lb(&self) -> Rational {
-        Rational::new(self.num.lb, self.denom)
-    }
-    pub fn ub(&self) -> Rational {
-        Rational::new(self.num.lb, self.denom)
-    }
-
-    pub fn lb_f32(&self) -> f32 {
-        (self.num.lb as f32) / (self.denom as f32)
-    }
-
-    pub fn ub_f32(&self) -> f32 {
-        (self.num.ub as f32) / (self.denom as f32)
-    }
-}
-
-impl Display for FixedDomain {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_bound() {
-            write!(f, "{:.3}", self.lb_f32())
-        } else if self.is_empty() {
-            write!(f, "∅")
-        } else {
-            write!(f, "[{:.3}, {:.3}]", self.lb_f32(), self.ub_f32())
         }
     }
 }

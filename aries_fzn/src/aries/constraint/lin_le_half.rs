@@ -2,10 +2,7 @@ use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::BVar;
-use aries::model::lang::IVar;
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::linear::LinearTerm;
-use aries::model::lang::linear::ScaledVar;
+use aries::model::lang::linear::*;
 
 use crate::aries::Post;
 
@@ -43,9 +40,7 @@ impl LinLeHalf {
 impl<Lbl: Label> Post<Lbl> for LinLeHalf {
     fn post(&self, model: &mut Model<Lbl>) {
         // r => sum(v[i] * c[i]) <= ub
-        let sum = self.sum.iter().fold(LinearSum::zero(), |accu, elem| {
-            accu + LinearTerm::int(elem.factor, IVar::new(elem.var))
-        });
+        let sum = LinSum::new(0, self.sum.iter().copied());
         let constraint = sum.leq(self.ub);
         model.enforce_if(self.r.true_lit(), constraint);
     }

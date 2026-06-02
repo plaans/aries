@@ -1,7 +1,7 @@
-use crate::collections::id_map::IdMap;
-use crate::collections::ref_store::RefPool;
-use crate::model::lang::Type;
-use crate::utils::input::Sym;
+use aries::collections::id_map::IdMap;
+use aries::collections::ref_store::RefPool;
+use aries::prelude::*;
+use aries::utils::input::Sym;
 use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
@@ -142,9 +142,57 @@ impl TypeHierarchy {
     }
 
     /// Iterator on all Types by increasing usize value
-    pub fn types(&self) -> impl Iterator<Item = TypeId> {
+    pub fn types(&self) -> impl Iterator<Item = TypeId> + '_ {
         self.types.keys()
     }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub enum Type {
+    Sym(TypeId),
+    Int {
+        lb: IntCst,
+        ub: IntCst,
+    },
+    /// A fixed-point numeral, parameterized with its denominator.
+    Fixed(IntCst),
+    Bool,
+}
+
+impl Type {
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            Type::Sym(_) | Type::Bool => false,
+            Type::Int { .. } | Type::Fixed(_) => true,
+        }
+    }
+}
+
+impl From<Type> for Kind {
+    fn from(tpe: Type) -> Self {
+        match tpe {
+            Type::Sym(_) => Kind::Sym,
+            Type::Int { .. } => Kind::Int,
+            Type::Fixed(denum) => Kind::Fixed(denum),
+            Type::Bool => Kind::Bool,
+        }
+    }
+}
+
+impl Type {
+    pub const UNBOUNDED_INT: Type = Type::Int {
+        lb: INT_CST_MIN,
+        ub: INT_CST_MAX,
+    };
+}
+
+#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
+pub enum Kind {
+    Bool,
+    Int,
+    /// A fixed-point numeral, parameterized with its denominator.
+    Fixed(IntCst),
+    Sym,
 }
 
 #[cfg(test)]

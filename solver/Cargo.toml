@@ -41,5 +41,4 @@ env_param = { path = "../env_param" }
 num-integer = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
-num-rational = { workspace = true }
 hashbrown = { workspace = true }

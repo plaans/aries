@@ -2,8 +2,8 @@
 
 use aries::core::{IntCst, Lit, INT_CST_MAX};
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::{IVar, Rational};
+use aries::model::lang::IVar;
+use aries::prelude::LinSum;
 use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
@@ -16,6 +16,8 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt::{Display, Formatter};
 use std::time::Instant;
+
+type Rational = num_rational::Ratio<IntCst>;
 
 /// If true, then the objects will be renamed to match the order in which they are treated by the solver
 /// from the least interesting to the most. THis is meant to ease debugging.
@@ -78,7 +80,9 @@ impl Pb {
     /// Rename object so that the first (o1) is the one with least value per weight unit
     /// and this value increase afterwards.
     pub fn rename_ordered(&mut self) {
-        self.items.sort_by_key(|i| Rational::new(i.value, i.weight));
+        let priority = |i: &Item| (i.value as f32) / (i.weight as f32);
+        self.items
+            .sort_by(|i1, i2| f32::total_cmp(&priority(i1), &priority(i2)));
         for (i, item) in self.items.iter_mut().enumerate() {
             item.name = format!("o{}", i + 1);
         }
@@ -178,8 +182,8 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
     let (total_value, brancher): (IVar, Brancher<_>) = match mode {
         SolveMode::Simple => {
             let objective = model.new_ivar(0, INT_CST_MAX, "objective");
-            let mut total_weight = LinearSum::zero();
-            let mut total_value = LinearSum::zero();
+            let mut total_weight = LinSum::zero();
+            let mut total_value = LinSum::zero();
             for i in 0..vars.len() {
                 total_weight += vars[i] * items[i].weight;
                 total_value += vars[i] * (items[i].value);
@@ -201,12 +205,12 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
             let folder = |(weight_before, value_before): (IVar, IVar), i: usize| {
                 let item = &items[i];
                 let next_weight = model.new_ivar(0, pb.capacity, format!("weights_from_{}", &item.name));
-                let sum_weight = LinearSum::zero() + weight_before + vars[i] * item.weight;
+                let sum_weight = LinSum::zero() + weight_before + vars[i] * item.weight;
                 model.enforce(sum_weight.clone().leq(next_weight), []);
                 model.enforce(sum_weight.geq(next_weight), []);
 
                 let next_value = model.new_ivar(0, max_value, format!("value_from_{}", &item.name));
-                let sum_value = LinearSum::zero() + value_before + vars[i] * item.value;
+                let sum_value = LinSum::zero() + value_before + vars[i] * item.value;
                 model.enforce(sum_value.clone().leq(next_value), []);
                 model.enforce(sum_value.geq(next_value), []);
                 (next_weight, next_value)

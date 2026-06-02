@@ -2,9 +2,6 @@ use crate::chronicles::analysis::is_static;
 use crate::chronicles::{EffectOp, Fluent, Problem};
 use crate::legacy::*;
 use aries::core::Lit;
-use aries::model::lang::SAtom;
-use aries::model::symbols::{SymId, TypedSym};
-use aries::model::types::TypeId;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
@@ -28,11 +25,11 @@ impl Value {
     fn write(&self, out: &mut String, pb: &Problem) {
         match self {
             Value::SymType(t) => {
-                let tpe = pb.context.model.shape.symbols.types.from_id(*t);
+                let tpe = pb.context.symbols.types.from_id(*t);
                 write!(out, "{tpe}").unwrap()
             }
             Value::SymCst(ts) => {
-                let sym = pb.context.model.shape.symbols.symbol(ts.sym);
+                let sym = pb.context.symbols.symbol(ts.sym);
                 write!(out, "{sym}").unwrap()
             }
             Value::BoolType => write!(out, "?").unwrap(),
@@ -51,7 +48,7 @@ struct GAtom {
 impl GAtom {
     pub fn format(&self, pb: &Problem) -> String {
         let mut out = String::with_capacity(64);
-        let fluent = pb.context.model.shape.symbols.symbol(self.fluent);
+        let fluent = pb.context.symbols.symbol(self.fluent);
         write!(out, "{fluent}(").unwrap();
         for (i, arg) in self.params.iter().enumerate() {
             if i > 0 {

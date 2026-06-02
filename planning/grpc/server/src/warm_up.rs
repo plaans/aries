@@ -52,7 +52,6 @@ pub fn param_from_upf(param: &up::Atom, problem: &Problem) -> Result<Cst> {
         up::atom::Content::Symbol(s) => {
             let sym = problem
                 .context
-                .model
                 .get_symbol_table()
                 .id(&s)
                 .with_context(|| format!("Unknown parameter {}", s))?;

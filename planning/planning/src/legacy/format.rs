@@ -1,12 +1,10 @@
+use crate::chronicles::{Ctx, VarLabel};
 use crate::legacy::*;
 use aries::core::*;
-use aries::model::lang::{FAtom, IAtom, IVar, Kind, SAtom, Type};
-use aries::model::symbols::{SymId, SymbolTable};
-use aries::model::types::TypeId;
+use aries::model::lang::{IAtom, IVar};
+use aries::model::Label;
 use aries::model::ModelShape;
-use aries::model::{Label, Model};
 use aries::reif::{DifferenceExpression, ReifExpr};
-use aries::solver::Solver;
 use aries::utils::input::Sym;
 use aries::utils::Fmt;
 
@@ -20,9 +18,9 @@ where
         self.get_shape().labels.get(var.into())
     }
 
-    fn get_type(&self, var: impl Into<VarRef>) -> Option<Type> {
-        self.get_shape().types.get(var.into()).copied()
-    }
+    // fn get_type(&self, var: impl Into<VarRef>) -> Option<Type> {
+    //     self.get_shape().types.get(var.into()).copied()
+    // }
 
     fn get_var(&self, label: &Lbl) -> Option<VarRef> {
         self.get_shape().get_variable(label)
@@ -33,48 +31,46 @@ where
     }
 
     fn get_symbol(&self, sym: SymId) -> &Sym {
-        self.get_shape().symbols.symbol(sym)
+        self.get_symbol_table().symbol(sym)
     }
 
     fn get_type_of(&self, sym: SymId) -> TypeId {
-        self.get_shape().symbols.type_of(sym)
+        self.get_symbol_table().type_of(sym)
     }
 
-    fn get_symbol_table(&self) -> &SymbolTable {
-        &self.get_shape().symbols
-    }
+    fn get_symbol_table(&self) -> &SymbolTable;
 
     fn get_reified_expr(&self, lit: Lit) -> Option<&ReifExpr> {
         self.get_shape().expressions.original_full(lit)
     }
 }
-impl<Lbl: Label> Shaped<Lbl> for Model<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        &self.shape
+
+impl Shaped<VarLabel> for Ctx {
+    fn get_shape(&self) -> &ModelShape<VarLabel> {
+        &self.model.shape
+    }
+
+    fn get_symbol_table(&self) -> &SymbolTable {
+        self.symbols.as_ref()
     }
 }
-impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        self.model.get_shape()
-    }
-}
+
+// impl<Lbl: Label> Shaped<Lbl> for Model<Lbl> {
+//     fn get_shape(&self) -> &ModelShape<Lbl> {
+//         &self.shape
+//     }
+// }
+// impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
+//     fn get_shape(&self) -> &ModelShape<Lbl> {
+//         self.model.get_shape()
+//     }
+// }
 
 /// Wraps an atom into a custom object that can be formatted with the standard library `Display`
 ///
 /// Expressions and variables are formatted into a single line with lisp-like syntax.
 /// Anonymous variables are prefixed with "b_" and "i_" (for bools and ints respectively followed
 /// by a unique identifier.
-///
-/// # Usage
-/// ```
-/// use aries::model::Model;
-/// use aries_planning::legacy::*;
-/// let mut i = Model::<&'static str>::default();
-/// let x = i.new_ivar(0, 10, "X");
-/// let y = x + 10;
-/// println!("x: {}", fmt(x, &i));
-/// println!("y: {}", fmt(y, &i));
-/// ```
 pub fn fmt<Lbl: Label>(atom: impl Into<Atom>, ctx: &impl Shaped<Lbl>) -> impl std::fmt::Display + '_ {
     let atom = atom.into();
     Fmt(move |f| format_impl(ctx, atom, f))
@@ -89,26 +85,14 @@ fn format_impl<Lbl: Label>(ctx: &impl Shaped<Lbl>, atom: Atom, f: &mut std::fmt:
     }
 }
 fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let tpe = ctx.get_type(b.variable());
-    let t = b.variable().geq(1);
     if b == Lit::TRUE {
         write!(f, "true")
     } else if b == Lit::FALSE {
         write!(f, "false")
     } else if let Some(reified) = ctx.get_reified_expr(b) {
         format_reif(ctx, reified, f)
-    } else if let Some(Type::Bool) = tpe {
-        if b == t {
-            format_impl_var(ctx, b.variable(), Kind::Bool, f)
-        } else {
-            debug_assert_eq!(b, !t);
-            write!(f, "!")?;
-            format_impl_var(ctx, b.variable(), Kind::Bool, f)
-        }
     } else {
-        // let tpe = tpe.unwrap_or(Type::Int);
-        let kind = tpe.map(Kind::from).unwrap_or(Kind::Int);
-        format_impl_var(ctx, b.variable(), kind, f)?;
+        format_impl_var(ctx, b.variable(), Kind::Int, f)?;
         if b.svar().is_plus() {
             write!(f, " <= {}", b.ub_value())
         } else {

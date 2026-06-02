@@ -218,7 +218,6 @@ impl VarView for Atom {
     }
 }
 
-use aries::model::lang::{FAtom, Variable};
 use aries::transitive_conversions;
 use std::{
     convert::{TryFrom, TryInto},

@@ -5,7 +5,7 @@ use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
-use crate::model::lang::linear::LinearSum;
+use crate::model::lang::expr::geq;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
@@ -449,7 +449,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     debug_assert!(self.model.state.implies(item_scope, scope));
                     let alt_value = self.model.get_tautology_of_scope(item_scope);
                     // a.lhs >= item.var + item.cst
-                    let constraint = LinearSum::from(a.lhs).geq(LinearSum::from(item.var) + item.cst);
+                    let constraint = geq(a.lhs, item.var + item.cst);
                     self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
                 }
 

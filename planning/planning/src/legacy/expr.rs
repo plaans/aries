@@ -1,6 +1,9 @@
 use std::ops::Not;
 
-use aries::model::lang::{expr::*, Store};
+use aries::{
+    model::lang::{expr::*, Store},
+    reif::DifferenceExpression,
+};
 
 use crate::legacy::*;
 use aries::{
@@ -268,4 +271,86 @@ impl<Ctx: Store> BoolExpr<Ctx> for Neq {
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
         [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
     }
+}
+
+pub fn f_leq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    leq(lhs.num, rhs.num)
+}
+pub fn f_lt(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    lt(lhs.num, rhs.num)
+}
+
+pub fn f_geq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
+    let lhs = lhs.into();
+    let rhs = rhs.into();
+    assert_eq!(lhs.denom, rhs.denom);
+    geq(lhs.num, rhs.num)
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Leq(IAtom, IAtom);
+
+impl Not for Leq {
+    type Output = Leq;
+
+    fn not(self) -> Self::Output {
+        gt(self.0, self.1)
+    }
+}
+impl Not for &Leq {
+    type Output = Leq;
+
+    fn not(self) -> Self::Output {
+        !*self
+    }
+}
+
+impl From<Leq> for ReifExpr {
+    fn from(value: Leq) -> Self {
+        let lhs = value.0;
+        let rhs = value.1;
+
+        // normalize, transfer the shift from right to left
+        // to get: lhs <= rhs + rhs_add
+        let rhs_add = rhs.shift - lhs.shift;
+        let lhs: VarRef = lhs.var.into();
+        let rhs: VarRef = rhs.var.into();
+
+        // Only encode as a LEQ the patterns with two variables.
+        // Other are treated either are constant (if provable as so)
+        // or as literals on a single variable
+        if lhs == rhs {
+            // X  <= X + rhs_add   <=>  0 <= rhs_add
+            (0 <= rhs_add).into()
+        } else if rhs == VarRef::ZERO {
+            // lhs  <= rhs_add
+            Lit::leq(lhs, rhs_add).into()
+        } else if lhs == VarRef::ZERO {
+            // 0 <= rhs + rhs_add   <=>  -rhs_add <= rhs
+            Lit::geq(rhs, -rhs_add).into()
+        } else {
+            ReifExpr::MaxDiff(DifferenceExpression::new(lhs, rhs, rhs_add))
+        }
+    }
+}
+
+pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+    Leq(lhs.into(), rhs.into())
+}
+
+pub fn lt(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+    leq(lhs.into(), rhs.into() - 1)
+}
+
+pub fn geq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+    leq(rhs, lhs)
+}
+pub fn gt(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+    lt(rhs, lhs)
 }

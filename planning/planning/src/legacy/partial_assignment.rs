@@ -1,8 +1,7 @@
 use crate::legacy::*;
 use aries::core::views::Term;
 use aries::core::{IntCst, Lit, SignedVar, VarRef};
-use aries::model::lang::{FAtom, IAtom, Rational, SAtom};
-use aries::model::symbols::{SymId, TypedSym};
+use aries::prelude::*;
 use std::collections::HashMap;
 
 /// Extension trait to allow the evaluation of expressions based on a partial assignment of variables.

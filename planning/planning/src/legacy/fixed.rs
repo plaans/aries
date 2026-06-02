@@ -1,10 +1,12 @@
-use crate::core::views::{Dom, Term, VarView};
-use crate::core::{IntCst, QCst, VarRef};
-use crate::model::lang::{ConversionError, IAtom, IVar};
+use aries::core::views::{Dom, Term, VarView};
+use aries::core::{IntCst, VarRef};
+use aries::model::lang::{ConversionError, IAtom, IVar};
 use num_rational::Ratio;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
+
+use crate::legacy::QCst;
 
 pub type Rational = Ratio<IntCst>;
 

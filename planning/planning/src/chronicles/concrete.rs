@@ -8,7 +8,6 @@ use std::sync::Arc;
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::Fluent;
 use aries::core::{IntCst, Lit, SignedVar, VarRef};
-use aries::model::lang::linear::{LinearSum, LinearTerm};
 use aries::model::lang::*;
 
 /// A state variable e.g. `(location-of robot1)` where:
