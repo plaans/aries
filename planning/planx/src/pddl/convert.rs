@@ -149,6 +149,8 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         }
     }
 
+    model.user_utility = prob.user_utility;
+
     for t in &dom.tasks {
         let params = parse_parameters(&t.args, &model.env.types).msg(&model.env)?;
         model.actions.add_task(t.name.clone(), params)?;

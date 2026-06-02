@@ -130,6 +130,17 @@ fn pick_best_mcs(mcses: &[BTreeSet<Tag>], selected_names: &BTreeSet<String>, wei
 }
 
 // =====================================================================
+// Early stop via user-utility threshold.
+//
+// The :metric minimizes preference violations (lower = better).
+// The threshold is the violation cost the user considers acceptable.
+// When the objective drops to this value or below, the path stops
+// successfully — the user is satisfied, no need to keep improving.
+//
+// Source: PDDL (:user-utility X) if present, otherwise optimal × 2.0.
+// =====================================================================
+
+// =====================================================================
 // One-by-one enforcement loop (shared core for both strategies).
 //
 // Walks through `ordering` and enforces preferences one at a time.
@@ -156,6 +167,7 @@ fn run_one_by_one(
     plan_cost_obj: Option<IntTerm>,
     optimal_obj_val: IntCst,
     optimal_plan_cost: Option<IntCst>,
+    stop_threshold: IntCst,
     ordering: &[usize],
     path_label: &str,
 ) -> PathResult {
@@ -241,6 +253,15 @@ fn run_one_by_one(
             // Track the objective value of the latest solution
             if let Some(ref sol) = latest_solution {
                 last_obj_val = Some(sol.eval(obj).unwrap());
+            }
+
+            // Early stop: objective reached the user's acceptable level
+            if let Some(current) = last_obj_val {
+                if current <= stop_threshold {
+                    println!("\n[SIM][{}] User-utility reached: objective {} ≤ threshold {}",
+                        path_label, current, stop_threshold);
+                    return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
+                }
             }
 
             // All preferences satisfied — early exit
@@ -353,13 +374,26 @@ pub(crate) fn simulate_preference_enforcement(
 
     solver.enforce_permanent(phase_assumptions);
 
+    // Early stop threshold: from PDDL (:user-utility X) if present,
+    // otherwise computed as optimal × DEFAULT_STOP_FACTOR.
+    const DEFAULT_STOP_FACTOR: f64 = 2.0;
+    let stop_threshold: IntCst = if let Some(val) = model.user_utility {
+        println!("[SIM] User-utility threshold (from PDDL): {}", val);
+        val as IntCst
+    } else {
+        let computed = (optimal_obj_val as f64 * DEFAULT_STOP_FACTOR) as IntCst;
+        println!("[SIM] User-utility threshold (computed): {} (optimal {} × {:.1})",
+            computed, optimal_obj_val, DEFAULT_STOP_FACTOR);
+        computed
+    };
+
     match strategy {
         Strategy::Greedy => {
             let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 &violated_indices, plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                &ordering, "greedy",
+                stop_threshold, &ordering, "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -383,7 +417,7 @@ pub(crate) fn simulate_preference_enforcement(
                 let result = run_one_by_one(
                     &mut solver.clone(), encoding, model, sched, &entries, &weights,
                     &violated_indices, plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    &ordering, &label,
+                    stop_threshold, &ordering, &label,
                 );
                 let perm_names: Vec<&str> = perm.iter().map(|&i| entries[i].name.as_str()).collect();
                 let enforced_names: Vec<&str> = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect();

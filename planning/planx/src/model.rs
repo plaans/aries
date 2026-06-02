@@ -12,6 +12,13 @@ pub struct Model {
     pub goals: Vec<Goal>,
     pub preferences: Preferences<Goal>,
     pub metric: Option<Metric>,
+    /// Acceptable violation cost for the user (from PDDL `:user-utility`).
+    /// The `:metric` minimizes preference violations (lower = better). This value
+    /// is the level the user considers "good enough". During simulation, when the
+    /// objective drops to this value or below, the path stops successfully — the
+    /// user is satisfied, no need to keep improving.
+    /// If absent, simulation exhausts all analysis without early stopping.
+    pub user_utility: Option<f64>,
     pub task_network: Option<TaskNet>,
 }
 
@@ -24,6 +31,7 @@ impl Model {
             goals: Default::default(),
             preferences: Default::default(),
             metric: Default::default(),
+            user_utility: None,
             task_network: None,
         }
     }

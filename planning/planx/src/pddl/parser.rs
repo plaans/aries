@@ -805,6 +805,9 @@ pub struct Problem {
     pub task_network: Option<TaskNetwork>,
     pub goal: Vec<SExpr>,
     pub metric: Option<Metric>,
+    /// Acceptable violation cost for the user. E.g. (:user-utility 6) means
+    /// "I'm satisfied when total violation cost is 6 or less, no need to improve further."
+    pub user_utility: Option<f64>,
     pub constraints: Vec<SExpr>,
 }
 
@@ -818,6 +821,7 @@ impl Problem {
             task_network: None,
             goal: vec![],
             metric: None,
+            user_utility: None,
             constraints: vec![],
         }
     }
@@ -908,6 +912,12 @@ fn read_problem(problem: SExpr) -> std::result::Result<Problem, Message> {
                 for constraint in property {
                     res.constraints.push(constraint.clone());
                 }
+            }
+            ":user-utility" => {
+                let val = property.pop_atom()?;
+                let parsed: f64 = val.as_str().parse()
+                    .map_err(|_| val.invalid("expected a numeric value for :user-utility"))?;
+                res.user_utility = Some(parsed);
             }
             _ => return Err(current.invalid("unsupported block")),
         }
