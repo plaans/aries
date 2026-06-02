@@ -21,7 +21,13 @@ pub trait DomainsExt: Dom {
         var.lower_bound(self)
     }
     fn bounds<Var: VarView + Copy>(&self, v: Var) -> (Var::Value, Var::Value) {
-        (self.lb(v), self.ub(v))
+        let lb = self.lb(v);
+        let ub = self.ub(v);
+        debug_assert!(
+            lb <= ub,
+            "this may be the case if the `Ord` of Var::Value is not compatible with the `Ord` of the integer domain"
+        );
+        (lb, ub)
     }
 
     fn var_domain<Var: VarView + Copy>(&self, var: Var) -> RangeDomain<Var::Value> {

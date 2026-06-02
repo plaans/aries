@@ -216,10 +216,34 @@ impl Debug for SymId {
     }
 }
 
-#[derive(Copy, Clone, Hash, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Copy, Clone)]
 pub struct TypedSym {
     pub sym: SymId,
     pub tpe: TypeId,
+}
+
+impl PartialOrd for TypedSym {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for TypedSym {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.sym.cmp(&other.sym)
+    }
+}
+
+impl PartialEq for TypedSym {
+    fn eq(&self, other: &Self) -> bool {
+        self.sym == other.sym
+    }
+}
+impl Eq for TypedSym {}
+
+impl Hash for TypedSym {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.sym.hash(state);
+    }
 }
 
 impl Debug for TypedSym {
