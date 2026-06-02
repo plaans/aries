@@ -141,6 +141,8 @@ struct PathResult {
     steps: usize,
     outcome: Outcome,
     enforced: Vec<usize>,
+    /// Final objective value after enforcement (None if no solution found)
+    final_obj_val: Option<IntCst>,
 }
 
 fn run_one_by_one(
@@ -161,12 +163,13 @@ fn run_one_by_one(
     let mut selected_indices: Vec<usize> = Vec::new();
     let mut steps: usize = 0;
     let mut order_pos = 0;
+    let mut last_obj_val: Option<IntCst> = None;
 
     loop {
         // Exhausted the ordering — done
         if order_pos >= ordering.len() {
             println!("\n[SIM][{}] No more preferences to try.", path_label);
-            return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices };
+            return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
         }
 
         let next_idx = ordering[order_pos];
@@ -235,12 +238,17 @@ fn run_one_by_one(
                 }
             }
 
+            // Track the objective value of the latest solution
+            if let Some(ref sol) = latest_solution {
+                last_obj_val = Some(sol.eval(obj).unwrap());
+            }
+
             // All preferences satisfied — early exit
             if let Some(ref sol) = latest_solution {
                 let still_violated = compute_still_violated(entries, &selected_indices, sol);
                 if still_violated.is_empty() {
                     println!("\n[SIM][{}] All preferences are now satisfied.", path_label);
-                    return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices };
+                    return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
                 }
             }
         }
@@ -354,16 +362,20 @@ pub(crate) fn simulate_preference_enforcement(
                 &ordering, "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
-            println!("\n[SIM] Greedy path enforced: [{}]",
-                result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", "));
+            let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+            println!("\n[SIM] Greedy path enforced: [{}]", enforced_str);
+            if let Some(final_val) = result.final_obj_val {
+                println!("[SIM] Optimal objective: {}, final objective: {}, distance to optimal: {}",
+                    optimal_obj_val, final_val, final_val - optimal_obj_val);
+            }
         }
         Strategy::AllCombinations => {
             let perms = permutations(&violated_indices);
             let n = violated_indices.len();
             println!("[SIM] Exploring {} paths ({} violated preferences)\n", perms.len(), n);
 
-            let mut best: Option<(usize, usize, Vec<usize>)> = None;
-            let mut worst: Option<(usize, usize, Vec<usize>)> = None;
+            let mut best: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;  // (steps, delta, path_idx, enforced)
+            let mut worst: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;
 
             for (pi, perm) in perms.iter().enumerate() {
                 let ordering = build_combination_ordering_with_retries(perm, n);
@@ -376,30 +388,31 @@ pub(crate) fn simulate_preference_enforcement(
                 let perm_names: Vec<&str> = perm.iter().map(|&i| entries[i].name.as_str()).collect();
                 let enforced_names: Vec<&str> = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect();
                 println!("\n[SIM] Path {} (order: [{}]): {} steps, outcome: {}, enforced: [{}]",
-                    pi + 1,
-                    perm_names.join(", "),
-                    result.steps,
-                    result.outcome,
-                    enforced_names.join(", "),
-                );
+                    pi + 1, perm_names.join(", "), result.steps, result.outcome, enforced_names.join(", "));
+                if let Some(final_val) = result.final_obj_val {
+                    println!("      optimal: {}, final: {}, distance to optimal: {}",
+                        optimal_obj_val, final_val, final_val - optimal_obj_val);
+                }
 
-                let is_better = best.as_ref().map_or(true, |(s, _, _)| result.steps < *s);
-                if is_better { best = Some((result.steps, pi, result.enforced.clone())); }
-                let is_worse = worst.as_ref().map_or(true, |(s, _, _)| result.steps > *s);
-                if is_worse { worst = Some((result.steps, pi, result.enforced)); }
+                let is_better = best.as_ref().map_or(true, |(s, _, _, _)| result.steps < *s);
+                if is_better { best = Some((result.steps, result.final_obj_val, pi, result.enforced.clone())); }
+                let is_worse = worst.as_ref().map_or(true, |(s, _, _, _)| result.steps > *s);
+                if is_worse { worst = Some((result.steps, result.final_obj_val, pi, result.enforced)); }
             }
 
             println!("\n===== All-combinations summary =====");
-            if let Some((steps, pi, ref enforced)) = best {
+            if let Some((steps, final_val, pi, ref enforced)) = best {
                 let names: Vec<&str> = enforced.iter().map(|&i| entries[i].name.as_str()).collect();
-                println!("  Best:  path {} — {} steps, enforced: [{}]", pi + 1, steps, names.join(", "));
+                let distance = final_val.map_or("N/A".to_string(), |v| format!("{}", v - optimal_obj_val));
+                println!("  Best:  path {} — {} steps, distance to optimal: {}, enforced: [{}]", pi + 1, steps, distance, names.join(", "));
             }
-            if let Some((steps, pi, ref enforced)) = worst {
+            if let Some((steps, final_val, pi, ref enforced)) = worst {
                 let names: Vec<&str> = enforced.iter().map(|&i| entries[i].name.as_str()).collect();
-                println!("  Worst: path {} — {} steps, enforced: [{}]", pi + 1, steps, names.join(", "));
+                let distance = final_val.map_or("N/A".to_string(), |v| format!("{}", v - optimal_obj_val));
+                println!("  Worst: path {} — {} steps, distance to optimal: {}, enforced: [{}]", pi + 1, steps, distance, names.join(", "));
             }
 
-            if let Some((steps, _, _)) = worst {
+            if let Some((steps, _, _, _)) = worst {
                 let _metrics = SimulationMetrics { steps, outcome: Outcome::Accepted };
             }
         }
