@@ -1,6 +1,6 @@
 use crate::chronicles::analysis::ProblemClass;
 use crate::chronicles::{Chronicle, Problem};
-use crate::legacy::Atom;
+use crate::legacy::*;
 use aries::model::extensions::DomainsExt;
 
 pub fn class_of(pb: &Problem) -> ProblemClass {
@@ -45,7 +45,7 @@ pub fn hierarchical_is_non_recursive(pb: &Problem) -> bool {
         .map(|subtask| subtask.task_name.as_slice());
 
     // two task are considered equivalent for the purpose of cycle detection if they are unifiable
-    let equiv = |a: &[Atom], b: &[Atom]| model.unifiable_seq(a, b);
+    let equiv = |a: &[Atom], b: &[Atom]| unifiable_seq(model, a, b);
 
     is_acyclic(
         roots,

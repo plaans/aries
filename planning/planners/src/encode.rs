@@ -11,13 +11,15 @@ use crate::Model;
 use anyhow::{Context, Result};
 use aries::core::state::Conflict;
 use aries::core::*;
-use aries::model::extensions::{DomainsExt, Shaped};
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::linear::LinearSum;
 use aries::model::lang::mul::EqVarMulLit;
 use aries::model::lang::{expr::*, IVar};
 use aries::model::lang::{FAtom, FVar, IAtom, Variable};
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::*;
+use aries_planning::legacy::{eq, neq};
 use env_param::EnvParam;
 use numeric::iatom_mul_lit;
 use std::cmp::{max, min};
@@ -125,11 +127,11 @@ pub fn instantiate(
         let fresh: Variable = match v {
             Variable::Bool(_) => pb.model.new_optional_bvar(prez_lit, label).into(),
             Variable::Int(i) => {
-                let (lb, ub) = pb.model.int_bounds(i);
+                let (lb, ub) = pb.model.bounds(i);
                 pb.model.new_optional_ivar(lb, ub, prez_lit, label).into()
             }
             Variable::Fixed(f) => {
-                let (lb, ub) = pb.model.int_bounds(f.num);
+                let (lb, ub) = pb.model.bounds(f.num);
                 pb.model.new_optional_fvar(lb, ub, f.denom, prez_lit, label).into()
             }
             Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
@@ -454,7 +456,7 @@ pub struct EncodedProblem {
 
 /// Returns whether two state variables are unifiable.
 fn unifiable_sv(model: &Model, sv1: &StateVar, sv2: &StateVar) -> bool {
-    sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
+    sv1.fluent == sv2.fluent && unifiable_seq(model, &sv1.args, &sv2.args)
 }
 
 /// Encodes a finite problem.
@@ -655,7 +657,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 let EffectOp::Assign(effect_value) = eff.operation else {
                     unreachable!()
                 };
-                if !solver.model.unifiable(cond.value, effect_value) {
+                if !unifiable(&solver.model, cond.value, effect_value) {
                     continue;
                 }
                 // vector to store the AND clause

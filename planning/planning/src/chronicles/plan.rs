@@ -1,3 +1,4 @@
+use crate::legacy::*;
 use aries::model::lang::Rational;
 use std::fmt::{Debug, Formatter};
 

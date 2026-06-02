@@ -3,6 +3,7 @@ use aries::model::lang::FAtom;
 use aries::model::lang::Kind;
 pub use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::*;
 use env_param::EnvParam;
 use std::collections::{BTreeSet, HashSet};
 
@@ -177,7 +178,7 @@ pub fn refinements_of_task(task: &Task, pb: &FiniteProblem, spec: &Problem) -> H
     let mut candidates = HashSet::new();
     for (template_id, template) in spec.templates.iter().enumerate() {
         if let Some(ch_task) = &template.chronicle.task {
-            if pb.model.unifiable_seq(task.as_slice(), ch_task.as_slice()) {
+            if unifiable_seq(&pb.model, task.as_slice(), ch_task.as_slice()) {
                 candidates.insert(template_id);
             }
         }

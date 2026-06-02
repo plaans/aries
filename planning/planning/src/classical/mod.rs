@@ -1,5 +1,6 @@
 use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
+use crate::legacy::*;
 use anyhow::{bail, Context, Result};
 
 use aries::model::lang::*;

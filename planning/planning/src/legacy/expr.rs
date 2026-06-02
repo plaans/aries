@@ -2,13 +2,14 @@ use std::ops::Not;
 
 use aries::model::lang::{expr::*, Store};
 
-use crate::{legacy::*, parsing::sexpr::SAtom};
+use crate::legacy::*;
 use aries::{
     model::Label,
     prelude::*,
     reif::{ReifExpr, Reifiable},
 };
 use env_param::EnvParam;
+use itertools::*;
 use smallvec::*;
 
 static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");

@@ -1,6 +1,6 @@
 use super::*;
+use aries::core::views::{Term, VarView};
 use aries::prelude::*;
-use aries::{core::*, model::lang::ConversionError};
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Atom {
@@ -196,21 +196,29 @@ impl Term for Atom {
     }
 }
 
-// impl Evaluable for Atom {
-//     type Value = Cst;
+impl VarView for Atom {
+    type Value = Cst;
 
-//     fn evaluate(&self, solution: &aries::prelude::Solution) -> Option<Self::Value> {
-//         Atom::Bool(b) => self.value_of(b).map(Cst::Bool),
-//         Atom::Int(i) => self.var_domain(i).as_singleton().map(Cst::Int),
-//         Atom::Fixed(f) => self
-//             .var_domain(f.num)
-//             .as_singleton()
-//             .map(|i| Cst::Fixed(Rational::new(i, f.denom))),
-//         Atom::Sym(s) => self.sym_value_of(s).map(|sym| Cst::Sym(TypedSym::new(sym, s.tpe()))),
-//     }
-// }
+    fn upper_bound(&self, dom: impl aries::core::views::Dom) -> Self::Value {
+        match self {
+            Atom::Bool(b) => Cst::Bool(b.upper_bound(dom)),
+            Atom::Int(i) => Cst::Int(i.upper_bound(dom)),
+            Atom::Fixed(f) => Cst::Fixed(f.upper_bound(dom)),
+            Atom::Sym(s) => Cst::Sym(TypedSym::new(s.upper_bound(dom), s.tpe())),
+        }
+    }
 
-use aries::model::lang::Variable;
+    fn lower_bound(&self, dom: impl aries::core::views::Dom) -> Self::Value {
+        match self {
+            Atom::Bool(b) => Cst::Bool(b.lower_bound(dom)),
+            Atom::Int(i) => Cst::Int(i.lower_bound(dom)),
+            Atom::Fixed(f) => Cst::Fixed(f.lower_bound(dom)),
+            Atom::Sym(s) => Cst::Sym(TypedSym::new(s.lower_bound(dom), s.tpe())),
+        }
+    }
+}
+
+use aries::model::lang::{FAtom, Variable};
 use aries::transitive_conversions;
 use std::{
     convert::{TryFrom, TryInto},

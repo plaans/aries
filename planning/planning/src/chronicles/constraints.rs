@@ -7,6 +7,8 @@ use aries::model::lang::Type;
 use aries::model::lang::{expr::*, Kind};
 use aries::model::Label;
 use itertools::Itertools;
+
+use crate::legacy::{eq, neq};
 use std::fmt::Debug;
 use ConstraintType::*;
 

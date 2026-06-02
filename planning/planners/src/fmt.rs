@@ -3,12 +3,11 @@
 use anyhow::*;
 use aries::model::symbols::ContiguousSymbols;
 use aries::prelude::*;
+use aries_planning::legacy::*;
 use itertools::Itertools;
 use std::fmt::Write;
 
 use crate::Model;
-use aries::model::extensions::Shaped;
-use aries::model::lang::{Atom, Cst, Rational};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::{
     ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId, TIME_SCALE,
@@ -147,7 +146,7 @@ fn format_chronicle_partial(
             Some(false) => "-",
         }
     )?;
-    write!(out, "{} ", ass.int_bounds(ch.chronicle.start).0)?;
+    write!(out, "{} ", ass.bounds(ch.chronicle.start).0)?;
     writeln!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
     // writeln!(out, "         {}", format_atoms(&ch.chronicle.name, ass)?)?;
     if ass.boolean_value_of(ch.chronicle.presence) != Some(false) {
@@ -170,7 +169,7 @@ fn format_task_partial(
     out: &mut String,
 ) -> Result<()> {
     write!(out, "{}", "  ".repeat(depth))?;
-    let start = ass.int_bounds(task.start).0;
+    let start = ass.bounds(task.start).0;
     write!(out, "{} {}", start, format_partial_name(&task.task_name, ass)?)?;
     writeln!(out, "         {}", format_atoms(&task.task_name, ass)?)?;
     for &(i, ch) in chronicles.iter() {
@@ -235,7 +234,7 @@ pub fn extract_plan_actions(
     let name = format_atom(&ch.chronicle.name[0], &problem.model, ass);
     let params = ch.chronicle.name[1..]
         .iter()
-        .map(|atom| ass.evaluate(*atom).unwrap())
+        .map(|atom| ass.eval(*atom).unwrap())
         .collect_vec();
 
     let instance = ActionInstance {

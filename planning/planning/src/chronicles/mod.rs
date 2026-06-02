@@ -9,6 +9,7 @@ pub use concrete::*;
 
 use self::constraints::Table;
 use crate::chronicles::preprocessing::action_rolling::RollCompilation;
+use crate::legacy::*;
 use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::lang::{FAtom, IAtom, Type, Variable};
 use aries::model::symbols::{SymId, SymbolTable, TypedSym};

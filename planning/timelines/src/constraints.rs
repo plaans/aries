@@ -7,10 +7,7 @@ use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, 
 use aries::prelude::*;
 use aries::{
     core::{literals::DisjunctionBuilder, views::Dom},
-    model::lang::{
-        expr::{eq, or},
-        max::EqMax,
-    },
+    model::lang::{expr::or, max::EqMax},
 };
 
 use crate::{boxes::Segment, effects::EffectOp, *};

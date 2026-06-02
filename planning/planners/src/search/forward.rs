@@ -4,11 +4,12 @@ use crate::encoding::refinements_of;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl};
 use aries::core::{Lit, VarRef};
-use aries::model::extensions::{DomainsExt, Shaped};
+use aries::model::extensions::DomainsExt;
 use aries::model::lang::IVar;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
+use aries_planning::legacy::*;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -151,8 +152,8 @@ impl SearchControl<VarLabel> for ForwardSearcher {
         let yy = earliest_pending_task(&self.problem, model);
         let res = match (xx, yy) {
             (Some(ch), Some(tsk)) => {
-                let ch_est = model.int_bounds(ch.chronicle.start).0;
-                let tsk_est = model.int_bounds(tsk.details.start).0;
+                let ch_est = model.bounds(ch.chronicle.start).0;
+                let tsk_est = model.bounds(tsk.details.start).0;
                 if ch_est <= tsk_est {
                     Some(next_chronicle_decision(ch, model))
                 } else {

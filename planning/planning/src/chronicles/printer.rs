@@ -1,6 +1,7 @@
 #![allow(clippy::comparison_chain)]
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
+use crate::legacy::*;
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};

@@ -1,6 +1,7 @@
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Chronicle, Container, Effect, EffectOp, Fluent, Problem, StateVar, Time, VarType};
+use crate::legacy::*;
 use aries::model::lang::*;
 use aries::model::symbols::{SymId, TypedSym};
 use aries::model::types::{TypeHierarchy, TypeId};
@@ -524,7 +525,7 @@ fn is_substitutable(pb: &Problem, group: &SubstitutionGroup) -> bool {
                 tracing::trace!("non convertible condition in base");
                 return false;
             }
-            if model.unifiable(cond.value, false) {
+            if unifiable(model, cond.value, false) {
                 // note that it is assumed that if an effect is present, it may be needed by someone
                 // (there a special preprocessing phase that removes provably unused statements)
                 tracing::trace!("non positive condition in base");

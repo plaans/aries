@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
 use aries::core::*;
-use aries::model::extensions::Shaped;
-use aries::model::lang::{expr::*, Atom, Cst, FAtom, Type};
+use aries::model::lang::expr::*;
 use aries_planning::chronicles::constraints::Table;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::eq;
+use aries_planning::legacy::*;
 use itertools::Itertools;
 use num_rational::Ratio;
 use std::collections::BTreeMap;

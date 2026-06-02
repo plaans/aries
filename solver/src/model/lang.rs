@@ -19,13 +19,11 @@ mod variables;
 pub use crate::core::Lit;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
-#[doc(hidden)]
 pub use fixed::{FAtom, FVar, Rational};
 pub use int::{IAtom, IVar};
 pub use int_expr::IntExpr;
 pub use linear::{LinearLeq, LinearSum, LinearTerm};
 pub use store::{ModelWrapper, Store};
-#[doc(hidden)]
 pub use sym::{SAtom, SVar};
 pub use validity_scope::*;
 pub use variables::Variable;
@@ -72,7 +70,6 @@ impl Type {
     };
 }
 
-#[doc(hidden)]
 #[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum Kind {
     Bool,

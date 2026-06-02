@@ -1,10 +1,12 @@
+use crate::legacy::*;
 use aries::core::*;
-use aries::model::label::Label;
 use aries::model::lang::{FAtom, IAtom, IVar, Kind, SAtom, Type};
 use aries::model::symbols::{SymId, SymbolTable};
 use aries::model::types::TypeId;
 use aries::model::ModelShape;
+use aries::model::{Label, Model};
 use aries::reif::{DifferenceExpression, ReifExpr};
+use aries::solver::Solver;
 use aries::utils::input::Sym;
 use aries::utils::Fmt;
 
@@ -66,7 +68,7 @@ impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
 /// # Usage
 /// ```
 /// use aries::model::Model;
-/// use aries::model::extensions::fmt;
+/// use aries_planning::legacy::*;
 /// let mut i = Model::<&'static str>::default();
 /// let x = i.new_ivar(0, 10, "X");
 /// let y = x + 10;

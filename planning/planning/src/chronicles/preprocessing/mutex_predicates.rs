@@ -1,4 +1,5 @@
 use crate::chronicles::{Chronicle, Condition, Effect, EffectOp, Fluent, Problem};
+use crate::legacy::*;
 
 #[derive(Default)]
 struct Effects<'a> {

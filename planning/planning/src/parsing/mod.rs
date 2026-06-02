@@ -6,12 +6,11 @@ use crate::classical::state::{SvId, World};
 use crate::parsing::pddl::{consume_typed_symbols, PddlFeature, TypedSymbol};
 
 use crate::chronicles::constraints::{Constraint, Duration};
+use crate::legacy::*;
 use crate::parsing::sexpr::SExpr;
 use anyhow::{bail, Context, Result};
 use aries::core::*;
-use aries::model::extensions::Shaped;
 use aries::model::lang::linear::LinearSum;
-use aries::model::lang::*;
 use aries::model::symbols::SymbolTable;
 use aries::model::types::TypeHierarchy;
 use aries::utils::input::{ErrLoc, Loc, Sym};
