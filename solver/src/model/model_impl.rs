@@ -281,8 +281,33 @@ impl<Lbl: Label> Model<Lbl> {
         BVar::new(dvar)
     }
 
+    /// Creates a new variable, taking its value in `[lb, ub]`.
     pub fn new_variable(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
-        self.state.new_var(lb, ub)
+        self.new_optional_variable(lb, ub, Lit::TRUE)
+    }
+
+    /// Creates a new optional variable that is either:
+    ///
+    ///  - an integer in `[lb, ub]` when `presence` is entailed.
+    ///  - absent otherwise
+    ///
+    /// It is required that the presence literal is on an mandatory variable.
+    pub fn new_optional_variable(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
+        debug_assert!(self.presence_literal(presence).tautological());
+        if lb <= ub {
+            self.state.new_optional_var(lb, ub, presence)
+        } else {
+            // domain is empty which violates an invariant of `Domains`.
+            // If the variable is mandatory, this would be immediately UNSAT but we cannot communicate that fact with this method signature.
+            // Otherwise, the variable is optional and would be absent (but be can't propagate because it risks being in an inconsistent state)
+            // This is very unlikely to happen in most domains and we want to keep the return type simple, with no error handling required.
+            //
+            // hence we create a variable with a single value, and post a constraint enforcing the upper bound
+            // On the fist propagation, this one would trigger and give the appropriate result (UNSAT/absent)
+            let var = self.state.new_optional_var(lb, lb, presence);
+            self.enforce(var.leq(ub), [presence]);
+            var
+        }
     }
 
     #[doc(hidden)]
@@ -314,11 +339,7 @@ impl<Lbl: Label> Model<Lbl> {
     }
 
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Lbl>) -> IVar {
-        let dvar = if let Some(presence) = presence {
-            self.state.new_optional_var(lb, ub, presence)
-        } else {
-            self.state.new_var(lb, ub)
-        };
+        let dvar = self.new_optional_variable(lb, ub, presence.unwrap_or(Lit::TRUE));
         self.shape.set_label(dvar, label);
         self.shape.set_type(dvar, Type::Int { lb, ub });
         IVar::new(dvar)
@@ -336,33 +357,16 @@ impl<Lbl: Label> Model<Lbl> {
 
     fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<Lbl>) -> SVar {
         let instances = self.shape.symbols.instances_of_type(tpe);
-        if let Some((lb, ub)) = instances.bounds() {
-            let lb = usize::from(lb) as IntCst;
-            let ub = usize::from(ub) as IntCst;
-            let dvar = if let Some(presence) = presence {
-                self.state.new_optional_var(lb, ub, presence)
-            } else {
-                self.state.new_var(lb, ub)
-            };
-            self.shape.set_label(dvar, label);
-            self.shape.set_type(dvar, Type::Sym(tpe));
-            SVar::new(dvar, tpe)
-        } else {
-            // no instances for this type, we should create a variable with an empty domain which is only allowed for optional variable
-            println!("WARNING: workaround for empty domain of optional vars (Github Issue #28)");
-            let p = if let Some(presence) = presence {
-                // this is an optional variable, force it to be absent
-                self.state
-                    .set(!presence, Cause::Decision) // TODO: fix decision cause
-                    .expect("An optional but necessarily present variable has an empty integer domain.");
-                // create a a variable with arbitrary domain (which will never be used as is forced to be absent)
-                self.state.new_optional_var(0, 0, presence)
-            } else {
-                // non-optional variable, break on assumption of non-empty domain in the model
-                panic!("Variable with empty symbolic domain.");
-            };
-            SVar::new(p, tpe)
-        }
+        let presence = presence.unwrap_or(Lit::TRUE);
+        // get the lower and upper bounds, defaulting to an empty interval if there are no values.
+        let (lb, ub) = instances
+            .bounds()
+            .map(|(lb, ub)| (usize::from(lb) as IntCst, usize::from(ub) as IntCst))
+            .unwrap_or((0, -1));
+        let dvar = self.new_optional_variable(lb, ub, presence);
+        self.shape.set_label(dvar, label);
+        self.shape.set_type(dvar, Type::Sym(tpe));
+        SVar::new(dvar, tpe)
     }
 
     /// Interns the given expression and returns an equivalent literal.

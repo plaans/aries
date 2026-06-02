@@ -120,10 +120,10 @@ where
     T: ModelWrapper + Dom,
 {
     fn new_literal(&mut self, presence: Lit) -> Lit {
-        self.get_model_mut().state.new_optional_var(0, 1, presence).geq(1)
+        self.get_model_mut().new_optional_variable(0, 1, presence).geq(1)
     }
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
-        self.get_model_mut().state.new_optional_var(lb, ub, presence)
+        self.get_model_mut().new_optional_variable(lb, ub, presence)
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
         self.get_model_mut().half_reify(e.clone())
