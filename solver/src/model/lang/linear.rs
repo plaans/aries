@@ -891,7 +891,16 @@ impl LinSum {
                 false // different vars, don't merge
             }
         });
-        self.vars.retain(|sv| !sv.is_zero());
+        self.vars.retain(|sv| {
+            if sv.is_zero() {
+                false
+            } else if sv.var == VarRef::ONE {
+                self.constant += sv.factor;
+                false
+            } else {
+                true
+            }
+        });
     }
 
     pub fn constant(&self) -> IntCst {

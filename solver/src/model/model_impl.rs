@@ -377,7 +377,8 @@ impl<Lbl: Label> Model<Lbl> {
         self.reify_core(decomposed, false)
     }
     // TODO: replace reify with this one
-    pub fn reif<'a, Expr: BoolExpr<Self> + 'a, NotExpr>(&mut self, expr: &'a Expr) -> Lit
+    #[cfg(test)]
+    pub(crate) fn reif<'a, Expr: BoolExpr<Self> + 'a, NotExpr>(&mut self, expr: &'a Expr) -> Lit
     where
         &'a Expr: std::ops::Not<Output = NotExpr>,
         NotExpr: BoolExpr<Self>,
