@@ -1,8 +1,6 @@
-use crate::core::IntCst;
-use crate::model::lang::{Atom, ConversionError};
-use crate::model::symbols::TypedSym;
-
-use super::fixed::Rational;
+use crate::legacy::Atom;
+use aries::model::symbols::TypedSym;
+use aries::prelude::*;
 
 /// Represents a constant value
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
@@ -24,18 +22,18 @@ impl From<Cst> for Atom {
     }
 }
 
-impl TryFrom<Atom> for Cst {
-    type Error = ConversionError;
+// impl TryFrom<Atom> for Cst {
+//     type Error = ConversionError;
 
-    fn try_from(value: Atom) -> Result<Self, Self::Error> {
-        match value {
-            Atom::Sym(c) => Ok(Cst::Sym(c.try_into()?)),
-            Atom::Int(i) => Ok(Cst::Int(i.try_into()?)),
-            Atom::Fixed(f) => Ok(Cst::Fixed(f.try_into()?)),
-            Atom::Bool(l) => Ok(Cst::Bool(l.try_into()?)),
-        }
-    }
-}
+//     fn try_from(value: Atom) -> Result<Self, Self::Error> {
+//         match value {
+//             Atom::Sym(c) => Ok(Cst::Sym(c.try_into()?)),
+//             Atom::Int(i) => Ok(Cst::Int(i.try_into()?)),
+//             Atom::Fixed(f) => Ok(Cst::Fixed(f.try_into()?)),
+//             Atom::Bool(l) => Ok(Cst::Bool(l.try_into()?)),
+//         }
+//     }
+// }
 
 impl From<IntCst> for Cst {
     fn from(value: IntCst) -> Self {

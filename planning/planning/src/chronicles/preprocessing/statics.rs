@@ -2,8 +2,6 @@ use crate::chronicles::*;
 
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::constraints::{Constraint, ConstraintType};
-use aries::model::extensions::Shaped;
-use aries::model::lang::Cst;
 use std::convert::TryFrom;
 
 fn is_on_fluent(target_fluent: &Fluent, state_var: &StateVar) -> bool {

@@ -183,7 +183,7 @@ impl CspProblem {
             CspConstraint::Equals(lhs, rhs) => m.reify(eq(t(lhs), t(rhs))),
             CspConstraint::Not(constr) => {
                 let r = self.reify_constraint(m, constr, vars);
-                m.reify(eq(r, Lit::FALSE))
+                !r
             }
             CspConstraint::Or(disjuncts) => {
                 let r = or(disjuncts

@@ -101,11 +101,12 @@ impl<Lbl: Label> ModelShape<Lbl> {
     /// Given a TOTAL assignment, check that all constraints are satisfied.
     /// NOTE: Currently not really polished and intended for internal use.
     pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
+        let solution = assignment.extract_solution();
         for c in &self.constraints {
             match c {
                 Constraint::HalfReified(expr, enabler) => {
                     if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
-                        let actual_value = expr.eval(assignment);
+                        let actual_value = expr.eval(&solution);
                         anyhow::ensure!(
                             actual_value == Some(true),
                             "{} : {:?}  [but enabled by {:?}]",
@@ -421,7 +422,6 @@ impl<Lbl: Label> Model<Lbl> {
                     _ => {}
                 }
             }
-            ReifExpr::Linear(lin) => *lin = lin.simplify(),
             ReifExpr::Eq(v1, v2) => {
                 if v1 < v2 {
                     std::mem::swap(v1, v2);
@@ -442,6 +442,7 @@ impl<Lbl: Label> Model<Lbl> {
                     *expr = ReifExpr::Lit(Lit::TRUE)
                 }
             }
+            // linear sums are always  simplified and in canonical form
             _ => {}
         }
     }
@@ -571,7 +572,7 @@ impl<Lbl: Label> Model<Lbl> {
             // not yet reified but our literal cannot be used directly because it has a different scope
             // if the literal is already true for a linear constraint, use the tautology of the expression scope as reification
             // this is done because we do not handle reified linear constraint for the moment
-            let use_tautology = self.entails(value) && matches!(expr, ReifExpr::Linear(_));
+            let use_tautology = self.entails(value) && matches!(expr, ReifExpr::LinearLeq(_));
             let reified = self.reify_core(expr, use_tautology);
             self.bind_literals(value, reified);
         }

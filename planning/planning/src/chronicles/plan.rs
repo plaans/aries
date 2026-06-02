@@ -1,4 +1,4 @@
-use aries::model::lang::{Cst, Rational};
+use aries::model::lang::Rational;
 use std::fmt::{Debug, Formatter};
 
 #[derive(Clone)]

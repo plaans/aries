@@ -1,12 +1,12 @@
-use crate::core::*;
-use crate::model::label::Label;
-use crate::model::lang::{FAtom, IAtom, IVar, Kind, SAtom, Type};
-use crate::model::symbols::{SymId, SymbolTable};
-use crate::model::types::TypeId;
-use crate::model::ModelShape;
-use crate::reif::{DifferenceExpression, ReifExpr};
-use crate::utils::input::Sym;
-use crate::utils::Fmt;
+use aries::core::*;
+use aries::model::label::Label;
+use aries::model::lang::{FAtom, IAtom, IVar, Kind, SAtom, Type};
+use aries::model::symbols::{SymId, SymbolTable};
+use aries::model::types::TypeId;
+use aries::model::ModelShape;
+use aries::reif::{DifferenceExpression, ReifExpr};
+use aries::utils::input::Sym;
+use aries::utils::Fmt;
 
 pub trait Shaped<Lbl>
 where

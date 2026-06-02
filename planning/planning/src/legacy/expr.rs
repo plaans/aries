@@ -1,3 +1,18 @@
+use std::ops::Not;
+
+use aries::model::lang::{expr::*, Store};
+
+use crate::{legacy::*, parsing::sexpr::SAtom};
+use aries::{
+    model::Label,
+    prelude::*,
+    reif::{ReifExpr, Reifiable},
+};
+use env_param::EnvParam;
+use smallvec::*;
+
+static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");
+
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     let lhs = lhs.into();
     let rhs = rhs.into();
@@ -25,7 +40,7 @@ impl Not for Eq {
 impl Not for &Eq {
     type Output = Neq;
 
-    fn not(self) -> Self::Output {
+    fn not(self) -> Neq {
         !*self
     }
 }

@@ -1,6 +1,6 @@
 use aries::core::views::Term;
 use aries::core::{IntCst, Lit, SignedVar, VarRef};
-use aries::model::lang::{Atom, Cst, FAtom, IAtom, Rational, SAtom};
+use aries::model::lang::{FAtom, IAtom, Rational, SAtom};
 use aries::model::symbols::{SymId, TypedSym};
 use std::collections::HashMap;
 
@@ -156,7 +156,6 @@ impl Default for PartialAssignmentBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aries::model::lang::{Atom, Cst};
     use aries::model::Model;
 
     #[test]

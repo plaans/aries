@@ -1,6 +1,4 @@
 use crate::chronicles::{Chronicle, Condition, Effect, EffectOp, Fluent, Problem};
-use aries::model::extensions::Shaped;
-use aries::model::lang::Atom;
 
 #[derive(Default)]
 struct Effects<'a> {

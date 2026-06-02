@@ -4,13 +4,10 @@ use crate::model::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::model::lang::*;
 use crate::prelude::*;
 use crate::reif::{DifferenceExpression, ReifExpr};
-use env_param::EnvParam;
 use std::ops::Not;
 
 use super::IVar;
 use super::mul::EqMul;
-
-static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");
 
 pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
     Leq(lhs.into(), rhs.into())

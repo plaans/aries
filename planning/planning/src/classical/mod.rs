@@ -2,7 +2,6 @@ use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
 use anyhow::{bail, Context, Result};
 
-use aries::model::extensions::Shaped;
 use aries::model::lang::*;
 use aries::model::symbols::SymId;
 use aries::model::types::TypeId;

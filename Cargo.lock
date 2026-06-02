@@ -284,6 +284,7 @@ dependencies = [
  "itertools",
  "pathfinding",
  "regex",
+ "smallvec",
  "streaming-iterator",
  "tracing",
 ]

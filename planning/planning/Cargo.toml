@@ -12,6 +12,7 @@ fixedbitset = { workspace = true }
 itertools = { workspace = true }
 tracing = { workspace = true }
 streaming-iterator = { workspace = true }
+smallvec = { workspace = true }
 regex = { workspace = true }
 aries = { path = "../../solver" }
 env_param = { path = "../../env_param" }

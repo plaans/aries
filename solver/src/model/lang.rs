@@ -33,7 +33,6 @@ pub use variables::Variable;
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};
 use crate::model::types::TypeId;
 
-#[doc(hidden)]
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
 pub enum Type {
     Sym(TypeId),

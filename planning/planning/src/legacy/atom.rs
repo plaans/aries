@@ -1,6 +1,6 @@
 use super::*;
-use crate::core::*;
-use crate::model::symbols::TypedSym;
+use aries::prelude::*;
+use aries::{core::*, model::lang::ConversionError};
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Atom {
@@ -72,13 +72,6 @@ impl Atom {
 impl From<Lit> for Atom {
     fn from(b: Lit) -> Self {
         Atom::Bool(b)
-    }
-}
-
-#[cfg(not(feature = "i64"))]
-impl From<i64> for Atom {
-    fn from(i: i64) -> Self {
-        Atom::Int(IAtom::from(i as IntCst))
     }
 }
 
@@ -217,9 +210,8 @@ impl Term for Atom {
 //     }
 // }
 
-use crate::transitive_conversions;
-use aries::core::state::Evaluable;
-use fixed::Rational;
+use aries::model::lang::Variable;
+use aries::transitive_conversions;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Debug,

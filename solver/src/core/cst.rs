@@ -57,8 +57,8 @@ pub const fn u32_to_cst(cst: u32) -> IntCst {
 }
 
 /// Convert LongCst to IntCst
-pub(crate) const fn cst_long_to_int(cst: LongCst) -> IntCst {
-    cst as IntCst
+pub(crate) fn cst_long_to_int_clamped(cst: LongCst) -> IntCst {
+    cst.clamp(INT_CST_MIN as LongCst, INT_CST_MAX as LongCst) as IntCst
 }
 
 /// Overflow tolerant max value for integer constants.

@@ -7,7 +7,7 @@ use crate::chronicles::{
 };
 use crate::legacy::*;
 use aries::core::views::Term;
-use aries::model::lang::{Atom, Cst, FAtom, IAtom, Rational};
+use aries::model::lang::{Cst, FAtom, IAtom, Rational};
 use aries::model::Model;
 use aries::prelude::*;
 use aries::solver::{SearchLimit, Solver};

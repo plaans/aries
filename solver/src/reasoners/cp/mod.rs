@@ -12,8 +12,8 @@ use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::{Lit, SignedVar, VarRef};
-use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
+use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use mul_lit::VarEqVarMulLit;
@@ -103,18 +103,21 @@ impl Cp {
         }
     }
 
-    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq, doms: &Domains) {
-        self.add_half_reif_linear_constraint(leq, Lit::TRUE, doms)
+    /// Adds a linear inequality constraint that `sum <= 0`.
+    /// The constraint is unconditional and is assumed to be always in scope
+    pub fn add_linear_leq_constraint(&mut self, leq: &LinSum, doms: &Domains) {
+        self.add_half_reif_linear_leq_constraint(leq, Lit::TRUE, doms)
     }
 
-    /// Adds a linear constraint that is only active when `active` is true.
-    pub fn add_half_reif_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit, doms: &Domains) {
+    /// Adds a linear inequality constraint that is only active when `active` is true.
+    /// This one requires that `sum <= 0`
+    pub fn add_half_reif_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let valid = doms.presence(active);
-        debug_assert!(leq.sum.iter().all(|e| doms.implies(valid, doms.presence(e.var))));
-        let elements = leq.sum.iter().map(|e| SumElem::new(e.factor, e.var)).collect();
+        debug_assert!(sum.variables().all(|var| doms.implies(valid, doms.presence(var))));
+        let elements = sum.terms().map(|e| SumElem::new(e.factor, e.var)).collect();
         let propagator = LinearSumLeq {
             elements,
-            ub: leq.upper_bound,
+            ub: -sum.constant(),
             active,
             valid,
         };

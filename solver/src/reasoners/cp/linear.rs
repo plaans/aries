@@ -2,9 +2,7 @@
 
 use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, InvalidUpdate};
-use crate::core::{
-    INT_CST_MAX, INT_CST_MIN, IntCst, Lit, LongCst, SignedVar, VarRef, cst_int_to_long, cst_long_to_int,
-};
+use crate::core::{IntCst, Lit, LongCst, SignedVar, VarRef, cst_int_to_long, cst_long_to_int_clamped};
 use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
@@ -72,7 +70,7 @@ impl SumElem {
         // enforce  ub / factor >= var
         // equiv to floor(ub / factor) >= var
         let ub = div_floor(ub, cst_int_to_long(self.factor));
-        let ub = cst_long_to_int(ub.clamp(cst_int_to_long(INT_CST_MIN), cst_int_to_long(INT_CST_MAX)));
+        let ub = cst_long_to_int_clamped(ub);
         domains.set_ub(self.var, ub, cause)
     }
 }

@@ -1,3 +1,4 @@
+use crate::legacy::*;
 use core::fmt;
 use itertools::Itertools;
 use std::collections::HashSet;

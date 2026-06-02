@@ -1,7 +1,7 @@
 use crate::{
     model::lang::{
         expr::{And, Leq, Or, or},
-        linear::LinLeq,
+        linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
         *,
     },
@@ -150,6 +150,8 @@ impl_reif!(LinearLeq);
 impl_reif!(EqMax);
 impl_reif!(EqMin);
 impl_reif!(LinLeq);
+impl_reif!(LinEq);
+impl_reif!(LinNeq);
 
 #[cfg(test)]
 mod test {

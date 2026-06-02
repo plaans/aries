@@ -428,7 +428,8 @@ pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
         IntExp::cst(1) - b.variable()
     } else {
         let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
-        eq(bvar.geq(1), b).enforce(model);
+        implies(bvar.geq(1), b).enforce(model);
+        implies(b, bvar.geq(1)).enforce(model);
         IntExp::from(bvar)
     }
 }

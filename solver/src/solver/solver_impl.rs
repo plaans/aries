@@ -2,7 +2,7 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
-use crate::core::views::{Boundable, Dom, VarView};
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::model::lang::linear::LinearSum;
@@ -276,104 +276,92 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 Ok(())
             }
-            ReifExpr::Linear(lin) => {
-                let lin = lin.simplify();
-                let handled = match lin.sum.len() {
-                    0 => {
-                        // Check that the constant of the constraint is positive.
-                        self.post_constraint(&Constraint::HalfReified(
-                            ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
-                            enabler,
-                        ))?;
-                        true
+            ReifExpr::LinearLeq(lin) => {
+                let reformulation = if let Some((cst, [])) = lin.extract() {
+                    Some(ReifExpr::Lit((cst <= 0).into()))
+                } else if let Some((cst, [(f, v)])) = lin.extract() {
+                    debug_assert_ne!(f, 0); // should be guaranteed by `LinSum`
+                    // cst + f * v <= 0
+                    Some(ReifExpr::Lit((f * v).leq(-cst)))
+                } else if let Some((cst, [(f1, v1), (f2, v2)])) = lin.extract() {
+                    debug_assert_ne!(f1, 0); // should be guaranteed by `LinSum`
+                    debug_assert_ne!(f2, 0); // should be guaranteed by `LinSum`
+                    if f1 == -f2 {
+                        // can be expressed as a differences logic term
+                        let (factor, b, a) = if f1 > 0 { (f1, v1, v2) } else { (f2, v2, v1) };
+                        debug_assert!(factor > 0);
+                        // cst + factor *(b - a) <= 0
+                        // (b - a) <= -cst / factor
+                        Some(ReifExpr::MaxDiff(DifferenceExpression {
+                            b,
+                            a,
+                            ub: num_integer::div_floor(-cst, factor),
+                        }))
+                    } else {
+                        None
                     }
-                    1 => {
-                        let elem = lin.sum.first().unwrap();
-                        debug_assert_ne!(elem.factor, 0);
-
-                        if lin.upper_bound % elem.factor != 0 {
-                            false
-                        } else {
-                            // factor*X <= ub   decompose into either:
-                            //   - positive:  X <= ub/factor   (with factor >= 0)
-                            //   - negative:  -X <= ub/|factor|  (with factor < 0)
-                            let svar = if elem.factor >= 0 {
-                                SignedVar::plus(elem.var)
-                            } else {
-                                SignedVar::minus(elem.var)
-                            };
-                            let ub = lin.upper_bound / elem.factor.abs();
-                            let lit = svar.leq(ub);
-
-                            self.post_constraint(&Constraint::HalfReified(ReifExpr::Lit(lit), enabler))?;
-                            true
+                } else if let Some((0, [_, _, _])) = lin.extract()
+                    && self.model.entails(enabler)
+                    && DYNAMIC_EDGES.get()
+                {
+                    let doms = &self.model.state; // convenient alias
+                    // we may be eligible for encoding as a dynamic STN edge
+                    // This typically occurs for duration constraints `(start + duration) <= end`
+                    //
+                    // for all possible ordering of items in the sum, check if it representable as a dynamic STN edge
+                    // and if so add it to the STN
+                    let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+                    for [xi, yi, di] in permutations {
+                        // we are interested in the form `y - x <= d`
+                        // get it from the sum `y + (-x) + (-d) <= 0)
+                        let x = -lin.get_var(xi);
+                        let y = lin.get_var(yi);
+                        let d = -lin.get_var(di);
+                        if x.factor != 1 || y.factor != 1 {
+                            continue;
                         }
-                    }
-                    2 => {
-                        let fst = lin.sum.first().unwrap();
-                        let snd = lin.sum.get(1).unwrap();
-                        debug_assert_ne!(fst.factor, 0);
-                        debug_assert_ne!(snd.factor, 0);
-
-                        if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
-                            false
-                        } else {
-                            let b = if fst.factor > 0 { fst } else { snd };
-                            let a = if fst.factor < 0 { fst } else { snd };
-                            let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
-                            self.post_constraint(&Constraint::HalfReified(ReifExpr::MaxDiff(diff), enabler))?;
-                            true
+                        if doms.presence(d.var) != doms.presence_literal(enabler) {
+                            // presence of the constraint does not match the one of the edge
+                            continue;
                         }
+                        if !doms.implies(doms.presence(d.var), doms.presence(x.var))
+                            || !doms.implies(doms.presence(d.var), doms.presence(y.var))
+                        {
+                            continue;
+                        }
+                        // if we get there we are eligible, massage the constraint into the right format and post it
+                        let src = x.var;
+                        let tgt = y.var;
+                        let (ub_var, ub_factor) = if d.factor >= 0 {
+                            (SignedVar::plus(d.var), d.factor)
+                        } else {
+                            (SignedVar::minus(d.var), -d.factor)
+                        };
+                        // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
+                        // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
+                        self.reasoners.diff.add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
                     }
-                    _ => false,
+                    None // we posted redendant constraint, but this is not an exact reformulation, we need to post the original one as well
+                } else {
+                    None
                 };
-
-                if !handled {
+                if let Some(reformulated) = reformulation {
+                    self.post_constraint(&Constraint::HalfReified(reformulated, enabler))
+                } else {
                     self.reasoners
                         .cp
-                        .add_half_reif_linear_constraint(&lin, enabler, &self.model.state);
-
-                    let doms = &mut self.model.state; // convenient alias
-
-                    // if the linear sum is on three variables, try adding a redundant dynamic variable to the STN
-                    // this is only possible if the constraint is always active
-                    if lin.upper_bound == 0 && lin.sum.len() == 3 && doms.entails(enabler) && DYNAMIC_EDGES.get() {
-                        // we may be eligible for encoding as a dynamic STN edge
-                        // for all possible ordering of items in the sum, check if it representable as a dynamic STN edge
-                        // and if so add it to the STN
-                        let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
-                        for [xi, yi, di] in permutations {
-                            // we are interested in the form `y - x <= d`
-                            // get it from the sum `y + (-x) + (-d) <= 0)
-                            let x = -lin.sum[xi];
-                            let y = lin.sum[yi];
-                            let d = -lin.sum[di];
-                            if x.factor != 1 || y.factor != 1 {
-                                continue;
-                            }
-                            if doms.presence(d.var) != doms.presence_literal(enabler) {
-                                // presence of the constraint does not match the one of the edge
-                                continue;
-                            }
-                            if !doms.implies(doms.presence(d.var), doms.presence(x.var))
-                                || !doms.implies(doms.presence(d.var), doms.presence(y.var))
-                            {
-                                continue;
-                            }
-                            // if we get there we are eligible, massage the constraint into the right format and post it
-                            let src = x.var;
-                            let tgt = y.var;
-                            let (ub_var, ub_factor) = if d.factor >= 0 {
-                                (SignedVar::plus(d.var), d.factor)
-                            } else {
-                                (SignedVar::minus(d.var), -d.factor)
-                            };
-                            // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
-                            // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
-                            self.reasoners.diff.add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
-                        }
-                    }
+                        .add_half_reif_linear_leq_constraint(lin, enabler, &self.model.state);
+                    Ok(())
                 }
+            }
+            ReifExpr::LinearEq(lin) => {
+                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(lin.clone()), enabler))?;
+                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(-lin.clone()), enabler))
+            }
+            ReifExpr::LinearNeq(lin) => {
+                let option1 = self.model.half_reify(lin.clone().lt(0));
+                let option2 = self.model.half_reify(lin.clone().gt(0));
+                self.add_clause([!enabler, option1, option2], scope)?;
                 Ok(())
             }
             ReifExpr::Alternative(a) => {
@@ -555,19 +543,8 @@ impl<Lbl: Label> Solver<Lbl> {
         let start_cycles = StartCycleCount::now();
         while self.next_unposted_constraint < self.model.shape.constraints.len() {
             let c = &self.model.shape.constraints[self.next_unposted_constraint];
-            let size_before = self.model.shape.constraints.len();
-            let c = unsafe {
-                // SAFETY: we erase the lifetime of the constraint to please the borrow checker
-                // This is safe, because post constraint should not modify the constraints aray (`self.mode.shape.constraints`)
-                // in any way: nor overwrite nor append. The latter is problematic as it may cause the vec to relocate and invalidate the reference
-                std::mem::transmute::<&Constraint, &'static Constraint>(c)
-            };
-            self.post_constraint(c)?;
-            debug_assert_eq!(
-                self.model.shape.constraints.len(),
-                size_before,
-                "SAFETY invariant broken"
-            );
+            let c = c.clone(); // we cannot hold a reference because the underlying storage may grow as a result of posting constraints
+            self.post_constraint(&c)?;
             self.next_unposted_constraint += 1;
         }
         self.stats.init_time += start_time.elapsed();

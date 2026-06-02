@@ -1,13 +1,12 @@
 use crate::core::literals::Disjunction;
-use crate::core::state::{Domains, OptDomain};
-use crate::core::{IntCst, Lit, SignedVar, VarRef, cst_int_to_long};
+use crate::core::state::{Evaluable, OptDomain};
+use crate::core::{IntCst, Lit, SignedVar, VarRef};
 use crate::model::lang::ValidityScope;
 use crate::model::lang::alternative::NFAlternative;
-use crate::model::lang::linear::NFLinearLeq;
 use crate::model::lang::max::NFEqMax;
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::model::{Label, Model};
-use crate::prelude::Conjunction;
+use crate::prelude::{Conjunction, DomainsExt, LinSum, Solution};
 use std::fmt::{Debug, Formatter};
 use std::ops::Not;
 
@@ -31,7 +30,9 @@ pub enum ReifExpr {
     NeqVal(VarRef, IntCst),
     Or(Disjunction),
     And(Conjunction),
-    Linear(NFLinearLeq),
+    LinearLeq(LinSum),
+    LinearEq(LinSum),
+    LinearNeq(LinSum),
     // TODO: add LinearEq and LinearNeq, and subsume in specialized Variants
     Alternative(NFAlternative),
     EqMax(NFEqMax),
@@ -50,7 +51,9 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::NeqVal(a, b) => write!(f, "({a:?} != {b:?}"),
             ReifExpr::Or(or) => write!(f, "or{or:?}"),
             ReifExpr::And(and) => write!(f, "and{and:?}"),
-            ReifExpr::Linear(l) => write!(f, "{l}"),
+            ReifExpr::LinearLeq(l) => write!(f, "{l}"),
+            ReifExpr::LinearEq(l) => write!(f, "{l} = 0"),
+            ReifExpr::LinearNeq(l) => write!(f, "{l} != 0"),
             ReifExpr::EqMax(em) => write!(f, "{em:?}"),
             ReifExpr::EqMul(em) => write!(f, "{em:?}"),
             ReifExpr::Alternative(alt) => write!(f, "{alt:?}"),
@@ -79,7 +82,9 @@ impl ReifExpr {
                     .map(|l| !l)
                     .filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
-            ReifExpr::Linear(lin) => lin.validity_scope(presence),
+            ReifExpr::LinearLeq(lin) | ReifExpr::LinearEq(lin) | ReifExpr::LinearNeq(lin) => {
+                ValidityScope::new(lin.variables().map(presence), [])
+            }
             ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
             ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
             ReifExpr::EqMul(eq_mul) => {
@@ -97,13 +102,13 @@ impl ReifExpr {
         )
     }
 
-    pub fn eval(&self, assignment: &Domains) -> Option<bool> {
+    pub fn eval(&self, assignment: &Solution) -> Option<bool> {
         let prez = |var| assignment.present(var).unwrap();
-        let value = |var| match assignment.domain(var) {
+        let value = |var| match assignment.opt_domain_of(var) {
             OptDomain::Present(lb, ub) if lb == ub => lb,
             _ => panic!(),
         };
-        let lvalue = |lit: Lit| assignment.value(lit).unwrap();
+        let lvalue = |lit: Lit| assignment.value_of(lit).unwrap();
         let sprez = |svar: SignedVar| prez(svar.variable());
         let svalue = |svar: SignedVar| {
             if svar.is_plus() {
@@ -115,7 +120,7 @@ impl ReifExpr {
         match &self {
             ReifExpr::Lit(l) => {
                 if prez(l.variable()) {
-                    Some(assignment.value(*l).unwrap())
+                    Some(assignment.value_of(*l).unwrap())
                 } else {
                     None
                 }
@@ -168,19 +173,9 @@ impl ReifExpr {
                 None
             }
             ReifExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
-            ReifExpr::Linear(lin) => {
-                if lin.sum.iter().any(|term| !prez(term.var)) {
-                    None
-                } else {
-                    let lin = lin.simplify();
-                    let mut sum = 0;
-                    for term in &lin.sum {
-                        debug_assert!(prez(term.var));
-                        sum += cst_int_to_long(value(term.var)) * cst_int_to_long(term.factor);
-                    }
-                    Some(sum <= cst_int_to_long(lin.upper_bound))
-                }
-            }
+            ReifExpr::LinearLeq(lin) => lin.evaluate(assignment).map(|value| value <= 0),
+            ReifExpr::LinearEq(lin) => lin.evaluate(assignment).map(|value| value == 0),
+            ReifExpr::LinearNeq(lin) => lin.evaluate(assignment).map(|value| value != 0),
             ReifExpr::Alternative(NFAlternative { main, alternatives }) => {
                 if prez(*main) {
                     let main_value = value(*main);
@@ -284,20 +279,23 @@ impl Not for ReifExpr {
     type Output = Self;
 
     fn not(self) -> Self::Output {
+        use ReifExpr::*;
         match self {
-            ReifExpr::Lit(l) => ReifExpr::Lit(!l),
-            ReifExpr::MaxDiff(diff) => ReifExpr::MaxDiff(!diff),
-            ReifExpr::Eq(a, b) => ReifExpr::Neq(a, b),
-            ReifExpr::Neq(a, b) => ReifExpr::Eq(a, b),
-            ReifExpr::EqVal(a, b) => ReifExpr::NeqVal(a, b),
-            ReifExpr::NeqVal(a, b) => ReifExpr::EqVal(a, b),
-            ReifExpr::Or(lits) => ReifExpr::And(!lits),
-            ReifExpr::And(lits) => ReifExpr::Or(!lits),
-            ReifExpr::Linear(lin) => ReifExpr::Linear(!lin),
-            ReifExpr::Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
-            ReifExpr::EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
-            ReifExpr::EqMul(_) => panic!("EqMul is a constraint and cannot be negated"),
-            ReifExpr::EqVarMulLit(_) => panic!("EqVarMulLit is a constraint and cannot be negated"),
+            Lit(l) => Lit(!l),
+            MaxDiff(diff) => MaxDiff(!diff),
+            Eq(a, b) => Neq(a, b),
+            Neq(a, b) => Eq(a, b),
+            EqVal(a, b) => NeqVal(a, b),
+            NeqVal(a, b) => EqVal(a, b),
+            Or(lits) => And(!lits),
+            And(lits) => Or(!lits),
+            LinearLeq(lin) => LinearLeq(-lin + 1), // lin > 0 <=> -lin < 0 <=> -lin +1 <= 0
+            LinearEq(lin) => LinearNeq(lin),
+            LinearNeq(lin) => LinearEq(lin),
+            Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
+            EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
+            EqMul(_) => panic!("EqMul is a constraint and cannot be negated"),
+            EqVarMulLit(_) => panic!("EqVarMulLit is a constraint and cannot be negated"),
         }
     }
 }

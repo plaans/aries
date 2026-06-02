@@ -4,7 +4,7 @@ use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, T
 use aries::core::{Lit, Relation, VarRef};
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
+use aries::model::lang::{BVar, IAtom, IVar, SAtom};
 use aries::model::symbols::SymId;
 use aries::model::Model;
 
