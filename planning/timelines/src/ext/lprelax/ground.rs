@@ -4,24 +4,24 @@ use crate::ext::Grounding;
 use std::ops::Index;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub struct SourceGroundingFlatId(pub usize);
+pub struct TransitionGroundingFlatId(pub usize);
 
-impl From<usize> for SourceGroundingFlatId {
+impl From<usize> for TransitionGroundingFlatId {
     fn from(value: usize) -> Self {
         Self(value)
     }
 }
-impl From<SourceGroundingFlatId> for usize {
-    fn from(value: SourceGroundingFlatId) -> Self {
+impl From<TransitionGroundingFlatId> for usize {
+    fn from(value: TransitionGroundingFlatId) -> Self {
         value.0
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct SourceGrounding(Grounding);
+pub struct TransitionGrounding(Grounding);
 
-impl SourceGrounding {
-    pub fn to_flat_id(&self, ranges: &[(IntCst, IntCst)]) -> SourceGroundingFlatId {
+impl TransitionGrounding {
+    pub fn to_flat_id(&self, ranges: &[(IntCst, IntCst)]) -> TransitionGroundingFlatId {
         self.0.to_flat_id(ranges)
     }
     pub fn from(grounding: Vec<IntCst>) -> Self {
@@ -31,7 +31,7 @@ impl SourceGrounding {
         &self.0.0
     }
 }
-impl Index<usize> for SourceGrounding {
+impl Index<usize> for TransitionGrounding {
     type Output = IntCst;
 
     fn index(&self, index: usize) -> &Self::Output {
