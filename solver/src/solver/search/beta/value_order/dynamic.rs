@@ -123,9 +123,9 @@ mod tests {
     ///  - z in \[-2,4\]
     fn basic_model() -> (Model<String>, VarRef, VarRef, VarRef) {
         let mut model = Model::new();
-        let x = model.new_ivar(0, 7, "x").into();
-        let y = model.new_ivar(3, 6, "y").into();
-        let z = model.new_ivar(-2, 4, "z").into();
+        let x = model.new_ivar(0, 7, "x");
+        let y = model.new_ivar(3, 6, "y");
+        let z = model.new_ivar(-2, 4, "z");
         (model, x, y, z)
     }
 

@@ -1271,9 +1271,7 @@ impl<'a> ChronicleFactory<'a> {
                             Ok(value.into())
                         }
                         "up:plus" => {
-                            let value: IVar = self
-                                .create_variable(Type::UNBOUNDED_INT, VarType::Reification)
-                                .try_into()?;
+                            let value: IVar = self.create_variable(Type::UNBOUNDED_INT, VarType::Reification).into();
                             let mut sum = -LinearSum::from(value);
                             for param in params {
                                 sum += LinearSum::try_from(param)?;
@@ -1283,9 +1281,7 @@ impl<'a> ChronicleFactory<'a> {
                         }
                         "up:minus" => {
                             ensure!(params.len() == 2, "`-` operator should have exactly 2 arguments");
-                            let value: IVar = self
-                                .create_variable(Type::UNBOUNDED_INT, VarType::Reification)
-                                .try_into()?;
+                            let value: IVar = self.create_variable(Type::UNBOUNDED_INT, VarType::Reification).into();
                             let sum = LinearSum::try_from(params[0])?
                                 - LinearSum::try_from(params[1])?
                                 - LinearSum::from(value);

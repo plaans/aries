@@ -129,7 +129,7 @@ impl<'a> Printer<'a> {
 
     fn time(&self, t: Time) {
         let i = t.num;
-        self.var(i.var.into());
+        self.var(i.var);
         if i.shift > 0 {
             print!(" + {}", i.shift as f32 / t.denom as f32);
         } else if i.shift < 0 {
@@ -163,7 +163,7 @@ impl<'a> Printer<'a> {
         if i.var == IVar::ZERO {
             print!("{}", i.shift)
         } else {
-            self.var(i.var.into());
+            self.var(i.var);
             if i.shift > 0 {
                 print!(" + {}", i.shift);
             } else if i.shift < 0 {
@@ -234,7 +234,7 @@ impl<'a> Printer<'a> {
         if term.factor() != 1 {
             print!("{}*", term.factor());
         }
-        self.var(term.var().into());
+        self.var(term.var());
     }
 
     fn linear_sum(&self, sum: &LinearSum) {

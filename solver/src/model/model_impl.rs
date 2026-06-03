@@ -301,7 +301,7 @@ impl<Lbl: Label> Model<Lbl> {
     fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Lbl>) -> IVar {
         let dvar = self.new_optional_variable(lb, ub, presence.unwrap_or(Lit::TRUE));
         self.shape.set_label(dvar, label);
-        IVar::new(dvar)
+        dvar
     }
 
     /// Interns the given expression and returns an equivalent literal.

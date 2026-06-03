@@ -24,7 +24,7 @@ impl Stn {
     }
 
     pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
-        self.model.new_ivar(lb, ub, "").into()
+        self.model.new_ivar(lb, ub, "")
     }
 
     pub fn set_lb(&mut self, timepoint: Timepoint, lb: W) {

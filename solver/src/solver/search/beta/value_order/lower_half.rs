@@ -23,9 +23,9 @@ mod tests {
     #[test]
     fn select() {
         let mut model = Model::<String>::new();
-        let x = model.new_ivar(0, 1, "x").into();
-        let y = model.new_ivar(3, 5, "y").into();
-        let z = model.new_ivar(-5, -3, "z").into();
+        let x = model.new_ivar(0, 1, "x");
+        let y = model.new_ivar(3, 5, "y");
+        let z = model.new_ivar(-5, -3, "z");
         assert_eq!(LowerHalf.select(x, &model), x.leq(0));
         assert_eq!(LowerHalf.select(y, &model), y.leq(4));
         assert_eq!(LowerHalf.select(z, &model), z.leq(-4));

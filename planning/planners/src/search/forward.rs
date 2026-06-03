@@ -54,12 +54,12 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
 fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
     use VarType::*;
     // varref that controls the start time of the chronicle
-    let start_ref: VarRef = ch.chronicle.start.num.var.into();
+    let start_ref: VarRef = ch.chronicle.start.num.var;
     ch.parameters
         .iter()
         .filter_map(|&a| {
             if let Some(x) = a.int_view() {
-                IVar::try_from(x).ok().map(VarRef::from)
+                IVar::try_from(x).ok()
             } else {
                 None
             }

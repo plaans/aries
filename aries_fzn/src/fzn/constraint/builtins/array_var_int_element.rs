@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use aries::core::VarRef;
-use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -107,8 +106,7 @@ impl Encode for ArrayVarIntElement {
         &self,
         translation: &HashMap<usize, VarRef>,
     ) -> Box<dyn Post<usize>> {
-        let translate =
-            |v: &Rc<VarInt>| IVar::new(*translation.get(v.id()).unwrap());
+        let translate = |v: &Rc<VarInt>| *translation.get(v.id()).unwrap();
         let a = self.a.iter().map(|x| translate(x).into()).collect();
         let b = translate(&self.c);
         let i = translate(&self.b) - 1; // index starts at 1

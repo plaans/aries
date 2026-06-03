@@ -93,7 +93,7 @@ impl Solver {
                 self.aries_model.new_bvar(*var_bool.id()).int_view()
             }
         };
-        self.translation.insert(*var_bool.id(), ivar.into());
+        self.translation.insert(*var_bool.id(), ivar);
     }
 
     fn add_var_int(&mut self, var_int: &VarInt) {
@@ -113,7 +113,7 @@ impl Solver {
                 ivar
             }
         };
-        self.translation.insert(*var_int.id(), ivar.into());
+        self.translation.insert(*var_int.id(), ivar);
     }
 
     /// Add the given flatzinc constraint to the aries model.

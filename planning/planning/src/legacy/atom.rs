@@ -52,8 +52,8 @@ impl Atom {
     pub fn variable(self) -> VarRef {
         match self {
             Atom::Bool(l) => l.variable(),
-            Atom::Int(i) => i.var.into(),
-            Atom::Fixed(f) => f.num.var.into(),
+            Atom::Int(i) => i.var,
+            Atom::Fixed(f) => f.num.var,
             Atom::Sym(SAtom::Var(svar)) => svar.into(),
             Atom::Sym(SAtom::Cst(_)) => VarRef::ZERO,
         }

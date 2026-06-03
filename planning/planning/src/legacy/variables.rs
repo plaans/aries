@@ -52,7 +52,7 @@ impl From<Variable> for VarRef {
     fn from(v: Variable) -> Self {
         match v {
             Bool(x) => x.into(),
-            Int(x) => x.into(),
+            Int(x) => x,
             Fixed(x) => x.into(),
             Sym(x) => x.into(),
         }
@@ -65,17 +65,6 @@ impl TryFrom<Variable> for BVar {
     fn try_from(value: Variable) -> Result<Self, Self::Error> {
         match value {
             Bool(x) => Ok(x),
-            _ => Err(ConversionError::TypeError),
-        }
-    }
-}
-
-impl TryFrom<Variable> for IVar {
-    type Error = ConversionError;
-
-    fn try_from(value: Variable) -> Result<Self, Self::Error> {
-        match value {
-            Int(x) => Ok(x),
             _ => Err(ConversionError::TypeError),
         }
     }

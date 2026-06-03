@@ -3,7 +3,6 @@ use std::rc::Rc;
 
 use aries::core::VarRef;
 use aries::model::lang::BVar;
-use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -105,8 +104,8 @@ impl Encode for BoolXor {
         &self,
         translation: &HashMap<usize, VarRef>,
     ) -> Box<(dyn Post<usize>)> {
-        let a = IVar::new(*translation.get(self.a.id()).unwrap());
-        let b = IVar::new(*translation.get(self.b.id()).unwrap());
+        let a = *translation.get(self.a.id()).unwrap();
+        let b = *translation.get(self.b.id()).unwrap();
         let r = BVar::new(*translation.get(self.r.id()).unwrap());
         Box::new(NeReif::new(a, b, r))
     }

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use aries::core::VarRef;
-use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -94,6 +93,6 @@ impl Encode for IntEq {
     ) -> Box<(dyn Post<usize>)> {
         let a = translation.get(self.a.id()).unwrap();
         let b = translation.get(self.b.id()).unwrap();
-        Box::new(Eq::new(IVar::new(*a), IVar::new(*b)))
+        Box::new(Eq::new(*a, *b))
     }
 }

@@ -28,13 +28,13 @@ impl FVar {
 
 impl Debug for FVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "?f{:?}", VarRef::from(self.num).to_u32())
+        write!(f, "?f{:?}", self.num.to_u32())
     }
 }
 
 impl From<FVar> for VarRef {
     fn from(f: FVar) -> Self {
-        f.num.into()
+        f.num
     }
 }
 

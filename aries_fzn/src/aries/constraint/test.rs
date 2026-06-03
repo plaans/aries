@@ -169,11 +169,11 @@ pub(super) fn basic_lin_model() -> (
 
     let sum = vec![
         ScaledVar {
-            var: x.into(),
+            var: x,
             factor: c_x,
         },
         ScaledVar {
-            var: y.into(),
+            var: y,
             factor: c_y,
         },
     ];

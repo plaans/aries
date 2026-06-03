@@ -20,7 +20,7 @@ mod tests {
     fn select() {
         let mut model = Model::<String>::new();
         let _ = model.new_ivar(1, 0, "x"); // Empty domain
-        let y = model.new_ivar(3, 5, "y").into();
+        let y = model.new_ivar(3, 5, "y");
         let _ = model.new_ivar(0, 1, "z");
         assert_eq!(Lexical.select(&model), Some(y));
     }

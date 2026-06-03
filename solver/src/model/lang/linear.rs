@@ -347,11 +347,9 @@ impl TryFrom<LinTerm> for IntCst {
 
 transitive_conversion!(LinTerm, ScaledVar, SignedVar);
 transitive_conversion!(LinTerm, IAtom, IVar);
-transitive_conversion!(LinTerm, SignedVar, VarRef);
 transitive_conversion!(LinSum, LinTerm, VarRef);
 transitive_conversion!(LinSum, LinTerm, SignedVar);
 transitive_conversion!(LinSum, LinTerm, IAtom);
-transitive_conversion!(LinSum, LinTerm, IVar);
 transitive_conversions!(LinSum, LinTerm, IntCst);
 transitive_conversions!(LinSum, LinTerm, ScaledVar);
 

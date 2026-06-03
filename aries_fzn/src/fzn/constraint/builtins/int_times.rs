@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use aries::core::VarRef;
-use aries::model::lang::IVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -107,6 +106,6 @@ impl Encode for IntTimes {
         let a = translation.get(self.a.id()).unwrap();
         let b = translation.get(self.b.id()).unwrap();
         let c = translation.get(self.c.id()).unwrap();
-        Box::new(Mul::new(IVar::new(*c), IVar::new(*a), IVar::new(*b)))
+        Box::new(Mul::new(*c, *a, *b))
     }
 }

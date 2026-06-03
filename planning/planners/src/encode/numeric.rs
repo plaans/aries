@@ -102,7 +102,7 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
     } else if model.entails(!lit) {
         IVar::ZERO
     } else if model.bounds(lit.variable()) == (0, 1) {
-        IVar::new(lit.variable())
+        lit.variable()
     } else {
         let lbl = model
             .get_label(lit.variable())

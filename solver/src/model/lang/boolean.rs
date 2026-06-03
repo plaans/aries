@@ -15,7 +15,7 @@ impl BVar {
     /// Provides an integer view of this boolean variable
     /// where true <-> 1   and  false <-> 0
     pub fn int_view(self) -> IVar {
-        IVar::new(self.0)
+        self.0
     }
 
     pub fn true_lit(self) -> Lit {
@@ -47,12 +47,6 @@ impl From<usize> for BVar {
 impl From<BVar> for usize {
     fn from(b: BVar) -> Self {
         usize::from(b.0)
-    }
-}
-
-impl From<BVar> for IVar {
-    fn from(b: BVar) -> Self {
-        IVar::new(b.0)
     }
 }
 

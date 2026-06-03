@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn holes() {
-        let x = IVar::new(VarRef::from_u32(2));
+        let x = VarRef::from_u32(2);
         let set = vec![0, 2, 3, 6];
         let in_set = InSet::new(x, set);
         assert_eq!(in_set.holes(), vec![(0, 2), (3, 6)]);

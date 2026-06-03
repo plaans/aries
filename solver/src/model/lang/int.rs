@@ -1,87 +1,11 @@
-use crate::core::views::{Boundable, Term, VarView};
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::lang::ConversionError;
-use crate::model::lang::linear::ScaledVar;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-pub struct IVar(VarRef);
-
-impl Debug for IVar {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl IVar {
-    pub const ZERO: IVar = IVar(VarRef::ZERO);
-
-    #[doc(hidden)]
-    pub const ONE: IVar = IVar(VarRef::ONE);
-
-    pub const fn new(dvar: VarRef) -> Self {
-        IVar(dvar)
-    }
-
-    pub fn leq(self, i: IntCst) -> Lit {
-        Lit::leq(self, i)
-    }
-
-    pub fn geq(self, i: IntCst) -> Lit {
-        Lit::geq(self, i)
-    }
-
-    pub fn lt(self, i: IntCst) -> Lit {
-        Lit::lt(self, i)
-    }
-
-    pub fn gt(self, i: IntCst) -> Lit {
-        Lit::gt(self, i)
-    }
-}
-
-impl From<IVar> for VarRef {
-    fn from(i: IVar) -> Self {
-        i.0
-    }
-}
-impl From<VarRef> for IVar {
-    fn from(v: VarRef) -> Self {
-        IVar::new(v)
-    }
-}
-
-impl From<IVar> for SignedVar {
-    fn from(value: IVar) -> Self {
-        SignedVar::plus(value.0)
-    }
-}
-
-impl VarView for IVar {
-    type Value = IntCst;
-
-    fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
-        self.variable().upper_bound(dom)
-    }
-
-    fn lower_bound(&self, dom: impl views::Dom) -> Self::Value {
-        self.variable().lower_bound(dom)
-    }
-}
-
-impl Boundable for IVar {
-    type Value = IntCst;
-
-    fn leq(&self, ub: Self::Value) -> Lit {
-        self.variable().leq(ub)
-    }
-
-    fn geq(&self, lb: Self::Value) -> Lit {
-        self.variable().geq(lb)
-    }
-}
+pub type IVar = VarRef;
 
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
@@ -140,7 +64,7 @@ impl IAtom {
     pub fn lt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
         if self.var != IVar::ZERO {
-            VarRef::from(self.var).lt(rhs)
+            self.var.lt(rhs)
         } else if 0 < rhs {
             Lit::TRUE
         } else {
@@ -157,7 +81,7 @@ impl IAtom {
     pub fn gt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
         if self.var != IVar::ZERO {
-            VarRef::from(self.var).gt(rhs)
+            self.var.gt(rhs)
         } else if 0 > rhs {
             Lit::TRUE
         } else {
@@ -189,11 +113,7 @@ impl From<IVar> for IAtom {
         IAtom::new(v, 0)
     }
 }
-impl From<VarRef> for IAtom {
-    fn from(v: VarRef) -> Self {
-        IAtom::new(IVar::new(v), 0)
-    }
-}
+
 impl From<IntCst> for IAtom {
     fn from(i: IntCst) -> Self {
         IAtom::new(IVar::ZERO, i)
@@ -249,14 +169,6 @@ impl std::ops::Sub<IntCst> for IVar {
 
     fn sub(self, rhs: IntCst) -> Self::Output {
         IAtom::new(self, -rhs)
-    }
-}
-
-impl std::ops::Mul<IntCst> for IVar {
-    type Output = ScaledVar;
-
-    fn mul(self, rhs: IntCst) -> Self::Output {
-        ScaledVar::new(self.0, rhs)
     }
 }
 

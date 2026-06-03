@@ -28,7 +28,7 @@ mod tests {
         let mut model = Model::<String>::new();
         let _ = model.new_ivar(1, 0, "x"); // Empty domain
         let _ = model.new_ivar(3, 5, "y");
-        let z = model.new_ivar(0, 1, "z").into();
+        let z = model.new_ivar(0, 1, "z");
         assert_eq!(FirstFail.select(&model), Some(z));
     }
 }

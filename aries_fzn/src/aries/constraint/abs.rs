@@ -35,17 +35,16 @@ impl<Lbl: Label> Post<Lbl> for Abs {
         let (lb, ub) = model.state.bounds(self.a);
 
         let minus_a = model.state.new_var(-ub, -lb);
-        let minus_a = IVar::new(minus_a);
 
         let plus_a = self.a;
 
         let sum = vec![
             ScaledVar {
-                var: plus_a.into(),
+                var: plus_a,
                 factor: 1,
             },
             ScaledVar {
-                var: minus_a.into(),
+                var: minus_a,
                 factor: 1,
             },
         ];

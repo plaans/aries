@@ -45,7 +45,7 @@ pub trait Substitution {
     fn sub_var(&self, var: VarRef) -> VarRef;
 
     fn sub_ivar(&self, atom: IVar) -> IVar {
-        IVar::new(self.sub_var(atom.into()))
+        self.sub_var(atom)
     }
     fn sub_bvar(&self, atom: BVar) -> BVar {
         BVar::new(self.sub_var(atom.into()))
@@ -515,9 +515,9 @@ impl VarSet {
         let atom = atom.into();
         match atom {
             Atom::Bool(b) => self.0.insert(b.variable()),
-            Atom::Int(i) => self.0.insert(VarRef::from(i.var)),
-            Atom::Fixed(f) => self.0.insert(f.num.var.into()),
-            Atom::Sym(s) => self.0.insert(s.int_view().var.into()),
+            Atom::Int(i) => self.0.insert(i.var),
+            Atom::Fixed(f) => self.0.insert(f.num.var),
+            Atom::Sym(s) => self.0.insert(s.int_view().var),
         };
     }
 

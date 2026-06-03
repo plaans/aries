@@ -22,7 +22,7 @@ where
     }
 
     fn get_int_var(&self, label: &Lbl) -> Option<IVar> {
-        self.get_var(label).map(IVar::new)
+        self.get_var(label)
     }
 
     fn get_symbol(&self, sym: SymId) -> &Sym {
@@ -100,7 +100,7 @@ fn format_impl_int<Lbl: Label>(ctx: &impl Shaped<Lbl>, i: IAtom, f: &mut std::fm
             } else if i.shift < 0 {
                 write!(f, "(- ")?;
             }
-            format_impl_var(ctx, v.into(), Kind::Int, f)?;
+            format_impl_var(ctx, v, Kind::Int, f)?;
             if i.shift != 0 {
                 write!(f, " {})", i.shift.abs())?;
             }
