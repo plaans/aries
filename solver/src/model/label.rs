@@ -10,7 +10,7 @@ pub trait Label: Display + Debug + Clone + Eq + PartialEq + Hash + Send + Sync +
 impl<T> Label for T where T: Display + Debug + Clone + Eq + PartialEq + Hash + Send + Sync + 'static {}
 
 #[derive(Clone)]
-pub struct VariableLabels<Lbl> {
+pub(crate) struct VariableLabels<Lbl> {
     labels: RefMap<VarRef, Arc<Lbl>>,
     labeled_variables: HashMap<Arc<Lbl>, Vec<VarRef>>,
 }

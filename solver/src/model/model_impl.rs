@@ -41,10 +41,10 @@ impl std::fmt::Display for Constraint {
 /// Defines the structure of a model: variables names, types, relations, ...
 #[derive(Clone)]
 pub struct ModelShape<Lbl> {
-    pub expressions: Reification,
-    pub constraints: Vec<Constraint>,
-    pub labels: VariableLabels<Lbl>,
-    pub conjunctive_scopes: Scopes,
+    pub(crate) expressions: Reification,
+    pub(crate) constraints: Vec<Constraint>,
+    pub(crate) labels: VariableLabels<Lbl>,
+    pub(crate) conjunctive_scopes: Scopes,
 }
 
 impl<Lbl: Label> ModelShape<Lbl> {
@@ -110,6 +110,11 @@ impl<Lbl: Label> ModelShape<Lbl> {
             }
         }
         Ok(())
+    }
+
+    /// Returns the label of this variable (if one was specified)
+    pub fn get_label(&self, var: VarRef) -> Option<&Lbl> {
+        self.labels.get(var)
     }
 }
 

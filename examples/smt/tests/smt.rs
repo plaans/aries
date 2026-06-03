@@ -462,9 +462,7 @@ fn test_opt_leq_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    model.shape.labels.insert(l.variable(), "l".to_string());
     let v = model.presence_literal(l.variable());
-    model.shape.labels.insert(v.variable(), "v".to_string());
 
     let tests = vec![
         Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
@@ -492,7 +490,6 @@ fn test_opt_leq_eager_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    model.shape.labels.insert(l.variable(), "l".to_string());
     let v = model.presence_literal(l.variable());
     debug_assert_eq!(v, pb);
     // model.shape.labels.insert(v.variable(), "v".to_string());

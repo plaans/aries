@@ -202,7 +202,7 @@ impl<'a> Printer<'a> {
     }
 
     fn var(&self, v: VarRef) {
-        if let Some(VarLabel(_container, tpe)) = self.model.shape.labels.get(v) {
+        if let Some(VarLabel(_container, tpe)) = self.model.get_label(v) {
             match tpe {
                 VarType::Horizon => print!("horizon"),
                 VarType::Makespan => print!("makespan"),

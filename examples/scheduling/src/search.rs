@@ -101,7 +101,7 @@ pub fn get_solver(mut base_solver: Solver, strategy: &SearchStrategy, pb: &Encod
         .model
         .state
         .variables()
-        .filter_map(|v| match base_solver.model.shape.labels.get(v) {
+        .filter_map(|v| match base_solver.model.get_label(v) {
             Some(&Var::Prec(_, _)) => Some(v.geq(1)),
             Some(&Var::Presence(_)) => Some(v.geq(1)),
             _ => None,

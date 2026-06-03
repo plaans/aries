@@ -6,7 +6,7 @@ use hashbrown::HashMap;
 ///
 /// A correspondence between canonical expressions and the literal that they have reified to is maintained.
 #[derive(Default, Clone)]
-pub struct Reification {
+pub(crate) struct Reification {
     /// Associates each canonical atom to a single literal.
     full_map: HashMap<ReifExpr, Lit>,
     full_inv: HashMap<Lit, ReifExpr>,
@@ -44,10 +44,6 @@ impl Reification {
         assert!(!self.half_map.contains_key(&e));
         self.half_map.insert(e.clone(), lit);
         self.half_inv.insert(lit, e.clone());
-    }
-
-    pub fn original_full(&self, lit: Lit) -> Option<&ReifExpr> {
-        self.full_inv.get(&lit)
     }
 }
 

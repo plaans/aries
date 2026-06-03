@@ -6,7 +6,6 @@ use aries::core::*;
 use aries::model::lang::{IAtom, IVar};
 use aries::model::Label;
 use aries::model::ModelShape;
-use aries::reif::{DifferenceExpression, ReifExpr};
 
 pub trait Shaped<Lbl>
 where
@@ -15,12 +14,8 @@ where
     fn get_shape(&self) -> &ModelShape<Lbl>;
 
     fn get_label(&self, var: impl Into<VarRef>) -> Option<&Lbl> {
-        self.get_shape().labels.get(var.into())
+        self.get_shape().get_label(var.into())
     }
-
-    // fn get_type(&self, var: impl Into<VarRef>) -> Option<Type> {
-    //     self.get_shape().types.get(var.into()).copied()
-    // }
 
     fn get_var(&self, label: &Lbl) -> Option<VarRef> {
         self.get_shape().get_variable(label)
@@ -39,10 +34,6 @@ where
     }
 
     fn get_symbol_table(&self) -> &SymbolTable;
-
-    fn get_reified_expr(&self, lit: Lit) -> Option<&ReifExpr> {
-        self.get_shape().expressions.original_full(lit)
-    }
 }
 
 impl Shaped<VarLabel> for Ctx {
@@ -89,8 +80,6 @@ fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt
         write!(f, "true")
     } else if b == Lit::FALSE {
         write!(f, "false")
-    } else if let Some(reified) = ctx.get_reified_expr(b) {
-        format_reif(ctx, reified, f)
     } else {
         format_impl_var(ctx, b.variable(), Kind::Int, f)?;
         if b.svar().is_plus() {
@@ -158,40 +147,5 @@ fn format_impl_var<Lbl: Label>(
             Kind::Sym => "s_",
         };
         write!(f, "{}{}", prefix, usize::from(v))
-    }
-}
-
-fn format_reif<Lbl: Label>(ctx: &impl Shaped<Lbl>, e: &ReifExpr, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    match e {
-        ReifExpr::Lit(l) => format_impl_bool(ctx, *l, f),
-        ReifExpr::MaxDiff(DifferenceExpression { a, b, ub }) => {
-            format_impl_var(ctx, *b, Kind::Sym, f)?;
-            write!(f, " - ")?;
-            format_impl_var(ctx, *a, Kind::Sym, f)?;
-            write!(f, " <= {ub}")
-        }
-        ReifExpr::Eq(v1, v2) => {
-            format_impl_var(ctx, *v1, Kind::Sym, f)?;
-            write!(f, " = ")?;
-            format_impl_var(ctx, *v2, Kind::Sym, f)
-        }
-        ReifExpr::Neq(v1, v2) => {
-            format_impl_var(ctx, *v1, Kind::Sym, f)?;
-            write!(f, " != ")?;
-            format_impl_var(ctx, *v2, Kind::Sym, f)
-        }
-        ReifExpr::EqVal(v1, v2) => {
-            format_impl_var(ctx, *v1, Kind::Sym, f)?;
-            let sym_id = SymId::from_u32(*v2 as u32);
-            let sym = ctx.get_symbol(sym_id);
-            write!(f, " = {sym}")
-        }
-        ReifExpr::NeqVal(v1, v2) => {
-            format_impl_var(ctx, *v1, Kind::Sym, f)?;
-            let sym_id = SymId::from_u32(*v2 as u32);
-            let sym = ctx.get_symbol(sym_id);
-            write!(f, " != {sym}")
-        }
-        x => write!(f, "{x:?}"),
     }
 }
