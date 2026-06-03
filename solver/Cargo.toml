@@ -28,7 +28,6 @@ i128 = []
 
 
 [dependencies]
-anyhow = { workspace = true }
 bumpalo = { workspace = true }
 streaming-iterator = { workspace = true }
 vec_map = { workspace = true }

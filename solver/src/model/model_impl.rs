@@ -86,30 +86,27 @@ impl<Lbl: Label> ModelShape<Lbl> {
 
     /// Given a TOTAL assignment, check that all constraints are satisfied.
     /// NOTE: Currently not really polished and intended for internal use.
-    pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
+    pub(crate) fn validate(&self, assignment: &Domains) -> Result<(), String> {
         let solution = assignment.extract_solution();
         for c in &self.constraints {
             match c {
                 Constraint::HalfReified(expr, enabler) => {
                     if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
                         let actual_value = expr.eval(&solution);
-                        anyhow::ensure!(
-                            actual_value == Some(true),
-                            "{} : {:?}  [but enabled by {:?}]",
-                            expr,
-                            actual_value,
-                            enabler
-                        );
+                        if actual_value != Some(true) {
+                            return Err(format!("{} : {:?}  [but enabled by {:?}]", expr, actual_value, enabler));
+                        }
                     } else {
                         // Underspecified: we may be able to determine a value on the
                         // expression side (e.g. with short-circuiting "or") even though we are not in the
                         // validity scope of the literal.
                     }
                 }
-                Constraint::Propagator(user_propagator) => anyhow::ensure!(
-                    user_propagator.satisfied(assignment),
-                    "user propagator is not satisfied:\n{user_propagator:?}"
-                ),
+                Constraint::Propagator(user_propagator) => {
+                    if !user_propagator.satisfied(assignment) {
+                        return Err(format!("user propagator is not satisfied:\n{user_propagator:?}"));
+                    }
+                }
             }
         }
         Ok(())

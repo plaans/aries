@@ -117,7 +117,6 @@ checksum = "03918c3dbd7701a85c6b9887732e2921175f26c350b4563841d0958c21d57e6d"
 name = "aries"
 version = "0.0.6"
 dependencies = [
- "anyhow",
  "bumpalo",
  "crossbeam-channel",
  "env_param",
