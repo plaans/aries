@@ -1,3 +1,21 @@
+//!
+//!
+//!
+//!
+//! | Type | Form | Represents | Implements |
+//! |------|:----:|------------|------------|
+//! | [`VarRef`] | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], [`Optional`] |
+//! | [`SignedVar`] | `±X` | Signed variable | [`VarView`], [`Term`], [`Boundable`], [`Optional`] |
+//! | [`ScaledVar`] | `n * X` | Variable multiplied by constant | [`VarView`], [`Term`], [`Boundable`], [`Optional`] |
+//!
+
+// #[cfg(doc)]
+use crate::core::views::*;
+// #[cfg(doc)]
+use crate::prelude::*;
+// #[cfg(doc)]
+use linear::*;
+
 pub mod alternative;
 mod bool_expr;
 mod boolean;
