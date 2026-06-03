@@ -5,7 +5,7 @@ mod types;
 use aries::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
 use aries::core::literals::ConjunctionBuilder;
 use aries::core::state::{DomainsSnapshot, Explanation, InferenceCause};
-use aries::prelude::{Domains, DomainsExt, IntCst, Lit, VarRef};
+use aries::prelude::{Domains, DomainsExt, INT_CST_MAX, INT_CST_MIN, IntCst, Lit, VarRef};
 use aries::reasoners::{Contradiction, ReasonerId, Theory};
 
 use bindings::LpRelaxBindings;
@@ -146,7 +146,7 @@ impl LpRelaxState {
 
         let lbs_ubs = Vec::from_iter(
             lbs_ubs
-                .into_iter()
+                .iter()
                 .map(|(lb, ub)| (lb.unwrap_or(FloatCst::MIN), ub.unwrap_or(FloatCst::MAX))),
         );
         self.lpmodel.add_columns(&lbs_ubs).unwrap()
@@ -177,6 +177,22 @@ impl LpRelaxState {
 
         self.lpmodel.change_column_bounds(col, lb..ub);
         res
+    }
+    fn change_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) {
+        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        let lb = if let Some(lb) = lb {
+            float_as_exact_int_cst(lb)
+        } else {
+            INT_CST_MIN
+        };
+        let ub = if let Some(ub) = ub {
+            float_as_exact_int_cst(ub)
+        } else {
+            INT_CST_MAX
+        };
+        assert!(lb <= ub);
+
+        self.lpmodel.change_column_bounds(col, lb..ub);
     }
     fn add_row(
         &mut self,
@@ -209,11 +225,11 @@ impl LpRelaxState {
         );
 
         let lbs_ubs: Vec<_> = lbs_ubs
-            .into_iter()
+            .iter()
             .map(|(lb, ub)| (lb.unwrap_or(FloatCst::MIN), ub.unwrap_or(FloatCst::MAX)))
             .collect();
 
-        self.lpmodel.add_rows(&lbs_ubs, &rows_coefs).unwrap()
+        self.lpmodel.add_rows(&lbs_ubs, rows_coefs).unwrap()
     }
 
     fn add_objective_column(
@@ -399,6 +415,9 @@ impl LpRelax {
 
     pub fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
         self.state.tighten_column(col, lb, ub)
+    }
+    pub fn change_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) {
+        self.state.change_column(col, lb, ub)
     }
 
     pub fn add_row(
@@ -668,7 +687,7 @@ impl Theory for LpRelax {
             }*/
 
             // TODO: allow propagation after a backtrack.
-            if self.config.use_propagation_skips && self.current_decision_level() > DecLvl::ROOT {
+            if self.config.use_propagation_skips && self.current_decision_level() > DecLvl::new(0) {
                 return Ok(());
             }
 
