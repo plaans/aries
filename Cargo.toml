@@ -34,13 +34,13 @@ derivative = "2.2"
 derive_builder = "0.20"
 itertools = { version = "0.14" }
 fixedbitset = { version = "0.5.7", default-features = false }
-format_num = "0.1.0"
 hashbrown = "0.16"
 im = "15.1"
 lru = "0.16"
 malachite = "0.9.0"
 num-rational = { version = "0.4.2" }
 num-integer = { default-features = false, version = "0.1.46" }
+numfmt = { version = "1.2.0" }
 pathfinding = "4.14.0"
 prost = { version = "0.14" }
 rand = { version = "0.9", features = ["small_rng"] }

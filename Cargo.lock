@@ -120,11 +120,11 @@ dependencies = [
  "bumpalo",
  "crossbeam-channel",
  "env_param",
- "format_num",
  "hashbrown",
  "itertools",
  "lru",
  "num-integer",
+ "numfmt",
  "rand",
  "smallvec",
  "streaming-iterator",
@@ -746,6 +746,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dtoa"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -817,15 +823,6 @@ name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
-
-[[package]]
-name = "format_num"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14ac05eb8d2eb4ed1eeff847911deae077b0b53332465de9d6a26b0ea9961bc8"
-dependencies = [
- "regex",
-]
 
 [[package]]
 name = "futures-channel"
@@ -1349,6 +1346,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "numfmt"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ea1a14c0c3b00c5b3f3ab9625c35601c5cac06a94bb6b17c27327a8f1d520c6"
+dependencies = [
+ "dtoa",
+ "itoa 1.0.17",
 ]
 
 [[package]]
