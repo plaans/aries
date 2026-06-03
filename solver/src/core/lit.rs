@@ -3,18 +3,16 @@ use crate::model::lang::ConversionError;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 
-/// A literal `Lit` represents a lower or upper bound on a discrete variable
-/// (i.e. an integer, boolean or symbolic variable).
+/// Represents a lower or upper bound on an integer variable.
 ///
-/// For a boolean variable X:
-///  - the bound `x > 0` represent the true literal (`X` takes the value `true`)
-///  - the bound `x <= 0` represents the false literal (`X` takes the value `false`)
+/// For a binary variable X:
+///  - the bound `x > 0` represent the true literal (`X` takes the value `true/1`)
+///  - the bound `x <= 0` represents the false literal (`X` takes the value `false/0`)
 ///
 ///
 /// ```
-/// use aries::core::*;
-/// use aries::core::state::IntDomains;
-/// let mut state = IntDomains::new();
+/// use aries::prelude::*;
+/// let mut state = Domains::new();
 /// let x = state.new_var(0, 1);
 /// let x_is_true: Lit = x.geq(1);
 /// let x_is_false: Lit = !x_is_true;

@@ -86,9 +86,15 @@ impl VarView for Lit {
     }
 }
 
+/// A variable for which setting an upper or lower bound bound can be represented as a [`Lit`].
 pub trait Boundable {
+    /// Type of the values taken by the variable.
     type Value;
+
+    /// Literal equivalent to a lower bound on the variable.
     fn leq(&self, ub: Self::Value) -> Lit;
+
+    /// Literal equivalent to an upper bound on the variable.
     fn geq(&self, lb: Self::Value) -> Lit;
 }
 

@@ -22,7 +22,7 @@ pub trait IntExpr<Ctx: Store> {
 
     /// Attempts to provide a linearization of the expression. It must be the case that the expression is defined within the provided scope.
     ///
-    /// The default implementation will simply reify the expression to a single variable and return the [`LinearSum`] with only this variable]
+    /// The default implementation will simply reify the expression to a single variable and return the [`LinSum`] with only this variable]
     fn linearize(&self, scope: impl Into<Conjunction>, ctx: &mut Ctx) -> LinSum {
         self.reify(scope, ctx).into()
     }

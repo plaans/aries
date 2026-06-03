@@ -19,13 +19,14 @@ use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
 
+/// Structure that keeps track of watches on variables in a CP solver.
 #[derive(Clone, Default)]
 pub struct Watches {
     propagations: RefMap<SignedVar, Vec<PropagatorId>>,
 }
 
 impl Watches {
-    /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `
+    /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `watched` variable.
     pub fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
         self.add_ub_watch(watched, propagator_id);
         self.add_lb_watch(watched, propagator_id);

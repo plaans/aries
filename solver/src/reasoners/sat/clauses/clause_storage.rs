@@ -26,7 +26,7 @@ type Arena = Bump<8>;
 /// Clauses are allocated into an internal allocation arena (bump allocator) which allows for efficient individual allocation and batched deallocation.
 ///
 /// It can be extended with new clauses but we do not provide methods for removing a single clause (because it cannot be individually deallocated).
-/// The method [`clone_with_subset`] however provides a way to
+/// The method `clone_with_subset` however provides a way to keep a subset of the clauses.
 ///
 ///
 /// # Safety

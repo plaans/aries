@@ -14,8 +14,6 @@ pub use lit_set::*;
 use smallvec::SmallVec;
 pub use watches::*;
 
-use crate::core::Lit;
-
 mod conjunction;
 mod disjunction;
 mod implication_graph;
@@ -23,6 +21,8 @@ mod lit_set;
 mod watches;
 
 const INLINE_SIZE: usize = 3;
+
+use crate::prelude::*;
 
 /// A sequence of literals, optimized to represent at least 3 elements inline.
 ///

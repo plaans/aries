@@ -7,7 +7,7 @@
 //! that will handle the storage of justifications.
 //!
 //! This kind of propagators are useful when propagation is complex and one want to avoid to reproduce the propagation algorithm for explaining each inference.
-//! This is notably used in the [`NoOverlap`](aries::reasoners::cp::NoOverlap) propagator.
+//! This is notably used in the `NoOverlap` propagator.
 //!
 //! Below is a simple example to illustrate how the different parts fit together.
 //!

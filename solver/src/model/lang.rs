@@ -1,19 +1,65 @@
+//! Types for representing expressions in the model.
 //!
 //!
+//! ## Numeric types
 //!
+//! This module provides a hierarchy of numeric types from most specific to most general.
+//! Each type can be converted into more general types through the `From` trait.
 //!
 //! | Type | Form | Represents | Implements |
 //! |------|:----:|------------|------------|
-//! | [`VarRef`] | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], [`Optional`] |
-//! | [`SignedVar`] | `±X` | Signed variable | [`VarView`], [`Term`], [`Boundable`], [`Optional`] |
-//! | [`ScaledVar`] | `n * X` | Variable multiplied by constant | [`VarView`], [`Term`], [`Boundable`], [`Optional`] |
+//! | **[`IntCst`]** | `c` | Integer constant |  |
+//! | **[`VarRef`]** | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], |
+//! | [`SignedVar`] | `±X` | Signed variable | [`VarView`], [`Term`], [`Boundable`], |
+//! | [`ScaledVar`] | `n·X` | Variable multiplied by constant | [`VarView`], [`Term`], [`Boundable`], |
+//! | [`IAtom`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
+//! | [`LinTerm`] | `n·X + c` | Scaled variable plus constant | [`VarView`], [`Term`], [`Boundable`] |
+//! | **[`LinSum`]** | `Σ(nᵢ·Xᵢ) + c` | Sum of scaled variables plus constant | [`IntExpr`] |
+//! | `dyn [`IntExpr`] | `unknown` | Arbitrary int expression |  |
+//!
+//! Most user code will only deal with [`VarRef`] (a single decision variable) and [`LinSum`] but one may face
+//! other variants when doing arithmetic (but type inference is usually sufficient to ignore them).
+//!
+//! ```
+//! # use aries::prelude::*;
+//! # use aries::model::lang::linear::*;
+//! let mut domains = Domains::new();
+//! let x: VarRef = domains.new_var(0, 10);
+//! let x: ScaledVar = 3 * x;
+//! let x: LinTerm = x + 2;
+//! let x: LinSum = x + domains.new_var(0,4);
+//! ```
+//!
+//! ### Conversions
+//!
+//! ```text
+//!        VarRef → SignedVar → ScaledVar → LinTerm → LinSum
+//!          ↓                                  ↑
+//! IntCst  →└────────────→ IAtom ──────────────┘
+//! ```
+//!
+//! All conversions upward in the hierarchy are provided through `From` implementations,
+//! while conversions downward are fallible and provided through `TryFrom` where applicable.
+//!
+//!
+//! ## Boolean types
+//!
+//! Unlike, most constraint programming libraries, aries comes with a core boolean type [`Lit`]
+//! that represents an upper or lower bound on a variables (`X <= c` or X >= c`).
+//!
+//! The [`Lit`] type is fundamental in the solver, representing decisions in the solvers,
+//! elements of a [`Disjunction`], elements of learned clauses, ...
+//!
+//! While a `Lit` is fundamentally a statement on a [`VarRef`] it can be built for any type that implements [`Boundable`].
+//!
+//!
 //!
 
-// #[cfg(doc)]
+#[cfg(doc)]
 use crate::core::views::*;
-// #[cfg(doc)]
+#[cfg(doc)]
 use crate::prelude::*;
-// #[cfg(doc)]
+#[cfg(doc)]
 use linear::*;
 
 pub mod alternative;

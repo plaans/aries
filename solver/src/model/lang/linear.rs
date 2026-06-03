@@ -260,11 +260,11 @@ impl std::ops::Neg for LinTerm {
         Self::new(-self.scaled_var, -self.constant)
     }
 }
-impl std::ops::Add<LinTerm> for LinTerm {
+impl<T: Into<LinTerm>> std::ops::Add<T> for LinTerm {
     type Output = LinSum;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        LinSum::from(self) + rhs
+    fn add(self, rhs: T) -> Self::Output {
+        LinSum::from(self) + rhs.into()
     }
 }
 impl std::ops::Sub<LinTerm> for LinTerm {
