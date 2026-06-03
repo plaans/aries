@@ -271,7 +271,7 @@ mod test {
             self.model.upper_bound(svar)
         }
 
-        fn presence(&self, var: VarRef) -> Lit {
+        fn presence(&self, var: Var) -> Lit {
             self.model.presence(var)
         }
     }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use aries::core::IntCst;
-use aries::core::VarRef;
+use aries::core::Var;
 use aries::model::Model as AriesModel;
 use aries::prelude::Domains;
 use aries::prelude::DomainsExt;
@@ -33,7 +33,7 @@ use crate::fzn::var::VarInt;
 pub struct Solver {
     fzn_model: FznModel,
     aries_model: AriesModel<usize>,
-    translation: HashMap<usize, VarRef>,
+    translation: HashMap<usize, Var>,
     brancher: Brancher,
 }
 
@@ -183,7 +183,7 @@ impl Solver {
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
                 let output_var_ids = self.output_var_ids();
-                let var_refs: Vec<VarRef> =
+                let var_refs: Vec<Var> =
                     output_var_ids.iter().map(translate).collect();
 
                 let g =

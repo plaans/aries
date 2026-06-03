@@ -1,7 +1,7 @@
 use num_integer::Integer;
 
 use crate::core::Lit;
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::model::Label;
 use crate::model::Model;
 use crate::solver::search::beta::value_order::ValueOrder;
@@ -10,7 +10,7 @@ use crate::solver::search::beta::value_order::ValueOrder;
 pub struct UpperHalf;
 
 impl<Lbl: Label> ValueOrder<Lbl> for UpperHalf {
-    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: Var, model: &Model<Lbl>) -> Lit {
         let (lb, ub) = model.state.bounds(var);
         let (mid, rem) = (lb + ub).div_mod_floor(&2);
         var.geq(mid + rem)

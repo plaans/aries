@@ -1,7 +1,7 @@
 //! Fundamental types and datastructures of the aries solver (variables, literals, domains & state)
 //!
 //! This module provide the essential building blocks of the solver:
-//!  - [VarRef]: integer variables
+//!  - [Var]: integer variables
 //!  - [Lit] (literal): lightweigh boolean statement about the lower or upper bound of a variable
 //!  - [Domains](state::Domains): backtrackable datastructures with the current bounds of all integer variables
 //!
@@ -17,7 +17,7 @@
 //!
 //! // create a new variable with domain [0,10]
 //! // the variable is create through the `Domains` datastructure that will keep track of its current domain
-//! let x: VarRef = state.new_var(0, 10);
+//! let x: Var = state.new_var(0, 10);
 //! assert_eq!(state.lb(x), 0);
 //! assert_eq!(state.ub(x), 10);
 //!

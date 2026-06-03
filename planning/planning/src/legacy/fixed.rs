@@ -1,5 +1,5 @@
 use aries::core::views::{Dom, Term, VarView};
-use aries::core::{IntCst, VarRef};
+use aries::core::{IntCst, Var};
 use aries::model::lang::{ConversionError, IAtom, IVar};
 use num_rational::Ratio;
 use std::cmp::Ordering;
@@ -32,7 +32,7 @@ impl Debug for FVar {
     }
 }
 
-impl From<FVar> for VarRef {
+impl From<FVar> for Var {
     fn from(f: FVar) -> Self {
         f.num
     }
@@ -76,7 +76,7 @@ impl VarView for FAtom {
     }
 }
 impl Term for FAtom {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.num.variable()
     }
 }

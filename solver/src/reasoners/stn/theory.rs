@@ -24,7 +24,7 @@ use std::str::FromStr;
 type ModelEvent = crate::core::state::Event;
 
 /// A temporal reference in an STN, i.e., reference to an absolute time.
-pub type Timepoint = VarRef;
+pub type Timepoint = Var;
 
 /// The edge weight of an STN, i.e., a fixed duration.
 pub type W = IntCst;

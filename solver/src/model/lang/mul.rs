@@ -1,5 +1,5 @@
 use crate::{
-    core::{Lit, VarRef},
+    core::{Lit, Var},
     reif::ReifExpr,
 };
 use std::fmt::{Debug, Formatter};
@@ -7,13 +7,13 @@ use std::fmt::{Debug, Formatter};
 /// Represents the constraint  `lhs = rhs1 * rhs2`
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct EqMul {
-    pub lhs: VarRef,
-    pub rhs1: VarRef,
-    pub rhs2: VarRef,
+    pub lhs: Var,
+    pub rhs1: Var,
+    pub rhs2: Var,
 }
 
 impl EqMul {
-    pub fn new(lhs: impl Into<VarRef>, factor1: impl Into<VarRef>, factor2: impl Into<VarRef>) -> Self {
+    pub fn new(lhs: impl Into<Var>, factor1: impl Into<Var>, factor2: impl Into<Var>) -> Self {
         let factor1 = factor1.into();
         let factor2 = factor2.into();
         let (rhs1, rhs2) = if factor1 <= factor2 {
@@ -42,8 +42,8 @@ impl Debug for EqMul {
 }
 
 pub struct EqVarMulLit {
-    pub lhs: VarRef,
-    pub rhs: VarRef,
+    pub lhs: Var,
+    pub rhs: Var,
     pub lit: Lit,
 }
 
@@ -54,7 +54,7 @@ impl Debug for EqVarMulLit {
 }
 
 impl EqVarMulLit {
-    pub fn new(lhs: impl Into<VarRef>, rhs: impl Into<VarRef>, lit: impl Into<Lit>) -> Self {
+    pub fn new(lhs: impl Into<Var>, rhs: impl Into<Var>, lit: impl Into<Lit>) -> Self {
         let lhs = lhs.into();
         let rhs = rhs.into();
         let lit = lit.into();
@@ -74,8 +74,8 @@ impl From<EqVarMulLit> for ReifExpr {
 
 #[derive(Eq, PartialEq, Hash, Clone)]
 pub struct NFEqVarMulLit {
-    pub lhs: VarRef,
-    pub rhs: VarRef,
+    pub lhs: Var,
+    pub rhs: Var,
     pub lit: Lit,
 }
 

@@ -5,10 +5,10 @@ use crate::model::lang::IVar;
 /// A boolean variable.
 /// It is a wrapper around an (untyped) discrete variable to provide type safety.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
-pub struct BVar(VarRef);
+pub struct BVar(Var);
 
 impl BVar {
-    pub fn new(dvar: VarRef) -> Self {
+    pub fn new(dvar: Var) -> Self {
         BVar(dvar)
     }
 
@@ -26,7 +26,7 @@ impl BVar {
     }
 }
 
-impl From<BVar> for VarRef {
+impl From<BVar> for Var {
     fn from(i: BVar) -> Self {
         i.0
     }
@@ -40,7 +40,7 @@ impl From<BVar> for Lit {
 
 impl From<usize> for BVar {
     fn from(i: usize) -> Self {
-        BVar(VarRef::from(i))
+        BVar(Var::from(i))
     }
 }
 

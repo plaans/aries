@@ -22,7 +22,7 @@ pub struct Solution {
 }
 
 impl Solution {
-    pub(super) fn new(values: RefVec<SignedVar, ValueCause>, presences: RefVec<VarRef, Lit>) -> Self {
+    pub(super) fn new(values: RefVec<SignedVar, ValueCause>, presences: RefVec<Var, Lit>) -> Self {
         Self {
             data: Arc::new(SolutionInternal { values, presences }),
         }
@@ -40,12 +40,12 @@ impl Solution {
     }
 
     /// Returns all variables.
-    pub fn variables(&self) -> impl Iterator<Item = VarRef> {
-        (0..self.num_variables()).map(VarRef::from)
+    pub fn variables(&self) -> impl Iterator<Item = Var> {
+        (0..self.num_variables()).map(Var::from)
     }
 
     /// Returns all variables whose value is fixed.
-    pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
+    pub fn bound_variables(&self) -> impl Iterator<Item = (Var, IntCst)> + '_ {
         self.variables().filter_map(move |v| {
             let lb = self.lb(v);
             let ub = self.ub(v);
@@ -56,7 +56,7 @@ impl Solution {
 
 pub(super) struct SolutionInternal {
     pub(super) values: RefVec<SignedVar, ValueCause>,
-    pub(super) presences: RefVec<VarRef, Lit>,
+    pub(super) presences: RefVec<Var, Lit>,
 }
 
 impl Dom for Solution {
@@ -64,7 +64,7 @@ impl Dom for Solution {
         self.data.values[svar].upper_bound
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.data.presences[var]
     }
 }
@@ -73,7 +73,7 @@ impl Dom for Solution {
 pub trait Evaluable {
     /// Type of the value of this expression.
     ///
-    /// For instance it would be [`IntCst`] for [`VarRef`] and `bool` for [`Lit`].
+    /// For instance it would be [`IntCst`] for [`Var`] and `bool` for [`Lit`].
     type Value;
 
     /// Determines the value that the expression has in a solution.

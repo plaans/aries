@@ -3,7 +3,7 @@ use crate::prelude::*;
 pub trait Dom {
     fn upper_bound(&self, svar: SignedVar) -> IntCst;
 
-    fn presence(&self, var: VarRef) -> Lit;
+    fn presence(&self, var: Var) -> Lit;
 
     fn lower_bound(&self, svar: SignedVar) -> IntCst {
         -self.upper_bound(-svar)
@@ -18,7 +18,7 @@ where
         Dom::upper_bound(*self, svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         Dom::presence(*self, var)
     }
 }
@@ -30,7 +30,7 @@ where
         Dom::upper_bound(*self, svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         Dom::presence(*self, var)
     }
 }
@@ -125,32 +125,32 @@ impl<T: Term + Copy> Optional for T {
     }
 }
 
-/// An expression that is a view of exactly one variable (which may be the [`VarRef::ZERO`] variable).
+/// An expression that is a view of exactly one variable (which may be the [`Var::ZERO`] variable).
 ///
-/// Notably implemented for `VarRef`, `Lit`, `IVar`, `SVar`, `BVar`
+/// Notably implemented for `Var`, `Lit`, `IVar`, `SVar`, `BVar`
 pub trait Term {
     /// Extracts the underlying variable in the expression.
     ///
-    /// Note that the resulting in [`VarRef`] cannot in general be considered as equivalent to the expression.
-    fn variable(self) -> VarRef;
+    /// Note that the resulting in [`Var`] cannot in general be considered as equivalent to the expression.
+    fn variable(self) -> Var;
 }
 impl Term for Lit {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.variable()
     }
 }
 impl Term for SignedVar {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.variable()
     }
 }
-impl<T: Into<VarRef>> Term for T {
-    fn variable(self) -> VarRef {
+impl<T: Into<Var>> Term for T {
+    fn variable(self) -> Var {
         self.into()
     }
 }
 impl Term for IAtom {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.var.variable()
     }
 }

@@ -43,14 +43,14 @@ pub trait Heuristic<Lbl>: Send + Sync + 'static {
     ///
     /// The brancher only starts branching on the variables of stage N when
     /// all variables of stage (N - 1) are set.
-    fn decision_stage(&self, var: VarRef, label: Option<&Lbl>, model: &Model<Lbl>) -> u8;
+    fn decision_stage(&self, var: Var, label: Option<&Lbl>, model: &Model<Lbl>) -> u8;
 }
 
 /// Default branching heuristic that puts all variables in the same decision stage.
 pub struct DefaultHeuristic;
 
 impl<L> Heuristic<L> for DefaultHeuristic {
-    fn decision_stage(&self, v: VarRef, _: Option<&L>, m: &Model<L>) -> u8 {
+    fn decision_stage(&self, v: Var, _: Option<&L>, m: &Model<L>) -> u8 {
         if m.var_domain(v).size() <= 2 { 0 } else { 1 }
     }
 }
@@ -65,8 +65,8 @@ pub struct ActivityBrancher<Lbl> {
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
     /// Associates presence literals to the optional variables
-    /// Essentially a `Map<Lit, Set<VarRef>>`
-    presences: Watches<VarRef>,
+    /// Essentially a `Map<Lit, Set<Var>>`
+    presences: Watches<Var>,
     cursor: ObsTrailCursor<Event>,
 }
 
@@ -75,7 +75,7 @@ struct DefaultValues {
     /// If these default values came from a valid assignment, this is the value of the associated objective
     objective_found: Option<IntCst>,
     /// Default value for variables (some variables might not have one)
-    values: RefMap<VarRef, IntCst>,
+    values: RefMap<Var, IntCst>,
 }
 
 impl<Lbl: Label> ActivityBrancher<Lbl> {
@@ -104,7 +104,7 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
         }
     }
 
-    fn priority(&self, variable: VarRef, model: &Model<Lbl>) -> u8 {
+    fn priority(&self, variable: Var, model: &Model<Lbl>) -> u8 {
         self.heuristic
             .decision_stage(variable, model.shape.labels.get(variable), model)
     }
@@ -113,7 +113,7 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
         if self.num_processed_var < model.state.num_variables() {
             let mut count = 0;
             // go through the model's variables and declare any newly declared variable
-            let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(VarRef::from);
+            let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(Var::from);
             for var in unprocessed_vars {
                 debug_assert!(!self.heap.is_declared(var));
                 let prez = model.presence_literal(var);
@@ -216,23 +216,23 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
         }
     }
 
-    pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {
+    pub fn set_default_value(&mut self, var: Var, val: IntCst) {
         self.default_assignment.values.insert(var, val);
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// If the variable is optional, the activity of the presence variable is increased as well.
     /// The activity is then used to select the next variable.
-    pub fn bump_activity(&mut self, bvar: VarRef, model: &Model<Lbl>) {
+    pub fn bump_activity(&mut self, bvar: Var, model: &Model<Lbl>) {
         self.heap.var_bump_activity(bvar);
         match model.state.presence(bvar).variable() {
-            VarRef::ZERO => {}
-            VarRef::ONE => {}
+            Var::ZERO => {}
+            Var::ONE => {}
             prez_var => self.heap.var_bump_activity(prez_var),
         }
     }
 
-    pub fn get_activity(&self, var: VarRef) -> f32 {
+    pub fn get_activity(&self, var: Var) -> f32 {
         self.heap.activity(var)
     }
 
@@ -275,7 +275,7 @@ struct BoolVarHeuristicValue {
     activity: f32,
 }
 
-type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
+type Heap = IdxHeap<Var, BoolVarHeuristicValue>;
 
 /// Changes that need to be undone.
 /// The only change that we need to undo is the removal from the queue.
@@ -284,7 +284,7 @@ type Heap = IdxHeap<VarRef, BoolVarHeuristicValue>;
 /// that will never be send to a caller.
 #[derive(Copy, Clone)]
 enum HeapEvent {
-    Removal(VarRef, u8),
+    Removal(Var, u8),
 }
 
 #[derive(Clone)]
@@ -293,7 +293,7 @@ pub struct VarSelect {
     /// One heap for each decision stage.
     heaps: Vec<Heap>,
     /// Stage in which each variable appears.
-    stages: RefMap<VarRef, u8>,
+    stages: RefMap<Var, u8>,
     trail: Trail<HeapEvent>,
 }
 
@@ -307,14 +307,14 @@ impl VarSelect {
         }
     }
 
-    pub fn is_declared(&self, v: VarRef) -> bool {
+    pub fn is_declared(&self, v: Var) -> bool {
         self.stages.contains(v)
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
     /// The stage parameter defines at which stage of the search the variable will be selected.
     /// Variables with the lowest stage are considered first.
-    pub fn declare_variable(&mut self, v: VarRef, stage: u8, initial_activity: Option<f32>) {
+    pub fn declare_variable(&mut self, v: Var, stage: u8, initial_activity: Option<f32>) {
         debug_assert!(!self.is_declared(v));
         let hvalue = BoolVarHeuristicValue {
             activity: initial_activity.unwrap_or(self.params.var_inc),
@@ -328,22 +328,22 @@ impl VarSelect {
     }
 
     /// Adds a previously declared variable to its queue
-    pub fn enqueue_variable(&mut self, v: VarRef) {
+    pub fn enqueue_variable(&mut self, v: Var) {
         debug_assert!(self.is_declared(v));
         let priority = self.stages[v] as usize;
         self.heaps[priority].enqueue(v);
     }
 
-    fn stage_of(&self, v: VarRef) -> u8 {
+    fn stage_of(&self, v: Var) -> u8 {
         self.stages[v]
     }
 
-    fn heap_of(&self, v: VarRef) -> &Heap {
+    fn heap_of(&self, v: Var) -> &Heap {
         let heap_index = self.stage_of(v) as usize;
         &self.heaps[heap_index]
     }
 
-    fn mut_heap_of(&mut self, v: VarRef) -> &mut Heap {
+    fn mut_heap_of(&mut self, v: Var) -> &mut Heap {
         let heap_index = self.stage_of(v) as usize;
         &mut self.heaps[heap_index]
     }
@@ -361,7 +361,7 @@ impl VarSelect {
         }
     }
 
-    pub fn var_bump_activity(&mut self, var: VarRef) {
+    pub fn var_bump_activity(&mut self, var: Var) {
         let var_inc = self.params.var_inc;
         let heap = self.mut_heap_of(var);
         heap.change_priority(var, |p| p.activity += var_inc);
@@ -370,7 +370,7 @@ impl VarSelect {
         }
     }
 
-    pub fn activity(&self, var: VarRef) -> f32 {
+    pub fn activity(&self, var: Var) -> f32 {
         self.heap_of(var).priority(var).activity / self.params.var_inc
     }
 
@@ -418,7 +418,7 @@ pub struct Popper<'a> {
 impl<'a> Popper<'a> {
     /// Returns the next element in the queue, without removing it.
     /// Returns `None` if no elements are left in the queue.
-    pub fn peek(&mut self) -> Option<VarRef> {
+    pub fn peek(&mut self) -> Option<Var> {
         while let Some(curr) = &self.current_heap {
             if let Some(var) = curr.peek().copied() {
                 return Some(var);
@@ -432,7 +432,7 @@ impl<'a> Popper<'a> {
 
     /// Remove the next element from the queue and return it.
     /// Returns `None` if no elements are left in the queue.
-    pub fn pop(&mut self) -> Option<VarRef> {
+    pub fn pop(&mut self) -> Option<Var> {
         while let Some(curr) = &mut self.current_heap {
             if let Some(var) = curr.pop() {
                 self.trail.push(HeapEvent::Removal(var, self.stage));

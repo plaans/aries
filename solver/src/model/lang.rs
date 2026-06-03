@@ -9,7 +9,7 @@
 //! | Type | Form | Represents | Implements |
 //! |------|:----:|------------|------------|
 //! | **[`IntCst`]** | `c` | Integer constant |  |
-//! | **[`VarRef`]** | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], |
+//! | **[`Var`]** | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`SignedVar`] | `±X` | Signed variable | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`ScaledVar`] | `n·X` | Variable multiplied by constant | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`IAtom`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
@@ -17,14 +17,14 @@
 //! | **[`LinSum`]** | `Σ(nᵢ·Xᵢ) + c` | Sum of scaled variables plus constant | [`IntExpr`] |
 //! | `dyn [`IntExpr`] | `unknown` | Arbitrary int expression |  |
 //!
-//! Most user code will only deal with [`VarRef`] (a single decision variable) and [`LinSum`] but one may face
+//! Most user code will only deal with [`Var`] (a single decision variable) and [`LinSum`] but one may face
 //! other variants when doing arithmetic (but type inference is usually sufficient to ignore them).
 //!
 //! ```
 //! # use aries::prelude::*;
 //! # use aries::model::lang::linear::*;
 //! let mut domains = Domains::new();
-//! let x: VarRef = domains.new_var(0, 10);
+//! let x: Var = domains.new_var(0, 10);
 //! let x: ScaledVar = 3 * x;
 //! let x: LinTerm = x + 2;
 //! let x: LinSum = x + domains.new_var(0,4);
@@ -33,7 +33,7 @@
 //! ### Conversions
 //!
 //! ```text
-//!        VarRef → SignedVar → ScaledVar → LinTerm → LinSum
+//!        Var → SignedVar → ScaledVar → LinTerm → LinSum
 //!          ↓                                  ↑
 //! IntCst  →└────────────→ IAtom ──────────────┘
 //! ```
@@ -50,7 +50,7 @@
 //! The [`Lit`] type is fundamental in the solver, representing decisions in the solvers,
 //! elements of a [`Disjunction`], elements of learned clauses, ...
 //!
-//! While a `Lit` is fundamentally a statement on a [`VarRef`] it can be built for any type that implements [`Boundable`].
+//! While a `Lit` is fundamentally a statement on a [`Var`] it can be built for any type that implements [`Boundable`].
 //!
 //!
 //!

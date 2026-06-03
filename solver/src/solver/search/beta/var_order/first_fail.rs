@@ -1,4 +1,4 @@
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::model::Label;
 use crate::model::Model;
 use crate::solver::search::beta::var_order::VarOrder;
@@ -7,7 +7,7 @@ use crate::solver::search::beta::var_order::VarOrder;
 pub struct FirstFail;
 
 impl<Lbl: Label> VarOrder<Lbl> for FirstFail {
-    fn select(&self, model: &Model<Lbl>) -> Option<VarRef> {
+    fn select(&self, model: &Model<Lbl>) -> Option<Var> {
         model
             .state
             .variables()

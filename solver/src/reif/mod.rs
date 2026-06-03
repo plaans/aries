@@ -1,6 +1,6 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Evaluable, OptDomain};
-use crate::core::{IntCst, Lit, SignedVar, VarRef};
+use crate::core::{IntCst, Lit, SignedVar, Var};
 use crate::model::lang::ValidityScope;
 use crate::model::lang::alternative::NFAlternative;
 use crate::model::lang::max::NFEqMax;
@@ -24,10 +24,10 @@ impl<Lbl: Label, Expr: Into<ReifExpr>> Reifiable<Lbl> for Expr {
 pub enum ReifExpr {
     Lit(Lit),
     MaxDiff(DifferenceExpression),
-    Eq(VarRef, VarRef),
-    Neq(VarRef, VarRef),
-    EqVal(VarRef, IntCst),
-    NeqVal(VarRef, IntCst),
+    Eq(Var, Var),
+    Neq(Var, Var),
+    EqVal(Var, IntCst),
+    NeqVal(Var, IntCst),
     Or(Disjunction),
     And(Conjunction),
     LinearLeq(LinSum),
@@ -63,7 +63,7 @@ impl std::fmt::Display for ReifExpr {
 }
 
 impl ReifExpr {
-    pub fn scope(&self, presence: impl Fn(VarRef) -> Lit) -> ValidityScope {
+    pub fn scope(&self, presence: impl Fn(Var) -> Lit) -> ValidityScope {
         match self {
             ReifExpr::Lit(l) => ValidityScope::new([presence(l.variable())], []),
             ReifExpr::MaxDiff(diff) => ValidityScope::new([presence(diff.b), presence(diff.a)], []),
@@ -303,15 +303,15 @@ impl Not for ReifExpr {
 /// A difference expression of the form `b - a <= ub` where `a` and `b` are variables.
 #[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Clone)]
 pub struct DifferenceExpression {
-    pub b: VarRef,
-    pub a: VarRef,
+    pub b: Var,
+    pub a: Var,
     pub ub: IntCst,
 }
 
 impl DifferenceExpression {
-    pub fn new(b: VarRef, a: VarRef, ub: IntCst) -> Self {
-        assert_ne!(b, VarRef::ZERO);
-        assert_ne!(a, VarRef::ZERO);
+    pub fn new(b: Var, a: Var, ub: IntCst) -> Self {
+        assert_ne!(b, Var::ZERO);
+        assert_ne!(a, Var::ZERO);
         DifferenceExpression { b, a, ub }
     }
 }

@@ -1,7 +1,7 @@
 use crate::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrail, ObsTrailCursor};
 use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
-use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, VarRef};
+use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, Var};
 use crate::model::{Label, Model};
 use crate::prelude::DomainsExt;
 use crate::reasoners::eq::domain;
@@ -56,12 +56,12 @@ impl DirEdge {
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Debug, Ord, PartialOrd)]
 pub enum Node {
-    Var(VarRef),
+    Var(Var),
     Val(IntCst),
 }
 
-impl From<VarRef> for Node {
-    fn from(v: VarRef) -> Self {
+impl From<Var> for Node {
+    fn from(v: Var) -> Self {
         Node::Var(v)
     }
 }
@@ -71,10 +71,10 @@ impl From<IntCst> for Node {
     }
 }
 
-fn var_of(n: Node) -> VarRef {
+fn var_of(n: Node) -> Var {
     match n {
         Node::Var(v) => v,
-        Node::Val(_) => VarRef::ZERO,
+        Node::Val(_) => Var::ZERO,
     }
 }
 
@@ -252,7 +252,7 @@ impl DenseEqTheory {
         }
     }
 
-    pub fn variables(&self) -> impl Iterator<Item = VarRef> + '_ {
+    pub fn variables(&self) -> impl Iterator<Item = Var> + '_ {
         self.graph.nodes_ordered.iter().filter_map(|n| match n {
             Node::Var(v) => Some(*v),
             Node::Val(_) => None,
@@ -882,7 +882,7 @@ pub trait ReifyEq {
     fn reify_eq(&mut self, a: Node, b: Node) -> Lit;
 
     /// Return a literal that is true iff p(a) => p(b)
-    fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit;
+    fn presence_implication(&self, a: Var, b: Var) -> Lit;
 
     fn n_presence_implication(&self, a: Node, b: Node) -> Lit {
         self.presence_implication(var_of(a), var_of(b))
@@ -921,7 +921,7 @@ impl<L: Label> ReifyEq for Model<L> {
         }
     }
 
-    fn presence_implication(&self, a: VarRef, b: VarRef) -> Lit {
+    fn presence_implication(&self, a: Var, b: Var) -> Lit {
         let pa = self.state.presence(a);
         let pb = self.state.presence(b);
         if self.state.implies(pa, pb) { Lit::TRUE } else { pb }
@@ -932,7 +932,7 @@ impl<L: Label> ReifyEq for Model<L> {
 mod tests {
     use crate::backtrack::{Backtrack, EventIndex};
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
-    use crate::core::{IntCst, Lit, VarRef};
+    use crate::core::{IntCst, Lit, Var};
     use crate::model::lang::expr::lin_eq;
     use crate::model::{Label, Model};
     use crate::reasoners::eq::dense::InferenceCause;
@@ -963,7 +963,7 @@ mod tests {
         map: HashMap<Pair, Lit>,
     }
     impl Eqs {
-        pub fn init(vars: &[VarRef], domains: &mut Domains) -> Eqs {
+        pub fn init(vars: &[Var], domains: &mut Domains) -> Eqs {
             let mut map = HashMap::new();
             for i in 0..vars.len() {
                 for j in (i + 1)..vars.len() {
@@ -1004,7 +1004,7 @@ mod tests {
             self.get(a, b)
         }
 
-        fn presence_implication(&self, _a: VarRef, _b: VarRef) -> Lit {
+        fn presence_implication(&self, _a: Var, _b: Var) -> Lit {
             Lit::TRUE // Only correct for non optional variables
         }
 
@@ -1043,7 +1043,7 @@ mod tests {
             domains.set(label, Cause::Decision).expect("Decision error");
             theory.propagate(domains).expect("Propagation error");
         };
-        let check = |eq1: &[VarRef], eq2: &[VarRef], domains: &Domains| {
+        let check = |eq1: &[Var], eq2: &[Var], domains: &Domains| {
             println!("Check {:?}  !=  {:?}", eq1, eq2);
             for &x in eq1 {
                 for &y in eq1 {

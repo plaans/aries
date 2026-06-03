@@ -1,6 +1,6 @@
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
-use crate::core::{IntCst, Lit, VarRef};
+use crate::core::{IntCst, Lit, Var};
 use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use itertools::Itertools;
@@ -13,12 +13,12 @@ type PartId = u16;
 #[derive(Clone, Default)]
 pub struct SplitEqTheory {
     parts: Vec<Option<DenseEqTheory>>,
-    part_of: HashMap<VarRef, PartId>,
+    part_of: HashMap<Var, PartId>,
     lvl: DecisionLevelTracker,
 }
 
 impl SplitEqTheory {
-    pub fn add_edge(&mut self, a: VarRef, b: VarRef, model: &mut impl ReifyEq) -> Lit {
+    pub fn add_edge(&mut self, a: Var, b: Var, model: &mut impl ReifyEq) -> Lit {
         debug_assert_eq!(self.lvl.num_saved(), 0, "Adding an edge but not at the root");
 
         let l = model.reify_eq(Node::Var(a), Node::Var(b));
@@ -82,7 +82,7 @@ impl SplitEqTheory {
         l
     }
 
-    pub fn add_val_edge(&mut self, var: VarRef, val: IntCst, model: &mut impl ReifyEq) -> Lit {
+    pub fn add_val_edge(&mut self, var: Var, val: IntCst, model: &mut impl ReifyEq) -> Lit {
         debug_assert_eq!(self.lvl.num_saved(), 0, "Adding an edge but not at the root");
 
         let l = model.reify_eq(Node::Var(var), Node::Val(val));

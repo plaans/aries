@@ -123,7 +123,7 @@ impl Lits {
         // In the same passe, we also remove any trivially unsatisfiable literal (this could be simplified as it would always be the last of the sequence)
         self.elems.dedup_by(|curr, prev| (*curr).entails(*prev));
 
-        // the last two elements may be on `VarRef::ZERO` and thus either tautological or absurd.
+        // the last two elements may be on `Var::ZERO` and thus either tautological or absurd.
         // we remove any absurd one and simplify the clause if we find any tautological one
         if self.elems.last().is_some_and(|l| l.absurd()) {
             self.elems.pop();

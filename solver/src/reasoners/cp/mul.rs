@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use crate::{
     core::{
-        IntCst, Lit, VarRef,
+        IntCst, Lit, Var,
         state::{Cause, Domains, DomainsSnapshot, Explanation},
     },
     reasoners::{
@@ -18,9 +18,9 @@ use crate::{
 /// Explanations are far from minimal.
 #[derive(Clone)]
 pub(super) struct Mul {
-    pub prod: VarRef,
-    pub fact1: VarRef,
-    pub fact2: VarRef,
+    pub prod: Var,
+    pub fact1: Var,
+    pub fact2: Var,
     pub active: Lit,
     pub valid: Lit,
 }
@@ -126,8 +126,8 @@ impl Mul {
         &self,
         domains: &mut Domains,
         cause: Cause,
-        fact: VarRef,
-        other_fact: VarRef,
+        fact: Var,
+        other_fact: Var,
     ) -> Result<bool, Contradiction> {
         let p = domains.concrete_domain(self.prod);
         let of = domains.concrete_domain(other_fact);
@@ -240,7 +240,7 @@ impl Mul {
     }
 
     /// If x = y * x case, returns y
-    fn xyx_fact(&self) -> Option<VarRef> {
+    fn xyx_fact(&self) -> Option<Var> {
         if self.fact1 == self.prod {
             Some(self.fact2)
         } else if self.fact2 == self.prod {
@@ -254,17 +254,17 @@ impl Mul {
 // Utils for common operations on domains
 impl DomainsSnapshot<'_> {
     /// Creates literal v <= ub(v)
-    fn ub_literal(&self, v: VarRef) -> Lit {
+    fn ub_literal(&self, v: Var) -> Lit {
         v.leq(self.ub(v))
     }
 
     /// Creates literal v >= lb(v)
-    fn lb_literal(&self, v: VarRef) -> Lit {
+    fn lb_literal(&self, v: Var) -> Lit {
         v.geq(self.lb(v))
     }
 
     // Pushes v <= ub(v) and v >= lb(v) into explanation
-    fn explain_var(&self, v: VarRef, out_explanation: &mut Explanation) {
+    fn explain_var(&self, v: Var, out_explanation: &mut Explanation) {
         out_explanation.push(self.lb_literal(v));
         out_explanation.push(self.ub_literal(v));
     }
@@ -272,7 +272,7 @@ impl DomainsSnapshot<'_> {
 
 impl Domains {
     // Set upper and lower bounds, return true if either changed
-    fn set_bounds(&mut self, v: VarRef, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
+    fn set_bounds(&mut self, v: Var, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
         let changed1 = self.set_lb(v, lb, cause)?;
         let changed2 = self.set_ub(v, ub, cause)?;
         Ok(changed1 || changed2)
@@ -302,12 +302,12 @@ mod test {
     // === Assertions ===
 
     /// Asserts that bounds of var are as expected
-    fn check_bounds(v: VarRef, d: &Domains, expected_bounds: (IntCst, IntCst)) {
+    fn check_bounds(v: Var, d: &Domains, expected_bounds: (IntCst, IntCst)) {
         assert_eq!(d.bounds(v), expected_bounds, "Unexpected bounds for {v:?}");
     }
 
     /// Asserts that val is in var's bounds
-    fn check_in_bounds(d: &Domains, var: VarRef, val: IntCst) {
+    fn check_in_bounds(d: &Domains, var: Var, val: IntCst) {
         let (lb, ub) = d.bounds(var);
         assert!(lb <= val && val <= ub, "{} <= {} <= {} failed", lb, val, ub);
     }

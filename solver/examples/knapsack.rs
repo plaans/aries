@@ -8,7 +8,7 @@ fn solve(items: &[(IntCst, IntCst)], capacity: IntCst) -> Option<IntCst> {
     // create one decision variable for each item, with value:
     //  -  0 if the of item is absent from the solution
     //  -  1 if it is selected
-    let vars: Vec<VarRef> = items.iter().map(|_| model.new_variable(0, 1)).collect();
+    let vars: Vec<Var> = items.iter().map(|_| model.new_variable(0, 1)).collect();
 
     // create linear expressions containing the sum of weight/value for all present items
     let mut total_weight = LinSum::zero();

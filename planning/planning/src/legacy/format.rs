@@ -13,11 +13,11 @@ where
 {
     fn get_shape(&self) -> &ModelShape<Lbl>;
 
-    fn get_label(&self, var: impl Into<VarRef>) -> Option<&Lbl> {
+    fn get_label(&self, var: impl Into<Var>) -> Option<&Lbl> {
         self.get_shape().get_label(var.into())
     }
 
-    fn get_var(&self, label: &Lbl) -> Option<VarRef> {
+    fn get_var(&self, label: &Lbl) -> Option<Var> {
         self.get_shape().get_variable(label)
     }
 
@@ -133,7 +133,7 @@ fn format_impl_sym<Lbl: Label>(
 
 fn format_impl_var<Lbl: Label>(
     ctx: &impl Shaped<Lbl>,
-    v: VarRef,
+    v: Var,
     kind: Kind,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {

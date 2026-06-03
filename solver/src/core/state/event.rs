@@ -43,7 +43,7 @@ impl Event {
     }
 
     /// Defines the event, that corresponds to the creation of a variable with this upper bound
-    pub fn initial_upper_bound(var: VarRef, ub: IntCst) -> Self {
+    pub fn initial_upper_bound(var: Var, ub: IntCst) -> Self {
         Event {
             affected_bound: SignedVar::plus(var),
             previous: ValueCause {
@@ -55,7 +55,7 @@ impl Event {
         }
     }
     /// Defines the event, that corresponds to the creation of a variable with this upper bound
-    pub fn initial_lower_bound(var: VarRef, lb: IntCst) -> Self {
+    pub fn initial_lower_bound(var: Var, lb: IntCst) -> Self {
         Event {
             affected_bound: SignedVar::minus(var),
             previous: ValueCause {

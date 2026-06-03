@@ -3,7 +3,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
-use crate::core::{IntCst, Lit, LongCst, SignedVar, VarRef, cst_long_to_int_clamped};
+use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
 use crate::model::lang::{BoolExpr, ConversionError, IAtom, IVar, IntExpr, Store};
 use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
@@ -21,20 +21,20 @@ pub struct ScaledVar {
     ///
     /// Note that the order is important so that `Ord` considers first the variable when ordering a list.
     /// This is relied upon when normalizing a linear sum.
-    pub var: VarRef,
+    pub var: Var,
     /// Factor `a` by which the variable is multiplied.
     pub factor: IntCst,
 }
 
 impl ScaledVar {
-    pub const ZERO: ScaledVar = ScaledVar::new(VarRef::ZERO, 0);
-    pub const fn new(var: VarRef, factor: IntCst) -> Self {
+    pub const ZERO: ScaledVar = ScaledVar::new(Var::ZERO, 0);
+    pub const fn new(var: Var, factor: IntCst) -> Self {
         Self { var, factor }
     }
 
     /// Returns true if the term is always equal to zero.
     pub fn is_zero(&self) -> bool {
-        self.factor == 0 || self.var == VarRef::ZERO
+        self.factor == 0 || self.var == Var::ZERO
     }
 }
 
@@ -63,17 +63,17 @@ impl From<SignedVar> for ScaledVar {
         }
     }
 }
-impl std::ops::Mul<IntCst> for VarRef {
+impl std::ops::Mul<IntCst> for Var {
     type Output = ScaledVar;
 
     fn mul(self, rhs: IntCst) -> Self::Output {
         ScaledVar::new(self, rhs)
     }
 }
-impl std::ops::Mul<VarRef> for IntCst {
+impl std::ops::Mul<Var> for IntCst {
     type Output = ScaledVar;
 
-    fn mul(self, rhs: VarRef) -> Self::Output {
+    fn mul(self, rhs: Var) -> Self::Output {
         ScaledVar::new(rhs, self)
     }
 }
@@ -176,7 +176,7 @@ impl std::ops::Neg for &ScaledVar {
     }
 }
 impl Term for ScaledVar {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.var
     }
 }
@@ -248,7 +248,7 @@ impl Boundable for LinTerm {
     }
 }
 impl Term for LinTerm {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.scaled_var.variable()
     }
 }
@@ -347,7 +347,7 @@ impl TryFrom<LinTerm> for IntCst {
 
 transitive_conversion!(LinTerm, ScaledVar, SignedVar);
 transitive_conversion!(LinTerm, IAtom, IVar);
-transitive_conversion!(LinSum, LinTerm, VarRef);
+transitive_conversion!(LinSum, LinTerm, Var);
 transitive_conversion!(LinSum, LinTerm, SignedVar);
 transitive_conversion!(LinSum, LinTerm, IAtom);
 transitive_conversions!(LinSum, LinTerm, IntCst);
@@ -420,7 +420,7 @@ impl LinSum {
         self.vars.retain(|sv| {
             if sv.is_zero() {
                 false
-            } else if sv.var == VarRef::ONE {
+            } else if sv.var == Var::ONE {
                 self.constant += sv.factor;
                 false
             } else {
@@ -440,12 +440,12 @@ impl LinSum {
 
     /// Returns an iterator over all variables appearing in the sum (without their factor).
     /// Variables are guaranteed to appear at most once.
-    pub fn variables(&self) -> impl Iterator<Item = VarRef> + '_ {
+    pub fn variables(&self) -> impl Iterator<Item = Var> + '_ {
         self.vars.iter().map(|sv| sv.var)
     }
 
     /// Extract the different parts of the expression, return `None` if th linear sum has a different number of variable terms.
-    pub fn extract<const N_VARS: usize>(&self) -> Option<(IntCst, [(IntCst, VarRef); N_VARS])> {
+    pub fn extract<const N_VARS: usize>(&self) -> Option<(IntCst, [(IntCst, Var); N_VARS])> {
         self.vars
             .as_array()
             .map(|vars| (self.constant, vars.map(|sv| (sv.factor, sv.var))))
@@ -577,10 +577,10 @@ impl std::fmt::Display for LinSum {
             if e.factor.abs() != 1 {
                 write!(f, "{}", e.factor.abs())?;
             }
-            if e.factor.abs() != 1 && e.var != VarRef::ONE {
+            if e.factor.abs() != 1 && e.var != Var::ONE {
                 write!(f, "*")?;
             }
-            if e.var != VarRef::ONE {
+            if e.var != Var::ONE {
                 write!(f, "{:?}", e.var)?;
             } else if e.factor.abs() == 1 {
                 write!(f, "1")?;
@@ -683,14 +683,14 @@ mod tests {
     #[test]
     fn test_simplify_linear_sum() {
         // Terms should be grouped by (lit, variable)
-        // Terms with null `factor` or `variable` equals to VarRef::ZERO should be filtered
+        // Terms with null `factor` or `variable` equals to Var::ZERO should be filtered
         // Terms with null `variable` and `literal` equals to Lit::TRUE  should be grouped into the upper bound
-        let var0 = VarRef::ZERO;
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(6);
-        let var3 = VarRef::from_u32(7);
+        let var0 = Var::ZERO;
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(6);
+        let var3 = Var::from_u32(7);
 
-        let item = |factor: IntCst, var: VarRef| ScaledVar { var, factor };
+        let item = |factor: IntCst, var: Var| ScaledVar { var, factor };
 
         let obj = LinSum::new(
             -5,

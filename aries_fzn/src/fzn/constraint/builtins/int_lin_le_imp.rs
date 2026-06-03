@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
+use aries::core::Var;
 use aries::model::lang::BVar;
 use aries::model::lang::linear::ScaledVar;
 use flatzinc::ConstraintItem;
@@ -120,7 +120,7 @@ impl From<IntLinLeImp> for Constraint {
 impl Encode for IntLinLeImp {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<dyn Post<usize>> {
         let translate = |vid: &usize| translation.get(vid).unwrap();
         let sum = self

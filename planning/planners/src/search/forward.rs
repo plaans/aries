@@ -3,7 +3,7 @@
 use crate::encoding::refinements_of;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl};
-use aries::core::{Lit, VarRef};
+use aries::core::{Lit, Var};
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::IVar;
 use aries::solver::search::{Decision, SearchControl};
@@ -51,10 +51,10 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
 }
 
 /// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
-fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
+fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl Iterator<Item = Var> + 'a {
     use VarType::*;
-    // varref that controls the start time of the chronicle
-    let start_ref: VarRef = ch.chronicle.start.num.var;
+    // var that controls the start time of the chronicle
+    let start_ref: Var = ch.chronicle.start.num.var;
     ch.parameters
         .iter()
         .filter_map(|&a| {

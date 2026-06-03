@@ -1,5 +1,5 @@
 use crate::core::views::Term;
-use crate::core::{IntCst, VarRef};
+use crate::core::{IntCst, Var};
 use crate::model::lang::{ConversionError, IAtom};
 use crate::reif::ReifExpr;
 use itertools::Itertools;
@@ -50,12 +50,12 @@ impl TryFrom<Alternative> for NFAlternative {
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug, Ord, PartialOrd)]
 pub struct NFAlternativeItem {
-    pub var: VarRef,
+    pub var: Var,
     pub cst: IntCst,
 }
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub struct NFAlternative {
-    pub main: VarRef,
+    pub main: Var,
     // sorted alternatives
     pub alternatives: Vec<NFAlternativeItem>,
 }

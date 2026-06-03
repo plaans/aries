@@ -2,7 +2,7 @@ use hashbrown::HashMap;
 
 use crate::core::Lit;
 use crate::core::Relation;
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::core::state::Conflict;
 use crate::core::state::Explainer;
 use crate::model::Label;
@@ -12,7 +12,7 @@ use crate::solver::search::beta::value_order::ValueOrder;
 
 #[derive(Clone, Debug)]
 pub struct Dynamic {
-    table: HashMap<VarRef, i32>,
+    table: HashMap<Var, i32>,
     period: u32,
     countdown: u32,
     zero_pos: bool,
@@ -30,7 +30,7 @@ impl Dynamic {
     }
 
     /// Return the score of the given variable
-    fn get(&self, var: &VarRef) -> i32 {
+    fn get(&self, var: &Var) -> i32 {
         *self.table.get(var).unwrap_or(&0)
     }
 
@@ -41,7 +41,7 @@ impl Dynamic {
     }
 
     /// Add the given value to the variable score.
-    fn bump(&mut self, var: VarRef, value: i32) {
+    fn bump(&mut self, var: Var, value: i32) {
         if let Some(s) = self.table.get_mut(&var) {
             *s += value;
         } else {
@@ -77,7 +77,7 @@ impl Dynamic {
 }
 
 impl<Lbl: Label> ValueOrder<Lbl> for Dynamic {
-    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: Var, model: &Model<Lbl>) -> Lit {
         let score = self.get(&var);
         let (lb, ub) = model.state.bounds(var);
         let positive = score > 0 || (score == 0 && self.zero_is_pos());
@@ -121,7 +121,7 @@ mod tests {
     ///  - x in \[0,7\]
     ///  - y in \[3,6\]
     ///  - z in \[-2,4\]
-    fn basic_model() -> (Model<String>, VarRef, VarRef, VarRef) {
+    fn basic_model() -> (Model<String>, Var, Var, Var) {
         let mut model = Model::new();
         let x = model.new_ivar(0, 7, "x");
         let y = model.new_ivar(3, 6, "y");

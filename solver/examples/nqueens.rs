@@ -11,7 +11,7 @@ fn solve_nqueens(n: usize) -> Option<Vec<usize>> {
 
     // Create one variable per row, representing the column position of the queen in that row.
     // Each variable has domain [0, n-1], whose value indicates the column in which the queen is.
-    let queens: Vec<VarRef> = (0..n).map(|_| model.new_variable(0, (n - 1) as IntCst)).collect();
+    let queens: Vec<Var> = (0..n).map(|_| model.new_variable(0, (n - 1) as IntCst)).collect();
 
     // For any pair of queens, enforce that they are not on the same column, or diagonal.
     for i in 0..n {

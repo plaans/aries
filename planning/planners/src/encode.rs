@@ -81,7 +81,7 @@ pub fn instantiate(
         template
             .parameters
             .iter()
-            .map(|v| VarRef::from(*v))
+            .map(|v| Var::from(*v))
             .any(|x| x == template.chronicle.presence.variable()),
         "presence var not in parameters."
     );
@@ -101,7 +101,7 @@ pub fn instantiate(
     let prez_template = template
         .parameters
         .iter()
-        .find(|&x| VarRef::from(*x) == template.chronicle.presence.variable())
+        .find(|&x| Var::from(*x) == template.chronicle.presence.variable())
         .copied()
         .expect("Presence variable not in parameters");
 

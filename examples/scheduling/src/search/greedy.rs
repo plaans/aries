@@ -1,12 +1,12 @@
 // ============= Forward progression ===========
 
-use crate::Var;
+use crate::VarLbl;
 use crate::problem::Encoding;
 use crate::search::Model;
 use aries::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries::core::state::OptDomain;
 use aries::core::views::Term;
-use aries::core::{IntCst, Lit, VarRef};
+use aries::core::{IntCst, Lit, Var};
 use aries::model::extensions::DomainsExt;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
@@ -26,7 +26,7 @@ impl EstBrancher {
     }
 }
 
-impl SearchControl<Var> for EstBrancher {
+impl SearchControl<VarLbl> for EstBrancher {
     fn next_decision(&mut self, _stats: &Stats, model: &Model) -> Option<Decision> {
         // among the task with the smallest "earliest starting time (est)" pick the one that has the least slack
         let best = active_tasks(&self.pb, model).min_by_key(|(_var, est, lst)| (*est, *lst));
@@ -43,7 +43,7 @@ impl SearchControl<Var> for EstBrancher {
         })
     }
 
-    fn clone_to_box(&self) -> Box<dyn SearchControl<Var> + Send> {
+    fn clone_to_box(&self) -> Box<dyn SearchControl<VarLbl> + Send> {
         Box::new(self.clone())
     }
 }
@@ -68,7 +68,7 @@ impl Backtrack for EstBrancher {
 ///  - `est` is its lower bound (the earliest start time of the task)
 ///  - `lst` is its upper bound (the latest start time of the task)
 ///  - `est < lst`: the start time of the task has not been decided yet.
-fn active_tasks<'a>(pb: &'a Encoding, model: &'a Model) -> impl Iterator<Item = (VarRef, IntCst, IntCst)> + 'a {
+fn active_tasks<'a>(pb: &'a Encoding, model: &'a Model) -> impl Iterator<Item = (Var, IntCst, IntCst)> + 'a {
     pb.all_alternatives().filter_map(move |a| {
         let v = a.start().var.variable();
         // keep all variables that not absent and not bound

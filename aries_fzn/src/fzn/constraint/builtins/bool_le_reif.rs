@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
+use aries::core::Var;
 use aries::model::lang::BVar;
 use flatzinc::ConstraintItem;
 
@@ -103,7 +103,7 @@ impl From<BoolLeReif> for Constraint {
 impl Encode for BoolLeReif {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<(dyn Post<usize>)> {
         let a = translation.get(self.a.id()).unwrap();
         let b = translation.get(self.b.id()).unwrap();

@@ -67,7 +67,7 @@ impl<Lbl: Label> Post<Lbl> for InSet {
 #[cfg(test)]
 mod tests {
     use aries::core::IntCst;
-    use aries::core::VarRef;
+    use aries::core::Var;
 
     use crate::aries::constraint::test::basic_int_model_1;
     use crate::aries::constraint::test::verify_all;
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn holes() {
-        let x = VarRef::from_u32(2);
+        let x = Var::from_u32(2);
         let set = vec![0, 2, 3, 6];
         let in_set = InSet::new(x, set);
         assert_eq!(in_set.holes(), vec![(0, 2), (3, 6)]);

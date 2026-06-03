@@ -319,8 +319,8 @@ impl From<Leq> for ReifExpr {
         // normalize, transfer the shift from right to left
         // to get: lhs <= rhs + rhs_add
         let rhs_add = rhs.shift - lhs.shift;
-        let lhs: VarRef = lhs.var;
-        let rhs: VarRef = rhs.var;
+        let lhs: Var = lhs.var;
+        let rhs: Var = rhs.var;
 
         // Only encode as a LEQ the patterns with two variables.
         // Other are treated either are constant (if provable as so)
@@ -328,10 +328,10 @@ impl From<Leq> for ReifExpr {
         if lhs == rhs {
             // X  <= X + rhs_add   <=>  0 <= rhs_add
             (0 <= rhs_add).into()
-        } else if rhs == VarRef::ZERO {
+        } else if rhs == Var::ZERO {
             // lhs  <= rhs_add
             Lit::leq(lhs, rhs_add).into()
-        } else if lhs == VarRef::ZERO {
+        } else if lhs == Var::ZERO {
             // 0 <= rhs + rhs_add   <=>  -rhs_add <= rhs
             Lit::geq(rhs, -rhs_add).into()
         } else {

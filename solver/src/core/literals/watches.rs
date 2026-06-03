@@ -186,8 +186,8 @@ mod tests {
 
     #[test]
     fn test_watches() {
-        let a = VarRef::from_u32(1);
-        let b = VarRef::from_u32(2);
+        let a = Var::from_u32(1);
+        let b = Var::from_u32(2);
 
         let watches = &mut Watches::new();
 

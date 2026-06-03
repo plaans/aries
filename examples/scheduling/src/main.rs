@@ -3,7 +3,7 @@ mod problem;
 mod search;
 
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
-use crate::search::{SearchStrategy, Solver, Var};
+use crate::search::{SearchStrategy, Solver, VarLbl};
 use anyhow::Context;
 use aries::model::lang::IVar;
 use aries::prelude::*;
@@ -109,7 +109,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
     println!("Initial lower bound: {lower_bound}");
 
     let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, opt.no_overlap);
-    let makespan: IVar = model.shape.get_variable(&Var::Makespan).unwrap();
+    let makespan: IVar = model.shape.get_variable(&VarLbl::Makespan).unwrap();
 
     let solver = Solver::new(model);
     let mut solver = search::get_solver(solver, &opt.search, &encoding);
@@ -255,7 +255,7 @@ fn read_file(file: impl AsRef<Path>) -> anyhow::Result<String> {
 #[cfg(test)]
 mod test {
     use crate::problem::ProblemKind;
-    use crate::search::Var;
+    use crate::search::VarLbl;
     use crate::{parser, problem};
     use aries::core::state::witness;
     use aries::model::Label;
@@ -322,7 +322,7 @@ mod test {
 
         // produce a model for this problem
         let (model, _encoding) = problem::encode(&pb, lower_bound, Some(opt * 2), propagation_level);
-        let makespan: IVar = model.shape.get_variable(&Var::Makespan).unwrap();
+        let makespan: IVar = model.shape.get_variable(&VarLbl::Makespan).unwrap();
 
         // run several random solvers on the problem to assert the coherency of the results
         random_solves(&model, makespan, num_reps, Some(opt as IntCst))

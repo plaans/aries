@@ -48,7 +48,7 @@ impl From<FVar> for Variable {
     }
 }
 
-impl From<Variable> for VarRef {
+impl From<Variable> for Var {
     fn from(v: Variable) -> Self {
         match v {
             Bool(x) => x.into(),

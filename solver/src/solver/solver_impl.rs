@@ -65,6 +65,9 @@ pub enum SearchLimit {
 }
 
 impl SearchLimit {
+    /// Maximum allowed duration *from now*  that the search is allowed to proceed.
+    ///
+    /// This is immediately converted into a deadline from the current time.
     pub fn duration(dur: Duration) -> Self {
         Self::Deadline(Instant::now() + dur)
     }
@@ -364,7 +367,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::Alternative(a) => {
-                let prez = |v: VarRef| self.model.state.presence_literal(v);
+                let prez = |v: Var| self.model.state.presence_literal(v);
                 assert!(
                     self.model.entails(enabler),
                     "Unsupported half reified alternative constraints."
@@ -401,7 +404,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     ))?;
                 }
 
-                let prez = |v: VarRef| self.model.state.presence_literal(v);
+                let prez = |v: Var| self.model.state.presence_literal(v);
 
                 // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
                 self.reasoners.cp.add_propagator(AtLeastOneGeq {
@@ -571,7 +574,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
     ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
     ///  needed for something else.
-    pub fn enumerate(&mut self, variables: &[VarRef], limit: SearchLimit) -> Result<Vec<Vec<IntCst>>, Exit> {
+    pub fn enumerate(&mut self, variables: &[Var], limit: SearchLimit) -> Result<Vec<Vec<IntCst>>, Exit> {
         let mut valid_assignments = Vec::with_capacity(64);
 
         // If trivially UNSAT
@@ -597,7 +600,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///  needed for something else.
     pub fn enumerate_with(
         &mut self,
-        variables: &[VarRef],
+        variables: &[Var],
         mut on_new_solution: impl FnMut(&Domains),
         limit: SearchLimit,
     ) -> Result<bool, Exit> {
@@ -718,7 +721,7 @@ impl<Lbl: Label> Solver<Lbl> {
         limit: SearchLimit,
     ) -> Result<Result<Solution, UnsatCore>, Exit> {
         // delegate to optimization with a constant objective
-        self.minimize_with_assumptions(VarRef::ZERO, assumptions, limit, |_sol| {})
+        self.minimize_with_assumptions(Var::ZERO, assumptions, limit, |_sol| {})
     }
 
     /// Returns an iterable datastructure for computing all MUS and MCS.

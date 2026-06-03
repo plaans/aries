@@ -11,7 +11,7 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
-use crate::core::{Lit, SignedVar, VarRef};
+use crate::core::{Lit, SignedVar, Var};
 use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
@@ -27,13 +27,13 @@ pub struct Watches {
 
 impl Watches {
     /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `watched` variable.
-    pub fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
+    pub fn add_watch(&mut self, watched: Var, propagator_id: PropagatorId) {
         self.add_ub_watch(watched, propagator_id);
         self.add_lb_watch(watched, propagator_id);
     }
 
     /// Request a trigger of `propagator_id` on every upper bound change of the `watched` signed variable.
-    /// If `watched` is given as a VarRef, notification will occur on the change of its upper bound.
+    /// If `watched` is given as a Var, notification will occur on the change of its upper bound.
     pub fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.propagations
@@ -42,7 +42,7 @@ impl Watches {
     }
 
     /// Request a trigger of `propagator_id` on every lower bound change of the `watched` signed variable.
-    /// If `watched` is given as a VarRef, notification will occur on the change of its lower bound.
+    /// If `watched` is given as a Var, notification will occur on the change of its lower bound.
     pub fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.add_ub_watch(-watched, propagator_id)

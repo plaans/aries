@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use crate::legacy::*;
-use aries::core::{Lit, Relation, VarRef};
+use aries::core::{Lit, Relation, Var};
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::BVar;
 use aries::model::Model;
@@ -201,7 +201,7 @@ impl<'a> Printer<'a> {
         }
     }
 
-    fn var(&self, v: VarRef) {
+    fn var(&self, v: Var) {
         if let Some(VarLabel(_container, tpe)) = self.model.get_label(v) {
             match tpe {
                 VarType::Horizon => print!("horizon"),
@@ -216,9 +216,9 @@ impl<'a> Printer<'a> {
                 VarType::Reification => print!("reif_{v:?}"),
                 VarType::Cost => print!("cost_{v:?}"),
             }
-        } else if v == VarRef::ZERO {
+        } else if v == Var::ZERO {
             print!("0");
-        } else if v == VarRef::ONE {
+        } else if v == Var::ONE {
             print!("1");
         } else {
             print!("{v:?}");

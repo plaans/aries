@@ -8,7 +8,7 @@ use std::fmt::Debug;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct SVar {
-    pub var: VarRef,
+    pub var: Var,
     pub tpe: TypeId,
 }
 
@@ -21,7 +21,7 @@ impl Debug for SVar {
 }
 
 impl SVar {
-    pub fn new(var: VarRef, tpe: TypeId) -> Self {
+    pub fn new(var: Var, tpe: TypeId) -> Self {
         SVar { var, tpe }
     }
 }
@@ -86,15 +86,15 @@ impl SAtom {
         }
     }
 
-    pub fn variable(&self) -> VarRef {
+    pub fn variable(&self) -> Var {
         match self {
             SAtom::Var(v) => v.var,
-            SAtom::Cst(_) => VarRef::ZERO,
+            SAtom::Cst(_) => Var::ZERO,
         }
     }
 }
 
-impl From<SVar> for VarRef {
+impl From<SVar> for Var {
     fn from(s: SVar) -> Self {
         s.var
     }

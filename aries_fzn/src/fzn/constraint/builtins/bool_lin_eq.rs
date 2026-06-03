@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
+use aries::core::Var;
 use aries::model::lang::linear::ScaledVar;
 use flatzinc::ConstraintItem;
 
@@ -107,7 +107,7 @@ impl From<BoolLinEq> for Constraint {
 impl Encode for BoolLinEq {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<dyn Post<usize>> {
         let translate = |v: Rc<VarBool>| translation.get(v.id()).unwrap();
         let mut sum: Vec<ScaledVar> = self

@@ -1,12 +1,12 @@
 use crate::legacy::*;
 use aries::core::views::Term;
-use aries::core::{IntCst, Lit, SignedVar, VarRef};
+use aries::core::{IntCst, Lit, SignedVar, Var};
 use aries::prelude::*;
 use std::collections::HashMap;
 
 /// Extension trait to allow the evaluation of expressions based on a partial assignment of variables.
 pub trait PartialAssignment {
-    fn val(&self, var: VarRef) -> Option<IntCst>;
+    fn val(&self, var: Var) -> Option<IntCst>;
 
     fn sval(&self, svar: impl Into<SignedVar>) -> Option<IntCst> {
         let svar = svar.into();
@@ -55,7 +55,7 @@ pub trait PartialAssignment {
 
 /// A tool to construct a partial assignment by binding expressions (Atom) to their values (Cst)
 pub struct PartialAssignmentBuilder {
-    values: HashMap<VarRef, IntCst>,
+    values: HashMap<Var, IntCst>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -66,12 +66,12 @@ impl PartialAssignmentBuilder {
         let mut s = Self {
             values: Default::default(),
         };
-        s.add_var(VarRef::ZERO, 0).unwrap();
-        s.add_var(VarRef::ONE, 1).unwrap();
+        s.add_var(Var::ZERO, 0).unwrap();
+        s.add_var(Var::ONE, 1).unwrap();
         s
     }
 
-    fn add_var(&mut self, var: VarRef, val: IntCst) -> Result<(), InvalidAssignment> {
+    fn add_var(&mut self, var: Var, val: IntCst) -> Result<(), InvalidAssignment> {
         if let Some(prev) = self.values.get(&var).copied() {
             if val == prev {
                 Ok(())
@@ -142,7 +142,7 @@ impl PartialAssignmentBuilder {
 }
 
 impl PartialAssignment for PartialAssignmentBuilder {
-    fn val(&self, var: VarRef) -> Option<IntCst> {
+    fn val(&self, var: Var) -> Option<IntCst> {
         self.values.get(&var).copied()
     }
 }

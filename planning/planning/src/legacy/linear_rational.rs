@@ -518,8 +518,8 @@ mod test {
 
     #[test]
     fn test_term_new() {
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(15);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
@@ -536,8 +536,8 @@ mod test {
 
     #[test]
     fn test_term_int() {
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(15);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [var1, var2] {
@@ -552,8 +552,8 @@ mod test {
 
     #[test]
     fn test_term_rational() {
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(15);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [var1, var2] {
@@ -598,8 +598,8 @@ mod test {
     fn test_term_from_ivar() {
         let var0 = IVar::ZERO;
         let var1 = IVar::ONE;
-        let var2 = VarRef::from_u32(5);
-        let var3 = VarRef::from_u32(15);
+        let var2 = Var::from_u32(5);
+        let var3 = Var::from_u32(15);
         for v in [var0, var1, var2, var3] {
             let term = LinearTerm::from(v);
             let expected = LinearTerm::int(1, v);
@@ -619,8 +619,8 @@ mod test {
     #[test]
     fn test_term_eq() {
         let mut terms: Vec<LinearTerm> = vec![];
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(15);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(15);
         for f in [1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
@@ -641,8 +641,8 @@ mod test {
 
     #[test]
     fn test_term_neg() {
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(15);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
@@ -658,8 +658,8 @@ mod test {
 
     #[test]
     fn test_term_getters() {
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(15);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
                 for v in [IVar::ONE, var1, var2] {
@@ -676,7 +676,7 @@ mod test {
 
     #[test]
     fn test_term_display() {
-        let var = VarRef::from_u32(5);
+        let var = Var::from_u32(5);
         // Constant terms
         assert_eq!(format!("{}", LinearTerm::constant_int(1)), "1");
         assert_eq!(format!("{}", LinearTerm::constant_int(-1)), "-1");
@@ -740,7 +740,7 @@ mod test {
 
     #[test]
     fn test_sum_of_elements_same_denom() {
-        let var = VarRef::from_u32(5);
+        let var = Var::from_u32(5);
         let terms = vec![LinearTerm::rational(1, var, 10), LinearTerm::constant_rational(5, 10)];
         let sum = LinearSum::of(terms.clone());
         assert_eq!(sum.constant, 0);
@@ -848,7 +848,7 @@ mod test {
         }
 
         // Test with different terms
-        let var = VarRef::from_u32(5);
+        let var = Var::from_u32(5);
         let terms = vec![LinearTerm::rational(1, var, 10), LinearTerm::constant_rational(5, 10)];
         let sum = LinearSum::of(terms.clone());
         assert_eq!(sum.constant(), sum.constant);
@@ -859,11 +859,11 @@ mod test {
     #[test]
     fn test_sum_simplify() {
         // Terms should be grouped by (lit, variable)
-        // Terms with null `factor` or `variable` equals to VarRef::ZERO should be filtered
+        // Terms with null `factor` or `variable` equals to Var::ZERO should be filtered
         // Terms with null `variable` and `literal` equals to Lit::TRUE  should be grouped into the constant
         let denom = 100;
-        let var1 = VarRef::from_u32(5);
-        let var2 = VarRef::from_u32(6);
+        let var1 = Var::from_u32(5);
+        let var2 = Var::from_u32(6);
 
         let sum = LinearSum {
             constant: 5,
@@ -937,8 +937,8 @@ mod test {
     fn test_sum_from_fatom() {
         let var0 = IVar::ZERO;
         let var1 = IVar::ONE;
-        let var2 = VarRef::from_u32(5);
-        let var3 = VarRef::from_u32(15);
+        let var2 = Var::from_u32(5);
+        let var3 = Var::from_u32(15);
         for s in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                 for v in [var0, var1, var2, var3] {
@@ -959,8 +959,8 @@ mod test {
     fn test_sum_from_iatom() {
         let var0 = IVar::ZERO;
         let var1 = IVar::ONE;
-        let var2 = VarRef::from_u32(5);
-        let var3 = VarRef::from_u32(15);
+        let var2 = Var::from_u32(5);
+        let var3 = Var::from_u32(15);
         for s in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for v in [var0, var1, var2, var3] {
                 let ia = IAtom::new(v, s);
@@ -984,7 +984,7 @@ mod test {
 
     #[test]
     fn test_sum_mul() {
-        let v = VarRef::from_u32(5);
+        let v = Var::from_u32(5);
         let s = LinearSum::of(vec![FAtom::new(IAtom::new(v, 5), 28)]);
         let result = (s * 3).simplify();
         assert_eq!(result.constant, 15);
@@ -1028,7 +1028,7 @@ mod test {
 
     #[test]
     fn test_sum_mul_assign() {
-        let v = VarRef::from_u32(5);
+        let v = Var::from_u32(5);
         let s = LinearSum::of(vec![FAtom::new(IAtom::new(v, 5), 28)]);
         let mut result = s.clone();
         result *= 3;
@@ -1054,7 +1054,7 @@ mod test {
 
     #[test]
     fn test_sum_display() {
-        let var = VarRef::from_u32(5);
+        let var = Var::from_u32(5);
         // Simple addition
         let sum = LinearSum::of(vec![
             LinearTerm::rational(1, var, 10),

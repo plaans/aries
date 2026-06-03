@@ -20,7 +20,7 @@ impl Dom for SchedEncoder {
         self.store.upper_bound(svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.store.presence(var)
     }
 }

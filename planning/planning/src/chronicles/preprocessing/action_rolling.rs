@@ -84,12 +84,12 @@ struct TemplateToCSPVal<'a> {
     /// mapping of templates variables into the CSP variables
     mapping: &'a Sub,
     /// Variables of the CSP
-    vars: &'a [VarRef],
+    vars: &'a [Var],
     /// Values for each variable of the CSP
     vals: &'a [IntCst],
 }
 impl<'a> PartialAssignment for TemplateToCSPVal<'a> {
-    fn val(&self, var: VarRef) -> Option<IntCst> {
+    fn val(&self, var: Var) -> Option<IntCst> {
         let var = self.mapping.sub_var(var);
         for i in 0..self.vars.len() {
             if var == self.vars[i] {
@@ -115,7 +115,7 @@ fn extract_constraints(
     let action_fixed_duration = delay(ch.chronicle.start, ch.chronicle.end);
 
     // gather all variables that appear in the chronicle constraints
-    let variables: HashSet<VarRef> = ch
+    let variables: HashSet<Var> = ch
         .chronicle
         .constraints
         .iter()
@@ -147,7 +147,7 @@ fn extract_constraints(
         mapping.add_untyped(var, new_var).unwrap();
     }
     // the action start is set to 0
-    mapping.add_untyped(start_var, VarRef::ZERO).unwrap();
+    mapping.add_untyped(start_var, Var::ZERO).unwrap();
     if end_var != start_var {
         // if there is an end_var, create a corresponding one in the CSP
         let (lb, ub) = pb.context.model.state.bounds(end_var);
@@ -200,7 +200,7 @@ fn extract_constraints(
     // returns true if the given expression is bound by the parameters of the chronicle
     let bound_by_action_params = |e: Atom| {
         let v = e.variable();
-        v == VarRef::ZERO || v == VarRef::ONE || ch.chronicle.name.iter().any(|p| p.variable() == v)
+        v == Var::ZERO || v == Var::ONE || ch.chronicle.name.iter().any(|p| p.variable() == v)
     };
     // only consider as rollable the actions whose transition can be determined directly form the parameters
     // This is necessary to unroll the action in the current implementation but may be relaxed if we were to consider the constraints in the chronicle

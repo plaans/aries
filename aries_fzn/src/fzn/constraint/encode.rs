@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aries::core::VarRef;
+use aries::core::Var;
 
 use crate::aries::Post;
 
@@ -9,6 +9,6 @@ pub trait Encode {
     /// Return postable aries constraint.
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<dyn Post<usize>>;
 }

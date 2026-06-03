@@ -15,7 +15,7 @@ use crate::{
 /// TODO: the name `Store` is mostly historical and should be change to align it with other views.
 pub trait Store: Dom {
     fn new_literal(&mut self, presence: Lit) -> Lit;
-    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef;
+    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var;
     fn get_implicant(&mut self, e: ReifExpr) -> Lit;
     fn add_implies(&mut self, l: Lit, e: ReifExpr);
 
@@ -122,7 +122,7 @@ where
     fn new_literal(&mut self, presence: Lit) -> Lit {
         self.get_model_mut().new_optional_variable(0, 1, presence).geq(1)
     }
-    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
+    fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
         self.get_model_mut().new_optional_variable(lb, ub, presence)
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {

@@ -7,7 +7,7 @@ use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::search::ForwardSearcher;
 use crate::Solver;
 use anyhow::Result;
-use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
+use aries::core::{IntCst, Lit, Var, INT_CST_MAX};
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::IAtom;
 use aries::model::Model;
@@ -418,7 +418,7 @@ pub enum Strat {
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
 struct ActivityBoolFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
-    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
+    fn decision_stage(&self, _var: Var, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
         let (lb, ub) = _model.bounds(_var);
         if ub - lb == 1 {
             return 0;

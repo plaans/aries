@@ -1,4 +1,4 @@
-use crate::search::{Model, Var};
+use crate::search::{Model, VarLbl};
 use aries::core::{IntCst, Lit, u32_to_cst};
 use aries::model::lang::expr::{alternative, eq, leq, or};
 use aries::model::lang::{IAtom, IVar};
@@ -236,7 +236,7 @@ pub struct Encoding {
 
 impl Encoding {
     pub fn new(pb: &Problem, lower_bound: IntCst, upper_bound: IntCst, m: &mut Model) -> Self {
-        let makespan = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
+        let makespan = m.new_ivar(lower_bound, upper_bound, VarLbl::Makespan);
 
         let mut operations = Vec::new();
         let mut alternatives = Vec::new();
@@ -254,9 +254,9 @@ impl Encoding {
                 let presence = if op.alternatives.len() == 1 {
                     Lit::TRUE
                 } else {
-                    m.new_presence_variable(Lit::TRUE, Var::Presence(id)).true_lit()
+                    m.new_presence_variable(Lit::TRUE, VarLbl::Presence(id)).true_lit()
                 };
-                let start = m.new_optional_ivar(0, upper_bound, presence, Var::Start(id));
+                let start = m.new_optional_ivar(0, upper_bound, presence, VarLbl::Start(id));
                 alternatives.push(OperationAlternative {
                     id,
                     machine: alt.machine,
@@ -286,8 +286,8 @@ impl Encoding {
                 Operation {
                     job: job_id,
                     op: op_id,
-                    start: m.new_optional_ivar(0, upper_bound, Lit::TRUE, Var::Start(id)).into(),
-                    end: m.new_optional_ivar(0, upper_bound, Lit::TRUE, Var::Start(id)).into(),
+                    start: m.new_optional_ivar(0, upper_bound, Lit::TRUE, VarLbl::Start(id)).into(),
+                    end: m.new_optional_ivar(0, upper_bound, Lit::TRUE, VarLbl::Start(id)).into(),
                 }
             };
             operations.push(operation);
@@ -402,7 +402,7 @@ pub(crate) fn encode(
                 // variable that is true if alt1 comes first and false otherwise.
                 // in any case, setting a value to it enforces that the two tasks do not overlap
                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
-                let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
+                let prec = m.new_optional_bvar(scope, VarLbl::Prec(alt1.id, alt2.id));
 
                 m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
                 m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
@@ -464,7 +464,7 @@ pub(crate) fn encode(
                                 // variable that is true if alt1 comes first and false otherwise.
                                 // in any case, setting a value to it enforces that the two tasks do not overlap
                                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
-                                let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
+                                let prec = m.new_optional_bvar(scope, VarLbl::Prec(alt1.id, alt2.id));
 
                                 m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
                                 m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));

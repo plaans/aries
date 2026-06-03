@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
-pub type IVar = VarRef;
+pub type IVar = Var;
 
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [IVar::ZERO] as the variable.

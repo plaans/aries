@@ -49,13 +49,13 @@ impl Atom {
     }
 
     /// Returns the variable that is used in this Atom.
-    pub fn variable(self) -> VarRef {
+    pub fn variable(self) -> Var {
         match self {
             Atom::Bool(l) => l.variable(),
             Atom::Int(i) => i.var,
             Atom::Fixed(f) => f.num.var,
             Atom::Sym(SAtom::Var(svar)) => svar.into(),
-            Atom::Sym(SAtom::Cst(_)) => VarRef::ZERO,
+            Atom::Sym(SAtom::Cst(_)) => Var::ZERO,
         }
     }
 
@@ -191,7 +191,7 @@ impl TryFrom<Atom> for LinearSum {
     }
 }
 impl Term for Atom {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         self.variable()
     }
 }

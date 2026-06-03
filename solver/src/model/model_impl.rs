@@ -57,10 +57,10 @@ impl<Lbl: Label> ModelShape<Lbl> {
         }
     }
 
-    fn set_label(&mut self, var: VarRef, l: impl Into<Lbl>) {
+    fn set_label(&mut self, var: Var, l: impl Into<Lbl>) {
         self.labels.insert(var, l.into())
     }
-    pub fn get_variable(&self, label: &Lbl) -> Option<VarRef> {
+    pub fn get_variable(&self, label: &Lbl) -> Option<Var> {
         match *self.labels.variables_with_label(label) {
             [] => None,
             [var] => Some(var),
@@ -113,7 +113,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
     }
 
     /// Returns the label of this variable (if one was specified)
-    pub fn get_label(&self, var: VarRef) -> Option<&Lbl> {
+    pub fn get_label(&self, var: Var) -> Option<&Lbl> {
         self.labels.get(var)
     }
 }
@@ -260,7 +260,7 @@ impl<Lbl: Label> Model<Lbl> {
     }
 
     /// Creates a new variable, taking its value in `[lb, ub]`.
-    pub fn new_variable(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
+    pub fn new_variable(&mut self, lb: IntCst, ub: IntCst) -> Var {
         self.new_optional_variable(lb, ub, Lit::TRUE)
     }
 
@@ -270,7 +270,7 @@ impl<Lbl: Label> Model<Lbl> {
     ///  - absent otherwise
     ///
     /// It is required that the presence literal is on an mandatory variable.
-    pub fn new_optional_variable(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
+    pub fn new_optional_variable(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
         debug_assert!(self.presence_literal(presence).tautological());
         if lb <= ub {
             self.state.new_optional_var(lb, ub, presence)
@@ -565,7 +565,7 @@ impl<Lbl> Dom for Model<Lbl> {
         Domains::ub(&self.state, svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.state.presence(var)
     }
 }

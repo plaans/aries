@@ -11,8 +11,8 @@ impl<T> Label for T where T: Display + Debug + Clone + Eq + PartialEq + Hash + S
 
 #[derive(Clone)]
 pub(crate) struct VariableLabels<Lbl> {
-    labels: RefMap<VarRef, Arc<Lbl>>,
-    labeled_variables: HashMap<Arc<Lbl>, Vec<VarRef>>,
+    labels: RefMap<Var, Arc<Lbl>>,
+    labeled_variables: HashMap<Arc<Lbl>, Vec<Var>>,
 }
 
 impl<Lbl> VariableLabels<Lbl> {
@@ -22,11 +22,11 @@ impl<Lbl> VariableLabels<Lbl> {
             labeled_variables: Default::default(),
         }
     }
-    pub fn get(&self, var: VarRef) -> Option<&Lbl> {
+    pub fn get(&self, var: Var) -> Option<&Lbl> {
         self.labels.get(var).map(|l| l.as_ref())
     }
 
-    pub fn insert(&mut self, var: VarRef, label: impl Into<Arc<Lbl>>)
+    pub fn insert(&mut self, var: Var, label: impl Into<Arc<Lbl>>)
     where
         Lbl: Label,
     {
@@ -39,7 +39,7 @@ impl<Lbl> VariableLabels<Lbl> {
         vars.push(var);
     }
 
-    pub fn variables_with_label(&self, label: &Lbl) -> &[VarRef]
+    pub fn variables_with_label(&self, label: &Lbl) -> &[Var]
     where
         Lbl: Label,
     {

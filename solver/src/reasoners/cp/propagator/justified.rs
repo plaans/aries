@@ -20,7 +20,7 @@
 //!
 //! /// A dummy propagator on a variable
 //! #[derive(Debug, Clone)]
-//! struct Prop(VarRef);
+//! struct Prop(Var);
 //!
 //! /// A justification for `Prop`. Can be any arbitrary type, here just storing an integer
 //! #[derive(Debug, Clone)]
@@ -59,7 +59,7 @@
 //!     }
 //! }
 //! let mut model: Model<&str> = Model::new();
-//! model.enforce_user_propagator(Prop(VarRef::ZERO));
+//! model.enforce_user_propagator(Prop(Var::ZERO));
 //! ```
 
 use crate::{
@@ -178,7 +178,7 @@ impl<'a, J> Dom for DomainsAndJustifications<'a, J> {
         self.domains.upper_bound(svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.domains.presence(var)
     }
 }

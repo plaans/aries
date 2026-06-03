@@ -5,7 +5,7 @@
 //!  - solution checking by enumerating all possibilities
 
 use aries::core::IntCst;
-use aries::core::VarRef;
+use aries::core::Var;
 use aries::model::Model;
 use aries::model::lang::BVar;
 use aries::model::lang::IVar;
@@ -18,7 +18,7 @@ use itertools::Itertools;
 ///
 /// The solutions are generated in lexicographic order.
 fn get_solutions<const N: usize>(
-    vars: [VarRef; N],
+    vars: [Var; N],
     model: Model<String>,
 ) -> Vec<[IntCst; N]> {
     let mut solver = Solver::new(model);
@@ -36,7 +36,7 @@ fn get_solutions<const N: usize>(
 ///
 /// The solutions are generated in lexicographic order.
 fn gen_solutions<const N: usize>(
-    vars: [VarRef; N],
+    vars: [Var; N],
     model: &Model<String>,
     verify: impl Fn([IntCst; N]) -> bool,
 ) -> Vec<[IntCst; N]> {
@@ -76,14 +76,14 @@ fn gen_solutions<const N: usize>(
 /// verify_all([x, y], model, verify);
 /// ```
 pub(super) fn verify_all<const N: usize>(
-    vars: [impl Into<VarRef>; N],
+    vars: [impl Into<Var>; N],
     model: Model<String>,
     verify: impl Fn([IntCst; N]) -> bool,
 ) {
-    let vars: [VarRef; N] = vars
+    let vars: [Var; N] = vars
         .into_iter()
         .map(|var| var.into())
-        .collect::<Vec<VarRef>>()
+        .collect::<Vec<Var>>()
         .try_into()
         .unwrap();
     let expected = gen_solutions(vars, &model, verify);

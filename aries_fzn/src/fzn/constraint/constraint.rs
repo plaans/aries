@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aries::core::VarRef;
+use aries::core::Var;
 
 use crate::aries::Post;
 use crate::fzn::constraint::Encode;
@@ -52,7 +52,7 @@ pub enum Constraint {
 impl Encode for Constraint {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<dyn Post<usize>> {
         match self {
             Constraint::ArrayIntElement(c) => c.encode(translation),

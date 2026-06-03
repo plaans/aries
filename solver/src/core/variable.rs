@@ -7,29 +7,34 @@ use crate::{
 };
 use std::{fmt::Debug, hash::Hash};
 
-create_ref_type!(VarRef);
+/// Kept to ease the transition from `VarRef`
+#[deprecated = "Use Var instead."]
+#[doc(hidden)]
+pub type VarRef = Var;
 
-// Implement Debug for VarRef
+create_ref_type!(Var);
+
+// Implement Debug for Var
 // `?` represents a variable
-impl Debug for VarRef {
+impl Debug for Var {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "var{:?}", self.to_u32())
     }
 }
 
-impl VarRef {
-    /// A reserved special variable that is always equal to 0. It corresponds to the first representable VarRef.
+impl Var {
+    /// A reserved special variable that is always equal to 0. It corresponds to the first representable Var.
     ///
     /// For efficiency reasons, this special case is not treated separately from the other variables, and it is the responsibility
-    /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is `[0,0]`.
-    pub const ZERO: VarRef = VarRef::from_u32(0);
+    /// of the producers of Var to ensure that they only emit this value for variables whose domain is `[0,0]`.
+    pub const ZERO: Var = Var::from_u32(0);
 
-    /// A reserved special variable that is always equal to 1. It corresponds to the second representable VarRef.
+    /// A reserved special variable that is always equal to 1. It corresponds to the second representable Var.
     ///
     /// For efficiency reasons, this special case is not treated separately from the other variables, and it is the responsibility
-    /// of the producers of VarRef to ensure that they only emit this value for variables whose domain is `[1,1]`.
+    /// of the producers of Var to ensure that they only emit this value for variables whose domain is `[1,1]`.
     #[doc(hidden)]
-    pub const ONE: VarRef = VarRef::from_u32(1);
+    pub const ONE: Var = Var::from_u32(1);
 
     pub fn leq(self, i: IntCst) -> Lit {
         Lit::leq(self, i)
@@ -45,7 +50,7 @@ impl VarRef {
     }
 }
 
-impl VarView for VarRef {
+impl VarView for Var {
     type Value = IntCst;
 
     fn upper_bound(&self, dom: impl super::views::Dom) -> Self::Value {
@@ -57,7 +62,7 @@ impl VarView for VarRef {
     }
 }
 
-impl Boundable for VarRef {
+impl Boundable for Var {
     type Value = IntCst;
 
     fn leq(&self, ub: Self::Value) -> Lit {

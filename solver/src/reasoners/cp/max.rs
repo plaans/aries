@@ -177,11 +177,11 @@ impl Propagator for AtLeastOneGeq {
 #[cfg(test)]
 mod test {
     use crate::core::state::{Cause, Domains};
-    use crate::core::{IntCst, Lit, SignedVar, VarRef};
+    use crate::core::{IntCst, Lit, SignedVar, Var};
     use crate::reasoners::cp::Propagator;
     use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 
-    fn check_bounds(d: &Domains, v: VarRef, lb: IntCst, ub: IntCst) {
+    fn check_bounds(d: &Domains, v: Var, lb: IntCst, ub: IntCst) {
         assert_eq!(d.lb(v), lb);
         assert_eq!(d.ub(v), ub);
     }

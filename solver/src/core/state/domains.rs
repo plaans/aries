@@ -40,7 +40,7 @@ pub struct Domains {
     /// Associates it with a literal that is true if and only if the variable is present.
     ///
     /// A non-optional variable is associated with [`Lit::TRUE`]
-    presence: RefVec<VarRef, Lit>,
+    presence: RefVec<Var, Lit>,
     /// A graph to encode the relations between presence variables.
     implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
@@ -70,7 +70,7 @@ impl Domains {
     /// The domain must be a *non-empty* subset of \[[`INT_CST_MIN`], [`INT_CST_MAX`]\], representing the extremes of domain values.
     /// These value are dependent on the representation of domain values ([`IntCst`]) which defaults to 32 bits.
     /// Larger domain values can be used (with a small runtime cost) with the `i64` and `i128` features.
-    pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
+    pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> Var {
         debug_assert!(lb <= ub);
         let var = self.doms.new_var(lb, ub);
         let var2 = self.presence.push(Lit::TRUE);
@@ -109,7 +109,7 @@ impl Domains {
         lit
     }
 
-    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> VarRef {
+    pub fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
         assert!(
             self.presence[presence.variable()].tautological(),
             "The presence literal of an optional variable should not be based on an optional variable"
@@ -124,7 +124,7 @@ impl Domains {
     }
 
     /// Returns `true` if `presence(a) => presence(b)`
-    pub fn only_present_with(&self, a: VarRef, b: VarRef) -> bool {
+    pub fn only_present_with(&self, a: Var, b: Var) -> bool {
         let prez_a = self.presence(a);
         let prez_b = self.presence(b);
         self.implies(prez_a, prez_b)
@@ -155,7 +155,7 @@ impl Domains {
     }
 
     /// Returns true if we know that two variable are always present jointly.
-    pub fn always_present_together(&self, a: VarRef, b: VarRef) -> bool {
+    pub fn always_present_together(&self, a: Var, b: Var) -> bool {
         self.presence(a) == self.presence(b)
     }
 
@@ -173,7 +173,7 @@ impl Domains {
     }
 
     /// Returns the domain of an optional variable
-    pub fn domain(&self, var: impl Into<VarRef>) -> OptDomain {
+    pub fn domain(&self, var: impl Into<Var>) -> OptDomain {
         let var = var.into();
         let (lb, ub) = self.bounds(var);
         let prez = self.presence(var);
@@ -215,7 +215,7 @@ impl Domains {
     ///
     /// Note that an empty set is valid for optional variables and implies that
     /// the variable is absent.
-    pub fn is_bound(&self, var: VarRef) -> bool {
+    pub fn is_bound(&self, var: Var) -> bool {
         self.lb(var) >= self.ub(var)
     }
 
@@ -405,7 +405,7 @@ impl Domains {
 
     // ============= Variables =================
 
-    pub fn variables(&self) -> impl Iterator<Item = VarRef> {
+    pub fn variables(&self) -> impl Iterator<Item = Var> {
         self.doms.variables()
     }
 
@@ -414,7 +414,7 @@ impl Domains {
         self.doms.num_variables()
     }
 
-    pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
+    pub fn bound_variables(&self) -> impl Iterator<Item = (Var, IntCst)> + '_ {
         self.doms.bound_variables()
     }
 
@@ -880,7 +880,7 @@ impl crate::core::views::Dom for Domains {
         Domains::upper_bound(self, svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         Domains::presence(self, var)
     }
 }
@@ -1025,7 +1025,7 @@ mod tests {
         struct Expl {
             a: Lit,
             b: Lit,
-            n: VarRef,
+            n: Var,
         }
         impl Explainer for Expl {
             fn explain(
@@ -1266,8 +1266,8 @@ mod tests {
         };
 
         struct Expl {
-            x: VarRef,
-            y: VarRef,
+            x: Var,
+            y: Var,
         }
         impl Explainer for Expl {
             fn explain(
