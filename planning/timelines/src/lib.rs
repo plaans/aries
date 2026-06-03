@@ -14,7 +14,7 @@ use constraints::*;
 use core::fmt::Debug;
 use core::hash::Hash;
 use smallvec::SmallVec;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use aries::core::INT_CST_MAX;
@@ -49,11 +49,11 @@ pub type SymAtom = IntTerm;
 #[derive(Clone, Debug)]
 pub struct FluentParam {
     pub range: Segment,
-    // pub numeric: bool,
+    pub numeric: bool,
 }
 #[derive(Clone, Debug, Default)]
 pub struct FluentsEncoding {
-    store: BTreeMap<Sym, usize>,
+    store: HashMap<Sym, usize>,
     params: Vec<SmallVec<[FluentParam; 6]>>,
     returns: Vec<FluentParam>,
 }
@@ -70,6 +70,9 @@ impl FluentsEncoding {
     }
     pub fn get_params(&self, name: &Sym) -> Option<&[FluentParam]> {
         self.store.get(name).map(|&i| self.params[i].as_slice())
+    }
+    pub fn get_return(&self, name: &Sym) -> Option<&FluentParam> {
+        self.store.get(name).map(|&i| &self.returns[i])
     }
     pub fn iter(&self) -> impl Iterator<Item = (&Sym, &[FluentParam], &FluentParam)> {
         self.store
@@ -151,6 +154,7 @@ pub struct Sched {
     pub epsilon: IntCst,
     pub origin: Time,
     pub horizon: Time,
+    pub global_args: Vec<IntTerm>, // TODO: PLACEHOLDER
     pub makespan: Time,
     pub tasks: Tasks,
     pub effects: Effects,
@@ -172,6 +176,7 @@ impl Sched {
             epsilon: 1,
             origin,
             horizon,
+            global_args: Default::default(),
             makespan,
             tasks: Default::default(),
             effects: Default::default(),

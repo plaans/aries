@@ -167,6 +167,10 @@ impl IAtom {
     pub fn ge_lit(self, value: IntCst) -> Lit {
         self.gt_lit(value - 1)
     }
+
+    pub fn is_cst(&self) -> bool {
+        self.var == IVar::ZERO
+    }
 }
 
 /// Comparison on the values that can be taken for two atoms.

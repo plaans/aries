@@ -54,12 +54,14 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
             for tpe in f.parameters.iter().map(|p| &p.tpe) {
                 ps.push(FluentParam {
                     range: type_range(tpe, objects)?,
+                    numeric: matches!(tpe, Type::Int(_) | Type::Real),
                 });
             }
             ps
         };
         let r#return = FluentParam {
             range: type_range(&f.return_type, objects)?,
+            numeric: matches!(f.return_type, Type::Int(_) | Type::Real),
         };
 
         res.add(f.name().to_string(), &params, r#return);
@@ -190,7 +192,7 @@ pub fn condition_to_constraint(
                         source: bindings.source,
                     };
                     ConditionExpression::HasValue(c).scoped(bindings.presence)
-                },
+                }
                 (_, StateVariable(fluent_id, args)) => {
                     let fluent = model.env.fluents.get(*fluent_id);
                     let mut reif_args = Vec::with_capacity(args.len());
@@ -211,7 +213,7 @@ pub fn condition_to_constraint(
                         source: bindings.source,
                     };
                     ConditionExpression::HasValue(c).scoped(bindings.presence)
-                },
+                }
                 _ => {
                     let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
                     let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
@@ -549,7 +551,7 @@ pub fn reify_expression(
             .args
             .get(param.name())
             .copied()
-//            .inspect(|id| println!("{:?}-{:?}", id.lower_bound(&sched.model), id.upper_bound(&sched.model)))
+            // .inspect(|id| println!("{:?}-{:?}", id.lower_bound(&sched.model), id.upper_bound(&sched.model)))
             .map(|id| id.into())
             .ok_or_else(|| param.name().invalid("unknown parameter")),
         StateVariable(fluent, args) => {
