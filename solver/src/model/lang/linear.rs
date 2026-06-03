@@ -4,7 +4,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
-use crate::model::lang::{BoolExpr, ConversionError, IAtom, IVar, IntExpr, Store};
+use crate::model::lang::{BoolExpr, ConversionError, IAtom, IntExpr, Store};
 use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
 use crate::{transitive_conversion, transitive_conversions};
@@ -346,7 +346,7 @@ impl TryFrom<LinTerm> for IntCst {
 }
 
 transitive_conversion!(LinTerm, ScaledVar, SignedVar);
-transitive_conversion!(LinTerm, IAtom, IVar);
+transitive_conversion!(LinTerm, IAtom, Var);
 transitive_conversion!(LinSum, LinTerm, Var);
 transitive_conversion!(LinSum, LinTerm, SignedVar);
 transitive_conversion!(LinSum, LinTerm, IAtom);

@@ -2,11 +2,11 @@ mod parser;
 mod problem;
 mod search;
 
+use aries::prelude::*;
+
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
 use crate::search::{SearchStrategy, Solver, VarLbl};
 use anyhow::Context;
-use aries::model::lang::IVar;
-use aries::prelude::*;
 use aries::solver::{Exit, SearchLimit};
 use aries_bench_data::IntermediateResult;
 use std::fmt::Write;
@@ -109,7 +109,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
     println!("Initial lower bound: {lower_bound}");
 
     let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, opt.no_overlap);
-    let makespan: IVar = model.shape.get_variable(&VarLbl::Makespan).unwrap();
+    let makespan: Var = model.shape.get_variable(&VarLbl::Makespan).unwrap();
 
     let solver = Solver::new(model);
     let mut solver = search::get_solver(solver, &opt.search, &encoding);
@@ -266,7 +266,7 @@ mod test {
 
     /// Solve the problem multiple with different random variable ordering, ensuring that all results are as expected.
     /// It also set up solution witness to check that no learned clause prune valid solutions.
-    fn random_solves<S: Label>(model: &Model<S>, objective: IVar, num_solves: u32, expected_result: Option<IntCst>) {
+    fn random_solves<S: Label>(model: &Model<S>, objective: Var, num_solves: u32, expected_result: Option<IntCst>) {
         // when this object goes out of scope, any witness solution for the current thread will be removed
         let _clean_up = witness::on_drop_witness_cleaner();
         for seed in 0..num_solves {
@@ -322,7 +322,7 @@ mod test {
 
         // produce a model for this problem
         let (model, _encoding) = problem::encode(&pb, lower_bound, Some(opt * 2), propagation_level);
-        let makespan: IVar = model.shape.get_variable(&VarLbl::Makespan).unwrap();
+        let makespan: Var = model.shape.get_variable(&VarLbl::Makespan).unwrap();
 
         // run several random solvers on the problem to assert the coherency of the results
         random_solves(&model, makespan, num_reps, Some(opt as IntCst))

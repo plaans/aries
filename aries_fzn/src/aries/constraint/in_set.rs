@@ -1,7 +1,7 @@
 use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::IVar;
+use aries::model::lang::Var;
 use aries::model::lang::expr::or;
 
 use crate::aries::Post;
@@ -12,7 +12,7 @@ use crate::aries::Post;
 /// where `c[i]` are constants.
 #[derive(Debug)]
 pub struct InSet {
-    var: IVar,
+    var: Var,
     constants: Vec<IntCst>,
 }
 
@@ -20,12 +20,12 @@ impl InSet {
     /// Create a new InSet constraint.
     ///
     /// It assumes the constants are sorted.
-    pub fn new(var: IVar, constants: Vec<IntCst>) -> Self {
+    pub fn new(var: Var, constants: Vec<IntCst>) -> Self {
         debug_assert!(constants.is_sorted());
         Self { var, constants }
     }
 
-    pub fn var(&self) -> &IVar {
+    pub fn var(&self) -> &Var {
         &self.var
     }
 

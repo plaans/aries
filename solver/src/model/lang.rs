@@ -78,9 +78,10 @@ mod store;
 mod validity_scope;
 
 pub use crate::core::Lit;
+pub use crate::core::Var;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
-pub use int::{IAtom, IVar};
+pub use int::IAtom;
 pub use int_expr::IntExpr;
 pub use store::{ModelWrapper, Store};
 pub use validity_scope::*;

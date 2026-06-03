@@ -127,7 +127,7 @@ impl<T: Term + Copy> Optional for T {
 
 /// An expression that is a view of exactly one variable (which may be the [`Var::ZERO`] variable).
 ///
-/// Notably implemented for `Var`, `Lit`, `IVar`, `SVar`, `BVar`
+/// Notably implemented for  [`Var`], [`Lit`], [`IAtom`]
 pub trait Term {
     /// Extracts the underlying variable in the expression.
     ///

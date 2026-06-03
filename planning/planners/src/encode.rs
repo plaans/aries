@@ -14,7 +14,7 @@ use aries::core::views::Term;
 use aries::core::*;
 use aries::model::extensions::DomainsExt;
 use aries::model::lang::mul::EqVarMulLit;
-use aries::model::lang::{expr::*, IVar};
+use aries::model::lang::{expr::*, Var};
 use aries::prelude::*;
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;

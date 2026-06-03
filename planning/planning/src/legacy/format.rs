@@ -3,7 +3,7 @@ use crate::legacy::input::Sym;
 use crate::legacy::utils::Fmt;
 use crate::legacy::*;
 use aries::core::*;
-use aries::model::lang::{IAtom, IVar};
+use aries::model::lang::IAtom;
 use aries::model::Label;
 use aries::model::ModelShape;
 
@@ -21,7 +21,7 @@ where
         self.get_shape().get_variable(label)
     }
 
-    fn get_int_var(&self, label: &Lbl) -> Option<IVar> {
+    fn get_int_var(&self, label: &Lbl) -> Option<Var> {
         self.get_var(label)
     }
 
@@ -93,7 +93,7 @@ fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt
 #[allow(clippy::comparison_chain)]
 fn format_impl_int<Lbl: Label>(ctx: &impl Shaped<Lbl>, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match i.var {
-        IVar::ZERO => write!(f, "{}", i.shift),
+        Var::ZERO => write!(f, "{}", i.shift),
         v => {
             if i.shift > 0 {
                 write!(f, "(+ ")?;

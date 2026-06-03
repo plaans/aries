@@ -1,7 +1,7 @@
 use aries::model::Label;
 use aries::model::Model;
 use aries::model::lang::BVar;
-use aries::model::lang::IVar;
+use aries::model::lang::Var;
 use aries::model::lang::expr::eq;
 
 use crate::aries::Post;
@@ -11,21 +11,21 @@ use crate::aries::Post;
 /// `r -> a = b`
 #[derive(Debug)]
 pub struct EqHalf {
-    a: IVar,
-    b: IVar,
+    a: Var,
+    b: Var,
     r: BVar,
 }
 
 impl EqHalf {
-    pub fn new(a: IVar, b: IVar, r: BVar) -> Self {
+    pub fn new(a: Var, b: Var, r: BVar) -> Self {
         Self { a, b, r }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &Var {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &Var {
         &self.b
     }
 

@@ -6,7 +6,7 @@ use std::convert::TryFrom;
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub enum Variable {
     Bool(BVar),
-    Int(IVar),
+    Int(Var),
     Fixed(FVar),
     Sym(SVar),
 }
@@ -30,8 +30,8 @@ impl From<BVar> for Variable {
     }
 }
 
-impl From<IVar> for Variable {
-    fn from(x: IVar) -> Self {
+impl From<Var> for Variable {
+    fn from(x: Var) -> Self {
         Int(x)
     }
 }

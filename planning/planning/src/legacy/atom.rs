@@ -224,7 +224,7 @@ use std::{
     fmt::Debug,
 };
 
-transitive_conversions!(Atom, IAtom, IVar);
+transitive_conversions!(Atom, IAtom, Var);
 transitive_conversions!(Atom, IAtom, IntCst);
 transitive_conversions!(Atom, SAtom, SVar);
 transitive_conversions!(Atom, SAtom, TypedSym);

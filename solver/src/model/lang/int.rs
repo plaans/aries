@@ -5,13 +5,11 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
-pub type IVar = Var;
-
 /// An int-valued atom `(variable + constant)`
-/// It can be used to represent a constant value by using [IVar::ZERO] as the variable.
+/// It can be used to represent a constant value by using [Var::ZERO] as the variable.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct IAtom {
-    pub var: IVar,
+    pub var: Var,
     pub shift: IntCst,
 }
 
@@ -30,7 +28,7 @@ impl VarView for IAtom {
 // Implement Debug for IAtom
 impl Debug for IAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.var == IVar::ZERO {
+        if self.var == Var::ZERO {
             write!(f, "{}", self.shift)
         } else if self.shift == 0 {
             write!(f, "{:?}", self.var)
@@ -42,23 +40,23 @@ impl Debug for IAtom {
 
 impl IAtom {
     pub const ZERO: IAtom = IAtom {
-        var: IVar::ZERO,
+        var: Var::ZERO,
         shift: 0,
     };
     pub const ONE: IAtom = IAtom {
-        var: IVar::ZERO,
+        var: Var::ZERO,
         shift: 1,
     };
     pub const TRUE: IAtom = Self::ONE;
     pub const FALSE: IAtom = Self::ZERO;
-    pub fn new(var: IVar, shift: IntCst) -> IAtom {
+    pub fn new(var: Var, shift: IntCst) -> IAtom {
         IAtom { var, shift }
     }
 
     /// Returns a literal representing whether this atom is lesser than the given value.
     pub fn lt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
-        if self.var != IVar::ZERO {
+        if self.var != Var::ZERO {
             self.var.lt(rhs)
         } else if 0 < rhs {
             Lit::TRUE
@@ -75,7 +73,7 @@ impl IAtom {
     /// Returns a literal representing whether this atom is greater than the given value.
     pub fn gt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
-        if self.var != IVar::ZERO {
+        if self.var != Var::ZERO {
             self.var.gt(rhs)
         } else if 0 > rhs {
             Lit::TRUE
@@ -103,19 +101,19 @@ impl PartialOrd for IAtom {
     }
 }
 
-impl From<IVar> for IAtom {
-    fn from(v: IVar) -> Self {
+impl From<Var> for IAtom {
+    fn from(v: Var) -> Self {
         IAtom::new(v, 0)
     }
 }
 
 impl From<IntCst> for IAtom {
     fn from(i: IntCst) -> Self {
-        IAtom::new(IVar::ZERO, i)
+        IAtom::new(Var::ZERO, i)
     }
 }
 
-impl TryFrom<IAtom> for IVar {
+impl TryFrom<IAtom> for Var {
     type Error = ConversionError;
 
     fn try_from(value: IAtom) -> Result<Self, Self::Error> {
@@ -132,7 +130,7 @@ impl TryFrom<IAtom> for IntCst {
 
     fn try_from(value: IAtom) -> Result<Self, Self::Error> {
         match value.var {
-            IVar::ZERO => Ok(value.shift),
+            Var::ZERO => Ok(value.shift),
             _ => Err(ConversionError::NotConstant),
         }
     }
@@ -145,7 +143,7 @@ impl std::ops::Add<IntCst> for IAtom {
         IAtom::new(self.var, self.shift + rhs)
     }
 }
-impl std::ops::Add<IntCst> for IVar {
+impl std::ops::Add<IntCst> for Var {
     type Output = IAtom;
 
     fn add(self, rhs: IntCst) -> Self::Output {
@@ -159,7 +157,7 @@ impl std::ops::Sub<IntCst> for IAtom {
         IAtom::new(self.var, self.shift - rhs)
     }
 }
-impl std::ops::Sub<IntCst> for IVar {
+impl std::ops::Sub<IntCst> for Var {
     type Output = IAtom;
 
     fn sub(self, rhs: IntCst) -> Self::Output {
@@ -173,7 +171,7 @@ impl std::ops::Add<usize> for IAtom {
         IAtom::new(self.var, self.shift + IntCst::try_from(rhs).unwrap())
     }
 }
-impl std::ops::Add<usize> for IVar {
+impl std::ops::Add<usize> for Var {
     type Output = IAtom;
 
     fn add(self, rhs: usize) -> Self::Output {
@@ -187,7 +185,7 @@ impl std::ops::Sub<usize> for IAtom {
         IAtom::new(self.var, self.shift - IntCst::try_from(rhs).unwrap())
     }
 }
-impl std::ops::Sub<usize> for IVar {
+impl std::ops::Sub<usize> for Var {
     type Output = IAtom;
 
     fn sub(self, rhs: usize) -> Self::Output {

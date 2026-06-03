@@ -10,7 +10,7 @@ use aries::{
     model::{
         lang::{
             expr::{and, eq, geq, lt, or},
-            IVar,
+            Var,
         },
         Model,
     },
@@ -171,7 +171,7 @@ impl CspProblem {
     }
 
     /// Reifies the given constraint into the given model.
-    fn reify_constraint(&mut self, m: &mut Model<String>, c: &CspConstraint, vars: &HashMap<String, IVar>) -> Lit {
+    fn reify_constraint(&mut self, m: &mut Model<String>, c: &CspConstraint, vars: &HashMap<String, Var>) -> Lit {
         let mut t = |x: &CspConstraintTerm| {
             let var = vars[&x.id];
             var + self.normalize(&x.delay)

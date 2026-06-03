@@ -90,7 +90,7 @@ impl BorrowPattern {
 
 /// Convert a literal into a `IVar`.
 /// The result is a new `IVar` evaluated to 1 if the literal is true, and to 0 otherwise.
-fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
+fn lit_to_ivar(model: &mut Model, lit: Lit) -> Var {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert_eq!(
         model.presence_literal(lit.variable()),
@@ -98,9 +98,9 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
         "Optional variables not supported by this function"
     );
     if model.entails(lit) {
-        IVar::ONE
+        Var::ONE
     } else if model.entails(!lit) {
-        IVar::ZERO
+        Var::ZERO
     } else if model.bounds(lit.variable()) == (0, 1) {
         lit.variable()
     } else {
@@ -122,7 +122,7 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
 pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
-    if atom.var == IVar::ZERO {
+    if atom.var == Var::ZERO {
         // Constant variable
         if atom.shift == 0 || model.entails(!lit) {
             LinearSum::zero()

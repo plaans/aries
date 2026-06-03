@@ -4,7 +4,6 @@ use crate::model::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::model::lang::*;
 use crate::prelude::*;
 
-use super::IVar;
 use super::mul::EqMul;
 
 // TODO: use a single term (for backward compatibility currently)
@@ -45,7 +44,7 @@ pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
 }
 
 /// Creates a new expression that is true iff `lhs = factor1 * factor2`
-pub fn eq_mul(lhs: impl Into<IVar>, factor1: impl Into<IVar>, factor2: impl Into<IVar>) -> EqMul {
+pub fn eq_mul(lhs: impl Into<Var>, factor1: impl Into<Var>, factor2: impl Into<Var>) -> EqMul {
     EqMul::new(lhs.into(), factor1.into(), factor2.into())
 }
 

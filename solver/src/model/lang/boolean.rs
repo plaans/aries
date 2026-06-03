@@ -1,6 +1,5 @@
 use crate::core::views::Term;
 use crate::core::*;
-use crate::model::lang::IVar;
 
 /// A boolean variable.
 /// It is a wrapper around an (untyped) discrete variable to provide type safety.
@@ -14,7 +13,7 @@ impl BVar {
 
     /// Provides an integer view of this boolean variable
     /// where true <-> 1   and  false <-> 0
-    pub fn int_view(self) -> IVar {
+    pub fn int_view(self) -> Var {
         self.0
     }
 

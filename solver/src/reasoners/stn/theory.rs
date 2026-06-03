@@ -1122,7 +1122,6 @@ impl Backtrack for StnTheory {
 #[cfg(test)]
 mod tests {
     use crate::model::extensions::DomainsExt;
-    use crate::model::lang::IVar;
 
     use crate::reasoners::stn::stn_impl::Stn;
 
@@ -1270,7 +1269,7 @@ mod tests {
     #[test]
     fn test_optional_chain() -> Result<(), Contradiction> {
         let stn = &mut Stn::new();
-        let mut vars: Vec<(Lit, IVar)> = Vec::new();
+        let mut vars: Vec<(Lit, Var)> = Vec::new();
         let mut context = Lit::TRUE;
         for i in 0..10 {
             let prez = stn

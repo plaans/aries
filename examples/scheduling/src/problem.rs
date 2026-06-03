@@ -1,7 +1,7 @@
 use crate::search::{Model, VarLbl};
 use aries::core::{IntCst, Lit, u32_to_cst};
 use aries::model::lang::expr::{alternative, eq, leq, or};
-use aries::model::lang::{IAtom, IVar};
+use aries::model::lang::{IAtom, Var};
 use aries::reasoners::cp::no_overlap::{self, NoOverlap, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
@@ -212,7 +212,7 @@ pub struct OperationAlternative {
     pub id: OperationId,
     pub machine: u32,
     pub duration: IntCst,
-    pub start: IVar,
+    pub start: Var,
     pub presence: Lit,
 }
 
@@ -229,7 +229,7 @@ impl OperationAlternative {
 /// Encoding of a scheduling problem, where each operation and alternative is associated with its variables in the CSP.
 #[derive(Clone)]
 pub struct Encoding {
-    makespan: IVar,
+    makespan: Var,
     operations: Vec<Operation>,
     alternatives: Vec<OperationAlternative>,
 }

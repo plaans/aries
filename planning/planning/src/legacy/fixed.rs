@@ -1,6 +1,6 @@
 use aries::core::views::{Dom, Term, VarView};
 use aries::core::{IntCst, Var};
-use aries::model::lang::{ConversionError, IAtom, IVar};
+use aries::model::lang::{ConversionError, IAtom};
 use num_rational::Ratio;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
@@ -15,12 +15,12 @@ pub type Rational = Ratio<IntCst>;
 ///  - the denominator `denom` is a constant integer.
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct FVar {
-    pub num: IVar,
+    pub num: Var,
     pub denom: IntCst,
 }
 
 impl FVar {
-    pub fn new(num: IVar, denom: IntCst) -> FVar {
+    pub fn new(num: Var, denom: IntCst) -> FVar {
         assert_ne!(denom, 0);
         FVar { num, denom }
     }

@@ -1,11 +1,10 @@
 //! A search controller that mimics forward search for HTN planning.
 
+use aries::prelude::*;
+
 use crate::encoding::refinements_of;
 use crate::Model;
 use aries::backtrack::{Backtrack, DecLvl};
-use aries::core::{Lit, Var};
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::IVar;
 use aries::solver::search::{Decision, SearchControl};
 use aries::solver::stats::Stats;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
@@ -59,7 +58,7 @@ fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl 
         .iter()
         .filter_map(|&a| {
             if let Some(x) = a.int_view() {
-                IVar::try_from(x).ok()
+                Var::try_from(x).ok()
             } else {
                 None
             }

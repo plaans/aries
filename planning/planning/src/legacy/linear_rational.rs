@@ -64,7 +64,7 @@ impl From<LinearLeq> for ReifExpr {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct LinearTerm {
     factor: IntCst,
-    var: IVar,
+    var: Var,
     denom: IntCst,
 }
 
@@ -77,10 +77,10 @@ impl Display for LinearTerm {
                 write!(f, "{}", self.factor)?;
             }
         }
-        if self.factor.abs() != 1 && self.var != IVar::ONE {
+        if self.factor.abs() != 1 && self.var != Var::ONE {
             write!(f, "*")?;
         }
-        if self.var != IVar::ONE {
+        if self.var != Var::ONE {
             write!(f, "{:?}", self.var)?;
         } else if self.factor.abs() == 1 {
             write!(f, "1")?;
@@ -90,22 +90,22 @@ impl Display for LinearTerm {
 }
 
 impl LinearTerm {
-    pub const fn new(factor: IntCst, var: IVar, denom: IntCst) -> LinearTerm {
+    pub const fn new(factor: IntCst, var: Var, denom: IntCst) -> LinearTerm {
         LinearTerm { factor, var, denom }
     }
 
-    pub const fn int(factor: IntCst, var: IVar) -> LinearTerm {
+    pub const fn int(factor: IntCst, var: Var) -> LinearTerm {
         LinearTerm { factor, var, denom: 1 }
     }
 
-    pub const fn rational(factor: IntCst, var: IVar, denom: IntCst) -> LinearTerm {
+    pub const fn rational(factor: IntCst, var: Var, denom: IntCst) -> LinearTerm {
         LinearTerm { factor, var, denom }
     }
 
     pub const fn constant_int(value: IntCst) -> LinearTerm {
         LinearTerm {
             factor: value,
-            var: IVar::ONE,
+            var: Var::ONE,
             denom: 1,
         }
     }
@@ -113,7 +113,7 @@ impl LinearTerm {
     pub const fn constant_rational(num: IntCst, denom: IntCst) -> LinearTerm {
         LinearTerm {
             factor: num,
-            var: IVar::ONE,
+            var: Var::ONE,
             denom,
         }
     }
@@ -126,13 +126,13 @@ impl LinearTerm {
         self.factor
     }
 
-    pub fn var(&self) -> IVar {
+    pub fn var(&self) -> Var {
         self.var
     }
 }
 
-impl From<IVar> for LinearTerm {
-    fn from(var: IVar) -> Self {
+impl From<Var> for LinearTerm {
+    fn from(var: Var) -> Self {
         LinearTerm::int(1, var)
     }
 }
@@ -185,10 +185,10 @@ impl std::fmt::Display for LinearSum {
             if e.factor.abs() != 1 {
                 write!(f, "{}", e.factor.abs())?;
             }
-            if e.factor.abs() != 1 && e.var != IVar::ONE {
+            if e.factor.abs() != 1 && e.var != Var::ONE {
                 write!(f, "*")?;
             }
-            if e.var != IVar::ONE {
+            if e.var != Var::ONE {
                 write!(f, "{:?}", e.var)?;
             } else if e.factor.abs() == 1 {
                 write!(f, "1")?;
@@ -301,7 +301,7 @@ impl LinearSum {
                 .or_insert(term.factor);
 
             // Group the constant terms into the constant.
-            if term.var == IVar::ONE {
+            if term.var == Var::ONE {
                 constant += term.factor;
             }
         }
@@ -312,8 +312,8 @@ impl LinearSum {
             denom: self.denom,
             terms: term_map
                 .into_iter()
-                .filter(|(v, f)| *f != 0 && *v != IVar::ZERO)
-                .filter(|(v, _)| *v != IVar::ONE) // Has been grouped into the constant
+                .filter(|(v, f)| *f != 0 && *v != Var::ZERO)
+                .filter(|(v, _)| *v != Var::ONE) // Has been grouped into the constant
                 .map(|(v, f)| LinearTerm {
                     factor: f,
                     var: v,
@@ -469,7 +469,7 @@ impl TryFrom<LinearSum> for IAtom {
             return Err(());
         }
         let var = if value.terms.is_empty() {
-            IVar::ZERO
+            Var::ZERO
         } else if value.terms.len() == 1 {
             let term = value.terms[0];
             debug_assert_eq!(term.denom, 1);
@@ -487,7 +487,7 @@ impl TryFrom<LinearSum> for IAtom {
 
 use aries::transitive_conversion;
 
-transitive_conversion!(LinearSum, LinearTerm, IVar);
+transitive_conversion!(LinearSum, LinearTerm, Var);
 
 impl Evaluable for LinearSum {
     type Value = QCst;
@@ -522,7 +522,7 @@ mod test {
         let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
-                for v in [IVar::ONE, var1, var2] {
+                for v in [Var::ONE, var1, var2] {
                     for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                         let term = LinearTerm::new(ff * f, v, d);
                         assert_eq!(term.factor, ff * f);
@@ -574,7 +574,7 @@ mod test {
             for ff in [-1, 1] {
                 let term = LinearTerm::constant_int(ff * f);
                 assert_eq!(term.factor, ff * f);
-                assert_eq!(term.var, IVar::ONE);
+                assert_eq!(term.var, Var::ONE);
                 assert_eq!(term.denom, 1);
             }
         }
@@ -587,7 +587,7 @@ mod test {
                 for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                     let term = LinearTerm::constant_rational(ff * f, d);
                     assert_eq!(term.factor, ff * f);
-                    assert_eq!(term.var, IVar::ONE);
+                    assert_eq!(term.var, Var::ONE);
                     assert_eq!(term.denom, d);
                 }
             }
@@ -596,8 +596,8 @@ mod test {
 
     #[test]
     fn test_term_from_ivar() {
-        let var0 = IVar::ZERO;
-        let var1 = IVar::ONE;
+        let var0 = Var::ZERO;
+        let var1 = Var::ONE;
         let var2 = Var::from_u32(5);
         let var3 = Var::from_u32(15);
         for v in [var0, var1, var2, var3] {
@@ -623,7 +623,7 @@ mod test {
         let var2 = Var::from_u32(15);
         for f in [1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
-                for v in [IVar::ONE, var1, var2] {
+                for v in [Var::ONE, var1, var2] {
                     for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                         let term = LinearTerm::new(ff * f, v, d);
                         terms.push(term);
@@ -645,7 +645,7 @@ mod test {
         let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
-                for v in [IVar::ONE, var1, var2] {
+                for v in [Var::ONE, var1, var2] {
                     for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                         let term = -LinearTerm::new(ff * f, v, d);
                         let expected = LinearTerm::new(-ff * f, v, d);
@@ -662,7 +662,7 @@ mod test {
         let var2 = Var::from_u32(15);
         for f in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for ff in [-1, 1] {
-                for v in [IVar::ONE, var1, var2] {
+                for v in [Var::ONE, var1, var2] {
                     for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                         let term = LinearTerm::new(ff * f, v, d);
                         assert_eq!(term.factor, term.factor());
@@ -687,14 +687,14 @@ mod test {
         assert_eq!(format!("{}", LinearTerm::constant_rational(5, 10)), "5");
         assert_eq!(format!("{}", LinearTerm::constant_rational(-5, 10)), "-5");
         // Pseudo-constant terms
-        assert_eq!(format!("{}", LinearTerm::int(1, IVar::ONE)), "1");
-        assert_eq!(format!("{}", LinearTerm::int(-1, IVar::ONE)), "-1");
-        assert_eq!(format!("{}", LinearTerm::int(5, IVar::ONE)), "5");
-        assert_eq!(format!("{}", LinearTerm::int(-5, IVar::ONE)), "-5");
-        assert_eq!(format!("{}", LinearTerm::rational(1, IVar::ONE, 10)), "1");
-        assert_eq!(format!("{}", LinearTerm::rational(-1, IVar::ONE, 10)), "-1");
-        assert_eq!(format!("{}", LinearTerm::rational(5, IVar::ONE, 10)), "5");
-        assert_eq!(format!("{}", LinearTerm::rational(-5, IVar::ONE, 10)), "-5");
+        assert_eq!(format!("{}", LinearTerm::int(1, Var::ONE)), "1");
+        assert_eq!(format!("{}", LinearTerm::int(-1, Var::ONE)), "-1");
+        assert_eq!(format!("{}", LinearTerm::int(5, Var::ONE)), "5");
+        assert_eq!(format!("{}", LinearTerm::int(-5, Var::ONE)), "-5");
+        assert_eq!(format!("{}", LinearTerm::rational(1, Var::ONE, 10)), "1");
+        assert_eq!(format!("{}", LinearTerm::rational(-1, Var::ONE, 10)), "-1");
+        assert_eq!(format!("{}", LinearTerm::rational(5, Var::ONE, 10)), "5");
+        assert_eq!(format!("{}", LinearTerm::rational(-5, Var::ONE, 10)), "-5");
         // Variable terms
         assert_eq!(format!("{}", LinearTerm::int(1, var)), "var5");
         assert_eq!(format!("{}", LinearTerm::int(-1, var)), "-var5");
@@ -870,15 +870,15 @@ mod test {
             denom,
             terms: vec![
                 // Constant terms should be in the constant
-                LinearTerm::new(10, IVar::ONE, denom),
-                LinearTerm::new(15, IVar::ONE, denom),
-                LinearTerm::new(20, IVar::ONE, denom),
-                LinearTerm::new(25, IVar::ONE, denom),
+                LinearTerm::new(10, Var::ONE, denom),
+                LinearTerm::new(15, Var::ONE, denom),
+                LinearTerm::new(20, Var::ONE, denom),
+                LinearTerm::new(25, Var::ONE, denom),
                 // Variable terms with zero variable, should be filtered
-                LinearTerm::new(30, IVar::ZERO, denom),
-                LinearTerm::new(35, IVar::ZERO, denom),
-                LinearTerm::new(40, IVar::ZERO, denom),
-                LinearTerm::new(45, IVar::ZERO, denom),
+                LinearTerm::new(30, Var::ZERO, denom),
+                LinearTerm::new(35, Var::ZERO, denom),
+                LinearTerm::new(40, Var::ZERO, denom),
+                LinearTerm::new(45, Var::ZERO, denom),
                 // Variable terms with null factor, should be filtered
                 LinearTerm::new(0, var1, denom),
                 LinearTerm::new(0, var2, denom),
@@ -935,8 +935,8 @@ mod test {
 
     #[test]
     fn test_sum_from_fatom() {
-        let var0 = IVar::ZERO;
-        let var1 = IVar::ONE;
+        let var0 = Var::ZERO;
+        let var1 = Var::ONE;
         let var2 = Var::from_u32(5);
         let var3 = Var::from_u32(15);
         for s in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
@@ -957,8 +957,8 @@ mod test {
 
     #[test]
     fn test_sum_from_iatom() {
-        let var0 = IVar::ZERO;
-        let var1 = IVar::ONE;
+        let var0 = Var::ZERO;
+        let var1 = Var::ONE;
         let var2 = Var::from_u32(5);
         let var3 = Var::from_u32(15);
         for s in [0, 1, 2, 5, 10, 15, 20, 50, 100] {

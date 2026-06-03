@@ -1,6 +1,6 @@
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::IVar;
+use aries::model::lang::Var;
 use aries::model::lang::linear::ScaledVar;
 
 use crate::aries::Post;
@@ -12,20 +12,20 @@ use crate::aries::constraint::Max;
 /// `b = abs(a)`
 #[derive(Debug)]
 pub struct Abs {
-    a: IVar,
-    b: IVar,
+    a: Var,
+    b: Var,
 }
 
 impl Abs {
-    pub fn new(a: IVar, b: IVar) -> Self {
+    pub fn new(a: Var, b: Var) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &Var {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &Var {
         &self.b
     }
 }

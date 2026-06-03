@@ -4,11 +4,9 @@
 //!  - basic model generators
 //!  - solution checking by enumerating all possibilities
 
-use aries::core::IntCst;
-use aries::core::Var;
-use aries::model::Model;
+use aries::prelude::*;
+
 use aries::model::lang::BVar;
-use aries::model::lang::IVar;
 use aries::model::lang::linear::ScaledVar;
 use aries::solver::SearchLimit;
 use aries::solver::Solver;
@@ -99,7 +97,7 @@ pub(super) fn verify_all<const N: usize>(
 ///
 /// It has one variables:
 ///  - x in \[-1,7\]
-pub(super) fn basic_int_model_1() -> (Model<String>, IVar) {
+pub(super) fn basic_int_model_1() -> (Model<String>, Var) {
     let mut model = Model::new();
 
     let x = model.new_ivar(-1, 7, "x".to_string());
@@ -116,7 +114,7 @@ pub(super) fn basic_int_model_1() -> (Model<String>, IVar) {
 /// It has two variables:
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
-pub(super) fn basic_int_model_2() -> (Model<String>, IVar, IVar) {
+pub(super) fn basic_int_model_2() -> (Model<String>, Var, Var) {
     let (mut model, x) = basic_int_model_1();
 
     let y = model.new_ivar(-4, 6, "y".to_string());
@@ -134,7 +132,7 @@ pub(super) fn basic_int_model_2() -> (Model<String>, IVar, IVar) {
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - z in \[-2,5\]
-pub(super) fn basic_int_model_3() -> (Model<String>, IVar, IVar, IVar) {
+pub(super) fn basic_int_model_3() -> (Model<String>, Var, Var, Var) {
     let (mut model, x, y) = basic_int_model_2();
     let z = model.new_ivar(-2, 5, "z".to_string());
 
@@ -155,8 +153,8 @@ pub(super) fn basic_int_model_3() -> (Model<String>, IVar, IVar, IVar) {
 pub(super) fn basic_lin_model() -> (
     Model<String>,
     Vec<ScaledVar>,
-    IVar,
-    IVar,
+    Var,
+    Var,
     IntCst,
     IntCst,
     IntCst,
@@ -220,7 +218,7 @@ pub(super) fn basic_bool_model_3() -> (Model<String>, BVar, BVar, BVar) {
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - r bool
-pub(super) fn basic_reif_model() -> (Model<String>, IVar, IVar, BVar) {
+pub(super) fn basic_reif_model() -> (Model<String>, Var, Var, BVar) {
     let (mut model, x, y) = basic_int_model_2();
 
     let r = model.new_bvar("r".to_string());

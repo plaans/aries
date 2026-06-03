@@ -1,14 +1,11 @@
 #![allow(clippy::needless_range_loop)]
 
-use aries::core::{IntCst, Lit, INT_CST_MAX};
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::IVar;
-use aries::prelude::LinSum;
+use aries::prelude::*;
+
 use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::Brancher;
-use aries::solver::SearchLimit;
 use env_param::EnvParam;
 use itertools::Itertools;
 use std::cmp::max;
@@ -141,10 +138,10 @@ impl Display for Sol {
     }
 }
 
-type Var = String;
+type VarLbl = String;
 
-type Model = aries::model::Model<Var>;
-type Solver = aries::solver::Solver<Var>;
+type Model = aries::model::Model<VarLbl>;
+type Solver = aries::solver::Solver<VarLbl>;
 
 #[derive(Copy, Clone)]
 enum SolveMode {
@@ -173,13 +170,13 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
         .collect();
     let max_value = items.iter().map(|i| i.value).sum();
 
-    let vars: Vec<IVar> = items
+    let vars: Vec<Var> = items
         .iter()
         .map(|item| model.new_ivar(0, pb.max_instances, &item.name))
         .collect();
 
     let decisions: Vec<Lit> = vars.iter().map(|v| v.geq(1)).collect();
-    let (total_value, brancher): (IVar, Brancher<_>) = match mode {
+    let (total_value, brancher): (Var, Brancher<_>) = match mode {
         SolveMode::Simple => {
             let objective = model.new_ivar(0, INT_CST_MAX, "objective");
             let mut total_weight = LinSum::zero();
@@ -202,7 +199,7 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
             // this facilitates memoization (like in DP) as it allows representing the fact that
             //   capacity_left_from_i < N => value_from_i < M
 
-            let folder = |(weight_before, value_before): (IVar, IVar), i: usize| {
+            let folder = |(weight_before, value_before): (Var, Var), i: usize| {
                 let item = &items[i];
                 let next_weight = model.new_ivar(0, pb.capacity, format!("weights_from_{}", &item.name));
                 let sum_weight = LinSum::zero() + weight_before + vars[i] * item.weight;
@@ -219,7 +216,7 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
             // fold from right
             // weight_from_i = i*weight + weight_from_(i+1)
             // value_from_i = i*value + value_from_(i+1)
-            let (_total_weight, total_value) = (0..vars.len()).rfold((IVar::ZERO, IVar::ZERO), folder);
+            let (_total_weight, total_value) = (0..vars.len()).rfold((Var::ZERO, Var::ZERO), folder);
 
             // brancher use lexical search with assignement to max
             // the effect is that we will first pick uninteresting objects (they appear first in the variables)

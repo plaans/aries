@@ -44,7 +44,7 @@ pub type Time = FAtom;
 pub trait Substitution {
     fn sub_var(&self, var: Var) -> Var;
 
-    fn sub_ivar(&self, atom: IVar) -> IVar {
+    fn sub_ivar(&self, atom: Var) -> Var {
         self.sub_var(atom)
     }
     fn sub_bvar(&self, atom: BVar) -> BVar {

@@ -2,7 +2,7 @@ use crate::legacy::*;
 use aries::core::state::Evaluable;
 use aries::core::views::VarView;
 use aries::core::*;
-use aries::model::lang::{ConversionError, IAtom, IVar};
+use aries::model::lang::{ConversionError, IAtom, Var};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
@@ -82,7 +82,7 @@ impl SAtom {
     pub fn int_view(self) -> IAtom {
         match self {
             SAtom::Var(v) => IAtom::new(v.var, 0),
-            SAtom::Cst(s) => IAtom::new(IVar::ZERO, usize::from(s.sym) as IntCst),
+            SAtom::Cst(s) => IAtom::new(Var::ZERO, usize::from(s.sym) as IntCst),
         }
     }
 

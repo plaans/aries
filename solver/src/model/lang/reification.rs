@@ -50,12 +50,11 @@ impl Reification {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::lang::IVar;
     use crate::model::lang::expr::{geq, leq};
 
-    const A: IVar = Var::from_u32(1);
-    const B: IVar = Var::from_u32(2);
-    const C: IVar = Var::from_u32(3);
+    const A: Var = Var::from_u32(1);
+    const B: Var = Var::from_u32(2);
+    const C: Var = Var::from_u32(3);
 
     #[test]
     fn test_reif() {
