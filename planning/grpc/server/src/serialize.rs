@@ -144,7 +144,7 @@ pub fn serialize_plan(
 
     // If this is a scheduling problem, interpret all actions as activities
     // TODO: currently, variables are not supported.
-    let schedule = if problem_request.scheduling_extension.is_some() {
+    let schedule = if let Some(scheduling_extension) = problem_request.scheduling_extension.as_ref() {
         let mut schedule = Schedule {
             activities: vec![],
             variable_assignments: Default::default(),
@@ -162,10 +162,7 @@ pub fn serialize_plan(
             );
             if !a.parameters.is_empty() {
                 // Search for the corresponding activity definition
-                let act = problem_request
-                    .scheduling_extension
-                    .as_ref()
-                    .expect("Missing scheduling extension")
+                let act = scheduling_extension
                     .activities
                     .iter()
                     .find(|a| a.name == name)
