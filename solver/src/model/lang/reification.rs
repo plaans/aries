@@ -61,7 +61,7 @@ mod tests {
     fn test_reif() {
         let t = Lit::TRUE;
         let f = Lit::FALSE;
-        let l1: ReifExpr = leq(A, B + 3).into();
+        let l1: ReifExpr = leq(A, B + (3 as IntCst)).into();
         let l2: ReifExpr = leq(A, C).into();
 
         let mut reif = Reification::default();
@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(reif.interned_full(&l2), Some(f));
 
         // same as l1
-        let l1_prime = geq(B + 3, A).into();
+        let l1_prime = geq(B + (3 as IntCst), A).into();
         assert_eq!(reif.interned_full(&l1_prime), Some(t));
 
         // inverse of l1, should return the opposite literal
