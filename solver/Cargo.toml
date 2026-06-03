@@ -40,3 +40,12 @@ num-integer = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 hashbrown = { workspace = true }
+
+
+[[example]]
+name = "knapsack"
+path = "examples/knapsack.rs"
+
+[[example]]
+name = "nqueens"
+path = "examples/nqueens.rs"

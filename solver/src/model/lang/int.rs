@@ -55,11 +55,6 @@ impl IAtom {
         IAtom { var, shift }
     }
 
-    /// A total order between the names of the atoms, not on their expected values.
-    pub fn lexical_cmp(&self, other: &IAtom) -> Ordering {
-        self.var.cmp(&other.var).then(self.shift.cmp(&other.shift))
-    }
-
     /// Returns a literal representing whether this atom is lesser than the given value.
     pub fn lt_lit(self, value: IntCst) -> Lit {
         let rhs = value - self.shift;
@@ -169,6 +164,34 @@ impl std::ops::Sub<IntCst> for IVar {
 
     fn sub(self, rhs: IntCst) -> Self::Output {
         IAtom::new(self, -rhs)
+    }
+}
+impl std::ops::Add<usize> for IAtom {
+    type Output = IAtom;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        IAtom::new(self.var, self.shift + IntCst::try_from(rhs).unwrap())
+    }
+}
+impl std::ops::Add<usize> for IVar {
+    type Output = IAtom;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        IAtom::new(self, IntCst::try_from(rhs).unwrap())
+    }
+}
+impl std::ops::Sub<usize> for IAtom {
+    type Output = IAtom;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        IAtom::new(self.var, self.shift - IntCst::try_from(rhs).unwrap())
+    }
+}
+impl std::ops::Sub<usize> for IVar {
+    type Output = IAtom;
+
+    fn sub(self, rhs: usize) -> Self::Output {
+        IAtom::new(self, -IntCst::try_from(rhs).unwrap())
     }
 }
 
