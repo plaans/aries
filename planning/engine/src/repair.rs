@@ -7,7 +7,8 @@ use std::{
     time::Instant,
 };
 
-use aries::model::{extensions::DomainsExt, lang::Store};
+use aries::lang::Store;
+use aries::model::extensions::DomainsExt;
 use aries::prelude::*;
 use aries_plan_engine::{
     encode::{encoding::Encoding, *},

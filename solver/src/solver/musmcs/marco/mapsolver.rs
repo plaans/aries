@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::backtrack::Backtrack;
 use crate::core::{INT_CST_MAX, Lit};
 use crate::model::Model;
-use crate::model::lang::{IAtom, expr::or};
+use crate::lang::{IAtom, expr::or};
 use crate::prelude::*;
 use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
 use crate::solver::{Exit, SearchLimit};

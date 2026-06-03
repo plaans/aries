@@ -6,7 +6,7 @@ use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, T
 use crate::legacy::*;
 use aries::core::{Lit, Relation, Var};
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::BVar;
+use aries::lang::BVar;
 use aries::model::Model;
 use aries::prelude::*;
 

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::Fluent;
 use aries::core::{IntCst, Lit, SignedVar, Var};
-use aries::model::lang::*;
+use aries::lang::*;
 
 /// A state variable e.g. `(location-of robot1)` where:
 ///  - the fluent is the name of the state variable (e.g. `location-of`) and defines its type.

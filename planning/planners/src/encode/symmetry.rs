@@ -3,7 +3,7 @@ use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
 use analysis::CausalSupport;
 use aries::core::Lit;
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::expr::{and, implies, or};
+use aries::lang::expr::{and, implies, or};
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use aries_planning::legacy::f_leq;

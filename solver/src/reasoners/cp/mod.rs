@@ -12,7 +12,7 @@ use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::{Lit, SignedVar, Var};
-use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
+use crate::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};

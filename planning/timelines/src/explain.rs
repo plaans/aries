@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use aries::prelude::*;
 use aries::{
     backtrack::Backtrack,
-    model::lang::*,
+    lang::*,
     solver::{Solver, musmcs::MusMcs},
 };
 use itertools::Itertools;

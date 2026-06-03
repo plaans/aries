@@ -1,7 +1,7 @@
 use crate::search::{Model, VarLbl};
 use aries::core::{IntCst, Lit, u32_to_cst};
-use aries::model::lang::expr::{alternative, eq, leq, or};
-use aries::model::lang::{IAtom, Var};
+use aries::lang::expr::{alternative, eq, leq, or};
+use aries::lang::{IAtom, Var};
 use aries::reasoners::cp::no_overlap::{self, NoOverlap, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};

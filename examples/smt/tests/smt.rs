@@ -3,9 +3,9 @@ use aries::prelude::*;
 use aries::backtrack::Backtrack;
 use aries::core::state::OptDomain;
 use aries::core::views::Term;
-use aries::model::lang::alternative::Alternative;
-use aries::model::lang::expr::*;
-use aries::model::lang::max::{EqMax, EqMin};
+use aries::lang::alternative::Alternative;
+use aries::lang::expr::*;
+use aries::lang::max::{EqMax, EqMin};
 use aries::solver::SearchLimit;
 use itertools::Itertools;
 

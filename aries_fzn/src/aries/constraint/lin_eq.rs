@@ -1,7 +1,7 @@
 use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::linear::ScaledVar;
+use aries::lang::linear::ScaledVar;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinGe;

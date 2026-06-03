@@ -1,7 +1,7 @@
-use aries::model::lang::Store;
-use aries::model::lang::expr::{implies, leq};
+use aries::lang::Store;
+use aries::lang::expr::{implies, leq};
 use aries::prelude::*;
-use aries::{core::literals::DisjunctionBuilder, model::lang::BoolExpr};
+use aries::{core::literals::DisjunctionBuilder, lang::BoolExpr};
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1,10 +1,10 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Evaluable, OptDomain};
 use crate::core::{IntCst, Lit, SignedVar, Var};
-use crate::model::lang::ValidityScope;
-use crate::model::lang::alternative::NFAlternative;
-use crate::model::lang::max::NFEqMax;
-use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
+use crate::lang::ValidityScope;
+use crate::lang::alternative::NFAlternative;
+use crate::lang::max::NFEqMax;
+use crate::lang::mul::{EqMul, NFEqVarMulLit};
 use crate::model::{Label, Model};
 use crate::prelude::{Conjunction, DomainsExt, LinSum, Solution};
 use std::fmt::{Debug, Formatter};

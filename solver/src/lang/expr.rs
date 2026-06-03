@@ -1,7 +1,7 @@
 use crate::core::state::Evaluable;
-use crate::model::lang::alternative::Alternative;
-use crate::model::lang::linear::{LinEq, LinLeq, LinNeq};
-use crate::model::lang::*;
+use crate::lang::alternative::Alternative;
+use crate::lang::linear::{LinEq, LinLeq, LinNeq};
+use crate::lang::*;
 use crate::prelude::*;
 
 use super::mul::EqMul;

@@ -1,7 +1,7 @@
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::Var;
-use aries::model::lang::max::EqMax;
+use aries::lang::Var;
+use aries::lang::max::EqMax;
 
 use crate::aries::Post;
 

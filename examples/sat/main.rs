@@ -2,8 +2,8 @@
 
 use anyhow::*;
 use aries::core::Lit;
-use aries::model::lang::expr::or;
-use aries::model::lang::BVar;
+use aries::lang::expr::or;
+use aries::lang::BVar;
 use aries::solver::parallel::{ParSolver, SolverResult};
 use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
 use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};

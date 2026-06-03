@@ -26,7 +26,7 @@ pub use variables::*;
 pub mod input;
 pub mod utils;
 
-pub use aries::model::lang::ConversionError;
+pub use aries::lang::ConversionError;
 use aries::model::Model;
 
 use aries::prelude::DomainsExt;

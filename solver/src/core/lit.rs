@@ -1,5 +1,5 @@
 use crate::core::*;
-use crate::model::lang::ConversionError;
+use crate::lang::ConversionError;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 

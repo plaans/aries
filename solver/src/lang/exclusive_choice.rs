@@ -1,5 +1,5 @@
 use crate::{
-    model::lang::{BoolExpr, Store, expr::or},
+    lang::{BoolExpr, Store, expr::or},
     prelude::*,
 };
 

@@ -1,8 +1,8 @@
 use aries::core::IntCst;
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::linear::*;
+use aries::lang::BVar;
+use aries::lang::linear::*;
 
 use crate::aries::Post;
 

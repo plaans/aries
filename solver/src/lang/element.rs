@@ -1,5 +1,5 @@
 use crate::{
-    model::lang::{
+    lang::{
         expr::{implies, lin_eq},
         *,
     },

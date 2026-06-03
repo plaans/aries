@@ -9,7 +9,7 @@ use crate::Solver;
 use anyhow::Result;
 use aries::core::{IntCst, Lit, Var, INT_CST_MAX};
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::IAtom;
+use aries::lang::IAtom;
 use aries::model::Model;
 use aries::prelude::*;
 use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};

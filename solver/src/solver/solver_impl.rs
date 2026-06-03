@@ -5,7 +5,7 @@ use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
-use crate::model::lang::expr::geq;
+use crate::lang::expr::geq;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};

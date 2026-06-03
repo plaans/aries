@@ -1,6 +1,6 @@
 use crate::core::views::Term;
 use crate::core::{IntCst, Var};
-use crate::model::lang::{ConversionError, IAtom};
+use crate::lang::{ConversionError, IAtom};
 use crate::reif::ReifExpr;
 use itertools::Itertools;
 

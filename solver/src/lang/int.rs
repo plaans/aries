@@ -1,6 +1,6 @@
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
-use crate::model::lang::ConversionError;
+use crate::lang::ConversionError;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::Debug;

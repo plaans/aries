@@ -7,7 +7,7 @@ pub mod tags;
 
 use aries::{
     core::literals::ConjunctionBuilder,
-    model::lang::{
+    lang::{
         BoolExpr, IntExpr,
         expr::{eq, lin_eq},
     },

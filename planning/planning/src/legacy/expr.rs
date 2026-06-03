@@ -1,7 +1,7 @@
 use std::ops::Not;
 
 use aries::{
-    model::lang::{expr::*, Store},
+    lang::{expr::*, Store},
     reif::DifferenceExpression,
 };
 

@@ -5,14 +5,12 @@
 use std::{cmp::min, collections::HashMap, fmt::Display, mem::swap};
 
 use anyhow::{bail, Result};
+
+use aries::prelude::*;
 use aries::{
-    core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN},
-    model::{
-        lang::{
-            expr::{and, eq, geq, lt, or},
-            Var,
-        },
-        Model,
+    lang::{
+        expr::{and, eq, geq, lt, or},
+        Var,
     },
     solver::{SearchLimit, Solver},
 };

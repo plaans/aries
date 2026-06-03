@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use aries::core::INT_CST_MAX;
 pub use aries::core::IntCst;
-use aries::model::lang::*;
+use aries::lang::*;
 use aries::prelude::*;
 use aries::solver::Solver;
 use idmap::DirectIdMap;

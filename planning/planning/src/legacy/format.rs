@@ -3,7 +3,7 @@ use crate::legacy::input::Sym;
 use crate::legacy::utils::Fmt;
 use crate::legacy::*;
 use aries::core::*;
-use aries::model::lang::IAtom;
+use aries::lang::IAtom;
 use aries::model::Label;
 use aries::model::ModelShape;
 

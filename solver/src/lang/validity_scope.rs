@@ -2,7 +2,7 @@ use smallvec::SmallVec;
 
 use crate::core::Lit;
 use crate::core::literals::{LitSet, StableLitSet};
-use crate::model::lang::Store;
+use crate::lang::Store;
 
 /// Represents the scope in which a given expression is valid.
 ///

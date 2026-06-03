@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use aries::core::*;
-use aries::model::lang::expr::*;
+use aries::lang::expr::*;
 use aries_planning::chronicles::constraints::Table;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::*;

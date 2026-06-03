@@ -1,7 +1,7 @@
 use crate::core::state::{OptDomain, RangeDomain};
 use crate::core::views::{Dom, Term, VarView};
 use crate::core::*;
-use crate::model::lang::IAtom;
+use crate::lang::IAtom;
 
 /// Extension methods for an object containing a partial or total assignment to a problem.
 pub trait DomainsExt: Dom {

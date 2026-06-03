@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use aries::model::lang::ModelWrapper;
+use aries::lang::ModelWrapper;
 
 use crate::*;
 

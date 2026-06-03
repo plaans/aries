@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use aries::core::Var;
-use aries::model::lang::BVar;
+use aries::lang::BVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;

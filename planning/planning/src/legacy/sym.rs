@@ -2,7 +2,7 @@ use crate::legacy::*;
 use aries::core::state::Evaluable;
 use aries::core::views::VarView;
 use aries::core::*;
-use aries::model::lang::{ConversionError, IAtom, Var};
+use aries::lang::{ConversionError, IAtom, Var};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 

@@ -311,7 +311,7 @@ mod tests {
     use itertools::Itertools;
 
     use crate::core::Lit;
-    use crate::model::lang::expr::{geq, lt};
+    use crate::lang::expr::{geq, lt};
     use crate::solver::musmcs::marco::mapsolver::MapSolverMode;
     use crate::solver::musmcs::{Mcs, Mus, MusMcs};
     type Lbl = &'static str;

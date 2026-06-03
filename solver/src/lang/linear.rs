@@ -4,7 +4,7 @@ use smallvec::{SmallVec, smallvec};
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
-use crate::model::lang::{BoolExpr, ConversionError, IAtom, IntExpr, Store};
+use crate::lang::{BoolExpr, ConversionError, IAtom, IntExpr, Store};
 use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
 use crate::{transitive_conversion, transitive_conversions};

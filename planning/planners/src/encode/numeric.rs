@@ -8,7 +8,7 @@ use aries::backtrack::DecLvl;
 use aries::core::state::Conflict;
 use aries::core::*;
 use aries::model::extensions::DomainsExt;
-use aries::model::lang::expr::*;
+use aries::lang::expr::*;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::*;
 use aries_planning::legacy::{eq, geq, leq};

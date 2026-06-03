@@ -6,8 +6,8 @@
 
 use aries::prelude::*;
 
-use aries::model::lang::BVar;
-use aries::model::lang::linear::ScaledVar;
+use aries::lang::BVar;
+use aries::lang::linear::ScaledVar;
 use aries::solver::SearchLimit;
 use aries::solver::Solver;
 use itertools::Itertools;
@@ -62,7 +62,7 @@ fn gen_solutions<const N: usize>(
 /// ```
 /// # use aries::core::IntCst;
 /// # use aries::model::Model;
-/// # use aries::model::lang::IVar;
+/// # use aries::lang::IVar;
 /// # use crate::aries::constraint::test::verify_all;
 /// let model: Model<String>;
 /// let x: IVar;

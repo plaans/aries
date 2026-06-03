@@ -50,7 +50,7 @@ impl Reification {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::lang::expr::{geq, leq};
+    use crate::lang::expr::{geq, leq};
 
     const A: Var = Var::from_u32(1);
     const B: Var = Var::from_u32(2);

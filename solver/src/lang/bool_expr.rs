@@ -1,5 +1,5 @@
 use crate::{
-    model::lang::{
+    lang::{
         expr::{And, Or, or},
         linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
@@ -155,13 +155,11 @@ impl_reif!(LinNeq);
 mod test {
     use crate::{
         core::views::{Dom, Term},
-        model::{
-            Label,
-            lang::{
-                IAtom,
-                expr::{lin_neq, lt},
-            },
+        lang::{
+            IAtom,
+            expr::{lin_neq, lt},
         },
+        model::Label,
     };
 
     use super::*;

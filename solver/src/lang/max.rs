@@ -1,6 +1,6 @@
 use crate::core::views::Term;
 use crate::core::{IntCst, SignedVar};
-use crate::model::lang::IAtom;
+use crate::lang::IAtom;
 use crate::reif::ReifExpr;
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};

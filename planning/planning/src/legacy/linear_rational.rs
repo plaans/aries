@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::legacy::*;
 use aries::core::state::Evaluable;
-use aries::model::lang::linear::*;
+use aries::lang::linear::*;
 use aries::{prelude::*, reif::ReifExpr};
 use num_integer::lcm;
 /* ========================================================================== */

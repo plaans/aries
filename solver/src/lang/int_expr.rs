@@ -1,4 +1,4 @@
-use crate::{model::lang::Store, prelude::*};
+use crate::{lang::Store, prelude::*};
 
 /// Represents an integer expression that can be reified or made equal to another variable
 pub trait IntExpr<Ctx: Store> {

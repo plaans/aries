@@ -1,8 +1,8 @@
 use aries::model::Label;
 use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::Var;
-use aries::model::lang::expr::eq;
+use aries::lang::BVar;
+use aries::lang::Var;
+use aries::lang::expr::eq;
 
 use crate::aries::Post;
 

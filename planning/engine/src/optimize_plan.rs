@@ -6,7 +6,7 @@ use std::{
 
 use aries::{
     core::{state::Evaluable, views::Boundable},
-    model::lang::{IntExpr, Store},
+    lang::{IntExpr, Store},
     prelude::*,
 };
 use aries_plan_engine::{

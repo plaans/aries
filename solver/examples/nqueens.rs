@@ -1,4 +1,4 @@
-use aries::{model::lang::expr::neq, prelude::*}; // TODO: ugly import
+use aries::{lang::expr::neq, prelude::*}; // TODO: ugly import
 
 type Model = aries::prelude::Model<String>;
 

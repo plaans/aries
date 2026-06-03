@@ -933,7 +933,7 @@ mod tests {
     use crate::backtrack::{Backtrack, EventIndex};
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
     use crate::core::{IntCst, Lit, Var};
-    use crate::model::lang::expr::lin_eq;
+    use crate::lang::expr::lin_eq;
     use crate::model::{Label, Model};
     use crate::reasoners::eq::dense::InferenceCause;
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
