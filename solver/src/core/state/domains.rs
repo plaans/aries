@@ -390,21 +390,9 @@ impl Domains {
         }
     }
 
-    #[inline]
-    pub fn set_unchecked(&mut self, literal: Lit, cause: Cause) {
-        // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.set(literal, cause);
-        debug_assert!(res.is_ok());
-    }
-
-    pub fn set_bound_unchecked(&mut self, affected: SignedVar, new_ub: IntCst, cause: Cause) {
-        // todo: to have optimal performance, we should implement the unchecked version in IntDomains
-        let res = self.set_upper_bound_impl(affected, new_ub, cause.into());
-        debug_assert!(res.is_ok());
-    }
-
     // ============= Variables =================
 
+    /// Returns an iterator over all variables.
     pub fn variables(&self) -> impl Iterator<Item = Var> {
         self.doms.variables()
     }
@@ -412,10 +400,6 @@ impl Domains {
     /// Returns the number of variables in the model.
     pub fn num_variables(&self) -> usize {
         self.doms.num_variables()
-    }
-
-    pub fn bound_variables(&self) -> impl Iterator<Item = (Var, IntCst)> + '_ {
-        self.doms.bound_variables()
     }
 
     // history

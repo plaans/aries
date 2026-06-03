@@ -15,7 +15,7 @@
 //! | [`IAtom`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`LinTerm`] | `n·X + c` | Scaled variable plus constant | [`VarView`], [`Term`], [`Boundable`] |
 //! | **[`LinSum`]** | `Σ(nᵢ·Xᵢ) + c` | Sum of scaled variables plus constant | [`IntExpr`] |
-//! | `dyn [`IntExpr`] | `unknown` | Arbitrary int expression |  |
+//! | `dyn` [`IntExpr`] | `unknown` | Arbitrary int expression |  |
 //!
 //! Most user code will only deal with [`Var`] (a single decision variable) and [`LinSum`] but one may face
 //! other variants when doing arithmetic (but type inference is usually sufficient to ignore them).
