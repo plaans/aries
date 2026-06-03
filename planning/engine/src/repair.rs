@@ -211,6 +211,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             name: format!("operation{op_id}"),
             start,
             end,
+            args: args.values().copied().collect(),
             presence,
         });
 
