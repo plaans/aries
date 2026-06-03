@@ -1,12 +1,12 @@
 use crate::chronicles::{Ctx, VarLabel};
+use crate::legacy::input::Sym;
+use crate::legacy::utils::Fmt;
 use crate::legacy::*;
 use aries::core::*;
 use aries::model::lang::{IAtom, IVar};
 use aries::model::Label;
 use aries::model::ModelShape;
 use aries::reif::{DifferenceExpression, ReifExpr};
-use aries::utils::input::Sym;
-use aries::utils::Fmt;
 
 pub trait Shaped<Lbl>
 where

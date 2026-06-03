@@ -7,5 +7,4 @@ pub mod prelude;
 pub mod reasoners;
 pub mod reif;
 pub mod solver;
-#[doc(hidden)]
-pub mod utils;
+pub(crate) mod utils;

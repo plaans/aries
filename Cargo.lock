@@ -127,7 +127,6 @@ dependencies = [
  "numfmt",
  "rand",
  "smallvec",
- "streaming-iterator",
  "tracing",
  "vec_map",
 ]
@@ -185,6 +184,7 @@ dependencies = [
  "itertools",
  "num-rational",
  "smallvec",
+ "streaming-iterator",
  "tracing",
 ]
 

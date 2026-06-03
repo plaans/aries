@@ -3,8 +3,8 @@ use crate::classical::state::{Lit, Operator, Operators, State, World};
 use crate::legacy::*;
 use anyhow::{bail, Context, Result};
 
-use aries::utils::enumerate;
-use aries::utils::input::Sym;
+use crate::legacy::input::Sym;
+use crate::legacy::utils::enumerate;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use streaming_iterator::StreamingIterator;

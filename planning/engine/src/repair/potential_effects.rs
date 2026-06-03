@@ -1,8 +1,11 @@
-use aries::{core::Lit, utils::StreamingIterator};
+use aries::core::Lit;
 use itertools::Itertools;
 use planx::*;
 use std::collections::BTreeMap;
-use timelines::boxes::{BBox, Segment};
+use timelines::boxes::{
+    BBox, Segment,
+    enumeration::{StreamingIterator, enumerate},
+};
 
 use crate::repair::required_values::RequiredValues;
 
@@ -56,7 +59,7 @@ impl PotentialEffects {
                 }
 
                 // loop over all instanciation, i.e., unique substition of a fluent parameter by an action parameter
-                let mut instanciations = aries::utils::enumerate(candidate_params);
+                let mut instanciations = enumerate(candidate_params);
                 while let Some(instanciation) = instanciations.next() {
                     let params: Vec<Param> = instanciation.iter().cloned().cloned().collect();
 

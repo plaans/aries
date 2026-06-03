@@ -10,11 +10,11 @@ pub use concrete::*;
 
 use self::constraints::Table;
 use crate::chronicles::preprocessing::action_rolling::RollCompilation;
+use crate::legacy::input::Sym;
 use crate::legacy::*;
 use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::Model;
 use aries::prelude::*;
-use aries::utils::input::Sym;
 use env_param::EnvParam;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};

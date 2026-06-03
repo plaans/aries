@@ -1,11 +1,11 @@
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
 use aries::model::lang::*;
-use aries::utils::enumerate;
-use aries::utils::input::Sym;
 use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use aries_planning::chronicles::VarType::Reification;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::input::Sym;
+use aries_planning::legacy::utils::enumerate;
 use aries_planning::legacy::*;
 use aries_planning::parsing::pddl::TypedSymbol;
 use env_param::EnvParam;
@@ -749,7 +749,7 @@ impl<'a> ChronicleFactory<'a> {
                     .try_collect()
                     .context("unsupported non symbolic type in fluent parameters")?;
                 let arg_domains = arg_types.iter().map(|tpe| symbols.instances_of_type(*tpe)).collect();
-                use aries::utils::StreamingIterator;
+                use aries_planning::legacy::utils::StreamingIterator;
                 let mut combinations = enumerate(arg_domains);
 
                 // for each possible instantiation of the fluent add an initial fact (with a default)

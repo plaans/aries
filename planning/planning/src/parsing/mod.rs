@@ -6,11 +6,11 @@ use crate::classical::state::{SvId, World};
 use crate::parsing::pddl::{consume_typed_symbols, PddlFeature, TypedSymbol};
 
 use crate::chronicles::constraints::{Constraint, Duration};
+use crate::legacy::input::{ErrLoc, Loc, Sym};
 use crate::legacy::*;
 use crate::parsing::sexpr::SExpr;
 use anyhow::{bail, Context, Result};
 use aries::core::*;
-use aries::utils::input::{ErrLoc, Loc, Sym};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;

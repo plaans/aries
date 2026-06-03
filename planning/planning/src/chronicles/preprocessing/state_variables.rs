@@ -1,8 +1,8 @@
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Chronicle, Container, Effect, EffectOp, Fluent, Problem, StateVar, Time, VarType};
+use crate::legacy::input::Sym;
 use crate::legacy::*;
-use aries::utils::input::Sym;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;

@@ -5,7 +5,7 @@ use crate::backtrack::{DecLvl, EventIndex};
 /// The purpose of this structure is to allow undoing the changes in order to restore a
 /// previous state.
 ///
-/// It supports save points, on which one may to backtrack.
+/// It supports save points, on which one may backtrack.
 #[derive(Clone)]
 pub struct Trail<Event> {
     pub trail: Vec<Event>,

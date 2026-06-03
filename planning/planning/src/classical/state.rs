@@ -1,7 +1,7 @@
 use crate::chronicles::Fluent;
+use crate::legacy::utils::enumerate;
 use crate::legacy::*;
 use aries::collections::ref_store::{RefPool, RefStore};
-use aries::utils::enumerate;
 use core::num::NonZeroU32;
 use fixedbitset::FixedBitSet;
 use std::collections::HashSet;
