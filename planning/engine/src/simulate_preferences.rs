@@ -1,13 +1,15 @@
 //! Simulated preference enforcement for automated experimental evaluation.
 //!
-//! Two strategies, both using the same one-by-one enforcement loop
-//! ([`run_one_by_one`]):
-//!   - **Greedy**: natural PDDL order; runs the loop once.
-//!   - **AllCombinations**: runs the loop once per permutation of the
-//!     violated preferences (N! times), then reports best/worst.
+//! Three strategies:
+//!   - **Greedy**: natural PDDL order; runs [`run_one_by_one`] once.
+//!   - **AllCombinations**: runs [`run_one_by_one`] once per permutation
+//!     of the violated preferences (N! times), then reports best/worst.
+//!   - **AllAtOnce**: selects all violated preferences at once, prunes
+//!     until feasible ([`run_prune`]), then re-adds dropped preferences
+//!     via [`run_one_by_one`].
 //!
 //! The greedy behavior lives in conflict resolution (`pick_best_mcs`):
-//! always drop the cheapest preference. This is shared by both strategies.
+//! always drop the cheapest preference. This is shared by all strategies.
 //! Dropped preferences are re-enqueued and retried later (the solver state
 //! may have changed). Retries stop when a full pass makes no progress.
 
@@ -37,6 +39,8 @@ pub(crate) enum Strategy {
     Greedy,
     /// Runs the same loop for every permutation; reports best and worst paths.
     AllCombinations,
+    /// Select all violated at once, trim until feasible, then re-add dropped.
+    AllAtOnce,
 }
 
 impl std::fmt::Display for Strategy {
@@ -44,6 +48,7 @@ impl std::fmt::Display for Strategy {
         match self {
             Strategy::Greedy => write!(f, "greedy"),
             Strategy::AllCombinations => write!(f, "all-combinations"),
+            Strategy::AllAtOnce => write!(f, "all-at-once"),
         }
     }
 }
@@ -173,10 +178,11 @@ fn run_one_by_one(
     optimal_plan_cost: Option<IntCst>,
     stop_threshold: IntCst,
     initial_ordering: &[usize],
+    initial_selected: &[usize],
     path_label: &str,
 ) -> PathResult {
     let obj = encoding.objectives[0];
-    let mut selected_indices: Vec<usize> = Vec::new();
+    let mut selected_indices: Vec<usize> = initial_selected.to_vec();
     let mut steps: usize = 0;
     let mut last_obj_val: Option<IntCst> = None;
 
@@ -307,6 +313,113 @@ fn run_one_by_one(
 }
 
 // =====================================================================
+// AllAtOnce — Phase 1: select all violated, prune until feasible.
+// Returns the surviving set and the dropped indices (in drop order).
+// =====================================================================
+
+struct PruneResult {
+    selected: Vec<usize>,
+    dropped: Vec<usize>,
+    steps: usize,
+    final_obj_val: Option<IntCst>,
+}
+
+fn run_prune(
+    solver: &mut ExplainableSolver<Tag>,
+    encoding: &Encoding,
+    model: &Model,
+    sched: &Sched,
+    entries: &[PreferenceEntry],
+    weights: &BTreeMap<String, i64>,
+    plan_cost_obj: Option<IntTerm>,
+    optimal_obj_val: IntCst,
+    optimal_plan_cost: Option<IntCst>,
+    violated_indices: &[usize],
+    path_label: &str,
+) -> PruneResult {
+    let obj = encoding.objectives[0];
+    let mut selected_indices: Vec<usize> = violated_indices.to_vec();
+    let mut dropped: Vec<usize> = Vec::new();
+    let mut steps: usize = 1;
+
+    let selected_str = selected_indices.iter()
+        .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+    println!("\n[SIM][{}] Step 1: enforce all [{}]", path_label, selected_str);
+
+    // Trim until feasible
+    loop {
+        if selected_indices.is_empty() {
+            println!("\n[SIM][{}] All preferences were dropped.", path_label);
+            break;
+        }
+
+        let selected_pref_lits: Vec<Lit> = selected_indices.iter()
+            .flat_map(|&i| entries[i].lits.iter().copied()).collect();
+        let selected_names: BTreeSet<String> = selected_indices.iter()
+            .map(|&i| entries[i].name.clone()).collect();
+
+        if crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits) {
+            break;
+        }
+
+        println!("\n[SIM][{}] Selection infeasible, analyzing conflicts...", path_label);
+        let mus_mcs = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
+        display_conflicts(&mus_mcs.muses, &selected_names, model);
+        display_resolutions(&mus_mcs.mcses, &selected_names, model);
+
+        steps += 1;
+        match pick_best_mcs(&mus_mcs.mcses, &selected_names, weights) {
+            Some(best_idx) => {
+                let prefs_to_drop: BTreeSet<&str> = mcs_dropped_prefs(&mus_mcs.mcses[best_idx], &selected_names)
+                    .into_iter().collect();
+                println!("[SIM][{}] Applying R{}: drop {}", path_label, best_idx + 1,
+                    prefs_to_drop.iter().copied().collect::<Vec<_>>().join(", "));
+                let dropped_indices: Vec<usize> = selected_indices.iter()
+                    .filter(|&&i| prefs_to_drop.contains(entries[i].name.as_str()))
+                    .copied().collect();
+                selected_indices.retain(|&i| !prefs_to_drop.contains(entries[i].name.as_str()));
+                dropped.extend(dropped_indices);
+            }
+            None => {
+                break;
+            }
+        }
+    }
+
+    // Solve the surviving set
+    let mut final_obj_val: Option<IntCst> = None;
+    if !selected_indices.is_empty() {
+        let selected_pref_lits: Vec<Lit> = selected_indices.iter()
+            .flat_map(|&i| entries[i].lits.iter().copied()).collect();
+
+        let mut latest_solution = run_phase1(
+            solver, encoding, sched, entries, &selected_indices,
+            &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost,
+        );
+        if latest_solution.is_none() {
+            if let Some(cost_obj) = plan_cost_obj {
+                latest_solution = run_phase2(
+                    solver, encoding, sched, entries, &selected_indices,
+                    &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost, cost_obj,
+                );
+            }
+        }
+        if let Some(ref sol) = latest_solution {
+            final_obj_val = Some(sol.eval(obj).unwrap());
+        }
+    }
+
+    let surviving_str = selected_indices.iter()
+        .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+    let dropped_str = dropped.iter()
+        .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+    println!("\n[SIM][{}] Phase 1 done: {} steps, surviving: [{}], dropped: [{}]",
+        path_label, steps, surviving_str, dropped_str);
+
+    PruneResult { selected: selected_indices, dropped, steps, final_obj_val }
+}
+
+// =====================================================================
 // All-combinations — every permutation of violated indices.
 // Warning: grows as N!, only practical for small N.
 // =====================================================================
@@ -394,7 +507,7 @@ pub(crate) fn simulate_preference_enforcement(
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &violated_indices, "greedy",
+                stop_threshold, &violated_indices, &[], "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -417,7 +530,7 @@ pub(crate) fn simulate_preference_enforcement(
                 let result = run_one_by_one(
                     &mut solver.clone(), encoding, model, sched, &entries, &weights,
                     plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    stop_threshold, perm, &label,
+                    stop_threshold, perm, &[], &label,
                 );
                 let perm_names: Vec<&str> = perm.iter().map(|&i| entries[i].name.as_str()).collect();
                 let enforced_names: Vec<&str> = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect();
@@ -449,6 +562,36 @@ pub(crate) fn simulate_preference_enforcement(
             if let Some((steps, _, _, _)) = worst {
                 let _metrics = SimulationMetrics { steps, outcome: Outcome::Accepted };
             }
+        }
+        Strategy::AllAtOnce => {
+            let mut sim_solver = solver.clone();
+
+            // Phase 1: select all, prune until feasible.
+            let prune = run_prune(
+                &mut sim_solver, encoding, model, sched, &entries, &weights,
+                plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                &violated_indices, "all-at-once",
+            );
+
+            // Phase 2: re-add dropped preferences (in drop order) via the queue loop.
+            println!("\n[SIM] Phase 2: re-adding {} dropped preferences...", prune.dropped.len());
+            let phase2 = run_one_by_one(
+                &mut sim_solver, encoding, model, sched, &entries, &weights,
+                plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                stop_threshold, &prune.dropped, &prune.selected, "all-at-once-readd",
+            );
+
+            let total_steps = prune.steps + phase2.steps;
+            let final_obj = phase2.final_obj_val.or(prune.final_obj_val);
+            let enforced_str = phase2.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+            println!("\n[SIM] AllAtOnce enforced: [{}]", enforced_str);
+            println!("[SIM] Phase 1: {} steps, Phase 2: {} steps, Total: {} steps",
+                prune.steps, phase2.steps, total_steps);
+            if let Some(final_val) = final_obj {
+                println!("[SIM] Optimal objective: {}, final objective: {}, distance to optimal: {}",
+                    optimal_obj_val, final_val, final_val - optimal_obj_val);
+            }
+            let _metrics = SimulationMetrics { steps: total_steps, outcome: Outcome::Accepted };
         }
     }
 }
