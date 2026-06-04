@@ -1,5 +1,5 @@
+use crate::legacy::id_map::IdMap;
 use crate::legacy::input::Sym;
-use aries::collections::id_map::IdMap;
 use aries::collections::ref_store::RefPool;
 use aries::prelude::*;
 use std::borrow::Borrow;

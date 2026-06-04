@@ -19,3 +19,4 @@ regex = { workspace = true }
 aries = { path = "../../solver" }
 env_param = { path = "../../env_param" }
 pathfinding = { workspace = true }
+vec_map = { workspace = true }

@@ -128,7 +128,6 @@ dependencies = [
  "rand",
  "smallvec",
  "tracing",
- "vec_map",
 ]
 
 [[package]]
@@ -288,6 +287,7 @@ dependencies = [
  "smallvec",
  "streaming-iterator",
  "tracing",
+ "vec_map",
 ]
 
 [[package]]

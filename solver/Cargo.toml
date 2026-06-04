@@ -29,7 +29,6 @@ i128 = []
 
 [dependencies]
 bumpalo = { workspace = true }
-vec_map = { workspace = true }
 crossbeam-channel = { workspace = true }
 smallvec = { workspace = true }
 lru = { workspace = true }

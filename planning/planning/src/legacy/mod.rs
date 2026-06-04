@@ -23,6 +23,7 @@ pub use symbols::*;
 pub use types::*;
 pub use variables::*;
 
+pub(crate) mod id_map;
 pub mod input;
 pub mod utils;
 

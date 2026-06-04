@@ -1,6 +1,6 @@
+use crate::legacy::id_map::IdMap;
 use crate::legacy::*;
 use anyhow::*;
-use aries::collections::id_map::IdMap;
 use aries::core::{u32_to_cst, IntCst};
 use aries::create_ref_type;
 use std::cmp::Eq;
