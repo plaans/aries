@@ -2,16 +2,13 @@
 //!
 //! Two strategies:
 //!   - **Greedy**: descending utility order; runs [`run_one_by_one`] once.
-//!   - **AllAtOnce**: selects all violated preferences at once, prunes
-//!     until feasible ([`run_prune`]), then re-adds dropped preferences
-//!     via [`run_one_by_one`].
+//!   - **AllAtOnce**: selects all violated preferences at once, then
+//!     prunes until feasible ([`run_prune`]).
 //!
 //! Conflict resolution: analyze MUSes to find which preferences are in
 //! conflict, then drop the one with the lowest utility.
-//! Dropped preferences are re-enqueued and retried later (the solver state
-//! may have changed). Retries stop when a full pass makes no progress.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use aries::prelude::*;
 use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
@@ -34,7 +31,7 @@ use crate::explain_preferences::{
 pub(crate) enum Strategy {
     /// Enforce violated preferences by descending utility; drop cheapest on conflict.
     Greedy,
-    /// Select all violated at once, trim until feasible, then re-add dropped.
+    /// Select all violated at once, trim until feasible.
     AllAtOnce,
 }
 
@@ -130,18 +127,16 @@ fn pick_cheapest_in_conflict(
 }
 
 // =====================================================================
-// One-by-one enforcement loop.
+// One-by-one enforcement (Greedy).
 //
-// Uses a queue seeded with the initial ordering. On conflict, dropped
-// preferences are pushed to the back for retry. Stops when the queue
-// is empty or a full pass yields no successful enforcement.
+// Single pass over preferences in descending utility order. On conflict,
+// the newly added preference is always the cheapest — drop it and move on.
 // =====================================================================
 
 struct PathResult {
     steps: usize,
     outcome: Outcome,
     enforced: Vec<usize>,
-    /// Final objective value after enforcement (None if no solution found)
     final_obj_val: Option<IntCst>,
 }
 
@@ -151,145 +146,82 @@ fn run_one_by_one(
     model: &Model,
     sched: &Sched,
     entries: &[PreferenceEntry],
-    weights: &BTreeMap<String, i64>,
     plan_cost_obj: Option<IntTerm>,
     optimal_obj_val: IntCst,
     optimal_plan_cost: Option<IntCst>,
     stop_threshold: Option<IntCst>,
-    initial_ordering: &[usize],
-    initial_selected: &[usize],
+    ordering: &[usize],
     path_label: &str,
 ) -> PathResult {
     let obj = encoding.objectives[0];
-    let mut selected_indices: Vec<usize> = initial_selected.to_vec();
+    let mut selected_indices: Vec<usize> = Vec::new();
     let mut steps: usize = 0;
     let mut last_obj_val: Option<IntCst> = None;
 
-    let mut queue: VecDeque<usize> = initial_ordering.iter().copied().collect();
-    let mut consecutive_failures: usize = 0;
-
-    while let Some(next_idx) = queue.pop_front() {
-        // Already enforced from a previous iteration — skip without
-        // affecting the failure counter (neither success nor failure).
-        if selected_indices.contains(&next_idx) {
-            continue;
-        }
-
+    for &next_idx in ordering {
         steps += 1;
         selected_indices.push(next_idx);
         println!("\n[SIM][{}] Step {}: enforce {}", path_label, steps, entries[next_idx].name);
 
-        // Resolve conflicts until feasible or empty
-        loop {
-            if selected_indices.is_empty() { break; }
+        let selected_pref_lits: Vec<Lit> = selected_indices.iter()
+            .flat_map(|&i| entries[i].lits.iter().copied()).collect();
+        let selected_names: BTreeSet<String> = selected_indices.iter()
+            .map(|&i| entries[i].name.clone()).collect();
 
-            let selected_pref_lits: Vec<Lit> = selected_indices.iter()
-                .flat_map(|&i| entries[i].lits.iter().copied()).collect();
-            let selected_names: BTreeSet<String> = selected_indices.iter()
-                .map(|&i| entries[i].name.clone()).collect();
-
-            if crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits) {
-                break;
-            }
-
-            println!("\n[SIM][{}] Selection infeasible, analyzing conflicts...", path_label);
+        if !crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits) {
+            println!("\n[SIM][{}] Infeasible, analyzing conflicts...", path_label);
             let analysis = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
             display_conflicts(&analysis.muses, &selected_names, model);
-
             steps += 1;
-            match pick_cheapest_in_conflict(&analysis.muses, &selected_names, weights) {
-                Some(name_to_drop) => {
-                    println!("[SIM][{}] Drop cheapest in conflict: {}", path_label, name_to_drop);
-                    let dropped_idx = selected_indices.iter()
-                        .position(|&i| entries[i].name == name_to_drop).unwrap();
-                    let idx = selected_indices.remove(dropped_idx);
-                    queue.push_back(idx);
-                    if selected_indices.is_empty() {
-                        println!("\n[SIM][{}] All selected preferences were dropped.", path_label);
-                    }
-                }
-                None => {
-                    break;
-                }
+            println!("[SIM][{}] Drop: {}", path_label, entries[next_idx].name);
+            selected_indices.pop();
+            continue;
+        }
+
+        let mut latest_solution = run_phase1(
+            solver, encoding, sched, entries, &selected_indices,
+            &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost,
+        );
+        if latest_solution.is_none() {
+            if let Some(cost_obj) = plan_cost_obj {
+                latest_solution = run_phase2(
+                    solver, encoding, sched, entries, &selected_indices,
+                    &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost, cost_obj,
+                );
             }
         }
 
-        // A "failure" is when next_idx itself was dropped — not when some
-        // other preference was dropped as collateral (that counts as success
-        // because next_idx survived and the solver state changed).
-        if selected_indices.contains(&next_idx) {
-            consecutive_failures = 0;
-        } else {
-            consecutive_failures += 1;
-            // Full pass without progress: every queued preference was tried
-            // and none survived. Solver state unchanged → retrying is futile.
-            if consecutive_failures >= queue.len() && !queue.is_empty() {
-                let remaining: Vec<&str> = queue.iter()
-                    .filter(|&&i| !selected_indices.contains(&i))
-                    .map(|&i| entries[i].name.as_str()).collect();
-                println!("\n[SIM][{}] No progress — {} consecutive failures, stopping retries. Unenforced: [{}]",
-                    path_label, consecutive_failures, remaining.join(", "));
-                break;
+        if let Some(ref sol) = latest_solution {
+            last_obj_val = Some(sol.eval(obj).unwrap());
+        }
+
+        if let (Some(current), Some(threshold)) = (last_obj_val, stop_threshold) {
+            if current <= threshold {
+                println!("\n[SIM][{}] Stop threshold reached: objective {} ≤ threshold {}",
+                    path_label, current, threshold);
+                return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
             }
         }
 
-        // Solve: Phase 1 (within cost bound), Phase 2 (relaxed) if needed
-        if !selected_indices.is_empty() {
-            let selected_pref_lits: Vec<Lit> = selected_indices.iter()
-                .flat_map(|&i| entries[i].lits.iter().copied()).collect();
-
-            let mut latest_solution = run_phase1(
-                solver, encoding, sched, entries, &selected_indices,
-                &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost,
-            );
-            if latest_solution.is_none() {
-                if let Some(cost_obj) = plan_cost_obj {
-                    latest_solution = run_phase2(
-                        solver, encoding, sched, entries, &selected_indices,
-                        &selected_pref_lits, obj, optimal_obj_val, optimal_plan_cost, cost_obj,
-                    );
-                }
-            }
-
-            // Track the objective value of the latest solution
-            if let Some(ref sol) = latest_solution {
-                last_obj_val = Some(sol.eval(obj).unwrap());
-            }
-
-            // Early stop: objective reached the user's acceptable level
-            if let (Some(current), Some(threshold)) = (last_obj_val, stop_threshold) {
-                if current <= threshold {
-                    println!("\n[SIM][{}] Stop threshold reached: objective {} ≤ threshold {}",
-                        path_label, current, threshold);
-                    return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
-                }
-            }
-
-            // All preferences satisfied — early exit
-            if let Some(ref sol) = latest_solution {
-                let still_violated = compute_still_violated(entries, &selected_indices, sol);
-                if still_violated.is_empty() {
-                    println!("\n[SIM][{}] All preferences are now satisfied.", path_label);
-                    return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
-                }
+        if let Some(ref sol) = latest_solution {
+            let still_violated = compute_still_violated(entries, &selected_indices, sol);
+            if still_violated.is_empty() {
+                println!("\n[SIM][{}] All preferences are now satisfied.", path_label);
+                return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
             }
         }
     }
 
-    if queue.is_empty() {
-        println!("\n[SIM][{}] No more preferences to try.", path_label);
-    }
+    println!("\n[SIM][{}] No more preferences to try.", path_label);
     PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val }
 }
 
 // =====================================================================
-// AllAtOnce — Phase 1: select all violated, prune until feasible.
-// Returns the surviving set and the dropped indices (in drop order).
+// AllAtOnce — select all violated, prune until feasible.
 // =====================================================================
 
 struct PruneResult {
     selected: Vec<usize>,
-    dropped: Vec<usize>,
     steps: usize,
     final_obj_val: Option<IntCst>,
 }
@@ -309,7 +241,6 @@ fn run_prune(
 ) -> PruneResult {
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = violated_indices.to_vec();
-    let mut dropped: Vec<usize> = Vec::new();
     let mut steps: usize = 1;
 
     let selected_str = selected_indices.iter()
@@ -342,8 +273,7 @@ fn run_prune(
                 println!("[SIM][{}] Drop cheapest in conflict: {}", path_label, name_to_drop);
                 let dropped_idx = selected_indices.iter()
                     .position(|&i| entries[i].name == name_to_drop).unwrap();
-                let idx = selected_indices.remove(dropped_idx);
-                dropped.push(idx);
+                selected_indices.remove(dropped_idx);
             }
             None => {
                 break;
@@ -376,12 +306,10 @@ fn run_prune(
 
     let surviving_str = selected_indices.iter()
         .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
-    let dropped_str = dropped.iter()
-        .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
-    println!("\n[SIM][{}] Phase 1 done: {} steps, surviving: [{}], dropped: [{}]",
-        path_label, steps, surviving_str, dropped_str);
+    println!("\n[SIM][{}] Prune done: {} steps, surviving: [{}]",
+        path_label, steps, surviving_str);
 
-    PruneResult { selected: selected_indices, dropped, steps, final_obj_val }
+    PruneResult { selected: selected_indices, steps, final_obj_val }
 }
 
 // =====================================================================
@@ -461,9 +389,9 @@ pub(crate) fn simulate_preference_enforcement(
             // Enforce highest-utility violated preferences first.
             let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
             let result = run_one_by_one(
-                &mut solver.clone(), encoding, model, sched, &entries, &weights,
+                &mut solver.clone(), encoding, model, sched, &entries,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &ordering, &[], "greedy",
+                stop_threshold, &ordering, "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -474,39 +402,22 @@ pub(crate) fn simulate_preference_enforcement(
             }
         }
         Strategy::AllAtOnce => {
-            let mut sim_solver = solver.clone();
             let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
 
-            // Phase 1: select all (sorted by descending utility), prune until feasible.
             let prune = run_prune(
-                &mut sim_solver, encoding, model, sched, &entries, &weights,
+                &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
                 &ordering, "all-at-once",
             );
 
-            let (total_steps, final_obj, enforced) = if prune.dropped.is_empty() {
-                (prune.steps, prune.final_obj_val, prune.selected.clone())
-            } else {
-                // Phase 2: re-add dropped preferences (in drop order) via the queue loop.
-                println!("\n[SIM] Phase 2: re-adding {} dropped preferences...", prune.dropped.len());
-                let phase2 = run_one_by_one(
-                    &mut sim_solver, encoding, model, sched, &entries, &weights,
-                    plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    stop_threshold, &prune.dropped, &prune.selected, "all-at-once-readd",
-                );
-                let total = prune.steps + phase2.steps;
-                println!("[SIM] Phase 1: {} steps, Phase 2: {} steps", prune.steps, phase2.steps);
-                (total, phase2.final_obj_val.or(prune.final_obj_val), phase2.enforced)
-            };
-
-            let enforced_str = enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+            let enforced_str = prune.selected.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
             println!("\n[SIM] AllAtOnce enforced: [{}]", enforced_str);
-            println!("[SIM] Total steps: {}", total_steps);
-            if let Some(final_val) = final_obj {
+            println!("[SIM] Total steps: {}", prune.steps);
+            if let Some(final_val) = prune.final_obj_val {
                 println!("[SIM] Optimal objective: {}, final objective: {}, distance to optimal: {}",
                     optimal_obj_val, final_val, final_val - optimal_obj_val);
             }
-            let _metrics = SimulationMetrics { steps: total_steps, outcome: Outcome::Accepted };
+            let _metrics = SimulationMetrics { steps: prune.steps, outcome: Outcome::Accepted };
         }
     }
 }
