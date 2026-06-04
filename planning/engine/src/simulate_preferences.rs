@@ -1,14 +1,17 @@
 //! Simulated preference enforcement for automated experimental evaluation.
 //!
-//! Two one-by-one strategies:
-//!   - **Greedy**: always pick the highest-utility violated preference next.
-//!   - **AllCombinations**: also one-by-one, but tries every possible ordering
-//!     (all permutations) instead of just highest-utility first.
+//! Two strategies, both using the same one-by-one enforcement loop
+//! ([`run_one_by_one`]):
+//!   - **Greedy**: natural PDDL order; runs the loop once.
+//!   - **AllCombinations**: runs the loop once per permutation of the
+//!     violated preferences (N! times), then reports best/worst.
 //!
-//! Both share the same conflict resolution: drop the lowest-utility preference.
-//! Dropped preferences can be re-attempted later (solver state may have changed).
+//! The greedy behavior lives in conflict resolution (`pick_best_mcs`):
+//! always drop the cheapest preference. This is shared by both strategies.
+//! Dropped preferences are re-enqueued and retried later (the solver state
+//! may have changed). Retries stop when a full pass makes no progress.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use aries::prelude::*;
 use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
@@ -30,9 +33,9 @@ use crate::explain_preferences::{
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub(crate) enum Strategy {
-    /// Always pick the highest-utility violated preference next.
+    /// Natural PDDL order; greedy conflict resolution (drop cheapest preference).
     Greedy,
-    /// One-by-one like Greedy, but explores all possible orderings instead of just highest-utility.
+    /// Runs the same loop for every permutation; reports best and worst paths.
     AllCombinations,
 }
 
@@ -117,12 +120,14 @@ fn mcs_dropped_prefs<'a>(mcs: &'a BTreeSet<Tag>, selected_names: &'a BTreeSet<St
 }
 
 /// Pick the MCS that drops the cheapest preference (lowest utility).
+/// Tie-breaking: fewest drops, then alphabetical name.
 fn pick_best_mcs(mcses: &[BTreeSet<Tag>], selected_names: &BTreeSet<String>, weights: &BTreeMap<String, i64>) -> Option<usize> {
     mcses.iter().enumerate()
         .filter_map(|(i, mcs)| {
             let dropped = mcs_dropped_prefs(mcs, selected_names);
             if dropped.is_empty() { return None; }
             let min_weight = dropped.iter().map(|n| weights.get(*n).copied().unwrap_or(0)).min().unwrap();
+            // Score: (lowest weight dropped, number of drops, name) — min wins
             Some((i, (min_weight, dropped.len(), dropped.iter().min().unwrap().to_string())))
         })
         .min_by_key(|(_, s)| s.clone())
@@ -143,9 +148,9 @@ fn pick_best_mcs(mcses: &[BTreeSet<Tag>], selected_names: &BTreeSet<String>, wei
 // =====================================================================
 // One-by-one enforcement loop (shared core for both strategies).
 //
-// Walks through `ordering` and enforces preferences one at a time.
-// On conflict, drops the lowest-utility preference. The ordering is
-// repeated N times so dropped preferences get re-attempted later.
+// Uses a queue seeded with the initial ordering. On conflict, dropped
+// preferences are pushed to the back for retry. Stops when the queue
+// is empty or a full pass yields no successful enforcement.
 // =====================================================================
 
 struct PathResult {
@@ -163,31 +168,24 @@ fn run_one_by_one(
     sched: &Sched,
     entries: &[PreferenceEntry],
     weights: &BTreeMap<String, i64>,
-    _violated_indices: &[usize],
     plan_cost_obj: Option<IntTerm>,
     optimal_obj_val: IntCst,
     optimal_plan_cost: Option<IntCst>,
     stop_threshold: IntCst,
-    ordering: &[usize],
+    initial_ordering: &[usize],
     path_label: &str,
 ) -> PathResult {
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = Vec::new();
     let mut steps: usize = 0;
-    let mut order_pos = 0;
     let mut last_obj_val: Option<IntCst> = None;
 
-    loop {
-        // Exhausted the ordering — done
-        if order_pos >= ordering.len() {
-            println!("\n[SIM][{}] No more preferences to try.", path_label);
-            return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
-        }
+    let mut queue: VecDeque<usize> = initial_ordering.iter().copied().collect();
+    let mut consecutive_failures: usize = 0;
 
-        let next_idx = ordering[order_pos];
-        order_pos += 1;
-
-        // Already enforced — skip
+    while let Some(next_idx) = queue.pop_front() {
+        // Already enforced from a previous iteration — skip without
+        // affecting the failure counter (neither success nor failure).
         if selected_indices.contains(&next_idx) {
             continue;
         }
@@ -221,7 +219,15 @@ fn run_one_by_one(
                         .into_iter().collect();
                     println!("[SIM][{}] Applying R{}: drop {}", path_label, best_idx + 1,
                         prefs_to_drop.iter().copied().collect::<Vec<_>>().join(", "));
+                    let dropped_indices: Vec<usize> = selected_indices.iter()
+                        .filter(|&&i| prefs_to_drop.contains(entries[i].name.as_str()))
+                        .copied().collect();
                     selected_indices.retain(|&i| !prefs_to_drop.contains(entries[i].name.as_str()));
+                    // Re-enqueue dropped preferences: solver state may change
+                    // after future enforcements, making them feasible again.
+                    for idx in dropped_indices {
+                        queue.push_back(idx);
+                    }
                     if selected_indices.is_empty() {
                         println!("\n[SIM][{}] All selected preferences were dropped.", path_label);
                     }
@@ -229,6 +235,25 @@ fn run_one_by_one(
                 None => {
                     break;
                 }
+            }
+        }
+
+        // A "failure" is when next_idx itself was dropped — not when some
+        // other preference was dropped as collateral (that counts as success
+        // because next_idx survived and the solver state changed).
+        if selected_indices.contains(&next_idx) {
+            consecutive_failures = 0;
+        } else {
+            consecutive_failures += 1;
+            // Full pass without progress: every queued preference was tried
+            // and none survived. Solver state unchanged → retrying is futile.
+            if consecutive_failures >= queue.len() && !queue.is_empty() {
+                let remaining: Vec<&str> = queue.iter()
+                    .filter(|&&i| !selected_indices.contains(&i))
+                    .map(|&i| entries[i].name.as_str()).collect();
+                println!("\n[SIM][{}] No progress — {} consecutive failures, stopping retries. Unenforced: [{}]",
+                    path_label, consecutive_failures, remaining.join(", "));
+                break;
             }
         }
 
@@ -274,26 +299,11 @@ fn run_one_by_one(
             }
         }
     }
-}
 
-// =====================================================================
-// Greedy ordering — descending utility, repeated N times for re-attempts.
-// =====================================================================
-
-fn build_greedy_ordering(violated_indices: &[usize], entries: &[PreferenceEntry], weights: &BTreeMap<String, i64>) -> Vec<usize> {
-    let mut sorted: Vec<usize> = violated_indices.to_vec();
-    sorted.sort_by(|&a, &b| {
-        let wa = weights.get(&entries[a].name).copied().unwrap_or(0);
-        let wb = weights.get(&entries[b].name).copied().unwrap_or(0);
-        wb.cmp(&wa).then_with(|| entries[a].name.cmp(&entries[b].name))
-    });
-
-    let n = sorted.len();
-    let mut ordering = Vec::with_capacity(n * n);
-    for _ in 0..n {
-        ordering.extend_from_slice(&sorted);
+    if queue.is_empty() {
+        println!("\n[SIM][{}] No more preferences to try.", path_label);
     }
-    ordering
+    PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val }
 }
 
 // =====================================================================
@@ -315,15 +325,6 @@ fn permutations(items: &[usize]) -> Vec<Vec<usize>> {
         }
     }
     result
-}
-
-/// Repeat a permutation N times for re-attempting dropped preferences.
-fn build_combination_ordering_with_retries(perm: &[usize], n_rounds: usize) -> Vec<usize> {
-    let mut ordering = Vec::with_capacity(perm.len() * n_rounds);
-    for _ in 0..n_rounds {
-        ordering.extend_from_slice(perm);
-    }
-    ordering
 }
 
 // =====================================================================
@@ -389,11 +390,11 @@ pub(crate) fn simulate_preference_enforcement(
 
     match strategy {
         Strategy::Greedy => {
-            let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
+            // Single run with natural PDDL order; pick_best_mcs is the only greedy component.
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
-                &violated_indices, plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &ordering, "greedy",
+                plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                stop_threshold, &violated_indices, "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -405,19 +406,18 @@ pub(crate) fn simulate_preference_enforcement(
         }
         Strategy::AllCombinations => {
             let perms = permutations(&violated_indices);
-            let n = violated_indices.len();
-            println!("[SIM] Exploring {} paths ({} violated preferences)\n", perms.len(), n);
+            println!("[SIM] Exploring {} paths ({} violated preferences)\n", perms.len(), violated_indices.len());
 
-            let mut best: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;  // (steps, delta, path_idx, enforced)
+            let mut best: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;
             let mut worst: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;
 
             for (pi, perm) in perms.iter().enumerate() {
-                let ordering = build_combination_ordering_with_retries(perm, n);
                 let label = format!("path-{}", pi + 1);
+                // Fresh solver clone per path — each permutation is independent.
                 let result = run_one_by_one(
                     &mut solver.clone(), encoding, model, sched, &entries, &weights,
-                    &violated_indices, plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    stop_threshold, &ordering, &label,
+                    plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                    stop_threshold, perm, &label,
                 );
                 let perm_names: Vec<&str> = perm.iter().map(|&i| entries[i].name.as_str()).collect();
                 let enforced_names: Vec<&str> = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect();
