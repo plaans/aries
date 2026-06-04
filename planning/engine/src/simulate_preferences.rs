@@ -1,13 +1,13 @@
 //! Simulated preference enforcement for automated experimental evaluation.
 //!
 //! Two strategies:
-//!   - **Greedy**: natural PDDL order; runs [`run_one_by_one`] once.
+//!   - **Greedy**: descending utility order; runs [`run_one_by_one`] once.
 //!   - **AllAtOnce**: selects all violated preferences at once, prunes
 //!     until feasible ([`run_prune`]), then re-adds dropped preferences
 //!     via [`run_one_by_one`].
 //!
-//! The greedy behavior lives in conflict resolution (`pick_best_mcs`):
-//! always drop the cheapest preference. This is shared by all strategies.
+//! Conflict resolution: analyze MUSes to find which preferences are in
+//! conflict, then drop the one with the lowest utility.
 //! Dropped preferences are re-enqueued and retried later (the solver state
 //! may have changed). Retries stop when a full pass makes no progress.
 
@@ -24,7 +24,6 @@ use crate::explain_preferences::{
     build_preference_entries, collect_mus_mcs, compute_plan_cost,
     compute_still_violated, display_conflicts,
     print_preference_list, run_phase1, run_phase2,
-    display_resolutions,
 };
 
 // =====================================================================
@@ -105,33 +104,29 @@ fn collect_weights(model: &Model, expr_id: ExprId, weights: &mut BTreeMap<String
 }
 
 // =====================================================================
-// MCS scoring — on conflict, pick the resolution that drops the
-// preference with the lowest utility.
+// Conflict resolution — from MUSes, pick the preference with the
+// lowest utility. Tie-breaking: alphabetical name.
 // =====================================================================
 
-/// Which selected preferences does this MCS drop?
-fn mcs_dropped_prefs<'a>(mcs: &'a BTreeSet<Tag>, selected_names: &'a BTreeSet<String>) -> Vec<&'a str> {
-    mcs.iter()
+fn pick_cheapest_in_conflict(
+    muses: &[BTreeSet<Tag>],
+    selected_names: &BTreeSet<String>,
+    weights: &BTreeMap<String, i64>,
+) -> Option<String> {
+    let in_conflict: BTreeSet<&str> = muses.iter()
+        .flat_map(|mus| mus.iter())
         .filter_map(|tag| match tag {
             Tag::EnforcePreference(name) if selected_names.contains(name.as_str()) => Some(name.as_str()),
             _ => None,
         })
-        .collect()
-}
-
-/// Pick the MCS that drops the cheapest preference (lowest utility).
-/// Tie-breaking: fewest drops, then alphabetical name.
-fn pick_best_mcs(mcses: &[BTreeSet<Tag>], selected_names: &BTreeSet<String>, weights: &BTreeMap<String, i64>) -> Option<usize> {
-    mcses.iter().enumerate()
-        .filter_map(|(i, mcs)| {
-            let dropped = mcs_dropped_prefs(mcs, selected_names);
-            if dropped.is_empty() { return None; }
-            let min_weight = dropped.iter().map(|n| weights.get(*n).copied().unwrap_or(0)).min().unwrap();
-            // Score: (lowest weight dropped, number of drops, name) — min wins
-            Some((i, (min_weight, dropped.len(), dropped.iter().min().unwrap().to_string())))
+        .collect();
+    in_conflict.iter()
+        .min_by(|&&a, &&b| {
+            let wa = weights.get(a).copied().unwrap_or(0);
+            let wb = weights.get(b).copied().unwrap_or(0);
+            wa.cmp(&wb).then_with(|| a.cmp(b))
         })
-        .min_by_key(|(_, s)| s.clone())
-        .map(|(i, _)| i)
+        .map(|&name| name.to_string())
 }
 
 // =====================================================================
@@ -198,26 +193,17 @@ fn run_one_by_one(
             }
 
             println!("\n[SIM][{}] Selection infeasible, analyzing conflicts...", path_label);
-            let mus_mcs = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
-            display_conflicts(&mus_mcs.muses, &selected_names, model);
-            display_resolutions(&mus_mcs.mcses, &selected_names, model);
+            let analysis = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
+            display_conflicts(&analysis.muses, &selected_names, model);
 
             steps += 1;
-            match pick_best_mcs(&mus_mcs.mcses, &selected_names, weights) {
-                Some(best_idx) => {
-                    let prefs_to_drop: BTreeSet<&str> = mcs_dropped_prefs(&mus_mcs.mcses[best_idx], &selected_names)
-                        .into_iter().collect();
-                    println!("[SIM][{}] Applying R{}: drop {}", path_label, best_idx + 1,
-                        prefs_to_drop.iter().copied().collect::<Vec<_>>().join(", "));
-                    let dropped_indices: Vec<usize> = selected_indices.iter()
-                        .filter(|&&i| prefs_to_drop.contains(entries[i].name.as_str()))
-                        .copied().collect();
-                    selected_indices.retain(|&i| !prefs_to_drop.contains(entries[i].name.as_str()));
-                    // Re-enqueue dropped preferences: solver state may change
-                    // after future enforcements, making them feasible again.
-                    for idx in dropped_indices {
-                        queue.push_back(idx);
-                    }
+            match pick_cheapest_in_conflict(&analysis.muses, &selected_names, weights) {
+                Some(name_to_drop) => {
+                    println!("[SIM][{}] Drop cheapest in conflict: {}", path_label, name_to_drop);
+                    let dropped_idx = selected_indices.iter()
+                        .position(|&i| entries[i].name == name_to_drop).unwrap();
+                    let idx = selected_indices.remove(dropped_idx);
+                    queue.push_back(idx);
                     if selected_indices.is_empty() {
                         println!("\n[SIM][{}] All selected preferences were dropped.", path_label);
                     }
@@ -347,22 +333,17 @@ fn run_prune(
         }
 
         println!("\n[SIM][{}] Selection infeasible, analyzing conflicts...", path_label);
-        let mus_mcs = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
-        display_conflicts(&mus_mcs.muses, &selected_names, model);
-        display_resolutions(&mus_mcs.mcses, &selected_names, model);
+        let analysis = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
+        display_conflicts(&analysis.muses, &selected_names, model);
 
         steps += 1;
-        match pick_best_mcs(&mus_mcs.mcses, &selected_names, weights) {
-            Some(best_idx) => {
-                let prefs_to_drop: BTreeSet<&str> = mcs_dropped_prefs(&mus_mcs.mcses[best_idx], &selected_names)
-                    .into_iter().collect();
-                println!("[SIM][{}] Applying R{}: drop {}", path_label, best_idx + 1,
-                    prefs_to_drop.iter().copied().collect::<Vec<_>>().join(", "));
-                let dropped_indices: Vec<usize> = selected_indices.iter()
-                    .filter(|&&i| prefs_to_drop.contains(entries[i].name.as_str()))
-                    .copied().collect();
-                selected_indices.retain(|&i| !prefs_to_drop.contains(entries[i].name.as_str()));
-                dropped.extend(dropped_indices);
+        match pick_cheapest_in_conflict(&analysis.muses, &selected_names, weights) {
+            Some(name_to_drop) => {
+                println!("[SIM][{}] Drop cheapest in conflict: {}", path_label, name_to_drop);
+                let dropped_idx = selected_indices.iter()
+                    .position(|&i| entries[i].name == name_to_drop).unwrap();
+                let idx = selected_indices.remove(dropped_idx);
+                dropped.push(idx);
             }
             None => {
                 break;
