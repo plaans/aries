@@ -1,13 +1,12 @@
 use num_integer::{div_ceil, div_floor};
-use smallvec::{SmallVec, smallvec};
+use smallvec::SmallVec;
 
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
-use crate::lang::{BoolExpr, ConversionError, IAtom, IntExpr, Store};
+use crate::lang::{BoolExpr, IntExpr, Store};
 use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
-use crate::{transitive_conversion, transitive_conversions};
 use std::fmt::{Debug, Display};
 
 /* ========================================================================== */
@@ -53,29 +52,6 @@ impl Display for ScaledVar {
 impl std::fmt::Debug for ScaledVar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
-    }
-}
-
-impl From<SignedVar> for ScaledVar {
-    fn from(value: SignedVar) -> Self {
-        Self {
-            var: value.variable(),
-            factor: value.sign(),
-        }
-    }
-}
-impl std::ops::Mul<IntCst> for Var {
-    type Output = ScaledVar;
-
-    fn mul(self, rhs: IntCst) -> Self::Output {
-        ScaledVar::new(self, rhs)
-    }
-}
-impl std::ops::Mul<Var> for IntCst {
-    type Output = ScaledVar;
-
-    fn mul(self, rhs: Var) -> Self::Output {
-        ScaledVar::new(rhs, self)
     }
 }
 
@@ -162,20 +138,6 @@ impl Boundable for ScaledVar {
     }
 }
 
-impl std::ops::Neg for ScaledVar {
-    type Output = ScaledVar;
-
-    fn neg(self) -> Self::Output {
-        ScaledVar::new(self.var, -self.factor)
-    }
-}
-impl std::ops::Neg for &ScaledVar {
-    type Output = ScaledVar;
-
-    fn neg(self) -> Self::Output {
-        ScaledVar::new(self.var, -self.factor)
-    }
-}
 impl Term for ScaledVar {
     fn variable(self) -> Var {
         self.var
@@ -185,12 +147,12 @@ impl Term for ScaledVar {
 /// A term of the form `a * X + b` where `X` is an integer variable and `a` and `b` are integer constants.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LinTerm {
-    scaled_var: ScaledVar,
-    constant: IntCst,
+    pub scaled_var: ScaledVar,
+    pub constant: IntCst,
 }
 
 impl LinTerm {
-    const fn new(scaled_var: ScaledVar, constant: IntCst) -> Self {
+    pub const fn new(scaled_var: ScaledVar, constant: IntCst) -> Self {
         Self { scaled_var, constant }
     }
     pub const fn int_cst(constant: IntCst) -> Self {
@@ -254,109 +216,34 @@ impl Term for LinTerm {
     }
 }
 
-impl std::ops::Neg for LinTerm {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        Self::new(-self.scaled_var, -self.constant)
-    }
-}
-impl<T: Into<LinTerm>> std::ops::Add<T> for LinTerm {
-    type Output = LinSum;
-
-    fn add(self, rhs: T) -> Self::Output {
-        LinSum::from(self) + rhs.into()
-    }
-}
-impl std::ops::Sub<LinTerm> for LinTerm {
-    type Output = LinSum;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        LinSum::from(self) - rhs
-    }
-}
-impl std::ops::Add<IntCst> for SignedVar {
-    type Output = LinTerm;
-
-    fn add(self, rhs: IntCst) -> Self::Output {
-        self.sign() * self.variable() + rhs
-    }
-}
-impl std::ops::Add<IntCst> for ScaledVar {
-    type Output = LinTerm;
-
-    fn add(self, rhs: IntCst) -> Self::Output {
-        LinTerm::new(self, rhs)
-    }
-}
-impl std::ops::Add<SignedVar> for IntCst {
-    type Output = LinTerm;
-
-    fn add(self, rhs: SignedVar) -> Self::Output {
-        rhs + self
-    }
-}
-impl std::ops::Add<ScaledVar> for IntCst {
-    type Output = LinTerm;
-
-    fn add(self, rhs: ScaledVar) -> Self::Output {
-        rhs + self
-    }
-}
-
-impl From<IntCst> for LinTerm {
-    fn from(value: IntCst) -> Self {
-        LinTerm::int_cst(value)
-    }
-}
-impl From<IAtom> for LinTerm {
-    fn from(value: IAtom) -> Self {
-        Self {
-            scaled_var: ScaledVar::new(value.var.variable(), 1),
-            constant: value.shift,
-        }
-    }
-}
-impl From<ScaledVar> for LinTerm {
-    fn from(value: ScaledVar) -> Self {
-        Self::new(value, 0)
-    }
-}
-impl TryFrom<LinTerm> for ScaledVar {
-    type Error = ConversionError;
-
-    fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
-        if value.constant == 0 {
-            Ok(value.scaled_var)
-        } else {
-            Err(ConversionError::NotPure)
-        }
-    }
-}
-
-impl TryFrom<LinTerm> for IntCst {
-    type Error = ConversionError;
-
-    fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
-        if value.scaled_var.is_zero() {
-            Ok(value.constant)
-        } else {
-            Err(ConversionError::NotConstant)
-        }
-    }
-}
-
-transitive_conversion!(LinTerm, ScaledVar, SignedVar);
-transitive_conversion!(LinTerm, IAtom, Var);
-transitive_conversion!(LinSum, LinTerm, Var);
-transitive_conversion!(LinSum, LinTerm, SignedVar);
-transitive_conversion!(LinSum, LinTerm, IAtom);
-transitive_conversions!(LinSum, LinTerm, IntCst);
-transitive_conversions!(LinSum, LinTerm, ScaledVar);
-
+/// A linear sum representation, of the form `c + c1 * X1 + c2 * X2 + ...`.
+///
+/// The linear sum is *always* in a normalized form:
+///  - a variable may only occur once
+///  - no variables appear with a factor of 0
+///  - the variables [`Var::ZERO`] and [`Var::ONE`] may not appear
+///  - the terms are sorted (with the variables as sorting keys)
+///
+/// ## Performance
+///
+/// The type guarantees no allocation for sum with at most two variables.
+///
+/// Maintaining the invariant that the sum is in normal form is in
+/// `O(n*log(n))` where `n` is the number of terms in the sum.
+/// This can make constructed a sum iteratively by adding element one by one
+/// expensive for large sum (you pay the cost at each addition).
+///
+/// The typical work around would be to do batched addition ([`LinSum::new`] accepts an iterator )
+/// but we may consider having a builder (which fits more naturally in existing code) if that becomes
+/// a recurring issue (similar to `ConjunctionBuilder`)
+///
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct LinSum {
+    /// All scaled variables appearing in the sum (`ci +Xi`).
+    ///
+    /// IMPORTANT: must remain private, to ensure that invariants always hold
     vars: SmallVec<[ScaledVar; 2]>,
+    /// Constant term in the sum (`c`)
     constant: IntCst,
 }
 
@@ -404,9 +291,12 @@ impl LinSum {
         Conjunction::from_iter(self.vars.iter().map(|sv| dom.presence(sv.var)))
     }
 
-    /// Simplify the variables to their normal form
+    /// Simplify the terms of the expression, into a normalized expression that satisfies
+    /// all our invariants.
     ///
     /// Note that it should be an invariant that the `LinearSum` is always in its normal form.
+    ///
+    /// This is private because no-one should be able to hold a `LinSum` chare
     fn simplify(&mut self) {
         self.vars.sort_unstable_by_key(|sv| sv.var);
         self.vars.dedup_by(|second, first| {
@@ -439,6 +329,10 @@ impl LinSum {
         self.vars.iter().copied()
     }
 
+    pub(crate) fn terms_slice(&self) -> &[ScaledVar] {
+        &self.vars
+    }
+
     /// Returns an iterator over all variables appearing in the sum (without their factor).
     /// Variables are guaranteed to appear at most once.
     pub fn variables(&self) -> impl Iterator<Item = Var> + '_ {
@@ -456,92 +350,20 @@ impl LinSum {
     pub fn get_var(&self, var_index: usize) -> ScaledVar {
         self.vars[var_index]
     }
-}
 
-impl From<LinTerm> for LinSum {
-    fn from(value: LinTerm) -> Self {
-        if value.scaled_var.is_zero() {
-            LinSum::cst(value.constant)
-        } else {
-            Self {
-                vars: smallvec![value.scaled_var],
-                constant: value.constant,
-            }
-        }
-    }
-}
+    // Implementation of operations that require private access
+    // These are publicly exposed as implmentations for `std::ops:*` traits.
 
-impl TryFrom<LinSum> for LinTerm {
-    type Error = ConversionError;
-
-    fn try_from(value: LinSum) -> Result<Self, Self::Error> {
-        match *value.vars.as_slice() {
-            [] => Ok(LinTerm::int_cst(value.constant)),
-            [single] => Ok(LinTerm::new(single, value.constant)),
-            _ => Err(ConversionError::NotVariable),
-        }
-    }
-}
-
-impl<T: Into<Self>> std::ops::AddAssign<T> for LinSum {
-    fn add_assign(&mut self, rhs: T) {
-        let rhs = rhs.into();
-        self.vars.extend_from_slice(&rhs.vars);
-        self.constant += rhs.constant;
+    pub(super) fn add_assign_impl(&mut self, other: Self) {
+        self.vars.extend_from_slice(&other.vars);
+        self.constant += other.constant;
         self.simplify();
     }
-}
-impl<T: Into<Self>> std::ops::Add<T> for LinSum {
-    type Output = Self;
 
-    fn add(mut self, rhs: T) -> Self::Output {
-        self += rhs;
-        self
-    }
-}
-impl std::ops::Neg for LinSum {
-    type Output = LinSum;
-
-    fn neg(mut self) -> Self::Output {
-        self *= -1;
-        self
-    }
-}
-impl<T: Into<Self>> std::ops::SubAssign<T> for LinSum {
-    fn sub_assign(&mut self, rhs: T) {
-        *self += -rhs.into();
+    pub(super) fn mul_assign_impl(&mut self, factor: IntCst) {
+        self.constant *= factor;
+        self.vars.iter_mut().for_each(|sv| sv.factor *= factor);
         self.simplify();
-    }
-}
-impl<T: Into<Self>> std::ops::Sub<T> for LinSum {
-    type Output = Self;
-
-    fn sub(mut self, rhs: T) -> Self::Output {
-        self -= rhs;
-        self
-    }
-}
-impl std::ops::MulAssign<IntCst> for LinSum {
-    fn mul_assign(&mut self, rhs: IntCst) {
-        self.constant *= rhs;
-        self.vars.iter_mut().for_each(|sv| sv.factor *= rhs);
-        self.simplify(); // note: probably useless if the factor is > 0
-    }
-}
-impl std::ops::Mul<IntCst> for LinSum {
-    type Output = Self;
-
-    fn mul(mut self, rhs: IntCst) -> Self::Output {
-        self *= rhs;
-        self
-    }
-}
-impl std::ops::Mul<LinSum> for IntCst {
-    type Output = LinSum;
-
-    fn mul(self, mut rhs: LinSum) -> Self::Output {
-        rhs *= self;
-        rhs
     }
 }
 

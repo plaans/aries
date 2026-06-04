@@ -1,8 +1,6 @@
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
-use crate::lang::ConversionError;
 use std::cmp::Ordering;
-use std::convert::TryFrom;
 use std::fmt::Debug;
 
 /// An int-valued atom `(variable + constant)`
@@ -98,70 +96,6 @@ impl PartialOrd for IAtom {
         } else {
             None
         }
-    }
-}
-
-impl From<Var> for IAtom {
-    fn from(v: Var) -> Self {
-        IAtom::new(v, 0)
-    }
-}
-
-impl<T: IntoIntCst> From<T> for IAtom {
-    fn from(i: T) -> Self {
-        IAtom::new(Var::ZERO, i.into_int_cst())
-    }
-}
-
-impl TryFrom<IAtom> for Var {
-    type Error = ConversionError;
-
-    fn try_from(value: IAtom) -> Result<Self, Self::Error> {
-        if value.shift == 0 {
-            Ok(value.var)
-        } else {
-            Err(ConversionError::NotPure)
-        }
-    }
-}
-
-impl TryFrom<IAtom> for IntCst {
-    type Error = ConversionError;
-
-    fn try_from(value: IAtom) -> Result<Self, Self::Error> {
-        match value.var {
-            Var::ZERO => Ok(value.shift),
-            _ => Err(ConversionError::NotConstant),
-        }
-    }
-}
-
-impl<T: IntoIntCst> std::ops::Add<T> for IAtom {
-    type Output = IAtom;
-
-    fn add(self, rhs: T) -> Self::Output {
-        IAtom::new(self.var, self.shift + rhs.into_int_cst())
-    }
-}
-impl<T: IntoIntCst> std::ops::Add<T> for Var {
-    type Output = IAtom;
-
-    fn add(self, rhs: T) -> Self::Output {
-        IAtom::new(self, rhs.into_int_cst())
-    }
-}
-impl<T: IntoIntCst> std::ops::Sub<T> for IAtom {
-    type Output = IAtom;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        IAtom::new(self.var, self.shift - rhs.into_int_cst())
-    }
-}
-impl<T: IntoIntCst> std::ops::Sub<T> for Var {
-    type Output = IAtom;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        IAtom::new(self, -rhs.into_int_cst())
     }
 }
 

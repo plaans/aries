@@ -70,9 +70,10 @@ pub mod exclusive_choice;
 pub mod expr;
 mod int;
 mod int_expr;
-pub mod linear; // TODO: make pub(crate)
+pub mod linear;
 pub mod max;
 pub mod mul;
+mod ops;
 pub mod reification;
 mod store;
 mod validity_scope;
@@ -99,6 +100,8 @@ pub enum ConversionError {
     /// there is a variable but its value is modified. For instance, this would
     /// occur when trying to convert the atoms representing `!v` or `v + 1` for some variable `v`.
     NotPure,
+    /// The expression is more general than the targetted one.
+    MoreGeneral,
 }
 
 impl std::fmt::Display for ConversionError {
@@ -110,6 +113,7 @@ impl std::fmt::Display for ConversionError {
             ConversionError::NotPure => write!(f, "not a pure"),
             ConversionError::NotExpression => write!(f, "not an expression"),
             ConversionError::NotLiteral => write!(f, "not a bound"),
+            ConversionError::MoreGeneral => write!(f, "more general than target"),
         }
     }
 }
