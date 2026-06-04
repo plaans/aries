@@ -35,7 +35,7 @@ use crate::explain_preferences::{
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy)]
 pub(crate) enum Strategy {
-    /// Natural PDDL order; greedy conflict resolution (drop cheapest preference).
+    /// Enforce violated preferences by descending utility; drop cheapest on conflict.
     Greedy,
     /// Runs the same loop for every permutation; reports best and worst paths.
     AllCombinations,
@@ -140,17 +140,6 @@ fn pick_best_mcs(mcses: &[BTreeSet<Tag>], selected_names: &BTreeSet<String>, wei
 }
 
 // =====================================================================
-// Early stop via user-utility threshold.
-//
-// The :metric minimizes preference violations (lower = better).
-// The threshold is the violation cost the user considers acceptable.
-// When the objective drops to this value or below, the path stops
-// successfully — the user is satisfied, no need to keep improving.
-//
-// Source: PDDL (:user-utility X) if present, otherwise optimal × 2.0.
-// =====================================================================
-
-// =====================================================================
 // One-by-one enforcement loop (shared core for both strategies).
 //
 // Uses a queue seeded with the initial ordering. On conflict, dropped
@@ -176,9 +165,10 @@ fn run_one_by_one(
     plan_cost_obj: Option<IntTerm>,
     optimal_obj_val: IntCst,
     optimal_plan_cost: Option<IntCst>,
-    stop_threshold: IntCst,
+    stop_threshold: Option<IntCst>,
     initial_ordering: &[usize],
     initial_selected: &[usize],
+    reorder_queue_by_utility: bool,
     path_label: &str,
 ) -> PathResult {
     let obj = encoding.objectives[0];
@@ -244,6 +234,15 @@ fn run_one_by_one(
             }
         }
 
+        if reorder_queue_by_utility {
+            let q_slice = queue.make_contiguous();
+            q_slice.sort_by(|&a, &b| {
+                let wa = weights.get(&entries[a].name).copied().unwrap_or(0);
+                let wb = weights.get(&entries[b].name).copied().unwrap_or(0);
+                wb.cmp(&wa).then_with(|| entries[a].name.cmp(&entries[b].name))
+            });
+        }
+
         // A "failure" is when next_idx itself was dropped — not when some
         // other preference was dropped as collateral (that counts as success
         // because next_idx survived and the solver state changed).
@@ -287,10 +286,10 @@ fn run_one_by_one(
             }
 
             // Early stop: objective reached the user's acceptable level
-            if let Some(current) = last_obj_val {
-                if current <= stop_threshold {
-                    println!("\n[SIM][{}] User-utility reached: objective {} ≤ threshold {}",
-                        path_label, current, stop_threshold);
+            if let (Some(current), Some(threshold)) = (last_obj_val, stop_threshold) {
+                if current <= threshold {
+                    println!("\n[SIM][{}] Stop threshold reached: objective {} ≤ threshold {}",
+                        path_label, current, threshold);
                     return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
                 }
             }
@@ -420,6 +419,20 @@ fn run_prune(
 }
 
 // =====================================================================
+// Greedy ordering — descending utility.
+// =====================================================================
+
+fn build_greedy_ordering(violated_indices: &[usize], entries: &[PreferenceEntry], weights: &BTreeMap<String, i64>) -> Vec<usize> {
+    let mut sorted: Vec<usize> = violated_indices.to_vec();
+    sorted.sort_by(|&a, &b| {
+        let wa = weights.get(&entries[a].name).copied().unwrap_or(0);
+        let wb = weights.get(&entries[b].name).copied().unwrap_or(0);
+        wb.cmp(&wa).then_with(|| entries[a].name.cmp(&entries[b].name))
+    });
+    sorted
+}
+
+// =====================================================================
 // All-combinations — every permutation of violated indices.
 // Warning: grows as N!, only practical for small N.
 // =====================================================================
@@ -453,6 +466,7 @@ pub(crate) fn simulate_preference_enforcement(
     phase_assumptions: &[Lit],
     plan_cost_obj: Option<IntTerm>,
     strategy: Strategy,
+    cli_stop_threshold: Option<i64>,
 ) {
     if encoding.preferences.is_empty() { return; }
 
@@ -488,26 +502,23 @@ pub(crate) fn simulate_preference_enforcement(
 
     solver.enforce_permanent(phase_assumptions);
 
-    // Early stop threshold: from PDDL (:user-utility X) if present,
-    // otherwise computed as optimal × DEFAULT_STOP_FACTOR.
-    const DEFAULT_STOP_FACTOR: f64 = 2.0;
-    let stop_threshold: IntCst = if let Some(val) = model.user_utility {
-        println!("[SIM] User-utility threshold (from PDDL): {}", val);
-        val as IntCst
-    } else {
-        let computed = (optimal_obj_val as f64 * DEFAULT_STOP_FACTOR) as IntCst;
-        println!("[SIM] User-utility threshold (computed): {} (optimal {} × {:.1})",
-            computed, optimal_obj_val, DEFAULT_STOP_FACTOR);
-        computed
-    };
+    // Early stop threshold: only active if passed via --stop-threshold.
+    let stop_threshold: Option<IntCst> = cli_stop_threshold.map(|v| {
+        println!("[SIM] Stop threshold (from CLI): {}", v);
+        v as IntCst
+    });
+    if stop_threshold.is_none() {
+        println!("[SIM] Stop threshold: disabled (pass --stop-threshold to enable)");
+    }
 
     match strategy {
         Strategy::Greedy => {
-            // Single run with natural PDDL order; pick_best_mcs is the only greedy component.
+            // Enforce highest-utility violated preferences first.
+            let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &violated_indices, &[], "greedy",
+                stop_threshold, &ordering, &[], true, "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -530,7 +541,7 @@ pub(crate) fn simulate_preference_enforcement(
                 let result = run_one_by_one(
                     &mut solver.clone(), encoding, model, sched, &entries, &weights,
                     plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    stop_threshold, perm, &[], &label,
+                    stop_threshold, perm, &[], false, &label,
                 );
                 let perm_names: Vec<&str> = perm.iter().map(|&i| entries[i].name.as_str()).collect();
                 let enforced_names: Vec<&str> = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect();
@@ -573,20 +584,24 @@ pub(crate) fn simulate_preference_enforcement(
                 &violated_indices, "all-at-once",
             );
 
-            // Phase 2: re-add dropped preferences (in drop order) via the queue loop.
-            println!("\n[SIM] Phase 2: re-adding {} dropped preferences...", prune.dropped.len());
-            let phase2 = run_one_by_one(
-                &mut sim_solver, encoding, model, sched, &entries, &weights,
-                plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &prune.dropped, &prune.selected, "all-at-once-readd",
-            );
+            let (total_steps, final_obj, enforced) = if prune.dropped.is_empty() {
+                (prune.steps, prune.final_obj_val, prune.selected.clone())
+            } else {
+                // Phase 2: re-add dropped preferences (in drop order) via the queue loop.
+                println!("\n[SIM] Phase 2: re-adding {} dropped preferences...", prune.dropped.len());
+                let phase2 = run_one_by_one(
+                    &mut sim_solver, encoding, model, sched, &entries, &weights,
+                    plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                    stop_threshold, &prune.dropped, &prune.selected, true, "all-at-once-readd",
+                );
+                let total = prune.steps + phase2.steps;
+                println!("[SIM] Phase 1: {} steps, Phase 2: {} steps", prune.steps, phase2.steps);
+                (total, phase2.final_obj_val.or(prune.final_obj_val), phase2.enforced)
+            };
 
-            let total_steps = prune.steps + phase2.steps;
-            let final_obj = phase2.final_obj_val.or(prune.final_obj_val);
-            let enforced_str = phase2.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+            let enforced_str = enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
             println!("\n[SIM] AllAtOnce enforced: [{}]", enforced_str);
-            println!("[SIM] Phase 1: {} steps, Phase 2: {} steps, Total: {} steps",
-                prune.steps, phase2.steps, total_steps);
+            println!("[SIM] Total steps: {}", total_steps);
             if let Some(final_val) = final_obj {
                 println!("[SIM] Optimal objective: {}, final objective: {}, distance to optimal: {}",
                     optimal_obj_val, final_val, final_val - optimal_obj_val);
