@@ -7,7 +7,7 @@ use crate::reasoners::stn::theory::{StnConfig, StnTheory, Timepoint, W};
 use crate::reasoners::{Contradiction, Theory};
 
 #[derive(Clone)]
-pub struct Stn {
+pub(crate) struct Stn {
     pub(crate) stn: StnTheory,
     pub model: Model<String>,
 }

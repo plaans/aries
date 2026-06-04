@@ -26,7 +26,7 @@ impl<K, P: PartialOrd> PartialOrd for HeapEntry<K, P> {
 }
 
 #[derive(Clone)]
-pub struct IdxHeap<K, P> {
+pub(crate) struct IdxHeap<K, P> {
     /// binary heap, the first
     heap: Vec<HeapEntry<K, P>>,
     index: RefMap<K, Entry<P>>,

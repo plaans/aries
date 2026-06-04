@@ -100,9 +100,9 @@ pub(crate) const REASONERS: [ReasonerId; 5] = [
 pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
-    pub eq: SplitEqTheory,
-    pub cp: Cp,
-    pub tautologies: Tautologies,
+    pub(crate) eq: SplitEqTheory,
+    pub(crate) cp: Cp,
+    pub(crate) tautologies: Tautologies,
 }
 impl Reasoners {
     pub fn new() -> Self {

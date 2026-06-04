@@ -319,7 +319,7 @@ impl Clause {
     ///   - UNDEF literals
     ///   - FALSE Literal, prioritizing those with the highest decision level
     ///   - left most literal in the original clause (to avoid swapping two literals with the same priority)
-    pub fn move_watches_front(
+    pub(crate) fn move_watches_front(
         &mut self,
         value_of: impl Fn(Lit) -> Option<bool>,
         implying_event: impl Fn(Lit) -> Option<EventIndex>,

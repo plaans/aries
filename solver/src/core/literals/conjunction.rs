@@ -76,7 +76,7 @@ impl Conjunction {
 
 impl<'a> IntoIterator for &'a Conjunction {
     type Item = Lit;
-    type IntoIter = <&'a Lits as IntoIterator>::IntoIter;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, Lit>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.literals.as_ref().iter().copied()
@@ -84,7 +84,7 @@ impl<'a> IntoIterator for &'a Conjunction {
 }
 impl IntoIterator for Conjunction {
     type Item = Lit;
-    type IntoIter = <Lits as IntoIterator>::IntoIter;
+    type IntoIter = smallvec::IntoIter<[Lit; 3]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.literals.into_iter()

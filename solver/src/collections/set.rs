@@ -4,7 +4,7 @@ use super::ref_store::IterableRefMap;
 
 /// A set of values that can be converted into small unsigned integers.
 #[derive(Clone)]
-pub struct RefSet<K> {
+pub(crate) struct RefSet<K> {
     set: RefMap<K, ()>,
 }
 
@@ -66,7 +66,7 @@ impl<K: Ref> Default for RefSet<K> {
 /// and clearing.
 /// THe down side would be slightly slower insertion, where the set msut be queried for duplicated entries.
 #[derive(Clone)]
-pub struct IterableRefSet<K> {
+pub(crate) struct IterableRefSet<K> {
     set: IterableRefMap<K, ()>,
 }
 

@@ -162,7 +162,7 @@ impl std::ops::AddAssign<i32> for EventIndex {
     }
 }
 
-pub enum DecisionLevelClass {
+pub(crate) enum DecisionLevelClass {
     Root,
     Current,
     Intermediate,

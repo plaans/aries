@@ -44,6 +44,6 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
         let mut sa = self.alt1.conj_scope(ctx).into_lits();
         let sb = self.alt2.conj_scope(ctx);
         sa.extend_from_slice(&sb);
-        sa.into()
+        Conjunction::new(sa)
     }
 }

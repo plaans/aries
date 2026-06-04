@@ -6,6 +6,7 @@ use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::lang::expr::geq;
+use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
@@ -528,7 +529,7 @@ impl<Lbl: Label> Solver<Lbl> {
         let mut disjuncts = disjuncts.into_lits();
         disjuncts.push(!scope);
 
-        (disjuncts.into(), Lit::TRUE)
+        (Disjunction::new(disjuncts), Lit::TRUE)
     }
 
     /// Returns true if all constraints are posted.

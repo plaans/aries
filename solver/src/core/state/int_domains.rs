@@ -11,8 +11,7 @@ use crate::core::*;
 /// We enforce an alignment on 8 bytes to make sure it can be read and written in a single instruction.
 #[derive(Copy, Clone, Debug)]
 #[repr(align(8))]
-pub struct ValueCause {
-    /// Current value of the variable bound.
+pub(crate) struct ValueCause {
     pub upper_bound: IntCst,
     /// Index of the event that caused the current value.
     pub cause: ChangeIndex,
@@ -30,7 +29,7 @@ impl ValueCause {
 /// **Invariant:** every domain is non empty. Hence any update that would result in an empty domain
 /// would return an `Error<EmptyDomain>`.
 #[derive(Clone)]
-pub struct IntDomains {
+pub(crate) struct IntDomains {
     /// Associates each lb/ub of each variable to its current value and the event that caused the latest update.
     pub(super) bounds: RefVec<SignedVar, ValueCause>,
     /// All events that updated the bound values.
@@ -146,7 +145,7 @@ impl IntDomains {
 
     /// Returns the index of the first event that makes `lit` true.
     /// If the function returns None, it means that `lit` was true at the root level.
-    pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
+    pub(crate) fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         debug_assert!(self.entails(lit));
         let mut cur = self.bounds[lit.svar()].cause;
         while let Some(loc) = cur {
@@ -215,11 +214,11 @@ impl IntDomains {
         self.events.num_events()
     }
 
-    pub fn last_event(&self) -> Option<&Event> {
+    pub(crate) fn last_event(&self) -> Option<&Event> {
         self.events.peek()
     }
 
-    pub fn trail(&self) -> &ObsTrail<Event> {
+    pub(crate) fn trail(&self) -> &ObsTrail<Event> {
         &self.events
     }
 
