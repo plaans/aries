@@ -135,6 +135,10 @@ pub struct OptimizePlan {
     /// Requires -e interactive-enforce-preferences.
     #[arg(long)]
     simulate: Option<simulate_preferences::Strategy>,
+    /// Stop simulation early when objective reaches this threshold.
+    /// Disabled by default; pass a value to enable (e.g. --stop-threshold 6).
+    #[arg(long)]
+    stop_threshold: Option<i64>,
 }
 
 #[derive(Parser, Debug)]
@@ -308,7 +312,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         Some(path) => Some(path.clone()),
     };
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate)
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate, command.stop_threshold)
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
