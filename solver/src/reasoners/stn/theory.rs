@@ -269,7 +269,7 @@ impl StnTheory {
     /// Creates a new STN. Initially, the STN contains a single timepoint
     /// representing the origin whose domain is `[0,0]`. The id of this timepoint can
     /// be retrieved with the `origin()` method.
-    pub fn new(config: StnConfig) -> Self {
+    pub(crate) fn new(config: StnConfig) -> Self {
         StnTheory {
             config,
             constraints: ConstraintDb::new(),
@@ -286,11 +286,11 @@ impl StnTheory {
             dyn_edges: Default::default(),
         }
     }
-    pub fn num_nodes(&self) -> u32 {
+    pub(crate) fn num_nodes(&self) -> u32 {
         (self.active_propagators.len() / 2) as u32
     }
 
-    pub fn reserve_timepoint(&mut self) {
+    pub(crate) fn reserve_timepoint(&mut self) {
         // add slots for the propagators of both signed variables
         self.active_propagators.push(Vec::new());
         self.active_propagators.push(Vec::new());
@@ -302,7 +302,7 @@ impl StnTheory {
     /// The associated propagator will ensure that the domains of the variables are appropriately updated
     /// and that `literal` is set to false if the edge contradicts other constraints.
     // This equivalent to  `literal => (target <= source + weight)`
-    pub fn add_half_reified_edge(
+    pub(crate) fn add_half_reified_edge(
         &mut self,
         literal: Lit,
         source: impl Into<Timepoint>,
@@ -367,7 +367,8 @@ impl StnTheory {
 
     // Adds a new fully reified edge `literal <=> source ---(weight)---> target`  (STN max delay)
     // This equivalent to  `literal <=> (target <= source + weight)`
-    pub fn add_reified_edge(
+    #[cfg(test)]
+    pub(crate) fn add_reified_edge(
         &mut self,
         literal: Lit,
         source: impl Into<Timepoint>,
@@ -385,7 +386,7 @@ impl StnTheory {
     }
 
     /// Add an edge with a dynamic upper bound, representing the fact that `tgt - src <= ub_factor * ub_var`
-    pub fn add_dynamic_edge(
+    pub(crate) fn add_dynamic_edge(
         &mut self,
         src: impl Into<Timepoint>,
         tgt: impl Into<Timepoint>,
@@ -557,7 +558,7 @@ impl StnTheory {
     }
 
     /// Propagates all edges that have been marked as active since the last propagation.
-    pub fn propagate_all(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
+    pub(crate) fn propagate_all(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         // in first propagation, process each edge once to check if it can be added to the model based on the literals
         // of its extremities. If it is not the case, make its enablers false.
         // This step is equivalent to "bound theory propagation" but need to be made independently because
@@ -819,7 +820,7 @@ impl StnTheory {
 
     /// Creates a new backtrack point that represents the STN at the point of the method call,
     /// just before the insertion of the backtrack point.
-    pub fn set_backtrack_point(&mut self) -> BacktrackLevel {
+    pub(crate) fn set_backtrack_point(&mut self) -> BacktrackLevel {
         assert!(
             self.pending_activations.is_empty(),
             "Cannot set a backtrack point if a propagation is pending. \
@@ -829,7 +830,7 @@ impl StnTheory {
         self.constraints.save_state()
     }
 
-    pub fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
+    pub(crate) fn undo_to_last_backtrack_point(&mut self) -> Option<BacktrackLevel> {
         // remove pending activations
         // invariant: there are no pending activation when saving the state
         self.pending_activations.clear();
@@ -1123,9 +1124,156 @@ impl Backtrack for StnTheory {
 mod tests {
     use crate::model::extensions::DomainsExt;
 
-    use crate::reasoners::stn::stn_impl::Stn;
-
     use super::*;
+
+    /// A simple self containted Stn implementation for testing
+    #[derive(Clone)]
+    struct Stn {
+        stn: StnTheory,
+        model: Model<String>,
+    }
+    impl Stn {
+        pub fn new() -> Self {
+            let model = Model::new();
+            let stn = StnTheory::new(StnConfig::default());
+            Stn { stn, model }
+        }
+        pub fn new_with_config(config: StnConfig) -> Self {
+            let model = Model::new();
+            let stn = StnTheory::new(config);
+            Stn { stn, model }
+        }
+
+        pub fn add_timepoint(&mut self, lb: W, ub: W) -> Timepoint {
+            self.model.new_ivar(lb, ub, "")
+        }
+
+        pub fn set_ub(&mut self, timepoint: Timepoint, ub: W) {
+            self.model.state.set_ub(timepoint, ub, Cause::Decision).unwrap();
+        }
+
+        pub fn add_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) {
+            let valid_edge = self.get_conjunctive_scope(source, target);
+            let active_edge = self.model.get_tautology_of_scope(valid_edge);
+            debug_assert!(self.model.state.entails(active_edge));
+            self.stn
+                .add_reified_edge(active_edge, source, target, weight, &self.model.state)
+        }
+
+        pub fn add_dynamic_edge(&mut self, source: Timepoint, target: Timepoint, ub_var: SignedVar, ub_factor: IntCst) {
+            self.stn
+                .add_dynamic_edge(source, target, ub_var, ub_factor, &self.model.state);
+        }
+
+        pub fn add_inactive_edge(&mut self, source: Timepoint, target: Timepoint, weight: W) -> Lit {
+            let valid_edge = self.get_conjunctive_scope(source, target);
+            let active_edge = self
+                .model
+                .new_optional_bvar(valid_edge, format!("reif({source:?} -- {weight} --> {target:?})"))
+                .true_lit();
+
+            self.stn
+                .add_reified_edge(active_edge, source, target, weight, &self.model.state);
+            active_edge
+        }
+
+        // add delay between optional variables
+        pub fn add_delay(&mut self, a: impl Into<Timepoint>, b: impl Into<Timepoint>, delay: W) {
+            self.add_edge(b.into(), a.into(), -delay);
+        }
+
+        /// Returns a literal that is true iff both timepoints are present.
+        fn get_conjunctive_scope(&mut self, a: Timepoint, b: Timepoint) -> Lit {
+            let pa = self.model.state.presence(a);
+            let pb = self.model.state.presence(b);
+            self.model.get_conjunctive_scope(&[pa, pb])
+        }
+
+        pub fn mark_active(&mut self, edge: Lit) {
+            self.model.state.decide(edge).unwrap();
+        }
+
+        pub fn propagate_all(&mut self) -> Result<(), Contradiction> {
+            self.stn.propagate_all(&mut self.model.state)
+        }
+
+        pub fn set_backtrack_point(&mut self) {
+            self.model.save_state();
+            self.stn.set_backtrack_point();
+        }
+
+        pub fn undo_to_last_backtrack_point(&mut self) {
+            self.model.restore_last();
+            self.stn.undo_to_last_backtrack_point();
+        }
+
+        // ------ Private method for testing purposes -------
+
+        #[allow(unused)]
+        pub(crate) fn assert_consistent(&mut self) {
+            assert!(self.propagate_all().is_ok());
+        }
+
+        #[allow(unused)]
+        pub(crate) fn assert_inconsistent<X>(&mut self, mut _err: Vec<X>) {
+            assert!(self.propagate_all().is_err());
+        }
+
+        #[allow(unused)]
+        pub(crate) fn explain_literal(&mut self, literal: Lit) -> Disjunction {
+            struct Exp<'a> {
+                stn: &'a mut StnTheory,
+            }
+            impl<'a> Explainer for Exp<'a> {
+                fn explain(
+                    &mut self,
+                    cause: InferenceCause,
+                    literal: Lit,
+                    model: &DomainsSnapshot,
+                    explanation: &mut Explanation,
+                ) {
+                    assert_eq!(cause.writer, self.stn.identity.writer_id);
+                    self.stn.explain(literal, cause, model, explanation);
+                }
+            }
+            let mut explanation = Explanation::new();
+            explanation.push(literal);
+            self.model
+                .state
+                .refine_explanation(explanation, &mut Exp { stn: &mut self.stn })
+                .clause
+        }
+
+        #[cfg(test)]
+        pub(crate) fn implying_literals(&mut self, literal: Lit) -> Option<Vec<Lit>> {
+            struct Exp<'a> {
+                stn: &'a mut StnTheory,
+            }
+            impl<'a> Explainer for Exp<'a> {
+                fn explain(
+                    &mut self,
+                    cause: InferenceCause,
+                    literal: Lit,
+                    model: &DomainsSnapshot,
+                    explanation: &mut Explanation,
+                ) {
+                    assert_eq!(cause.writer, self.stn.identity.writer_id);
+                    self.stn.explain(literal, cause, model, explanation);
+                }
+            }
+            let mut explanation = Explanation::new();
+            explanation.push(literal);
+            self.model
+                .state
+                .implying_literals(literal, &mut Exp { stn: &mut self.stn })
+        }
+    }
+
+    impl Default for Stn {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
 
     #[test]
     fn test_propagation() {

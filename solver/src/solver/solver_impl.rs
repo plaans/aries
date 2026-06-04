@@ -4,7 +4,6 @@ use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
-use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::lang::expr::geq;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::model::{Constraint, Label, Model};

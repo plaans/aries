@@ -1,6 +1,6 @@
+use aries::lang::BVar;
 use aries::model::Label;
 use aries::model::Model;
-use aries::lang::BVar;
 
 use crate::aries::Post;
 use crate::aries::constraint::ClauseReif;

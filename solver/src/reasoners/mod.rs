@@ -5,7 +5,7 @@ use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
 use crate::reasoners::eq::SplitEqTheory;
 use crate::reasoners::sat::SatSolver;
-use crate::reasoners::stn::theory::StnTheory;
+use crate::reasoners::stn::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 

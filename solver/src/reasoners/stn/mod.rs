@@ -1,2 +1,3 @@
-mod stn_impl;
-pub mod theory;
+mod theory;
+
+pub use theory::*;

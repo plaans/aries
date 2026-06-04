@@ -29,9 +29,8 @@ use std::cmp::Ordering;
 ///  - var >= 3   ->  -var <= -3
 ///  - var > 3    ->  -var <= -4
 /// ```
-/// use aries::core::*;
-/// use aries::core::state::IntDomains;
-/// let mut state = IntDomains::new();
+/// use aries::prelude::*;
+/// let mut state = Domains::new();
 /// let x = state.new_var(0, 1);
 /// assert_eq!(x.leq(5), SignedVar::plus(x).leq(5));
 /// assert_eq!(Lit::lt(x, 5), SignedVar::plus(x).leq(4));
@@ -51,7 +50,7 @@ use std::cmp::Ordering;
 /// An important invariant is that, in a sorted list, a bound can only entail the literals immediately following it.
 ///
 /// ```
-/// use aries::core::*;
+/// use aries::prelude::*;
 /// let x = Var::from_u32(1);
 /// let y = Var::from_u32(2);
 /// let mut literals = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];

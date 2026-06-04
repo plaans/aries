@@ -11,9 +11,8 @@ use crate::core::*;
 /// We enforce an alignment on 8 bytes to make sure it can be read and written in a single instruction.
 #[derive(Copy, Clone, Debug)]
 #[repr(align(8))]
-pub(crate) struct ValueCause {
+pub struct ValueCause {
     pub upper_bound: IntCst,
-    /// Index of the event that caused the current value.
     pub cause: ChangeIndex,
 }
 impl ValueCause {
@@ -132,20 +131,11 @@ impl IntDomains {
         (0..self.num_variables()).map(Var::from)
     }
 
-    /// Returns all variables whose value is fixed.
-    pub fn bound_variables(&self) -> impl Iterator<Item = (Var, IntCst)> + '_ {
-        self.variables().filter_map(move |v| {
-            let lb = self.lb(v);
-            let ub = self.ub(v);
-            if lb == ub { Some((v, lb)) } else { None }
-        })
-    }
-
     // =========== History ===================
 
     /// Returns the index of the first event that makes `lit` true.
     /// If the function returns None, it means that `lit` was true at the root level.
-    pub(crate) fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
+    pub fn implying_event(&self, lit: Lit) -> Option<EventIndex> {
         debug_assert!(self.entails(lit));
         let mut cur = self.bounds[lit.svar()].cause;
         while let Some(loc) = cur {
@@ -214,11 +204,11 @@ impl IntDomains {
         self.events.num_events()
     }
 
-    pub(crate) fn last_event(&self) -> Option<&Event> {
+    pub fn last_event(&self) -> Option<&Event> {
         self.events.peek()
     }
 
-    pub(crate) fn trail(&self) -> &ObsTrail<Event> {
+    pub fn trail(&self) -> &ObsTrail<Event> {
         &self.events
     }
 

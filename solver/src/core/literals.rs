@@ -7,22 +7,22 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-pub use conjunction::*;
-pub use disjunction::*;
-pub use implication_graph::*;
-pub use lit_set::*;
-use smallvec::SmallVec;
-pub use watches::*;
-
 mod conjunction;
 mod disjunction;
 mod implication_graph;
 mod lit_set;
 mod watches;
 
-const INLINE_SIZE: usize = 3;
+pub use conjunction::*;
+pub use disjunction::*;
+pub(crate) use implication_graph::*;
+pub use lit_set::*;
+pub(crate) use watches::*;
 
 use crate::prelude::*;
+use smallvec::SmallVec;
+
+const INLINE_SIZE: usize = 3;
 
 /// A sequence of literals, optimized to represent at least 3 elements inline.
 ///

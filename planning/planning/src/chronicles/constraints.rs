@@ -1,7 +1,7 @@
 use super::*;
 use crate::legacy::*;
-use aries::model::extensions::DomainsExt;
 use aries::lang::expr::and;
+use aries::model::extensions::DomainsExt;
 use aries::model::Label;
 use aries::{core::Lit, lang::expr::or};
 use itertools::Itertools;

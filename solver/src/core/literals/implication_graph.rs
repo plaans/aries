@@ -21,10 +21,10 @@ use std::sync::Mutex;
 /// It also does not check for edge duplication, which might a cause for inefficiencies.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// use aries::core::*;
 /// use aries::core::literals::ImplicationGraph;
-/// let mut set = ImplicationGraph::empty();
+/// let mut set = ImplicationGraph::new();
 /// let v1 = Var::from_u32(3); // arbitrary variable
 /// let v2 = Var::from_u32(4); // arbitrary variable
 /// assert!(!set.implies(v1.leq(0), v2.leq(0)));
@@ -35,7 +35,7 @@ use std::sync::Mutex;
 /// assert!(!set.implies(v1.leq(1), v2.leq(0)));
 /// ```
 #[derive(Default)]
-pub struct ImplicationGraph {
+pub(crate) struct ImplicationGraph {
     edges: Watches<Lit>,
     num_edges: usize,
     cache: CachedDFS,
@@ -43,7 +43,8 @@ pub struct ImplicationGraph {
 
 impl ImplicationGraph {
     /// Creates an empty implication graph
-    pub fn empty() -> Self {
+    #[allow(unused)]
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -179,7 +180,7 @@ mod test {
 
     #[test]
     fn test_implications() {
-        let mut g = ImplicationGraph::empty();
+        let mut g = ImplicationGraph::new();
 
         assert!(g.implies(A.leq(0), A.leq(0)));
         assert!(g.implies(A.leq(0), A.leq(1)));
@@ -205,7 +206,7 @@ mod test {
 
     #[test]
     fn test_implication_cycle() {
-        let mut g = ImplicationGraph::empty();
+        let mut g = ImplicationGraph::new();
 
         g.add_implication(A.leq(0), B.leq(0));
         g.add_implication(B.leq(0), A.leq(0));

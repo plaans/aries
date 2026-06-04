@@ -1,12 +1,12 @@
 use aries::core::IntCst;
-use aries::model::Label;
-use aries::model::Model;
 use aries::lang::BVar;
 use aries::lang::IAtom;
 use aries::lang::expr::eq;
 use aries::lang::expr::geq;
 use aries::lang::expr::implies;
 use aries::lang::expr::lt;
+use aries::model::Label;
+use aries::model::Model;
 
 use crate::aries::Post;
 

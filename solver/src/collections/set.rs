@@ -3,6 +3,9 @@ use crate::collections::ref_store::{Ref, RefMap};
 use super::ref_store::IterableRefMap;
 
 /// A set of values that can be converted into small unsigned integers.
+///
+/// It does not provide any method that would require iterating on the elements
+/// has this is an important performance hazard. See [`IterableRefSet`] for this purpose.
 #[derive(Clone)]
 pub(crate) struct RefSet<K> {
     set: RefMap<K, ()>,
@@ -15,18 +18,6 @@ impl<K: Ref> RefSet<K> {
         }
     }
 
-    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
-    pub fn len(&self) -> usize {
-        #[allow(deprecated)]
-        self.set.len()
-    }
-
-    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
-    pub fn is_empty(&self) -> bool {
-        #[allow(deprecated)]
-        self.set.is_empty()
-    }
-
     pub fn insert(&mut self, k: K) {
         self.set.insert(k, ());
     }
@@ -35,23 +26,8 @@ impl<K: Ref> RefSet<K> {
         self.set.remove(k);
     }
 
-    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
-    pub fn clear(&mut self) {
-        #[allow(deprecated)]
-        self.set.clear()
-    }
-
     pub fn contains(&self, k: K) -> bool {
         self.set.contains(k)
-    }
-
-    #[deprecated(note = "Performance hazard. Use an iterableRefSet instead.")]
-    pub fn iter(&self) -> impl Iterator<Item = K> + '_
-    where
-        K: From<usize>,
-    {
-        #[allow(deprecated)]
-        self.set.entries().map(|(k, _)| k)
     }
 }
 
@@ -81,6 +57,7 @@ impl<K: Ref> IterableRefSet<K> {
         self.set.len()
     }
 
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.set.is_empty()
     }
@@ -93,6 +70,7 @@ impl<K: Ref> IterableRefSet<K> {
         self.set.clear()
     }
 
+    #[allow(unused)]
     pub fn contains(&self, k: K) -> bool {
         self.set.contains(k)
     }

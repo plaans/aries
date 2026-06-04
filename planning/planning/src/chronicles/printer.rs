@@ -5,8 +5,8 @@ use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use crate::legacy::*;
 use aries::core::{Lit, Relation, Var};
-use aries::model::extensions::DomainsExt;
 use aries::lang::BVar;
+use aries::model::extensions::DomainsExt;
 use aries::model::Model;
 use aries::prelude::*;
 

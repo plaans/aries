@@ -1,7 +1,7 @@
-use aries::model::Label;
-use aries::model::Model;
 use aries::lang::BVar;
 use aries::lang::expr::and;
+use aries::model::Label;
+use aries::model::Model;
 
 use crate::aries::Post;
 

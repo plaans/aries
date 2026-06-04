@@ -162,7 +162,7 @@ impl std::ops::AddAssign<i32> for EventIndex {
     }
 }
 
-pub(crate) enum DecisionLevelClass {
+pub enum DecisionLevelClass {
     Root,
     Current,
     Intermediate,
@@ -216,7 +216,6 @@ impl<V> ObsTrail<V> {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),
             last_backtrack: None,
-            pristine: true,
             _phantom: Default::default(),
         }
     }
@@ -296,6 +295,7 @@ impl<V> ObsTrail<V> {
     ///    - `event_index` is the current event index (going from the index of the last event down to 0)
     ///
     /// # Usage
+    ///
     /// ```
     /// use aries::backtrack::*;
     /// let mut q = ObsTrail::new();
@@ -349,7 +349,8 @@ impl<V> ObsTrail<V> {
     }
 
     /// Prints the content of the trail to standard output, specifying the decision levels.
-    pub fn print(&self)
+    #[allow(unused)]
+    pub(crate) fn print(&self)
     where
         V: std::fmt::Debug,
     {
@@ -428,7 +429,6 @@ pub struct TrailEvent<'a, V> {
 pub struct ObsTrailCursor<V> {
     next_read: EventIndex,
     last_backtrack: Option<u64>,
-    pristine: bool,
     _phantom: PhantomData<V>,
 }
 
@@ -446,17 +446,8 @@ impl<V> ObsTrailCursor<V> {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),
             last_backtrack: None,
-            pristine: true,
             _phantom: Default::default(),
         }
-    }
-
-    pub fn is_pristine(&self) -> bool {
-        self.pristine
-    }
-
-    pub fn mark_used(&mut self) {
-        self.pristine = false
     }
 
     // TODO: check correctness if more than one backtrack occurred between two synchronisations
@@ -486,7 +477,6 @@ impl<V> ObsTrailCursor<V> {
     }
 
     pub fn pop<'q>(&mut self, queue: &'q ObsTrail<V>) -> Option<&'q V> {
-        self.mark_used();
         self.sync_backtrack(queue);
 
         let next = self.next_read;
@@ -499,7 +489,6 @@ impl<V> ObsTrailCursor<V> {
     }
 
     pub fn move_to_end(&mut self, queue: &ObsTrail<V>) {
-        self.mark_used();
         self.sync_backtrack(queue);
         self.next_read = queue.next_slot();
     }
