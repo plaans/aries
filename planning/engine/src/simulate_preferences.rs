@@ -1,9 +1,7 @@
 //! Simulated preference enforcement for automated experimental evaluation.
 //!
-//! Three strategies:
+//! Two strategies:
 //!   - **Greedy**: natural PDDL order; runs [`run_one_by_one`] once.
-//!   - **AllCombinations**: runs [`run_one_by_one`] once per permutation
-//!     of the violated preferences (N! times), then reports best/worst.
 //!   - **AllAtOnce**: selects all violated preferences at once, prunes
 //!     until feasible ([`run_prune`]), then re-adds dropped preferences
 //!     via [`run_one_by_one`].
@@ -37,8 +35,6 @@ use crate::explain_preferences::{
 pub(crate) enum Strategy {
     /// Enforce violated preferences by descending utility; drop cheapest on conflict.
     Greedy,
-    /// Runs the same loop for every permutation; reports best and worst paths.
-    AllCombinations,
     /// Select all violated at once, trim until feasible, then re-add dropped.
     AllAtOnce,
 }
@@ -47,7 +43,6 @@ impl std::fmt::Display for Strategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Strategy::Greedy => write!(f, "greedy"),
-            Strategy::AllCombinations => write!(f, "all-combinations"),
             Strategy::AllAtOnce => write!(f, "all-at-once"),
         }
     }
@@ -140,7 +135,7 @@ fn pick_best_mcs(mcses: &[BTreeSet<Tag>], selected_names: &BTreeSet<String>, wei
 }
 
 // =====================================================================
-// One-by-one enforcement loop (shared core for both strategies).
+// One-by-one enforcement loop.
 //
 // Uses a queue seeded with the initial ordering. On conflict, dropped
 // preferences are pushed to the back for retry. Stops when the queue
@@ -168,7 +163,6 @@ fn run_one_by_one(
     stop_threshold: Option<IntCst>,
     initial_ordering: &[usize],
     initial_selected: &[usize],
-    reorder_queue_by_utility: bool,
     path_label: &str,
 ) -> PathResult {
     let obj = encoding.objectives[0];
@@ -232,15 +226,6 @@ fn run_one_by_one(
                     break;
                 }
             }
-        }
-
-        if reorder_queue_by_utility {
-            let q_slice = queue.make_contiguous();
-            q_slice.sort_by(|&a, &b| {
-                let wa = weights.get(&entries[a].name).copied().unwrap_or(0);
-                let wb = weights.get(&entries[b].name).copied().unwrap_or(0);
-                wb.cmp(&wa).then_with(|| entries[a].name.cmp(&entries[b].name))
-            });
         }
 
         // A "failure" is when next_idx itself was dropped — not when some
@@ -433,27 +418,6 @@ fn build_greedy_ordering(violated_indices: &[usize], entries: &[PreferenceEntry]
 }
 
 // =====================================================================
-// All-combinations — every permutation of violated indices.
-// Warning: grows as N!, only practical for small N.
-// =====================================================================
-
-fn permutations(items: &[usize]) -> Vec<Vec<usize>> {
-    if items.len() <= 1 {
-        return vec![items.to_vec()];
-    }
-    let mut result = Vec::new();
-    for (i, &item) in items.iter().enumerate() {
-        let mut rest: Vec<usize> = items.to_vec();
-        rest.remove(i);
-        for mut perm in permutations(&rest) {
-            perm.insert(0, item);
-            result.push(perm);
-        }
-    }
-    result
-}
-
-// =====================================================================
 // Main entry point — called from optimize_plan when --simulate is set.
 // =====================================================================
 
@@ -518,7 +482,7 @@ pub(crate) fn simulate_preference_enforcement(
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &ordering, &[], true, "greedy",
+                stop_threshold, &ordering, &[], "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -528,60 +492,15 @@ pub(crate) fn simulate_preference_enforcement(
                     optimal_obj_val, final_val, final_val - optimal_obj_val);
             }
         }
-        Strategy::AllCombinations => {
-            let perms = permutations(&violated_indices);
-            println!("[SIM] Exploring {} paths ({} violated preferences)\n", perms.len(), violated_indices.len());
-
-            let mut best: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;
-            let mut worst: Option<(usize, Option<IntCst>, usize, Vec<usize>)> = None;
-
-            for (pi, perm) in perms.iter().enumerate() {
-                let label = format!("path-{}", pi + 1);
-                // Fresh solver clone per path — each permutation is independent.
-                let result = run_one_by_one(
-                    &mut solver.clone(), encoding, model, sched, &entries, &weights,
-                    plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    stop_threshold, perm, &[], false, &label,
-                );
-                let perm_names: Vec<&str> = perm.iter().map(|&i| entries[i].name.as_str()).collect();
-                let enforced_names: Vec<&str> = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect();
-                println!("\n[SIM] Path {} (order: [{}]): {} steps, outcome: {}, enforced: [{}]",
-                    pi + 1, perm_names.join(", "), result.steps, result.outcome, enforced_names.join(", "));
-                if let Some(final_val) = result.final_obj_val {
-                    println!("      optimal: {}, final: {}, distance to optimal: {}",
-                        optimal_obj_val, final_val, final_val - optimal_obj_val);
-                }
-
-                let is_better = best.as_ref().map_or(true, |(s, _, _, _)| result.steps < *s);
-                if is_better { best = Some((result.steps, result.final_obj_val, pi, result.enforced.clone())); }
-                let is_worse = worst.as_ref().map_or(true, |(s, _, _, _)| result.steps > *s);
-                if is_worse { worst = Some((result.steps, result.final_obj_val, pi, result.enforced)); }
-            }
-
-            println!("\n===== All-combinations summary =====");
-            if let Some((steps, final_val, pi, ref enforced)) = best {
-                let names: Vec<&str> = enforced.iter().map(|&i| entries[i].name.as_str()).collect();
-                let distance = final_val.map_or("N/A".to_string(), |v| format!("{}", v - optimal_obj_val));
-                println!("  Best:  path {} — {} steps, distance to optimal: {}, enforced: [{}]", pi + 1, steps, distance, names.join(", "));
-            }
-            if let Some((steps, final_val, pi, ref enforced)) = worst {
-                let names: Vec<&str> = enforced.iter().map(|&i| entries[i].name.as_str()).collect();
-                let distance = final_val.map_or("N/A".to_string(), |v| format!("{}", v - optimal_obj_val));
-                println!("  Worst: path {} — {} steps, distance to optimal: {}, enforced: [{}]", pi + 1, steps, distance, names.join(", "));
-            }
-
-            if let Some((steps, _, _, _)) = worst {
-                let _metrics = SimulationMetrics { steps, outcome: Outcome::Accepted };
-            }
-        }
         Strategy::AllAtOnce => {
             let mut sim_solver = solver.clone();
+            let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
 
-            // Phase 1: select all, prune until feasible.
+            // Phase 1: select all (sorted by descending utility), prune until feasible.
             let prune = run_prune(
                 &mut sim_solver, encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                &violated_indices, "all-at-once",
+                &ordering, "all-at-once",
             );
 
             let (total_steps, final_obj, enforced) = if prune.dropped.is_empty() {
@@ -592,7 +511,7 @@ pub(crate) fn simulate_preference_enforcement(
                 let phase2 = run_one_by_one(
                     &mut sim_solver, encoding, model, sched, &entries, &weights,
                     plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                    stop_threshold, &prune.dropped, &prune.selected, true, "all-at-once-readd",
+                    stop_threshold, &prune.dropped, &prune.selected, "all-at-once-readd",
                 );
                 let total = prune.steps + phase2.steps;
                 println!("[SIM] Phase 1: {} steps, Phase 2: {} steps", prune.steps, phase2.steps);
