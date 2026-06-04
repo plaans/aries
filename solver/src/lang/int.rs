@@ -107,9 +107,9 @@ impl From<Var> for IAtom {
     }
 }
 
-impl From<IntCst> for IAtom {
-    fn from(i: IntCst) -> Self {
-        IAtom::new(Var::ZERO, i)
+impl<T: IntoIntCst> From<T> for IAtom {
+    fn from(i: T) -> Self {
+        IAtom::new(Var::ZERO, i.into_int_cst())
     }
 }
 
@@ -136,60 +136,32 @@ impl TryFrom<IAtom> for IntCst {
     }
 }
 
-impl std::ops::Add<IntCst> for IAtom {
+impl<T: IntoIntCst> std::ops::Add<T> for IAtom {
     type Output = IAtom;
 
-    fn add(self, rhs: IntCst) -> Self::Output {
-        IAtom::new(self.var, self.shift + rhs)
+    fn add(self, rhs: T) -> Self::Output {
+        IAtom::new(self.var, self.shift + rhs.into_int_cst())
     }
 }
-impl std::ops::Add<IntCst> for Var {
+impl<T: IntoIntCst> std::ops::Add<T> for Var {
     type Output = IAtom;
 
-    fn add(self, rhs: IntCst) -> Self::Output {
-        IAtom::new(self, rhs)
+    fn add(self, rhs: T) -> Self::Output {
+        IAtom::new(self, rhs.into_int_cst())
     }
 }
-impl std::ops::Sub<IntCst> for IAtom {
+impl<T: IntoIntCst> std::ops::Sub<T> for IAtom {
     type Output = IAtom;
 
-    fn sub(self, rhs: IntCst) -> Self::Output {
-        IAtom::new(self.var, self.shift - rhs)
+    fn sub(self, rhs: T) -> Self::Output {
+        IAtom::new(self.var, self.shift - rhs.into_int_cst())
     }
 }
-impl std::ops::Sub<IntCst> for Var {
+impl<T: IntoIntCst> std::ops::Sub<T> for Var {
     type Output = IAtom;
 
-    fn sub(self, rhs: IntCst) -> Self::Output {
-        IAtom::new(self, -rhs)
-    }
-}
-impl std::ops::Add<usize> for IAtom {
-    type Output = IAtom;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        IAtom::new(self.var, self.shift + IntCst::try_from(rhs).unwrap())
-    }
-}
-impl std::ops::Add<usize> for Var {
-    type Output = IAtom;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        IAtom::new(self, IntCst::try_from(rhs).unwrap())
-    }
-}
-impl std::ops::Sub<usize> for IAtom {
-    type Output = IAtom;
-
-    fn sub(self, rhs: usize) -> Self::Output {
-        IAtom::new(self.var, self.shift - IntCst::try_from(rhs).unwrap())
-    }
-}
-impl std::ops::Sub<usize> for Var {
-    type Output = IAtom;
-
-    fn sub(self, rhs: usize) -> Self::Output {
-        IAtom::new(self, -IntCst::try_from(rhs).unwrap())
+    fn sub(self, rhs: T) -> Self::Output {
+        IAtom::new(self, -rhs.into_int_cst())
     }
 }
 

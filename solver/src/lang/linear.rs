@@ -27,6 +27,7 @@ pub struct ScaledVar {
 }
 
 impl ScaledVar {
+    /// Constant always equal to zero.
     pub const ZERO: ScaledVar = ScaledVar::new(Var::ZERO, 0);
     pub const fn new(var: Var, factor: IntCst) -> Self {
         Self { var, factor }

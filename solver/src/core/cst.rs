@@ -63,3 +63,42 @@ pub const INT_CST_MAX: IntCst = IntCst::MAX / 4 - 1;
 ///
 /// A larger value can be select by enlarging the [`IntCst`] representation  with the `i64` and `i128` cargo features
 pub const INT_CST_MIN: IntCst = -INT_CST_MAX;
+
+/// Represents a type that can typically be converted into an [`IntCst`] and is accepted in arithmetic operations.
+///
+/// THe types that we typically want for this is `IntCst` itself and `usize` because
+/// many CP programs use indices for domain bounds.
+///
+/// Thus we want to support operations on `usize` as dealing explictly with the conversion
+/// `usize -> IntCst` substantially obfuscate the expressed logic.
+/// In virtually all case where usize is an index, it can be safelly converted into an `IntCst` max whose minimal value
+/// is in the order of `2^29`.
+///
+/// We cannot simply implement of `IntCst` and `usize` because when that is the case, and `IntCst` is 64 or 128 bit,
+/// the compiler does not know wheter to interpret a numeric literal as `IntCst` or `usize`. We thus also need it to be implemented
+/// for `i32` the default for int literals.
+pub(crate) trait IntoIntCst {
+    /// Converts the value into an [`IntCst`],
+    /// panicking if the value is not in `[INT_CST_MIN, INT_CST_MAX]`.
+    fn into_int_cst(self) -> IntCst;
+}
+
+macro_rules! into_int_cst {
+    ($type_name:ident) => {
+        impl IntoIntCst for $type_name {
+            fn into_int_cst(self) -> IntCst {
+                let val: IntCst = self.try_into().expect("not representable");
+                assert!(val <= INT_CST_MAX);
+                assert!(val >= INT_CST_MIN);
+                val
+            }
+        }
+    };
+}
+
+into_int_cst!(i32);
+into_int_cst!(i64);
+into_int_cst!(i128);
+into_int_cst!(usize);
+into_int_cst!(u32);
+into_int_cst!(u64);
