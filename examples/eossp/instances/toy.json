@@ -1,0 +1,142 @@
+{
+  "satellite": {
+    "energy_max": 10
+  },
+  "tasks": [
+    {
+      "release": 0,
+      "deadline": 0,
+      "duration": 0,
+      "energy": 8,
+      "optional": false
+    },
+    {
+      "release": 2,
+      "deadline": 6,
+      "duration": 2,
+      "energy": -2,
+      "optional": true
+    },
+    {
+      "release": 2,
+      "deadline": 6,
+      "duration": 2,
+      "energy": -3,
+      "optional": true
+    },
+    {
+      "release": 9,
+      "deadline": 16,
+      "duration": 3,
+      "energy": -5,
+      "optional": true
+    },
+    {
+      "release": 12,
+      "deadline": 19,
+      "duration": 1,
+      "energy": 0,
+      "optional": true
+    },
+    {
+      "release": 24,
+      "deadline": 30,
+      "duration": 1,
+      "energy": -1,
+      "optional": true
+    },
+    {
+      "release": 40,
+      "deadline": 40,
+      "duration": 0,
+      "energy": 0,
+      "optional": false
+    }
+  ],
+  "transitions": [
+    {
+      "source": 0,
+      "destination": 1,
+      "duration": null,
+      "energy": -1
+    },
+    {
+      "source": 0,
+      "destination": 2,
+      "duration": null,
+      "energy": 0
+    },
+    {
+      "source": 0,
+      "destination": 3,
+      "duration": null,
+      "energy": 8
+    },
+    {
+      "source": 1,
+      "destination": 2,
+      "duration": null,
+      "energy": null
+    },
+    {
+      "source": 1,
+      "destination": 3,
+      "duration": 5,
+      "energy": -3
+    },
+    {
+      "source": 1,
+      "destination": 4,
+      "duration": null,
+      "energy": -6
+    },
+    {
+      "source": 2,
+      "destination": 1,
+      "duration": null,
+      "energy": null
+    },
+    {
+      "source": 2,
+      "destination": 3,
+      "duration": 7,
+      "energy": -4
+    },
+    {
+      "source": 2,
+      "destination": 4,
+      "duration": null,
+      "energy": 3
+    },
+    {
+      "source": 3,
+      "destination": 4,
+      "duration": 3,
+      "energy": 4
+    },
+    {
+      "source": 3,
+      "destination": 5,
+      "duration": null,
+      "energy": 5
+    },
+    {
+      "source": 4,
+      "destination": 3,
+      "duration": null,
+      "energy": null
+    },
+    {
+      "source": 4,
+      "destination": 5,
+      "duration": null,
+      "energy": 4
+    },
+    {
+      "source": 5,
+      "destination": 6,
+      "duration": null,
+      "energy": 6
+    }
+  ]
+}
