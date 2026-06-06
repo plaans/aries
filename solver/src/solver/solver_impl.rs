@@ -18,7 +18,7 @@ use crate::solver::search::{Decision, SearchControl, default_brancher};
 use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
 use crossbeam_channel::Sender;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::Arc;

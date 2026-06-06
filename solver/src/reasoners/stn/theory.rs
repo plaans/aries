@@ -14,7 +14,7 @@ use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use contraint_db::*;
 use distances::{Graph, StnGraph};
 use edges::*;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::convert::*;

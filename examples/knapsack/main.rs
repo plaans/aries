@@ -6,7 +6,7 @@ use aries::solver::search::combinators::WithGeomRestart;
 use aries::solver::search::conflicts::ConflictBasedBrancher;
 use aries::solver::search::lexical::Lexical;
 use aries::solver::search::Brancher;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::Itertools;
 use std::cmp::max;
 use std::collections::HashMap;

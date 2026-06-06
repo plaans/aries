@@ -8,7 +8,7 @@ use crate::model::{Label, Model};
 use crate::prelude::*;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::sync::Arc;
 
 pub static PREFER_MIN_VALUE: EnvParam<bool> = EnvParam::new("ARIES_SMT_PREFER_MIN_VALUE", "true");

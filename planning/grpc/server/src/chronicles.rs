@@ -8,7 +8,7 @@ use aries_planning::legacy::input::Sym;
 use aries_planning::legacy::utils::enumerate;
 use aries_planning::legacy::*;
 use aries_planning::parsing::pddl::TypedSymbol;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::Itertools;
 use regex::Regex;
 use std::collections::HashMap;

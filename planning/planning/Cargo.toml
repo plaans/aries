@@ -17,6 +17,6 @@ streaming-iterator = { workspace = true }
 smallvec = { workspace = true }
 regex = { workspace = true }
 aries = { path = "../../solver" }
-env_param = { path = "../../env_param" }
+aries-env-param = { path = "../../utils/env_param" }
 pathfinding = { workspace = true }
 vec_map = { workspace = true }

@@ -20,7 +20,7 @@ use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::*;
 use aries_planning::legacy::{eq, neq};
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use numeric::iatom_mul_lit;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashMap, HashSet};

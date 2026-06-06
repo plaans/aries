@@ -2,7 +2,7 @@ use aries::core::{IntCst, Lit};
 pub use aries_planning::chronicles::analysis::CondOrigin;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::*;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::collections::{BTreeSet, HashSet};
 
 /// Temporal origin

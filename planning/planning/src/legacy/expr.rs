@@ -11,7 +11,7 @@ use aries::{
     prelude::*,
     reif::{ReifExpr, Reifiable},
 };
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::*;
 use smallvec::*;
 

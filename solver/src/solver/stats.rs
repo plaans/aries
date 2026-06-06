@@ -3,7 +3,7 @@ use crate::core::{IntCst, Lit};
 use crate::reasoners::REASONERS;
 use crate::reasoners::ReasonerId;
 use crate::utils::cpu_time::*;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Index, IndexMut};

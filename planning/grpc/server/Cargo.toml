@@ -12,7 +12,7 @@ aries_planners = { path = "../../planners" }
 aries_planning = { path = "../../planning" }
 async-trait = { workspace = true }
 clap = { workspace = true }
-env_param = { path = "../../../env_param" }
+aries-env-param = { path = "../../../utils/env_param" }
 itertools = { workspace = true }
 num-rational = { workspace = true }
 prost = { workspace = true }
@@ -21,7 +21,7 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
 unified_planning = { path = "../api" }
-aries_plan_validator = { path = "../../../validator" }
+aries_plan_validator = { path = "../../validator" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

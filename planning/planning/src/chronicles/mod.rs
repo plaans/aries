@@ -15,7 +15,7 @@ use crate::legacy::*;
 use aries::core::{IntCst, INT_CST_MAX};
 use aries::model::Model;
 use aries::prelude::*;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;

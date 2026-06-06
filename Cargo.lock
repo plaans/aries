@@ -117,9 +117,9 @@ checksum = "03918c3dbd7701a85c6b9887732e2921175f26c350b4563841d0958c21d57e6d"
 name = "aries"
 version = "0.0.6"
 dependencies = [
+ "aries-env-param",
  "bumpalo",
  "crossbeam-channel",
- "env_param",
  "hashbrown",
  "itertools",
  "lru",
@@ -157,6 +157,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-env-param"
+version = "0.1.0"
+dependencies = [
+ "once_cell",
+]
+
+[[package]]
 name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
@@ -178,7 +185,7 @@ name = "aries-timelines"
 version = "0.1.0"
 dependencies = [
  "aries",
- "env_param",
+ "aries-env-param",
  "idmap",
  "itertools",
  "num-rational",
@@ -216,12 +223,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
+ "aries-env-param",
  "aries_plan_validator",
  "aries_planners",
  "aries_planning",
  "async-trait",
  "clap 4.5.54",
- "env_param",
  "itertools",
  "num-rational",
  "prost",
@@ -239,7 +246,7 @@ name = "aries_knapsack"
 version = "0.1.0"
 dependencies = [
  "aries",
- "env_param",
+ "aries-env-param",
  "itertools",
  "num-rational",
 ]
@@ -262,8 +269,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
+ "aries-env-param",
  "aries_planning",
- "env_param",
  "itertools",
  "num-rational",
  "structopt",
@@ -277,7 +284,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aries",
- "env_param",
+ "aries-env-param",
  "fixedbitset",
  "itertools",
  "num-integer",
@@ -756,13 +763,6 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
-
-[[package]]
-name = "env_param"
-version = "0.1.0"
-dependencies = [
- "once_cell",
-]
 
 [[package]]
 name = "equivalent"

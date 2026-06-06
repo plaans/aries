@@ -23,7 +23,7 @@ use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::Shaped;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;

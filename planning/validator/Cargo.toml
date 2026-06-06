@@ -6,8 +6,8 @@ version = "0.1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-aries = { path = "../solver" }
-unified_planning = { path = "../planning/grpc/api" }
+aries = { path = "../../solver" }
+unified_planning = { path = "../grpc/api" }
 anyhow = { workspace = true }
 im = { workspace = true }
 malachite = { workspace = true }

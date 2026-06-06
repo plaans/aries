@@ -4,7 +4,7 @@ members = [
     "solver",
     "bench/data",
     "bench/bench",
-    "env_param",
+    "utils/env_param",
     "planning/engine",
     "planning/planx",
     "planning/timelines",
@@ -18,7 +18,7 @@ members = [
     "examples/smt",
     "examples/gg",
     "examples/knapsack",
-    "validator",
+    "planning/validator",
 ]
 resolver = "2"
 

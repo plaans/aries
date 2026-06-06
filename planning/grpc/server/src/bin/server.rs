@@ -11,7 +11,7 @@ use aries_planning::chronicles::analysis::hierarchy::hierarchical_is_non_recursi
 use aries_planning::chronicles::FiniteProblem;
 use async_trait::async_trait;
 use clap::{Args, Parser, Subcommand};
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::Itertools;
 use prost::Message;
 use std::collections::HashMap;
