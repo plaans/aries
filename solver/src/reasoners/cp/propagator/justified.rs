@@ -12,11 +12,11 @@
 //! Below is a simple example to illustrate how the different parts fit together.
 //!
 //! ```
-//! use aries::prelude::*;
-//! use aries::core::state::*;
-//! use aries::reasoners::cp::propagator::*;
-//! use aries::reasoners::cp::propagator::justified::*;
-//! use aries::reasoners::cp::*;
+//! use aries_solver::prelude::*;
+//! use aries_solver::core::state::*;
+//! use aries_solver::reasoners::cp::propagator::*;
+//! use aries_solver::reasoners::cp::propagator::justified::*;
+//! use aries_solver::reasoners::cp::*;
 //!
 //! /// A dummy propagator on a variable
 //! #[derive(Debug, Clone)]

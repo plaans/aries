@@ -1,7 +1,7 @@
-use aries::lang::Var;
-use aries::lang::expr::leq;
-use aries::model::Label;
-use aries::model::Model;
+use aries_solver::lang::Var;
+use aries_solver::lang::expr::leq;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -36,7 +36,7 @@ impl<Lbl: Label> Post<Lbl> for Le {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::verify_all;

@@ -1,8 +1,8 @@
-use aries::core::IntCst;
-use aries::lang::linear::ScaledVar;
-use aries::model::Label;
-use aries::model::Model;
-use aries::prelude::LinSum;
+use aries_solver::core::IntCst;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
+use aries_solver::prelude::LinSum;
 
 use crate::aries::Post;
 

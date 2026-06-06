@@ -7,16 +7,6 @@ use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
 use crate::search::ForwardSearcher;
 use crate::Solver;
 use anyhow::Result;
-use aries::core::{IntCst, Lit, Var, INT_CST_MAX};
-use aries::lang::IAtom;
-use aries::model::extensions::DomainsExt;
-use aries::model::Model;
-use aries::prelude::*;
-use aries::reasoners::stn::{StnConfig, TheoryPropagationLevel};
-use aries::solver::search::activity::*;
-use aries::solver::search::conflicts::ConflictBasedBrancher;
-use aries::solver::search::lexical::Lexical;
-use aries::solver::search::{Brancher, SearchControl};
 use aries_env_param::EnvParam;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::plan::ActionInstance;
@@ -24,6 +14,16 @@ use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::Shaped;
+use aries_solver::core::{IntCst, Lit, Var, INT_CST_MAX};
+use aries_solver::lang::IAtom;
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Model;
+use aries_solver::prelude::*;
+use aries_solver::reasoners::stn::{StnConfig, TheoryPropagationLevel};
+use aries_solver::solver::search::activity::*;
+use aries_solver::solver::search::conflicts::ConflictBasedBrancher;
+use aries_solver::solver::search::lexical::Lexical;
+use aries_solver::solver::search::{Brancher, SearchControl};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -72,7 +72,7 @@ impl std::str::FromStr for WarmUpType {
     }
 }
 
-pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
+pub type SolverResult<Sol> = aries_solver::solver::parallel::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
@@ -381,7 +381,7 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
         ..Default::default()
     };
 
-    let mut solver = Box::new(aries::solver::Solver::new(model));
+    let mut solver = Box::new(aries_solver::solver::Solver::new(model));
     solver.reasoners.diff.config = stn_config;
     solver
 }
@@ -418,7 +418,7 @@ pub enum Strat {
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
 struct ActivityBoolFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
-    fn decision_stage(&self, _var: Var, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
+    fn decision_stage(&self, _var: Var, label: Option<&VarLabel>, _model: &aries_solver::model::Model<VarLabel>) -> u8 {
         let (lb, ub) = _model.bounds(_var);
         if ub - lb == 1 {
             return 0;
@@ -462,7 +462,7 @@ impl Strat {
 }
 
 fn causal_brancher(_problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Brancher<VarLabel> {
-    use aries::solver::search::combinators::CombinatorExt;
+    use aries_solver::solver::search::combinators::CombinatorExt;
     let branching_literals: Vec<Lit> = encoding.tags.iter().map(|&(_, l)| l).collect();
 
     // conflict directed search on tagged literals only
@@ -573,7 +573,7 @@ fn solve_finite_problem(
     } else {
         GEN_DEFAULT_STRATEGIES
     };
-    let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
+    let mut solver = aries_solver::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
         strats[id].adapt_solver(s, pb.clone(), encoding.clone())
     });
     if let Some((objective_value, assignment)) = initial_solution {

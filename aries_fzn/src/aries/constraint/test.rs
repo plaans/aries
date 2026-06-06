@@ -4,12 +4,12 @@
 //!  - basic model generators
 //!  - solution checking by enumerating all possibilities
 
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
-use aries::lang::BVar;
-use aries::lang::linear::ScaledVar;
-use aries::solver::SearchLimit;
-use aries::solver::Solver;
+use aries_solver::lang::BVar;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::solver::SearchLimit;
+use aries_solver::solver::Solver;
 use itertools::Itertools;
 
 /// Return all possible values for the given variables.
@@ -60,9 +60,9 @@ fn gen_solutions<const N: usize>(
 /// `verify([var_1, var_2, ...]) == true`.
 ///
 /// ```
-/// # use aries::core::IntCst;
-/// # use aries::model::Model;
-/// # use aries::lang::IVar;
+/// # use aries_solver::core::IntCst;
+/// # use aries_solver::model::Model;
+/// # use aries_solver::lang::IVar;
 /// # use crate::aries::constraint::test::verify_all;
 /// let model: Model<String>;
 /// let x: IVar;

@@ -1,8 +1,8 @@
-use aries::core::IntCst;
-use aries::lang::BVar;
-use aries::lang::linear::ScaledVar;
-use aries::model::Label;
-use aries::model::Model;
+use aries_solver::core::IntCst;
+use aries_solver::lang::BVar;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinGeReif;

@@ -3,11 +3,11 @@ mod greedy;
 use crate::problem::{Encoding, OperationId};
 use crate::search::SearchStrategy::Custom;
 use crate::search::greedy::EstBrancher;
-use aries::prelude::*;
-use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
-use aries::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
-use aries::solver::search::lexical::Lexical;
-use aries::solver::search::{Brancher, SearchControl, conflicts};
+use aries_solver::prelude::*;
+use aries_solver::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
+use aries_solver::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
+use aries_solver::solver::search::lexical::Lexical;
+use aries_solver::solver::search::{Brancher, SearchControl, conflicts};
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -28,8 +28,8 @@ impl std::fmt::Display for VarLbl {
     }
 }
 
-pub type Model = aries::model::Model<VarLbl>;
-pub type Solver = aries::solver::Solver<VarLbl>;
+pub type Model = aries_solver::model::Model<VarLbl>;
+pub type Solver = aries_solver::solver::Solver<VarLbl>;
 
 /// Variants of the search strategy
 #[derive(Eq, PartialEq, Debug, Clone)]

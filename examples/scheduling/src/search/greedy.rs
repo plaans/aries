@@ -3,13 +3,13 @@
 use crate::VarLbl;
 use crate::problem::Encoding;
 use crate::search::Model;
-use aries::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
-use aries::core::state::OptDomain;
-use aries::core::views::Term;
-use aries::core::{IntCst, Lit, Var};
-use aries::model::extensions::DomainsExt;
-use aries::solver::search::{Decision, SearchControl};
-use aries::solver::stats::Stats;
+use aries_solver::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
+use aries_solver::core::state::OptDomain;
+use aries_solver::core::views::Term;
+use aries_solver::core::{IntCst, Lit, Var};
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::solver::search::{Decision, SearchControl};
+use aries_solver::solver::stats::Stats;
 
 #[derive(Clone)]
 pub struct EstBrancher {

@@ -2,13 +2,13 @@ mod parser;
 mod problem;
 mod search;
 
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
 use crate::search::{SearchStrategy, Solver, VarLbl};
 use anyhow::Context;
-use aries::solver::{Exit, SearchLimit};
 use aries_bench_data::IntermediateResult;
+use aries_solver::solver::{Exit, SearchLimit};
 use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -45,7 +45,7 @@ pub struct Opt {
     /// Choose the propagation level for the no-overlap constraint.
     /// Options: try it out, you will get an error message with the options
     #[structopt(long = "no-overlap", default_value = "edge-finding")]
-    no_overlap: aries::reasoners::cp::no_overlap::PropagatorKind,
+    no_overlap: aries_solver::reasoners::cp::no_overlap::PropagatorKind,
     /// Indicates a layout file, containing a matrix with the transportation times between all pairs of machines.
     #[structopt(long = "layout")]
     layout_file: Option<String>,
@@ -257,12 +257,12 @@ mod test {
     use crate::problem::ProblemKind;
     use crate::search::VarLbl;
     use crate::{parser, problem};
-    use aries::core::state::witness;
-    use aries::model::Label;
-    use aries::prelude::*;
-    use aries::reasoners::cp::no_overlap;
-    use aries::solver::search::random::RandomChoice;
-    use aries::solver::{SearchLimit, Solver};
+    use aries_solver::core::state::witness;
+    use aries_solver::model::Label;
+    use aries_solver::prelude::*;
+    use aries_solver::reasoners::cp::no_overlap;
+    use aries_solver::solver::search::random::RandomChoice;
+    use aries_solver::solver::{SearchLimit, Solver};
 
     /// Solve the problem multiple with different random variable ordering, ensuring that all results are as expected.
     /// It also set up solution witness to check that no learned clause prune valid solutions.

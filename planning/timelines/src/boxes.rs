@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt::Debug, ops::RangeInclusive};
 
-use aries::core::IntCst;
+use aries_solver::core::IntCst;
 use enumeration::StreamingIterator;
 use itertools::Itertools;
 use smallvec::SmallVec;

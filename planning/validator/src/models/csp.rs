@@ -6,8 +6,8 @@ use std::{cmp::min, collections::HashMap, fmt::Display, mem::swap};
 
 use anyhow::{bail, Result};
 
-use aries::prelude::*;
-use aries::{
+use aries_solver::prelude::*;
+use aries_solver::{
     lang::{
         expr::{and, eq, geq, lt, or},
         Var,

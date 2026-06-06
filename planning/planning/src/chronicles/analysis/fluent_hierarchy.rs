@@ -1,7 +1,7 @@
 use crate::chronicles::analysis::TemplateID;
 use crate::chronicles::{EffectOp, Fluent, Problem};
 use crate::legacy::SymId;
-use aries::collections::ref_store::IterableRefMap;
+use aries_solver::collections::ref_store::IterableRefMap;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -134,7 +134,7 @@ mod tarjan {
     can use `src/graph/graph_enumeration.rs` to convert their graph.
     */
 
-    use aries::collections::ref_store::IterableRefMap;
+    use aries_solver::collections::ref_store::IterableRefMap;
     use std::collections::HashSet;
 
     use crate::legacy::SymId;

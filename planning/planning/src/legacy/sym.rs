@@ -1,8 +1,8 @@
 use crate::legacy::*;
-use aries::core::state::Evaluable;
-use aries::core::views::VarView;
-use aries::core::*;
-use aries::lang::{ConversionError, IAtom, Var};
+use aries_solver::core::state::Evaluable;
+use aries_solver::core::views::VarView;
+use aries_solver::core::*;
+use aries_solver::lang::{ConversionError, IAtom, Var};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
@@ -48,7 +48,7 @@ impl VarView for SAtom {
 impl Evaluable for SAtom {
     type Value = SymId;
 
-    fn evaluate(&self, solution: &aries::prelude::Solution) -> Option<Self::Value> {
+    fn evaluate(&self, solution: &aries_solver::prelude::Solution) -> Option<Self::Value> {
         self.int_view().evaluate(solution).map(|v| SymId::from(v as usize))
     }
 }

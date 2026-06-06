@@ -180,7 +180,7 @@ impl IndexMut<ClauseId> for Clauses {
 /// because the lifetime associated with the reference would be lost.
 ///
 /// ```compile_fail,E0308
-/// use aries::reasoners::sat::clauses::Clause;
+/// use aries_solver::reasoners::sat::clauses::Clause;
 /// let cl: &Clause = todo!();
 /// let copied: Clause = cl.clone(); // should never compile
 /// ```

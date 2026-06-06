@@ -1,6 +1,6 @@
-use aries::core::views::{Dom, Term, VarView};
-use aries::core::{IntCst, Var};
-use aries::lang::{ConversionError, IAtom};
+use aries_solver::core::views::{Dom, Term, VarView};
+use aries_solver::core::{IntCst, Var};
+use aries_solver::lang::{ConversionError, IAtom};
 use num_rational::Ratio;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};

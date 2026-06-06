@@ -1,5 +1,5 @@
 use crate::legacy::*;
-use aries::{lang::BVar, prelude::*};
+use aries_solver::{lang::BVar, prelude::*};
 use std::convert::TryFrom;
 
 /// Contains a variable of any type

@@ -1,7 +1,7 @@
-use aries::lang::IAtom;
-use aries::lang::expr::neq;
-use aries::model::Label;
-use aries::model::Model;
+use aries_solver::lang::IAtom;
+use aries_solver::lang::expr::neq;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -38,7 +38,7 @@ impl<Lbl: Label> Post<Lbl> for Ne {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::verify_all;

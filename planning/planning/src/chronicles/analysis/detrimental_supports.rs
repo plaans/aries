@@ -1,7 +1,7 @@
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::{EffectOp, Fluent, Problem};
 use crate::legacy::*;
-use aries::core::Lit;
+use aries_solver::core::Lit;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;

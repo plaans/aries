@@ -7,7 +7,7 @@ version = "0.1.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 anyhow = { workspace = true }
-aries = { path = "../../../solver" }
+aries-solver = { path = "../../../solver" }
 aries_planners = { path = "../../planners" }
 aries_planning = { path = "../../planning" }
 async-trait = { workspace = true }

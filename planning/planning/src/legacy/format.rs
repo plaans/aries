@@ -2,10 +2,10 @@ use crate::chronicles::{Ctx, VarLabel};
 use crate::legacy::input::Sym;
 use crate::legacy::utils::Fmt;
 use crate::legacy::*;
-use aries::core::*;
-use aries::lang::IAtom;
-use aries::model::Label;
-use aries::model::ModelShape;
+use aries_solver::core::*;
+use aries_solver::lang::IAtom;
+use aries_solver::model::Label;
+use aries_solver::model::ModelShape;
 
 pub trait Shaped<Lbl>
 where

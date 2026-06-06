@@ -110,7 +110,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
         anyhow::ensure!(
-            ch.presence == aries::core::Lit::TRUE,
+            ch.presence == aries_solver::core::Lit::TRUE,
             "A chronicle instance is optional",
         );
         for eff in &ch.effects {

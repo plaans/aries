@@ -5,17 +5,17 @@ pub mod plan;
 pub mod preprocessing;
 pub mod printer;
 
-use aries::core::views::Term;
+use aries_solver::core::views::Term;
 pub use concrete::*;
 
 use self::constraints::Table;
 use crate::chronicles::preprocessing::action_rolling::RollCompilation;
 use crate::legacy::input::Sym;
 use crate::legacy::*;
-use aries::core::{IntCst, INT_CST_MAX};
-use aries::model::Model;
-use aries::prelude::*;
 use aries_env_param::EnvParam;
+use aries_solver::core::{IntCst, INT_CST_MAX};
+use aries_solver::model::Model;
+use aries_solver::prelude::*;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;

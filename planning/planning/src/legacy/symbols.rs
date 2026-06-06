@@ -1,8 +1,8 @@
 use crate::legacy::id_map::IdMap;
 use crate::legacy::*;
 use anyhow::*;
-use aries::core::{u32_to_cst, IntCst};
-use aries::create_ref_type;
+use aries_solver::core::{u32_to_cst, IntCst};
+use aries_solver::create_ref_type;
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
@@ -10,7 +10,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use crate::legacy::input::Sym;
-use aries::collections::ref_store::RefVec;
+use aries_solver::collections::ref_store::RefVec;
 use std::borrow::Borrow;
 
 /// Associates each symbol (of rust type `Sym`) to

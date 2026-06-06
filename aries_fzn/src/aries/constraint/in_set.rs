@@ -1,8 +1,8 @@
-use aries::core::IntCst;
-use aries::lang::Var;
-use aries::lang::expr::or;
-use aries::model::Label;
-use aries::model::Model;
+use aries_solver::core::IntCst;
+use aries_solver::lang::Var;
+use aries_solver::lang::expr::or;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -66,8 +66,8 @@ impl<Lbl: Label> Post<Lbl> for InSet {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
-    use aries::core::Var;
+    use aries_solver::core::IntCst;
+    use aries_solver::core::Var;
 
     use crate::aries::constraint::test::basic_int_model_1;
     use crate::aries::constraint::test::verify_all;

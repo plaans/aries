@@ -1,4 +1,4 @@
-use aries::core::Lit;
+use aries_solver::core::Lit;
 use itertools::Itertools;
 use planx::*;
 use std::collections::BTreeMap;

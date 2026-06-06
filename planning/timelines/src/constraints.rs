@@ -1,11 +1,11 @@
 pub mod symmetry;
 
-use aries::core::literals::ConjunctionBuilder;
-use aries::lang::element::Element;
-use aries::lang::exclusive_choice::exclu_choice;
-use aries::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
-use aries::prelude::*;
-use aries::{
+use aries_solver::core::literals::ConjunctionBuilder;
+use aries_solver::lang::element::Element;
+use aries_solver::lang::exclusive_choice::exclu_choice;
+use aries_solver::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
+use aries_solver::prelude::*;
+use aries_solver::{
     core::{literals::DisjunctionBuilder, views::Dom},
     lang::{expr::or, max::EqMax},
 };

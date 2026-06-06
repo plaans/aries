@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 structopt = { workspace = true }
 anyhow = { workspace = true }
-aries = { path = "../../solver" }
+aries-solver = { path = "../../solver" }
 aries_planning = { path = "../planning" }
 aries-env-param = { path = "../../utils/env_param" }
 tracing = { workspace = true }
@@ -22,7 +22,7 @@ num-rational = { workspace = true }
 full_check = []
 
 # Will instruct the solver to count CPU cycles in various parts of the solver. (if CPU architecture allows)
-cpu_cycles = ["aries/cpu_cycles"]
+cpu_cycles = ["aries-solver/cpu_cycles"]
 
 
 [[bin]]

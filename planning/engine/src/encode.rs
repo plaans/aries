@@ -5,7 +5,7 @@ pub mod encoding;
 pub mod required_values;
 pub mod tags;
 
-use aries::{
+use aries_solver::{
     core::literals::ConjunctionBuilder,
     lang::{
         BoolExpr, IntExpr,
@@ -412,8 +412,11 @@ pub fn reify_expression(
             if let Ok(i) = IntCst::try_from(*r.numer()) {
                 Ok(i.into())
             } else {
-                e.todo(format!("Cannot be converted to an {}", aries::core::INT_TYPE_NAME))
-                    .failed()
+                e.todo(format!(
+                    "Cannot be converted to an {}",
+                    aries_solver::core::INT_TYPE_NAME
+                ))
+                .failed()
             }
         }
         planx::Expr::Object(object) => {

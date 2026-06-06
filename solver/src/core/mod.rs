@@ -9,9 +9,9 @@
 //! ## Example
 //!
 //! ```
-//! use aries::core::*;
-//! use aries::core::state::*;
-//! use aries::backtrack::Backtrack;
+//! use aries_solver::core::*;
+//! use aries_solver::core::state::*;
+//! use aries_solver::backtrack::Backtrack;
 //! # fn main() {
 //! let mut state = Domains::new();
 //!

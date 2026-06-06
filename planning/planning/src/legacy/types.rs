@@ -1,7 +1,7 @@
 use crate::legacy::id_map::IdMap;
 use crate::legacy::input::Sym;
-use aries::collections::ref_store::RefPool;
-use aries::prelude::*;
+use aries_solver::collections::ref_store::RefPool;
+use aries_solver::prelude::*;
 use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};

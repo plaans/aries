@@ -18,11 +18,11 @@ create_ref_type!(PropagatorId);
 ///
 /// An example propagator is provided in the `propagator::test::implies` in the same file as the trait definition.
 /// ```
-/// use aries::prelude::*;
-/// use aries::core::state::*;
-/// use aries::reasoners::*;
-/// use aries::reasoners::cp::*;
-/// use aries::reasoners::cp::propagator::*;
+/// use aries_solver::prelude::*;
+/// use aries_solver::core::state::*;
+/// use aries_solver::reasoners::*;
+/// use aries_solver::reasoners::cp::*;
+/// use aries_solver::reasoners::cp::propagator::*;
 ///
 /// /// An example propagator for an implication constraint (a => b)
 /// ///

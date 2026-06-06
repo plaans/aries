@@ -1,9 +1,9 @@
 use super::*;
 use crate::legacy::*;
-use aries::lang::expr::and;
-use aries::model::extensions::DomainsExt;
-use aries::model::Label;
-use aries::{core::Lit, lang::expr::or};
+use aries_solver::lang::expr::and;
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Label;
+use aries_solver::{core::Lit, lang::expr::or};
 use itertools::Itertools;
 
 use crate::legacy::{eq, neq};

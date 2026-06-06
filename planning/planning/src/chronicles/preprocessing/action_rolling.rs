@@ -6,10 +6,10 @@ use crate::chronicles::{
     Substitute, Substitution, Time, VarType, TIME_SCALE,
 };
 use crate::legacy::*;
-use aries::core::views::Term;
-use aries::model::Model;
-use aries::prelude::*;
-use aries::solver::{SearchLimit, Solver};
+use aries_solver::core::views::Term;
+use aries_solver::model::Model;
+use aries_solver::prelude::*;
+use aries_solver::solver::{SearchLimit, Solver};
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

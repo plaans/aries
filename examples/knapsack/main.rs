@@ -1,12 +1,12 @@
 #![allow(clippy::needless_range_loop)]
 
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
-use aries::solver::search::combinators::WithGeomRestart;
-use aries::solver::search::conflicts::ConflictBasedBrancher;
-use aries::solver::search::lexical::Lexical;
-use aries::solver::search::Brancher;
 use aries_env_param::EnvParam;
+use aries_solver::solver::search::combinators::WithGeomRestart;
+use aries_solver::solver::search::conflicts::ConflictBasedBrancher;
+use aries_solver::solver::search::lexical::Lexical;
+use aries_solver::solver::search::Brancher;
 use itertools::Itertools;
 use std::cmp::max;
 use std::collections::HashMap;
@@ -140,8 +140,8 @@ impl Display for Sol {
 
 type VarLbl = String;
 
-type Model = aries::model::Model<VarLbl>;
-type Solver = aries::solver::Solver<VarLbl>;
+type Model = aries_solver::model::Model<VarLbl>;
+type Solver = aries_solver::solver::Solver<VarLbl>;
 
 #[derive(Copy, Clone)]
 enum SolveMode {

@@ -114,23 +114,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03918c3dbd7701a85c6b9887732e2921175f26c350b4563841d0958c21d57e6d"
 
 [[package]]
-name = "aries"
-version = "0.0.6"
-dependencies = [
- "aries-env-param",
- "bumpalo",
- "crossbeam-channel",
- "hashbrown",
- "itertools",
- "lru",
- "num-integer",
- "numfmt",
- "rand",
- "smallvec",
- "tracing",
-]
-
-[[package]]
 name = "aries-bench"
 version = "0.1.0"
 dependencies = [
@@ -167,7 +150,7 @@ dependencies = [
 name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
- "aries",
+ "aries-solver",
  "aries-timelines",
  "clap 4.5.54",
  "derivative",
@@ -181,11 +164,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-solver"
+version = "0.6.0"
+dependencies = [
+ "aries-env-param",
+ "bumpalo",
+ "crossbeam-channel",
+ "hashbrown",
+ "itertools",
+ "lru",
+ "num-integer",
+ "numfmt",
+ "rand",
+ "smallvec",
+ "tracing",
+]
+
+[[package]]
 name = "aries-timelines"
 version = "0.1.0"
 dependencies = [
- "aries",
  "aries-env-param",
+ "aries-solver",
  "idmap",
  "itertools",
  "num-rational",
@@ -199,7 +199,7 @@ name = "aries_fzn"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
+ "aries-solver",
  "clap 4.5.54",
  "flatzinc",
  "itertools",
@@ -212,7 +212,7 @@ name = "aries_gg"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
+ "aries-solver",
  "aries_planning",
  "structopt",
 ]
@@ -222,8 +222,8 @@ name = "aries_grpc_server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
  "aries-env-param",
+ "aries-solver",
  "aries_plan_validator",
  "aries_planners",
  "aries_planning",
@@ -245,8 +245,8 @@ dependencies = [
 name = "aries_knapsack"
 version = "0.1.0"
 dependencies = [
- "aries",
  "aries-env-param",
+ "aries-solver",
  "itertools",
  "num-rational",
 ]
@@ -256,7 +256,7 @@ name = "aries_plan_validator"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
+ "aries-solver",
  "im",
  "malachite",
  "regex",
@@ -268,8 +268,8 @@ name = "aries_planners"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
  "aries-env-param",
+ "aries-solver",
  "aries_planning",
  "itertools",
  "num-rational",
@@ -283,8 +283,8 @@ name = "aries_planning"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
  "aries-env-param",
+ "aries-solver",
  "fixedbitset",
  "itertools",
  "num-integer",
@@ -302,7 +302,7 @@ name = "aries_sat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
+ "aries-solver",
  "clap 4.5.54",
  "varisat-dimacs",
  "varisat-formula",
@@ -314,8 +314,8 @@ name = "aries_scheduling"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "aries",
  "aries-bench-data",
+ "aries-solver",
  "itertools",
  "structopt",
  "walkdir",
@@ -325,7 +325,7 @@ dependencies = [
 name = "aries_smt"
 version = "0.1.0"
 dependencies = [
- "aries",
+ "aries-solver",
  "itertools",
 ]
 

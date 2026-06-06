@@ -21,8 +21,8 @@
 //! other variants when doing arithmetic (but type inference is usually sufficient to ignore them).
 //!
 //! ```
-//! # use aries::prelude::*;
-//! # use aries::lang::linear::*;
+//! # use aries_solver::prelude::*;
+//! # use aries_solver::lang::linear::*;
 //! let mut domains = Domains::new();
 //! let x: Var = domains.new_var(0, 10);
 //! let x: ScaledVar = 3 * x;

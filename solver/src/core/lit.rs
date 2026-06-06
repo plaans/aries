@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 ///
 ///
 /// ```
-/// use aries::prelude::*;
+/// use aries_solver::prelude::*;
 /// let mut state = Domains::new();
 /// let x = state.new_var(0, 1);
 /// let x_is_true: Lit = x.geq(1);
@@ -29,7 +29,7 @@ use std::cmp::Ordering;
 ///  - var >= 3   ->  -var <= -3
 ///  - var > 3    ->  -var <= -4
 /// ```
-/// use aries::prelude::*;
+/// use aries_solver::prelude::*;
 /// let mut state = Domains::new();
 /// let x = state.new_var(0, 1);
 /// assert_eq!(x.leq(5), SignedVar::plus(x).leq(5));
@@ -50,7 +50,7 @@ use std::cmp::Ordering;
 /// An important invariant is that, in a sorted list, a bound can only entail the literals immediately following it.
 ///
 /// ```
-/// use aries::prelude::*;
+/// use aries_solver::prelude::*;
 /// let x = Var::from_u32(1);
 /// let y = Var::from_u32(2);
 /// let mut literals = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
@@ -150,7 +150,7 @@ impl Lit {
     /// Return the negated version of the literal.
     ///
     /// ```
-    /// use aries::core::{Lit, Var};
+    /// use aries_solver::core::{Lit, Var};
     /// assert_eq!(!Lit::TRUE, Lit::FALSE);
     /// assert_eq!(!Lit::FALSE, Lit::TRUE);
     /// let a = Var::from(0usize);
@@ -169,7 +169,7 @@ impl Lit {
     /// Note that this property is checked independently of the context where these literals appear.
     ///
     /// ```
-    /// use aries::core::{Lit, Var};
+    /// use aries_solver::core::{Lit, Var};
     /// let a = Var::from(0usize);
     /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 1)));
     /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 2)));
@@ -194,7 +194,7 @@ impl Lit {
     /// Returns true if the literal will always be true in any model.
     ///
     /// ```
-    /// use aries::core::{Lit,Var};
+    /// use aries_solver::core::{Lit,Var};
     /// assert!(Lit::TRUE.tautological());
     /// assert!(!Lit::FALSE.tautological());
     /// assert!(Var::ZERO.leq(10).tautological());
@@ -210,7 +210,7 @@ impl Lit {
     /// Returns true if the literal can never be made true in any model.
     ///
     /// ```
-    /// use aries::core::{Lit,Var};
+    /// use aries_solver::core::{Lit,Var};
     /// assert!(Lit::FALSE.absurd());
     /// assert!(Var::ZERO.geq(10).absurd());
     /// assert!(Var::ZERO.lt(0).absurd());

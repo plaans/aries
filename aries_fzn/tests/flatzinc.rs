@@ -3,13 +3,13 @@
 //! Each (fzn,dzn) pair with the same name in output directory gives a test.
 //! The parser is also tested on the malformed flatzic files in error directory.
 
-use aries::solver::search::beta::BetaBrancher;
-use aries::solver::search::beta::restart::Never;
-use aries::solver::search::beta::value_order::Min;
-use aries::solver::search::beta::var_order::Lexical;
 use aries_fzn::aries::Solver;
 use aries_fzn::fzn::parser::parse_model;
 use aries_fzn::fzn::solution::make_output_flow;
+use aries_solver::solver::search::beta::BetaBrancher;
+use aries_solver::solver::search::beta::restart::Never;
+use aries_solver::solver::search::beta::value_order::Min;
+use aries_solver::solver::search::beta::var_order::Lexical;
 use test_each_file::test_each_file;
 
 test_each_file! { for ["fzn", "dzn"] in "./aries_fzn/tests/output" as output => test_output }

@@ -1,6 +1,4 @@
 use anyhow::{anyhow, bail, ensure, Context, Error};
-use aries::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
-use aries::lang::*;
 use aries_env_param::EnvParam;
 use aries_planning::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use aries_planning::chronicles::VarType::Reification;
@@ -9,6 +7,8 @@ use aries_planning::legacy::input::Sym;
 use aries_planning::legacy::utils::enumerate;
 use aries_planning::legacy::*;
 use aries_planning::parsing::pddl::TypedSymbol;
+use aries_solver::core::{IntCst, Lit, INT_CST_MAX, INT_CST_MIN};
+use aries_solver::lang::*;
 use itertools::Itertools;
 use regex::Regex;
 use std::collections::HashMap;

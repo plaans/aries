@@ -56,7 +56,7 @@ impl std::ops::Sub<i32> for DecLvl {
     /// Decreases the decision level by the given amount.
     ///
     /// ```
-    /// use aries::backtrack::DecLvl;
+    /// use aries_solver::backtrack::DecLvl;
     /// let a = DecLvl::ROOT +1;
     /// let b = DecLvl::ROOT +9;
     /// //assert_ne!(a, b);
@@ -297,7 +297,7 @@ impl<V> ObsTrail<V> {
     /// # Usage
     ///
     /// ```
-    /// use aries::backtrack::*;
+    /// use aries_solver::backtrack::*;
     /// let mut q = ObsTrail::new();
     /// q.push(0); // decision_level: 0, index: 0
     /// q.push(1); // decision_level: 0, index: 1

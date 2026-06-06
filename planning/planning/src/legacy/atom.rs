@@ -1,6 +1,6 @@
 use super::*;
-use aries::core::views::{Term, VarView};
-use aries::prelude::*;
+use aries_solver::core::views::{Term, VarView};
+use aries_solver::prelude::*;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Atom {
@@ -199,7 +199,7 @@ impl Term for Atom {
 impl VarView for Atom {
     type Value = Cst;
 
-    fn upper_bound(&self, dom: impl aries::core::views::Dom) -> Self::Value {
+    fn upper_bound(&self, dom: impl aries_solver::core::views::Dom) -> Self::Value {
         match self {
             Atom::Bool(b) => Cst::Bool(b.upper_bound(dom)),
             Atom::Int(i) => Cst::Int(i.upper_bound(dom)),
@@ -208,7 +208,7 @@ impl VarView for Atom {
         }
     }
 
-    fn lower_bound(&self, dom: impl aries::core::views::Dom) -> Self::Value {
+    fn lower_bound(&self, dom: impl aries_solver::core::views::Dom) -> Self::Value {
         match self {
             Atom::Bool(b) => Cst::Bool(b.lower_bound(dom)),
             Atom::Int(i) => Cst::Int(i.lower_bound(dom)),
@@ -218,7 +218,7 @@ impl VarView for Atom {
     }
 }
 
-use aries::transitive_conversions;
+use aries_solver::transitive_conversions;
 use std::{
     convert::{TryFrom, TryInto},
     fmt::Debug,

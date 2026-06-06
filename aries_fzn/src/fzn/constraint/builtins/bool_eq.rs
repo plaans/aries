@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::Var;
+use aries_solver::core::Var;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;

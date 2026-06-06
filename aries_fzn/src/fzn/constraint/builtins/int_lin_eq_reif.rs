@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::Var;
-use aries::lang::BVar;
-use aries::lang::linear::ScaledVar;
+use aries_solver::core::Var;
+use aries_solver::lang::BVar;
+use aries_solver::lang::linear::ScaledVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;

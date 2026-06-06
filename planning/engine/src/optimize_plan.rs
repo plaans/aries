@@ -4,11 +4,6 @@ use std::{
     time::Instant,
 };
 
-use aries::{
-    core::{state::Evaluable, views::Boundable},
-    lang::{IntExpr, Store},
-    prelude::*,
-};
 use aries_plan_engine::{
     encode::{
         constraints::{ConditionConstraint, ReificationConstraint},
@@ -17,6 +12,11 @@ use aries_plan_engine::{
         *,
     },
     plans::lifted_plan::{self, LiftedPlan},
+};
+use aries_solver::{
+    core::{state::Evaluable, views::Boundable},
+    lang::{IntExpr, Store},
+    prelude::*,
 };
 use derive_more::derive::Display;
 use itertools::Itertools;

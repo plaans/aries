@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use aries::core::Var;
+use aries_solver::core::Var;
 
 use crate::aries::Post;
 

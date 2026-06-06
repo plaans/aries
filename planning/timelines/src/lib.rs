@@ -6,22 +6,22 @@ pub mod explain;
 pub mod symbols;
 pub mod tasks;
 
-use aries::core::state::Evaluable;
-use aries::core::views::Dom;
+use aries_solver::core::state::Evaluable;
+use aries_solver::core::views::Dom;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::Hash;
 use std::sync::Arc;
 
-use aries::core::INT_CST_MAX;
-pub use aries::core::IntCst;
-use aries::lang::*;
-use aries::prelude::*;
-use aries::solver::Solver;
+use aries_solver::core::INT_CST_MAX;
+pub use aries_solver::core::IntCst;
+use aries_solver::lang::*;
+use aries_solver::prelude::*;
+use aries_solver::solver::Solver;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
-pub type Model = aries::model::Model<Sym>;
+pub type Model = aries_solver::model::Model<Sym>;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
@@ -34,10 +34,10 @@ pub type Sym = String;
 pub type Time = IAtom;
 
 /// Type of simple int expressions (composed of at most one variable)
-pub type IntTerm = aries::prelude::LinTerm;
+pub type IntTerm = aries_solver::prelude::LinTerm;
 
 /// Type of compound integer expressions.
-pub type IntExp = aries::prelude::LinSum;
+pub type IntExp = aries_solver::prelude::LinSum;
 
 pub type SymAtom = IntTerm;
 

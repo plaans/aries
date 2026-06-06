@@ -1,13 +1,13 @@
 //! A search controller that mimics forward search for HTN planning.
 
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
 use crate::encoding::refinements_of;
 use crate::Model;
-use aries::backtrack::{Backtrack, DecLvl};
-use aries::solver::search::{Decision, SearchControl};
-use aries::solver::stats::Stats;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
+use aries_solver::backtrack::{Backtrack, DecLvl};
+use aries_solver::solver::search::{Decision, SearchControl};
+use aries_solver::solver::stats::Stats;
 use std::convert::TryFrom;
 use std::sync::Arc;
 

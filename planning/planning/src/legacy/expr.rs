@@ -1,17 +1,17 @@
 use std::ops::Not;
 
-use aries::{
+use aries_solver::{
     lang::{expr::*, Store},
     reif::DifferenceExpression,
 };
 
 use crate::legacy::*;
-use aries::{
+use aries_env_param::EnvParam;
+use aries_solver::{
     model::Label,
     prelude::*,
     reif::{ReifExpr, Reifiable},
 };
-use aries_env_param::EnvParam;
 use itertools::*;
 use smallvec::*;
 

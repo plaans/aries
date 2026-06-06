@@ -5,5 +5,5 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2021"
 
 [dependencies]
-aries = { path = "../../solver" }
+aries-solver = { path = "../../solver" }
 itertools = { workspace = true }

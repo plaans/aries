@@ -1,14 +1,14 @@
 #![allow(clippy::map_entry)]
 
 use anyhow::*;
-use aries::core::Lit;
-use aries::lang::expr::or;
-use aries::lang::BVar;
-use aries::solver::parallel::{ParSolver, SolverResult};
-use aries::solver::search::combinators::{RoundRobin, WithGeomRestart};
-use aries::solver::search::conflicts::{ConflictBasedBrancher, Params};
-use aries::solver::search::SearchControl;
-use aries::solver::Solver;
+use aries_solver::core::Lit;
+use aries_solver::lang::expr::or;
+use aries_solver::lang::BVar;
+use aries_solver::solver::parallel::{ParSolver, SolverResult};
+use aries_solver::solver::search::combinators::{RoundRobin, WithGeomRestart};
+use aries_solver::solver::search::conflicts::{ConflictBasedBrancher, Params};
+use aries_solver::solver::search::SearchControl;
+use aries_solver::solver::Solver;
 use clap::{Parser, Subcommand};
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use varisat_formula::CnfFormula;
 
-type Model = aries::model::Model<String>;
+type Model = aries_solver::model::Model<String>;
 
 /// Simple SAT solver based on the aries constraint solving library.
 ///

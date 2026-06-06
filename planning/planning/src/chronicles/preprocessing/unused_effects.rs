@@ -1,7 +1,7 @@
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Condition, Effect, EffectOp, Problem, VarLabel};
 use crate::legacy::*;
-use aries::model::Model;
+use aries_solver::model::Model;
 use std::cmp::Ordering;
 
 // is the effect a possible support for this condition

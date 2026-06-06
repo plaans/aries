@@ -1,9 +1,9 @@
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
-use aries::lang::BVar;
-use aries::lang::expr::eq;
-use aries::model::Label;
-use aries::model::Model;
+use aries_solver::lang::BVar;
+use aries_solver::lang::expr::eq;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -43,7 +43,7 @@ impl<Lbl: Label> Post<Lbl> for NeReif {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_reif_model;
     use crate::aries::constraint::test::verify_all;

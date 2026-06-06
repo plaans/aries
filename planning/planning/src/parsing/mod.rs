@@ -10,7 +10,7 @@ use crate::legacy::input::{ErrLoc, Loc, Sym};
 use crate::legacy::*;
 use crate::parsing::sexpr::SExpr;
 use anyhow::{bail, Context, Result};
-use aries::core::*;
+use aries_solver::core::*;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;

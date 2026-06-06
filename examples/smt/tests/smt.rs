@@ -1,16 +1,16 @@
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
-use aries::backtrack::Backtrack;
-use aries::core::state::OptDomain;
-use aries::core::views::Term;
-use aries::lang::alternative::Alternative;
-use aries::lang::expr::*;
-use aries::lang::max::{EqMax, EqMin};
-use aries::solver::SearchLimit;
+use aries_solver::backtrack::Backtrack;
+use aries_solver::core::state::OptDomain;
+use aries_solver::core::views::Term;
+use aries_solver::lang::alternative::Alternative;
+use aries_solver::lang::expr::*;
+use aries_solver::lang::max::{EqMax, EqMin};
+use aries_solver::solver::SearchLimit;
 use itertools::Itertools;
 
-type Model = aries::model::Model<String>;
-type Solver = aries::solver::Solver<String>;
+type Model = aries_solver::model::Model<String>;
+type Solver = aries_solver::solver::Solver<String>;
 
 #[test]
 fn sat() {

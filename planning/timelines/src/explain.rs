@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use aries::prelude::*;
-use aries::{
+use aries_solver::prelude::*;
+use aries_solver::{
     backtrack::Backtrack,
     lang::*,
     solver::{Solver, musmcs::MusMcs},
@@ -55,7 +55,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let res = self
             .solver
-            .solve_with_assumptions(&assumptions, aries::solver::SearchLimit::None)
+            .solve_with_assumptions(&assumptions, aries_solver::solver::SearchLimit::None)
             .unwrap()
             .ok();
         // self.solver.print_stats();
@@ -78,7 +78,12 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
         let res = self
             .solver
-            .minimize_with_assumptions(obj, &assumptions, aries::solver::SearchLimit::None, on_new_solution)
+            .minimize_with_assumptions(
+                obj,
+                &assumptions,
+                aries_solver::solver::SearchLimit::None,
+                on_new_solution,
+            )
             .unwrap();
         // self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
@@ -122,7 +127,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 .solver
                 .solve_with_assumptions(
                     &[max_relaxed_assumptions.leq(allowed_relaxations)],
-                    aries::solver::SearchLimit::None,
+                    aries_solver::solver::SearchLimit::None,
                 )
                 .unwrap();
             match result {

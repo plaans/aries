@@ -1,8 +1,8 @@
-use aries::core::Lit;
-use aries::lang::BVar;
-use aries::lang::expr::or;
-use aries::model::Label;
-use aries::model::Model;
+use aries_solver::core::Lit;
+use aries_solver::lang::BVar;
+use aries_solver::lang::expr::or;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -46,7 +46,7 @@ impl<Lbl: Label> Post<Lbl> for ClauseReif {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_bool_model_3;
     use crate::aries::constraint::test::verify_all;

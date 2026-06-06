@@ -27,10 +27,10 @@ pub(crate) mod id_map;
 pub mod input;
 pub mod utils;
 
-pub use aries::lang::ConversionError;
-use aries::model::Model;
+pub use aries_solver::lang::ConversionError;
+use aries_solver::model::Model;
 
-use aries::prelude::DomainsExt;
+use aries_solver::prelude::DomainsExt;
 
 pub fn unifiable<L>(model: &Model<L>, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
     let a = a.into();

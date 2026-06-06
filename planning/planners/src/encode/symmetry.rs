@@ -1,13 +1,13 @@
 use crate::encode::analysis;
 use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
 use analysis::CausalSupport;
-use aries::core::Lit;
-use aries::lang::expr::{and, implies, or};
-use aries::model::extensions::DomainsExt;
 use aries_env_param::EnvParam;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use aries_planning::legacy::f_leq;
+use aries_solver::core::Lit;
+use aries_solver::lang::expr::{and, implies, or};
+use aries_solver::model::extensions::DomainsExt;
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 

@@ -1,8 +1,10 @@
 [package]
-name = "aries"
-version = "0.0.6"
+name = "aries-solver"
+version = "0.6.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/plaans/aries"
 
 [features]
 # If enabled, will instruct the the solver to count cpu cycles at various point of its execution.

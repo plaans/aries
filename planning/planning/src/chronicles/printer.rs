@@ -4,11 +4,11 @@ use std::sync::Arc;
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
 use crate::legacy::*;
-use aries::core::{Lit, Relation, Var};
-use aries::lang::BVar;
-use aries::model::extensions::DomainsExt;
-use aries::model::Model;
-use aries::prelude::*;
+use aries_solver::core::{Lit, Relation, Var};
+use aries_solver::lang::BVar;
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Model;
+use aries_solver::prelude::*;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,

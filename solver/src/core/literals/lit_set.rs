@@ -12,8 +12,8 @@ use std::fmt::{Debug, Formatter};
 ///
 /// # Example
 /// ```
-/// use aries::core::literals::LitSet;
-/// use aries::core::Var;
+/// use aries_solver::core::literals::LitSet;
+/// use aries_solver::core::Var;
 /// let mut set = LitSet::new();
 /// let var = Var::from_u32(3); // arbitrary variable
 /// assert!(!set.contains(var.leq(0)));

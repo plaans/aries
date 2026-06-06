@@ -1,9 +1,9 @@
 use anyhow::{ensure, Context, Result};
-use aries::prelude::*;
 use aries_planners::encoding::ChronicleId;
 use aries_planners::fmt::{extract_plan_actions, format_atom};
 use aries_planning::chronicles::{ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
 use aries_planning::legacy::*;
+use aries_solver::prelude::*;
 use std::collections::HashMap;
 use unified_planning as up;
 use unified_planning::{Real, Schedule};

@@ -1,7 +1,7 @@
-use aries::lang::Store;
-use aries::lang::expr::{implies, leq};
-use aries::prelude::*;
-use aries::{core::literals::DisjunctionBuilder, lang::BoolExpr};
+use aries_solver::lang::Store;
+use aries_solver::lang::expr::{implies, leq};
+use aries_solver::prelude::*;
+use aries_solver::{core::literals::DisjunctionBuilder, lang::BoolExpr};
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -139,7 +139,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
         }
     }
 
-    fn conj_scope(&self, _ctx: &SchedEncoder) -> aries::prelude::Conjunction {
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> aries_solver::prelude::Conjunction {
         Lit::TRUE.into()
     }
 }

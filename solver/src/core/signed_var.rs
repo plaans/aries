@@ -35,7 +35,7 @@ impl SignedVar {
     /// Return the opposite view of the same variable.
     ///
     /// ```
-    /// use aries::core::*;
+    /// use aries_solver::core::*;
     /// let var = Var::from(1u32);
     /// let plus_var = SignedVar::minus(var);
     /// let minus_var = SignedVar::plus(var);

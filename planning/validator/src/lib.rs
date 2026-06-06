@@ -5,7 +5,7 @@ mod procedures;
 mod traits;
 mod utils;
 
-use aries::core::INT_CST_MAX;
+use aries_solver::core::INT_CST_MAX;
 // Public exportation of the interfaces
 pub use interfaces::unified_planning::validate_upf;
 

@@ -1,7 +1,7 @@
 use crate::legacy::*;
-use aries::core::views::Term;
-use aries::core::{IntCst, Lit, SignedVar, Var};
-use aries::prelude::*;
+use aries_solver::core::views::Term;
+use aries_solver::core::{IntCst, Lit, SignedVar, Var};
+use aries_solver::prelude::*;
 use std::collections::HashMap;
 
 /// Extension trait to allow the evaluation of expressions based on a partial assignment of variables.
@@ -156,7 +156,7 @@ impl Default for PartialAssignmentBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aries::model::Model;
+    use aries_solver::model::Model;
 
     #[test]
     fn test_partial_assignment() {

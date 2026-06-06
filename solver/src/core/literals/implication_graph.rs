@@ -22,8 +22,8 @@ use std::sync::Mutex;
 ///
 /// # Example
 /// ```ignore
-/// use aries::core::*;
-/// use aries::core::literals::ImplicationGraph;
+/// use aries_solver::core::*;
+/// use aries_solver::core::literals::ImplicationGraph;
 /// let mut set = ImplicationGraph::new();
 /// let v1 = Var::from_u32(3); // arbitrary variable
 /// let v2 = Var::from_u32(4); // arbitrary variable

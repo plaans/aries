@@ -1,6 +1,6 @@
-use aries::{lang::expr::neq, prelude::*}; // TODO: ugly import
+use aries_solver::{lang::expr::neq, prelude::*}; // TODO: ugly import
 
-type Model = aries::prelude::Model<String>;
+type Model = aries_solver::prelude::Model<String>;
 
 /// Solves the N-Queens problem for a given board size.
 ///

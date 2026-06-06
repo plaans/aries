@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use crate::legacy::*;
-use aries::core::state::Evaluable;
-use aries::lang::linear::*;
-use aries::{prelude::*, reif::ReifExpr};
+use aries_solver::core::state::Evaluable;
+use aries_solver::lang::linear::*;
+use aries_solver::{prelude::*, reif::ReifExpr};
 use num_integer::lcm;
 /* ========================================================================== */
 /*                                  LinearLeq                                 */
@@ -485,7 +485,7 @@ impl TryFrom<LinearSum> for IAtom {
     }
 }
 
-use aries::transitive_conversion;
+use aries_solver::transitive_conversion;
 
 transitive_conversion!(LinearSum, LinearTerm, Var);
 

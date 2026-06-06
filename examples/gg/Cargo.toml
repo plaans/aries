@@ -8,7 +8,7 @@ edition = "2021"
 structopt = { workspace = true }
 anyhow = { workspace = true }
 aries_planning = { path = "../../planning/planning" }
-aries = { path = "../../solver" }
+aries-solver = { path = "../../solver" }
 
 
 [[bin]]

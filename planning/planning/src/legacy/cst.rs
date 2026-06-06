@@ -1,5 +1,5 @@
 use crate::legacy::*;
-use aries::prelude::*;
+use aries_solver::prelude::*;
 
 /// Represents a constant value
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]

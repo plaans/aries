@@ -3,15 +3,15 @@ use std::collections::HashMap;
 use crate::encode::*;
 use crate::encoding::*;
 use crate::Solver;
-use aries::backtrack::Backtrack;
-use aries::backtrack::DecLvl;
-use aries::core::state::Conflict;
-use aries::core::*;
-use aries::lang::expr::*;
-use aries::model::extensions::DomainsExt;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::*;
 use aries_planning::legacy::{eq, geq, leq};
+use aries_solver::backtrack::Backtrack;
+use aries_solver::backtrack::DecLvl;
+use aries_solver::core::state::Conflict;
+use aries_solver::core::*;
+use aries_solver::lang::expr::*;
+use aries_solver::model::extensions::DomainsExt;
 use itertools::Itertools;
 
 /// Parameter that activates additional constraints for borrow patterns.

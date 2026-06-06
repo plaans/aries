@@ -1,8 +1,8 @@
 //! Functions related to printing and formatting (partial) plans.
 
 use anyhow::*;
-use aries::prelude::*;
 use aries_planning::legacy::*;
+use aries_solver::prelude::*;
 use itertools::Itertools;
 use std::fmt::Write;
 
