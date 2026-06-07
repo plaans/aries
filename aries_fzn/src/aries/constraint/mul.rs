@@ -1,7 +1,7 @@
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::IVar;
-use aries::model::lang::expr::eq_mul;
+use aries_solver::lang::Var;
+use aries_solver::lang::expr::eq_mul;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -10,25 +10,25 @@ use crate::aries::Post;
 /// `a = b * c`
 #[derive(Debug)]
 pub struct Mul {
-    a: IVar,
-    b: IVar,
-    c: IVar,
+    a: Var,
+    b: Var,
+    c: Var,
 }
 
 impl Mul {
-    pub fn new(a: IVar, b: IVar, c: IVar) -> Self {
+    pub fn new(a: Var, b: Var, c: Var) -> Self {
         Self { a, b, c }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &Var {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &Var {
         &self.b
     }
 
-    pub fn c(&self) -> &IVar {
+    pub fn c(&self) -> &Var {
         &self.c
     }
 }
@@ -41,7 +41,7 @@ impl<Lbl: Label> Post<Lbl> for Mul {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::basic_int_model_3;

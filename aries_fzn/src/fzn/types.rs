@@ -1,6 +1,6 @@
 //! Flatzinc types.
 
-use aries::core::IntCst;
+use aries_solver::core::IntCst;
 
 /// Flatzinc integer value.
 ///

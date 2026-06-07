@@ -76,7 +76,7 @@ impl Conjunction {
 
 impl<'a> IntoIterator for &'a Conjunction {
     type Item = Lit;
-    type IntoIter = <&'a Lits as IntoIterator>::IntoIter;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, Lit>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.literals.as_ref().iter().copied()
@@ -84,7 +84,7 @@ impl<'a> IntoIterator for &'a Conjunction {
 }
 impl IntoIterator for Conjunction {
     type Item = Lit;
-    type IntoIter = <Lits as IntoIterator>::IntoIter;
+    type IntoIter = smallvec::IntoIter<[Lit; 3]>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.literals.into_iter()
@@ -263,13 +263,13 @@ mod tests {
     use rand::rng;
     use rand::seq::SliceRandom;
 
-    const A: VarRef = VarRef::from_u32(1u32);
-    const B: VarRef = VarRef::from_u32(2u32);
+    const A: Var = Var::from_u32(1u32);
+    const B: Var = Var::from_u32(2u32);
 
-    fn leq(var: VarRef, val: IntCst) -> Lit {
+    fn leq(var: Var, val: IntCst) -> Lit {
         Lit::leq(var, val)
     }
-    fn geq(var: VarRef, val: IntCst) -> Lit {
+    fn geq(var: Var, val: IntCst) -> Lit {
         Lit::geq(var, val)
     }
 
@@ -321,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_minimality_coherence() {
-        let vars = (0..=100).map(VarRef::from_u32);
+        let vars = (0..=100).map(Var::from_u32);
 
         let vals = -5..5;
 
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_builder() {
-        let vars = (1..=10).map(VarRef::from_u32);
+        let vars = (1..=10).map(Var::from_u32);
 
         let vals = 0..10;
 

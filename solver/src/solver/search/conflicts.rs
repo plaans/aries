@@ -19,9 +19,9 @@ use std::fmt::Debug;
 #[derive(Default, Clone)]
 struct ConflictTracking {
     num_conflicts: u64,
-    assignment_time: RefMap<VarRef, u64>,
-    conflict_since_assignment: RefVec<VarRef, f64>,
-    assignments: Trail<VarRef>,
+    assignment_time: RefMap<Var, u64>,
+    conflict_since_assignment: RefVec<Var, f64>,
+    assignments: Trail<Var>,
 }
 
 /// A branching scheme that first select variables that were recently involved in conflicts.
@@ -30,10 +30,10 @@ pub struct ConflictBasedBrancher {
     heap: VarSelect,
     default_assignment: PreferredValues,
     /// vars that should be considered for branching but htat have not been processed yet.
-    unprocessed_vars: Vec<VarRef>,
+    unprocessed_vars: Vec<Var>,
     /// Associates presence literals to the optional variables
-    /// Essentially a `Map<Lit, Set<VarRef>>`
-    presences: Watches<VarRef>,
+    /// Essentially a `Map<Lit, Set<Var>>`
+    presences: Watches<Var>,
     cursor: ObsTrailCursor<Event>,
     pub params: Params,
     conflicts: ConflictTracking,
@@ -50,7 +50,7 @@ struct PreferredValues {
     objective_found: Option<IntCst>,
     /// Default value for variables (some variables might not have one)
     /// The value is tagged with its origin which might be a solution ID or phase saving.
-    values: RefMap<VarRef, (IntCst, PreferredValueOrigin)>,
+    values: RefMap<Var, (IntCst, PreferredValueOrigin)>,
 }
 
 /// Denotes the origin of a preferred value, which can be either from a phase saving or from a solution (identified with its ID)
@@ -71,7 +71,7 @@ impl PreferredValues {
     }
 
     /// Record the value as preferred, unless it already as a value from the current solution.
-    pub fn set_from_phase(&mut self, var: VarRef, value: IntCst) {
+    pub fn set_from_phase(&mut self, var: Var, value: IntCst) {
         match self.values.get(var) {
             // Some((_, origin)) if origin.0 == self.last_solution_id => {  // do not erase a value from the last solution
             Some((_, origin)) if origin.0 > 0 => { // do not erase from solution
@@ -81,13 +81,13 @@ impl PreferredValues {
     }
 
     /// Set the value as preferred and mark it as coming from the latest solution (requires bumping the solution ID)
-    pub fn set_from_solution(&mut self, var: VarRef, value: IntCst) {
+    pub fn set_from_solution(&mut self, var: Var, value: IntCst) {
         self.values
             .insert(var, (value, PreferredValueOrigin::from_solution(self.last_solution_id)));
     }
 
     /// Returns the preferred value vor the variable or None is none is recorded
-    pub fn get(&self, var: VarRef) -> Option<IntCst> {
+    pub fn get(&self, var: Var) -> Option<IntCst> {
         self.values.get(var).map(|(val, _)| *val)
     }
 }
@@ -218,7 +218,7 @@ impl ConflictBasedBrancher {
     }
 
     pub fn with(choices: Vec<Lit>, params: Params) -> Self {
-        let vars: BTreeSet<VarRef> = choices.iter().map(|l| l.variable()).collect();
+        let vars: BTreeSet<Var> = choices.iter().map(|l| l.variable()).collect();
         ConflictBasedBrancher {
             params,
             heap: VarSelect::new(Default::default()),
@@ -248,7 +248,7 @@ impl ConflictBasedBrancher {
         self.process_events(model);
     }
 
-    fn is_decision_variable(&self, v: VarRef) -> bool {
+    fn is_decision_variable(&self, v: Var) -> bool {
         self.heap.is_declared(v)
     }
 
@@ -277,11 +277,11 @@ impl ConflictBasedBrancher {
     /// to the level preceding the decision to be made.
     ///
     /// Returns `None` if no decision is left to be made.
-    pub fn next_decision<Var>(&mut self, _stats: &Stats, model: &Model<Var>) -> Option<Decision> {
+    pub fn next_decision<VarLbl>(&mut self, _stats: &Stats, model: &Model<VarLbl>) -> Option<Decision> {
         self.import_vars(model);
 
         // returns true if this variable is available for decision
-        let decidable = |var: VarRef| !model.state.is_bound(var) && model.state.present(var) == Some(true);
+        let decidable = |var: Var| !model.state.is_bound(var) && model.state.present(var) == Some(true);
 
         let next_unset = if self.params.random_var_period != 0
             && _stats.num_decisions.is_multiple_of(self.params.random_var_period)
@@ -351,19 +351,19 @@ impl ConflictBasedBrancher {
         }
     }
 
-    pub fn set_default_value(&mut self, var: VarRef, val: IntCst) {
+    pub fn set_default_value(&mut self, var: Var, val: IntCst) {
         self.default_assignment.set_from_phase(var, val)
     }
 
     /// Increase the activity of the variable and perform an reordering in the queue.
     /// If the variable is optional, the activity of the presence variable is increased as well.
     /// The activity is then used to select the next variable.
-    pub fn bump_activity<Var>(&mut self, lit: Lit, model: &Model<Var>) {
+    pub fn bump_activity<VarLbl>(&mut self, lit: Lit, model: &Model<VarLbl>) {
         self.heap.lit_bump_activity(lit);
         let prez = model.state.presence(lit.variable());
         match prez.variable() {
-            VarRef::ZERO => {}
-            VarRef::ONE => {}
+            Var::ZERO => {}
+            Var::ONE => {}
             _ => self.heap.lit_bump_activity(prez),
         }
     }
@@ -383,7 +383,7 @@ impl Default for BoolHeuristicParams {
     }
 }
 
-type Heap = IdxHeap<VarRef, f64>;
+type Heap = IdxHeap<Var, f64>;
 
 /// Changes that need to be undone.
 /// The only change that we need to undo is the removal from the queue.
@@ -392,7 +392,7 @@ type Heap = IdxHeap<VarRef, f64>;
 /// that will never be send to a caller.
 #[derive(Copy, Clone)]
 enum HeapEvent {
-    Removal(VarRef),
+    Removal(Var),
 }
 
 #[derive(Clone)]
@@ -401,7 +401,7 @@ struct VarSelect {
     /// Heap where pending variables are present and allows extracting the highest-priority variable.
     heap: Heap,
     /// Decision variables among which we must select.
-    vars: RefSet<VarRef>,
+    vars: RefSet<Var>,
     /// Trail that record events and allows repopulating the heap when backtracking.
     trail: Trail<HeapEvent>,
 }
@@ -416,14 +416,14 @@ impl VarSelect {
         }
     }
 
-    pub fn is_declared(&self, v: VarRef) -> bool {
+    pub fn is_declared(&self, v: Var) -> bool {
         self.vars.contains(v)
     }
 
     /// Declares a new variable. The variable is NOT added to the queue.
     /// The stage parameter defines at which stage of the search the variable will be selected.
     /// Variables with the lowest stage are considered first.
-    pub fn declare_variable(&mut self, v: VarRef, initial_priority: Option<f64>) {
+    pub fn declare_variable(&mut self, v: Var, initial_priority: Option<f64>) {
         debug_assert!(!self.is_declared(v));
         let priority = initial_priority.unwrap_or(0.0);
 
@@ -432,20 +432,20 @@ impl VarSelect {
     }
 
     /// Adds a previously declared variable to its queue
-    pub fn enqueue_variable(&mut self, v: VarRef) {
+    pub fn enqueue_variable(&mut self, v: Var) {
         debug_assert!(self.is_declared(v));
         self.heap.enqueue(v);
     }
 
     /// Returns the next element in the queue, without removing it.
     /// Returns `None` if no elements are left in the queue.
-    pub fn peek(&mut self) -> Option<VarRef> {
+    pub fn peek(&mut self) -> Option<Var> {
         self.heap.peek().copied()
     }
 
     /// Remove the next element from the queue and return it.
     /// Returns `None` if no elements are left in the queue.
-    pub fn pop(&mut self) -> Option<VarRef> {
+    pub fn pop(&mut self) -> Option<Var> {
         if let Some(var) = self.heap.pop() {
             self.trail.push(HeapEvent::Removal(var));
             Some(var)

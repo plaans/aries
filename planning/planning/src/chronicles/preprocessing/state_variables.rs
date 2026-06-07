@@ -1,10 +1,8 @@
 use crate::chronicles::analysis::is_static;
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Chronicle, Container, Effect, EffectOp, Fluent, Problem, StateVar, Time, VarType};
-use aries::model::lang::*;
-use aries::model::symbols::{SymId, TypedSym};
-use aries::model::types::{TypeHierarchy, TypeId};
-use aries::utils::input::Sym;
+use crate::legacy::input::Sym;
+use crate::legacy::*;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -76,7 +74,7 @@ impl Function {
 fn find_compound_state_variables(pb: &Problem) -> Vec<SubstitutionGroup> {
     let mut valid_groups = Vec::new();
 
-    let types = &pb.context.model.shape.symbols.types;
+    let types = &pb.context.symbols.types;
     let mut functions = Vec::new();
 
     for f in &pb.context.fluents {
@@ -524,7 +522,7 @@ fn is_substitutable(pb: &Problem, group: &SubstitutionGroup) -> bool {
                 tracing::trace!("non convertible condition in base");
                 return false;
             }
-            if model.unifiable(cond.value, false) {
+            if unifiable(model, cond.value, false) {
                 // note that it is assumed that if an effect is present, it may be needed by someone
                 // (there a special preprocessing phase that removes provably unused statements)
                 tracing::trace!("non positive condition in base");
@@ -663,7 +661,7 @@ fn lift(pb: &mut Problem, group: &SubstitutionGroup) {
                         // transform   [s,t] (loc r l) == false  into
                         //    [s,t] loc r == ?x    and      ?x != l
                         let var_type = return_type(&cond.state_var.fluent);
-                        let var = pb.context.model.new_optional_sym_var(
+                        let var = pb.context.new_optional_sym_var(
                             var_type,
                             ch.presence,
                             container_label.var(VarType::Reification),

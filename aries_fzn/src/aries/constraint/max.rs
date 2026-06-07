@@ -1,7 +1,7 @@
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::IVar;
-use aries::model::lang::max::EqMax;
+use aries_solver::lang::Var;
+use aries_solver::lang::max::EqMax;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -11,20 +11,20 @@ use crate::aries::Post;
 /// where `v[i]` are variables.
 #[derive(Debug)]
 pub struct Max {
-    items: Vec<IVar>,
-    var: IVar,
+    items: Vec<Var>,
+    var: Var,
 }
 
 impl Max {
-    pub fn new(items: Vec<IVar>, var: IVar) -> Self {
+    pub fn new(items: Vec<Var>, var: Var) -> Self {
         Self { items, var }
     }
 
-    pub fn items(&self) -> &Vec<IVar> {
+    pub fn items(&self) -> &Vec<Var> {
         &self.items
     }
 
-    pub fn var(&self) -> &IVar {
+    pub fn var(&self) -> &Var {
         &self.var
     }
 }
@@ -38,7 +38,7 @@ impl<Lbl: Label> Post<Lbl> for Max {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_3;
     use crate::aries::constraint::test::verify_all;

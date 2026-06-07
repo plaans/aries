@@ -3,7 +3,7 @@ mod first_fail;
 mod lexical;
 
 use crate::backtrack::DecLvl;
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::core::state::Conflict;
 use crate::core::state::Explainer;
 use crate::model::Label;
@@ -14,7 +14,7 @@ pub use crate::solver::search::beta::var_order::lexical::Lexical;
 
 pub trait VarOrder<Lbl: Label> {
     /// Return the variable to branch on or None if no one is available.
-    fn select(&self, model: &Model<Lbl>) -> Option<VarRef>;
+    fn select(&self, model: &Model<Lbl>) -> Option<Var>;
 
     /// Function called each time a conflict occurs.
     fn conflict(
@@ -35,7 +35,7 @@ pub enum VarOrderKind {
 }
 
 impl<Lbl: Label> VarOrder<Lbl> for VarOrderKind {
-    fn select(&self, model: &Model<Lbl>) -> Option<VarRef> {
+    fn select(&self, model: &Model<Lbl>) -> Option<Var> {
         match self {
             VarOrderKind::Activity(activity) => activity.select(model),
             VarOrderKind::Lexical(lexical) => lexical.select(model),

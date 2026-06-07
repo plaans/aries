@@ -4,7 +4,7 @@ use crate::core::*;
 /// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
 #[derive(Clone)]
-pub struct WatchSet<Watcher> {
+pub(crate) struct WatchSet<Watcher> {
     watches: Vec<Watch<Watcher>>,
 }
 impl<Watcher> WatchSet<Watcher> {
@@ -17,14 +17,6 @@ impl<Watcher> WatchSet<Watcher> {
             watcher,
             guard: literal.ub_value(),
         })
-    }
-
-    pub fn len(&self) -> usize {
-        self.watches.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.watches.is_empty()
     }
 
     pub fn clear(&mut self) {
@@ -90,8 +82,8 @@ impl<Watcher> Default for WatchSet<Watcher> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Watch<Watcher> {
-    pub watcher: Watcher,
+pub(crate) struct Watch<Watcher> {
+    pub(crate) watcher: Watcher,
     /// upper bound
     guard: IntCst,
 }
@@ -103,7 +95,7 @@ impl<Watcher> Watch<Watcher> {
 
 /// A datastructure for implementing watches, functionnally equivalent to a `Map<Lit, Set<Watcher>>`
 #[derive(Clone)]
-pub struct Watches<Watcher> {
+pub(crate) struct Watches<Watcher> {
     watches: RefVec<SignedVar, WatchSet<Watcher>>,
     empty_watch_set: WatchSet<Watcher>,
 }
@@ -186,8 +178,8 @@ mod tests {
 
     #[test]
     fn test_watches() {
-        let a = VarRef::from_u32(1);
-        let b = VarRef::from_u32(2);
+        let a = Var::from_u32(1);
+        let b = Var::from_u32(2);
 
         let watches = &mut Watches::new();
 

@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use aries::utils::StreamingIterator;
 use planx::FluentId;
 use smallvec::SmallVec;
 use timelines::{
     IntCst,
-    boxes::{BBox, BoxRef},
+    boxes::{BBox, BoxRef, enumeration::StreamingIterator},
 };
 
 /// An overapproximation of all the values (time, state-variable, value) that may be required in any part of the problem.

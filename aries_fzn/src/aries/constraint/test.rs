@@ -4,21 +4,19 @@
 //!  - basic model generators
 //!  - solution checking by enumerating all possibilities
 
-use aries::core::IntCst;
-use aries::core::VarRef;
-use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::IVar;
-use aries::model::lang::linear::ScaledVar;
-use aries::solver::SearchLimit;
-use aries::solver::Solver;
+use aries_solver::prelude::*;
+
+use aries_solver::lang::BVar;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::solver::SearchLimit;
+use aries_solver::solver::Solver;
 use itertools::Itertools;
 
 /// Return all possible values for the given variables.
 ///
 /// The solutions are generated in lexicographic order.
 fn get_solutions<const N: usize>(
-    vars: [VarRef; N],
+    vars: [Var; N],
     model: Model<String>,
 ) -> Vec<[IntCst; N]> {
     let mut solver = Solver::new(model);
@@ -36,7 +34,7 @@ fn get_solutions<const N: usize>(
 ///
 /// The solutions are generated in lexicographic order.
 fn gen_solutions<const N: usize>(
-    vars: [VarRef; N],
+    vars: [Var; N],
     model: &Model<String>,
     verify: impl Fn([IntCst; N]) -> bool,
 ) -> Vec<[IntCst; N]> {
@@ -62,9 +60,9 @@ fn gen_solutions<const N: usize>(
 /// `verify([var_1, var_2, ...]) == true`.
 ///
 /// ```
-/// # use aries::core::IntCst;
-/// # use aries::model::Model;
-/// # use aries::model::lang::IVar;
+/// # use aries_solver::core::IntCst;
+/// # use aries_solver::model::Model;
+/// # use aries_solver::lang::IVar;
 /// # use crate::aries::constraint::test::verify_all;
 /// let model: Model<String>;
 /// let x: IVar;
@@ -76,14 +74,14 @@ fn gen_solutions<const N: usize>(
 /// verify_all([x, y], model, verify);
 /// ```
 pub(super) fn verify_all<const N: usize>(
-    vars: [impl Into<VarRef>; N],
+    vars: [impl Into<Var>; N],
     model: Model<String>,
     verify: impl Fn([IntCst; N]) -> bool,
 ) {
-    let vars: [VarRef; N] = vars
+    let vars: [Var; N] = vars
         .into_iter()
         .map(|var| var.into())
-        .collect::<Vec<VarRef>>()
+        .collect::<Vec<Var>>()
         .try_into()
         .unwrap();
     let expected = gen_solutions(vars, &model, verify);
@@ -99,7 +97,7 @@ pub(super) fn verify_all<const N: usize>(
 ///
 /// It has one variables:
 ///  - x in \[-1,7\]
-pub(super) fn basic_int_model_1() -> (Model<String>, IVar) {
+pub(super) fn basic_int_model_1() -> (Model<String>, Var) {
     let mut model = Model::new();
 
     let x = model.new_ivar(-1, 7, "x".to_string());
@@ -116,7 +114,7 @@ pub(super) fn basic_int_model_1() -> (Model<String>, IVar) {
 /// It has two variables:
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
-pub(super) fn basic_int_model_2() -> (Model<String>, IVar, IVar) {
+pub(super) fn basic_int_model_2() -> (Model<String>, Var, Var) {
     let (mut model, x) = basic_int_model_1();
 
     let y = model.new_ivar(-4, 6, "y".to_string());
@@ -134,7 +132,7 @@ pub(super) fn basic_int_model_2() -> (Model<String>, IVar, IVar) {
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - z in \[-2,5\]
-pub(super) fn basic_int_model_3() -> (Model<String>, IVar, IVar, IVar) {
+pub(super) fn basic_int_model_3() -> (Model<String>, Var, Var, Var) {
     let (mut model, x, y) = basic_int_model_2();
     let z = model.new_ivar(-2, 5, "z".to_string());
 
@@ -155,8 +153,8 @@ pub(super) fn basic_int_model_3() -> (Model<String>, IVar, IVar, IVar) {
 pub(super) fn basic_lin_model() -> (
     Model<String>,
     Vec<ScaledVar>,
-    IVar,
-    IVar,
+    Var,
+    Var,
     IntCst,
     IntCst,
     IntCst,
@@ -169,11 +167,11 @@ pub(super) fn basic_lin_model() -> (
 
     let sum = vec![
         ScaledVar {
-            var: x.into(),
+            var: x,
             factor: c_x,
         },
         ScaledVar {
-            var: y.into(),
+            var: y,
             factor: c_y,
         },
     ];
@@ -220,7 +218,7 @@ pub(super) fn basic_bool_model_3() -> (Model<String>, BVar, BVar, BVar) {
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - r bool
-pub(super) fn basic_reif_model() -> (Model<String>, IVar, IVar, BVar) {
+pub(super) fn basic_reif_model() -> (Model<String>, Var, Var, BVar) {
     let (mut model, x, y) = basic_int_model_2();
 
     let r = model.new_bvar("r".to_string());

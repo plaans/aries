@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// For instance, the expression `a <= b` is defined iff both `a` and `b` are *present*.
 /// It can be said to exist in the conjunctive scope `presence(a) & presence(b)`.
 #[derive(Clone)]
-pub struct Scopes {
+pub(crate) struct Scopes {
     conjunctive_scopes: HashMap<Arc<StableLitSet>, Lit>,
     conjunction_of: HashMap<Lit, Arc<StableLitSet>>,
     /// Associates for each scope literal (the key) an optional literal that is true in this scope.

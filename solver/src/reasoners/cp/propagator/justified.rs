@@ -7,20 +7,20 @@
 //! that will handle the storage of justifications.
 //!
 //! This kind of propagators are useful when propagation is complex and one want to avoid to reproduce the propagation algorithm for explaining each inference.
-//! This is notably used in the [`NoOverlap`](aries::reasoners::cp::NoOverlap) propagator.
+//! This is notably used in the `NoOverlap` propagator.
 //!
 //! Below is a simple example to illustrate how the different parts fit together.
 //!
 //! ```
-//! use aries::prelude::*;
-//! use aries::core::state::*;
-//! use aries::reasoners::cp::propagator::*;
-//! use aries::reasoners::cp::propagator::justified::*;
-//! use aries::reasoners::cp::*;
+//! use aries_solver::prelude::*;
+//! use aries_solver::core::state::*;
+//! use aries_solver::reasoners::cp::propagator::*;
+//! use aries_solver::reasoners::cp::propagator::justified::*;
+//! use aries_solver::reasoners::cp::*;
 //!
 //! /// A dummy propagator on a variable
 //! #[derive(Debug, Clone)]
-//! struct Prop(VarRef);
+//! struct Prop(Var);
 //!
 //! /// A justification for `Prop`. Can be any arbitrary type, here just storing an integer
 //! #[derive(Debug, Clone)]
@@ -59,7 +59,7 @@
 //!     }
 //! }
 //! let mut model: Model<&str> = Model::new();
-//! model.enforce_user_propagator(Prop(VarRef::ZERO));
+//! model.enforce_user_propagator(Prop(Var::ZERO));
 //! ```
 
 use crate::{
@@ -178,7 +178,7 @@ impl<'a, J> Dom for DomainsAndJustifications<'a, J> {
         self.domains.upper_bound(svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.domains.presence(var)
     }
 }

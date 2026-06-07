@@ -1,10 +1,12 @@
+//! Implementation of clause minimization
+
 use itertools::Itertools;
 
 use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::Lit;
 use crate::core::literals::LitSet;
 use crate::core::state::{Domains, Explainer, Explanation, Origin};
-use std::collections::HashSet;
+use hashbrown::HashSet;
 
 use super::literals::Disjunction;
 use super::state::ExplanationQueue;

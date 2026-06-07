@@ -1,12 +1,13 @@
 use crate::encode::analysis;
 use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
 use analysis::CausalSupport;
-use aries::core::Lit;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::expr::{and, f_leq, implies, or};
+use aries_env_param::EnvParam;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
-use env_param::EnvParam;
+use aries_planning::legacy::f_leq;
+use aries_solver::core::Lit;
+use aries_solver::lang::expr::{and, implies, or};
+use aries_solver::model::extensions::DomainsExt;
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 
@@ -372,6 +373,6 @@ fn print_cond(cid: CondID, pb: &FiniteProblem, model: &Model) {
         analysis::CondOrigin::ExplicitCondition(cond_id) => &ch.chronicle.conditions[cond_id].state_var,
         analysis::CondOrigin::PostIncrease(eff_id) => &ch.chronicle.effects[eff_id].state_var,
     };
-    let s = model.shape.symbols.format(&[state_var.fluent.sym]);
+    let s = pb.symbols.format(&[state_var.fluent.sym]);
     print!("  {:?}:{}", ch.origin, s)
 }

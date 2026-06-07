@@ -1,8 +1,7 @@
 use crate::chronicles::Fluent;
-use aries::collections::ref_store::{RefPool, RefStore};
-use aries::model::lang::Type;
-use aries::model::symbols::{ContiguousSymbols, SymId, SymbolTable};
-use aries::utils::enumerate;
+use crate::legacy::utils::enumerate;
+use crate::legacy::*;
+use aries_solver::collections::ref_store::{RefPool, RefStore};
 use core::num::NonZeroU32;
 use fixedbitset::FixedBitSet;
 use std::collections::HashSet;

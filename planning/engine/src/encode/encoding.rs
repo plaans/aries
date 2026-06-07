@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::{collections::BTreeMap, fmt::Display, path::Path};
 
-use aries::{core::state::Evaluable, prelude::*};
+use aries_solver::{core::state::Evaluable, prelude::*};
 use itertools::Itertools;
 use planx::Res;
 use planx::{ActionRef, Message, errors::Ctx};

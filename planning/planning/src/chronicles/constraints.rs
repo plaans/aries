@@ -1,11 +1,12 @@
 use super::*;
-use aries::core::Lit;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::{expr::*, Kind};
-use aries::model::lang::{Cst, Type};
-use aries::model::Label;
+use crate::legacy::*;
+use aries_solver::lang::expr::and;
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Label;
+use aries_solver::{core::Lit, lang::expr::or};
 use itertools::Itertools;
+
+use crate::legacy::{eq, neq};
 use std::fmt::Debug;
 use ConstraintType::*;
 
@@ -40,7 +41,7 @@ impl Constraint {
     pub fn leq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Leq,
+            tpe: ConstraintType::Leq,
             value: None,
         }
     }
@@ -54,14 +55,14 @@ impl Constraint {
     pub fn reified_leq(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Leq,
+            tpe: ConstraintType::Leq,
             value: Some(constraint_value),
         }
     }
     pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Eq,
+            tpe: ConstraintType::Eq,
             value: None,
         }
     }
@@ -73,7 +74,7 @@ impl Constraint {
         } else {
             Constraint {
                 variables: vec![a.into(), b.into()],
-                tpe: Eq,
+                tpe: ConstraintType::Eq,
                 value: Some(constraint_value),
             }
         }
@@ -81,7 +82,7 @@ impl Constraint {
     pub fn neq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Neq,
+            tpe: ConstraintType::Neq,
             value: None,
         }
     }
@@ -145,7 +146,7 @@ impl Substitute for ConstraintType {
                 ub: substitution.sub_linear_sum(ub),
             }),
             LinearEq(sum) => LinearEq(substitution.sub_linear_sum(sum)),
-            InTable(_) | Lt | Leq | Eq | Neq | Or => self.clone(), // no variables in those variants
+            InTable(_) | Lt | ConstraintType::Leq | ConstraintType::Eq | ConstraintType::Neq | Or => self.clone(), // no variables in those variants
         }
     }
 }

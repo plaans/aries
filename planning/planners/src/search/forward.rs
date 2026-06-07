@@ -1,14 +1,13 @@
 //! A search controller that mimics forward search for HTN planning.
 
+use aries_solver::prelude::*;
+
 use crate::encoding::refinements_of;
 use crate::Model;
-use aries::backtrack::{Backtrack, DecLvl};
-use aries::core::{Lit, VarRef};
-use aries::model::extensions::{DomainsExt, Shaped};
-use aries::model::lang::IVar;
-use aries::solver::search::{Decision, SearchControl};
-use aries::solver::stats::Stats;
 use aries_planning::chronicles::{ChronicleInstance, FiniteProblem, SubTask, VarLabel, VarType};
+use aries_solver::backtrack::{Backtrack, DecLvl};
+use aries_solver::solver::search::{Decision, SearchControl};
+use aries_solver::solver::stats::Stats;
 use std::convert::TryFrom;
 use std::sync::Arc;
 
@@ -47,19 +46,19 @@ fn earliest_pending_task<'a>(pb: &'a FiniteProblem, model: &Model) -> Option<Tas
             .iter()
             .all(|refinement| !model.entails(refinement.presence))
     });
-    pending.min_by_key(|t| model.f_domain(t.details.start).num.lb)
+    pending.min_by_key(|t| model.lb(t.details.start))
 }
 
 /// Returns an iterator over all variables that appear in the atoms in input on which we would like to branch
-fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl Iterator<Item = VarRef> + 'a {
+fn branching_variables<'a>(ch: &'a ChronicleInstance, model: &'a Model) -> impl Iterator<Item = Var> + 'a {
     use VarType::*;
-    // varref that controls the start time of the chronicle
-    let start_ref: VarRef = ch.chronicle.start.num.var.into();
+    // var that controls the start time of the chronicle
+    let start_ref: Var = ch.chronicle.start.num.var;
     ch.parameters
         .iter()
         .filter_map(|&a| {
             if let Some(x) = a.int_view() {
-                IVar::try_from(x).ok().map(VarRef::from)
+                Var::try_from(x).ok()
             } else {
                 None
             }
@@ -88,10 +87,7 @@ fn earliest_pending_chronicle<'a>(pb: &'a FiniteProblem, model: &Model) -> Optio
     let pendings = presents.filter(|&ch| branching_variables(ch, model).next().is_some());
     let pendings: Vec<_> = pendings.collect();
     // println!("{pendings:?}");
-    pendings
-        .iter()
-        .copied()
-        .min_by_key(|ch| model.f_domain(ch.chronicle.start).num.lb)
+    pendings.iter().copied().min_by_key(|ch| model.lb(ch.chronicle.start))
 }
 
 /// Returns an arbitrary unbound variable in the parameters of this chronicle.
@@ -151,8 +147,8 @@ impl SearchControl<VarLabel> for ForwardSearcher {
         let yy = earliest_pending_task(&self.problem, model);
         let res = match (xx, yy) {
             (Some(ch), Some(tsk)) => {
-                let ch_est = model.int_bounds(ch.chronicle.start).0;
-                let tsk_est = model.int_bounds(tsk.details.start).0;
+                let ch_est = model.bounds(ch.chronicle.start).0;
+                let tsk_est = model.bounds(tsk.details.start).0;
                 if ch_est <= tsk_est {
                     Some(next_chronicle_decision(ch, model))
                 } else {

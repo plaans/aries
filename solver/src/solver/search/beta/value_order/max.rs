@@ -1,5 +1,5 @@
 use crate::core::Lit;
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::model::Label;
 use crate::model::Model;
 use crate::solver::search::beta::value_order::ValueOrder;
@@ -8,7 +8,7 @@ use crate::solver::search::beta::value_order::ValueOrder;
 pub struct Max;
 
 impl<Lbl: Label> ValueOrder<Lbl> for Max {
-    fn select(&mut self, var: VarRef, model: &Model<Lbl>) -> Lit {
+    fn select(&mut self, var: Var, model: &Model<Lbl>) -> Lit {
         let ub = model.state.ub(var);
         var.geq(ub)
     }
@@ -21,8 +21,8 @@ mod tests {
     #[test]
     fn select() {
         let mut model = Model::<String>::new();
-        let x = model.new_ivar(0, 1, "x").into();
-        let y = model.new_ivar(3, 5, "y").into();
+        let x = model.new_ivar(0, 1, "x");
+        let y = model.new_ivar(3, 5, "y");
         assert_eq!(Max.select(x, &model), x.geq(1));
         assert_eq!(Max.select(y, &model), y.geq(5));
     }

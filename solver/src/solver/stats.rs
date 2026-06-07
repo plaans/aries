@@ -3,7 +3,7 @@ use crate::core::{IntCst, Lit};
 use crate::reasoners::REASONERS;
 use crate::reasoners::ReasonerId;
 use crate::utils::cpu_time::*;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Error, Formatter};
 use std::ops::{Index, IndexMut};
@@ -118,20 +118,18 @@ impl Default for Stats {
 
 impl Display for Stats {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
-        fn number(f: &mut Formatter<'_>, format_str: &str, n: u64) -> Result<(), Error> {
-            write!(f, "{}", format_num::format_num!(format_str, n as f64))
+        // a right padded number with the given format string
+        fn number(f: &mut Formatter<'_>, format_str: &str, n: impl numfmt::Numeric, width: usize) -> Result<(), Error> {
+            let mut nf: numfmt::Formatter = format_str.parse().unwrap();
+            write!(f, "{:>width$}", nf.fmt2(n), width = width)
         }
         fn label(f: &mut Formatter<'_>, label: &str) -> Result<(), Error> {
             write!(f, "{label:<20}: ")
         }
         fn val_throughput(f: &mut Formatter<'_>, value: u64, time: &Duration) -> Result<(), Error> {
-            number(f, "<12,.3d", value)?;
+            number(f, "[n.0]", value, 12)?;
             if time.as_millis() > 0 && value != 0 {
-                write!(
-                    f,
-                    " ({} /sec)",
-                    format_num::format_num!(".3s", (value as f64) / time.as_secs_f64())
-                )?;
+                number(f, " ([s~3] /sec)", (value as f64) / time.as_secs_f64(), 0)?;
             }
             Ok(())
         }
@@ -174,17 +172,17 @@ impl Display for Stats {
         new_line(f)?;
         label(f, "# propagation loops")?;
         for ms in self.per_module_stat.values() {
-            number(f, ">15,.3d", ms.propagation_loops)?;
+            number(f, "[n.0]", ms.propagation_loops, 15)?;
         }
         new_line(f)?;
         label(f, "# bound updates")?;
         for ms in self.per_module_stat.values() {
-            number(f, ">15,.3d", ms.dom_updates)?;
+            number(f, "[n.0]", ms.dom_updates, 15)?;
         }
         new_line(f)?;
         label(f, "# conflicts")?;
         for ms in self.per_module_stat.values() {
-            number(f, ">15,.3d", ms.conflicts)?;
+            number(f, "[n.0]", ms.conflicts, 15)?;
         }
 
         writeln!(f, "\n================= ")?;

@@ -17,6 +17,70 @@ create_ref_type!(PropagatorId);
 /// # Example
 ///
 /// An example propagator is provided in the `propagator::test::implies` in the same file as the trait definition.
+/// ```
+/// use aries_solver::prelude::*;
+/// use aries_solver::core::state::*;
+/// use aries_solver::reasoners::*;
+/// use aries_solver::reasoners::cp::*;
+/// use aries_solver::reasoners::cp::propagator::*;
+///
+/// /// An example propagator for an implication constraint (a => b)
+/// ///
+/// /// We should propagate (infer) :
+/// /// - `b` when `a` is true    (case 1)
+/// /// - `!a` when `b` is false  (case 2)
+/// #[derive(Clone, Debug)]
+/// pub struct ImpliesProp {
+///     pub a: Lit,
+///     pub b: Lit,
+/// }
+///
+/// impl Propagator for ImpliesProp {
+///     fn setup(&self, id: PropagatorId, context: &mut Watches) {
+///         // request to be notified whenever `a` or `!b` becomes true
+///         context.add_lit_watch(self.a, id);
+///         context.add_lit_watch(!self.b, id);
+///     }
+///
+///     fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
+///         if domains.entails(self.a) {
+///             // a is true, we should propagate b
+///             // we set `b` to true in the domain which wuold return one of:
+///             //  - Ok(true): the change was performed sucessfully
+///             //  - Ok(false): nothing was done (i.e. b was already true)
+///             //  - Err(xx): contradiction (i.e. b was already false!)
+///             //
+///             // In the first two cases, we proceed.
+///             // If an error was returned, the `?` operator will short-circuit and
+///             // immediately return with an appropriate `Contradiction`
+///             domains.set(self.b, cause)?;
+///         }
+///         // we did not reach an error, propagate the other case
+///         if domains.entails(!self.b) {
+///             domains.set(!self.a, cause)?;
+///         }
+///         // if we reach this point, propagation was successful, return Ok
+///         Ok(())
+///     }
+///
+///     fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
+///         // we are asked to explain a propagation that we previously made
+///
+///         if self.b.entails(literal) && state.entails(self.a) {
+///             // b is stronger that `literal`, meaning setting `b` would also have set `literal`
+///             out_explanation.push(self.a);
+///         } else if (!self.a).entails(literal) && state.entails(!self.b) {
+///             out_explanation.push(!self.b);
+///         } else {
+///             panic!("Error: we were asked to explain something we could not have inferred")
+///         }
+///     }
+///
+///     fn clone_box(&self) -> Box<dyn Propagator> {
+///         Box::new(self.clone())
+///     }
+/// }
+/// ```
 pub trait Propagator: Send {
     /// Set up the watches of the propagator, where `id` is the propagator id that should be placed on the watches.
     /// The propagator is responsible for placing a watch on every bound whose change might require a propagation.
@@ -30,7 +94,7 @@ pub trait Propagator: Send {
 
     /// Explain a previous inference made by the constraint.
     ///
-    /// The objective is to determine a set of literals `l1, ..., ln` such that `(l1 & l2 & ... & ln) implies `literal`.
+    /// The objective is to determine a set of literals `l1, ..., ln` such that `(l1 & l2 & ... & ln)` implies `literal`.
     /// This literals should be appended to the provided `out_explanation`.
     ///
     /// The `state` parameter provides a view of the `domains` as they were at the time the inference was made.

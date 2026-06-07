@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
-use aries::model::lang::IVar;
+use aries_solver::core::Var;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -90,10 +89,10 @@ impl From<IntLe> for Constraint {
 impl Encode for IntLe {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<(dyn Post<usize>)> {
         let a = translation.get(self.a.id()).unwrap();
         let b = translation.get(self.b.id()).unwrap();
-        Box::new(Le::new(IVar::new(*a), IVar::new(*b)))
+        Box::new(Le::new(*a, *b))
     }
 }

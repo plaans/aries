@@ -3,14 +3,15 @@ use std::collections::HashMap;
 use crate::encode::*;
 use crate::encoding::*;
 use crate::Solver;
-use aries::backtrack::Backtrack;
-use aries::backtrack::DecLvl;
-use aries::core::state::Conflict;
-use aries::core::*;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::FAtom;
-use aries::model::lang::{expr::*, Atom, Type};
 use aries_planning::chronicles::*;
+use aries_planning::legacy::*;
+use aries_planning::legacy::{eq, geq, leq};
+use aries_solver::backtrack::Backtrack;
+use aries_solver::backtrack::DecLvl;
+use aries_solver::core::state::Conflict;
+use aries_solver::core::*;
+use aries_solver::lang::expr::*;
+use aries_solver::model::extensions::DomainsExt;
 use itertools::Itertools;
 
 /// Parameter that activates additional constraints for borrow patterns.
@@ -89,7 +90,7 @@ impl BorrowPattern {
 
 /// Convert a literal into a `IVar`.
 /// The result is a new `IVar` evaluated to 1 if the literal is true, and to 0 otherwise.
-fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
+fn lit_to_ivar(model: &mut Model, lit: Lit) -> Var {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert_eq!(
         model.presence_literal(lit.variable()),
@@ -97,11 +98,11 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
         "Optional variables not supported by this function"
     );
     if model.entails(lit) {
-        IVar::ONE
+        Var::ONE
     } else if model.entails(!lit) {
-        IVar::ZERO
+        Var::ZERO
     } else if model.bounds(lit.variable()) == (0, 1) {
-        IVar::new(lit.variable())
+        lit.variable()
     } else {
         let lbl = model
             .get_label(lit.variable())
@@ -121,7 +122,7 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> IVar {
 pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
-    if atom.var == IVar::ZERO {
+    if atom.var == Var::ZERO {
         // Constant variable
         if atom.shift == 0 || model.entails(!lit) {
             LinearSum::zero()

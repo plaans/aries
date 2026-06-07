@@ -22,7 +22,7 @@ mod theta_lambda_tree;
 /// Notable adaptations are with respect to explanations and propagation of the bounds of optional intervals in edge-finding.
 ///
 /// ```
-/// use aries::reasoners::cp::no_overlap::PropagatorKind::*;
+/// use aries_solver::reasoners::cp::no_overlap::PropagatorKind::*;
 /// assert!(Overload < OverloadWithOptional);
 /// assert!(OverloadWithOptional < EdgeFinding);
 /// ```

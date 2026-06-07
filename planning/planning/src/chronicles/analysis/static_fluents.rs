@@ -1,5 +1,5 @@
 use crate::chronicles::{concrete, EffectOp, Fluent, Problem, StateVar};
-use aries::model::extensions::DomainsExt;
+use aries_solver::model::extensions::DomainsExt;
 fn is_on_fluent(target_fluent: &Fluent, state_var: &StateVar) -> bool {
     target_fluent == state_var.fluent.as_ref()
 }
@@ -21,7 +21,7 @@ pub fn is_static(target_fluent: &Fluent, pb: &Problem) -> bool {
         }
         // effect must be an assignment of a constant
         if let EffectOp::Assign(value) = eff.operation {
-            let (lb, ub) = context.model.int_bounds(value);
+            let (lb, ub) = context.model.bounds(value);
             if lb != ub {
                 return false;
             }

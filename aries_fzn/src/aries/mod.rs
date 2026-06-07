@@ -5,7 +5,7 @@ mod solver;
 
 pub mod constraint;
 
-use aries::solver::search::SearchControl;
+use aries_solver::solver::search::SearchControl;
 pub use post::Post;
 pub use solver::Solver;
 

@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
-use aries::model::lang::BVar;
-use aries::model::lang::IVar;
+use aries_solver::core::Var;
+use aries_solver::lang::BVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -103,10 +102,10 @@ impl From<BoolXor> for Constraint {
 impl Encode for BoolXor {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<(dyn Post<usize>)> {
-        let a = IVar::new(*translation.get(self.a.id()).unwrap());
-        let b = IVar::new(*translation.get(self.b.id()).unwrap());
+        let a = *translation.get(self.a.id()).unwrap();
+        let b = *translation.get(self.b.id()).unwrap();
         let r = BVar::new(*translation.get(self.r.id()).unwrap());
         Box::new(NeReif::new(a, b, r))
     }

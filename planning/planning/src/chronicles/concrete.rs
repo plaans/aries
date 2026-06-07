@@ -1,3 +1,4 @@
+use crate::legacy::*;
 use core::fmt;
 use itertools::Itertools;
 use std::collections::HashSet;
@@ -6,9 +7,8 @@ use std::sync::Arc;
 
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::Fluent;
-use aries::core::{IntCst, Lit, SignedVar, VarRef};
-use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::*;
+use aries_solver::core::{IntCst, Lit, SignedVar, Var};
+use aries_solver::lang::*;
 
 /// A state variable e.g. `(location-of robot1)` where:
 ///  - the fluent is the name of the state variable (e.g. `location-of`) and defines its type.
@@ -42,10 +42,10 @@ pub type ChronicleName = Vec<Atom>;
 pub type Time = FAtom;
 
 pub trait Substitution {
-    fn sub_var(&self, var: VarRef) -> VarRef;
+    fn sub_var(&self, var: Var) -> Var;
 
-    fn sub_ivar(&self, atom: IVar) -> IVar {
-        IVar::new(self.sub_var(atom.into()))
+    fn sub_ivar(&self, atom: Var) -> Var {
+        self.sub_var(atom)
     }
     fn sub_bvar(&self, atom: BVar) -> BVar {
         BVar::new(self.sub_var(atom.into()))
@@ -109,8 +109,8 @@ pub trait Substitution {
 /// The constructor validates the input to make sure that the parameters and instances are of the same kind.
 #[derive(Debug)]
 pub struct Sub {
-    parameters: Vec<VarRef>,
-    instances: Vec<VarRef>,
+    parameters: Vec<Var>,
+    instances: Vec<Var>,
 }
 impl Sub {
     pub fn empty() -> Self {
@@ -120,12 +120,12 @@ impl Sub {
         }
     }
 
-    pub fn contains(&self, v: impl Into<VarRef>) -> bool {
+    pub fn contains(&self, v: impl Into<Var>) -> bool {
         let v = v.into();
         self.parameters.contains(&v)
     }
 
-    pub fn add_untyped(&mut self, param: VarRef, instance: VarRef) -> Result<(), InvalidSubstitution> {
+    pub fn add_untyped(&mut self, param: Var, instance: Var) -> Result<(), InvalidSubstitution> {
         if self.parameters.contains(&param) {
             Err(InvalidSubstitution::DuplicatedEntry(param))
         } else {
@@ -218,11 +218,11 @@ impl Sub {
         Ok(sub)
     }
 
-    pub fn replaced_vars(&self) -> impl Iterator<Item = VarRef> + '_ {
+    pub fn replaced_vars(&self) -> impl Iterator<Item = Var> + '_ {
         self.parameters.iter().copied()
     }
 
-    pub fn replacement_vars(&self) -> impl Iterator<Item = VarRef> + '_ {
+    pub fn replacement_vars(&self) -> impl Iterator<Item = Var> + '_ {
         self.instances.iter().copied().unique()
     }
 }
@@ -230,7 +230,7 @@ impl Sub {
 pub enum InvalidSubstitution {
     IncompatibleTypes(Variable, Variable),
     DifferentLength,
-    DuplicatedEntry(VarRef),
+    DuplicatedEntry(Var),
     IncompatibleStructures(Atom, Atom),
 }
 impl std::error::Error for InvalidSubstitution {}
@@ -251,7 +251,7 @@ impl std::fmt::Display for InvalidSubstitution {
 }
 
 impl Substitution for Sub {
-    fn sub_var(&self, var: VarRef) -> VarRef {
+    fn sub_var(&self, var: Var) -> Var {
         match self.parameters.iter().position(|&x| x == var) {
             Some(i) => self.instances[i], // safe to unwrap thanks to validation in constructor
             None => var,
@@ -501,7 +501,7 @@ pub struct Chronicle {
     pub cost: Option<IntCst>,
 }
 
-struct VarSet(HashSet<VarRef>);
+struct VarSet(HashSet<Var>);
 impl VarSet {
     fn new() -> Self {
         VarSet(HashSet::new())
@@ -515,9 +515,9 @@ impl VarSet {
         let atom = atom.into();
         match atom {
             Atom::Bool(b) => self.0.insert(b.variable()),
-            Atom::Int(i) => self.0.insert(VarRef::from(i.var)),
-            Atom::Fixed(f) => self.0.insert(f.num.var.into()),
-            Atom::Sym(s) => self.0.insert(s.int_view().var.into()),
+            Atom::Int(i) => self.0.insert(i.var),
+            Atom::Fixed(f) => self.0.insert(f.num.var),
+            Atom::Sym(s) => self.0.insert(s.int_view().var),
         };
     }
 
@@ -554,7 +554,7 @@ impl VarSet {
 
 impl Chronicle {
     /// Returns a set of all variables that appear in this chronicle.
-    pub fn variables(&self) -> HashSet<VarRef> {
+    pub fn variables(&self) -> HashSet<Var> {
         let mut vars = VarSet::new();
         vars.add_lit(self.presence);
         vars.add_atom(self.start);

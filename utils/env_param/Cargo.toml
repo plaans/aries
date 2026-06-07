@@ -1,0 +1,11 @@
+[package]
+name = "aries-env-param"
+description = "Exposes internal parameters of solvers."
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/plaans/aries"
+
+[dependencies]
+once_cell = "1.21.4"

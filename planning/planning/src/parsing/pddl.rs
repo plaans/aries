@@ -3,10 +3,10 @@
 use anyhow::Context;
 use std::fmt::{Display, Error, Formatter};
 
+use crate::legacy::input::*;
+use crate::legacy::utils::disp_iter;
 use crate::parsing::sexpr::*;
 use anyhow::Result;
-use aries::utils::disp_iter;
-use aries::utils::input::*;
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;

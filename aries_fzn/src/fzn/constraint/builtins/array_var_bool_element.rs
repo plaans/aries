@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
-use aries::model::lang::IVar;
+use aries_solver::core::Var;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -107,13 +106,12 @@ impl From<ArrayVarBoolElement> for Constraint {
 impl Encode for ArrayVarBoolElement {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<dyn Post<usize>> {
-        let translate =
-            |v: &Rc<VarBool>| IVar::new(*translation.get(v.id()).unwrap());
+        let translate = |v: &Rc<VarBool>| *translation.get(v.id()).unwrap();
         let a = self.a.iter().map(|x| translate(x).into()).collect();
         let b = translate(&self.c);
-        let i = IVar::new(*translation.get(self.b.id()).unwrap()) - 1; // index starts at 1
+        let i = *translation.get(self.b.id()).unwrap() - 1; // index starts at 1
         Box::new(ArrayElement::new(a, b, i))
     }
 }

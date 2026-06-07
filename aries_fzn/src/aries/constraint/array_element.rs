@@ -1,12 +1,12 @@
-use aries::core::IntCst;
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::IAtom;
-use aries::model::lang::expr::eq;
-use aries::model::lang::expr::geq;
-use aries::model::lang::expr::implies;
-use aries::model::lang::expr::lt;
+use aries_solver::core::IntCst;
+use aries_solver::lang::BVar;
+use aries_solver::lang::IAtom;
+use aries_solver::lang::expr::eq;
+use aries_solver::lang::expr::geq;
+use aries_solver::lang::expr::implies;
+use aries_solver::lang::expr::lt;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -64,7 +64,7 @@ impl<Lbl: Label> Post<Lbl> for ArrayElement {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_3;
     use crate::aries::constraint::test::verify_all;

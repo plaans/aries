@@ -1,7 +1,7 @@
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::IVar;
-use aries::model::lang::expr::lt;
+use aries_solver::lang::Var;
+use aries_solver::lang::expr::lt;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -10,20 +10,20 @@ use crate::aries::Post;
 /// `a < b`
 #[derive(Debug)]
 pub struct Lt {
-    a: IVar,
-    b: IVar,
+    a: Var,
+    b: Var,
 }
 
 impl Lt {
-    pub fn new(a: IVar, b: IVar) -> Self {
+    pub fn new(a: Var, b: Var) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &Var {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &Var {
         &self.b
     }
 }
@@ -36,7 +36,7 @@ impl<Lbl: Label> Post<Lbl> for Lt {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::verify_all;

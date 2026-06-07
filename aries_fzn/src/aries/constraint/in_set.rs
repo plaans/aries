@@ -1,8 +1,8 @@
-use aries::core::IntCst;
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::IVar;
-use aries::model::lang::expr::or;
+use aries_solver::core::IntCst;
+use aries_solver::lang::Var;
+use aries_solver::lang::expr::or;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -12,7 +12,7 @@ use crate::aries::Post;
 /// where `c[i]` are constants.
 #[derive(Debug)]
 pub struct InSet {
-    var: IVar,
+    var: Var,
     constants: Vec<IntCst>,
 }
 
@@ -20,12 +20,12 @@ impl InSet {
     /// Create a new InSet constraint.
     ///
     /// It assumes the constants are sorted.
-    pub fn new(var: IVar, constants: Vec<IntCst>) -> Self {
+    pub fn new(var: Var, constants: Vec<IntCst>) -> Self {
         debug_assert!(constants.is_sorted());
         Self { var, constants }
     }
 
-    pub fn var(&self) -> &IVar {
+    pub fn var(&self) -> &Var {
         &self.var
     }
 
@@ -66,8 +66,8 @@ impl<Lbl: Label> Post<Lbl> for InSet {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
-    use aries::core::VarRef;
+    use aries_solver::core::IntCst;
+    use aries_solver::core::Var;
 
     use crate::aries::constraint::test::basic_int_model_1;
     use crate::aries::constraint::test::verify_all;
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn holes() {
-        let x = IVar::new(VarRef::from_u32(2));
+        let x = Var::from_u32(2);
         let set = vec![0, 2, 3, 6];
         let in_set = InSet::new(x, set);
         assert_eq!(in_set.holes(), vec![(0, 2), (3, 6)]);

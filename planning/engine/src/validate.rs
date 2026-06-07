@@ -1,5 +1,5 @@
-use aries::core::state::Evaluable;
 use aries_plan_engine::{encode::tags::format_culprit_set, plans::lifted_plan::LiftedPlan};
+use aries_solver::core::state::Evaluable;
 use planx::{Message, Model, Res};
 
 use crate::optimize_plan::{self, encode_plan_optimization_problem};

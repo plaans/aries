@@ -1,17 +1,16 @@
-use aries::backtrack::Backtrack;
-use aries::core::state::OptDomain;
-use aries::core::views::Term;
-use aries::core::Lit;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::alternative::Alternative;
-use aries::model::lang::expr::*;
-use aries::model::lang::max::{EqMax, EqMin};
-use aries::model::lang::IVar;
-use aries::solver::SearchLimit;
+use aries_solver::prelude::*;
+
+use aries_solver::backtrack::Backtrack;
+use aries_solver::core::state::OptDomain;
+use aries_solver::core::views::Term;
+use aries_solver::lang::alternative::Alternative;
+use aries_solver::lang::expr::*;
+use aries_solver::lang::max::{EqMax, EqMin};
+use aries_solver::solver::SearchLimit;
 use itertools::Itertools;
 
-type Model = aries::model::Model<String>;
-type Solver = aries::solver::Solver<String>;
+type Model = aries_solver::model::Model<String>;
+type Solver = aries_solver::solver::Solver<String>;
 
 #[test]
 fn sat() {
@@ -142,13 +141,13 @@ fn int_bounds() {
 fn bools_as_ints() {
     let mut model = Model::new();
     let a = model.new_bvar("a");
-    let ia: IVar = a.into();
+    let ia: Var = a.into();
     let b = model.new_bvar("b");
-    let ib: IVar = b.into();
+    let ib: Var = b.into();
     let c = model.new_bvar("c");
-    let ic: IVar = c.into();
+    let ic: Var = c.into();
     let d = model.new_bvar("d");
-    let id: IVar = d.into();
+    let id: Var = d.into();
 
     let mut solver = Solver::new(model);
 
@@ -182,7 +181,7 @@ fn bools_as_ints() {
 fn ints_and_bools() {
     let mut model = Model::new();
     let a = model.new_bvar("a");
-    let ia: IVar = a.into();
+    let ia: Var = a.into();
     let i = model.new_ivar(-10, 10, "i");
 
     let mut solver = Solver::new(model);
@@ -247,7 +246,7 @@ fn optional_hierarchy() {
         .map(|i| model.new_presence_variable(p, format!("p_{i}")).true_lit())
         .collect();
     let domains = [(0, 8), (-20, -5), (5, 20)];
-    let vars: Vec<IVar> = domains
+    let vars: Vec<Var> = domains
         .iter()
         .enumerate()
         .map(|(i, (lb, ub))| model.new_optional_ivar(*lb, *ub, scopes[i], format!("i_{i}")))
@@ -462,9 +461,7 @@ fn test_opt_leq_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    model.shape.labels.insert(l.variable(), "l".to_string());
     let v = model.presence_literal(l.variable());
-    model.shape.labels.insert(v.variable(), "v".to_string());
 
     let tests = vec![
         Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
@@ -492,7 +489,6 @@ fn test_opt_leq_eager_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    model.shape.labels.insert(l.variable(), "l".to_string());
     let v = model.presence_literal(l.variable());
     debug_assert_eq!(v, pb);
     // model.shape.labels.insert(v.variable(), "v".to_string());

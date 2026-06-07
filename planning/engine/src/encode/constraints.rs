@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use aries::{core::views::Dom, model::lang::BoolExpr, prelude::*};
+use aries_solver::{core::views::Dom, lang::BoolExpr, prelude::*};
 use timelines::{IntExp, constraints::HasValueAt, encoder::SchedEncoder};
 
 use crate::encode::required_values::RequiredValues;

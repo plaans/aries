@@ -37,7 +37,7 @@ fzn-build:
 
 # Invoke minizinc, within the development environments (with aries compiled in release mode)
 minizinc +args: fzn-build
-    minizinc {{ args }}
+    minizinc --solver aries {{ args }}
 
 fzn-build-dbg:
     cargo build --profile ci --bin aries_fzn
@@ -45,7 +45,9 @@ fzn-build-dbg:
 
 # Invoke minizinc, within the development environments (with aries compiled in ci mode)
 minizinc-dbg +args: fzn-build-dbg
-    minizinc {{ args }}
+    # Flatzinc file is exported to a file `/tmp/pb.fzn-build`
+    # and can me tested directly with `cargo run --bin aries_fzn -- /tmp/pb.out`
+    minizinc --solver aries {{ args }} --fzn /tmp/pb.fzn
 
 # Shortcut command to run the samply profiler on a specific binary
 samply bin +args:

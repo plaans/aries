@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
-use aries::{core::state::Evaluable, prelude::*};
 use aries_plan_engine::{
     encode::{encoding::Encoding, tags::Tag},
     plans::lifted_plan::LiftedPlan,
 };
+use aries_solver::{core::state::Evaluable, prelude::*};
 use planx::{Model, Res};
 use timelines::{Sched, explain::ExplainableSolver};
 

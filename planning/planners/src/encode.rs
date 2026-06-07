@@ -9,16 +9,18 @@ use crate::encoding::*;
 use crate::solver::{init_solver, Metric};
 use crate::Model;
 use anyhow::{Context, Result};
-use aries::core::state::Conflict;
-use aries::core::*;
-use aries::model::extensions::{DomainsExt, Shaped};
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::mul::EqVarMulLit;
-use aries::model::lang::{expr::*, IVar};
-use aries::model::lang::{FAtom, FVar, IAtom, Variable};
+use aries_env_param::EnvParam;
 use aries_planning::chronicles::constraints::encode_constraint;
 use aries_planning::chronicles::*;
-use env_param::EnvParam;
+use aries_planning::legacy::*;
+use aries_planning::legacy::{eq, neq};
+use aries_solver::core::state::Conflict;
+use aries_solver::core::views::Term;
+use aries_solver::core::*;
+use aries_solver::lang::mul::EqVarMulLit;
+use aries_solver::lang::{expr::*, Var};
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::prelude::*;
 use numeric::iatom_mul_lit;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -79,7 +81,7 @@ pub fn instantiate(
         template
             .parameters
             .iter()
-            .map(|v| VarRef::from(*v))
+            .map(|v| Var::from(*v))
             .any(|x| x == template.chronicle.presence.variable()),
         "presence var not in parameters."
     );
@@ -99,7 +101,7 @@ pub fn instantiate(
     let prez_template = template
         .parameters
         .iter()
-        .find(|&x| VarRef::from(*x) == template.chronicle.presence.variable())
+        .find(|&x| Var::from(*x) == template.chronicle.presence.variable())
         .copied()
         .expect("Presence variable not in parameters");
 
@@ -125,14 +127,26 @@ pub fn instantiate(
         let fresh: Variable = match v {
             Variable::Bool(_) => pb.model.new_optional_bvar(prez_lit, label).into(),
             Variable::Int(i) => {
-                let (lb, ub) = pb.model.int_bounds(i);
+                let (lb, ub) = pb.model.bounds(i);
                 pb.model.new_optional_ivar(lb, ub, prez_lit, label).into()
             }
             Variable::Fixed(f) => {
-                let (lb, ub) = pb.model.int_bounds(f.num);
-                pb.model.new_optional_fvar(lb, ub, f.denom, prez_lit, label).into()
+                let (lb, ub) = pb.model.bounds(f.num);
+                let ivar = pb.model.new_optional_ivar(lb, ub, prez_lit, label);
+                FVar::new(ivar, f.denom).into()
             }
-            Variable::Sym(s) => pb.model.new_optional_sym_var(s.tpe, prez_lit, label).into(),
+            Variable::Sym(s) => {
+                // copy of Ctx::new_optional_sym_var
+
+                let instances = pb.symbols.instances_of_type(s.tpe);
+                // get the lower and upper bounds, defaulting to an empty interval if there are no values.
+                let (lb, ub) = instances
+                    .bounds()
+                    .map(|(lb, ub)| (usize::from(lb) as IntCst, usize::from(ub) as IntCst))
+                    .unwrap_or((0, -1));
+                let dvar = pb.model.new_optional_ivar(lb, ub, prez_lit, label).variable();
+                SVar::new(dvar, s.tpe).into()
+            }
         };
         sub.add(v, fresh)?;
     }
@@ -454,7 +468,7 @@ pub struct EncodedProblem {
 
 /// Returns whether two state variables are unifiable.
 fn unifiable_sv(model: &Model, sv1: &StateVar, sv2: &StateVar) -> bool {
-    sv1.fluent == sv2.fluent && model.unifiable_seq(&sv1.args, &sv2.args)
+    sv1.fluent == sv2.fluent && unifiable_seq(model, &sv1.args, &sv2.args)
 }
 
 /// Encodes a finite problem.
@@ -478,13 +492,13 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
     let eff_mutex_ends: HashMap<EffID, FVar> = assigns
         .iter()
         .map(|(eff_id, prez, _)| {
-            let var = solver.model.new_optional_fvar(
+            let var = solver.model.new_optional_ivar(
                 ORIGIN * TIME_SCALE.get(),
                 HORIZON.get() * TIME_SCALE.get(),
-                TIME_SCALE.get(),
                 *prez,
                 Container::Instance(eff_id.instance_id) / VarType::EffectEnd,
             );
+            let var = FVar::new(var, TIME_SCALE.get());
             (*eff_id, var)
         })
         .collect();
@@ -655,7 +669,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 let EffectOp::Assign(effect_value) = eff.operation else {
                     unreachable!()
                 };
-                if !solver.model.unifiable(cond.value, effect_value) {
+                if !unifiable(&solver.model, cond.value, effect_value) {
                     continue;
                 }
                 // vector to store the AND clause

@@ -4,7 +4,7 @@ Aries is a project aimed at exploring constraint-based techniques for [automated
 It relies on an original implementation of constraint solver with optional variables and clause learning to which various automated planning problems can be submitted.
 
 
-## Combinatorial Solver
+## Constraint Programming Solver
 
 Previous research, especially with the [FAPE](https://github.com/laas/fape) solver, have shown that while obtaining state-of-the-art performance with constraint-based approaches to planning is possible, it requires pushing the inference capabilities of existing combinatorial solver beyond their current capabilities.
 The Aries project thus provides an innovative combinatorial solver that is built from the ground up by (1) mixing several techniques from constraint programming and automated reasoning, and (2) providing original representations and technologies relevant for automated planning:
@@ -17,10 +17,10 @@ The Aries project thus provides an innovative combinatorial solver that is built
   - SAT based engine for disjunctive constraints (*clauses* in which at least one literal must be true), relying on unit clause propagation
   - Difference Logic engine (aka STN), for propagating temporal constraints or general difference constraints between two variables.
     The difference logic engine notably supports forward checking (or theory propagation) and native reasoning on optional variables.
-  - General purpose CP engine for adding arbitrary constraints and the associated propagators (linear, max, ...).
+  - General purpose CP engine for adding arbitrary constraints and the associated propagators (linear, max, no-overlap, ...).
 - **Explanation and Clause learning** are supported by the various engine.
   When a conflict is detected during search, a new constraint will be inferred that prevents the solver of doing the same mistake.
-- **Optional variables**: some variables can be optional their presence in the solution will be determined by the value of a literal.
+- **Optional variables**: some variables can be optional: their presence in the solution will be determined by the value of a literal.
   This allows eager reasoning and constraint propagation by decoupling the presence literal and the domain of the variable.
 
 While the aries solver library is built with automated planning problems in mind, it remains a general purpose solver that can be used for other combinatorial problems.
@@ -61,13 +61,13 @@ This repository contains several crates that provide various functionalities for
  - `planning`: Several crates related to automated planning. In particular:
    - `planning/planners`: provides a complete PDDL and HDDL planner, with support for temporal and numeric models
    - `planning/unified/plugin`: provides the `up-aries` python module (published on PyPI) that allows using aries as a backend for the [unified-planning](https://github.com/aiplan4eu/unified-planning) library
+   - `validator`: a plan validator for the unified-planning library
  - `aries_fzn`: implements a solver for the `flatzinc` constraint modelling language, supporting the integration of Aries as a backend for [`minizinc`](https://www.minizinc.org/)
- - `validator`: a plan validator for the unified-planning library
  - `examples`: Several thin wrappers around the library to demonstrate and test its capabilities. Notably:
    - `sat`: A thin wrapper around the `solver` crate that implements a sat executable that solves problems from CNF files.
    - `scheduler`: A solver for several disjunctive scheduling problems
    - `knapsack`: an example solver for knapsack problems
-   - `gg`: A forward-search automated planner, in the spirit of YAHSP2.
+ - `utils`: several utility crates providing target-scope features used in other crates
 
 
 
@@ -78,31 +78,19 @@ While aries is primarily thought as a library it does come with some programs to
 - `aries-plan`: a plan-space planner for PDDL and HDDL, based on a compilation to constraint satisfaction problems.
 - `scheduler`: solver for the jobshop and openshop problems
 - `aries-sat`: SAT solver that mimic the minisat solver behavior
-- `gg`: a state-space planner for PDDL based on heuristic search with the `hadd` heuristic.
 
 Source code of these executables can be found in the directory `apps/src/bin`. One can install an executable locally like so (example for `gg`):
 
 ```shell
-cargo install --bin gg --path . # should be done in the "apps/" sub-crate
+cargo install --bin scheduler --path . # should be done in the "apps/" sub-crate
 ```
 
 These can also be run directly with `cargo`. For instance for `gg`:
 
 ```shell
-cargo run --release --bin gg -- <arguments>
+cargo run --release --bin scheduler -- <arguments>
 ```
 
-## Documentation
-
-An overview of the concepts and algorithms at play in the aries project is provided as a [mdbook](https://rust-lang.github.io/mdBook/) in the [`doc/`](https://github.com/plaans/aries/tree/master/doc/src) folder.
-This documentation is centered on the core part of the solver, dedicated to combinatorial problem solving with optional variables.
-
-To build it, you should first install the [mdBook command line tool](https://rust-lang.github.io/mdBook/index.html).
-Then the following command should build the book and serve it locally (rebuilding on modifications). Please refer to the mdbook documentation for an overview of the other features.
-
-```
-mdbook serve doc/
-```
 
 
 ## Contributors
@@ -119,4 +107,12 @@ Above is the list of persons with recurring contributions, that have contibuted 
 ## References
 
  - CP solver core and scheduling solver
-   - Arthur Bit-Monnot. Enhancing Hybrid CP-SAT Search for Disjunctive Scheduling. 26th European Conference on Artificial Intelligence (ECAI 2023 [(link)](https://hal.science/hal-04174800)
+   - Arthur Bit-Monnot. *Enhancing Hybrid CP-SAT Search for Disjunctive Scheduling* -- ECAI 2023 [(link)](https://hal.science/hal-04174800)
+   - Arthur Bit-Monnot. *Revisiting Optional Variables in Lazy Clause Generation Solvers for Flexible Scheduling* -- CP 2026 [(link)](https://doi.org/10.4230/LIPIcs.CP.2026.48)
+
+
+## License
+
+Licensed under either of *Apache License, Version 2.0* or *MIT license* at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this repository by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

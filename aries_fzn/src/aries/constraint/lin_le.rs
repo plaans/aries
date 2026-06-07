@@ -1,9 +1,8 @@
-use aries::core::IntCst;
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::linear::NFLinearLeq;
-use aries::model::lang::linear::ScaledVar;
-use aries::reif::ReifExpr;
+use aries_solver::core::IntCst;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
+use aries_solver::prelude::LinSum;
 
 use crate::aries::Post;
 
@@ -33,12 +32,8 @@ impl LinLe {
 
 impl<Lbl: Label> Post<Lbl> for LinLe {
     fn post(&self, model: &mut Model<Lbl>) {
-        let leq = NFLinearLeq {
-            sum: self.items.clone(),
-            upper_bound: self.ub,
-        };
-        let reif_expr = ReifExpr::Linear(leq);
-        model.enforce(reif_expr, []);
+        let sum = LinSum::new(0, self.items.iter().copied());
+        model.enforce(sum.leq(self.ub), []);
     }
 }
 

@@ -2,12 +2,12 @@ use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
-use crate::core::views::{Boundable, Dom, Term, VarView};
+use crate::core::views::{Boundable, VarView};
 use crate::core::*;
-use crate::model::extensions::{DisjunctionExt, DomainsExt, Shaped};
-use crate::model::lang::IAtom;
-use crate::model::lang::linear::LinearSum;
-use crate::model::{Constraint, Label, Model, ModelShape};
+use crate::lang::expr::geq;
+use crate::model::extensions::{DisjunctionExt, DomainsExt};
+use crate::model::{Constraint, Label, Model};
+use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
@@ -17,13 +17,12 @@ use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, S
 use crate::solver::search::{Decision, SearchControl, default_brancher};
 use crate::solver::stats::Stats;
 use crate::utils::cpu_time::StartCycleCount;
+use aries_env_param::EnvParam;
 use crossbeam_channel::Sender;
-use env_param::EnvParam;
 use itertools::Itertools;
 use std::fmt::Formatter;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::instrument;
 
 /// If true, decisions will be logged to the standard output.
 static LOG_DECISIONS: EnvParam<bool> = EnvParam::new("ARIES_LOG_DECISIONS", "false");
@@ -66,6 +65,9 @@ pub enum SearchLimit {
 }
 
 impl SearchLimit {
+    /// Maximum allowed duration *from now*  that the search is allowed to proceed.
+    ///
+    /// This is immediately converted into a deadline from the current time.
     pub fn duration(dur: Duration) -> Self {
         Self::Deadline(Instant::now() + dur)
     }
@@ -276,108 +278,96 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 Ok(())
             }
-            ReifExpr::Linear(lin) => {
-                let lin = lin.simplify();
-                let handled = match lin.sum.len() {
-                    0 => {
-                        // Check that the constant of the constraint is positive.
-                        self.post_constraint(&Constraint::HalfReified(
-                            ReifExpr::Lit(VarRef::ZERO.leq(lin.upper_bound)),
-                            enabler,
-                        ))?;
-                        true
+            ReifExpr::LinearLeq(lin) => {
+                let reformulation = if let Some((cst, [])) = lin.extract() {
+                    Some(ReifExpr::Lit((cst <= 0).into()))
+                } else if let Some((cst, [(f, v)])) = lin.extract() {
+                    debug_assert_ne!(f, 0); // should be guaranteed by `LinSum`
+                    // cst + f * v <= 0
+                    Some(ReifExpr::Lit((f * v).leq(-cst)))
+                } else if let Some((cst, [(f1, v1), (f2, v2)])) = lin.extract() {
+                    debug_assert_ne!(f1, 0); // should be guaranteed by `LinSum`
+                    debug_assert_ne!(f2, 0); // should be guaranteed by `LinSum`
+                    if f1 == -f2 {
+                        // can be expressed as a differences logic term
+                        let (factor, b, a) = if f1 > 0 { (f1, v1, v2) } else { (f2, v2, v1) };
+                        debug_assert!(factor > 0);
+                        // cst + factor *(b - a) <= 0
+                        // (b - a) <= -cst / factor
+                        Some(ReifExpr::MaxDiff(DifferenceExpression {
+                            b,
+                            a,
+                            ub: num_integer::div_floor(-cst, factor),
+                        }))
+                    } else {
+                        None
                     }
-                    1 => {
-                        let elem = lin.sum.first().unwrap();
-                        debug_assert_ne!(elem.factor, 0);
-
-                        if lin.upper_bound % elem.factor != 0 {
-                            false
-                        } else {
-                            // factor*X <= ub   decompose into either:
-                            //   - positive:  X <= ub/factor   (with factor >= 0)
-                            //   - negative:  -X <= ub/|factor|  (with factor < 0)
-                            let svar = if elem.factor >= 0 {
-                                SignedVar::plus(elem.var)
-                            } else {
-                                SignedVar::minus(elem.var)
-                            };
-                            let ub = lin.upper_bound / elem.factor.abs();
-                            let lit = svar.leq(ub);
-
-                            self.post_constraint(&Constraint::HalfReified(ReifExpr::Lit(lit), enabler))?;
-                            true
+                } else if let Some((0, [_, _, _])) = lin.extract()
+                    && self.model.entails(enabler)
+                    && DYNAMIC_EDGES.get()
+                {
+                    let doms = &self.model.state; // convenient alias
+                    // we may be eligible for encoding as a dynamic STN edge
+                    // This typically occurs for duration constraints `(start + duration) <= end`
+                    //
+                    // for all possible ordering of items in the sum, check if it representable as a dynamic STN edge
+                    // and if so add it to the STN
+                    let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+                    for [xi, yi, di] in permutations {
+                        // we are interested in the form `y - x <= d`
+                        // get it from the sum `y + (-x) + (-d) <= 0)
+                        let x = -lin.get_var(xi);
+                        let y = lin.get_var(yi);
+                        let d = -lin.get_var(di);
+                        if x.factor != 1 || y.factor != 1 {
+                            continue;
                         }
-                    }
-                    2 => {
-                        let fst = lin.sum.first().unwrap();
-                        let snd = lin.sum.get(1).unwrap();
-                        debug_assert_ne!(fst.factor, 0);
-                        debug_assert_ne!(snd.factor, 0);
-
-                        if fst.factor != -snd.factor || lin.upper_bound % fst.factor != 0 {
-                            false
-                        } else {
-                            let b = if fst.factor > 0 { fst } else { snd };
-                            let a = if fst.factor < 0 { fst } else { snd };
-                            let diff = DifferenceExpression::new(b.var, a.var, lin.upper_bound / b.factor);
-                            self.post_constraint(&Constraint::HalfReified(ReifExpr::MaxDiff(diff), enabler))?;
-                            true
+                        if doms.presence(d.var) != doms.presence_literal(enabler) {
+                            // presence of the constraint does not match the one of the edge
+                            continue;
                         }
+                        if !doms.implies(doms.presence(d.var), doms.presence(x.var))
+                            || !doms.implies(doms.presence(d.var), doms.presence(y.var))
+                        {
+                            continue;
+                        }
+                        // if we get there we are eligible, massage the constraint into the right format and post it
+                        let src = x.var;
+                        let tgt = y.var;
+                        let (ub_var, ub_factor) = if d.factor >= 0 {
+                            (SignedVar::plus(d.var), d.factor)
+                        } else {
+                            (SignedVar::minus(d.var), -d.factor)
+                        };
+                        // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
+                        // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
+                        self.reasoners.diff.add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
                     }
-                    _ => false,
+                    None // we posted redendant constraint, but this is not an exact reformulation, we need to post the original one as well
+                } else {
+                    None
                 };
-
-                if !handled {
+                if let Some(reformulated) = reformulation {
+                    self.post_constraint(&Constraint::HalfReified(reformulated, enabler))
+                } else {
                     self.reasoners
                         .cp
-                        .add_half_reif_linear_constraint(&lin, enabler, &self.model.state);
-
-                    let doms = &mut self.model.state; // convenient alias
-
-                    // if the linear sum is on three variables, try adding a redundant dynamic variable to the STN
-                    // this is only possible if the constraint is always active
-                    if lin.upper_bound == 0 && lin.sum.len() == 3 && doms.entails(enabler) && DYNAMIC_EDGES.get() {
-                        // we may be eligible for encoding as a dynamic STN edge
-                        // for all possible ordering of items in the sum, check if it representable as a dynamic STN edge
-                        // and if so add it to the STN
-                        let permutations = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
-                        for [xi, yi, di] in permutations {
-                            // we are interested in the form `y - x <= d`
-                            // get it from the sum `y + (-x) + (-d) <= 0)
-                            let x = -lin.sum[xi];
-                            let y = lin.sum[yi];
-                            let d = -lin.sum[di];
-                            if x.factor != 1 || y.factor != 1 {
-                                continue;
-                            }
-                            if doms.presence(d.var) != doms.presence_literal(enabler) {
-                                // presence of the constraint does not match the one of the edge
-                                continue;
-                            }
-                            if !doms.implies(doms.presence(d.var), doms.presence(x.var))
-                                || !doms.implies(doms.presence(d.var), doms.presence(y.var))
-                            {
-                                continue;
-                            }
-                            // if we get there we are eligible, massage the constraint into the right format and post it
-                            let src = x.var;
-                            let tgt = y.var;
-                            let (ub_var, ub_factor) = if d.factor >= 0 {
-                                (SignedVar::plus(d.var), d.factor)
-                            } else {
-                                (SignedVar::minus(d.var), -d.factor)
-                            };
-                            // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
-                            // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
-                            self.reasoners.diff.add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
-                        }
-                    }
+                        .add_half_reif_linear_leq_constraint(lin, enabler, &self.model.state);
+                    Ok(())
                 }
+            }
+            ReifExpr::LinearEq(lin) => {
+                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(lin.clone()), enabler))?;
+                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(-lin.clone()), enabler))
+            }
+            ReifExpr::LinearNeq(lin) => {
+                let option1 = self.model.half_reify(lin.clone().lt(0));
+                let option2 = self.model.half_reify(lin.clone().gt(0));
+                self.add_clause([!enabler, option1, option2], scope)?;
                 Ok(())
             }
             ReifExpr::Alternative(a) => {
-                let prez = |v: VarRef| self.model.state.presence_literal(v);
+                let prez = |v: Var| self.model.state.presence_literal(v);
                 assert!(
                     self.model.entails(enabler),
                     "Unsupported half reified alternative constraints."
@@ -414,7 +404,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     ))?;
                 }
 
-                let prez = |v: VarRef| self.model.state.presence_literal(v);
+                let prez = |v: Var| self.model.state.presence_literal(v);
 
                 // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
                 self.reasoners.cp.add_propagator(AtLeastOneGeq {
@@ -461,7 +451,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     debug_assert!(self.model.state.implies(item_scope, scope));
                     let alt_value = self.model.get_tautology_of_scope(item_scope);
                     // a.lhs >= item.var + item.cst
-                    let constraint = LinearSum::from(a.lhs).geq(LinearSum::from(item.var) + item.cst);
+                    let constraint = geq(a.lhs, item.var + item.cst);
                     self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
                 }
 
@@ -538,7 +528,7 @@ impl<Lbl: Label> Solver<Lbl> {
         let mut disjuncts = disjuncts.into_lits();
         disjuncts.push(!scope);
 
-        (disjuncts.into(), Lit::TRUE)
+        (Disjunction::new(disjuncts), Lit::TRUE)
     }
 
     /// Returns true if all constraints are posted.
@@ -555,19 +545,8 @@ impl<Lbl: Label> Solver<Lbl> {
         let start_cycles = StartCycleCount::now();
         while self.next_unposted_constraint < self.model.shape.constraints.len() {
             let c = &self.model.shape.constraints[self.next_unposted_constraint];
-            let size_before = self.model.shape.constraints.len();
-            let c = unsafe {
-                // SAFETY: we erase the lifetime of the constraint to please the borrow checker
-                // This is safe, because post constraint should not modify the constraints aray (`self.mode.shape.constraints`)
-                // in any way: nor overwrite nor append. The latter is problematic as it may cause the vec to relocate and invalidate the reference
-                std::mem::transmute::<&Constraint, &'static Constraint>(c)
-            };
-            self.post_constraint(c)?;
-            debug_assert_eq!(
-                self.model.shape.constraints.len(),
-                size_before,
-                "SAFETY invariant broken"
-            );
+            let c = c.clone(); // we cannot hold a reference because the underlying storage may grow as a result of posting constraints
+            self.post_constraint(&c)?;
             self.next_unposted_constraint += 1;
         }
         self.stats.init_time += start_time.elapsed();
@@ -595,7 +574,7 @@ impl<Lbl: Label> Solver<Lbl> {
     /// IMPORTANT: this method will post non-removable clauses to block solutions. So even resetting will not bring
     ///  the solver back to its previous state. The solver should be cloned before calling enumerate if it is
     ///  needed for something else.
-    pub fn enumerate(&mut self, variables: &[VarRef], limit: SearchLimit) -> Result<Vec<Vec<IntCst>>, Exit> {
+    pub fn enumerate(&mut self, variables: &[Var], limit: SearchLimit) -> Result<Vec<Vec<IntCst>>, Exit> {
         let mut valid_assignments = Vec::with_capacity(64);
 
         // If trivially UNSAT
@@ -621,7 +600,7 @@ impl<Lbl: Label> Solver<Lbl> {
     ///  needed for something else.
     pub fn enumerate_with(
         &mut self,
-        variables: &[VarRef],
+        variables: &[Var],
         mut on_new_solution: impl FnMut(&Domains),
         limit: SearchLimit,
     ) -> Result<bool, Exit> {
@@ -742,7 +721,7 @@ impl<Lbl: Label> Solver<Lbl> {
         limit: SearchLimit,
     ) -> Result<Result<Solution, UnsatCore>, Exit> {
         // delegate to optimization with a constant objective
-        self.minimize_with_assumptions(VarRef::ZERO, assumptions, limit, |_sol| {})
+        self.minimize_with_assumptions(Var::ZERO, assumptions, limit, |_sol| {})
     }
 
     /// Returns an iterable datastructure for computing all MUS and MCS.
@@ -866,7 +845,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn minimize(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.minimize_with_callback(objective, |_, _| (), limit)
@@ -874,7 +853,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn minimize_with_callback(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
@@ -883,7 +862,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn maximize(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
         self.maximize_with_callback(objective, |_, _| (), limit)
@@ -891,7 +870,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn maximize_with_callback(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<LinTerm>,
         on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
     ) -> Result<Option<(IntCst, Solution)>, Exit> {
@@ -900,7 +879,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     fn optimize_with(
         &mut self,
-        objective: IAtom,
+        objective: LinTerm,
         minimize: bool,
         mut on_new_solution: impl FnMut(IntCst, &Solution),
         limit: SearchLimit,
@@ -908,11 +887,7 @@ impl<Lbl: Label> Solver<Lbl> {
         assert_eq!(self.decision_level, DecLvl::ROOT);
         assert_eq!(self.last_assumption_level, DecLvl::ROOT);
 
-        let opt_var = if minimize {
-            SignedVar::plus(objective.var.variable())
-        } else {
-            SignedVar::minus(objective.var.variable())
-        };
+        let opt_var = if minimize { objective } else { -objective };
         if let Ok(sol) =
             self.minimize_with_assumptions(opt_var, &[], limit, |sol| on_new_solution(sol.lb(objective), sol))?
         {
@@ -1027,9 +1002,9 @@ impl<Lbl: Label> Solver<Lbl> {
         assert!(self.all_constraints_posted());
         self.save_state();
         log_dec!(
-            "decision: {:?} -- {}     dom:{:?}",
+            "decision: {:?} -- {:?}     dom:{:?}",
             self.decision_level,
-            self.model.fmt(decision),
+            decision,
             self.model.bounds(decision.variable())
         );
         let res = self.model.state.decide(decision);
@@ -1203,7 +1178,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         " CONFLICT {:?} (size: {})  >  {}",
                         self.decision_level,
                         conflict.clause.len(),
-                        conflict.literals().iter().map(|l| self.model.fmt(*l)).format(" | ")
+                        conflict.literals().iter().map(|l| format!("{:?}", l)).format(" | ")
                     );
                     self.sync.notify_learnt(&conflict.clause);
                     if self.add_conflicting_clause_and_backtrack(&conflict) {
@@ -1243,7 +1218,6 @@ impl<Lbl: Label> Solver<Lbl> {
     /// - `Ok(())`: if quiescence was reached without finding any conflict
     /// - `Err(clause)`: if a conflict was found. In this case, `clause` is a conflicting cause in the current
     ///   decision level that
-    #[instrument(level = "trace", skip(self))]
     pub fn propagate(&mut self) -> Result<(), Conflict> {
         match self.post_constraints() {
             Ok(()) => {}
@@ -1388,12 +1362,6 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             stats: self.stats.clone(),
             sync: self.sync.clone(),
         }
-    }
-}
-
-impl<Lbl: Label> Shaped<Lbl> for Solver<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        self.model.get_shape()
     }
 }
 

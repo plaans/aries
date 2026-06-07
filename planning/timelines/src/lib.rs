@@ -3,26 +3,25 @@ pub mod constraints;
 mod effects;
 pub mod encoder;
 pub mod explain;
-pub mod rational;
 pub mod symbols;
 pub mod tasks;
 
-use aries::core::state::Evaluable;
-use aries::core::views::Dom;
+use aries_solver::core::state::Evaluable;
+use aries_solver::core::views::Dom;
 use constraints::*;
 use core::fmt::Debug;
-use core::hash::{Hash, Hasher};
+use core::hash::Hash;
 use std::sync::Arc;
 
-use aries::core::INT_CST_MAX;
-pub use aries::core::IntCst;
-use aries::model::lang::*;
-use aries::prelude::*;
-use aries::solver::Solver;
+use aries_solver::core::INT_CST_MAX;
+pub use aries_solver::core::IntCst;
+use aries_solver::lang::*;
+use aries_solver::prelude::*;
+use aries_solver::solver::Solver;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
-pub type Model = aries::model::Model<Sym>;
+pub type Model = aries_solver::model::Model<Sym>;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
@@ -35,48 +34,12 @@ pub type Sym = String;
 pub type Time = IAtom;
 
 /// Type of simple int expressions (composed of at most one variable)
-pub type IntTerm = aries::prelude::LinTerm;
+pub type IntTerm = aries_solver::prelude::LinTerm;
 
 /// Type of compound integer expressions.
-pub type IntExp = aries::prelude::LinSum;
+pub type IntExp = aries_solver::prelude::LinSum;
 
 pub type SymAtom = IntTerm;
-
-/// A fluent is a state function defined as a symbol and a set of parameter and return types.
-///
-/// For instance `at: Robot -> Location -> Bool` is the state function with symbol `at`
-/// that accepts two parameters of type `Robot` and `Location`.
-///
-/// Given two symbols `bob: Robot` and `kitchen: Location`, the application of the
-/// *state function* `at` to these parameters:
-/// `(at bob kitchen)` is a *state variable* of boolean type.
-// TODO: make internals private
-#[derive(Clone, Debug, Eq, PartialOrd, Ord)]
-pub struct Fluent {
-    /// Human readable name of the fluent
-    pub sym: Sym,
-    /// Signature of the function. A vec [a, b, c] corresponds
-    /// to the type `a -> b -> c` in curried notation.
-    /// Hence `a` and `b` are the arguments and the last element `c` is the return type
-    pub signature: Vec<Type>,
-}
-impl PartialEq for Fluent {
-    fn eq(&self, other: &Self) -> bool {
-        // if they have the same symbol they should be exactly the same by construct
-        debug_assert!(
-            self.sym != other.sym || self.signature == other.signature,
-            "{:?} {:?}",
-            self,
-            other
-        );
-        self.sym == other.sym
-    }
-}
-impl Hash for Fluent {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.sym.hash(state);
-    }
-}
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct StateVar {
@@ -231,7 +194,7 @@ impl Dom for Sched {
         self.model.upper_bound(svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.model.presence(var)
     }
 }

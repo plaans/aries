@@ -1,16 +1,13 @@
 pub mod symmetry;
 
-use aries::core::literals::ConjunctionBuilder;
-use aries::model::lang::element::Element;
-use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
-use aries::prelude::*;
-use aries::{
+use aries_solver::core::literals::ConjunctionBuilder;
+use aries_solver::lang::element::Element;
+use aries_solver::lang::exclusive_choice::exclu_choice;
+use aries_solver::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
+use aries_solver::prelude::*;
+use aries_solver::{
     core::{literals::DisjunctionBuilder, views::Dom},
-    model::lang::{
-        expr::{eq, or},
-        max::EqMax,
-    },
+    lang::{expr::or, max::EqMax},
 };
 
 use crate::{boxes::Segment, effects::EffectOp, *};
@@ -428,7 +425,8 @@ pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
         IntExp::cst(1) - b.variable()
     } else {
         let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
-        eq(bvar.geq(1), b).enforce(model);
+        implies(bvar.geq(1), b).enforce(model);
+        implies(b, bvar.geq(1)).enforce(model);
         IntExp::from(bvar)
     }
 }

@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
 use crate::{
-    core::{Lit, Relation, VarRef},
+    core::{Lit, Relation, Var},
     model::extensions::DomainsExt,
 };
 
@@ -10,8 +10,8 @@ use super::Propagator;
 #[derive(Clone, Debug)]
 /// Propagator for the constraint `reified <=> original * lit`
 pub(super) struct VarEqVarMulLit {
-    pub reified: VarRef,
-    pub original: VarRef,
+    pub reified: Var,
+    pub original: Var,
     pub lit: Lit,
 }
 
@@ -177,7 +177,7 @@ mod tests {
 
     use super::*;
 
-    fn mul(reif: VarRef, orig: VarRef, lit: Lit) -> VarEqVarMulLit {
+    fn mul(reif: Var, orig: Var, lit: Lit) -> VarEqVarMulLit {
         VarEqVarMulLit {
             reified: reif,
             original: orig,
@@ -185,7 +185,7 @@ mod tests {
         }
     }
 
-    fn check_bounds(v: VarRef, d: &Domains, lb: IntCst, ub: IntCst) {
+    fn check_bounds(v: Var, d: &Domains, lb: IntCst, ub: IntCst) {
         assert_eq!(d.lb(v), lb);
         assert_eq!(d.ub(v), ub);
     }

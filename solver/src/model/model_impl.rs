@@ -3,19 +3,16 @@ use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 
 use crate::backtrack::{Backtrack, DecLvl};
-use crate::collections::ref_store::RefMap;
 use crate::core::literals::StableLitSet;
 use crate::core::state::*;
-use crate::core::views::Dom;
+use crate::core::views::{Dom, Term};
 use crate::core::*;
-use crate::model::extensions::{DomainsExt, Shaped};
+use crate::lang::expr::or;
+use crate::lang::reification::Reification;
+use crate::lang::*;
+use crate::model::extensions::DomainsExt;
 use crate::model::label::{Label, VariableLabels};
-use crate::model::lang::expr::or;
-use crate::model::lang::reification::Reification;
-use crate::model::lang::*;
 use crate::model::model_impl::scopes::Scopes;
-use crate::model::symbols::SymbolTable;
-use crate::model::types::TypeId;
 use crate::reasoners::cp::UserPropagator;
 use crate::reif::{ReifExpr, Reifiable};
 
@@ -44,23 +41,15 @@ impl std::fmt::Display for Constraint {
 /// Defines the structure of a model: variables names, types, relations, ...
 #[derive(Clone)]
 pub struct ModelShape<Lbl> {
-    pub symbols: Arc<SymbolTable>,
-    pub types: RefMap<VarRef, Type>,
-    pub expressions: Reification,
-    pub constraints: Vec<Constraint>,
-    pub labels: VariableLabels<Lbl>,
-    pub conjunctive_scopes: Scopes,
+    pub(crate) expressions: Reification,
+    pub(crate) constraints: Vec<Constraint>,
+    pub(crate) labels: VariableLabels<Lbl>,
+    pub(crate) conjunctive_scopes: Scopes,
 }
 
 impl<Lbl: Label> ModelShape<Lbl> {
     pub fn new() -> Self {
-        Self::new_with_symbols(Arc::new(SymbolTable::empty()))
-    }
-
-    pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         ModelShape {
-            symbols,
-            types: Default::default(),
             expressions: Default::default(),
             constraints: Default::default(),
             labels: Default::default(),
@@ -68,18 +57,15 @@ impl<Lbl: Label> ModelShape<Lbl> {
         }
     }
 
-    fn set_label(&mut self, var: VarRef, l: impl Into<Lbl>) {
+    fn set_label(&mut self, var: Var, l: impl Into<Lbl>) {
         self.labels.insert(var, l.into())
     }
-    pub fn get_variable(&self, label: &Lbl) -> Option<VarRef> {
+    pub fn get_variable(&self, label: &Lbl) -> Option<Var> {
         match *self.labels.variables_with_label(label) {
             [] => None,
             [var] => Some(var),
             _ => panic!("More than one variable with label: {label:?}"),
         }
-    }
-    fn set_type(&mut self, var: VarRef, typ: Type) {
-        self.types.insert(var, typ);
     }
     fn add_half_reification_constraint(&mut self, value: Lit, expr: ReifExpr) {
         let c = Constraint::HalfReified(expr, value);
@@ -100,32 +86,35 @@ impl<Lbl: Label> ModelShape<Lbl> {
 
     /// Given a TOTAL assignment, check that all constraints are satisfied.
     /// NOTE: Currently not really polished and intended for internal use.
-    pub(crate) fn validate(&self, assignment: &Domains) -> anyhow::Result<()> {
+    pub(crate) fn validate(&self, assignment: &Domains) -> Result<(), String> {
+        let solution = assignment.extract_solution();
         for c in &self.constraints {
             match c {
                 Constraint::HalfReified(expr, enabler) => {
                     if assignment.present(enabler.variable()).unwrap() && assignment.entails(*enabler) {
-                        let actual_value = expr.eval(assignment);
-                        anyhow::ensure!(
-                            actual_value == Some(true),
-                            "{} : {:?}  [but enabled by {:?}]",
-                            expr,
-                            actual_value,
-                            enabler
-                        );
+                        let actual_value = expr.eval(&solution);
+                        if actual_value != Some(true) {
+                            return Err(format!("{} : {:?}  [but enabled by {:?}]", expr, actual_value, enabler));
+                        }
                     } else {
                         // Underspecified: we may be able to determine a value on the
                         // expression side (e.g. with short-circuiting "or") even though we are not in the
                         // validity scope of the literal.
                     }
                 }
-                Constraint::Propagator(user_propagator) => anyhow::ensure!(
-                    user_propagator.satisfied(assignment),
-                    "user propagator is not satisfied:\n{user_propagator:?}"
-                ),
+                Constraint::Propagator(user_propagator) => {
+                    if !user_propagator.satisfied(assignment) {
+                        return Err(format!("user propagator is not satisfied:\n{user_propagator:?}"));
+                    }
+                }
             }
         }
         Ok(())
+    }
+
+    /// Returns the label of this variable (if one was specified)
+    pub fn get_label(&self, var: Var) -> Option<&Lbl> {
+        self.labels.get(var)
     }
 }
 
@@ -147,12 +136,8 @@ pub struct Model<Lbl> {
 
 impl<Lbl: Label> Model<Lbl> {
     pub fn new() -> Self {
-        Self::new_with_symbols(Arc::new(SymbolTable::empty()))
-    }
-
-    pub fn new_with_symbols(symbols: Arc<SymbolTable>) -> Self {
         Model {
-            shape: ModelShape::new_with_symbols(symbols),
+            shape: ModelShape::new(),
             state: Domains::new(),
         }
     }
@@ -171,7 +156,6 @@ impl<Lbl: Label> Model<Lbl> {
         self.state.add_implication(lit, scope);
         let var = lit.variable();
         self.shape.set_label(var, label);
-        self.shape.set_type(var, Type::Bool);
         BVar::new(var)
     }
 
@@ -203,7 +187,6 @@ impl<Lbl: Label> Model<Lbl> {
             .unwrap_or_else(|| {
                 let var = self.state.new_optional_var(1, 1, scope);
                 let lit = var.geq(1);
-                self.shape.set_type(var, Type::Bool);
                 self.shape.conjunctive_scopes.set_tautology_of_scope(scope, lit);
                 lit
             })
@@ -240,7 +223,6 @@ impl<Lbl: Label> Model<Lbl> {
                 // NOTE: we cannot use `Lit::FALSE` directly because we need to uniquely identify
                 //       the literal as the conjunction of the other two in some corner cases.
                 let l = self.state.new_var(0, 0).geq(1);
-                self.shape.set_type(l.variable(), Type::Bool);
                 Some(l)
             } else {
                 None // no simplification found, proceed
@@ -255,7 +237,6 @@ impl<Lbl: Label> Model<Lbl> {
             // - `l => v1`, `l => v2`, ...
             // - `l | !v1 | !v2 | ... | !vn`
             let l = self.state.new_var(0, 1).geq(1);
-            self.shape.set_type(l.variable(), Type::Bool);
             let mut clause = vec![l];
             for v_i in set.literals() {
                 self.state.add_implication(l, v_i);
@@ -275,112 +256,52 @@ impl<Lbl: Label> Model<Lbl> {
             self.state.new_var(0, 1)
         };
         self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Bool);
         BVar::new(dvar)
     }
 
-    pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Lbl>) -> IVar {
+    /// Creates a new variable, taking its value in `[lb, ub]`.
+    pub fn new_variable(&mut self, lb: IntCst, ub: IntCst) -> Var {
+        self.new_optional_variable(lb, ub, Lit::TRUE)
+    }
+
+    /// Creates a new optional variable that is either:
+    ///
+    ///  - an integer in `[lb, ub]` when `presence` is entailed.
+    ///  - absent otherwise
+    ///
+    /// It is required that the presence literal is on an mandatory variable.
+    pub fn new_optional_variable(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
+        debug_assert!(self.presence_literal(presence).tautological());
+        if lb <= ub {
+            self.state.new_optional_var(lb, ub, presence)
+        } else {
+            // domain is empty which violates an invariant of `Domains`.
+            // If the variable is mandatory, this would be immediately UNSAT but we cannot communicate that fact with this method signature.
+            // Otherwise, the variable is optional and would be absent (but be can't propagate because it risks being in an inconsistent state)
+            // This is very unlikely to happen in most domains and we want to keep the return type simple, with no error handling required.
+            //
+            // hence we create a variable with a single value, and post a constraint enforcing the upper bound
+            // On the fist propagation, this one would trigger and give the appropriate result (UNSAT/absent)
+            let var = self.state.new_optional_var(lb, lb, presence);
+            self.enforce(var.leq(ub), [presence]);
+            var
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn new_ivar(&mut self, lb: IntCst, ub: IntCst, label: impl Into<Lbl>) -> Var {
         self.create_ivar(lb, ub, None, label)
     }
 
-    pub fn new_fvar(&mut self, num_lb: IntCst, num_ub: IntCst, denom: IntCst, label: impl Into<Lbl>) -> FVar {
-        let ivar = self.new_ivar(num_lb, num_ub, label);
-        FVar::new(ivar, denom)
-    }
-    pub fn new_optional_fvar(
-        &mut self,
-        num_lb: IntCst,
-        num_ub: IntCst,
-        denom: IntCst,
-        presence: Lit,
-        label: impl Into<Lbl>,
-    ) -> FVar {
-        let ivar = self.new_optional_ivar(num_lb, num_ub, presence, label);
-        FVar::new(ivar, denom)
-    }
-
-    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> IVar {
+    #[doc(hidden)]
+    pub fn new_optional_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Lit, label: impl Into<Lbl>) -> Var {
         self.create_ivar(lb, ub, Some(presence), label)
     }
 
-    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Lbl>) -> IVar {
-        let dvar = if let Some(presence) = presence {
-            self.state.new_optional_var(lb, ub, presence)
-        } else {
-            self.state.new_var(lb, ub)
-        };
+    fn create_ivar(&mut self, lb: IntCst, ub: IntCst, presence: Option<Lit>, label: impl Into<Lbl>) -> Var {
+        let dvar = self.new_optional_variable(lb, ub, presence.unwrap_or(Lit::TRUE));
         self.shape.set_label(dvar, label);
-        self.shape.set_type(dvar, Type::Int { lb, ub });
-        IVar::new(dvar)
-    }
-
-    pub fn new_sym_var(&mut self, tpe: TypeId, label: impl Into<Lbl>) -> SVar {
-        self.create_sym_var(tpe, None, label)
-    }
-
-    pub fn new_optional_sym_var(&mut self, tpe: TypeId, presence: impl Into<Lit>, label: impl Into<Lbl>) -> SVar {
-        self.create_sym_var(tpe, Some(presence.into()), label)
-    }
-
-    fn create_sym_var(&mut self, tpe: TypeId, presence: Option<Lit>, label: impl Into<Lbl>) -> SVar {
-        let instances = self.shape.symbols.instances_of_type(tpe);
-        if let Some((lb, ub)) = instances.bounds() {
-            let lb = usize::from(lb) as IntCst;
-            let ub = usize::from(ub) as IntCst;
-            let dvar = if let Some(presence) = presence {
-                self.state.new_optional_var(lb, ub, presence)
-            } else {
-                self.state.new_var(lb, ub)
-            };
-            self.shape.set_label(dvar, label);
-            self.shape.set_type(dvar, Type::Sym(tpe));
-            SVar::new(dvar, tpe)
-        } else {
-            // no instances for this type, we should create a variable with an empty domain which is only allowed for optional variable
-            println!("WARNING: workaround for empty domain of optional vars (Github Issue #28)");
-            let p = if let Some(presence) = presence {
-                // this is an optional variable, force it to be absent
-                self.state
-                    .set(!presence, Cause::Decision) // TODO: fix decision cause
-                    .expect("An optional but necessarily present variable has an empty integer domain.");
-                // create a a variable with arbitrary domain (which will never be used as is forced to be absent)
-                self.state.new_optional_var(0, 0, presence)
-            } else {
-                // non-optional variable, break on assumption of non-empty domain in the model
-                panic!("Variable with empty symbolic domain.");
-            };
-            SVar::new(p, tpe)
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn unifiable(&self, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
-        let a = a.into();
-        let b = b.into();
-        if a.kind() != b.kind() {
-            false
-        } else {
-            let (l1, u1) = self.int_bounds(a);
-            let (l2, u2) = self.int_bounds(b);
-            let disjoint = u1 < l2 || u2 < l1;
-            !disjoint
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn unifiable_seq<A: Into<Atom> + Copy, B: Into<Atom> + Copy>(&self, a: &[A], b: &[B]) -> bool {
-        if a.len() != b.len() {
-            false
-        } else {
-            for (a, b) in a.iter().zip(b.iter()) {
-                let a = (*a).into();
-                let b = (*b).into();
-                if !self.unifiable(a, b) {
-                    return false;
-                }
-            }
-            true
-        }
+        dvar
     }
 
     /// Interns the given expression and returns an equivalent literal.
@@ -393,6 +314,15 @@ impl<Lbl: Label> Model<Lbl> {
     pub fn reify<Expr: Reifiable<Lbl>>(&mut self, expr: Expr) -> Lit {
         let decomposed = expr.decompose(self);
         self.reify_core(decomposed, false)
+    }
+    // TODO: replace reify with this one
+    #[cfg(test)]
+    pub(crate) fn reif<'a, Expr: BoolExpr<Self> + 'a, NotExpr>(&mut self, expr: &'a Expr) -> Lit
+    where
+        &'a Expr: std::ops::Not<Output = NotExpr>,
+        NotExpr: BoolExpr<Self>,
+    {
+        expr.reified(self)
     }
 
     /// Returns a new literal that, if set to true, will force the given expression to be true.
@@ -432,7 +362,6 @@ impl<Lbl: Label> Model<Lbl> {
                     _ => {}
                 }
             }
-            ReifExpr::Linear(lin) => *lin = lin.simplify(),
             ReifExpr::Eq(v1, v2) => {
                 if v1 < v2 {
                     std::mem::swap(v1, v2);
@@ -453,6 +382,7 @@ impl<Lbl: Label> Model<Lbl> {
                     *expr = ReifExpr::Lit(Lit::TRUE)
                 }
             }
+            // linear sums are always  simplified and in canonical form
             _ => {}
         }
     }
@@ -471,7 +401,6 @@ impl<Lbl: Label> Model<Lbl> {
                 self.get_tautology_of_scope(scope)
             } else {
                 let var = self.state.new_optional_var(0, 1, scope);
-                self.shape.set_type(var, Type::Bool);
                 var.geq(1)
             };
             self.shape.expressions.intern_full_as(expr.clone(), lit);
@@ -488,7 +417,6 @@ impl<Lbl: Label> Model<Lbl> {
         } else {
             let scope = self.scope_lit_of(&expr);
             let var = self.state.new_optional_var(0, 1, scope);
-            self.shape.set_type(var, Type::Bool);
             let lit = var.geq(1);
             self.shape.expressions.intern_half_as(expr.clone(), lit);
             self.shape.add_half_reification_constraint(lit, expr);
@@ -582,7 +510,7 @@ impl<Lbl: Label> Model<Lbl> {
             // not yet reified but our literal cannot be used directly because it has a different scope
             // if the literal is already true for a linear constraint, use the tautology of the expression scope as reification
             // this is done because we do not handle reified linear constraint for the moment
-            let use_tautology = self.entails(value) && matches!(expr, ReifExpr::Linear(_));
+            let use_tautology = self.entails(value) && matches!(expr, ReifExpr::LinearLeq(_));
             let reified = self.reify_core(expr, use_tautology);
             self.bind_literals(value, reified);
         }
@@ -604,24 +532,31 @@ impl<Lbl: Label> Model<Lbl> {
         }
     }
 
+    #[doc(hidden)]
+    pub fn get_label(&self, var: impl Term) -> Option<&Lbl> {
+        self.shape.labels.get(var.variable())
+    }
+
     // =========== Formatting ==============
 
-    pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
-        let atom = atom.into();
-        crate::model::extensions::fmt(atom, self)
-    }
+    // pub fn fmt(&self, atom: impl Into<Atom>) -> impl std::fmt::Display + '_ {
+    //     let atom = atom.into();
+    //     crate::model::extensions::fmt(atom, self)
+    // }
 
     pub fn print_state(&self) {
         for v in self.state.variables() {
             let prez = format!("[{:?}]", self.presence_literal(v));
             let v_str = format!("{v:?}");
-            print!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
-            if let Some(lbl) = self.get_label(v) {
-                println!("    {lbl:?}");
-            } else {
-                println!()
-            }
+            println!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
         }
+    }
+
+    /// Temporaly place holder to facilitate refactoring
+    /// TODO: remove
+    #[doc(hidden)]
+    pub fn fmt(&self, var: impl Debug) -> impl std::fmt::Display {
+        format!("{var:?}")
     }
 }
 
@@ -630,7 +565,7 @@ impl<Lbl> Dom for Model<Lbl> {
         Domains::ub(&self.state, svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.state.presence(var)
     }
 }
@@ -656,11 +591,5 @@ impl<Lbl> Backtrack for Model<Lbl> {
 
     fn restore(&mut self, saved_id: DecLvl) {
         self.state.restore(saved_id);
-    }
-}
-
-impl<Lbl: Label> Shaped<Lbl> for Model<Lbl> {
-    fn get_shape(&self) -> &ModelShape<Lbl> {
-        &self.shape
     }
 }
