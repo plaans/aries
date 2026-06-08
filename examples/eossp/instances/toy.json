@@ -1,13 +1,11 @@
 {
-  "satellite": {
-    "energy_max": 10
-  },
+  "energy_max": 10,
   "tasks": [
     {
       "release": 0,
       "deadline": 0,
       "duration": 0,
-      "energy": 8,
+      "energy": -2,
       "optional": false
     },
     {

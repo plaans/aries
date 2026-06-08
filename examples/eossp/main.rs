@@ -4,7 +4,7 @@ use aries::{
     core::{IntCst, Lit},
     model::lang::{
         IAtom, IVar,
-        expr::{leq, or},
+        expr::{eq, geq, leq, or},
         linear::LinearSum,
     },
     solver::Solver,
@@ -48,6 +48,7 @@ pub struct TransitionJson {
 pub struct InstanceJson {
     pub tasks: Vec<TaskJson>,
     pub transitions: Vec<TransitionJson>,
+    pub energy_max: IntCst,
 }
 
 impl InstanceJson {
@@ -110,6 +111,7 @@ impl From<TransitionJson> for Transition {
 pub struct Instance {
     pub tasks: Vec<Task>,
     pub transitions: Vec<Transition>,
+    pub energy_max: IntCst,
 }
 
 impl Instance {
@@ -130,8 +132,13 @@ impl From<InstanceJson> for Instance {
         }
 
         let transitions = instance_json.transitions.into_iter().map(Into::into).collect();
+        let energy_max = instance_json.energy_max;
 
-        Self { tasks, transitions }
+        Self {
+            tasks,
+            transitions,
+            energy_max,
+        }
     }
 }
 
@@ -139,13 +146,14 @@ pub struct TaskVar {
     pub task: Task,
     pub presence: Lit,
     pub start: IVar,
-    pub end: IAtom,
+    pub energy_at_start: IVar,
+    pub energy_at_end: IVar, // We could remove this variable by putting all saturation on energy at start
 }
 
 impl TaskVar {
-    pub fn new(model: &mut AriesModel, task: Task) -> Self {
+    pub fn new(model: &mut AriesModel, task: Task, energy_max: IntCst) -> Self {
         let presence = if task.optional {
-            model.new_bvar(format!("p_{}", task.id)).into()
+            model.new_bvar(format!("p_{}", task.id)).true_lit()
         } else {
             Lit::TRUE
         };
@@ -153,20 +161,31 @@ impl TaskVar {
         let latest_start = task.deadline - task.duration;
         let start = model.new_optional_ivar(task.release, latest_start, presence, format!("s_{}", task.id));
 
-        let end = start + task.duration;
+        let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("a_{}", task.id));
+        let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("b_{}", task.id));
+        model.enforce(eq(energy_at_start + task.energy, energy_at_end), [presence]);
 
         Self {
             task,
             presence,
             start,
-            end,
+            energy_at_start,
+            energy_at_end,
         }
+    }
+
+    pub fn end(&self) -> IAtom {
+        self.start + self.task.duration
     }
 
     /// Return literal b_ij such that b_ij => e_i + t_ij <= s_j.
     pub fn before(model: &mut AriesModel, task_i: &Self, task_j: &Self, t_ij: IntCst) -> Lit {
-        let before_expr = leq(task_i.end + t_ij, task_j.start);
-        model.half_reify(before_expr)
+        model.half_reify(leq(task_i.end() + t_ij, task_j.start))
+    }
+
+    /// Post energy constraint b_ij => b_i + e_ij >= a_i.
+    pub fn post_energy(model: &mut AriesModel, task_i: &Self, task_j: &Self, e_ij: IntCst, b_ij: Lit) {
+        model.enforce_if(b_ij, geq(task_i.energy_at_end + e_ij, task_j.energy_at_start));
     }
 
     /// Post transition constraints for i -> j.
@@ -183,12 +202,14 @@ impl TaskVar {
             return;
         }
 
-        // Post duration constraint
-        if let Some(d) = duration {
-            Self::before(model, task_i, task_j, *d);
-        }
+        // Post temporal constraint
+        let d = duration.unwrap_or(0);
+        let i_before_j = Self::before(model, task_i, task_j, d);
 
-        // Post energy constraint: TODO
+        // Post energy constraint
+        if let Some(e) = energy {
+            Self::post_energy(model, task_i, task_j, *e, i_before_j);
+        }
     }
 }
 
@@ -205,7 +226,7 @@ impl Model {
         let task_vars = instance
             .tasks
             .iter()
-            .map(|task| TaskVar::new(&mut model, task.clone()))
+            .map(|task| TaskVar::new(&mut model, task.clone(), instance.energy_max))
             .collect();
 
         let transitions = instance.transitions.clone();
@@ -261,12 +282,13 @@ fn main() -> anyhow::Result<()> {
     println!("{:?}", instance);
 
     println!("----------");
+
     model.model.print_state();
 
     let mut solver = Solver::new(model.model);
     let result = solver.maximize(model.objective);
 
-    let (objective, domains) = result.unwrap().unwrap();
+    let (objective, domains) = result.expect("error while solving").expect("unsat");
 
     println!("----------");
 
@@ -275,7 +297,16 @@ fn main() -> anyhow::Result<()> {
         if present {
             let start = domains.lb(task_var.start);
             let end = start + task_var.task.duration;
-            println!("T{} [{} - {}]", task_var.task.id, start, end);
+
+            // Domains already set all variables to lower bound
+            // TODO: find a way to use upper bound
+            let energy_at_start = domains.ub(task_var.energy_at_start);
+            let energy_at_end = domains.ub(task_var.energy_at_end);
+
+            println!(
+                "T{} [{} - {}] ({} - {})",
+                task_var.task.id, start, end, energy_at_start, energy_at_end
+            );
         } else {
             println!("T{} *", task_var.task.id);
         }
