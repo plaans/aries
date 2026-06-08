@@ -2,7 +2,11 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use aries::{
     core::{IntCst, Lit},
-    model::lang::{IAtom, IVar},
+    model::lang::{
+        IAtom, IVar,
+        expr::{leq, or},
+        linear::LinearSum,
+    },
     solver::Solver,
 };
 use clap::Parser;
@@ -63,15 +67,22 @@ pub struct Task {
     pub optional: bool,
 }
 
+impl Task {
+    /// Return true iff task i must be before task j ie i < j.
+    pub fn before(task_i: &Task, task_j: &Task, t_ji: IntCst) -> bool {
+        return task_j.release + task_j.duration + t_ji + task_i.duration > task_i.deadline;
+    }
+}
+
 impl From<TaskJson> for Task {
-    fn from(value: TaskJson) -> Self {
+    fn from(task_json: TaskJson) -> Self {
         Self {
             id: 0,
-            release: value.release,
-            deadline: value.deadline,
-            duration: value.duration,
-            energy: value.energy,
-            optional: value.optional,
+            release: task_json.release,
+            deadline: task_json.deadline,
+            duration: task_json.duration,
+            energy: task_json.energy,
+            optional: task_json.optional,
         }
     }
 }
@@ -109,7 +120,11 @@ impl Instance {
 
 impl From<InstanceJson> for Instance {
     fn from(instance_json: InstanceJson) -> Self {
-        let tasks = instance_json.tasks.into_iter().map(Into::into).collect();
+        let mut tasks: Vec<Task> = instance_json.tasks.into_iter().map(Into::into).collect();
+        for (i, task) in tasks.iter_mut().enumerate() {
+            task.id = i;
+        }
+
         let transitions = instance_json.transitions.into();
         Self { tasks, transitions }
     }
@@ -130,8 +145,8 @@ impl TaskVar {
             Lit::TRUE
         };
 
-        let lates_start = task.deadline - task.duration;
-        let start = model.new_optional_ivar(task.release, lates_start, presence, format!("s_{}", task.id));
+        let latest_start = task.deadline - task.duration;
+        let start = model.new_optional_ivar(task.release, latest_start, presence, format!("s_{}", task.id));
 
         let end = start + task.duration;
 
@@ -141,6 +156,34 @@ impl TaskVar {
             start,
             end,
         }
+    }
+
+    /// Return literal b_ij such that b_ij => e_i + t_ij <= s_j.
+    pub fn before(model: &mut AriesModel, task_i: &Self, task_j: &Self, t_ij: IntCst) -> Lit {
+        let before_expr = leq(task_i.end + t_ij, task_j.start);
+        model.half_reify(before_expr)
+    }
+
+    /// Post transition constraints for i -> j.
+    pub fn post_transition(
+        model: &mut AriesModel,
+        task_i: &Self,
+        task_j: &Self,
+        duration: &Option<IntCst>,
+        energy: &Option<IntCst>,
+    ) {
+        // No duration and no energy: i is uncompatible with j
+        if duration.is_none() && energy.is_none() {
+            model.enforce(or(vec![task_i.presence.not(), task_j.presence.not()]), []);
+            return;
+        }
+
+        // Post duration constraint
+        if let Some(d) = duration {
+            Self::before(model, task_i, task_j, *d);
+        }
+
+        // Post energy constraint: TODO
     }
 }
 
@@ -165,12 +208,37 @@ impl Model {
         let num_tasks: i32 = instance.num_tasks().try_into().unwrap();
         let objective = model.new_ivar(0, num_tasks, "objective");
 
-        Self {
+        let mut model = Self {
             model,
             task_vars,
             transitions,
             objective,
+        };
+
+        model.post_transitions();
+        model.post_objective();
+        model
+    }
+
+    fn post_transitions(&mut self) {
+        for ((i, j), (duration, energy)) in self.transitions.edges.iter() {
+            let task_i = &self.task_vars[*i];
+            let task_j = &self.task_vars[*j];
+            TaskVar::post_transition(&mut self.model, task_i, task_j, duration, energy);
         }
+    }
+
+    fn post_objective(&mut self) {
+        let mut sum = LinearSum::zero();
+        for task in self.task_vars.iter() {
+            if task.presence == Lit::TRUE {
+                sum += 1;
+            } else {
+                sum += IVar::new(task.presence.variable());
+            }
+        }
+        self.model.enforce(sum.clone().geq(self.objective), []);
+        self.model.enforce(sum.leq(self.objective), []);
     }
 }
 
@@ -180,13 +248,29 @@ fn main() -> anyhow::Result<()> {
     let model = Model::new(&instance);
 
     println!("{:?}", instance);
+
+    println!("----------");
     model.model.print_state();
 
     let mut solver = Solver::new(model.model);
     let result = solver.maximize(model.objective);
 
     let (objective, domains) = result.unwrap().unwrap();
-    println!("{objective}");
+
+    println!("----------");
+
+    for task_var in model.task_vars {
+        let present = domains.entails(task_var.presence);
+        if present {
+            let start = domains.lb(task_var.start);
+            let end = start + task_var.task.duration;
+            println!("T{} [{} - {}]", task_var.task.id, start, end);
+        } else {
+            println!("T{} *", task_var.task.id);
+        }
+    }
+
+    println!("Objective: {objective}");
 
     Ok(())
 }
