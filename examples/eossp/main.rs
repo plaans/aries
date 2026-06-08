@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 use aries::{
     core::{IntCst, Lit},
@@ -88,24 +88,28 @@ impl From<TaskJson> for Task {
 }
 
 #[derive(Debug, Clone)]
-pub struct TransitionGraph {
-    pub edges: HashMap<(usize, usize), (Option<IntCst>, Option<IntCst>)>,
+pub struct Transition {
+    pub source: usize,
+    pub destination: usize,
+    pub duration: Option<IntCst>,
+    pub energy: Option<IntCst>,
 }
 
-impl From<Vec<TransitionJson>> for TransitionGraph {
-    fn from(transition_jsons: Vec<TransitionJson>) -> Self {
-        let edges = transition_jsons
-            .iter()
-            .map(|t| ((t.source, t.destination), (t.duration, t.energy)))
-            .collect();
-        Self { edges }
+impl From<TransitionJson> for Transition {
+    fn from(transition_json: TransitionJson) -> Self {
+        Self {
+            source: transition_json.source,
+            destination: transition_json.destination,
+            duration: transition_json.duration,
+            energy: transition_json.energy,
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct Instance {
     pub tasks: Vec<Task>,
-    pub transitions: TransitionGraph,
+    pub transitions: Vec<Transition>,
 }
 
 impl Instance {
@@ -125,7 +129,8 @@ impl From<InstanceJson> for Instance {
             task.id = i;
         }
 
-        let transitions = instance_json.transitions.into();
+        let transitions = instance_json.transitions.into_iter().map(Into::into).collect();
+
         Self { tasks, transitions }
     }
 }
@@ -190,7 +195,7 @@ impl TaskVar {
 pub struct Model {
     pub model: AriesModel,
     pub task_vars: Vec<TaskVar>,
-    pub transitions: TransitionGraph,
+    pub transitions: Vec<Transition>,
     pub objective: IVar,
 }
 
@@ -221,10 +226,16 @@ impl Model {
     }
 
     fn post_transitions(&mut self) {
-        for ((i, j), (duration, energy)) in self.transitions.edges.iter() {
-            let task_i = &self.task_vars[*i];
-            let task_j = &self.task_vars[*j];
-            TaskVar::post_transition(&mut self.model, task_i, task_j, duration, energy);
+        for transition in self.transitions.iter() {
+            let task_i = &self.task_vars[transition.source];
+            let task_j = &self.task_vars[transition.destination];
+            TaskVar::post_transition(
+                &mut self.model,
+                task_i,
+                task_j,
+                &transition.duration,
+                &transition.energy,
+            );
         }
     }
 
