@@ -2,8 +2,9 @@
 //!
 //! Two strategies:
 //!   - **Greedy**: descending utility order; runs [`run_one_by_one`] once.
-//!   - **AllAtOnce**: selects all violated preferences at once, then
-//!     prunes until feasible ([`run_prune`]).
+//!   - **AllAtOnce**: selects all violated preferences at once, prunes
+//!     until feasible ([`run_prune`]), then attempts to re-add dropped
+//!     preferences one by one via [`run_one_by_one`] (LIFO order).
 //!
 //! Conflict resolution: analyze MUSes to find which preferences are in
 //! conflict, then drop the one with the lowest utility.
@@ -127,10 +128,11 @@ fn pick_cheapest_in_conflict(
 }
 
 // =====================================================================
-// One-by-one enforcement (Greedy).
+// One-by-one enforcement.
 //
-// Single pass over preferences in descending utility order. On conflict,
-// the newly added preference is always the cheapest — drop it and move on.
+// Single pass: try each preference in `ordering`, solve on success,
+// drop on conflict.  Used by Greedy (from empty set) and by the
+// AllAtOnce re-add phase (from the surviving set after pruning).
 // =====================================================================
 
 struct PathResult {
@@ -150,12 +152,14 @@ fn run_one_by_one(
     optimal_obj_val: IntCst,
     optimal_plan_cost: Option<IntCst>,
     stop_threshold: Option<IntCst>,
+    initial_set: &[usize],
+    initial_steps: usize,
     ordering: &[usize],
     path_label: &str,
 ) -> PathResult {
     let obj = encoding.objectives[0];
-    let mut selected_indices: Vec<usize> = Vec::new();
-    let mut steps: usize = 0;
+    let mut selected_indices: Vec<usize> = initial_set.to_vec();
+    let mut steps: usize = initial_steps;
     let mut last_obj_val: Option<IntCst> = None;
 
     for &next_idx in ordering {
@@ -236,11 +240,11 @@ fn run_prune(
     plan_cost_obj: Option<IntTerm>,
     optimal_obj_val: IntCst,
     optimal_plan_cost: Option<IntCst>,
-    violated_indices: &[usize],
+    violated_sorted: &[usize],
     path_label: &str,
 ) -> PruneResult {
     let obj = encoding.objectives[0];
-    let mut selected_indices: Vec<usize> = violated_indices.to_vec();
+    let mut selected_indices: Vec<usize> = violated_sorted.to_vec();
     let mut steps: usize = 1;
 
     let selected_str = selected_indices.iter()
@@ -281,9 +285,38 @@ fn run_prune(
         }
     }
 
-    // Solve the surviving set
+    // Re-add phase: reuse the greedy one-by-one loop to try recovering
+    // dropped preferences.  The prune drops cheapest first, so reversing
+    // gives a LIFO order that retries highest-utility drops first.
+    // Each successful re-add is followed by a full solve (Phase 1 / Phase 2),
+    // exactly like the Greedy strategy.
+    // A single pass suffices: each re-add only grows the selected set,
+    // so a preference that fails feasibility cannot succeed later.
+    let dropped: Vec<usize> = violated_sorted.iter()
+        .copied()
+        .filter(|idx| !selected_indices.contains(idx))
+        .collect();
+    let readd_ordering: Vec<usize> = dropped.iter().copied().rev().collect();
+
     let mut final_obj_val: Option<IntCst> = None;
-    if !selected_indices.is_empty() {
+
+    if !readd_ordering.is_empty() && !selected_indices.is_empty() {
+        let readd_str = readd_ordering.iter()
+            .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+        println!("\n[SIM][{}] Re-add phase: attempting to recover [{}]", path_label, readd_str);
+
+        let readd_result = run_one_by_one(
+            solver, encoding, model, sched, entries,
+            plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+            None, &selected_indices, steps, &readd_ordering, path_label,
+        );
+        steps = readd_result.steps;
+        selected_indices = readd_result.enforced;
+        final_obj_val = readd_result.final_obj_val;
+    }
+
+    // Solve the surviving set (only needed if no re-add ran or none succeeded).
+    if final_obj_val.is_none() && !selected_indices.is_empty() {
         let selected_pref_lits: Vec<Lit> = selected_indices.iter()
             .flat_map(|&i| entries[i].lits.iter().copied()).collect();
 
@@ -391,7 +424,7 @@ pub(crate) fn simulate_preference_enforcement(
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &ordering, "greedy",
+                stop_threshold, &[], 0, &ordering, "greedy",
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
