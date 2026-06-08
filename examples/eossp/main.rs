@@ -89,11 +89,25 @@ impl From<TaskJson> for Task {
 }
 
 #[derive(Debug, Clone)]
+pub struct TransitionLabel {
+    pub duration: Option<IntCst>,
+    pub energy: Option<IntCst>,
+}
+
+impl From<TransitionJson> for TransitionLabel {
+    fn from(transition_json: TransitionJson) -> Self {
+        Self {
+            duration: transition_json.duration,
+            energy: transition_json.energy,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Transition {
     pub source: usize,
     pub destination: usize,
-    pub duration: Option<IntCst>,
-    pub energy: Option<IntCst>,
+    pub label: TransitionLabel,
 }
 
 impl From<TransitionJson> for Transition {
@@ -101,8 +115,7 @@ impl From<TransitionJson> for Transition {
         Self {
             source: transition_json.source,
             destination: transition_json.destination,
-            duration: transition_json.duration,
-            energy: transition_json.energy,
+            label: transition_json.into(),
         }
     }
 }
@@ -189,26 +202,20 @@ impl TaskVar {
     }
 
     /// Post transition constraints for i -> j.
-    pub fn post_transition(
-        model: &mut AriesModel,
-        task_i: &Self,
-        task_j: &Self,
-        duration: &Option<IntCst>,
-        energy: &Option<IntCst>,
-    ) {
+    pub fn post_transition(model: &mut AriesModel, task_i: &Self, task_j: &Self, transition: &TransitionLabel) {
         // No duration and no energy: i is uncompatible with j
-        if duration.is_none() && energy.is_none() {
+        if transition.duration.is_none() && transition.energy.is_none() {
             model.enforce(or(vec![task_i.presence.not(), task_j.presence.not()]), []);
             return;
         }
 
         // Post temporal constraint
-        let d = duration.unwrap_or(0);
-        let i_before_j = Self::before(model, task_i, task_j, d);
+        let duration = transition.duration.unwrap_or(0);
+        let i_before_j = Self::before(model, task_i, task_j, duration);
 
         // Post energy constraint
-        if let Some(e) = energy {
-            Self::post_energy(model, task_i, task_j, *e, i_before_j);
+        if let Some(energy) = transition.energy {
+            Self::post_energy(model, task_i, task_j, energy, i_before_j);
         }
     }
 }
@@ -248,14 +255,11 @@ impl Model {
 
     fn post_transitions(&mut self) {
         for transition in self.transitions.iter() {
-            let task_i = &self.task_vars[transition.source];
-            let task_j = &self.task_vars[transition.destination];
             TaskVar::post_transition(
                 &mut self.model,
-                task_i,
-                task_j,
-                &transition.duration,
-                &transition.energy,
+                &self.task_vars[transition.source],
+                &self.task_vars[transition.destination],
+                &transition.label,
             );
         }
     }
