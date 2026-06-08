@@ -71,7 +71,7 @@ pub struct Task {
 impl Task {
     /// Return true iff task i must be before task j ie i < j.
     pub fn before(task_i: &Task, task_j: &Task, t_ji: IntCst) -> bool {
-        return task_j.release + task_j.duration + t_ji + task_i.duration > task_i.deadline;
+        task_j.release + task_j.duration + t_ji + task_i.duration > task_i.deadline
     }
 }
 
@@ -231,7 +231,7 @@ impl Model {
 
         let transitions = instance.transitions.clone();
 
-        let num_tasks: i32 = instance.num_tasks().try_into().unwrap();
+        let num_tasks: IntCst = instance.num_tasks().try_into().expect("overflow on num_tasks");
         let objective = model.new_ivar(0, num_tasks, "objective");
 
         let mut model = Self {
