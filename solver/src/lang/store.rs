@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use crate::model::Model;
 use crate::{
     backtrack::DecLvl,
     core::{state::Evaluable, views::Dom},

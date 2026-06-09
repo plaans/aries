@@ -8,12 +8,13 @@ pub use crate::core::{IntCst, Lit, SignedVar, Var};
 pub use crate::lang::IAtom;
 pub use crate::lang::linear::{LinSum, LinTerm};
 pub use crate::lang::{BoolExpr, IntExpr};
-pub use crate::model::Model;
 pub use crate::model::extensions::DomainsExt;
 pub use crate::solver::SearchLimit;
 pub use crate::solver::Solver;
 
 pub use crate::lang::expr::*;
+
+pub type Model = crate::model::Model<String>;
 
 pub use crate::core::INT_CST_MAX;
 pub use crate::core::INT_CST_MIN;

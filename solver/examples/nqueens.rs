@@ -1,7 +1,5 @@
 use aries_solver::prelude::*;
 
-type Model = aries_solver::prelude::Model<String>;
-
 /// Solves the N-Queens problem for a given board size.
 ///
 /// The goal is to place N queens on an NxN chessboard such that no two queens

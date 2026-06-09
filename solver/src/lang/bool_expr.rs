@@ -197,7 +197,7 @@ mod test {
     #[test]
     fn test_alldiff_exp() {
         let n = 2;
-        let mut m: Model<String> = Model::new();
+        let mut m = Model::new();
         let mut tasks = Vec::with_capacity(n);
         for i in 1..=n {
             let pi = m.new_presence_variable(Lit::TRUE, format!("p{i}")).true_lit();
@@ -250,16 +250,16 @@ mod test {
 
     struct ModelWithMetadata {
         starts: Vec<IAtom>,
-        model: Model<String>,
+        model: Model,
     }
     impl ModelWrapper for ModelWithMetadata {
         type Lbl = String;
 
-        fn get_model(&self) -> &Model<Self::Lbl> {
+        fn get_model(&self) -> &Model {
             &self.model
         }
 
-        fn get_model_mut(&mut self) -> &mut Model<Self::Lbl> {
+        fn get_model_mut(&mut self) -> &mut Model {
             &mut self.model
         }
     }
@@ -288,7 +288,7 @@ mod test {
 
     #[test]
     fn test_ctx2() {
-        let mut store: Model<String> = Model::new();
+        let mut store = Model::new();
         let s1 = store.new_ivar(0, 1000, "start1");
         let s2 = store.new_ivar(0, 1000, "start2");
         let s3 = store.new_ivar(0, 1000, "start3");
