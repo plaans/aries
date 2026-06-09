@@ -4,7 +4,6 @@ use aries_solver::backtrack::Backtrack;
 use aries_solver::core::state::OptDomain;
 use aries_solver::core::views::Term;
 use aries_solver::lang::alternative::Alternative;
-use aries_solver::lang::expr::*;
 use aries_solver::lang::max::{EqMax, EqMin};
 use aries_solver::solver::SearchLimit;
 use itertools::Itertools;

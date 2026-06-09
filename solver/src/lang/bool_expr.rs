@@ -1,6 +1,6 @@
 use crate::{
     lang::{
-        expr::{And, Or, or},
+        expr::or,
         linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
         *,
@@ -143,8 +143,8 @@ macro_rules! impl_reif {
 
 // Derive `impl BoolExpr<_>` for Expression convertible to `ReifExpr`
 impl_reif!(Lit);
-impl_reif!(Or);
-impl_reif!(And);
+impl_reif!(Disjunction);
+impl_reif!(Conjunction);
 impl_reif!(EqMax);
 impl_reif!(EqMin);
 impl_reif!(LinLeq);
@@ -157,7 +157,7 @@ mod test {
         core::views::{Dom, Term},
         lang::{
             IAtom,
-            expr::{lin_neq, lt},
+            expr::{lt, neq},
         },
         model::Label,
     };
@@ -186,7 +186,7 @@ mod test {
 
     impl<Ctx: Store> BoolExpr<Ctx> for Different {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-            lin_neq(self.0, self.1).opt_enforce_if(l, ctx);
+            neq(self.0, self.1).opt_enforce_if(l, ctx);
         }
 
         fn conj_scope(&self, ctx: &Ctx) -> Conjunction {

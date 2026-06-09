@@ -9,7 +9,7 @@ use aries_solver::{
     core::literals::ConjunctionBuilder,
     lang::{
         BoolExpr, IntExpr,
-        expr::{eq, lin_eq},
+        expr::{eq},
     },
     prelude::*,
 };
@@ -317,7 +317,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
             override_conditions.push(sched.model.reify(eq(e.transition_start, overrider.transition_start)));
             // overrider must have the same state variable arguments
             for (a1, a2) in e.state_var.args.iter().zip_eq(overrider.state_var.args.iter()) {
-                override_conditions.push(lin_eq(*a1, *a2).reified(&mut sched.model));
+                override_conditions.push(eq(*a1, *a2).reified(&mut sched.model));
             }
             let conjunction = override_conditions.build();
             let cancelled_by = sched.model.reify(conjunction);

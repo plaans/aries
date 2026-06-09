@@ -1,6 +1,6 @@
 use super::*;
 use crate::legacy::*;
-use aries_solver::lang::expr::and;
+use crate::legacy::{geq, leq, lt};
 use aries_solver::model::extensions::DomainsExt;
 use aries_solver::model::Label;
 use aries_solver::{core::Lit, lang::expr::or};

@@ -1,6 +1,7 @@
 use crate::core::literals::Lits;
+use crate::core::state::Evaluable;
 use crate::core::*;
-use crate::prelude::Conjunction;
+use crate::prelude::{Conjunction, Solution};
 use std::borrow::Borrow;
 use std::cmp::Reverse;
 use std::fmt::{Debug, Formatter};
@@ -205,6 +206,20 @@ impl std::ops::Not for &Disjunction {
 
     fn not(self) -> Self::Output {
         Conjunction::from_iter(self.iter().map(|l| !l))
+    }
+}
+
+impl Evaluable for Disjunction {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &Solution) -> Option<Self::Value> {
+        if self.iter().any(|l| l.evaluate(solution) == Some(true)) {
+            Some(true)
+        } else if self.iter().any(|l| l.evaluate(solution).is_none()) {
+            None
+        } else {
+            Some(false)
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use aries_solver::{lang::expr::neq, prelude::*}; // TODO: ugly import
+use aries_solver::prelude::*;
 
 type Model = aries_solver::prelude::Model<String>;
 

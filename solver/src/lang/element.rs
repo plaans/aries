@@ -1,10 +1,4 @@
-use crate::{
-    lang::{
-        expr::{implies, lin_eq},
-        *,
-    },
-    prelude::*,
-};
+use crate::{lang::*, prelude::*};
 
 /// Represent a single option in an element constraint.
 #[derive(Copy, Clone, Debug)]
@@ -103,7 +97,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
             let _span = tracing::debug_span!("Option");
             let _span = _span.enter();
             // if `a` is the establishers the the variable must have its value
-            implies(o.selector, lin_eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
+            implies(o.selector, eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
             // TODO: we could do a stronger propagation by ensuring that at least each value in the lhs domain is supported by value in the rhs domains
 
             ctx.add_assertion(implies(o.selector, ctx.presence_literal(o.value)));

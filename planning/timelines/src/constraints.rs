@@ -3,7 +3,7 @@ pub mod symmetry;
 use aries_solver::core::literals::ConjunctionBuilder;
 use aries_solver::lang::element::Element;
 use aries_solver::lang::exclusive_choice::exclu_choice;
-use aries_solver::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
+use aries_solver::lang::expr::{eq, geq, gt, implies, leq, lt};
 use aries_solver::prelude::*;
 use aries_solver::{
     core::{literals::DisjunctionBuilder, views::Dom},
@@ -158,7 +158,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
                 conjuncts.push(leq(ass.mutex_end, step.mutex_end).implicant(ctx));
                 conjuncts.push(geq(ass.mutex_end, step.mutex_end).implicant(ctx));
                 for (arg1, arg2) in ass.state_var.args.iter().zip_eq(step.state_var.args.iter()) {
-                    conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
+                    conjuncts.push(eq(*arg1, *arg2).implicant(ctx))
                 }
                 let supports = conjuncts.build().implicant(ctx);
                 support_options.push(supports);
@@ -249,10 +249,10 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             conjuncts.push(geq(self.timepoint, eff.effective_start()).reified(ctx));
             conjuncts.push(leq(self.timepoint, eff.mutex_end).reified(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(lin_eq(*arg1, *arg2).reified(ctx))
+                conjuncts.push(eq(*arg1, *arg2).reified(ctx))
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = conjuncts.build();
+                let conjuncts = conjuncts.build();
                 let contributes = conjuncts.reified(ctx); // presence should be the same as self.presence?
                 step_contributors.push(StepContributor {
                     contributes,
@@ -280,11 +280,11 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             conjuncts.push(leq(self.timepoint, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
                 // note we use the conjunctive form with bot leq and geq to avoid reification of the equality
-                conjuncts.push(lin_leq(*arg1, *arg2).implicant(ctx));
-                conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(leq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = conjuncts.build();
+                let conjuncts = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
@@ -391,8 +391,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         );
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
-            disjuncts.push(lin_lt(*x1, *x2).implicant(ctx));
-            disjuncts.push(lin_gt(*x1, *x2).implicant(ctx));
+            disjuncts.push(lt(*x1, *x2).implicant(ctx));
+            disjuncts.push(gt(*x1, *x2).implicant(ctx));
             if disjuncts.tautological() {
                 return;
             }

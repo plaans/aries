@@ -13,6 +13,8 @@ pub use crate::model::extensions::DomainsExt;
 pub use crate::solver::SearchLimit;
 pub use crate::solver::Solver;
 
+pub use crate::lang::expr::*;
+
 pub use crate::core::INT_CST_MAX;
 pub use crate::core::INT_CST_MIN;
 
