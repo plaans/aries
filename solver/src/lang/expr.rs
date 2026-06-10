@@ -1,4 +1,3 @@
-use crate::core::state::Evaluable;
 use crate::lang::alternative::Alternative;
 use crate::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::lang::*;
@@ -6,40 +5,32 @@ use crate::prelude::*;
 
 use super::mul::EqMul;
 
-// TODO: use a single term (for backward compatibility currently)
-pub use lin_eq as eq;
-pub use lin_geq as geq;
-pub use lin_gt as gt;
-pub use lin_leq as leq;
-pub use lin_lt as lt;
-pub use lin_neq as neq;
-
-pub fn lin_eq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinEq {
+pub fn eq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinEq {
     lhs.into().eq(rhs)
 }
-pub fn lin_neq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinNeq {
+pub fn neq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinNeq {
     lhs.into().neq(rhs)
 }
-pub fn lin_leq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+pub fn leq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
     lhs.into().leq(rhs)
 }
-pub fn lin_geq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+pub fn geq(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
     lhs.into().geq(rhs)
 }
-pub fn lin_lt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+pub fn lt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
     lhs.into().lt(rhs)
 }
-pub fn lin_gt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
+pub fn gt(lhs: impl Into<LinSum>, rhs: impl Into<LinSum>) -> LinLeq {
     lhs.into().gt(rhs)
 }
 
-pub fn or(disjuncts: impl Into<Disjunction>) -> Or {
+pub fn or(disjuncts: impl Into<Disjunction>) -> Disjunction {
     disjuncts.into()
 }
-pub fn and(conjuncts: impl Into<Conjunction>) -> And {
+pub fn and(conjuncts: impl Into<Conjunction>) -> Conjunction {
     conjuncts.into()
 }
-pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Or {
+pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Disjunction {
     or([!a.into(), b.into()])
 }
 
@@ -52,20 +43,6 @@ pub fn alternative<T: Into<IAtom>>(main: impl Into<IAtom>, alternatives: impl In
     Alternative::new(main, alternatives)
 }
 
-pub type Or = Disjunction;
+// pub type Or = Disjunction;
 
-impl Evaluable for Disjunction {
-    type Value = bool;
-
-    fn evaluate(&self, solution: &Solution) -> Option<Self::Value> {
-        if self.iter().any(|l| l.evaluate(solution) == Some(true)) {
-            Some(true)
-        } else if self.iter().any(|l| l.evaluate(solution).is_none()) {
-            None
-        } else {
-            Some(false)
-        }
-    }
-}
-
-pub type And = Conjunction;
+// pub type And = Conjunction;

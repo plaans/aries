@@ -1130,7 +1130,7 @@ mod tests {
     #[derive(Clone)]
     struct Stn {
         stn: StnTheory,
-        model: Model<String>,
+        model: Model,
     }
     impl Stn {
         pub fn new() -> Self {

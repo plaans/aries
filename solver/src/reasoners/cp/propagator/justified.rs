@@ -58,7 +58,7 @@
 //!         todo!("Check if the constraint is satisfied for the current domains")
 //!     }
 //! }
-//! let mut model: Model<&str> = Model::new();
+//! let mut model = Model::new();
 //! model.enforce_user_propagator(Prop(Var::ZERO));
 //! ```
 

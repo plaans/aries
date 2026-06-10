@@ -17,7 +17,7 @@ use itertools::Itertools;
 /// The solutions are generated in lexicographic order.
 fn get_solutions<const N: usize>(
     vars: [Var; N],
-    model: Model<String>,
+    model: Model,
 ) -> Vec<[IntCst; N]> {
     let mut solver = Solver::new(model);
     let mut solutions: Vec<[IntCst; N]> = solver
@@ -35,7 +35,7 @@ fn get_solutions<const N: usize>(
 /// The solutions are generated in lexicographic order.
 fn gen_solutions<const N: usize>(
     vars: [Var; N],
-    model: &Model<String>,
+    model: &Model,
     verify: impl Fn([IntCst; N]) -> bool,
 ) -> Vec<[IntCst; N]> {
     let candidates = vars
@@ -75,7 +75,7 @@ fn gen_solutions<const N: usize>(
 /// ```
 pub(super) fn verify_all<const N: usize>(
     vars: [impl Into<Var>; N],
-    model: Model<String>,
+    model: Model,
     verify: impl Fn([IntCst; N]) -> bool,
 ) {
     let vars: [Var; N] = vars
@@ -97,7 +97,7 @@ pub(super) fn verify_all<const N: usize>(
 ///
 /// It has one variables:
 ///  - x in \[-1,7\]
-pub(super) fn basic_int_model_1() -> (Model<String>, Var) {
+pub(super) fn basic_int_model_1() -> (Model, Var) {
     let mut model = Model::new();
 
     let x = model.new_ivar(-1, 7, "x".to_string());
@@ -114,7 +114,7 @@ pub(super) fn basic_int_model_1() -> (Model<String>, Var) {
 /// It has two variables:
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
-pub(super) fn basic_int_model_2() -> (Model<String>, Var, Var) {
+pub(super) fn basic_int_model_2() -> (Model, Var, Var) {
     let (mut model, x) = basic_int_model_1();
 
     let y = model.new_ivar(-4, 6, "y".to_string());
@@ -132,7 +132,7 @@ pub(super) fn basic_int_model_2() -> (Model<String>, Var, Var) {
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - z in \[-2,5\]
-pub(super) fn basic_int_model_3() -> (Model<String>, Var, Var, Var) {
+pub(super) fn basic_int_model_3() -> (Model, Var, Var, Var) {
     let (mut model, x, y) = basic_int_model_2();
     let z = model.new_ivar(-2, 5, "z".to_string());
 
@@ -150,15 +150,8 @@ pub(super) fn basic_int_model_3() -> (Model<String>, Var, Var, Var) {
 ///  - y in \[-4,6\]
 ///
 /// The linear sum is 3\*x + 2\*y with bound 13.
-pub(super) fn basic_lin_model() -> (
-    Model<String>,
-    Vec<ScaledVar>,
-    Var,
-    Var,
-    IntCst,
-    IntCst,
-    IntCst,
-) {
+pub(super) fn basic_lin_model()
+-> (Model, Vec<ScaledVar>, Var, Var, IntCst, IntCst, IntCst) {
     let (model, x, y) = basic_int_model_2();
 
     let c_x = 3;
@@ -186,7 +179,7 @@ pub(super) fn basic_lin_model() -> (
 /// ```
 ///
 /// It has two boolean variables: x, y.
-pub(super) fn basic_bool_model_2() -> (Model<String>, BVar, BVar) {
+pub(super) fn basic_bool_model_2() -> (Model, BVar, BVar) {
     let mut model = Model::new();
     let x = model.new_bvar("x".to_string());
     let y = model.new_bvar("y".to_string());
@@ -201,7 +194,7 @@ pub(super) fn basic_bool_model_2() -> (Model<String>, BVar, BVar) {
 /// ```
 ///
 /// It has three boolean variables: x, y, z.
-pub(super) fn basic_bool_model_3() -> (Model<String>, BVar, BVar, BVar) {
+pub(super) fn basic_bool_model_3() -> (Model, BVar, BVar, BVar) {
     let (mut model, x, y) = basic_bool_model_2();
     let z = model.new_bvar("z".to_string());
 
@@ -218,7 +211,7 @@ pub(super) fn basic_bool_model_3() -> (Model<String>, BVar, BVar, BVar) {
 ///  - x in \[-1,7\]
 ///  - y in \[-4,6\]
 ///  - r bool
-pub(super) fn basic_reif_model() -> (Model<String>, Var, Var, BVar) {
+pub(super) fn basic_reif_model() -> (Model, Var, Var, BVar) {
     let (mut model, x, y) = basic_int_model_2();
 
     let r = model.new_bvar("r".to_string());

@@ -8,10 +8,7 @@ use anyhow::{bail, Result};
 
 use aries_solver::prelude::*;
 use aries_solver::{
-    lang::{
-        expr::{and, eq, geq, lt, or},
-        Var,
-    },
+    model::Model,
     solver::{SearchLimit, Solver},
 };
 use malachite::{Natural, Rational};
@@ -232,7 +229,7 @@ impl CspProblem {
 
     /// Returns whether the problem is valid.
     pub fn is_valid(&mut self) -> bool {
-        let mut m = Model::<String>::new();
+        let mut m = Model::new();
         let mut vars = HashMap::new();
 
         for (name, var) in self.variables.clone().iter() {

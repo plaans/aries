@@ -259,6 +259,7 @@ mod test {
     use crate::{parser, problem};
     use aries_solver::core::state::witness;
     use aries_solver::model::Label;
+    use aries_solver::model::Model;
     use aries_solver::prelude::*;
     use aries_solver::reasoners::cp::no_overlap;
     use aries_solver::solver::search::random::RandomChoice;

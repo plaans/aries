@@ -810,9 +810,9 @@ mod test {
             for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                 for u in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
                     let sum = LinearSum::constant_rational(n, d);
-                    let leq = sum.clone().leq(u);
-                    assert_eq!(leq.sum, sum - u);
-                    assert_eq!(leq.ub, 0);
+                    let le = sum.clone().leq(u);
+                    assert_eq!(le.sum, sum - u);
+                    assert_eq!(le.ub, 0);
                 }
             }
         }
@@ -824,9 +824,9 @@ mod test {
             for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                 for l in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
                     let sum = LinearSum::constant_rational(n, d);
-                    let leq = sum.clone().geq(l);
-                    assert_eq!(leq.sum, -(sum - l));
-                    assert_eq!(leq.ub, 0);
+                    let le = sum.clone().geq(l);
+                    assert_eq!(le.sum, -(sum - l));
+                    assert_eq!(le.ub, 0);
                 }
             }
         }

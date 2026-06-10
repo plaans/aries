@@ -933,7 +933,7 @@ mod tests {
     use crate::backtrack::{Backtrack, EventIndex};
     use crate::core::state::{Cause, Domains, SingleTheoryExplainer};
     use crate::core::{IntCst, Lit, Var};
-    use crate::lang::expr::lin_eq;
+    use crate::lang::expr::eq;
     use crate::model::{Label, Model};
     use crate::reasoners::eq::dense::InferenceCause;
     use crate::reasoners::eq::{DenseEqTheory, Node, ReifyEq};
@@ -1156,7 +1156,7 @@ mod tests {
 
         for (xi, x) in vars.iter().copied().enumerate() {
             for &y in &vars[xi..] {
-                model.reif(&lin_eq(x, y));
+                model.reif(&eq(x, y));
             }
         }
 
@@ -1212,7 +1212,7 @@ mod tests {
 
         for (xi, x) in vars.iter().copied().enumerate() {
             for &y in &vars[xi..] {
-                model.reif(&lin_eq(x, y));
+                model.reif(&eq(x, y));
             }
         }
 

@@ -1,7 +1,5 @@
 use aries_solver::prelude::*;
 
-type Model = aries_solver::prelude::Model<String>; // TODO: get rid of type parameter
-
 fn solve(items: &[(IntCst, IntCst)], capacity: IntCst) -> Option<IntCst> {
     let mut model = Model::new();
 

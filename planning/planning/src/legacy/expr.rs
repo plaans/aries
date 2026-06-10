@@ -8,7 +8,7 @@ use aries_solver::{
 use crate::legacy::*;
 use aries_env_param::EnvParam;
 use aries_solver::{
-    model::Label,
+    model::{Label, Model},
     prelude::*,
     reif::{ReifExpr, Reifiable},
 };
