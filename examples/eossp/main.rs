@@ -1,10 +1,10 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use aries::{
     core::{IntCst, Lit},
     model::lang::{
         IAtom, IVar,
-        expr::{eq, geq, leq, or},
+        expr::{and, eq, geq, implies, leq, or},
         linear::LinearSum,
     },
     solver::Solver,
@@ -94,12 +94,24 @@ pub struct TransitionLabel {
     pub energy: Option<IntCst>,
 }
 
-impl From<TransitionJson> for TransitionLabel {
-    fn from(transition_json: TransitionJson) -> Self {
+impl From<&TransitionJson> for (usize, usize) {
+    fn from(transition_json: &TransitionJson) -> Self {
+        (transition_json.source, transition_json.destination)
+    }
+}
+
+impl From<&TransitionJson> for TransitionLabel {
+    fn from(transition_json: &TransitionJson) -> Self {
         Self {
             duration: transition_json.duration,
             energy: transition_json.energy,
         }
+    }
+}
+
+impl From<&TransitionJson> for ((usize, usize), TransitionLabel) {
+    fn from(transition_json: &TransitionJson) -> Self {
+        (transition_json.into(), transition_json.into())
     }
 }
 
@@ -110,8 +122,8 @@ pub struct Transition {
     pub label: TransitionLabel,
 }
 
-impl From<TransitionJson> for Transition {
-    fn from(transition_json: TransitionJson) -> Self {
+impl From<&TransitionJson> for Transition {
+    fn from(transition_json: &TransitionJson) -> Self {
         Self {
             source: transition_json.source,
             destination: transition_json.destination,
@@ -120,10 +132,21 @@ impl From<TransitionJson> for Transition {
     }
 }
 
+impl From<((usize, usize), TransitionLabel)> for Transition {
+    fn from(value: ((usize, usize), TransitionLabel)) -> Self {
+        let ((source, destination), label) = value;
+        Self {
+            source,
+            destination,
+            label,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Instance {
     pub tasks: Vec<Task>,
-    pub transitions: Vec<Transition>,
+    pub transitions: HashMap<(usize, usize), TransitionLabel>,
     pub energy_max: IntCst,
 }
 
@@ -144,7 +167,7 @@ impl From<InstanceJson> for Instance {
             task.id = i;
         }
 
-        let transitions = instance_json.transitions.into_iter().map(Into::into).collect();
+        let transitions = instance_json.transitions.iter().map(Into::into).collect();
         let energy_max = instance_json.energy_max;
 
         Self {
@@ -166,16 +189,16 @@ pub struct TaskVar {
 impl TaskVar {
     pub fn new(model: &mut AriesModel, task: Task, energy_max: IntCst) -> Self {
         let presence = if task.optional {
-            model.new_bvar(format!("p_{}", task.id)).true_lit()
+            model.new_bvar(format!("presence_{}", task.id)).true_lit()
         } else {
             Lit::TRUE
         };
 
         let latest_start = task.deadline - task.duration;
-        let start = model.new_optional_ivar(task.release, latest_start, presence, format!("s_{}", task.id));
+        let start = model.new_optional_ivar(task.release, latest_start, presence, format!("start_{}", task.id));
 
-        let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("a_{}", task.id));
-        let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("b_{}", task.id));
+        let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_start_{}", task.id));
+        let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_end_{}", task.id));
         model.enforce(eq(energy_at_start + task.energy, energy_at_end), [presence]);
 
         Self {
@@ -220,49 +243,108 @@ impl TaskVar {
     }
 }
 
+pub struct TransitionVar {
+    pub transition: Transition,
+    pub before: Lit,
+}
+
+impl TransitionVar {
+    pub fn new(model: &mut AriesModel, transition: Transition, task_i: &TaskVar, task_j: &TaskVar) -> Self {
+        // Both duration and energy are none: i and j are incompatible
+        if transition.label.duration.is_none() && transition.label.energy.is_none() {
+            let before = Lit::FALSE;
+            return Self { transition, before };
+        }
+
+        // Problem: presence is optional even if both task_i.presence and task_j.presence are mandatory
+        // let presence = model.reify(and([task_i.presence, task_j.presence]));
+
+        let presence = model.new_bvar("").true_lit();
+
+        // model.enforce(implies(presence, task_i.presence), []);
+        // model.enforce(implies(presence, task_j.presence), []);
+        model.enforce(implies(task_i.presence, presence), []);
+        model.enforce(implies(task_j.presence, presence), []);
+
+        let before = model
+            .new_optional_bvar(presence, format!("before_{}_{}", task_i.task.id, task_j.task.id))
+            .true_lit();
+
+        // before_ij => end_i + duration_ij <= start_j
+        if let Some(duration) = transition.label.duration {
+            model.enforce_if(before, leq(task_i.end() + duration, task_j.start));
+        }
+
+        // before_ij => erngy_at_end_i + energy_ij >= energy_at_start_j
+        // if let Some(energy) = transition.label.energy {
+        //     model.enforce_if(enabler, geq(task_i.energy_at_end + energy, task_j.energy_at_start));
+        // }
+
+        Self { transition, before }
+    }
+}
+
+impl From<TransitionVar> for ((usize, usize), TransitionVar) {
+    fn from(transition_var: TransitionVar) -> Self {
+        (
+            (transition_var.transition.source, transition_var.transition.destination),
+            transition_var,
+        )
+    }
+}
+
 pub struct Model {
     pub model: AriesModel,
     pub task_vars: Vec<TaskVar>,
-    pub transitions: Vec<Transition>,
+    pub transition_vars: HashMap<(usize, usize), TransitionVar>,
     pub objective: IVar,
 }
 
 impl Model {
-    pub fn new(instance: &Instance) -> Self {
+    pub fn new(instance: Instance) -> Self {
         let mut model = AriesModel::new();
-        let task_vars = instance
-            .tasks
-            .iter()
-            .map(|task| TaskVar::new(&mut model, task.clone(), instance.energy_max))
-            .collect();
-
-        let transitions = instance.transitions.clone();
 
         let num_tasks: IntCst = instance.num_tasks().try_into().expect("overflow on num_tasks");
         let objective = model.new_ivar(0, num_tasks, "objective");
 
+        let task_vars: Vec<TaskVar> = instance
+            .tasks
+            .into_iter()
+            .map(|task| TaskVar::new(&mut model, task, instance.energy_max))
+            .collect();
+
+        let transition_vars = instance
+            .transitions
+            .into_iter()
+            .map(|((i, j), t)| TransitionVar::new(&mut model, ((i, j), t).into(), &task_vars[i], &task_vars[j]).into())
+            .collect();
+
         let mut model = Self {
             model,
             task_vars,
-            transitions,
+            transition_vars,
             objective,
         };
 
-        model.post_transitions();
+        // model.post_disjunctions();
         model.post_objective();
         model
     }
 
-    fn post_transitions(&mut self) {
-        for transition in self.transitions.iter() {
-            TaskVar::post_transition(
-                &mut self.model,
-                &self.task_vars[transition.source],
-                &self.task_vars[transition.destination],
-                &transition.label,
-            );
-        }
-    }
+    // fn post_disjunctions(&mut self) {
+    //     for ((i, j), transition_ij) in self.transition_vars.iter() {
+    //         let task_i = &self.task_vars[*i];
+    //         let task_j = &self.task_vars[*j];
+
+    //         let mut disjunction = vec![transition_ij.before.true_lit()];
+
+    //         if let Some(transition_ji) = self.transition_vars.get(&(*j, *i)) {
+    //             disjunction.push(transition_ji.before.true_lit());
+    //         }
+
+    //         self.model.enforce(or(disjunction), [task_i.presence, task_j.presence]);
+    //     }
+    // }
 
     fn post_objective(&mut self) {
         let mut sum = LinearSum::zero();
@@ -280,10 +362,11 @@ impl Model {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let instance = Instance::read(&args.instance);
-    let model = Model::new(&instance);
 
+    let instance = Instance::read(&args.instance);
     println!("{:?}", instance);
+
+    let model = Model::new(instance);
 
     println!("----------");
 
