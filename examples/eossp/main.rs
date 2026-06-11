@@ -4,7 +4,7 @@ use aries::{
     core::{IntCst, Lit},
     model::lang::{
         IAtom, IVar,
-        expr::{and, eq, geq, implies, leq, or},
+        expr::{geq, leq},
         linear::LinearSum,
     },
     solver::Solver,
@@ -199,7 +199,7 @@ impl TaskVar {
 
         let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_start_{}", task.id));
         let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_end_{}", task.id));
-        model.enforce(eq(energy_at_start + task.energy, energy_at_end), [presence]);
+        model.enforce(geq(energy_at_start + task.energy, energy_at_end), [presence]);
 
         Self {
             task,
@@ -212,34 +212,6 @@ impl TaskVar {
 
     pub fn end(&self) -> IAtom {
         self.start + self.task.duration
-    }
-
-    /// Return literal b_ij such that b_ij => e_i + t_ij <= s_j.
-    pub fn before(model: &mut AriesModel, task_i: &Self, task_j: &Self, t_ij: IntCst) -> Lit {
-        model.half_reify(leq(task_i.end() + t_ij, task_j.start))
-    }
-
-    /// Post energy constraint b_ij => b_i + e_ij >= a_i.
-    pub fn post_energy(model: &mut AriesModel, task_i: &Self, task_j: &Self, e_ij: IntCst, b_ij: Lit) {
-        model.enforce_if(b_ij, geq(task_i.energy_at_end + e_ij, task_j.energy_at_start));
-    }
-
-    /// Post transition constraints for i -> j.
-    pub fn post_transition(model: &mut AriesModel, task_i: &Self, task_j: &Self, transition: &TransitionLabel) {
-        // No duration and no energy: i is uncompatible with j
-        if transition.duration.is_none() && transition.energy.is_none() {
-            model.enforce(or(vec![task_i.presence.not(), task_j.presence.not()]), []);
-            return;
-        }
-
-        // Post temporal constraint
-        let duration = transition.duration.unwrap_or(0);
-        let i_before_j = Self::before(model, task_i, task_j, duration);
-
-        // Post energy constraint
-        if let Some(energy) = transition.energy {
-            Self::post_energy(model, task_i, task_j, energy, i_before_j);
-        }
     }
 }
 
@@ -263,8 +235,8 @@ impl TransitionVar {
 
         // model.enforce(implies(presence, task_i.presence), []);
         // model.enforce(implies(presence, task_j.presence), []);
-        model.enforce(implies(task_i.presence, presence), []);
-        model.enforce(implies(task_j.presence, presence), []);
+        // model.enforce(implies(task_i.presence, presence), []);
+        // model.enforce(implies(task_j.presence, presence), []);
 
         let before = model
             .new_optional_bvar(presence, format!("before_{}_{}", task_i.task.id, task_j.task.id))
@@ -275,7 +247,7 @@ impl TransitionVar {
             model.enforce_if(before, leq(task_i.end() + duration, task_j.start));
         }
 
-        // before_ij => erngy_at_end_i + energy_ij >= energy_at_start_j
+        // before_ij => energy_at_end_i + energy_ij >= energy_at_start_j
         // if let Some(energy) = transition.label.energy {
         //     model.enforce_if(enabler, geq(task_i.energy_at_end + energy, task_j.energy_at_start));
         // }
