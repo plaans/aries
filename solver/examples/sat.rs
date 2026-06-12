@@ -1,4 +1,5 @@
 use aries_solver::prelude::*;
+use itertools::Itertools;
 
 /// Solves a SAT problem in its CNF form
 ///
@@ -8,33 +9,21 @@ use aries_solver::prelude::*;
 fn solve_sat(instance: &[Vec<IntCst>]) -> Option<Vec<bool>> {
     let mut model = Model::new();
 
-    let nb_var: u32 = instance
-                        .iter()
-                        .flatten()
-                        .map(|x| x.abs())
-                        .max()
-                        .unwrap() as u32;
+    let nb_var: u32 = instance.iter().flatten().map(|x| x.abs()).max().unwrap() as u32;
 
-    let variables: Vec<Var> = (0..nb_var)
-                                .map(|_| model.new_variable(0, 1))
-                                .collect();
+    let variables: Vec<Lit> = (0..nb_var).map(|_| model.new_variable(0, 1).geq(1)).collect();
 
     for disj_raw in instance {
-
         let disj_refined: Vec<Lit> = disj_raw
-                                        .iter()
-                                        .map(|&lit|{ 
-                                                if lit > 0 {
-                                                    variables[(lit - 1) as usize].geq(1)
-                                                } else {
-                                                    variables[(-lit - 1) as usize].leq(0)
-                                                }
-                                            })
-                                        .collect();
+            .iter()
+            .map(|&lit| {
+                let var = variables[lit.abs() - 1];
+                if lit > 0 { var } else { !var }
+            })
+            .collect();
 
         model.enforce(or(disj_refined), []);
     }
-
 
     // Create the solver and search for a solution
     let mut solver = Solver::new(model);
@@ -44,7 +33,7 @@ fn solve_sat(instance: &[Vec<IntCst>]) -> Option<Vec<bool>> {
             // Extract the value for our boolean variables
             let values: Vec<bool> = variables
                 .iter()
-                .map(|&q| solution.eval(q).expect("Our variable should have a value") != 0)
+                .map(|&q| solution.eval(q).expect("Our variable should have a value"))
                 .collect();
 
             println!("Found a solution for this SAT instance:");
@@ -93,26 +82,19 @@ fn print_instance(formula: &[Vec<IntCst>]) {
     println!("{}", format_formula(formula));
 }
 
-fn print_solution_values(values: &[bool]){
+fn print_solution_values(values: &[bool]) {
     for (i, value) in values.iter().enumerate() {
-        print!("x{} = {value}, ", i+1);
+        print!("x{} = {value}, ", i + 1);
     }
     println!();
     println!();
 }
 
-
 fn main() {
     // Solve the following SAT instances
     solve_sat(&vec![vec![1], vec![-2], vec![3]]);
 
-    solve_sat(&vec![
-        vec![1, 2],
-        vec![-1, 2],
-        vec![1, -2],
-        vec![-1, -2, 3],
-        vec![3]
-    ]);
+    solve_sat(&vec![vec![1, 2], vec![-1, 2], vec![1, -2], vec![-1, -2, 3], vec![3]]);
 
     solve_sat(&vec![
         vec![1, 2],
@@ -123,7 +105,7 @@ fn main() {
         vec![3, -4],
         vec![4, 5],
         vec![-4, 5],
-        vec![1, -5]
+        vec![1, -5],
     ]);
 
     solve_sat(&vec![vec![1], vec![-1]]);
@@ -134,7 +116,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_single_disjunction(){
+    fn test_single_disjunction() {
         let instance = vec![vec![1, -2, 3]];
         let solution = solve_sat(&instance);
 
@@ -142,7 +124,7 @@ mod test {
     }
 
     #[test]
-    fn test_single_conjunction(){
+    fn test_single_conjunction() {
         let instance = vec![vec![1], vec![-2], vec![3]];
         let solution = solve_sat(&instance);
 
@@ -150,25 +132,25 @@ mod test {
     }
 
     #[test]
-    fn test_simple_instance(){
+    fn test_simple_instance() {
         let instance = vec![
-                                        vec![1, 2],
-                                        vec![-1, 2],
-                                        vec![-2, 3],
-                                        vec![2, -3],
-                                        vec![-3, 4],
-                                        vec![3, -4],
-                                        vec![4, 5],
-                                        vec![-4, 5],
-                                        vec![1, -5]
-                                    ];
+            vec![1, 2],
+            vec![-1, 2],
+            vec![-2, 3],
+            vec![2, -3],
+            vec![-3, 4],
+            vec![3, -4],
+            vec![4, 5],
+            vec![-4, 5],
+            vec![1, -5],
+        ];
         let solution = solve_sat(&instance);
 
         verify_solution(solution, &instance);
     }
 
     #[test]
-    fn test_unsatisfiable_instance(){
+    fn test_unsatisfiable_instance() {
         let instance = vec![vec![1], vec![-1]];
         let solution = solve_sat(&instance);
 
@@ -181,16 +163,17 @@ mod test {
         let values = solution.unwrap();
 
         for disj in instance {
-            assert!(disj
-                    .iter()
-                    .any(|&lit| {
-                        if lit > 0 {
-                            values[(lit-1) as usize]
-                        } else {
-                            !values[(-lit-1) as usize]
-                        }
-                    }), "The solution doesn't satisfy the disjunction: {:?}", disj);
+            assert!(
+                disj.iter().any(|&lit| {
+                    if lit > 0 {
+                        values[(lit - 1) as usize]
+                    } else {
+                        !values[(-lit - 1) as usize]
+                    }
+                }),
+                "The solution doesn't satisfy the disjunction: {:?}",
+                disj
+            );
         }
     }
-
 }

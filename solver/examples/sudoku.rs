@@ -1,21 +1,19 @@
 use aries_solver::prelude::*;
 
 /// Solves the given sudoku
-/// 
+///
 /// The input grid must contains 0 for empty cells and number between 1 and 9 for the fixed one
 
 fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
     let mut model = Model::new();
 
     let variables_grid: Vec<Vec<Var>> = (0..9)
-                                .map(|_| (0..9)
-                                            .map(|_| model.new_variable(1, 9))
-                                            .collect())
-                                .collect();
-
+        .map(|_| (0..9).map(|_| model.new_variable(1, 9)).collect())
+        .collect();
 
     for i in 0..9usize {
         for j in 0..9usize {
+            // We force fixed cells to have the correct value
             if initial_grid[i][j] != 0 {
                 model.enforce(eq(variables_grid[i][j], initial_grid[i][j] as IntCst), []);
             }
@@ -24,12 +22,7 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
 
     for i in 0..9usize {
         for j in 0..9usize {
-
-            // We determine the position of the top left cell of the region we are in
-            let row_tl_cell = 3 * (i/3); 
-            let col_tl_cell= 3 * (j/3);
-
-            for k in j+1..9usize {
+            for k in j + 1..9usize {
                 // We force cells on the same line to be different
                 model.enforce(neq(variables_grid[i][j], variables_grid[i][k]), []);
 
@@ -37,14 +30,24 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
                 model.enforce(neq(variables_grid[j][i], variables_grid[k][i]), []);
             }
 
+            // We determine the position of the top left cell of the region we are in
+            let row_tl_cell = 3 * (i / 3);
+            let col_tl_cell = 3 * (j / 3);
+
             let lower_bound_region = (i - row_tl_cell) * 3 + (j - col_tl_cell) + 1;
 
             for k in lower_bound_region..9 {
                 //We force cells on the same region to be different
-                model.enforce(neq(variables_grid[i][j], variables_grid[row_tl_cell + k/3][col_tl_cell + k % 3]),[]);
+                model.enforce(
+                    neq(
+                        variables_grid[i][j],
+                        variables_grid[row_tl_cell + k / 3][col_tl_cell + k % 3],
+                    ),
+                    [],
+                );
             }
         }
-    }    
+    }
 
     // Create the solver and search for a solution
     let mut solver = Solver::new(model);
@@ -58,10 +61,11 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
             // Extract the solved grid
             let solved_grid: Vec<Vec<usize>> = variables_grid
                 .iter()
-                .map(|v| v
-                    .iter()
-                    .map(|&q| solution.eval(q).expect("All cells should have a value") as usize)
-                    .collect())
+                .map(|v| {
+                    v.iter()
+                        .map(|&q| solution.eval(q).expect("All cells should have a value") as usize)
+                        .collect()
+                })
                 .collect();
 
             println!("Solution:");
@@ -80,7 +84,7 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
     }
 }
 
-fn print_grid(grid: &[Vec<usize>]){
+fn print_grid(grid: &[Vec<usize>]) {
     for i in 0..9usize {
         for j in 0..9usize {
             print!("{} ", grid[i][j]);
@@ -90,12 +94,12 @@ fn print_grid(grid: &[Vec<usize>]){
         }
         println!("");
         if i == 2 || i == 5 {
-                println!("---------------------")
+            println!("---------------------")
         }
     }
 }
 
-fn main(){
+fn main() {
     let grid = vec![
         vec![0, 0, 3, 0, 2, 0, 6, 0, 0],
         vec![9, 0, 0, 3, 0, 5, 0, 0, 1],
