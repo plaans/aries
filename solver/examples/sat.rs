@@ -1,5 +1,4 @@
 use aries_solver::prelude::*;
-use itertools::Itertools;
 
 /// Solves a SAT problem in its CNF form
 ///
@@ -17,7 +16,7 @@ fn solve_sat(instance: &[Vec<IntCst>]) -> Option<Vec<bool>> {
         let disj_refined: Vec<Lit> = disj_raw
             .iter()
             .map(|&lit| {
-                let var = variables[lit.abs() - 1];
+                let var = variables[(lit.abs() - 1) as usize];
                 if lit > 0 { var } else { !var }
             })
             .collect();
@@ -132,7 +131,7 @@ mod test {
     }
 
     #[test]
-    fn test_simple_instance() {
+    fn test_2_sat_instance() {
         let instance = vec![
             vec![1, 2],
             vec![-1, 2],
@@ -143,6 +142,22 @@ mod test {
             vec![4, 5],
             vec![-4, 5],
             vec![1, -5],
+        ];
+        let solution = solve_sat(&instance);
+
+        verify_solution(solution, &instance);
+    }
+
+    #[test]
+    fn test_3_sat_instance() {
+        let instance = vec![
+            vec![1, 2, 3],
+            vec![1, 2, -3],
+            vec![1, -2, 3],
+            vec![1, -2, -3],
+            vec![-1, 2, 3],
+            vec![-1, -2, 3],
+            vec![-1, -2, -3],
         ];
         let solution = solve_sat(&instance);
 
