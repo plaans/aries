@@ -13,7 +13,7 @@ use aries_solver::prelude::*;
 /// constraints contains all the inequalities
 /// Example: [[0, 2, 1, 5], [4, 0, 3, 2]] represents 2*x1 + x2 <= 5 and 4*x0 + 3*x2 <= 2
 
-fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<Vec<IntCst>> {
+fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<IntCst>, IntCst)> {
     let mut model = Model::new();
 
     let nb_var = obj_fun.len();
@@ -50,7 +50,7 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<Vec<IntC
 
     match solver.maximize(obj_value_var, SearchLimit::None) {
         Ok(Some((obj_value, solution))) => {
-            // Extract the value for our boolean variables
+            // Extract the value for our xn
             let values: Vec<IntCst> = variables
                 .iter()
                 .map(|&q| solution.eval(q).expect("Our variable should have a value"))
@@ -59,7 +59,7 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<Vec<IntC
             println!("Found a maximum value of {obj_value} for this ILP instance:");
             print_instance(obj_fun, constraints);
             print_solution(&values);
-            Some(values)
+            Some((values, obj_value))
         }
         Ok(None) => {
             println!("This ILP instance has unsatisfiable constraints:");
@@ -165,4 +165,81 @@ fn main() {
             vec![0, 0, 1, 3],
         ],
     );
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_unsatisfiable_instance() {
+        let obj_fun = vec![1];
+        let constraints = vec![vec![1, 3], vec![-1, -4]]; // x0 <= 3 and x0 >= 4 => no solution
+
+        let solution = solve_ilp(&obj_fun, &constraints);
+
+        assert!(solution.is_none(), "There should be no solution");
+    }
+
+    #[test]
+    fn test_simple_instance() {
+        let obj_fun = vec![3, 2];
+        let constraints = vec![
+            vec![1, 1, 4], // x0 + x1 <= 4
+            vec![1, 0, 2], // x0 <= 2
+            vec![0, 1, 3], // x1 <= 3
+        ];
+
+        let expected_xn = vec![2, 2];
+        let expected_obj_value = 10;
+
+        let solution = solve_ilp(&obj_fun, &constraints);
+
+        assert!(solution.is_some(), "A solution should have been found");
+
+        let (xn, obj_value) = solution.unwrap();
+
+        assert_eq!(
+            expected_obj_value, obj_value,
+            "The obj_value {obj_value} differs from the expected: {expected_obj_value}"
+        );
+
+        assert_eq!(
+            expected_xn, xn,
+            "Values found for the xn {:?} differ from the expected {:?}",
+            xn, expected_xn
+        );
+    }
+
+    #[test]
+    fn test_medium_instance() {
+        let obj_fun = vec![8, 5, 6];
+        let constraints = vec![
+            vec![2, 1, 1, 7],
+            vec![1, 3, 2, 10],
+            vec![1, 0, 0, 3],
+            vec![0, 1, 0, 3],
+            vec![0, 0, 1, 3],
+        ];
+
+        let expected_xn = vec![2, 0, 3];
+        let expected_obj_value = 34;
+
+        let solution = solve_ilp(&obj_fun, &constraints);
+
+        assert!(solution.is_some(), "A solution should have been found");
+
+        let (xn, obj_value) = solution.unwrap();
+
+        assert_eq!(
+            expected_obj_value, obj_value,
+            "The obj_value {obj_value} differs from the expected: {expected_obj_value}"
+        );
+
+        assert_eq!(
+            expected_xn, xn,
+            "Values found for the xn {:?} differ from the expected {:?}",
+            xn, expected_xn
+        );
+    }
 }
