@@ -15,11 +15,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
+      - run: cargo test --all-targets
       - name: Test with i64 int type
-        run: cargo test --features aries-solver/i64
+        run: cargo test --all-targets --features aries-solver/i64
       - name: Test with i128 int type
-        run: cargo test --features aries-solver/i128
+        run: cargo test --all-targets --features aries-solver/i128
 
   lints:
     name: Rustfmt and Clippy
@@ -32,7 +32,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all -- --check
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-targets --no-deps -- -D warnings
 
   integration-tests:
     name: Solving
