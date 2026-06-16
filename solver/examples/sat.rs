@@ -4,28 +4,35 @@ use aries_solver::prelude::*;
 ///
 /// We consider that the first variable is always 1
 /// Example: [[1, 2], [-2, 3, 4]] represents (x1 \/ x2) /\ (not x2 \/ x3 \/ x4)
+fn solve_sat(instance: &[Vec<i32>]) -> Option<Vec<bool>> {
+    print_instance(instance);
 
-fn solve_sat(instance: &[Vec<IntCst>]) -> Option<Vec<bool>> {
+    // create a new model that will contain all variables and constraints
     let mut model = Model::new();
 
-    let nb_var: u32 = instance.iter().flatten().map(|x| x.abs()).max().unwrap() as u32;
+    // determine the number of vars needed (largest variable ID in the clauses)
+    let nb_var = instance.iter().flatten().map(|literal| literal.abs()).max().unwrap();
 
+    // for each variable in the problem:
+    //  - create a new integer variable (`Var`) with domain [0,1]
+    //  - transform it into a literal (`Lit`) that acts as a boolean variable that is true iff it has the value 1
     let variables: Vec<Lit> = (0..nb_var).map(|_| model.new_variable(0, 1).geq(1)).collect();
 
     for disj_raw in instance {
-        let disj_refined: Vec<Lit> = disj_raw
-            .iter()
-            .map(|&lit| {
-                let var = variables[(lit.abs() - 1) as usize];
-                if lit > 0 { var } else { !var }
-            })
-            .collect();
+        // create a clause (Disjunction) for this constraint
+        let clause = Disjunction::from_iter(disj_raw.iter().map(|&lit| {
+            let var = variables[(lit.abs() - 1) as usize];
+            if lit > 0 { var } else { !var }
+        }));
 
-        model.enforce(or(disj_refined), []);
+        // add clause to the model
+        model.enforce(clause, []);
     }
 
-    // Create the solver and search for a solution
+    // Create a solver for the model
     let mut solver = Solver::new(model);
+
+    println!("\nSolving...");
 
     match solver.solve(SearchLimit::None) {
         Ok(Some(solution)) => {
@@ -35,69 +42,55 @@ fn solve_sat(instance: &[Vec<IntCst>]) -> Option<Vec<bool>> {
                 .map(|&q| solution.eval(q).expect("Our variable should have a value"))
                 .collect();
 
-            println!("Found a solution for this SAT instance:");
-            print_instance(&instance);
+            println!("=> Instance is SAT");
             print_solution_values(&values);
 
             Some(values)
         }
         Ok(None) => {
-            println!("This SAT instance is unsatisfiable:");
-            print_instance(&instance);
+            println!("=> Instance is UNSAT (no solution)");
             None
         }
-        Err(e) => {
-            println!("Solver error: {}", e);
-            None
+        Err(_) => {
+            unreachable!("Solver should not exit without a solution when no search limit is set");
         }
     }
 }
 
-fn format_literal(lit: IntCst) -> String {
-    if lit > 0 {
-        format!("x{}", lit)
-    } else {
-        format!("not x{}", -lit)
+/// Prints a an instance in CNF form
+fn print_instance(formula: &[Vec<i32>]) {
+    use itertools::Itertools;
+
+    fn format_literal(lit: i32) -> String {
+        if lit > 0 {
+            format!("x{}", lit)
+        } else {
+            format!("not x{}", -lit)
+        }
     }
-}
 
-fn format_clause(clause: &[IntCst]) -> String {
-    clause
-        .iter()
-        .map(|&lit| format_literal(lit))
-        .collect::<Vec<_>>()
-        .join(" \\/ ")
-}
-
-fn format_formula(formula: &[Vec<IntCst>]) -> String {
-    formula
-        .iter()
-        .map(|clause| format!("({})", format_clause(clause)))
-        .collect::<Vec<_>>()
-        .join(" /\\ ")
-}
-
-fn print_instance(formula: &[Vec<IntCst>]) {
-    println!("{}", format_formula(formula));
+    println!("\nInstance:");
+    for clause in formula {
+        println!("  - {}", clause.iter().map(|&lit| format_literal(lit)).format(" \\/ "))
+    }
 }
 
 fn print_solution_values(values: &[bool]) {
+    println!("\nSolution:");
     for (i, value) in values.iter().enumerate() {
-        print!("x{} = {value}, ", i + 1);
+        println!("  x{} = {value}, ", i + 1);
     }
-    println!();
     println!();
 }
 
 fn main() {
     // Solve the following SAT instances
-    solve_sat(&vec![vec![1], vec![-2], vec![3]]);
+    solve_sat(&[vec![1], vec![-2], vec![3]]);
 
-    solve_sat(&vec![vec![1, 2], vec![-1, 2], vec![1, -2], vec![-1, -2, 3], vec![3]]);
+    solve_sat(&[vec![1, 2], vec![-1, 2], vec![1, -2], vec![-1, -2, -3]]);
 
-    solve_sat(&vec![
-        vec![1, 2],
-        vec![-1, 2],
+    solve_sat(&[
+        vec![-1, -2],
         vec![-2, 3],
         vec![2, -3],
         vec![-3, 4],
@@ -107,7 +100,7 @@ fn main() {
         vec![1, -5],
     ]);
 
-    solve_sat(&vec![vec![1], vec![-1]]);
+    solve_sat(&[vec![-1, 2], vec![1, 2], vec![-2, -1], vec![1, -2]]);
 }
 
 #[cfg(test)]
@@ -172,7 +165,7 @@ mod test {
         assert!(solution.is_none());
     }
 
-    fn verify_solution(solution: Option<Vec<bool>>, instance: &[Vec<IntCst>]) {
+    fn verify_solution(solution: Option<Vec<bool>>, instance: &[Vec<i32>]) {
         assert!(solution.is_some(), "A solution should have been found");
 
         let values = solution.unwrap();
