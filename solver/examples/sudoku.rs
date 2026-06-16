@@ -1,60 +1,63 @@
+#![allow(clippy::needless_range_loop)]
+
 use aries_solver::prelude::*;
 
 /// Solves the given sudoku
 ///
 /// The input grid must contains 0 for empty cells and number between 1 and 9 for the fixed one
-
 fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
     let mut model = Model::new();
 
+    // create one variable with domain [1, 9] for each cell
     let variables_grid: Vec<Vec<Var>> = (0..9)
         .map(|_| (0..9).map(|_| model.new_variable(1, 9)).collect())
         .collect();
 
-    for i in 0..9usize {
-        for j in 0..9usize {
-            // We force fixed cells to have the correct value
-            if initial_grid[i][j] != 0 {
-                model.enforce(eq(variables_grid[i][j], initial_grid[i][j] as IntCst), []);
-            }
-
-            for k in j + 1..9usize {
-                // We force cells on the same line to be different
-                model.enforce(neq(variables_grid[i][j], variables_grid[i][k]), []);
-
-                // We force cells on the same column to be different
-                model.enforce(neq(variables_grid[j][i], variables_grid[k][i]), []);
-            }
-
-            // We determine the position of the top left cell of the region we are in
-            let row_tl_cell = 3 * (i / 3);
-            let col_tl_cell = 3 * (j / 3);
-
-            let lower_bound_region = (i - row_tl_cell) * 3 + (j - col_tl_cell) + 1;
-
-            for k in lower_bound_region..9 {
-                //We force cells on the same region to be different
-                model.enforce(
-                    neq(
-                        variables_grid[i][j],
-                        variables_grid[row_tl_cell + k / 3][col_tl_cell + k % 3],
-                    ),
-                    [],
-                );
+    // if the input impose a value for a cell, force the corresponding variable to take this value
+    for line in 0..9 {
+        for col in 0..9 {
+            let cell_value = initial_grid[line][col];
+            if cell_value != 0 {
+                model.enforce(eq(variables_grid[line][col], cell_value as IntCst), []);
             }
         }
+    }
+    // enforce that all variables on a line are different
+    for line in 0..9 {
+        let vars_on_line: Vec<Var> = (0..9).map(|col| variables_grid[line][col]).collect();
+        enforce_all_different(&mut model, vars_on_line);
+    }
+    // enforce that all variables on a column are different
+    for col in 0..9 {
+        let vars_on_column: Vec<Var> = (0..9).map(|line| variables_grid[line][col]).collect();
+        enforce_all_different(&mut model, vars_on_column);
+    }
+
+    // enforce that all variables on a 3x3 square are different
+    for square in 0..9 {
+        // index of top left element of the square
+        let tl_line = square / 3 * 3;
+        let tl_col = square % 3 * 3;
+
+        let mut vars_in_square = Vec::new();
+        for line in tl_line..(tl_line + 3) {
+            for col in tl_col..(tl_col + 3) {
+                vars_in_square.push(variables_grid[line][col]);
+            }
+        }
+        enforce_all_different(&mut model, vars_in_square);
     }
 
     // Create the solver and search for a solution
     let mut solver = Solver::new(model);
 
     println!("Initial grid:");
-    print_grid(&initial_grid);
+    print_grid(initial_grid);
     println!();
 
     match solver.solve(SearchLimit::None) {
         Ok(Some(solution)) => {
-            // Extract the solved grid
+            // Extract the filled-up grid
             let solved_grid: Vec<Vec<usize>> = variables_grid
                 .iter()
                 .map(|v| {
@@ -70,28 +73,36 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
             Some(solved_grid)
         }
         Ok(None) => {
-            println!("No solution found for this sudoku");
+            println!("No solution for this sudoku");
             None
         }
-        Err(e) => {
-            println!("Solver error: {}", e);
-            None
+        Err(_) => {
+            unreachable!("Without search limit, should never terminate without a result.");
+        }
+    }
+}
+
+/// Helper function that enforces that all variables are different in the given model.
+fn enforce_all_different(model: &mut Model, vars: Vec<Var>) {
+    for (i, x) in vars.iter().enumerate() {
+        for y in &vars[i + 1..] {
+            model.enforce(neq(*x, *y), []);
         }
     }
 }
 
 fn print_grid(grid: &[Vec<usize>]) {
-    for i in 0..9usize {
-        for j in 0..9usize {
-            print!("{} ", grid[i][j]);
-            if j == 2 || j == 5 {
+    for line in 0..9 {
+        for col in 0..9 {
+            print!("{} ", grid[line][col]);
+            if col == 2 || col == 5 {
                 print!("| ")
             }
         }
 
         println!();
 
-        if i == 2 || i == 5 {
+        if line == 2 || line == 5 {
             println!("---------------------")
         }
     }
