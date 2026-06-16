@@ -32,7 +32,7 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --all -- --check
-      - run: cargo clippy -- -D warnings
+      - run: cargo clippy --all-targets --no-deps -- -D warnings
 
   integration-tests:
     name: Solving
