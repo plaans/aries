@@ -1,5 +1,3 @@
-use std::vec;
-
 use aries_solver::prelude::*;
 
 /// Solves an ILP (Integer Linear Problem) problem in its canonical form:
@@ -12,8 +10,9 @@ use aries_solver::prelude::*;
 ///
 /// constraints contains all the inequalities
 /// Example: [[0, 2, 1, 5], [4, 0, 3, 2]] represents 2*x1 + x2 <= 5 and 4*x0 + 3*x2 <= 2
-
 fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<IntCst>, IntCst)> {
+    print_instance(obj_fun, constraints);
+
     let mut model = Model::new();
 
     let nb_var = obj_fun.len();
@@ -29,24 +28,29 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<Int
         }
 
         // We finish by adding our constant term that corresponds to the upper bound of our inequality
-        lin_sum -= constraint[nb_var];
+        let upper_bound = constraint[nb_var];
+        let constraint = lin_sum.leq(upper_bound);
 
-        model.enforce(leq(lin_sum, 0), []);
+        model.enforce(constraint, []);
     }
 
+    // crate a var that will represent the objective
     let obj_value_var = model.new_variable(INT_CST_MIN, INT_CST_MAX);
 
+    // create a linear sum of the objective function from the input
     let lin_sum_obj: LinSum = obj_fun
         .iter()
         .enumerate()
         .map(|(i, &factor)| factor * variables[i])
         .fold(LinSum::zero(), |acc, term| acc + term);
 
-    // We force our cost to correponds to the objective function
+    // We force our objective variable to correponds to the objective function
     model.enforce(eq(obj_value_var, lin_sum_obj), []);
 
     // Create the solver and search for a solution
     let mut solver = Solver::new(model);
+
+    println!("Solving...");
 
     match solver.maximize(obj_value_var, SearchLimit::None) {
         Ok(Some((obj_value, solution))) => {
@@ -56,21 +60,44 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<Int
                 .map(|&q| solution.eval(q).expect("Our variable should have a value"))
                 .collect();
 
-            println!("Found a maximum value of {obj_value} for this ILP instance:");
-            print_instance(obj_fun, constraints);
+            println!("=> Optimal (max) value of {obj_value} for this ILP instance:");
             print_solution(&values);
             Some((values, obj_value))
         }
         Ok(None) => {
-            println!("This ILP instance has unsatisfiable constraints:");
-            print_instance(obj_fun, constraints);
+            println!("=> No solution\n");
             None
         }
-        Err(e) => {
-            println!("Solver error: {}", e);
-            None
+        Err(_) => {
+            unreachable!("Without a search limit, the solver should always return a value.")
         }
     }
+}
+
+fn main() {
+    solve_ilp(&[1, 2], &[vec![1, 0, 3], vec![0, 1, 2]]);
+
+    solve_ilp(&[1], &[vec![1, 3], vec![-1, -4]]);
+
+    solve_ilp(
+        &[3, 2],
+        &[
+            vec![1, 1, 4], // x0 + x1 <= 4
+            vec![1, 0, 2], // x0 <= 2
+            vec![0, 1, 3], // x1 <= 3
+        ],
+    );
+
+    solve_ilp(
+        &[8, 5, 6],
+        &[
+            vec![2, 1, 1, 7],
+            vec![1, 3, 2, 10],
+            vec![1, 0, 0, 3],
+            vec![0, 1, 0, 3],
+            vec![0, 0, 1, 3],
+        ],
+    );
 }
 
 fn print_lin_sum(lin_sum: &[IntCst]) {
@@ -107,64 +134,35 @@ fn print_lin_sum(lin_sum: &[IntCst]) {
 
 fn print_obj_fun(obj_fun: &[IntCst]) {
     print!("Maximize: ");
-
     print_lin_sum(obj_fun);
     println!();
 }
 
 fn print_constraints(constraints: &[Vec<IntCst>], nb_var: usize) {
+    println!("Subject to:");
     for constraint in constraints {
+        print!("  ");
         print_lin_sum(&constraint[0..nb_var]);
-
-        print!(" <= {}", constraint[nb_var]);
-
-        println!()
+        println!(" <= {}", constraint[nb_var]);
     }
+    println!("  for all i, xi in [0, {INT_CST_MAX}]");
 }
 
 fn print_instance(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) {
+    println!();
     print_obj_fun(obj_fun);
-
     print_constraints(constraints, obj_fun.len());
-
     println!()
 }
 
 fn print_solution(values: &[IntCst]) {
-    println!("Solution found:");
+    println!("Optimal solution:");
 
     for (i, value) in values.iter().enumerate() {
-        print!("x{i} = {value}, ");
+        println!("  x{i} = {value}");
     }
 
     println!();
-    println!();
-}
-
-fn main() {
-    solve_ilp(&vec![1, 2], &vec![vec![1, 0, 3], vec![0, 1, 2]]);
-
-    solve_ilp(&vec![1], &vec![vec![1, 3], vec![-1, -4]]);
-
-    solve_ilp(
-        &vec![3, 2],
-        &vec![
-            vec![1, 1, 4], // x0 + x1 <= 4
-            vec![1, 0, 2], // x0 <= 2
-            vec![0, 1, 3], // x1 <= 3
-        ],
-    );
-
-    solve_ilp(
-        &vec![8, 5, 6],
-        &vec![
-            vec![2, 1, 1, 7],
-            vec![1, 3, 2, 10],
-            vec![1, 0, 0, 3],
-            vec![0, 1, 0, 3],
-            vec![0, 0, 1, 3],
-        ],
-    );
 }
 
 #[cfg(test)]
