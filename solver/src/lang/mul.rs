@@ -41,6 +41,7 @@ impl Debug for EqMul {
     }
 }
 
+#[derive(Clone)]
 pub struct EqVarMulLit {
     pub lhs: Var,
     pub rhs: Var,

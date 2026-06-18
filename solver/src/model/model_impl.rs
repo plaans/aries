@@ -242,7 +242,7 @@ impl<Lbl: Label> Model<Lbl> {
                 self.state.add_implication(l, v_i);
                 clause.push(!v_i);
             }
-            self.enforce(or(clause), []);
+            self.enforce(or(clause));
             l
         });
         self.shape.conjunctive_scopes.insert(set, l);
@@ -283,7 +283,7 @@ impl<Lbl: Label> Model<Lbl> {
             // hence we create a variable with a single value, and post a constraint enforcing the upper bound
             // On the fist propagation, this one would trigger and give the appropriate result (UNSAT/absent)
             let var = self.state.new_optional_var(lb, lb, presence);
-            self.enforce(var.leq(ub), [presence]);
+            self.enforce_scoped(var.leq(ub), [presence]);
             var
         }
     }
@@ -435,9 +435,9 @@ impl<Lbl: Label> Model<Lbl> {
     /// Enforce the given expression to be true whenever all literals of the scope are true.
     /// Similar to posting a constraint in CP solvers.
     ///
-    /// Internally, the expression is reified to an optional literal that is true, when the expression
+    /// Internally, the expression is half-reified to an optional literal that is true, when the expression
     /// is valid and absent otherwise.
-    pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, scope: impl IntoIterator<Item = Lit>) {
+    pub fn enforce_scoped<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, scope: impl IntoIterator<Item = Lit>) {
         debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
         let mut expr = expr.decompose(self);
         self.simplify(&mut expr);
@@ -460,13 +460,23 @@ impl<Lbl: Label> Model<Lbl> {
         self.shape.add_half_reification_constraint(tauto, expr);
     }
 
+    /// Enforces a boolean expression to be always true when defined (in scope).
+    ///
+    /// In case the expression contains optional variables, it is in general prefered to
+    pub fn enforce<Expr>(&mut self, expr: Expr)
+    where
+        Expr: BoolExpr<Self>,
+    {
+        expr.enforce(self);
+    }
+
     pub fn enforce_all<Expr: Reifiable<Lbl>>(
         &mut self,
         bools: impl IntoIterator<Item = Expr>,
         scope: impl IntoIterator<Item = Lit> + Clone,
     ) {
         for b in bools {
-            self.enforce(b, scope.clone());
+            self.enforce_scoped(b, scope.clone());
         }
     }
 

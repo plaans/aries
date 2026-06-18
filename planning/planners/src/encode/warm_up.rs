@@ -66,7 +66,7 @@ pub fn add_strict_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionIn
         .zip(pb.chronicles.iter().skip(1)) // Skip the initial chronicle
         .for_each(|(action, chronicle)| {
             // Force the presence of the chronicle
-            pb.model.enforce(chronicle.chronicle.presence, []);
+            pb.model.enforce(chronicle.chronicle.presence);
 
             // Bind the parameters of the chronicle with the action
             chronicle
@@ -75,16 +75,16 @@ pub fn add_strict_same_plan_constraints(pb: &mut FiniteProblem, plan: &[ActionIn
                 .iter()
                 .skip(1) // Skip the chronicle name (e.g., "move")
                 .zip(action.params.iter())
-                .for_each(|(var, val)| pb.model.enforce(eq(*var, *val), [chronicle.chronicle.presence]));
+                .for_each(|(var, val)| pb.model.enforce_scoped(eq(*var, *val), [chronicle.chronicle.presence]));
 
             // Bind the start time-points
-            pb.model.enforce(
+            pb.model.enforce_scoped(
                 eq(chronicle.chronicle.start, ratio_to_timepoint(action.start)),
                 [chronicle.chronicle.presence],
             );
 
             // Bind the end time-points
-            pb.model.enforce(
+            pb.model.enforce_scoped(
                 eq(
                     chronicle.chronicle.end,
                     ratio_to_timepoint(action.start + action.duration),
@@ -165,7 +165,7 @@ pub fn add_flexible_same_plan_constraints(pb: &mut FiniteProblem, plan: &[Action
     pb.chronicles
         .iter()
         .skip(1) // Skip the initial chronicle
-        .for_each(|chronicle| pb.model.enforce(chronicle.chronicle.presence, []));
+        .for_each(|chronicle| pb.model.enforce(chronicle.chronicle.presence));
 
     // Force the set of chronicles to cover the table of the corresponding action
     plan.iter()
@@ -251,7 +251,7 @@ fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>,
         .into_iter()
         .map(|supported_by_line| model.reify(and(supported_by_line)))
         .collect_vec();
-    model.enforce(or(match_line.clone()), [presence]);
+    model.enforce_scoped(or(match_line.clone()), [presence]);
 
     // Reduce the domain of each variable to the values in the table
     variables
@@ -266,7 +266,7 @@ fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>,
         })
         .collect_vec() // collect to require unique access to `*model` at the same time
         .into_iter()
-        .for_each(|allowed_values| model.enforce(or(allowed_values), [presence]));
+        .for_each(|allowed_values| model.enforce_scoped(or(allowed_values), [presence]));
 
     // Add a redundant constraint such that the variable is either supported by the line or not match the value
     let support_table = match_line.iter().zip(table.lines()).collect_vec();
@@ -303,8 +303,8 @@ fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>,
                                         le_clause.push(lit);
                                     }
                                 });
-                            model.enforce(or(ge_clause), [presence]);
-                            model.enforce(or(le_clause), [presence]);
+                            model.enforce_scoped(or(ge_clause), [presence]);
+                            model.enforce_scoped(or(le_clause), [presence]);
                         });
                 }
                 Atom::Fixed(var) => {
@@ -331,8 +331,8 @@ fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>,
                                         le_clause.push(lit);
                                     }
                                 });
-                            model.enforce(or(ge_clause), [presence]);
-                            model.enforce(or(le_clause), [presence]);
+                            model.enforce_scoped(or(ge_clause), [presence]);
+                            model.enforce_scoped(or(le_clause), [presence]);
                         });
                 }
                 Atom::Sym(var) => {
@@ -342,7 +342,7 @@ fn enforce_in_table(model: &mut Model, variables: Vec<Atom>, table: &Table<Cst>,
                             .iter()
                             .filter(|(_, v)| *v == val)
                             .for_each(|(&&lit, _)| clause.push(lit));
-                        model.enforce(or(clause), [presence]);
+                        model.enforce_scoped(or(clause), [presence]);
                     });
                 }
             }
@@ -366,7 +366,7 @@ fn enforce_cover_table(model: &mut Model, variables: Vec<Vec<Atom>>, table: &Tab
             lits.iter()
                 .combinations(2)
                 .map(|pair| (pair[0], pair[1]))
-                .for_each(|(&a, &b)| model.enforce(or([!a, !b]), [*presence]));
+                .for_each(|(&a, &b)| model.enforce_scoped(or([!a, !b]), [*presence]));
         })
         .map(|(lits, _)| lits.clone())
         .collect_vec();
@@ -375,13 +375,15 @@ fn enforce_cover_table(model: &mut Model, variables: Vec<Vec<Atom>>, table: &Tab
     let tab_line_match_var_line = transpose(var_line_match_tab_line);
     tab_line_match_var_line.into_iter().for_each(|lits| {
         // Force to match at least one line
-        model.enforce(or(lits.clone()), presences.iter().copied());
+        model.enforce_scoped(or(lits.clone()), presences.iter().copied());
         // Force the unicity
         lits.iter()
             .zip(presences.iter())
             .combinations(2)
             .map(|pair| (pair[0], pair[1]))
-            .for_each(|((&a, &presence_a), (&b, &presence_b))| model.enforce(or([!a, !b]), [presence_a, presence_b]));
+            .for_each(|((&a, &presence_a), (&b, &presence_b))| {
+                model.enforce_scoped(or([!a, !b]), [presence_a, presence_b])
+            });
     });
 }
 

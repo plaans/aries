@@ -4,6 +4,7 @@ use crate::lang::{ConversionError, IAtom};
 use crate::reif::ReifExpr;
 use itertools::Itertools;
 
+#[derive(Clone)]
 pub struct Alternative {
     main: IAtom,
     alternatives: Vec<IAtom>,

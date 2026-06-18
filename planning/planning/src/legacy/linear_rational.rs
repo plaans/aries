@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::legacy::*;
 use aries_solver::core::state::Evaluable;
-use aries_solver::lang::linear::*;
+use aries_solver::lang::{linear::*, Store};
 use aries_solver::{prelude::*, reif::ReifExpr};
 use num_integer::lcm;
 /* ========================================================================== */
@@ -39,18 +39,27 @@ impl LinearLeq {
 // TODO: this is very suboptimal and misses many potential optimizations (e.g. 0 <= 0 should yield Lit::TRUE)
 impl From<LinearLeq> for ReifExpr {
     fn from(value: LinearLeq) -> Self {
-        let mut vars = BTreeMap::new();
-        for e in &value.sum.terms {
-            let var = e.var;
-            let key = var;
-            vars.entry(key)
-                .and_modify(|factor| *factor += e.factor)
-                .or_insert(e.factor);
-        }
+        ReifExpr::from(&value)
+    }
+}
+impl From<&LinearLeq> for ReifExpr {
+    fn from(value: &LinearLeq) -> Self {
         ReifExpr::LinearLeq(LinSum::new(
             value.sum.constant - value.ub,
-            vars.iter().map(|(&var, &factor)| ScaledVar { var, factor }),
+            value.sum.terms().iter().map(|t| ScaledVar {
+                var: t.var,
+                factor: t.factor,
+            }),
         ))
+    }
+}
+impl<Ctx: Store> BoolExpr<Ctx> for LinearLeq {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+        ReifExpr::from(self).enforce_if(implicant, ctx);
+    }
+
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        ReifExpr::from(self).conj_scope(ctx)
     }
 }
 

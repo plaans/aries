@@ -48,18 +48,18 @@ impl<Lbl: Label> Post<Lbl> for InSet {
     fn post(&self, model: &mut Model<Lbl>) {
         // var >= min(constants)
         if let Some(lower) = self.constants.first() {
-            model.enforce(self.var.geq(*lower), []);
+            model.enforce(self.var.geq(*lower));
         }
 
         // var <= max(constants)
         if let Some(upper) = self.constants.last() {
-            model.enforce(self.var.leq(*upper), []);
+            model.enforce(self.var.leq(*upper));
         }
 
         // Forbid the variable to take any value in a hole
         let holes = self.holes();
         for (l, u) in holes {
-            model.enforce(or([self.var.leq(l), self.var.geq(u)]), []);
+            model.enforce(or([self.var.leq(l), self.var.geq(u)]));
         }
     }
 }

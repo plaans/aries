@@ -35,7 +35,7 @@ impl<Lbl: Label> Post<Lbl> for Clause {
         let literals_a = self.a.iter().map(|v| v.true_lit());
         let literals_b = self.b.iter().map(|v| v.false_lit());
         let literals: Vec<Lit> = literals_a.chain(literals_b).collect();
-        model.enforce(or(literals), []);
+        model.enforce(or(literals));
     }
 }
 

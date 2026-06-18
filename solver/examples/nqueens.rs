@@ -15,13 +15,13 @@ fn solve_nqueens(n: usize) -> Option<Vec<usize>> {
     for i in 0..n {
         for j in (i + 1)..n {
             // Different column: queens[i] != queens[j] for all i < j
-            model.enforce(neq(queens[i], queens[j]), []);
+            model.enforce(neq(queens[i], queens[j]));
 
             // Different "/" diagonal: queens[i] - i != queens[j] - j
-            model.enforce(neq(queens[i] - i, queens[j] - j), []);
+            model.enforce(neq(queens[i] - i, queens[j] - j));
 
             // Different "\" diagonal: queens[i] + i != queens[j] + j
-            model.enforce(neq(queens[i] + i, queens[j] + j), []);
+            model.enforce(neq(queens[i] + i, queens[j] + j));
         }
     }
 

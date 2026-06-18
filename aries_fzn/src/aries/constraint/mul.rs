@@ -35,7 +35,7 @@ impl Mul {
 
 impl<Lbl: Label> Post<Lbl> for Mul {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.enforce(eq_mul(self.a, self.b, self.c), []);
+        model.enforce(eq_mul(self.a, self.b, self.c));
     }
 }
 

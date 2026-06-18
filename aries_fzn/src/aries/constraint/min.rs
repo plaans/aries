@@ -32,7 +32,7 @@ impl Min {
 impl<Lbl: Label> Post<Lbl> for Min {
     fn post(&self, model: &mut Model<Lbl>) {
         let eq_max = EqMin::new(self.var, self.items.clone());
-        model.enforce(eq_max, []);
+        model.enforce(eq_max);
     }
 }
 

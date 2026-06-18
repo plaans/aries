@@ -556,7 +556,7 @@ fn solve_finite_problem(
     };
     if let Some(metric) = metric {
         if minimize_metric {
-            model.enforce(metric.le_lit(cost_upper_bound), []);
+            model.enforce(metric.le_lit(cost_upper_bound));
         }
     }
     let solver = init_solver(model);

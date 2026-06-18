@@ -146,7 +146,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
     pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, bool_expr: Expr, scope: impl IntoIterator<Item = Lit>) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce(bool_expr, scope);
+        self.model.enforce_scoped(bool_expr, scope);
     }
     pub fn enforce_all<Expr: Reifiable<Lbl>>(
         &mut self,

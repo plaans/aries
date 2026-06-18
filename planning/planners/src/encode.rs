@@ -345,7 +345,7 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, encoding
             if let &[single] = clause.as_slice() {
                 model.state.add_implication(ch.chronicle.presence, single);
             } else {
-                model.enforce(or(clause), [ch.chronicle.presence]);
+                model.enforce_scoped(or(clause), [ch.chronicle.presence]);
             }
         }
 
@@ -365,13 +365,13 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, encoding
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if t is present then at least one supporter is present
     let clause: Vec<Lit> = supporters.iter().map(|s| s.presence).collect();
-    model.enforce(or(clause), [t.presence]);
+    model.enforce_scoped(or(clause), [t.presence]);
 
     // if a supporter is present, then all others are absent
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                model.enforce(or([!s1.presence, !s2.presence]), [t.presence]);
+                model.enforce_scoped(or([!s1.presence, !s2.presence]), [t.presence]);
             }
         }
     }
@@ -381,16 +381,16 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
         if RELAXED_TEMPORAL_CONSTRAINT.get() {
             // Relaxed constraints in the encoding for chronicles coming from an acting system,
             // where the interval of a method is contained in the interval of the task it refines.
-            model.enforce(f_leq(t.start, s.start), [s.presence, t.presence]);
-            model.enforce(f_leq(s.end, t.end), [s.presence, t.presence]);
+            model.enforce_scoped(f_leq(t.start, s.start), [s.presence, t.presence]);
+            model.enforce_scoped(f_leq(s.end, t.end), [s.presence, t.presence]);
         } else {
-            model.enforce(eq(s.start, t.start), [s.presence, t.presence]);
-            model.enforce(eq(s.end, t.end), [s.presence, t.presence]);
+            model.enforce_scoped(eq(s.start, t.start), [s.presence, t.presence]);
+            model.enforce_scoped(eq(s.end, t.end), [s.presence, t.presence]);
         }
 
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(eq(*a, *b), [s.presence, t.presence])
+            model.enforce_scoped(eq(*a, *b), [s.presence, t.presence])
         }
     }
 }
@@ -418,8 +418,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
             // make the sum of the action costs equal a `plan_length` variable.
             let plan_length = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            model.enforce(action_costs.clone().leq(plan_length), []);
-            model.enforce(action_costs.geq(plan_length), []);
+            model.enforce(action_costs.clone().leq(plan_length));
+            model.enforce(action_costs.geq(plan_length));
             // plan length is the metric that should be minimized.
             plan_length.into()
         }
@@ -440,8 +440,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
             // make the sum of the action costs equal a `plan_cost` variable.
             let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            model.enforce(action_costs.clone().leq(plan_cost), []);
-            model.enforce(action_costs.geq(plan_cost), []);
+            model.enforce(action_costs.clone().leq(plan_cost));
+            model.enforce(action_costs.geq(plan_cost));
             // plan cost is the metric that should be minimized.
             plan_cost.into()
         }
@@ -452,8 +452,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             // to_maximize = -to_minimize
             let to_minimize = model.new_ivar(INT_CST_MIN, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
             let sum = LinearSum::zero() + to_maximize + to_minimize;
-            model.enforce(sum.clone().leq(0), []);
-            model.enforce(sum.geq(0), []);
+            model.enforce(sum.clone().leq(0));
+            model.enforce(sum.geq(0));
             to_minimize.into()
         }
     }

@@ -32,7 +32,7 @@ impl Ne {
 
 impl<Lbl: Label> Post<Lbl> for Ne {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.enforce(neq(self.a, self.b), []);
+        model.enforce(neq(self.a, self.b));
     }
 }
 

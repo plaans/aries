@@ -1,8 +1,10 @@
 use crate::{
     lang::{
+        alternative::Alternative,
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
+        mul::{EqMul, EqVarMulLit},
         *,
     },
     prelude::*,
@@ -147,6 +149,9 @@ impl_reif!(Disjunction);
 impl_reif!(Conjunction);
 impl_reif!(EqMax);
 impl_reif!(EqMin);
+impl_reif!(EqMul);
+impl_reif!(EqVarMulLit);
+impl_reif!(Alternative);
 impl_reif!(LinLeq);
 impl_reif!(LinEq);
 impl_reif!(LinNeq);

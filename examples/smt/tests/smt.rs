@@ -53,12 +53,12 @@ fn minimize() {
     let b = model.new_ivar(0, 10, "b");
     let c = model.new_ivar(0, 10, "c");
 
-    model.enforce(lt(a, b), []);
-    model.enforce(lt(b, c), []);
-    model.enforce(lt(a, c), []);
+    model.enforce(lt(a, b));
+    model.enforce(lt(b, c));
+    model.enforce(lt(a, c));
     let x = model.reify(geq(b, 6));
     let y = model.reify(geq(b, 8));
-    model.enforce(or([x, y]), []);
+    model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
@@ -77,7 +77,7 @@ fn minimize_small() {
     let x = model.reify(geq(a, 6));
     let y = model.reify(geq(a, 8));
 
-    model.enforce(or([x, y]), []);
+    model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
@@ -219,7 +219,7 @@ fn test_multiplication() {
 
     let constraint = eq_mul(a, b, c);
 
-    model.enforce(constraint, []);
+    model.enforce(constraint);
     let mut solver = Solver::new(model);
 
     println!("a = b * c");
@@ -256,7 +256,7 @@ fn optional_hierarchy() {
 
     for (&sub_var, &sub_scope) in vars.iter().zip(scopes.iter()) {
         // if present, must be equal to i
-        model.enforce(eq(i, sub_var), [sub_scope]);
+        model.enforce_scoped(eq(i, sub_var), [sub_scope]);
     }
 
     let mut solver = Solver::new(model);
@@ -521,7 +521,7 @@ fn test_alternative_ints() {
         .collect_vec();
 
     let alt = Alternative::new(a, ais.clone());
-    model.enforce(alt, []);
+    model.enforce(alt);
 
     let tests = vec![
         Test::new(&[a.leq(3)], &[ais[0].leq(3), ais[1].leq(3)]),
@@ -556,8 +556,8 @@ fn test_max() {
     let max = model.new_ivar(0, 100, "max");
     let min = model.new_ivar(0, 100, "min");
 
-    model.enforce(EqMax::new(max, ais.clone()), []);
-    model.enforce(EqMin::new(min, ais), []);
+    model.enforce(EqMax::new(max, ais.clone()));
+    model.enforce(EqMin::new(min, ais));
 
     let tests = vec![
         Test::new(&[], &[min.geq(1), max.leq(9)]),

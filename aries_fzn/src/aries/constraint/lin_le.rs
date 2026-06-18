@@ -33,7 +33,7 @@ impl LinLe {
 impl<Lbl: Label> Post<Lbl> for LinLe {
     fn post(&self, model: &mut Model<Lbl>) {
         let sum = LinSum::new(0, self.items.iter().copied());
-        model.enforce(sum.leq(self.ub), []);
+        model.enforce(sum.leq(self.ub));
     }
 }
 

@@ -186,9 +186,9 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
                 total_value += vars[i] * (items[i].value);
             }
 
-            model.enforce(total_weight.leq(pb.capacity), []);
-            model.enforce(total_value.clone().leq(objective), []);
-            model.enforce(total_value.geq(objective), []);
+            model.enforce(total_weight.leq(pb.capacity));
+            model.enforce(total_value.clone().leq(objective));
+            model.enforce(total_value.geq(objective));
             let brancher = Box::new(ConflictBasedBrancher::new(decisions));
             let brancher = Box::new(WithGeomRestart::new(100, 1.2, brancher));
             (objective, brancher)
@@ -203,13 +203,13 @@ fn solve(pb: &Pb, mode: SolveMode) -> Sol {
                 let item = &items[i];
                 let next_weight = model.new_ivar(0, pb.capacity, format!("weights_from_{}", &item.name));
                 let sum_weight = LinSum::zero() + weight_before + vars[i] * item.weight;
-                model.enforce(sum_weight.clone().leq(next_weight), []);
-                model.enforce(sum_weight.geq(next_weight), []);
+                model.enforce(sum_weight.clone().leq(next_weight));
+                model.enforce(sum_weight.geq(next_weight));
 
                 let next_value = model.new_ivar(0, max_value, format!("value_from_{}", &item.name));
                 let sum_value = LinSum::zero() + value_before + vars[i] * item.value;
-                model.enforce(sum_value.clone().leq(next_value), []);
-                model.enforce(sum_value.geq(next_value), []);
+                model.enforce(sum_value.clone().leq(next_value));
+                model.enforce(sum_value.geq(next_value));
                 (next_weight, next_value)
             };
 
