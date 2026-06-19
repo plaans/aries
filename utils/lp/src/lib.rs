@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 /*!
 A fast linear programming solver library.
 
@@ -33,8 +35,8 @@ let x = problem.add_var(1.0, (0.0, f64::INFINITY));
 let y = problem.add_var(2.0, (0.0, 3.0));
 
 // subject to constraints: x + y <= 4 and 2 * x + y >= 2.
-problem.add_constraint(&[(x, 1.0), (y, 1.0)], ComparisonOp::Le, 4.0);
-problem.add_constraint(&[(x, 2.0), (y, 1.0)], ComparisonOp::Ge, 2.0);
+problem.add_constraint([(x, 1.0), (y, 1.0)], ComparisonOp::Le, 4.0);
+problem.add_constraint([(x, 2.0), (y, 1.0)], ComparisonOp::Ge, 2.0);
 
 // Optimal value is 7, achieved at x = 1 and y = 3.
 let solution = problem.solve().unwrap();
@@ -260,7 +262,7 @@ impl Problem {
     /// // Add an x + y >= 2 constraint, specifying the left-hand side expression:
     ///
     /// // * by passing a slice of pairs (useful when explicitly enumerating variables)
-    /// problem.add_constraint(&[(x, 1.0), (y, 1.0)], ComparisonOp::Ge, 2.0);
+    /// problem.add_constraint([(x, 1.0), (y, 1.0)], ComparisonOp::Ge, 2.0);
     ///
     /// // * by passing an iterator of variable-coefficient pairs.
     /// let vars = [x, y];
@@ -275,11 +277,8 @@ impl Problem {
     /// ```
     pub fn add_constraint(&mut self, expr: impl Into<LinearExpr>, cmp_op: ComparisonOp, rhs: f64) {
         let expr = expr.into();
-        self.constraints.push((
-            CsVec::new(self.obj_coeffs.len(), expr.vars, expr.coeffs),
-            cmp_op,
-            rhs,
-        ));
+        self.constraints
+            .push((CsVec::new(self.obj_coeffs.len(), expr.vars, expr.coeffs), cmp_op, rhs));
     }
 
     /// Solve the problem, finding the optimal objective function value and variable values.
@@ -289,12 +288,7 @@ impl Problem {
     /// Will return an error, if the problem is infeasible (constraints can't be satisfied)
     /// or if the objective value is unbounded.
     pub fn solve(&self) -> Result<Solution, Error> {
-        let mut solver = Solver::try_new(
-            &self.obj_coeffs,
-            &self.var_mins,
-            &self.var_maxs,
-            &self.constraints,
-        )?;
+        let mut solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
         solver.initial_solve()?;
         Ok(Solution {
             num_vars: self.obj_coeffs.len(),
@@ -347,7 +341,7 @@ impl Solution {
     }
 
     /// Iterate over the variable-value pairs of the solution.
-    pub fn iter(&self) -> SolutionIter {
+    pub fn iter(&self) -> SolutionIter<'_> {
         SolutionIter {
             solution: self,
             var_idx: 0,
@@ -372,11 +366,8 @@ impl Solution {
         rhs: f64,
     ) -> Result<Self, Error> {
         let expr = expr.into();
-        self.solver.add_constraint(
-            CsVec::new(self.num_vars, expr.vars, expr.coeffs),
-            cmp_op,
-            rhs,
-        )?;
+        self.solver
+            .add_constraint(CsVec::new(self.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)?;
         Ok(self)
     }
 
@@ -472,8 +463,8 @@ mod tests {
         let mut problem = Problem::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(3.0, (12.0, f64::INFINITY));
         let v2 = problem.add_var(4.0, (5.0, f64::INFINITY));
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 20.0);
-        problem.add_constraint(&[(v2, -4.0), (v1, 1.0)], ComparisonOp::Ge, -20.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 20.0);
+        problem.add_constraint([(v2, -4.0), (v1, 1.0)], ComparisonOp::Ge, -20.0);
 
         let sol = problem.solve().unwrap();
         assert_eq!(sol[v1], 12.0);
@@ -530,9 +521,9 @@ mod tests {
         let mut problem = Problem::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(1.0, (0.0, f64::INFINITY));
         let v2 = problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY));
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
-        problem.add_constraint(&[(v1, 1.0), (v2, -1.0)], ComparisonOp::Ge, 0.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
+        problem.add_constraint([(v1, 1.0), (v2, -1.0)], ComparisonOp::Ge, 0.0);
 
         let sol = problem.solve().unwrap();
         assert_eq!(sol[v1], 2.0);
@@ -545,8 +536,8 @@ mod tests {
         let mut problem = Problem::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(1.0, (0.0, 3.0));
         let v2 = problem.add_var(2.0, (0.0, 3.0));
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
         let orig_sol = problem.solve().unwrap();
 
@@ -580,15 +571,15 @@ mod tests {
         let mut problem = Problem::new(OptimizationDirection::Minimize);
         let v1 = problem.add_var(2.0, (0.0, f64::INFINITY));
         let v2 = problem.add_var(1.0, (0.0, f64::INFINITY));
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
-        problem.add_constraint(&[(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
 
         let orig_sol = problem.solve().unwrap();
 
         {
             let sol = orig_sol
                 .clone()
-                .add_constraint(&[(v1, -1.0), (v2, 1.0)], ComparisonOp::Le, 0.0)
+                .add_constraint([(v1, -1.0), (v2, 1.0)], ComparisonOp::Le, 0.0)
                 .unwrap();
 
             assert_eq!(sol[v1], 1.0);
@@ -601,7 +592,7 @@ mod tests {
                 .clone()
                 .fix_var(v2, 1.5)
                 .unwrap()
-                .add_constraint(&[(v1, -1.0), (v2, 1.0)], ComparisonOp::Le, 0.0)
+                .add_constraint([(v1, -1.0), (v2, 1.0)], ComparisonOp::Le, 0.0)
                 .unwrap();
             assert_eq!(sol[v1], 1.5);
             assert_eq!(sol[v2], 1.5);
@@ -611,7 +602,7 @@ mod tests {
         {
             let sol = orig_sol
                 .clone()
-                .add_constraint(&[(v1, -1.0), (v2, 1.0)], ComparisonOp::Ge, 3.0)
+                .add_constraint([(v1, -1.0), (v2, 1.0)], ComparisonOp::Ge, 3.0)
                 .unwrap();
 
             assert_eq!(sol[v1], 0.0);
@@ -625,8 +616,8 @@ mod tests {
         let mut problem = Problem::new(OptimizationDirection::Minimize);
         let v1 = problem.add_var(0.0, (0.0, f64::INFINITY));
         let v2 = problem.add_var(-1.0, (0.0, f64::INFINITY));
-        problem.add_constraint(&[(v1, 3.0), (v2, 2.0)], ComparisonOp::Le, 6.0);
-        problem.add_constraint(&[(v1, -3.0), (v2, 2.0)], ComparisonOp::Le, 0.0);
+        problem.add_constraint([(v1, 3.0), (v2, 2.0)], ComparisonOp::Le, 6.0);
+        problem.add_constraint([(v1, -3.0), (v2, 2.0)], ComparisonOp::Le, 0.0);
 
         let mut sol = problem.solve().unwrap();
         assert_eq!(sol[v1], 1.0);

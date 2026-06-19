@@ -80,10 +80,7 @@ impl ScatteredVec {
     }
 
     pub fn sq_norm(&self) -> f64 {
-        self.nonzero
-            .iter()
-            .map(|&i| self.values[i] * self.values[i])
-            .sum()
+        self.nonzero.iter().map(|&i| self.values[i] * self.values[i]).sum()
     }
 
     pub fn clear(&mut self) {
@@ -196,10 +193,7 @@ impl SparseMat {
     }
 
     pub(crate) fn col_iter(&self, i_col: usize) -> impl Iterator<Item = (usize, &f64)> {
-        self.col_rows(i_col)
-            .iter()
-            .copied()
-            .zip(self.col_data(i_col))
+        self.col_rows(i_col).iter().copied().zip(self.col_data(i_col))
     }
 
     pub(crate) fn append_col<T>(&mut self, col: T)
@@ -215,12 +209,7 @@ impl SparseMat {
     }
 
     pub(crate) fn into_csmat(self) -> CsMat<f64> {
-        CsMat::new_csc(
-            (self.cols(), self.n_rows),
-            self.indptr,
-            self.indices,
-            self.data,
-        )
+        CsMat::new_csc((self.cols(), self.n_rows), self.indptr, self.indices, self.data)
     }
 
     pub(crate) fn to_csmat(&self) -> CsMat<f64> {
@@ -317,11 +306,11 @@ impl TriangleMat {
 
 impl std::fmt::Debug for TriangleMat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "nondiag:\n")?;
+        writeln!(f, "nondiag:")?;
         for row in self.nondiag.to_csmat().to_csr().outer_iterator() {
-            write!(f, "{:?}\n", to_dense(&row))?
+            writeln!(f, "{:?}", to_dense(&row))?
         }
-        write!(f, "diag: {:?}\n", self.diag)?;
+        writeln!(f, "diag: {:?}", self.diag)?;
         Ok(())
     }
 }

@@ -1,10 +1,7 @@
 use sprs::{CsVecBase, CsVecView};
 use std::ops::Deref;
 
-pub(crate) fn resized_view<IStorage, DStorage>(
-    vec: &CsVecBase<IStorage, DStorage>,
-    len: usize,
-) -> CsVecView<f64>
+pub(crate) fn resized_view<IStorage, DStorage>(vec: &CsVecBase<IStorage, DStorage>, len: usize) -> CsVecView<'_, f64>
 where
     IStorage: Deref<Target = [usize]>,
     DStorage: Deref<Target = [f64]>,

@@ -6,6 +6,7 @@ members = [
     "bench/bench",
     "utils/env_param",
     "utils/datalog",
+    "utils/lp",
     "planning/engine",
     "planning/planx",
     "planning/timelines",
@@ -39,7 +40,7 @@ fixedbitset = { version = "0.5.7", default-features = false }
 hashbrown = "0.16"
 im = "15.1"
 lru = "0.16"
-malachite = "0.9.1"
+malachite = "0.9.2"
 num-rational = { version = "0.4.2" }
 num-integer = { default-features = false, version = "0.1.46" }
 numfmt = { version = "1.2.0" }

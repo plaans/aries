@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 //! A solver for the travelling salesman problem.
 //!
 //! Solves euclidean TPS problems using the integer linear programming approach.
@@ -158,12 +160,9 @@ impl Problem {
 struct Tour(Vec<usize>);
 
 impl Tour {
+    #[allow(clippy::inherent_to_string)]
     fn to_string(&self) -> String {
-        self.0
-            .iter()
-            .map(|n| (n + 1).to_string())
-            .collect::<Vec<_>>()
-            .join(" ")
+        self.0.iter().map(|n| (n + 1).to_string()).collect::<Vec<_>>().join(" ")
     }
 
     fn to_svg(&self, problem: &Problem) -> String {
@@ -182,10 +181,7 @@ impl Tour {
         svg += "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n";
         svg += "<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"\n";
         svg += "  \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n";
-        svg += &format!(
-            "<svg width=\"{}px\" height=\"{}px\" version=\"1.1\"",
-            width, height
-        );
+        svg += &format!("<svg width=\"{}px\" height=\"{}px\" version=\"1.1\"", width, height);
         svg += "     xmlns=\"http://www.w3.org/2000/svg\">\n";
 
         use std::fmt::Write;
@@ -349,9 +345,7 @@ fn solve(problem: &Problem) -> Tour {
         };
 
         let mut cur_solution = cur_step.start_solution.clone();
-        if let Ok(new_solution) =
-            cur_solution.fix_var(cur_step.var, cur_step.cur_val.unwrap() as f64)
-        {
+        if let Ok(new_solution) = cur_solution.fix_var(cur_step.var, cur_step.cur_val.unwrap() as f64) {
             cur_solution = new_solution;
         } else {
             // There is no feasible solution with the current variable constraints.
@@ -395,10 +389,7 @@ fn solve(problem: &Problem) -> Tour {
 /// A subtour constraint states that the sum of edge values for all edges going out
 /// of some proper subset of nodes must be >= 2. This prevents the formation of closed subtours
 /// that do not pass through all the vertices.
-fn add_subtour_constraints(
-    mut cur_solution: minilp::Solution,
-    edge_vars: &[Vec<Variable>],
-) -> minilp::Solution {
+fn add_subtour_constraints(mut cur_solution: minilp::Solution, edge_vars: &[Vec<Variable>]) -> minilp::Solution {
     let num_points = edge_vars.len();
     let mut edge_weights = Vec::with_capacity(num_points * num_points);
     loop {
@@ -533,7 +524,7 @@ fn find_min_cut(size: usize, weights: &mut [f64]) -> (f64, Vec<bool>) {
     }
 
     assert!(best_cut_weight.is_finite());
-    return (best_cut_weight, best_cut);
+    (best_cut_weight, best_cut)
 }
 
 #[cfg(test)]

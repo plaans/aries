@@ -21,10 +21,7 @@ pub fn order_simple<'a>(size: usize, get_col: impl Fn(usize) -> &'a [usize]) -> 
 }
 
 #[allow(dead_code)]
-pub fn order_colamd<'a>(
-    size: usize,
-    get_col: impl Fn(usize) -> &'a [usize],
-) -> Result<Perm, Error> {
+pub fn order_colamd<'a>(size: usize, get_col: impl Fn(usize) -> &'a [usize]) -> Result<Perm, Error> {
     // Implementation of (a part of) the COLAMD algorithm:
     //
     // "An approximate minimum degree column ordering algorithm",
@@ -132,8 +129,7 @@ pub fn order_colamd<'a>(
             // all columns on the stack are of size 1
             stack.clear();
             stack.push(c);
-            while !stack.is_empty() {
-                let c = stack.pop().unwrap();
+            while let Some(c) = stack.pop() {
                 let r = *cols[c]
                     .elems(&row_storage)
                     .iter()
@@ -462,10 +458,7 @@ impl ColsQueue {
 const SENTINEL: usize = 0usize.wrapping_sub(1);
 
 #[allow(dead_code)]
-pub fn find_diag_matching<'a>(
-    size: usize,
-    get_col: impl Fn(usize) -> &'a [usize],
-) -> Option<Vec<usize>> {
+pub fn find_diag_matching<'a>(size: usize, get_col: impl Fn(usize) -> &'a [usize]) -> Option<Vec<usize>> {
     let mut col2visited_on_iter = vec![SENTINEL; size];
     let mut row2matched_col = vec![SENTINEL; size];
     // for each col a pointer to the position in its adjacency lists where we last looked for neighbors.
@@ -481,13 +474,10 @@ pub fn find_diag_matching<'a>(
         let mut found = false; // whether the dfs iteration found the match
 
         dfs_stack.clear();
-        dfs_stack.push(Step {
-            col: start_c,
-            cur_i: 0,
-        });
+        dfs_stack.push(Step { col: start_c, cur_i: 0 });
 
         'dfs_loop: while !dfs_stack.is_empty() {
-            let mut cur_step = dfs_stack.last_mut().unwrap();
+            let cur_step = dfs_stack.last_mut().unwrap();
             let c = cur_step.col;
             let col_rows = get_col(c);
 
@@ -540,128 +530,6 @@ pub fn find_diag_matching<'a>(
     Some(row2matched_col)
 }
 
-/// Lower block triangular form of a matrix.
-#[derive(Clone, Debug)]
-pub struct BlockDiagForm {
-    /// Row permutation: for each original row its new row number so that diag is nonzero.
-    pub row2col: Vec<usize>,
-    /// For each block its set of columns (the order of blocks is lower block triangular)
-    pub block_cols: Vec<Vec<usize>>,
-}
-
-#[allow(dead_code)]
-pub fn find_block_diag_form<'a>(
-    size: usize,
-    get_col: impl Fn(usize) -> &'a [usize],
-) -> BlockDiagForm {
-    let row2col = find_diag_matching(size, &get_col).unwrap();
-
-    struct Step {
-        col: usize,
-        cur_i: usize,
-    }
-
-    let mut dfs_stack = vec![];
-    let mut visited = vec![];
-    let mut is_visited = vec![false; size];
-    for start_c in 0..size {
-        if is_visited[start_c] {
-            continue;
-        }
-
-        dfs_stack.clear();
-        dfs_stack.push(Step {
-            col: start_c,
-            cur_i: 0,
-        });
-        while !dfs_stack.is_empty() {
-            let cur_step = dfs_stack.last_mut().unwrap();
-            let c = cur_step.col;
-            if !is_visited[c] {
-                is_visited[c] = true;
-            } else {
-                cur_step.cur_i += 1;
-            }
-
-            let col_rows = get_col(c);
-            while cur_step.cur_i < col_rows.len() {
-                let next_c = row2col[col_rows[cur_step.cur_i]];
-                if !is_visited[next_c] {
-                    break;
-                }
-                cur_step.cur_i += 1;
-            }
-
-            if cur_step.cur_i < col_rows.len() {
-                let col = row2col[col_rows[cur_step.cur_i]];
-                dfs_stack.push(Step { col, cur_i: 0 });
-            } else {
-                visited.push(c);
-                dfs_stack.pop();
-            }
-        }
-    }
-
-    // Prepare transposed graph
-    // TODO: more efficient transpose without allocating each row.
-    let mut rows = vec![vec![]; size];
-    for c in 0..size {
-        for &r in get_col(c) {
-            rows[row2col[r]].push(c);
-        }
-    }
-
-    is_visited.clear();
-    is_visited.resize(size, false);
-
-    let mut block_cols = vec![];
-
-    // DFS on the transposed graph
-    for &start_c in visited.iter().rev() {
-        if is_visited[start_c] {
-            continue;
-        }
-
-        block_cols.push(vec![]);
-
-        dfs_stack.clear();
-        dfs_stack.push(Step {
-            col: start_c,
-            cur_i: 0,
-        });
-        while !dfs_stack.is_empty() {
-            let cur_step = dfs_stack.last_mut().unwrap();
-            let c = cur_step.col;
-            if !is_visited[c] {
-                is_visited[c] = true;
-                block_cols.last_mut().unwrap().push(c);
-            } else {
-                cur_step.cur_i += 1;
-            }
-
-            let next = &rows[c];
-            while cur_step.cur_i < next.len() {
-                if !is_visited[next[cur_step.cur_i]] {
-                    break;
-                }
-                cur_step.cur_i += 1;
-            }
-
-            if cur_step.cur_i < next.len() {
-                let col = next[cur_step.cur_i];
-                dfs_stack.push(Step { col, cur_i: 0 });
-            } else {
-                dfs_stack.pop();
-            }
-        }
-    }
-
-    BlockDiagForm {
-        row2col,
-        block_cols,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,13 +562,7 @@ mod tests {
             ],
         );
 
-        let perm = order_colamd(4, |c| {
-            mat.outer_view([0, 1, 2, 4][c])
-                .unwrap()
-                .into_raw_storage()
-                .0
-        })
-        .unwrap();
+        let perm = order_colamd(4, |c| mat.outer_view([0, 1, 2, 4][c]).unwrap().into_raw_storage().0).unwrap();
         assert_eq!(&perm.new2orig, &[1, 0, 2, 3]);
         assert_eq!(&perm.orig2new, &[1, 0, 2, 3]);
     }
@@ -709,17 +571,13 @@ mod tests {
     fn colamd_singular() {
         {
             let empty_col_mat = mat_from_triplets(3, 3, &[(0, 0), (1, 0), (1, 1), (1, 2)]);
-            let res = order_colamd(3, |c| {
-                empty_col_mat.outer_view(c).unwrap().into_raw_storage().0
-            });
+            let res = order_colamd(3, |c| empty_col_mat.outer_view(c).unwrap().into_raw_storage().0);
             assert_eq!(res.unwrap_err(), Error::SingularMatrix);
         }
 
         {
             let empty_row_mat = mat_from_triplets(3, 3, &[(0, 0), (0, 1), (1, 0), (1, 1), (1, 2)]);
-            let res = order_colamd(3, |c| {
-                empty_row_mat.outer_view(c).unwrap().into_raw_storage().0
-            });
+            let res = order_colamd(3, |c| empty_row_mat.outer_view(c).unwrap().into_raw_storage().0);
             assert_eq!(res.unwrap_err(), Error::SingularMatrix);
         }
     }
@@ -727,29 +585,9 @@ mod tests {
     #[test]
     fn diag_matching() {
         let size = 3;
-        let mat = mat_from_triplets(
-            size,
-            size,
-            &[(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0)],
-        );
+        let mat = mat_from_triplets(size, size, &[(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0)]);
 
-        let matching =
-            find_diag_matching(size, |c| mat.outer_view(c).unwrap().into_raw_storage().0);
+        let matching = find_diag_matching(size, |c| mat.outer_view(c).unwrap().into_raw_storage().0);
         assert_eq!(matching, Some(vec![1, 2, 0]));
-    }
-
-    #[test]
-    fn block_diag_form() {
-        let size = 3;
-        let mat = mat_from_triplets(
-            size,
-            size,
-            &[(1, 0), (2, 0), (0, 1), (1, 1), (2, 1), (0, 2)],
-        );
-
-        let bd_form =
-            find_block_diag_form(size, |c| mat.outer_view(c).unwrap().into_raw_storage().0);
-        assert_eq!(bd_form.row2col, &[2, 0, 1]);
-        assert_eq!(bd_form.block_cols, vec![vec![0, 1], vec![2]]);
     }
 }

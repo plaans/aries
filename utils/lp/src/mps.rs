@@ -97,10 +97,7 @@ impl MpsFile {
                     _ => return Err(lines.err(&format!("unexpected row type {}", row_type))),
                 };
 
-                if constr_name2idx
-                    .insert(name.to_owned(), constraints.len())
-                    .is_some()
-                {
+                if constr_name2idx.insert(name.to_owned(), constraints.len()).is_some() {
                     return Err(lines.err(&format!("row {} already declared", name)));
                 }
 
@@ -146,7 +143,7 @@ impl MpsFile {
                 let name = tokens.next()?;
 
                 if name != cur_name {
-                    if var_name2idx.get(name).is_some() {
+                    if var_name2idx.contains_key(name) {
                         return Err(lines.err(&format!("variable {} already declared", name)));
                     }
 
@@ -163,7 +160,7 @@ impl MpsFile {
                         cur_def.obj_coeff = val;
                     } else if let Some(idx) = constr_name2idx.get(key) {
                         constraints[*idx].lhs.add(cur_var, val);
-                    } else if free_rows.get(key).is_none() {
+                    } else if !free_rows.contains(key) {
                         return Err(lines.err(&format!("unknown constraint: {}", key)));
                     }
                 }
@@ -310,9 +307,7 @@ impl MpsFile {
                 let (min, max) = match constr.cmp_op {
                     ComparisonOp::Ge => (constr.rhs, constr.rhs + constr.range.abs()),
                     ComparisonOp::Le => (constr.rhs - constr.range.abs(), constr.rhs),
-                    ComparisonOp::Eq if constr.range > 0.0 => {
-                        (constr.rhs, constr.rhs + constr.range)
-                    }
+                    ComparisonOp::Eq if constr.range > 0.0 => (constr.rhs, constr.rhs + constr.range),
                     ComparisonOp::Eq => (constr.rhs + constr.range, constr.rhs),
                 };
                 problem.add_constraint(constr.lhs.clone(), ComparisonOp::Ge, min);
@@ -335,6 +330,7 @@ struct Lines<R: io::BufRead> {
 }
 
 impl<R: io::BufRead> Lines<R> {
+    #![allow(clippy::wrong_self_convention)]
     fn to_next(&mut self) -> io::Result<()> {
         loop {
             self.idx += 1;
@@ -357,10 +353,7 @@ impl<R: io::BufRead> Lines<R> {
     }
 
     fn err(&self, msg: &str) -> io::Error {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("line {}: {}", self.idx, msg),
-        )
+        io::Error::new(io::ErrorKind::InvalidData, format!("line {}: {}", self.idx, msg))
     }
 }
 
@@ -388,14 +381,11 @@ impl<'a> Tokens<'a> {
 }
 
 fn parse_f64(input: &str, line_idx: usize) -> io::Result<f64> {
-    input.parse().or_else(|_| {
-        Err(io::Error::new(
+    input.parse().map_err(|_| {
+        io::Error::new(
             io::ErrorKind::InvalidData,
-            format!(
-                "line {}: couldn't parse float from string: `{}`",
-                line_idx, input
-            ),
-        ))
+            format!("line {}: couldn't parse float from string: `{}`", line_idx, input),
+        )
     })
 }
 
