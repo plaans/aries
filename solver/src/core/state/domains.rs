@@ -102,7 +102,7 @@ impl Domains {
         }
     }
 
-    #[cfg(test)]
+    #[doc(hidden)]
     pub fn new_presence_literal(&mut self, scope: Lit) -> Lit {
         let lit = self.new_var(0, 1).geq(1);
         self.add_implication(lit, scope);

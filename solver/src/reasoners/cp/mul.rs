@@ -314,7 +314,7 @@ mod test {
     use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     use super::*;
-    use crate::{core::*, reasoners::cp::propagator::test::utils::test_explanations};
+    use crate::{core::*, reasoners::cp::testing::test_explanations};
 
     // === Assertions ===
 

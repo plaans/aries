@@ -5,6 +5,7 @@ use crate::encoding::*;
 use crate::Model;
 use crate::Solver;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::mul_lit::EqVarMulLit;
 use aries_planning::legacy::*;
 use aries_planning::legacy::{eq, geq, leq};
 use aries_solver::backtrack::Backtrack;

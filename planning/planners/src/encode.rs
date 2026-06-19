@@ -17,7 +17,6 @@ use aries_planning::legacy::{eq, neq};
 use aries_solver::core::state::Conflict;
 use aries_solver::core::views::Term;
 use aries_solver::core::*;
-use aries_solver::lang::mul::EqVarMulLit;
 use aries_solver::lang::{expr::*, Var};
 use aries_solver::model::extensions::DomainsExt;
 use aries_solver::prelude::*;

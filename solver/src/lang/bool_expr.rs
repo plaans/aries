@@ -4,7 +4,6 @@ use crate::{
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
-        mul::EqVarMulLit,
         *,
     },
     prelude::*,
@@ -149,7 +148,6 @@ impl_reif!(Disjunction);
 impl_reif!(Conjunction);
 impl_reif!(EqMax);
 impl_reif!(EqMin);
-impl_reif!(EqVarMulLit);
 impl_reif!(Alternative);
 impl_reif!(LinLeq);
 impl_reif!(LinEq);

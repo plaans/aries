@@ -470,14 +470,6 @@ impl<Lbl: Label> Solver<Lbl> {
 
                 Ok(())
             }
-            ReifExpr::EqVarMulLit(mul) => {
-                assert!(
-                    self.model.entails(enabler),
-                    "Unsupported half reified eqvarmullit constraints."
-                );
-                self.reasoners.cp.add_eq_var_mul_lit_constraint(mul);
-                Ok(())
-            }
         }
     }
 

@@ -1,22 +1,20 @@
 pub mod linear;
 pub mod max;
 pub mod mul;
-pub mod mul_lit;
 pub mod no_overlap;
-
 pub mod propagator;
 pub use propagator::{DynPropagator, Propagator, PropagatorId, UserPropagator};
+
+pub mod testing;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::{Lit, SignedVar, Var};
-use crate::lang::mul::NFEqVarMulLit;
 use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
-use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
 
 /// Structure that keeps track of watches on variables in a CP solver.
@@ -121,15 +119,6 @@ impl Cp {
             ub: -sum.constant(),
             active,
             valid,
-        };
-        self.add_propagator(propagator);
-    }
-
-    pub fn add_eq_var_mul_lit_constraint(&mut self, mul: &NFEqVarMulLit) {
-        let propagator = VarEqVarMulLit {
-            reified: mul.lhs,
-            original: mul.rhs,
-            lit: mul.lit,
         };
         self.add_propagator(propagator);
     }

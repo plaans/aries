@@ -20,3 +20,6 @@ aries-solver = { path = "../../solver" }
 aries-env-param = { path = "../../utils/env_param" }
 pathfinding = { workspace = true }
 vec_map = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
