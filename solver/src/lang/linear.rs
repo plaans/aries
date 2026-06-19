@@ -224,6 +224,8 @@ impl Term for LinTerm {
 ///  - the variables [`Var::ZERO`] and [`Var::ONE`] may not appear
 ///  - the terms are sorted (with the variables as sorting keys)
 ///
+/// The linear sum is defined when all variables in it are present (see: [`LinSum::conj_scope`]).
+///
 /// ## Performance
 ///
 /// The type guarantees no allocation for sum with at most two variables.
@@ -294,9 +296,9 @@ impl LinSum {
     /// Simplify the terms of the expression, into a normalized expression that satisfies
     /// all our invariants.
     ///
-    /// Note that it should be an invariant that the `LinearSum` is always in its normal form.
+    /// Note that it should be an invariant that the `LinSum` is always in its normal form.
     ///
-    /// This is private because no-one should be able to hold a `LinSum` chare
+    /// This is private because no-one outside this module should be able to hold a `LinSum` that is not normalized already.
     fn simplify(&mut self) {
         self.vars.sort_unstable_by_key(|sv| sv.var);
         self.vars.dedup_by(|second, first| {
@@ -410,6 +412,12 @@ impl std::fmt::Display for LinSum {
             }
         }
         Ok(())
+    }
+}
+
+impl From<&LinSum> for LinSum {
+    fn from(value: &LinSum) -> Self {
+        value.clone()
     }
 }
 

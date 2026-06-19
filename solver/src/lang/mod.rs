@@ -65,6 +65,7 @@ use linear::*;
 pub mod alternative;
 mod bool_expr;
 mod boolean;
+pub mod constraints;
 pub mod element;
 pub mod exclusive_choice;
 pub mod expr;
