@@ -1,13 +1,15 @@
 pub mod symmetry;
 
-use aries_solver::core::literals::ConjunctionBuilder;
-use aries_solver::lang::element::Element;
-use aries_solver::lang::exclusive_choice::exclu_choice;
-use aries_solver::lang::expr::{eq, geq, gt, implies, leq, lt};
 use aries_solver::prelude::*;
+
+use aries_solver::lang::constraints::Element;
+use aries_solver::lang::exclusive_choice::exclu_choice;
 use aries_solver::{
-    core::{literals::DisjunctionBuilder, views::Dom},
-    lang::{expr::or, max::EqMax},
+    core::{
+        literals::{ConjunctionBuilder, DisjunctionBuilder},
+        views::Dom,
+    },
+    lang::max::EqMax,
 };
 
 use crate::{boxes::Segment, effects::EffectOp, *};

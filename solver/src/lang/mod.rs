@@ -66,7 +66,6 @@ pub mod alternative;
 mod bool_expr;
 mod boolean;
 pub mod constraints;
-pub mod element;
 pub mod exclusive_choice;
 pub mod expr;
 mod int;
@@ -75,7 +74,7 @@ pub mod linear;
 pub mod max;
 pub mod mul;
 mod ops;
-pub mod reification;
+pub(crate) mod reification; // TODO: this should probably move to `crate::model`
 mod store;
 mod validity_scope;
 
