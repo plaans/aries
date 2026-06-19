@@ -413,7 +413,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     elements: a
                         .alternatives
                         .iter()
-                        .map(|alt| MaxElem::new(SignedVar::plus(alt.var), alt.cst, prez(alt.var)))
+                        .map(|alt| MaxElem::new(alt.var + alt.cst, prez(alt.var)))
                         .collect_vec(),
                 });
 
@@ -427,7 +427,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     elements: a
                         .alternatives
                         .iter()
-                        .map(|alt| MaxElem::new(SignedVar::minus(alt.var), alt.cst, prez(alt.var)))
+                        .map(|alt| MaxElem::new(-alt.var + alt.cst, prez(alt.var)))
                         .collect_vec(),
                 });
                 Ok(())
@@ -464,7 +464,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     elements: a
                         .rhs
                         .iter()
-                        .map(|elem| MaxElem::new(elem.var, elem.cst, prez(elem.var)))
+                        .map(|elem| MaxElem::new(elem.var + elem.cst, prez(elem.var)))
                         .collect_vec(),
                 });
 

@@ -1,19 +1,25 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
+use crate::core::views::{IntBoundable, Term, VarView};
 use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar};
 use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
-pub(crate) struct MaxElem {
-    var: SignedVar,
-    cst: IntCst,
+pub(crate) struct MaxElem<Variable> {
+    /// Variable providing a potential maximum value (ignored when absent).
+    var: Variable,
+    /// Presence literal of the variable.
+    /// This is redundant and placed here to avoid the need to retrieve from the domains on every access.
     presence: Lit,
 }
 
-impl MaxElem {
-    pub fn new(var: SignedVar, cst: IntCst, presence: Lit) -> Self {
-        Self { var, cst, presence }
+impl<Variable> MaxElem<Variable> {
+    pub fn new(variable: Variable, presence: Lit) -> Self {
+        Self {
+            var: variable,
+            presence,
+        }
     }
 }
 
@@ -25,14 +31,20 @@ impl MaxElem {
 ///
 /// This is not sufficient to implement a propagator of the Max constraint and is only used as one of several propagators in a decomposition.
 #[derive(Clone)]
-pub(crate) struct AtLeastOneGeq {
+pub(crate) struct AtLeastOneGeq<Variable>
+where
+    Variable: Send + Sync,
+{
     /// presence of LHS and scope of the constraint
     pub scope: Lit,
     pub lhs: SignedVar,
-    pub elements: Vec<MaxElem>,
+    pub elements: Vec<MaxElem<Variable>>,
 }
 
-impl Propagator for AtLeastOneGeq {
+impl<Variable> Propagator for AtLeastOneGeq<Variable>
+where
+    Variable: Term + VarView<Value = IntCst> + IntBoundable + Send + Sync + Copy + 'static,
+{
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
         context.add_watch(self.scope.variable(), id);
         context.add_watch(self.lhs.variable(), id);
@@ -51,7 +63,6 @@ impl Propagator for AtLeastOneGeq {
             Single(usize),
             Several,
         }
-        let ub = |svar: SignedVar| domains.ub(svar);
         let lb = |svar: SignedVar| domains.lb(svar);
 
         let mut candidates = Candidates::Empty;
@@ -62,7 +73,7 @@ impl Propagator for AtLeastOneGeq {
             if domains.entails(!elem.presence) {
                 continue; // elem is provably absent
             }
-            let elem_ub = ub(elem.var) + elem.cst;
+            let elem_ub = domains.ub(elem.var);
             if elem_ub < lhs_lb {
                 continue; // elem cannot reach the value of the lhs
             }
@@ -87,7 +98,7 @@ impl Propagator for AtLeastOneGeq {
             let elem = &self.elements[idx];
             // lb(elem.var + elem.cst) <- lb(lhs)
             // lb(elem.var) <- lb(lhs) - elem.cst
-            domains.set_lb(elem.var, domains.lb(self.lhs) - elem.cst, cause)?; // PROP 3
+            domains.set_lb(elem.var, domains.lb(self.lhs), cause)?; // PROP 3
             if domains.entails(domains.presence(self.lhs)) {
                 // if the constraint is active, the elem must be present
                 domains.set(elem.presence, cause)?; // PROP 4
@@ -110,10 +121,10 @@ impl Propagator for AtLeastOneGeq {
                 } else {
                     // e.var + e.cst < max_lb
                     // e.var < max_lb - e.cst
-                    let lit = Lit::lt(e.var, max_lb - e.cst);
+                    let lit = e.var.leq(max_lb - 1);
                     debug_assert!(domains.entails(lit));
                     out_explanation.push(lit);
-                    out_explanation.push(Lit::geq(self.lhs, max_lb))
+                    out_explanation.push(self.lhs.geq(max_lb));
                 }
             }
         } else if literal.svar() == self.lhs {
@@ -125,9 +136,7 @@ impl Propagator for AtLeastOneGeq {
                 if domains.entails(!e.presence) {
                     out_explanation.push(!e.presence);
                 } else {
-                    // e.var + e.cst <= max_ub
-                    // e.var <= max_ub - e.cst
-                    let lit = e.var.leq(max_ub - e.cst);
+                    let lit = e.var.leq(max_ub);
                     debug_assert!(domains.entails(lit));
                     out_explanation.push(lit);
                 }
@@ -138,7 +147,7 @@ impl Propagator for AtLeastOneGeq {
                 .elements
                 .iter()
                 .enumerate()
-                .find(|(_, e)| literal == e.presence || literal.svar() == -e.var)
+                .find(|(_, e)| literal == e.presence || literal.svar() == e.var.lower_bounding_signed_var())
                 .unwrap();
 
             let max_lb = domains.lb(self.lhs);
@@ -149,9 +158,7 @@ impl Propagator for AtLeastOneGeq {
                 if domains.entails(!e.presence) {
                     out_explanation.push(!e.presence);
                 } else {
-                    // e.var + e.cst < max_lb
-                    // e.var < max_lb - e.cst
-                    let lit = Lit::lt(e.var, max_lb - e.cst);
+                    let lit = e.var.lt(max_lb);
                     debug_assert!(domains.entails(lit));
                     out_explanation.push(lit);
                     out_explanation.push(Lit::geq(self.lhs, max_lb))
@@ -162,7 +169,7 @@ impl Propagator for AtLeastOneGeq {
                 out_explanation.push(self.scope) // TODO: should this always be there as the scope ?
             } else {
                 // PROP 3
-                let inferrable = Lit::geq(elem.var, max_lb - elem.cst);
+                let inferrable = elem.var.geq(max_lb);
                 debug_assert!(inferrable.entails(literal));
                 out_explanation.push(Lit::geq(self.lhs, max_lb));
             }
@@ -203,13 +210,11 @@ mod test {
             lhs: SignedVar::plus(m),
             elements: vec![
                 MaxElem {
-                    var: SignedVar::plus(a),
-                    cst: 1,
+                    var: SignedVar::plus(a) + 1,
                     presence: Lit::TRUE,
                 },
                 MaxElem {
-                    var: SignedVar::plus(b),
-                    cst: 1,
+                    var: SignedVar::plus(b) + 1,
                     presence: Lit::TRUE,
                 },
             ],
