@@ -103,7 +103,7 @@ impl<Lbl: Label> ModelShape<Lbl> {
                     }
                 }
                 Constraint::Propagator(user_propagator) => {
-                    if !user_propagator.satisfied(assignment) {
+                    if !user_propagator.satisfied(&solution) {
                         return Err(format!("user propagator is not satisfied:\n{user_propagator:?}"));
                     }
                 }

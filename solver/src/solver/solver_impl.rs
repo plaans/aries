@@ -470,12 +470,6 @@ impl<Lbl: Label> Solver<Lbl> {
 
                 Ok(())
             }
-            ReifExpr::EqMul(eq_mul) => {
-                self.reasoners
-                    .cp
-                    .add_half_reified_mul_constraint(eq_mul, enabler, &self.model.state);
-                Ok(())
-            }
             ReifExpr::EqVarMulLit(mul) => {
                 assert!(
                     self.model.entails(enabler),

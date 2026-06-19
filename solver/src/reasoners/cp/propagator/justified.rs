@@ -54,7 +54,7 @@
 //!         let wrapped_propagator = PropagatorWithJustifications::build(self.clone());
 //!         vec![wrapped_propagator]
 //!     }
-//!     fn satisfied(&self, dom: &Domains) -> bool {
+//!     fn satisfied(&self, sol: &Solution) -> bool {
 //!         todo!("Check if the constraint is satisfied for the current domains")
 //!     }
 //! }

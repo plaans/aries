@@ -285,16 +285,16 @@ impl UserPropagator for NoOverlap<IAtom> {
         propagators
     }
 
-    fn satisfied(&self, dom: &Domains) -> bool {
+    fn satisfied(&self, sol: &Solution) -> bool {
         // maximum intervals of all possibly present tasks
         let itvs = self
             .tasks
             .iter()
             .filter_map(|t| {
-                if dom.entails(!t.presence) {
+                if sol.entails(!t.presence) {
                     None
                 } else {
-                    Some((dom.lb(t.start), dom.ub(t.end)))
+                    Some((sol.eval(t.start).unwrap(), sol.eval(t.end).unwrap()))
                 }
             })
             .sorted_unstable()

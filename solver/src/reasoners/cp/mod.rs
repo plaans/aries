@@ -12,7 +12,7 @@ use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
 use crate::core::{Lit, SignedVar, Var};
-use crate::lang::mul::{EqMul, NFEqVarMulLit};
+use crate::lang::mul::NFEqVarMulLit;
 use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -119,24 +119,6 @@ impl Cp {
         let propagator = LinearSumLeq {
             elements,
             ub: -sum.constant(),
-            active,
-            valid,
-        };
-        self.add_propagator(propagator);
-    }
-
-    pub fn add_half_reified_mul_constraint(&mut self, mul: &EqMul, active: Lit, doms: &Domains) {
-        // TODO: this is correct but may miss opportunities for eager propagation of optional variables
-        let valid = doms.presence(active);
-        debug_assert!(
-            [mul.lhs, mul.rhs1, mul.rhs2]
-                .iter()
-                .all(|e| doms.implies(valid, doms.presence(*e)))
-        );
-        let propagator = mul::Mul {
-            prod: mul.lhs,
-            fact1: mul.rhs1,
-            fact2: mul.rhs2,
             active,
             valid,
         };

@@ -79,9 +79,9 @@ pub trait Store: Dom {
                     vec![]
                 }
 
-                fn satisfied(&self, dom: &Domains) -> bool {
+                fn satisfied(&self, sol: &Solution) -> bool {
                     // the extract solution step is unnecessarily costly (copying the domains of each assertion to validate)
-                    self.cond.as_ref().evaluate(&dom.extract_solution()) != Some(false)
+                    self.cond.as_ref().evaluate(sol) != Some(false)
                 }
             }
             let debug = format!("{condition:?}");
