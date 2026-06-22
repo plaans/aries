@@ -3,6 +3,8 @@
 //! This module contains all implementations of arithmetic operations (`Add`, `Sub`, `Mul`, `Neg`)
 //! and conversions (`From`, `TryFrom`) between the numeric types in the language module.
 
+use std::ops::Neg;
+
 use crate::core::IntoIntCst;
 use crate::core::{IntCst, SignedVar, Var};
 use crate::lang::ConversionError;
@@ -17,6 +19,14 @@ use crate::{transitive_conversion, transitive_conversions};
 impl From<Var> for IAtom {
     fn from(v: Var) -> Self {
         IAtom::new(v, 0)
+    }
+}
+
+impl Neg for IAtom {
+    type Output = LinTerm;
+
+    fn neg(self) -> Self::Output {
+        (-self.var) - self.shift
     }
 }
 
@@ -450,10 +460,10 @@ impl std::ops::Add<Var> for IntCst {
 
 // Reverse operations for IntCst - Var
 impl std::ops::Sub<Var> for IntCst {
-    type Output = IAtom;
+    type Output = LinTerm;
 
     fn sub(self, rhs: Var) -> Self::Output {
-        IAtom::new(rhs, -self)
+        (-rhs) + self
     }
 }
 
@@ -468,10 +478,10 @@ impl std::ops::Add<IAtom> for IntCst {
 
 // Reverse operations for IntCst - IAtom
 impl std::ops::Sub<IAtom> for IntCst {
-    type Output = IAtom;
+    type Output = LinSum;
 
     fn sub(self, rhs: IAtom) -> Self::Output {
-        IAtom::new(rhs.var, self - rhs.shift)
+        (-rhs) + self
     }
 }
 
@@ -552,9 +562,9 @@ mod tests {
         let _: IAtom = a + 5;
         let _: IAtom = a - 3;
         let _: IAtom = 7 + x;
-        let _: IAtom = 10 - x;
+        let _: LinTerm = 10 - x;
         let _: IAtom = 5 + a;
-        let _: IAtom = 10 - a;
+        let _: LinSum = 10 - a; // TODO: this could be al LinTerm
         let _: LinTerm = a * 3; // IAtom * IntCst -> LinTerm
         let _: LinTerm = 3 * a; // IntCst * IAtom -> LinTerm
 
