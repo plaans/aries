@@ -121,6 +121,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
     }
 }
 
+#[macro_export] // TODO: remove
 macro_rules! impl_reif {
     ($A: ty) => {
         impl<Ctx: Store> BoolExpr<Ctx> for $A

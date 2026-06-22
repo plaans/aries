@@ -437,27 +437,12 @@ impl<Lbl: Label> Model<Lbl> {
     ///
     /// Internally, the expression is half-reified to an optional literal that is true, when the expression
     /// is valid and absent otherwise.
-    pub fn enforce_scoped<Expr: Reifiable<Lbl>>(&mut self, expr: Expr, scope: impl IntoIterator<Item = Lit>) {
-        debug_assert_eq!(self.state.current_decision_level(), DecLvl::ROOT);
-        let mut expr = expr.decompose(self);
-        self.simplify(&mut expr);
-
+    pub fn enforce_scoped<Expr: BoolExpr<Self>>(&mut self, expr: Expr, scope: impl IntoIterator<Item = Lit>) {
         let scope = self.new_conjunctive_presence_variable(scope);
-        debug_assert!(
-            {
-                // compute the scope in which the expression is valid
-                let expr_scope = expr.scope(|var| self.state.presence(var));
-                let expr_scope = expr_scope.to_conjunction(self);
-                let expr_scope = self.new_conjunctive_presence_variable(expr_scope);
-                self.state.implies(scope, expr_scope)
-            },
-            "Error in scope definition: the expression {expr:?} is not always defined in the provided scope."
-        );
-
         // retrieve or create an optional variable that is always true in the scope
         let tauto = self.get_tautology_of_scope(scope);
 
-        self.shape.add_half_reification_constraint(tauto, expr);
+        expr.enforce_if(tauto, self);
     }
 
     /// Enforces a boolean expression to be always true when defined (in scope).
@@ -468,16 +453,6 @@ impl<Lbl: Label> Model<Lbl> {
         Expr: BoolExpr<Self>,
     {
         expr.enforce(self);
-    }
-
-    pub fn enforce_all<Expr: Reifiable<Lbl>>(
-        &mut self,
-        bools: impl IntoIterator<Item = Expr>,
-        scope: impl IntoIterator<Item = Lit> + Clone,
-    ) {
-        for b in bools {
-            self.enforce_scoped(b, scope.clone());
-        }
     }
 
     /// Adds a conditional constraint (aka, half-reified constraint)

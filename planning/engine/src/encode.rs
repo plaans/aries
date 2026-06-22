@@ -7,7 +7,7 @@ pub mod tags;
 
 use aries_solver::{
     core::literals::ConjunctionBuilder,
-    lang::{BoolExpr, IntExpr, expr::eq},
+    lang::{IntExpr, expr::eq},
     prelude::*,
 };
 use itertools::Itertools;

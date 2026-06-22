@@ -218,11 +218,11 @@ fn add_assignment_coherence_constraints(
             unreachable!()
         };
         if let Atom::Int(val) = val {
-            solver.enforce(geq(val, lb), [prez]);
-            solver.enforce(leq(val, ub), [prez]);
+            solver.enforce_scoped(geq(val, lb), [prez]);
+            solver.enforce_scoped(leq(val, ub), [prez]);
         } else if let Atom::Fixed(val) = val {
-            solver.enforce(f_geq(val, FAtom::new((lb * val.denom).into(), val.denom)), [prez]);
-            solver.enforce(f_leq(val, FAtom::new((ub * val.denom).into(), val.denom)), [prez]);
+            solver.enforce_scoped(f_geq(val, FAtom::new((lb * val.denom).into(), val.denom)), [prez]);
+            solver.enforce_scoped(f_leq(val, FAtom::new((ub * val.denom).into(), val.denom)), [prez]);
         } else {
             unreachable!();
         }
@@ -399,7 +399,7 @@ fn add_condition_support_constraints(
             encoding.tag(supported_by_inc, Tag::Support(*cond_id, inc_id));
         }
 
-        solver.enforce(or(supported), [*cond_prez]);
+        solver.enforce_scoped(or(supported), [*cond_prez]);
     }
 
     tracing::debug!(%num_numeric_support_constraints);

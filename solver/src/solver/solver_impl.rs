@@ -4,6 +4,7 @@ use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
+use crate::lang::BoolExpr;
 use crate::lang::expr::geq;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::model::{Constraint, Label, Model};
@@ -144,17 +145,18 @@ impl<Lbl: Label> Solver<Lbl> {
         self.sync.set_output(output);
     }
 
-    pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, bool_expr: Expr, scope: impl IntoIterator<Item = Lit>) {
+    pub fn enforce<Expr: BoolExpr<Model<Lbl>>>(&mut self, bool_expr: Expr) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce_scoped(bool_expr, scope);
+        self.model.enforce(bool_expr);
     }
-    pub fn enforce_all<Expr: Reifiable<Lbl>>(
+
+    pub fn enforce_scoped<Expr: BoolExpr<Model<Lbl>>>(
         &mut self,
-        bools: impl IntoIterator<Item = Expr>,
-        scope: impl IntoIterator<Item = Lit> + Clone,
+        bool_expr: Expr,
+        scope: impl IntoIterator<Item = Lit>,
     ) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce_all(bools, scope);
+        self.model.enforce_scoped(bool_expr, scope);
     }
 
     /// Interns the given expression and returns an equivalent literal.

@@ -18,6 +18,7 @@ pub trait Store: Dom {
     fn new_literal(&mut self, presence: Lit) -> Lit;
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var;
     fn get_implicant(&mut self, e: ReifExpr) -> Lit;
+    fn reify(&mut self, e: ReifExpr) -> Lit;
     fn add_implies(&mut self, l: Lit, e: ReifExpr);
 
     /// Given a set of scope literals, return a (possibly new) scope literal that
@@ -128,6 +129,9 @@ where
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
         self.get_model_mut().half_reify(e.clone())
+    }
+    fn reify(&mut self, e: ReifExpr) -> Lit {
+        self.get_model_mut().reify_core(e, false)
     }
 
     fn add_implies(&mut self, l: Lit, e: ReifExpr) {

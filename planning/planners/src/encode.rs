@@ -508,7 +508,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     // for each condition, make sure the end is after the start
     for &(_, prez_cond, cond) in &conds {
-        solver.enforce(f_leq(cond.start, cond.end), [prez_cond]);
+        solver.enforce_scoped(f_leq(cond.start, cond.end), [prez_cond]);
     }
 
     solver.propagate()?;
@@ -534,16 +534,16 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             use ChronicleKind::*;
             // chronicle finishes before the horizon and has a non negative duration
             if matches!(ch.chronicle.kind, Action | DurativeAction) {
-                solver.enforce(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
+                solver.enforce_scoped(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
             }
             match ch.chronicle.kind {
                 Problem | Action | DurativeAction => {
-                    solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez])
+                    solver.enforce_scoped(f_leq(ch.chronicle.start, ch.chronicle.end), [prez])
                 }
                 Method => {
                     // Minimum length of a method is -EPSILON (possible if it does not introduce any actions, directly or indirectly).
                     //  This is to ensure that, if a method is empty, the decomposed task can have a -EPSILON duration
-                    solver.enforce(f_leq(ch.chronicle.start - FAtom::EPSILON, ch.chronicle.end), [prez])
+                    solver.enforce_scoped(f_leq(ch.chronicle.start - FAtom::EPSILON, ch.chronicle.end), [prez])
                 }
             }
 
@@ -554,9 +554,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // A task network constraint `t1 < t2` is translated to `t1.end + epsilon <= t2.start`.
                 // When `t1` is a no-op and set to its minimal duration, it only requires `t1.start <= t2.start`, meaning that
                 // `t1` does not reserve any time
-                solver.enforce(f_leq(subtask.start - FAtom::EPSILON, subtask.end), [prez]);
-                solver.enforce(f_leq(ch.chronicle.start, subtask.start), [prez]);
-                solver.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
+                solver.enforce_scoped(f_leq(subtask.start - FAtom::EPSILON, subtask.end), [prez]);
+                solver.enforce_scoped(f_leq(ch.chronicle.start, subtask.start), [prez]);
+                solver.enforce_scoped(f_leq(subtask.end, ch.chronicle.end), [prez]);
             }
         }
         add_decomposition_constraints(pb, &mut solver.model, &mut encoding);
@@ -574,14 +574,14 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     // for each effect, make sure the time points are ordered and that nothing changes after the horizon
     for &(eff_id, prez_eff, eff) in &effs {
-        solver.enforce(f_leq(eff.transition_start, eff.transition_end), [prez_eff]);
-        solver.enforce(f_leq(eff.transition_end, pb.horizon), [prez_eff]);
+        solver.enforce_scoped(f_leq(eff.transition_start, eff.transition_end), [prez_eff]);
+        solver.enforce_scoped(f_leq(eff.transition_end, pb.horizon), [prez_eff]);
         if eff_mutex_ends.contains_key(&eff_id) {
             debug_assert!(is_assignment(eff));
             let mutex_end = eff_mutex_ends[&eff_id];
-            solver.enforce(f_leq(eff.transition_end, mutex_end), [prez_eff]);
+            solver.enforce_scoped(f_leq(eff.transition_end, mutex_end), [prez_eff]);
             for &min_mutex_end in &eff.min_mutex_end {
-                solver.enforce(f_leq(min_mutex_end, mutex_end), [prez_eff])
+                solver.enforce_scoped(f_leq(min_mutex_end, mutex_end), [prez_eff])
             }
         }
     }
@@ -630,7 +630,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 clause.push(solver.half_reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
 
                 // add coherence constraint
-                solver.enforce(or(clause.as_slice()), [p1, p2]);
+                solver.enforce_scoped(or(clause.as_slice()), [p1, p2]);
                 num_coherence_constraints += 1;
             }
         }
@@ -705,7 +705,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             }
 
             // enforce necessary conditions for condition's support
-            solver.enforce(or(supported), [prez_cond]);
+            solver.enforce_scoped(or(supported), [prez_cond]);
         }
         tracing::debug!(%num_support_constraints);
 
@@ -764,7 +764,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         non_overlapping.push(solver.half_reify(f_lt(cond.end, eff.transition_start)));
                         non_overlapping.push(solver.half_reify(f_leq(eff.transition_end, cond.start)));
 
-                        solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
+                        solver.enforce_scoped(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
                         num_mutex_constraints += 1;
                     }
                 }

@@ -119,7 +119,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .iter()
             .fold(IntExp::cst(num_assumptions), |sum, l| sum - l.variable());
         self.solver
-            .enforce(num_relaxed_assumptions.leq(max_relaxed_assumptions), []);
+            .enforce_scoped(num_relaxed_assumptions.leq(max_relaxed_assumptions), []);
 
         for allowed_relaxations in 0..num_assumptions {
             println!("Current lower bound: {}", allowed_relaxations);

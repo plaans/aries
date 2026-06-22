@@ -296,6 +296,8 @@ pub fn f_geq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
 #[derive(Copy, Clone, Debug)]
 pub struct Leq(IAtom, IAtom);
 
+aries_solver::impl_reif!(Leq);
+
 impl Not for Leq {
     type Output = Leq;
 

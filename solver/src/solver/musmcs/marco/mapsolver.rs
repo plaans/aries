@@ -227,13 +227,13 @@ impl MapSolver {
             // May only be needed for optional optimisation
             self.known_singleton_mcses_out.insert(self.trout(singleton_mcs));
         }
-        self.solver.enforce(or(translated_mcs), []);
+        self.solver.enforce_scoped(or(translated_mcs), []);
     }
 
     /// Mark assignments containing the given MUS as forbidden.
     /// In other words, mark them as explored. Seeds further discovered won't contain them.
     pub fn block_up(&mut self, mus: &BTreeSet<Lit>) {
         let translated_mus_negs = mus.iter().map(|&l| self.trin(l).not()).collect_vec();
-        self.solver.enforce(or(translated_mus_negs), []);
+        self.solver.enforce_scoped(or(translated_mus_negs), []);
     }
 }
