@@ -33,7 +33,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 let l = if let Some(l) = trigger.get(&tag) {
                     *l
                 } else {
-                    let l = encoding.new_literal(Lit::TRUE); // could we use the conjunctive scope directly?
+                    let l = encoding.new_optional_bool_var(Lit::TRUE); // could we use the conjunctive scope directly?
                     assumptions_map.insert(l, tag.clone());
                     trigger.insert(tag, l);
                     l

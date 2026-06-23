@@ -209,7 +209,7 @@ pub fn encode_plan_optimization_problem(
             args.insert(&param.name, arg);
         }
         let presence = if options.relaxation.contains(&Relaxation::ActionPresence) {
-            sched.model.new_literal(Lit::TRUE)
+            sched.model.new_optional_bool_var(Lit::TRUE)
         } else {
             Lit::TRUE
         };
@@ -263,7 +263,7 @@ pub fn encode_plan_optimization_problem(
                 .ok_or_else(|| action_name.invalid("cannot find corresponding action"))?;
 
             // free actions are optional
-            let presence = sched.model.new_literal(Lit::TRUE);
+            let presence = sched.model.new_optional_bool_var(Lit::TRUE);
 
             // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
 
