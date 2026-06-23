@@ -2,6 +2,7 @@
 //!
 //! These are all re-exported in `[crate::prelude`].
 
+use crate::core::views::Dom;
 use crate::lang::alternative::Alternative;
 use crate::lang::constraints::AllDifferent;
 use crate::lang::linear::{LinEq, LinLeq, LinNeq};
@@ -52,4 +53,26 @@ pub fn eq_mul(lhs: impl Into<Var>, factor1: impl Into<Var>, factor2: impl Into<V
 
 pub fn alternative<T: Into<IAtom>>(main: impl Into<IAtom>, alternatives: impl IntoIterator<Item = T>) -> Alternative {
     Alternative::new(main, alternatives)
+}
+
+/// Transforms a boolean into an integer expression where `1` represents `true` and `0` represents false.
+///
+/// In most cases, this will reuse the variable underlying the literal but it may in some case require the introduction
+/// of an auxiliary variable.
+pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinTerm {
+    let is_zero_one = model.bounds(b.variable()) == (0, 1);
+    if model.entails(b) {
+        1.into()
+    } else if model.entails(!b) {
+        0.into()
+    } else if is_zero_one && b == b.variable().geq(1) {
+        b.variable().into()
+    } else if is_zero_one && b == b.variable().leq(0) {
+        1 - b.variable()
+    } else {
+        let binary_var = model.new_optional_var(0, 1, model.presence_literal(b));
+        implies(binary_var.geq(1), b).enforce(model);
+        implies(b, binary_var.geq(1)).enforce(model);
+        LinTerm::from(binary_var)
+    }
 }

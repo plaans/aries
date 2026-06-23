@@ -127,7 +127,7 @@ fn build_objective(
         Objective::PlanLength | Objective::Original => {
             let mut sum = LinSum::zero();
             for t in sched.tasks.iter() {
-                sum += timelines::constraints::bool2int(t.presence, &mut sched.model);
+                sum += bool2int(t.presence, &mut sched.model);
             }
             reify_sum(sum, sched)
         }

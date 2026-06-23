@@ -413,22 +413,3 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         Conjunction::tautology()
     }
 }
-
-/// Transforms a boolean into an integer expression
-pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
-    let is_zero_one = model.bounds(b.variable()) == (0, 1);
-    if model.entails(b) {
-        1.into()
-    } else if model.entails(!b) {
-        0.into()
-    } else if is_zero_one && b == b.variable().geq(1) {
-        b.variable().into()
-    } else if is_zero_one && b == b.variable().leq(0) {
-        IntExp::cst(1) - b.variable()
-    } else {
-        let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
-        implies(bvar.geq(1), b).enforce(model);
-        implies(b, bvar.geq(1)).enforce(model);
-        IntExp::from(bvar)
-    }
-}
