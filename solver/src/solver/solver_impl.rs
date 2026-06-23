@@ -51,9 +51,9 @@ macro_rules! log_dec {
 /// Represents an absolute search limit
 #[derive(Clone, Copy, Debug)]
 pub enum SearchLimit {
-    /// Absolute time before which the search must be concluded
+    /// Absolute time before which the search must be concluded.
     Deadline(Instant),
-    /// Number of decisions before which search must be concluded
+    /// Number of decisions before which search must be concluded.
     ///
     /// *Note:* this references the number of decisions in the stats and might not be 0 if the solver was already used
     NumDecisions(u64),
@@ -66,11 +66,18 @@ pub enum SearchLimit {
 }
 
 impl SearchLimit {
-    /// Maximum allowed duration *from now*  that the search is allowed to proceed.
+    /// Maximum allowed duration *from now* that the search is allowed to proceed.
     ///
     /// This is immediately converted into a deadline from the current time.
     pub fn duration(dur: Duration) -> Self {
         Self::Deadline(Instant::now() + dur)
+    }
+
+    /// Maximum allowed duration in seconds *from now* that the search is allowed to proceed.
+    ///
+    /// This is immediately converted into a deadline from the current time.
+    pub fn duration_secs(dur: impl Into<f64>) -> Self {
+        Self::duration(Duration::from_secs_f64(dur.into()))
     }
 }
 
