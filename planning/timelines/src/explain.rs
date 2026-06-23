@@ -33,7 +33,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 let l = if let Some(l) = trigger.get(&tag) {
                     *l
                 } else {
-                    let l = encoding.new_literal(Lit::TRUE); // could we use the conjunctive scope directly?
+                    let l = encoding.new_optional_bool_var(Lit::TRUE); // could we use the conjunctive scope directly?
                     assumptions_map.insert(l, tag.clone());
                     trigger.insert(tag, l);
                     l
@@ -119,7 +119,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .iter()
             .fold(IntExp::cst(num_assumptions), |sum, l| sum - l.variable());
         self.solver
-            .enforce(num_relaxed_assumptions.leq(max_relaxed_assumptions), []);
+            .enforce_scoped(num_relaxed_assumptions.leq(max_relaxed_assumptions), []);
 
         for allowed_relaxations in 0..num_assumptions {
             println!("Current lower bound: {}", allowed_relaxations);

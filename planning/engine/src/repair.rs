@@ -280,7 +280,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
         model,
         &encoding.required_values,
         param_bounds,
-        || sched.model.new_literal(Lit::TRUE),
+        || sched.model.new_optional_bool_var(Lit::TRUE),
     ));
 
     // for each potential effect, add a (soft constraint) that it is absent
@@ -322,7 +322,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                         .may_require_value(eff.effect_expression.state_variable.fluent, 1 - imposed_value);
                     if possibly_detrimental {
                         // effect may delete a precondition, it must be relaxable and we tie its presence to a new literal
-                        sched.model.new_literal(Lit::TRUE)
+                        sched.model.new_optional_bool_var(Lit::TRUE)
                     } else {
                         // effect can never be detrimental and we thus always force its presence
                         Lit::TRUE

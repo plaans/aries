@@ -13,7 +13,7 @@ pub trait IntExpr<Ctx: Store> {
         reif
     }
 
-    /// Returns the lower and upper bounds of the expressions.
+    /// Returns the lower and upper bounds of the expression.
     ///
     /// The default implementation just returns the lower bound [`INT_CST_MIN`] and the upper bound  [`INT_CST_MAX`].`
     fn bounds(&self, _ctx: &Ctx) -> (IntCst, IntCst) {

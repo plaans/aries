@@ -26,7 +26,7 @@ fn solve_sat(instance: &[Vec<i32>]) -> Option<Vec<bool>> {
         }));
 
         // add clause to the model
-        model.enforce(clause, []);
+        model.enforce(clause);
     }
 
     // Create a solver for the model

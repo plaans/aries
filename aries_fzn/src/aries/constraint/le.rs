@@ -30,7 +30,7 @@ impl Le {
 
 impl<Lbl: Label> Post<Lbl> for Le {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.enforce(leq(self.a, self.b), []);
+        model.enforce(leq(self.a, self.b));
     }
 }
 

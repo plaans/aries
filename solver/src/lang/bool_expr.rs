@@ -1,5 +1,6 @@
 use crate::{
     lang::{
+        alternative::Alternative,
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
         max::{EqMax, EqMin},
@@ -47,7 +48,7 @@ pub trait BoolExpr<Ctx: Store> {
             ctx.tautology_of_scope(scope)
         } else {
             // we need to create a new literal that is true whenever it is defined and l is true.
-            let imp = ctx.new_literal(scope);
+            let imp = ctx.new_optional_bool_var(scope);
             // if in scope, and l, then imp should be true
             or([!scope, !l, imp]).enforce(ctx);
             imp
@@ -60,7 +61,7 @@ pub trait BoolExpr<Ctx: Store> {
     /// enforces the expression to be true whenever the return literal is.
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
         let scope = self.scope(ctx);
-        let implicant = ctx.new_literal(scope);
+        let implicant = ctx.new_optional_bool_var(scope);
         self.enforce_if(implicant, ctx);
         implicant
     }
@@ -120,6 +121,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
     }
 }
 
+#[macro_export] // TODO: remove
 macro_rules! impl_reif {
     ($A: ty) => {
         impl<Ctx: Store> BoolExpr<Ctx> for $A
@@ -147,6 +149,7 @@ impl_reif!(Disjunction);
 impl_reif!(Conjunction);
 impl_reif!(EqMax);
 impl_reif!(EqMin);
+impl_reif!(Alternative);
 impl_reif!(LinLeq);
 impl_reif!(LinEq);
 impl_reif!(LinNeq);

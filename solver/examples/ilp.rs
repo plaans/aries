@@ -31,7 +31,7 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<Int
         let upper_bound = constraint[nb_var];
         let constraint = lin_sum.leq(upper_bound);
 
-        model.enforce(constraint, []);
+        model.enforce(constraint);
     }
 
     // crate a var that will represent the objective
@@ -45,7 +45,7 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<Int
         .fold(LinSum::zero(), |acc, term| acc + term);
 
     // We force our objective variable to correponds to the objective function
-    model.enforce(eq(obj_value_var, lin_sum_obj), []);
+    model.enforce(eq(obj_value_var, lin_sum_obj));
 
     // Create the solver and search for a solution
     let mut solver = Solver::new(model);

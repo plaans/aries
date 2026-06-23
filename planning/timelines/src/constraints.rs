@@ -1,13 +1,15 @@
 pub mod symmetry;
 
-use aries_solver::core::literals::ConjunctionBuilder;
-use aries_solver::lang::element::Element;
-use aries_solver::lang::exclusive_choice::exclu_choice;
-use aries_solver::lang::expr::{eq, geq, gt, implies, leq, lt};
 use aries_solver::prelude::*;
+
+use aries_solver::lang::constraints::Element;
+use aries_solver::lang::exclusive_choice::exclu_choice;
 use aries_solver::{
-    core::{literals::DisjunctionBuilder, views::Dom},
-    lang::{expr::or, max::EqMax},
+    core::{
+        literals::{ConjunctionBuilder, DisjunctionBuilder},
+        views::Dom,
+    },
+    lang::max::EqMax,
 };
 
 use crate::{boxes::Segment, effects::EffectOp, *};
@@ -409,24 +411,5 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 
     fn conj_scope(&self, _ctx: &Ctx) -> Conjunction {
         Conjunction::tautology()
-    }
-}
-
-/// Transforms a boolean into an integer expression
-pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
-    let is_zero_one = model.bounds(b.variable()) == (0, 1);
-    if model.entails(b) {
-        1.into()
-    } else if model.entails(!b) {
-        0.into()
-    } else if is_zero_one && b == b.variable().geq(1) {
-        b.variable().into()
-    } else if is_zero_one && b == b.variable().leq(0) {
-        IntExp::cst(1) - b.variable()
-    } else {
-        let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
-        implies(bvar.geq(1), b).enforce(model);
-        implies(b, bvar.geq(1)).enforce(model);
-        IntExp::from(bvar)
     }
 }

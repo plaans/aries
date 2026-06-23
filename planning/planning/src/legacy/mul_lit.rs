@@ -1,11 +1,74 @@
+use aries_solver::{
+    core::{
+        state::{Cause, DomainsSnapshot, Explanation, OptDomain},
+        IntCst,
+    },
+    lang::{BoolExpr, Store},
+    prelude::{Conjunction, Domains, Solution},
+    reasoners::{
+        cp::{Propagator, PropagatorId, UserPropagator, Watches},
+        Contradiction,
+    },
+};
+use std::fmt::*;
+
+#[derive(Clone)]
+pub struct EqVarMulLit {
+    pub lhs: Var,
+    pub rhs: Var,
+    pub lit: Lit,
+}
+
+impl Debug for EqVarMulLit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} = {:?} * {:?}", self.lhs, self.lit, self.rhs)
+    }
+}
+
+impl EqVarMulLit {
+    pub fn new(lhs: impl Into<Var>, rhs: impl Into<Var>, lit: impl Into<Lit>) -> Self {
+        let lhs = lhs.into();
+        let rhs = rhs.into();
+        let lit = lit.into();
+        Self { lhs, rhs, lit }
+    }
+}
+
+// #[derive(Eq, PartialEq, Hash, Clone)]
+// pub struct NFEqVarMulLit {
+//     pub lhs: Var,
+//     pub rhs: Var,
+//     pub lit: Lit,
+// }
+
+// impl Debug for NFEqVarMulLit {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+//         write!(f, "{:?} = {:?} * {:?}", self.lhs, self.lit, self.rhs)
+//     }
+// }
+
+impl<Ctx: Store> BoolExpr<Ctx> for EqVarMulLit {
+    fn enforce_if(&self, implicant: aries_solver::prelude::Lit, ctx: &mut Ctx) {
+        assert!(ctx.entails(implicant));
+        let propagator = VarEqVarMulLit {
+            reified: self.lhs,
+            original: self.rhs,
+            lit: self.lit,
+        };
+        ctx.enforce_user_propagator(propagator);
+    }
+
+    fn conj_scope(&self, ctx: &Ctx) -> aries_solver::prelude::Conjunction {
+        Conjunction::from(ctx.presence_literal(self.lhs))
+    }
+}
+
 use std::cmp::{max, min};
 
-use crate::{
+use aries_solver::{
     core::{Lit, Relation, Var},
     model::extensions::DomainsExt,
 };
-
-use super::Propagator;
 
 #[derive(Clone, Debug)]
 /// Propagator for the constraint `reified <=> original * lit`
@@ -22,17 +85,13 @@ impl std::fmt::Display for VarEqVarMulLit {
 }
 
 impl Propagator for VarEqVarMulLit {
-    fn setup(&self, id: super::PropagatorId, context: &mut super::Watches) {
+    fn setup(&self, id: PropagatorId, context: &mut Watches) {
         context.add_watch(self.reified, id);
         context.add_watch(self.original, id);
         context.add_watch(self.lit.variable(), id);
     }
 
-    fn propagate(
-        &mut self,
-        domains: &mut crate::core::state::Domains,
-        cause: crate::core::state::Cause,
-    ) -> Result<(), crate::reasoners::Contradiction> {
+    fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> std::result::Result<(), Contradiction> {
         let n = domains.trail().len();
 
         let orig_prez = domains.presence_literal(self.original);
@@ -79,18 +138,11 @@ impl Propagator for VarEqVarMulLit {
         }
     }
 
-    fn explain(
-        &self,
-        literal: Lit,
-        state: &crate::core::state::DomainsSnapshot,
-        out_explanation: &mut crate::core::state::Explanation,
-    ) {
+    fn explain(&self, literal: Lit, state: &DomainsSnapshot, out_explanation: &mut Explanation) {
         // At least one element of the constraint must be the subject of the explanation
-        debug_assert!(
-            [self.reified, self.original, self.lit.variable()]
-                .iter()
-                .any(|&v| v == literal.variable())
-        );
+        debug_assert!([self.reified, self.original, self.lit.variable()]
+            .iter()
+            .any(|&v| v == literal.variable()));
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);
@@ -167,13 +219,48 @@ impl Propagator for VarEqVarMulLit {
     }
 }
 
+impl UserPropagator for VarEqVarMulLit {
+    fn get_propagators(&self) -> Vec<aries_solver::reasoners::cp::DynPropagator> {
+        vec![self.clone().into()]
+    }
+
+    fn satisfied(&self, sol: &Solution) -> bool {
+        let lhs = &self.reified;
+        let rhs = &self.original;
+        let lit = &self.lit;
+        let prez = |var| sol.present(var).unwrap();
+        let value = |var| match sol.opt_domain_of(var) {
+            OptDomain::Present(lb, ub) if lb == ub => lb,
+            _ => panic!(),
+        };
+        let lvalue = |lit: Lit| sol.value_of(lit).unwrap();
+        if !prez(*lhs) {
+            true
+        } else if !prez(lit.variable()) {
+            if !prez(*rhs) {
+                true
+            } else {
+                value(*lhs) == 0 && value(*rhs) == 0
+            }
+        } else {
+            let lit_value: IntCst = lvalue(*lit).into();
+            if !prez(*rhs) {
+                value(*lhs) == 0 && lit_value == 0
+            } else {
+                value(*lhs) == lit_value * value(*rhs)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use aries_solver::reasoners::cp::testing::test_explanations;
     use rand::prelude::SmallRng;
     use rand::{Rng, SeedableRng};
 
-    use crate::core::IntCst;
-    use crate::core::state::{Cause, Domains};
+    use aries_solver::core::state::{Cause, Domains};
+    use aries_solver::core::IntCst;
 
     use super::*;
 
@@ -294,8 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn test_explanations() {
-        use crate::reasoners::cp::propagator::test::utils::*;
+    fn test_explanations_eq_var_mul_lit() {
         for (d, mut c) in gen_problems(100) {
             println!("\nConstraint: {c:?}");
             test_explanations(&d, &mut c, true);

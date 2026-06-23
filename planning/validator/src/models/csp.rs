@@ -247,13 +247,13 @@ impl CspProblem {
                 options.push(in_interval);
             }
             if !options.is_empty() {
-                m.enforce(or(options), []);
+                m.enforce(or(options));
             }
         }
 
         for c in self.constraints.clone().iter() {
             let r = self.reify_constraint(&mut m, c, &vars);
-            m.enforce(r, []);
+            m.enforce(r);
         }
 
         let mut solver = Solver::new(m);

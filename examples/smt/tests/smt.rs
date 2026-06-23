@@ -18,16 +18,16 @@ fn sat() {
     let b = model.new_bvar("b").true_lit();
 
     let mut solver = Solver::new(model);
-    solver.enforce(a, []);
+    solver.enforce_scoped(a, []);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     solver.reset();
-    solver.enforce(implies(a, b), []);
+    solver.enforce_scoped(implies(a, b), []);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
-    solver.enforce(!b, []);
+    solver.enforce_scoped(!b, []);
 
     assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
@@ -42,7 +42,9 @@ fn diff_logic() {
     let constraints = vec![lt(a, b), lt(b, c), lt(c, a)];
 
     let mut solver = Solver::new(model);
-    solver.enforce_all(constraints, []);
+    for c in constraints {
+        solver.enforce(c);
+    }
     assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
 
@@ -53,12 +55,12 @@ fn minimize() {
     let b = model.new_ivar(0, 10, "b");
     let c = model.new_ivar(0, 10, "c");
 
-    model.enforce(lt(a, b), []);
-    model.enforce(lt(b, c), []);
-    model.enforce(lt(a, c), []);
+    model.enforce(lt(a, b));
+    model.enforce(lt(b, c));
+    model.enforce(lt(a, c));
     let x = model.reify(geq(b, 6));
     let y = model.reify(geq(b, 8));
-    model.enforce(or([x, y]), []);
+    model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
@@ -77,7 +79,7 @@ fn minimize_small() {
     let x = model.reify(geq(a, 6));
     let y = model.reify(geq(a, 8));
 
-    model.enforce(or([x, y]), []);
+    model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
@@ -121,7 +123,9 @@ fn int_bounds() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.enforce_all(constraints, []);
+    for c in constraints {
+        solver.enforce(c);
+    }
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     let check_dom = |v, lb, ub| {
         assert_eq!(solver.model.bounds(v), (lb, ub));
@@ -160,10 +164,10 @@ fn bools_as_ints() {
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.bounds(ia), (0, 1));
 
-    solver.enforce(a.true_lit(), []);
-    solver.enforce(b.false_lit(), []);
-    solver.enforce(geq(ic, 1), []);
-    solver.enforce(leq(id, 0), []);
+    solver.enforce_scoped(a.true_lit(), []);
+    solver.enforce_scoped(b.false_lit(), []);
+    solver.enforce_scoped(geq(ic, 1), []);
+    solver.enforce_scoped(leq(id, 0), []);
 
     solver.propagate().unwrap();
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -190,19 +194,19 @@ fn ints_and_bools() {
     assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(leq(i, ia), []);
+    solver.enforce_scoped(leq(i, ia), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.bounds(i), (-10, 1));
     assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(gt(ia, i), []);
+    solver.enforce_scoped(gt(ia, i), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.bounds(i), (-10, 0));
     assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(geq(i, 0), []);
+    solver.enforce_scoped(geq(i, 0), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.bounds(i), (0, 0));
     assert_eq!(solver.model.bounds(ia), (1, 1));
@@ -219,7 +223,7 @@ fn test_multiplication() {
 
     let constraint = eq_mul(a, b, c);
 
-    model.enforce(constraint, []);
+    model.enforce(constraint);
     let mut solver = Solver::new(model);
 
     println!("a = b * c");
@@ -256,7 +260,7 @@ fn optional_hierarchy() {
 
     for (&sub_var, &sub_scope) in vars.iter().zip(scopes.iter()) {
         // if present, must be equal to i
-        model.enforce(eq(i, sub_var), [sub_scope]);
+        model.enforce_scoped(eq(i, sub_var), [sub_scope]);
     }
 
     let mut solver = Solver::new(model);
@@ -521,7 +525,7 @@ fn test_alternative_ints() {
         .collect_vec();
 
     let alt = Alternative::new(a, ais.clone());
-    model.enforce(alt, []);
+    model.enforce(alt);
 
     let tests = vec![
         Test::new(&[a.leq(3)], &[ais[0].leq(3), ais[1].leq(3)]),
@@ -556,8 +560,8 @@ fn test_max() {
     let max = model.new_ivar(0, 100, "max");
     let min = model.new_ivar(0, 100, "min");
 
-    model.enforce(EqMax::new(max, ais.clone()), []);
-    model.enforce(EqMin::new(min, ais), []);
+    model.enforce(EqMax::new(max, ais.clone()));
+    model.enforce(EqMin::new(min, ais));
 
     let tests = vec![
         Test::new(&[], &[min.geq(1), max.leq(9)]),

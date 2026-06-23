@@ -30,7 +30,7 @@ impl Lt {
 
 impl<Lbl: Label> Post<Lbl> for Lt {
     fn post(&self, model: &mut Model<Lbl>) {
-        model.enforce(lt(self.a, self.b), []);
+        model.enforce(lt(self.a, self.b));
     }
 }
 

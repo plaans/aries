@@ -73,3 +73,18 @@ impl Boundable for Var {
         (*self).geq(lb)
     }
 }
+
+impl std::ops::Neg for Var {
+    type Output = SignedVar;
+
+    fn neg(self) -> Self::Output {
+        SignedVar::minus(self)
+    }
+}
+impl std::ops::Neg for &Var {
+    type Output = SignedVar;
+
+    fn neg(self) -> Self::Output {
+        SignedVar::minus(*self)
+    }
+}

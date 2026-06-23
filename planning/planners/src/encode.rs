@@ -17,7 +17,6 @@ use aries_planning::legacy::{eq, neq};
 use aries_solver::core::state::Conflict;
 use aries_solver::core::views::Term;
 use aries_solver::core::*;
-use aries_solver::lang::mul::EqVarMulLit;
 use aries_solver::lang::{expr::*, Var};
 use aries_solver::model::extensions::DomainsExt;
 use aries_solver::prelude::*;
@@ -345,7 +344,7 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, encoding
             if let &[single] = clause.as_slice() {
                 model.state.add_implication(ch.chronicle.presence, single);
             } else {
-                model.enforce(or(clause), [ch.chronicle.presence]);
+                model.enforce_scoped(or(clause), [ch.chronicle.presence]);
             }
         }
 
@@ -365,13 +364,13 @@ fn add_decomposition_constraints(pb: &FiniteProblem, model: &mut Model, encoding
 fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
     // if t is present then at least one supporter is present
     let clause: Vec<Lit> = supporters.iter().map(|s| s.presence).collect();
-    model.enforce(or(clause), [t.presence]);
+    model.enforce_scoped(or(clause), [t.presence]);
 
     // if a supporter is present, then all others are absent
     for (i, s1) in supporters.iter().enumerate() {
         for (j, s2) in supporters.iter().enumerate() {
             if i != j {
-                model.enforce(or([!s1.presence, !s2.presence]), [t.presence]);
+                model.enforce_scoped(or([!s1.presence, !s2.presence]), [t.presence]);
             }
         }
     }
@@ -381,16 +380,16 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
         if RELAXED_TEMPORAL_CONSTRAINT.get() {
             // Relaxed constraints in the encoding for chronicles coming from an acting system,
             // where the interval of a method is contained in the interval of the task it refines.
-            model.enforce(f_leq(t.start, s.start), [s.presence, t.presence]);
-            model.enforce(f_leq(s.end, t.end), [s.presence, t.presence]);
+            model.enforce_scoped(f_leq(t.start, s.start), [s.presence, t.presence]);
+            model.enforce_scoped(f_leq(s.end, t.end), [s.presence, t.presence]);
         } else {
-            model.enforce(eq(s.start, t.start), [s.presence, t.presence]);
-            model.enforce(eq(s.end, t.end), [s.presence, t.presence]);
+            model.enforce_scoped(eq(s.start, t.start), [s.presence, t.presence]);
+            model.enforce_scoped(eq(s.end, t.end), [s.presence, t.presence]);
         }
 
         assert_eq!(s.task.len(), t.task.len());
         for (a, b) in s.task.iter().zip(t.task.iter()) {
-            model.enforce(eq(*a, *b), [s.presence, t.presence])
+            model.enforce_scoped(eq(*a, *b), [s.presence, t.presence])
         }
     }
 }
@@ -418,8 +417,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
             // make the sum of the action costs equal a `plan_length` variable.
             let plan_length = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            model.enforce(action_costs.clone().leq(plan_length), []);
-            model.enforce(action_costs.geq(plan_length), []);
+            model.enforce(action_costs.clone().leq(plan_length));
+            model.enforce(action_costs.geq(plan_length));
             // plan length is the metric that should be minimized.
             plan_length.into()
         }
@@ -440,8 +439,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
             // make the sum of the action costs equal a `plan_cost` variable.
             let plan_cost = model.new_ivar(0, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
-            model.enforce(action_costs.clone().leq(plan_cost), []);
-            model.enforce(action_costs.geq(plan_cost), []);
+            model.enforce(action_costs.clone().leq(plan_cost));
+            model.enforce(action_costs.geq(plan_cost));
             // plan cost is the metric that should be minimized.
             plan_cost.into()
         }
@@ -452,8 +451,8 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
             // to_maximize = -to_minimize
             let to_minimize = model.new_ivar(INT_CST_MIN, INT_CST_MAX, VarLabel(Container::Base, VarType::Cost));
             let sum = LinearSum::zero() + to_maximize + to_minimize;
-            model.enforce(sum.clone().leq(0), []);
-            model.enforce(sum.geq(0), []);
+            model.enforce(sum.clone().leq(0));
+            model.enforce(sum.geq(0));
             to_minimize.into()
         }
     }
@@ -509,7 +508,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     // for each condition, make sure the end is after the start
     for &(_, prez_cond, cond) in &conds {
-        solver.enforce(f_leq(cond.start, cond.end), [prez_cond]);
+        solver.enforce_scoped(f_leq(cond.start, cond.end), [prez_cond]);
     }
 
     solver.propagate()?;
@@ -535,16 +534,16 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             use ChronicleKind::*;
             // chronicle finishes before the horizon and has a non negative duration
             if matches!(ch.chronicle.kind, Action | DurativeAction) {
-                solver.enforce(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
+                solver.enforce_scoped(f_leq(ch.chronicle.end, pb.makespan_ub), [prez]);
             }
             match ch.chronicle.kind {
                 Problem | Action | DurativeAction => {
-                    solver.enforce(f_leq(ch.chronicle.start, ch.chronicle.end), [prez])
+                    solver.enforce_scoped(f_leq(ch.chronicle.start, ch.chronicle.end), [prez])
                 }
                 Method => {
                     // Minimum length of a method is -EPSILON (possible if it does not introduce any actions, directly or indirectly).
                     //  This is to ensure that, if a method is empty, the decomposed task can have a -EPSILON duration
-                    solver.enforce(f_leq(ch.chronicle.start - FAtom::EPSILON, ch.chronicle.end), [prez])
+                    solver.enforce_scoped(f_leq(ch.chronicle.start - FAtom::EPSILON, ch.chronicle.end), [prez])
                 }
             }
 
@@ -555,9 +554,9 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 // A task network constraint `t1 < t2` is translated to `t1.end + epsilon <= t2.start`.
                 // When `t1` is a no-op and set to its minimal duration, it only requires `t1.start <= t2.start`, meaning that
                 // `t1` does not reserve any time
-                solver.enforce(f_leq(subtask.start - FAtom::EPSILON, subtask.end), [prez]);
-                solver.enforce(f_leq(ch.chronicle.start, subtask.start), [prez]);
-                solver.enforce(f_leq(subtask.end, ch.chronicle.end), [prez]);
+                solver.enforce_scoped(f_leq(subtask.start - FAtom::EPSILON, subtask.end), [prez]);
+                solver.enforce_scoped(f_leq(ch.chronicle.start, subtask.start), [prez]);
+                solver.enforce_scoped(f_leq(subtask.end, ch.chronicle.end), [prez]);
             }
         }
         add_decomposition_constraints(pb, &mut solver.model, &mut encoding);
@@ -575,14 +574,14 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
 
     // for each effect, make sure the time points are ordered and that nothing changes after the horizon
     for &(eff_id, prez_eff, eff) in &effs {
-        solver.enforce(f_leq(eff.transition_start, eff.transition_end), [prez_eff]);
-        solver.enforce(f_leq(eff.transition_end, pb.horizon), [prez_eff]);
+        solver.enforce_scoped(f_leq(eff.transition_start, eff.transition_end), [prez_eff]);
+        solver.enforce_scoped(f_leq(eff.transition_end, pb.horizon), [prez_eff]);
         if eff_mutex_ends.contains_key(&eff_id) {
             debug_assert!(is_assignment(eff));
             let mutex_end = eff_mutex_ends[&eff_id];
-            solver.enforce(f_leq(eff.transition_end, mutex_end), [prez_eff]);
+            solver.enforce_scoped(f_leq(eff.transition_end, mutex_end), [prez_eff]);
             for &min_mutex_end in &eff.min_mutex_end {
-                solver.enforce(f_leq(min_mutex_end, mutex_end), [prez_eff])
+                solver.enforce_scoped(f_leq(min_mutex_end, mutex_end), [prez_eff])
             }
         }
     }
@@ -631,7 +630,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 clause.push(solver.half_reify(f_leq(eff_mutex_ends[&i], e2.transition_start)));
 
                 // add coherence constraint
-                solver.enforce(or(clause.as_slice()), [p1, p2]);
+                solver.enforce_scoped(or(clause.as_slice()), [p1, p2]);
                 num_coherence_constraints += 1;
             }
         }
@@ -706,7 +705,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
             }
 
             // enforce necessary conditions for condition's support
-            solver.enforce(or(supported), [prez_cond]);
+            solver.enforce_scoped(or(supported), [prez_cond]);
         }
         tracing::debug!(%num_support_constraints);
 
@@ -765,7 +764,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                         non_overlapping.push(solver.half_reify(f_lt(cond.end, eff.transition_start)));
                         non_overlapping.push(solver.half_reify(f_leq(eff.transition_end, cond.start)));
 
-                        solver.enforce(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
+                        solver.enforce_scoped(or(non_overlapping), [act1.chronicle.presence, act2.chronicle.presence]);
                         num_mutex_constraints += 1;
                     }
                 }

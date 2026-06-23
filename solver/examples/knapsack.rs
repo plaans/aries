@@ -18,7 +18,7 @@ fn solve(items: &[(IntCst, IntCst)], capacity: IntCst) -> Option<IntCst> {
 
     let total_value = total_value.reify([], &mut model); // TODO: reify on model
 
-    model.enforce(total_weight.leq(capacity), []);
+    model.enforce(total_weight.leq(capacity));
 
     let mut solver = Solver::new(model);
 

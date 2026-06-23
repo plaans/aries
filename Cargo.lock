@@ -282,6 +282,7 @@ dependencies = [
  "num-integer",
  "num-rational",
  "pathfinding",
+ "rand",
  "regex",
  "smallvec",
  "streaming-iterator",

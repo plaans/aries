@@ -48,8 +48,8 @@ impl ArrayElement {
 impl<Lbl: Label> Post<Lbl> for ArrayElement {
     fn post(&self, model: &mut Model<Lbl>) {
         // 0 <= i < len(a)
-        model.enforce(geq(self.i, 0), []);
-        model.enforce(lt(self.i, self.a.len() as IntCst), []);
+        model.enforce(geq(self.i, 0));
+        model.enforce(lt(self.i, self.a.len() as IntCst));
 
         // i = j -> b = a[j]
         for (j, a_j) in self.a.iter().enumerate() {
@@ -57,7 +57,7 @@ impl<Lbl: Label> Post<Lbl> for ArrayElement {
             let b_eq_a_j = BVar::new(model.state.new_var(0, 1));
             model.bind(eq(self.i, j as IntCst), i_eq_j.true_lit());
             model.bind(eq(self.b, *a_j), b_eq_a_j.true_lit());
-            model.enforce(implies(i_eq_j, b_eq_a_j), []);
+            model.enforce(implies(i_eq_j, b_eq_a_j));
         }
     }
 }

@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_explanations() {
-        use crate::reasoners::cp::propagator::test::utils::*;
+        use crate::reasoners::cp::testing::*;
         for (d, mut s) in gen_problems() {
             println!("\nConstraint: {s:?}");
             test_explanations(&d, &mut s, true);

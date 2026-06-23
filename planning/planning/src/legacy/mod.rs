@@ -25,6 +25,7 @@ pub use variables::*;
 
 pub(crate) mod id_map;
 pub mod input;
+pub mod mul_lit;
 pub mod utils;
 
 pub use aries_solver::lang::ConversionError;

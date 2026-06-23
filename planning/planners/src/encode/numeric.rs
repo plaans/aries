@@ -2,8 +2,10 @@ use std::collections::HashMap;
 
 use crate::encode::*;
 use crate::encoding::*;
+use crate::Model;
 use crate::Solver;
 use aries_planning::chronicles::*;
+use aries_planning::legacy::mul_lit::EqVarMulLit;
 use aries_planning::legacy::*;
 use aries_planning::legacy::{eq, geq, leq};
 use aries_solver::backtrack::Backtrack;
@@ -111,8 +113,8 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> Var {
         let var = model.new_ivar(0, 1, lbl);
         let eq0 = var.leq(0);
         let eq1 = var.geq(1);
-        model.enforce(implies(lit, eq1), []);
-        model.enforce(implies(!lit, eq0), []);
+        model.enforce(implies(lit, eq1));
+        model.enforce(implies(!lit, eq0));
         var
     }
 }
@@ -138,7 +140,7 @@ pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
             .unwrap_or(&(Container::Base / VarType::Reification))
             .clone();
         let var = model.new_ivar(min(lb, 0), max(ub, 0), lbl);
-        model.enforce(EqVarMulLit::new(var, atom.var, lit), []);
+        model.enforce(EqVarMulLit::new(var, atom.var, lit));
         // Recursive call to handle the constant part of the atom
         iatom_mul_lit(model, atom.shift.into(), lit) + var
     }
@@ -216,11 +218,11 @@ fn add_assignment_coherence_constraints(
             unreachable!()
         };
         if let Atom::Int(val) = val {
-            solver.enforce(geq(val, lb), [prez]);
-            solver.enforce(leq(val, ub), [prez]);
+            solver.enforce_scoped(geq(val, lb), [prez]);
+            solver.enforce_scoped(leq(val, ub), [prez]);
         } else if let Atom::Fixed(val) = val {
-            solver.enforce(f_geq(val, FAtom::new((lb * val.denom).into(), val.denom)), [prez]);
-            solver.enforce(f_leq(val, FAtom::new((ub * val.denom).into(), val.denom)), [prez]);
+            solver.enforce_scoped(f_geq(val, FAtom::new((lb * val.denom).into(), val.denom)), [prez]);
+            solver.enforce_scoped(f_leq(val, FAtom::new((ub * val.denom).into(), val.denom)), [prez]);
         } else {
             unreachable!();
         }
@@ -384,8 +386,8 @@ fn add_condition_support_constraints(
                 }
             }
             let cond_val_sum = linear_sum_mul_lit(&mut solver.model, cond_val_sum, supported_by);
-            solver.model.enforce(cond_val_sum.clone().leq(0), [*cond_prez]);
-            solver.model.enforce(cond_val_sum.clone().geq(0), [*cond_prez]);
+            solver.model.enforce_scoped(cond_val_sum.clone().leq(0), [*cond_prez]);
+            solver.model.enforce_scoped(cond_val_sum.clone().geq(0), [*cond_prez]);
 
             // add the support literal to the support clause
             supported.push(supported_by);
@@ -397,7 +399,7 @@ fn add_condition_support_constraints(
             encoding.tag(supported_by_inc, Tag::Support(*cond_id, inc_id));
         }
 
-        solver.enforce(or(supported), [*cond_prez]);
+        solver.enforce_scoped(or(supported), [*cond_prez]);
     }
 
     tracing::debug!(%num_numeric_support_constraints);
@@ -850,8 +852,8 @@ fn add_borrow_pattern_constraints(
         }
 
         if set_constraint {
-            solver.model.enforce(sum.clone().leq(ub), [p1.presence]);
-            solver.model.enforce(sum.clone().geq(lb), [p1.presence]);
+            solver.model.enforce_scoped(sum.clone().leq(ub), [p1.presence]);
+            solver.model.enforce_scoped(sum.clone().geq(lb), [p1.presence]);
             num_borrow_patterns_contraints += 1;
         }
     }

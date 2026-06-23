@@ -98,6 +98,35 @@ pub trait Boundable {
     fn geq(&self, lb: Self::Value) -> Lit;
 }
 
+/// A [`Boundable`] variable with values of type [`IntCst`].
+///
+/// The trait provides additional convenience methods for this common case.
+pub trait IntBoundable: Boundable<Value = IntCst> {
+    /// Literal equivalent to a strict upper bound on the variable.
+    #[inline]
+    fn lt(&self, ub: Self::Value) -> Lit {
+        self.leq(ub - 1)
+    }
+
+    /// Literal equivalent to a strict lower bound on the variable.
+    #[inline]
+    fn gt(&self, lb: Self::Value) -> Lit {
+        self.geq(lb + 1)
+    }
+
+    /// Signed variable that would appear in the [`Lit`] when requesting an upper bound.
+    fn upper_bounding_signed_var(&self) -> SignedVar {
+        self.leq(0).svar()
+    }
+
+    /// Signed variable that would appear in the [`Lit`] when requesting an lower bound.
+    fn lower_bounding_signed_var(&self) -> SignedVar {
+        self.geq(0).svar()
+    }
+}
+
+impl<T> IntBoundable for T where T: Boundable<Value = IntCst> {}
+
 impl Boundable for SignedVar {
     type Value = IntCst;
 

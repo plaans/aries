@@ -18,19 +18,19 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
         for col in 0..9 {
             let cell_value = initial_grid[line][col];
             if cell_value != 0 {
-                model.enforce(eq(variables_grid[line][col], cell_value as IntCst), []);
+                model.enforce(eq(variables_grid[line][col], cell_value as IntCst));
             }
         }
     }
     // enforce that all variables on a line are different
     for line in 0..9 {
         let vars_on_line: Vec<Var> = (0..9).map(|col| variables_grid[line][col]).collect();
-        enforce_all_different(&mut model, vars_on_line);
+        model.enforce(all_different(vars_on_line));
     }
     // enforce that all variables on a column are different
     for col in 0..9 {
         let vars_on_column: Vec<Var> = (0..9).map(|line| variables_grid[line][col]).collect();
-        enforce_all_different(&mut model, vars_on_column);
+        model.enforce(all_different(vars_on_column));
     }
 
     // enforce that all variables on a 3x3 square are different
@@ -45,7 +45,7 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
                 vars_in_square.push(variables_grid[line][col]);
             }
         }
-        enforce_all_different(&mut model, vars_in_square);
+        model.enforce(all_different(vars_in_square));
     }
 
     // Create the solver and search for a solution
@@ -78,15 +78,6 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
         }
         Err(_) => {
             unreachable!("Without search limit, should never terminate without a result.");
-        }
-    }
-}
-
-/// Helper function that enforces that all variables are different in the given model.
-fn enforce_all_different(model: &mut Model, vars: Vec<Var>) {
-    for (i, x) in vars.iter().enumerate() {
-        for y in &vars[i + 1..] {
-            model.enforce(neq(*x, *y), []);
         }
     }
 }

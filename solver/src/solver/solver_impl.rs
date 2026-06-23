@@ -4,6 +4,7 @@ use crate::core::literals::{Disjunction, Lits};
 use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
+use crate::lang::BoolExpr;
 use crate::lang::expr::geq;
 use crate::model::extensions::{DisjunctionExt, DomainsExt};
 use crate::model::{Constraint, Label, Model};
@@ -50,9 +51,9 @@ macro_rules! log_dec {
 /// Represents an absolute search limit
 #[derive(Clone, Copy, Debug)]
 pub enum SearchLimit {
-    /// Absolute time before which the search must be concluded
+    /// Absolute time before which the search must be concluded.
     Deadline(Instant),
-    /// Number of decisions before which search must be concluded
+    /// Number of decisions before which search must be concluded.
     ///
     /// *Note:* this references the number of decisions in the stats and might not be 0 if the solver was already used
     NumDecisions(u64),
@@ -65,11 +66,18 @@ pub enum SearchLimit {
 }
 
 impl SearchLimit {
-    /// Maximum allowed duration *from now*  that the search is allowed to proceed.
+    /// Maximum allowed duration *from now* that the search is allowed to proceed.
     ///
     /// This is immediately converted into a deadline from the current time.
     pub fn duration(dur: Duration) -> Self {
         Self::Deadline(Instant::now() + dur)
+    }
+
+    /// Maximum allowed duration in seconds *from now* that the search is allowed to proceed.
+    ///
+    /// This is immediately converted into a deadline from the current time.
+    pub fn duration_secs(dur: impl Into<f64>) -> Self {
+        Self::duration(Duration::from_secs_f64(dur.into()))
     }
 }
 
@@ -144,17 +152,18 @@ impl<Lbl: Label> Solver<Lbl> {
         self.sync.set_output(output);
     }
 
-    pub fn enforce<Expr: Reifiable<Lbl>>(&mut self, bool_expr: Expr, scope: impl IntoIterator<Item = Lit>) {
+    pub fn enforce<Expr: BoolExpr<Model<Lbl>>>(&mut self, bool_expr: Expr) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce(bool_expr, scope);
+        self.model.enforce(bool_expr);
     }
-    pub fn enforce_all<Expr: Reifiable<Lbl>>(
+
+    pub fn enforce_scoped<Expr: BoolExpr<Model<Lbl>>>(
         &mut self,
-        bools: impl IntoIterator<Item = Expr>,
-        scope: impl IntoIterator<Item = Lit> + Clone,
+        bool_expr: Expr,
+        scope: impl IntoIterator<Item = Lit>,
     ) {
         assert_eq!(self.decision_level, DecLvl::ROOT);
-        self.model.enforce_all(bools, scope);
+        self.model.enforce_scoped(bool_expr, scope);
     }
 
     /// Interns the given expression and returns an equivalent literal.
@@ -413,7 +422,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     elements: a
                         .alternatives
                         .iter()
-                        .map(|alt| MaxElem::new(SignedVar::plus(alt.var), alt.cst, prez(alt.var)))
+                        .map(|alt| MaxElem::new(alt.var + alt.cst, prez(alt.var)))
                         .collect_vec(),
                 });
 
@@ -427,7 +436,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     elements: a
                         .alternatives
                         .iter()
-                        .map(|alt| MaxElem::new(SignedVar::minus(alt.var), alt.cst, prez(alt.var)))
+                        .map(|alt| MaxElem::new(-alt.var + alt.cst, prez(alt.var)))
                         .collect_vec(),
                 });
                 Ok(())
@@ -464,24 +473,10 @@ impl<Lbl: Label> Solver<Lbl> {
                     elements: a
                         .rhs
                         .iter()
-                        .map(|elem| MaxElem::new(elem.var, elem.cst, prez(elem.var)))
+                        .map(|elem| MaxElem::new(elem.var + elem.cst, prez(elem.var)))
                         .collect_vec(),
                 });
 
-                Ok(())
-            }
-            ReifExpr::EqMul(eq_mul) => {
-                self.reasoners
-                    .cp
-                    .add_half_reified_mul_constraint(eq_mul, enabler, &self.model.state);
-                Ok(())
-            }
-            ReifExpr::EqVarMulLit(mul) => {
-                assert!(
-                    self.model.entails(enabler),
-                    "Unsupported half reified eqvarmullit constraints."
-                );
-                self.reasoners.cp.add_eq_var_mul_lit_constraint(mul);
                 Ok(())
             }
         }

@@ -15,9 +15,11 @@ use crate::{
 ///
 /// TODO: the name `Store` is mostly historical and should be change to align it with other views.
 pub trait Store: Dom {
-    fn new_literal(&mut self, presence: Lit) -> Lit;
+    fn new_bool_var(&mut self) -> Lit;
+    fn new_optional_bool_var(&mut self, presence: Lit) -> Lit;
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var;
     fn get_implicant(&mut self, e: ReifExpr) -> Lit;
+    fn reify(&mut self, e: ReifExpr) -> Lit;
     fn add_implies(&mut self, l: Lit, e: ReifExpr);
 
     /// Given a set of scope literals, return a (possibly new) scope literal that
@@ -79,9 +81,9 @@ pub trait Store: Dom {
                     vec![]
                 }
 
-                fn satisfied(&self, dom: &Domains) -> bool {
+                fn satisfied(&self, sol: &Solution) -> bool {
                     // the extract solution step is unnecessarily costly (copying the domains of each assertion to validate)
-                    self.cond.as_ref().evaluate(&dom.extract_solution()) != Some(false)
+                    self.cond.as_ref().evaluate(sol) != Some(false)
                 }
             }
             let debug = format!("{condition:?}");
@@ -120,7 +122,10 @@ impl<T> Store for T
 where
     T: ModelWrapper + Dom,
 {
-    fn new_literal(&mut self, presence: Lit) -> Lit {
+    fn new_bool_var(&mut self) -> Lit {
+        self.get_model_mut().new_variable(0, 1).geq(1)
+    }
+    fn new_optional_bool_var(&mut self, presence: Lit) -> Lit {
         self.get_model_mut().new_optional_variable(0, 1, presence).geq(1)
     }
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
@@ -128,6 +133,9 @@ where
     }
     fn get_implicant(&mut self, e: ReifExpr) -> Lit {
         self.get_model_mut().half_reify(e.clone())
+    }
+    fn reify(&mut self, e: ReifExpr) -> Lit {
+        self.get_model_mut().reify_core(e, false)
     }
 
     fn add_implies(&mut self, l: Lit, e: ReifExpr) {
