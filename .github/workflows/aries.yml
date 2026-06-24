@@ -5,6 +5,7 @@ on: push
 env:
   CARGO_TERM_COLOR: always
   MZN_SOLVER_PATH: ${{github.workspace}}/aries/aries_fzn/share
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # work around to allow node20 to keep marvinpinto/action-automatic-releases functional until we replace it
 
 jobs:
   unit-tests:
