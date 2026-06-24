@@ -296,6 +296,18 @@ impl Problem {
             solver,
         })
     }
+
+    /// Create a solver for the problem and wrap it in a FeasbilityChecker
+    ///
+    /// # Errors
+    ///
+    /// Will return an error, if the problem is trivially infeasible:
+    /// - min > max for a the domain of a var
+    /// - contradiction in a constraint free of any var: 0.0 <= -1.0 for example
+    pub fn create_feasability_checker(&self) -> Result<FeasabilityChecker, Error> {
+        let solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
+        Ok(FeasabilityChecker { solver })
+    }
 }
 
 /// A solution of a problem: optimal objective function value and variable values.
@@ -384,6 +396,34 @@ impl Solution {
         Ok(self)
     }
 
+    /// Fix the upper bound of a variable to the specified value and return the solution to the updated problem.
+    ///
+    /// This method will consume the solution and not return it in case of error.
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem becomes infeasible with the additional constraint.
+    pub fn set_ub_var(mut self, var: Variable, val: f64) -> Result<Self, Error> {
+        assert!(var.0 < self.num_vars);
+        self.solver.set_ub_var(var.0, val)?;
+        self.solver.initial_solve()?;
+        Ok(self)
+    }
+
+    /// Fix the upper bound of a variable to the specified value and return the solution to the updated problem.
+    ///
+    /// This method will consume the solution and not return it in case of error.
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem becomes infeasible with the additional constraint.
+    pub fn set_lb_var(mut self, var: Variable, val: f64) -> Result<Self, Error> {
+        assert!(var.0 < self.num_vars);
+        self.solver.set_lb_var(var.0, val)?;
+        self.solver.initial_solve()?;
+        Ok(self)
+    }
+
     /// If the variable was fixed with [`fix_var`](#method.fix_var) before, remove that constraint
     /// and return the solution to the updated problem and a boolean indicating if the variable was
     /// really fixed before.
@@ -454,9 +494,79 @@ impl<'a> IntoIterator for &'a Solution {
 
 pub use mps::MpsFile;
 
+/// Used to select the bound we want to modify when using set_bound
+#[derive(Clone, Copy, Debug)]
+pub enum Bound {
+    /// Lower bound
+    Lower,
+    /// Higher bound
+    Higher,
+}
+
+impl From<Bound> for ComparisonOp {
+    fn from(bound: Bound) -> ComparisonOp {
+        match bound {
+            Bound::Higher => ComparisonOp::Le,
+            Bound::Lower => ComparisonOp::Ge,
+        }
+    }
+}
+
+/// Allow us to check the faisability of a problem and modify the bounds of its variables
+#[derive(Debug)]
+pub struct FeasabilityChecker {
+    solver: Solver,
+}
+
+impl FeasabilityChecker {
+    fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) -> Result<f64, Error> {
+        let old_val_solver = match bound {
+            Bound::Lower => self.solver.set_lb_var(var.0, val)?,
+            Bound::Higher => self.solver.set_ub_var(var.0, val)?,
+        };
+
+        Ok(old_val_solver)
+    }
+
+    // TODO: modify the way we treat old_val, read it directly from the solver?
+    fn set_bound_restrict(
+        &mut self,
+        var: Variable,
+        bound: Bound,
+        new_val: f64,
+        old_val: f64,
+    ) -> Result<Option<f64>, Error> {
+        let mut old_val_solver = None;
+
+        match bound {
+            Bound::Lower => {
+                if new_val > old_val {
+                    old_val_solver = Some(self.solver.set_lb_var(var.0, new_val)?);
+                }
+            }
+            Bound::Higher => {
+                if new_val < old_val {
+                    old_val_solver = Some(self.solver.set_ub_var(var.0, new_val)?);
+                }
+            }
+        };
+
+        Ok(old_val_solver)
+    }
+
+    fn check_feasability(&mut self) -> Result<(), Error> {
+        self.solver.solve_feasability()?;
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
     use super::*;
+
+    use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IteratorRandom};
 
     #[test]
     fn optimize() {
@@ -633,5 +743,271 @@ mod tests {
         assert!(f64::abs(sol[v1] - 1.0) < 1e-8);
         assert_eq!(sol[v2], 1.0);
         assert_eq!(sol.objective(), -1.0);
+    }
+
+    #[test]
+    fn set_ub_var() {
+        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        let v1 = problem.add_var(1.0, (0.0, 3.0));
+        let v2 = problem.add_var(2.0, (0.0, 3.0));
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
+
+        let orig_sol = problem.solve().unwrap();
+
+        {
+            let mut sol = orig_sol.clone().set_ub_var(v1, 0.5).unwrap();
+            assert_eq!(sol[v1], 0.5);
+            assert_eq!(sol[v2], 3.0);
+            assert_eq!(sol.objective(), 6.5);
+
+            sol = sol.set_ub_var(v1, 3.0).unwrap();
+            assert_eq!(sol[v1], 1.0);
+            assert_eq!(sol[v2], 3.0);
+            assert_eq!(sol.objective(), 7.0);
+        }
+
+        {
+            let mut sol = orig_sol.clone().set_ub_var(v2, 2.5).unwrap();
+            assert_eq!(sol[v1], 1.5);
+            assert_eq!(sol[v2], 2.5);
+            assert_eq!(sol.objective(), 6.5);
+
+            sol = sol.set_ub_var(v2, 3.0).unwrap();
+            assert_eq!(sol[v1], 1.0);
+            assert_eq!(sol[v2], 3.0);
+            assert_eq!(sol.objective(), 7.0);
+        }
+    }
+
+    #[test]
+    fn set_lb_var() {
+        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        let v1 = problem.add_var(1.0, (0.0, 3.0));
+        let v2 = problem.add_var(2.0, (0.0, 3.0));
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
+
+        let orig_sol = problem.solve().unwrap();
+
+        {
+            let mut sol = orig_sol.clone().set_lb_var(v1, 1.5).unwrap();
+            assert_eq!(sol[v1], 1.5);
+            assert_eq!(sol[v2], 2.5);
+            assert_eq!(sol.objective(), 6.5);
+
+            sol = sol.set_lb_var(v1, 0.0).unwrap();
+            assert_eq!(sol[v1], 1.0);
+            assert_eq!(sol[v2], 3.0);
+            assert_eq!(sol.objective(), 7.0);
+
+            assert!(sol.set_lb_var(v2, 4.0).is_err());
+        }
+    }
+
+    #[test]
+    fn check_feasability() {
+        {
+            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let v1 = problem.add_var(1.0, (0.0, 3.0));
+            let v2 = problem.add_var(2.0, (0.0, 3.0));
+            problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+            problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
+
+            let mut feas_checker = problem.create_feasability_checker().unwrap();
+
+            assert!(feas_checker.check_feasability().is_ok());
+        }
+
+        {
+            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let v1 = problem.add_var(1.0, (0.0, 3.0));
+            let v2 = problem.add_var(2.0, (0.0, 3.0));
+            problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+            problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 5.0);
+
+            let mut feas_checker = problem.create_feasability_checker().unwrap();
+
+            assert!(feas_checker.check_feasability().is_err());
+        }
+    }
+
+    #[test]
+    fn set_bound() {
+        {
+            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let v1 = problem.add_var(1.0, (0.0, 3.0));
+            let v2 = problem.add_var(2.0, (0.0, 3.0));
+            problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+            problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
+
+            let mut feas_checker = problem.create_feasability_checker().unwrap();
+
+            assert!(feas_checker.check_feasability().is_ok());
+
+            let r1 = feas_checker.set_bound(v2, &Bound::Lower, 2.0);
+            let r2 = feas_checker.set_bound(v1, &Bound::Lower, 4.0);
+
+            assert!(feas_checker.check_feasability().is_err() || r1.is_err() || r2.is_err());
+
+            let _ = feas_checker.set_bound(v1, &Bound::Lower, 2.0);
+
+            assert!(feas_checker.check_feasability().is_ok());
+        }
+    }
+
+    struct Lit {
+        bound: Bound,
+        var: Variable,
+        val: f64,
+    }
+
+    #[test]
+    fn fixed_problem() {
+        let mut problem = Problem::new(OptimizationDirection::Maximize);
+
+        let x_vars: Vec<Variable> = (0..10).map(|_| problem.add_var(0.0, (0.0, 10.0))).collect();
+
+        let mut lit_vec = Vec::new();
+
+        for i in 0..10 {
+            let s = problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY));
+            let x = if i < 9 { x_vars[i] } else { x_vars[0] };
+
+            problem.add_constraint([(s, 1.0), (x, -1.0)], ComparisonOp::Eq, 0.0);
+
+            let (bound, val) = if i < 9 {
+                if i % 2 == 0 {
+                    (Bound::Lower, 2.0)
+                } else {
+                    (Bound::Higher, 8.0)
+                }
+            } else {
+                // Last constraint intentionally makes x0 infeasible.
+                (Bound::Higher, 1.0)
+            };
+
+            lit_vec.push(Lit { bound, var: s, val });
+        }
+
+        test_incremental_constraints(problem, lit_vec, false);
+    }
+
+    #[test]
+    fn test_get_nb_x() {
+        let mut rng = SmallRng::seed_from_u64(1);
+
+        let n = 1000;
+
+        let mut mean = 0.0;
+        for _ in 0..n {
+            mean += get_nb_x(0.42, &mut rng, 100) as f64;
+        }
+
+        mean /= n as f64;
+
+        println!("Mean: {mean}");
+    }
+
+    #[test]
+    fn rand_problems() {
+        let mut rng = SmallRng::seed_from_u64(1);
+
+        let n = 100;
+
+        for _ in 0..n {
+            let (problem, lit_vec) = gen_problem(50, 100, -10.0, 10.0, 0.05, &mut rng);
+
+            test_incremental_constraints(problem, lit_vec, true);
+        }
+    }
+
+    fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
+        let k = 1.0 / sparse_proportion - 1.0;
+
+        let nb_x_float = (nb_var - 1) as f32 * rng.r#gen::<f32>().powf(k); // we have a f32 between in the range [0.0, nb_var - 1)
+
+        1 + nb_x_float as usize
+    }
+
+    fn gen_problem(
+        nb_var: usize,
+        nb_const: usize,
+        min: f64,
+        max: f64,
+        sparse_proportion: f32,
+        rng: &mut SmallRng,
+    ) -> (Problem, Vec<Lit>) {
+        let mut problem = Problem::new(OptimizationDirection::Maximize);
+
+        let mut lit_vec = Vec::new();
+
+        let vec_var: Vec<Variable> = (0..nb_var)
+            .map(|_| problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY)))
+            .collect();
+
+        for _ in 0..nb_const {
+            let s = problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY));
+
+            let nb_x = get_nb_x(sparse_proportion, rng, nb_var);
+
+            let x_vec: Vec<Variable> = (0..nb_var)
+                .choose_multiple(rng, nb_x)
+                .iter()
+                .map(|&i| vec_var[i])
+                .collect();
+
+            let mut expr: Vec<(Variable, f64)> = x_vec.iter().map(|&x| (x, rng.gen_range(min, max))).collect();
+
+            expr.push((s, -1.0));
+
+            problem.add_constraint(expr, ComparisonOp::Eq, 0.0);
+
+            let bound = if rng.gen_bool(0.5) { Bound::Higher } else { Bound::Lower };
+
+            let val = rng.gen_range(min, max);
+
+            lit_vec.push(Lit { bound, var: s, val });
+        }
+
+        (problem, lit_vec)
+    }
+
+    fn test_incremental_constraints(problem: Problem, lit_vec: Vec<Lit>, verbose: bool) {
+        let init_feas_checker = problem.create_feasability_checker();
+
+        let init_solve = problem.solve();
+
+        if init_feas_checker.is_err() {
+            assert!(init_solve.is_err());
+            return;
+        }
+
+        let mut feas_checker = init_feas_checker.unwrap();
+
+        if init_solve.is_err() {
+            assert!(feas_checker.check_feasability().is_err());
+        }
+
+        let mut solution = init_solve.unwrap();
+
+        for (i, lit) in lit_vec.iter().enumerate() {
+            let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val); // Might need to use set bound RESTRICT
+
+            let res_check_feas = feas_checker.check_feasability();
+
+            let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
+
+            assert!(res_add_const.is_err() == res_check_feas.is_err() || res_set_bound.is_err());
+
+            if res_add_const.is_err() {
+                if verbose {
+                    println!("err after {i} constraints")
+                }
+                break;
+            }
+
+            solution = res_add_const.unwrap();
+        }
     }
 }
