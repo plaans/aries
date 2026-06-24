@@ -1,8 +1,8 @@
 use crate::{
-    helpers::{resized_view, to_dense},
-    lu::{lu_factorize, LUFactors, ScratchSpace},
-    sparse::{ScatteredVec, SparseMat, SparseVec},
     ComparisonOp, CsVec, Error,
+    helpers::{resized_view, to_dense},
+    lu::{LUFactors, ScratchSpace, lu_factorize},
+    sparse::{ScatteredVec, SparseMat, SparseVec},
 };
 
 use sprs::CompressedStorage;
@@ -371,6 +371,118 @@ impl Solver {
         }
     }
 
+    pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
+        if val < self.orig_var_mins[var] {
+            return Err(Error::Infeasible);
+        }
+
+        let old_val = self.orig_var_maxs[var];
+
+        // We set the new upper bound
+        self.orig_var_maxs[var] = val;
+
+        let col = match self.var_states[var] {
+            VarState::Basic(row) => {
+                self.basic_var_maxs[row] = val;
+
+                if self.basic_var_vals[row] <= val {
+                    self.is_dual_feasible = false;
+                    return Ok(old_val);
+                } else {
+                    self.calc_row_coeffs(row);
+                    let pivot_info = self.choose_entering_col_dual(row, val)?;
+                    self.calc_col_coeffs(pivot_info.col);
+                    self.pivot(&pivot_info);
+                    pivot_info.col
+                }
+            }
+            VarState::NonBasic(col) => {
+                if self.nb_var_vals[col] <= val {
+                    self.is_dual_feasible = false;
+
+                    // We need to check whether if we are now equal to the new upper bound
+                    let cur_val = self.nb_var_vals[col];
+                    self.nb_var_states[col].at_max = cur_val == self.orig_var_maxs[var];
+
+                    return Ok(old_val);
+                } else {
+                    self.calc_col_coeffs(col);
+
+                    let diff = val - self.nb_var_vals[col];
+                    for (r, coeff) in self.col_coeffs.iter() {
+                        self.basic_var_vals[r] -= diff * coeff;
+                    }
+                    self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
+                    self.nb_var_vals[col] = val;
+
+                    col
+                }
+            }
+        };
+
+        self.nb_var_states[col].at_max = true;
+
+        self.is_primal_feasible = false;
+
+        Ok(old_val)
+    }
+
+    pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
+        if val > self.orig_var_maxs[var] {
+            return Err(Error::Infeasible);
+        }
+
+        let old_val = self.orig_var_maxs[var];
+
+        // We set the new lower bound
+        self.orig_var_mins[var] = val;
+
+        let col = match self.var_states[var] {
+            VarState::Basic(row) => {
+                self.basic_var_mins[row] = val;
+
+                if self.basic_var_vals[row] >= val {
+                    self.is_dual_feasible = false;
+                    return Ok(old_val);
+                } else {
+                    self.calc_row_coeffs(row);
+                    let pivot_info = self.choose_entering_col_dual(row, val)?;
+                    self.calc_col_coeffs(pivot_info.col);
+                    self.pivot(&pivot_info);
+                    pivot_info.col
+                }
+            }
+            VarState::NonBasic(col) => {
+                if self.nb_var_vals[col] >= val {
+                    self.is_dual_feasible = false;
+
+                    // We need to check whether if we are now equal to the new lower bound
+                    let cur_val = self.nb_var_vals[col];
+                    self.nb_var_states[col].at_min = cur_val == self.orig_var_mins[var];
+
+                    return Ok(old_val);
+                } else {
+                    self.calc_col_coeffs(col);
+
+                    let diff = val - self.nb_var_vals[col];
+                    for (r, coeff) in self.col_coeffs.iter() {
+                        self.basic_var_vals[r] -= diff * coeff;
+                    }
+                    self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
+                    self.nb_var_vals[col] = val;
+
+                    col
+                }
+            }
+        };
+
+        self.nb_var_states[col].at_min = true;
+
+        self.is_primal_feasible = false;
+
+        Ok(old_val)
+    }
+
     pub(crate) fn fix_var(&mut self, var: usize, val: f64) -> Result<(), Error> {
         if val < self.orig_var_mins[var] || val > self.orig_var_maxs[var] {
             return Err(Error::Infeasible);
@@ -457,6 +569,14 @@ impl Solver {
 
     fn num_total_vars(&self) -> usize {
         self.num_vars + self.num_constraints()
+    }
+
+    pub(crate) fn solve_feasability(&mut self) -> Result<(), Error> {
+        if !self.is_primal_feasible {
+            self.restore_feasibility()?;
+        }
+
+        Ok(())
     }
 
     pub(crate) fn initial_solve(&mut self) -> Result<(), Error> {
@@ -733,18 +853,10 @@ impl Solver {
             // in which direction this basic var will change and select appropriate bound.
             if (entering_diff_sign && coeff < 0.0) || (!entering_diff_sign && coeff > 0.0) {
                 let max = self.basic_var_maxs[r];
-                if val < max {
-                    max - val
-                } else {
-                    0.0
-                }
+                if val < max { max - val } else { 0.0 }
             } else {
                 let min = self.basic_var_mins[r];
-                if val > min {
-                    val - min
-                } else {
-                    0.0
-                }
+                if val > min { val - min } else { 0.0 }
             }
         };
 
