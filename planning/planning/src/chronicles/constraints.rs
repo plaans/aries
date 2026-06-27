@@ -40,7 +40,7 @@ impl Constraint {
     pub fn leq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Leq,
+            tpe: ConstraintType::Leq,
             value: None,
         }
     }
@@ -54,14 +54,14 @@ impl Constraint {
     pub fn reified_leq(a: impl Into<Atom>, b: impl Into<Atom>, constraint_value: Lit) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Leq,
+            tpe: ConstraintType::Leq,
             value: Some(constraint_value),
         }
     }
     pub fn eq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Eq,
+            tpe: ConstraintType::Eq,
             value: None,
         }
     }
@@ -73,7 +73,7 @@ impl Constraint {
         } else {
             Constraint {
                 variables: vec![a.into(), b.into()],
-                tpe: Eq,
+                tpe: ConstraintType::Eq,
                 value: Some(constraint_value),
             }
         }
@@ -81,7 +81,7 @@ impl Constraint {
     pub fn neq(a: impl Into<Atom>, b: impl Into<Atom>) -> Constraint {
         Constraint {
             variables: vec![a.into(), b.into()],
-            tpe: Neq,
+            tpe: ConstraintType::Neq,
             value: None,
         }
     }
@@ -145,7 +145,12 @@ impl Substitute for ConstraintType {
                 ub: substitution.sub_linear_sum(ub),
             }),
             LinearEq(sum) => LinearEq(substitution.sub_linear_sum(sum)),
-            InTable(_) | Lt | Leq | Eq | Neq | Or => self.clone(), // no variables in those variants
+            InTable(_)
+            | ConstraintType::Lt
+            | ConstraintType::Leq
+            | ConstraintType::Eq
+            | ConstraintType::Neq
+            | ConstraintType::Or => self.clone(), // no variables in those variants
         }
     }
 }
