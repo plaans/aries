@@ -175,15 +175,21 @@ pub enum ComparisonOp {
 pub enum Error {
     /// Constrains can't simultaneously be satisfied.
     Infeasible,
+    /// Constrains can't simultaneously be satisfied and a certificate was generated
+    InfeasibleWithCertificate(Vec<f64>),
     /// The objective function is unbounded.
     Unbounded,
+    /// Floating point operations caused instability
+    Instable,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let msg = match self {
             Error::Infeasible => "problem is infeasible",
+            Error::InfeasibleWithCertificate(v) => &format!("problem is infeasible, certificate: {:?}", v),
             Error::Unbounded => "problem is unbounded",
+            Error::Instable => "problem is instable",
         };
         msg.fmt(f)
     }
@@ -307,6 +313,107 @@ impl Problem {
     pub fn create_feasability_checker(&self) -> Result<FeasabilityChecker, Error> {
         let solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
         Ok(FeasabilityChecker { solver })
+    }
+
+    /// Set a new upper/lower bound to an existing variable
+    fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) {
+        debug_assert!(var.0 < self.var_maxs.len());
+
+        match bound {
+            Bound::Upper => self.var_maxs[var.0] = val,
+            Bound::Lower => self.var_mins[var.0] = val,
+        }
+    }
+
+    fn calculate_max_expr(&self, expr: &[f64]) -> f64 {
+        debug_assert_eq!(expr.len(), self.var_maxs.len());
+
+        expr.iter()
+            .enumerate()
+            .map(|(i, &coeff)| {
+                if coeff == 0.0 {
+                    0.0
+                } else if coeff < 0.0 {
+                    self.var_mins[i] * coeff
+                } else {
+                    self.var_maxs[i] * coeff
+                }
+            })
+            .sum()
+    }
+
+    fn calculate_min_expr(&self, expr: &[f64]) -> f64 {
+        debug_assert_eq!(expr.len(), self.var_mins.len());
+
+        expr.iter()
+            .enumerate()
+            .map(|(i, &coeff)| {
+                if coeff == 0.0 {
+                    0.0
+                } else if coeff > 0.0 {
+                    self.var_mins[i] * coeff
+                } else {
+                    self.var_maxs[i] * coeff
+                }
+            })
+            .sum()
+    }
+
+    /// Verify the certificate of unsatisfiability
+    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
+        debug_assert_eq!(cert.len(), self.constraints.len());
+
+        let mut expr = vec![0.0; self.var_maxs.len()];
+
+        let mut bound = 0.0;
+
+        let mut cmp_op = ComparisonOp::Eq;
+
+        for (const_i, &coef_cert) in cert.iter().enumerate() {
+            if coef_cert == 0.0 {
+                continue;
+            }
+
+            match self.constraints[const_i].1 {
+                ComparisonOp::Le => {
+                    if coef_cert > 0.0 {
+                        cmp_op = ComparisonOp::Le;
+                    } else {
+                        cmp_op = ComparisonOp::Ge;
+                    }
+                }
+                ComparisonOp::Ge => {
+                    if coef_cert > 0.0 {
+                        cmp_op = ComparisonOp::Ge;
+                    } else {
+                        cmp_op = ComparisonOp::Le;
+                    }
+                }
+                ComparisonOp::Eq => {}
+            }
+
+            bound += coef_cert * self.constraints[const_i].2;
+
+            for (var_i, coef_var) in self.constraints[const_i].0.iter() {
+                expr[var_i] += coef_cert * coef_var;
+            }
+        }
+
+        match cmp_op {
+            ComparisonOp::Ge => {
+                let max_expr = self.calculate_max_expr(&expr);
+                max_expr < bound
+            }
+            ComparisonOp::Le => {
+                let min_expr = self.calculate_min_expr(&expr);
+                min_expr > bound
+            }
+            ComparisonOp::Eq => {
+                let min_expr = self.calculate_min_expr(&expr);
+                let max_expr = self.calculate_max_expr(&expr);
+                max_expr < bound || min_expr > bound
+            }
+        }
     }
 }
 
@@ -500,13 +607,13 @@ pub enum Bound {
     /// Lower bound
     Lower,
     /// Higher bound
-    Higher,
+    Upper,
 }
 
 impl From<Bound> for ComparisonOp {
     fn from(bound: Bound) -> ComparisonOp {
         match bound {
-            Bound::Higher => ComparisonOp::Le,
+            Bound::Upper => ComparisonOp::Le,
             Bound::Lower => ComparisonOp::Ge,
         }
     }
@@ -522,7 +629,7 @@ impl FeasabilityChecker {
     fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) -> Result<f64, Error> {
         let old_val_solver = match bound {
             Bound::Lower => self.solver.set_lb_var(var.0, val)?,
-            Bound::Higher => self.solver.set_ub_var(var.0, val)?,
+            Bound::Upper => self.solver.set_ub_var(var.0, val)?,
         };
 
         Ok(old_val_solver)
@@ -544,7 +651,7 @@ impl FeasabilityChecker {
                     old_val_solver = Some(self.solver.set_lb_var(var.0, new_val)?);
                 }
             }
-            Bound::Higher => {
+            Bound::Upper => {
                 if new_val < old_val {
                     old_val_solver = Some(self.solver.set_ub_var(var.0, new_val)?);
                 }
@@ -880,17 +987,17 @@ mod tests {
                 if i % 2 == 0 {
                     (Bound::Lower, 2.0)
                 } else {
-                    (Bound::Higher, 8.0)
+                    (Bound::Upper, 8.0)
                 }
             } else {
                 // Last constraint intentionally makes x0 infeasible.
-                (Bound::Higher, 1.0)
+                (Bound::Upper, 1.0)
             };
 
             lit_vec.push(Lit { bound, var: s, val });
         }
 
-        test_incremental_constraints(problem, lit_vec, false);
+        test_incremental_constraints(problem, lit_vec, 10, false);
     }
 
     #[test]
@@ -911,21 +1018,24 @@ mod tests {
 
     #[test]
     fn rand_problems() {
-        let mut rng = SmallRng::seed_from_u64(1);
+        let n: u64 = 1000;
 
-        let n = 100;
+        let nb_const = 100;
 
-        for _ in 0..n {
-            let (problem, lit_vec) = gen_problem(50, 100, -10.0, 10.0, 0.05, &mut rng);
+        // Error at 649
+        for seed in 0..n {
+            println!("Seed: {seed}");
 
-            test_incremental_constraints(problem, lit_vec, true);
+            let (problem, lit_vec) = gen_problem(50, nb_const, i32::MIN as f64, i32::MAX as f64, 0.05, seed);
+
+            test_incremental_constraints(problem, lit_vec, nb_const, true);
         }
     }
 
     fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
         let k = 1.0 / sparse_proportion - 1.0;
 
-        let nb_x_float = (nb_var - 1) as f32 * rng.r#gen::<f32>().powf(k); // we have a f32 between in the range [0.0, nb_var - 1)
+        let nb_x_float = (nb_var - 1) as f32 * rng.r#gen::<f32>().powf(k); // we have a f32 in the range [0.0, nb_var - 1)
 
         1 + nb_x_float as usize
     }
@@ -936,34 +1046,38 @@ mod tests {
         min: f64,
         max: f64,
         sparse_proportion: f32,
-        rng: &mut SmallRng,
+        seed: u64,
     ) -> (Problem, Vec<Lit>) {
         let mut problem = Problem::new(OptimizationDirection::Maximize);
 
         let mut lit_vec = Vec::new();
 
+        let mut rng = SmallRng::seed_from_u64(seed);
+
         let vec_var: Vec<Variable> = (0..nb_var)
             .map(|_| problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY)))
             .collect();
 
-        for _ in 0..nb_const {
+        for i in 0..nb_const {
             let s = problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY));
 
-            let nb_x = get_nb_x(sparse_proportion, rng, nb_var);
+            let nb_x = get_nb_x(sparse_proportion, &mut rng, nb_var);
 
             let x_vec: Vec<Variable> = (0..nb_var)
-                .choose_multiple(rng, nb_x)
+                .choose_multiple(&mut rng, nb_x)
                 .iter()
                 .map(|&i| vec_var[i])
                 .collect();
 
             let mut expr: Vec<(Variable, f64)> = x_vec.iter().map(|&x| (x, rng.gen_range(min, max))).collect();
 
+            // println!("Const {i}: {:?}", expr);
+
             expr.push((s, -1.0));
 
             problem.add_constraint(expr, ComparisonOp::Eq, 0.0);
 
-            let bound = if rng.gen_bool(0.5) { Bound::Higher } else { Bound::Lower };
+            let bound = if rng.gen_bool(0.5) { Bound::Upper } else { Bound::Lower };
 
             let val = rng.gen_range(min, max);
 
@@ -973,7 +1087,7 @@ mod tests {
         (problem, lit_vec)
     }
 
-    fn test_incremental_constraints(problem: Problem, lit_vec: Vec<Lit>, verbose: bool) {
+    fn test_incremental_constraints(mut problem: Problem, lit_vec: Vec<Lit>, nb_const: usize, verbose: bool) {
         let init_feas_checker = problem.create_feasability_checker();
 
         let init_solve = problem.solve();
@@ -992,22 +1106,103 @@ mod tests {
         let mut solution = init_solve.unwrap();
 
         for (i, lit) in lit_vec.iter().enumerate() {
-            let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val); // Might need to use set bound RESTRICT
+            problem.set_bound(lit.var, &lit.bound, lit.val);
+
+            let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val);
 
             let res_check_feas = feas_checker.check_feasability();
 
             let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
 
-            assert!(res_add_const.is_err() == res_check_feas.is_err() || res_set_bound.is_err());
+            if verbose {
+                println!(
+                    "{i}\nadd_const: {:?}\nset_bound: {:?}\ncheack_feas: {:?}",
+                    res_add_const, res_set_bound, res_check_feas
+                );
+            }
 
-            if res_add_const.is_err() {
-                if verbose {
-                    println!("err after {i} constraints")
-                }
+            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_add_const {
+                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
+                println!("Is certificate valid add_const: {}", is_certif_valid);
+            }
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
+                let is_certif_valid = problem.is_certificate_valid(cert);
+                println!("Is certificate valid set_bound: {}", is_certif_valid);
+            }
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
+                let is_certif_valid = problem.is_certificate_valid(cert);
+                println!("Is certificate valid cheak_feas: {}", is_certif_valid);
+            }
+
+            assert_eq!(
+                res_add_const.is_err(),
+                res_check_feas.is_err() || res_set_bound.is_err()
+            );
+
+            if res_add_const.is_err() || res_check_feas.is_err() || res_set_bound.is_err() {
                 break;
             }
 
             solution = res_add_const.unwrap();
+        }
+    }
+
+    #[test]
+    fn certificate() {
+        {
+            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let x1 = problem.add_var(0.0, (0.0, f64::INFINITY));
+            let x2 = problem.add_var(0.0, (0.0, f64::INFINITY));
+            problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Le, 5.0);
+            problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 10.0);
+
+            let sol = problem.solve();
+
+            assert!(sol.is_err());
+
+            println!("{:?}", sol);
+
+            if let Error::InfeasibleWithCertificate(cert) = sol.unwrap_err() {
+                assert!(problem.is_certificate_valid(&cert));
+            }
+        }
+
+        {
+            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let x1 = problem.add_var(0.0, (0.0, 3.0));
+            let x2 = problem.add_var(0.0, (0.0, 4.0));
+            problem.add_constraint([(x1, 1.0), (x2, 2.0)], ComparisonOp::Le, 15.0);
+            problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 9.0);
+
+            let sol = problem.solve();
+
+            assert!(sol.is_err());
+
+            println!("{:?}", sol);
+
+            if let Error::InfeasibleWithCertificate(cert) = sol.unwrap_err() {
+                assert!(problem.is_certificate_valid(&cert));
+            }
+        }
+
+        {
+            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let x1 = problem.add_var(0.0, (0.0, 2.0));
+            let x2 = problem.add_var(0.0, (0.0, 2.0));
+            problem.add_constraint([(x1, 2.0), (x2, 1.0)], ComparisonOp::Ge, 5.0);
+            problem.add_constraint([(x1, -1.0), (x2, 1.0)], ComparisonOp::Ge, 2.0);
+
+            let sol = problem.solve();
+
+            assert!(sol.is_err());
+
+            println!("{:?}", sol);
+
+            if let Error::InfeasibleWithCertificate(cert) = sol.unwrap_err() {
+                assert!(problem.is_certificate_valid(&cert));
+            }
         }
     }
 }
