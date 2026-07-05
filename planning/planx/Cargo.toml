@@ -18,7 +18,8 @@ idmap = { workspace = true }
 smallvec = { workspace = true }
 compact_str = { workspace = true }
 arcstr = { workspace = true }
-
+tracing = { workspace = true }
+env_param = { path = "../../env_param" }
 
 [[bin]]
 name = "pddl-parser"

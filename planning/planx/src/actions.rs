@@ -71,6 +71,9 @@ impl Actions {
     pub fn get_action(&self, name: &ActionRef) -> Option<&Action> {
         self.actions.get(name)
     }
+    pub fn get_action_mut(&mut self, name: &ActionRef) -> Option<&mut Action> {
+        self.actions.get_mut(name)
+    }
 
     // Updates the achieved task to have the `action` as an achiever.
     fn add_achiever_to_task(&mut self, action: &Action, env: &Environment) -> Res<()> {
