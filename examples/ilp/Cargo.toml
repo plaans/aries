@@ -7,7 +7,7 @@ edition = "2024"
 clap = { workspace = true }
 anyhow = { workspace = true }
 aries = { path = "../../solver" }
-aries_lprelax = { path = "../../solver/lprelax" }
+aries-lprelax = { path = "../../solver/lprelax" }
 aries-bench-data = { path = "../../bench/data" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"

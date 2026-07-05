@@ -6,12 +6,9 @@ use aries::{
     model::lang::*,
     solver::{Solver, musmcs::MusMcs},
 };
-use env_param::EnvParam;
 use itertools::Itertools;
 
 use crate::{ConstraintID, IntExp, Sched};
-
-static ARIES_USE_LPRELAX: EnvParam<bool> = EnvParam::new("ARIES_USE_LPRELAX", "false");
 
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
@@ -47,11 +44,11 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
         }
 
-        let solver = if ARIES_USE_LPRELAX.get() {
-            let c = std::sync::Arc::new(crate::ext::LpRelaxEncodingConstraint);
+        let solver = if crate::ext::lprelax::ARIES_LPRELAX_USE.get() {
+            let c = std::sync::Arc::new(crate::ext::lprelax::LpRelaxEncodingConstraint);
             tracing::debug!("Adding constraint: {c:?}");
 
-            let mut encoding = crate::ext::LpRelaxSchedEncoder::new(&mut encoding);
+            let mut encoding = crate::ext::lprelax::LpRelaxSchedEncoder::new(&mut encoding);
             c.enforce(&mut encoding);
 
             Solver::with_extra_reasoners(encoding.main.store.clone(), vec![Box::new(encoding.lprelax.unwrap())])
@@ -73,7 +70,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .solve_with_assumptions(&assumptions, aries::solver::SearchLimit::None)
             .unwrap()
             .ok();
-        // self.solver.print_stats();
+        self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res
     }
@@ -95,7 +92,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .solver
             .minimize_with_assumptions(obj, &assumptions, aries::solver::SearchLimit::None, on_new_solution)
             .unwrap();
-        // self.solver.print_stats();
+        self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res.ok()
     }

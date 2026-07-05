@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use aries::core::VarRef;
 use aries::core::views::Term;
+use env_param::EnvParam;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
@@ -21,6 +22,9 @@ use crate::ext::Source;
 use crate::ext::ground::{SourceGrounding, SourceGroundingFlatId};
 use crate::ext::lprelax::ground::{TransitionGrounding, TransitionGroundingFlatId};
 use crate::{IntTerm, TaskId};
+
+pub static ARIES_LPRELAX_USE: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_USE", "false");
+static ARIES_LPRELAX_GROUNDER: EnvParam<String> = EnvParam::new("ARIES_LPRELAX_GROUNDER", "simple");
 
 #[derive(Debug)]
 pub(crate) struct LpRelaxEncodingConstraint;
@@ -158,6 +162,13 @@ impl LpRelaxEncoding {
                     Some(1.),
                 ),
             };
+            debug_assert!(
+                row_coefs.iter().duplicates_by(|&(col_tag, _)| col_tag).next().is_none(),
+                "{:?} {:?}",
+                rows_coefs.len(),
+                row_expr
+            );
+
             rows_coefs.push(row_coefs);
             lbs_ubs.push((lb, ub));
         }
@@ -288,6 +299,8 @@ impl LpRelaxEncoding {
     fn print_stats(&self) {
         println!("# LpRelax Encoding");
         println!("## Stats");
+        println!("num columns: {:?}", self.cols.len());
+        println!("num rows: {:?}", self.rows.len());
         println!("collect_relations time: {:6?}", self.stats.relations_time.as_secs_f64());
         println!(
             "build_cols_and_rows time: {:6?}",
@@ -343,6 +356,21 @@ impl LpRelaxEncodingRelations {
     fn from(ctx: &LpRelaxSchedEncoder) -> Self {
         let mut res = LpRelaxEncodingRelations::default();
 
+        println!("Started action grounder");
+        let sources_groundings = match ARIES_LPRELAX_GROUNDER.get_ref().as_str() {
+            "simple" => ctx.run_new_simple_datalog_grounder(),
+            "brutal" => ctx.run_new_brutal_grounder(),
+            name => panic!("unknown sources grounder '{name:?}'"),
+        };
+        println!("Ended action grounder");
+        for (src, grds) in &sources_groundings {
+            println!("|- {src:?}: {}", grds.len());
+            println!("{:?}", ctx.get_source(src));
+            // for grd in grds {
+            //     println!("|    {grd:?}");
+            // }
+        }
+
         // Collect lifted presences of transitions and sources,
         // as well as the relations between groundings of transitions, sources, and terms appearing in them.
         for source in ctx.iter_sources() {
@@ -352,8 +380,8 @@ impl LpRelaxEncodingRelations {
                 res._add_lifted_transition_and_source(transition_id, source, source_active);
             }
 
-            let (source_groundings, complete) = ctx.get_source_groundings(source);
-            res._add_ground_sources(source, &source_groundings, complete, ctx);
+            // TODO: complete / incomplete (partial) groundings ?
+            res._add_ground_sources(source, sources_groundings.get(&source).unwrap(), true, ctx);
         }
         for (transition_id, _) in ctx.iter_transitions() {
             let transition_groundings = ctx.get_transition_groundings(transition_id);
@@ -422,14 +450,16 @@ impl LpRelaxEncodingRelations {
                 (&self.presences_ground_sources_empty, true)
             };
 
-            let rhs = source_groundings_ids
+            let rhs: Vec<_> = source_groundings_ids
                 .iter()
                 .map(|&source_grounding_id| ColTag::PresenceSourceGround(source, source_grounding_id))
                 .collect();
-            if complete {
-                row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceSource(source)], rhs));
-            } else {
-                row_exprs.push(RowExpr::Geq(vec![ColTag::PresenceSource(source)], rhs));
+            if !rhs.is_empty() {
+                if complete {
+                    row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceSource(source)], rhs));
+                } else {
+                    row_exprs.push(RowExpr::Geq(vec![ColTag::PresenceSource(source)], rhs));
+                }
             }
 
             for &source_grounding_id in source_groundings_ids {
@@ -446,13 +476,15 @@ impl LpRelaxEncodingRelations {
                 continue;
             };
 
-            let rhs = transition_groundings_ids
+            let rhs: Vec<_> = transition_groundings_ids
                 .iter()
                 .map(|&transition_grounding_id| {
                     ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)
                 })
                 .collect();
-            row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition_id)], rhs));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition_id)], rhs));
+            }
 
             let source = ctx.get_transition_ref(transition_id).get_source();
             let complete = if let Some(task_id) = source {
@@ -464,22 +496,24 @@ impl LpRelaxEncodingRelations {
                 let compatible_source_groundings_ids = self
                     .presences_ground_transitions_and_sources
                     .get(&(transition_id, transition_grounding_id))
-                    .unwrap();
+                    .map(|v| v.iter())
+                    .unwrap_or_default();
 
-                let rhs = compatible_source_groundings_ids
-                    .iter()
+                let rhs: Vec<_> = compatible_source_groundings_ids
                     .map(|&source_grounding_id| ColTag::PresenceSourceGround(source, source_grounding_id))
                     .collect();
-                if complete {
-                    row_exprs.push(RowExpr::Eq(
-                        vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
-                        rhs,
-                    ));
-                } else {
-                    row_exprs.push(RowExpr::Geq(
-                        vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
-                        rhs,
-                    ));
+                if !rhs.is_empty() {
+                    if complete {
+                        row_exprs.push(RowExpr::Eq(
+                            vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
+                            rhs,
+                        ));
+                    } else {
+                        row_exprs.push(RowExpr::Geq(
+                            vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
+                            rhs,
+                        ));
+                    }
                 }
 
                 col_tags.insert(ColTag::PresenceTransitionGround(transition_id, transition_grounding_id));
@@ -489,7 +523,9 @@ impl LpRelaxEncodingRelations {
         // - At most one grounding of a term can be active
 
         for (&term, vs) in &self.terms_ground {
-            row_exprs.push(RowExpr::Leq1(vs.iter().map(|&v| ColTag::TermGround(term, v)).collect()));
+            if !vs.is_empty() {
+                row_exprs.push(RowExpr::Leq1(vs.iter().map(|&v| ColTag::TermGround(term, v)).collect()));
+            }
 
             for &v in vs {
                 col_tags.insert(ColTag::TermGround(term, v));
@@ -497,16 +533,17 @@ impl LpRelaxEncodingRelations {
         }
 
         // - A grounding of a term is active iff a transition grounding using it is active
-
         for (&(term, v), transitions_groundings) in &self.terms_ground_transitions {
             for (transition_id, transition_groundings_ids) in transitions_groundings {
-                let rhs = transition_groundings_ids
+                let rhs: Vec<_> = transition_groundings_ids
                     .iter()
                     .map(|&transition_grounding_id| {
                         ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)
                     })
                     .collect();
-                row_exprs.push(RowExpr::Eq(vec![ColTag::TermGround(term, v)], rhs));
+                if !rhs.is_empty() {
+                    row_exprs.push(RowExpr::Eq(vec![ColTag::TermGround(term, v)], rhs));
+                }
             }
         }
 
@@ -514,11 +551,13 @@ impl LpRelaxEncodingRelations {
         //   NOTE: when the source's considered groundings are incomplete, only the "<-" implication can be enforced (Geq instead of Eq)
 
         for (&(term, v), source_groundings_ids) in &self.terms_ground_sources_empty {
-            let rhs = source_groundings_ids
+            let rhs: Vec<_> = source_groundings_ids
                 .iter()
                 .map(|&source_grounding_id| ColTag::PresenceSourceGround(None, source_grounding_id))
                 .collect();
-            row_exprs.push(RowExpr::Eq(vec![ColTag::TermGround(term, v)], rhs));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Eq(vec![ColTag::TermGround(term, v)], rhs));
+            }
         }
         for (&(term, v), map) in &self.terms_ground_sources_concrete {
             for (task_id, source_groundings_ids) in map {
@@ -529,14 +568,16 @@ impl LpRelaxEncodingRelations {
                     true
                 };
 
-                let rhs = source_groundings_ids
+                let rhs: Vec<_> = source_groundings_ids
                     .iter()
                     .map(|&source_grounding_id| ColTag::PresenceSourceGround(source, source_grounding_id))
                     .collect();
-                if complete {
-                    row_exprs.push(RowExpr::Eq(vec![ColTag::TermGround(term, v)], rhs));
-                } else {
-                    row_exprs.push(RowExpr::Geq(vec![ColTag::TermGround(term, v)], rhs));
+                if !rhs.is_empty() {
+                    if complete {
+                        row_exprs.push(RowExpr::Eq(vec![ColTag::TermGround(term, v)], rhs));
+                    } else {
+                        row_exprs.push(RowExpr::Geq(vec![ColTag::TermGround(term, v)], rhs));
+                    }
                 }
             }
         }
@@ -560,7 +601,7 @@ impl LpRelaxEncodingRelations {
         // - If a ground support is active, then its transitions' corresponding groundings must be active
 
         for (&(transition1_id, transition2_id), groundings) in &self.supports_ground {
-            let rhs = groundings
+            let rhs: Vec<_> = groundings
                 .iter()
                 .map(|&(transition1_grounding_id, transition2_grounding_id)| {
                     ColTag::SupportGround(
@@ -571,7 +612,9 @@ impl LpRelaxEncodingRelations {
                     )
                 })
                 .collect();
-            row_exprs.push(RowExpr::Eq(vec![ColTag::Support(transition1_id, transition2_id)], rhs));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Eq(vec![ColTag::Support(transition1_id, transition2_id)], rhs));
+            }
 
             for &(transition1_grounding_id, transition2_grounding_id) in groundings {
                 row_exprs.push(RowExpr::Leq(
@@ -614,17 +657,18 @@ impl LpRelaxEncodingRelations {
         //   NOTE: recall that effect transitions are allowed to be supported too by transitions with the same state fluent and any value
 
         for (transition2_id, transition1_ids) in &self.supports_lifted_inflow {
-            let rhs = transition1_ids
+            let rhs: Vec<_> = transition1_ids
                 .iter()
                 .map(|&transition1_id| ColTag::Support(transition1_id, transition2_id))
                 .collect();
-            row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition2_id)], rhs));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition2_id)], rhs));
+            }
         }
-
         // - A ground transition is present iff it is support by another (compatible) one.
 
         for (&(transition2_id, transition2_grounding_id), transition1_ids) in &self.supports_ground_inflow {
-            let rhs = transition1_ids
+            let rhs: Vec<_> = transition1_ids
                 .iter()
                 .map(|&(transition1_id, transition1_grounding_id)| {
                     ColTag::SupportGround(
@@ -635,29 +679,32 @@ impl LpRelaxEncodingRelations {
                     )
                 })
                 .collect();
-            row_exprs.push(RowExpr::Eq(
-                vec![ColTag::PresenceTransitionGround(
-                    transition2_id,
-                    transition2_grounding_id,
-                )],
-                rhs,
-            ));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Eq(
+                    vec![ColTag::PresenceTransitionGround(
+                        transition2_id,
+                        transition2_grounding_id,
+                    )],
+                    rhs,
+                ));
+            }
         }
-
         // - If a (non-condition) transition is present, then it can support at most one Eff or CondEff transition.
 
         for (transition1_id, transition2_ids) in &self.supports_lifted_outflow_pure {
-            let rhs = transition2_ids
+            let rhs: Vec<_> = transition2_ids
                 .iter()
                 .map(|&transition2_id| ColTag::Support(transition1_id, transition2_id))
                 .collect();
-            row_exprs.push(RowExpr::Geq(vec![ColTag::PresenceTransition(transition1_id)], rhs));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Geq(vec![ColTag::PresenceTransition(transition1_id)], rhs));
+            }
         }
 
         // - If a ground (non-condition) transition is present, then it can support at most one (compatible) Eff or CondEff transition.
 
         for (&(transition1_id, transition1_grounding_id), transition1_ids) in &self.supports_ground_outflow_pure {
-            let rhs = transition1_ids
+            let rhs: Vec<_> = transition1_ids
                 .iter()
                 .map(|&(transition2_id, transition2_grounding_id)| {
                     ColTag::SupportGround(
@@ -668,19 +715,22 @@ impl LpRelaxEncodingRelations {
                     )
                 })
                 .collect();
-            row_exprs.push(RowExpr::Geq(
-                vec![ColTag::PresenceTransitionGround(
-                    transition1_id,
-                    transition1_grounding_id,
-                )],
-                rhs,
-            ));
+            if !rhs.is_empty() {
+                row_exprs.push(RowExpr::Geq(
+                    vec![ColTag::PresenceTransitionGround(
+                        transition1_id,
+                        transition1_grounding_id,
+                    )],
+                    rhs,
+                ));
+            }
         }
 
         // - Two transitions cannot mutually support each other (i.e. forbid trivial cycles)
-        //   NOTE: requires all initial effects (including negative / default ones).
-        //         Without them, the inflow constraint ("transition present iff supported by another one"),
-        //         which allows effects to be supported, would simply be incorrect !
+        // NOTE: This wouldn't work (would be *incorrect*) without *all* initial effects
+        //       (including those filtered out in the main encoding due to being detected as useless).
+        //       Without them, the inflow constraint ("transition present iff support by another one") could be impossible to satisfy.
+        //       Recall that we add these initial effects outside the main encoding, when computing transitions. (see `Transitions`)
 
         let mut seen = HashSet::new();
         for (transition2_id, transition1_ids) in &self.supports_lifted_inflow {
@@ -735,7 +785,7 @@ impl LpRelaxEncodingRelations {
             self.presences_ground_sources_empty.push(source_grounding_id);
         }
 
-        for (&term, &v) in ctx.get_source_terms(&source).iter().zip(source_grounding.inner()) {
+        for (&(term, _), &v) in ctx.get_source_terms(&source).iter().zip(source_grounding.inner()) {
             if term.is_cst() {
                 continue;
             }
@@ -837,7 +887,9 @@ impl LpRelaxEncodingRelations {
             if !sets.contains_key(transition_id) {
                 sets.insert(transition_id, vec![]);
             }
-            sets[transition_id].push(transition_grounding_id);
+            if !sets[transition_id].contains(&transition_grounding_id) {
+                sets[transition_id].push(transition_grounding_id);
+            }
         }
     }
 
@@ -895,17 +947,20 @@ impl LpRelaxEncodingRelations {
             let n = ctx.get_transition_ref(transition1_id).get_args().len();
             debug_assert!(n == ctx.get_transition_ref(transition2_id).get_args().len());
 
-            let compatible_ground_args = transition1_grounding.inner()[..n] == transition2_grounding.inner()[..n];
-
-            let compatible_ground_values = match (
-                ctx.get_transition_ref(transition1_id).get_valto_term_idx(),
-                ctx.get_transition_ref(transition2_id).get_valfrom_term_idx(),
-            ) {
-                (Some(i), Some(j)) => transition1_grounding.inner()[i] == transition2_grounding.inner()[j],
-                (Some(_), None) => true,
-                (None, _) => unreachable!(),
-            };
-            compatible_ground_args && compatible_ground_values
+            if transition1_grounding.inner()[..n] != transition2_grounding.inner()[..n] {
+                // incompatible ground args
+                false
+            } else {
+                // compatible ground values
+                match (
+                    ctx.get_transition_ref(transition1_id).get_valto_term_idx(),
+                    ctx.get_transition_ref(transition2_id).get_valfrom_term_idx(),
+                ) {
+                    (Some(i), Some(j)) => transition1_grounding.inner()[i] == transition2_grounding.inner()[j],
+                    (Some(_), None) => true,
+                    (None, _) => unreachable!(),
+                }
+            }
         };
         if !ground_support_valid {
             return;

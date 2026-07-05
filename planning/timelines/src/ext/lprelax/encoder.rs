@@ -107,14 +107,14 @@ impl<'a> LpRelaxSchedEncoder<'a> {
             .sched
             .global_args
             .iter()
-            .map(|t| sched_encoder.bounds(t))
+            .map(|(t, _)| sched_encoder.bounds(t))
             .collect();
 
         let concrete_sources_terms_ranges = sched_encoder
             .sched
             .tasks
             .iter()
-            .map(|task| task.args.iter().map(|t| sched_encoder.bounds(t)).collect())
+            .map(|task| task.args.iter().map(|(t, _)| sched_encoder.bounds(t)).collect())
             .collect();
 
         Self {
@@ -312,7 +312,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     pub fn get_source(&self, source: &Source) -> Option<&Task> {
         source.map(|task_id| &self.main.sched.tasks[task_id])
     }
-    pub fn get_source_terms(&self, source: &Source) -> &[IntTerm] {
+    pub fn get_source_terms(&self, source: &Source) -> &[(IntTerm, Sym)] {
         source
             .map(|task_id| &self.main.sched.tasks[task_id].args)
             .unwrap_or(&self.main.sched.global_args)
@@ -384,27 +384,27 @@ impl<'a> LpRelaxSchedEncoder<'a> {
         .filter(|&(_, tr)| matches!(tr, Transition::Eff(_) | Transition::CondEff(_, _)))
     }*/
 
-    pub fn get_source_groundings(&self, source: Source) -> (Vec<SourceGrounding>, bool) {
-        // let ranges = source
-        //     .map(|task_id| self.concrete_sources_terms_ranges[task_id.to_int() as usize].as_slice())
-        //     .unwrap_or(self.empty_source_terms_ranges.as_slice());
-        // let groundings = Vec::from_iter(
-        //     ranges
-        //         .iter()
-        //         .map(|&(lb, ub)| lb..=ub)
-        //         .multi_cartesian_product()
-        //         .map(SourceGrounding::from),
-        // );
-        let groundings = self
-            .get_source_terms(&source)
-            .iter()
-            .map(|t| self.main.bounds(t).0..=self.main.bounds(t).1)
-            .multi_cartesian_product()
-            .map(SourceGrounding::from)
-            .collect();
-        let complete = true;
-        (groundings, complete)
+    // TODO: complete / incomplete grounder ?
+    pub fn run_new_brutal_grounder(&self) -> HashMap<Option<TaskId>, Vec<SourceGrounding>> {
+        let mut res = HashMap::default();
+        for source in self.iter_sources() {
+            res.insert(
+                source,
+                self.get_source_terms(&source)
+                    .iter()
+                    .map(|(t, _)| self.main.bounds(t).0..=self.main.bounds(t).1)
+                    .multi_cartesian_product()
+                    .map(SourceGrounding::from)
+                    .collect(),
+            );
+        }
+        res
     }
+    // TODO: complete / incomplete grounder ?
+    pub fn run_new_simple_datalog_grounder(&self) -> HashMap<Option<TaskId>, Vec<SourceGrounding>> {
+        crate::ext::ground::SimpleDatalogGrounder::from(self.main, false).run()
+    }
+
     pub fn get_transition_groundings(&self, transition_id: TransitionId) -> Vec<TransitionGrounding> {
         // self.transitions_terms_ranges[transition_id]
         //     .iter()
@@ -624,7 +624,7 @@ impl Transitions {
         // (among the "explicit" known initial effects accessible from `ctx`).
 
         let mut default_initial_effects = vec![];
-        let first_default_initial_effect_id = of_effect.len();
+        let first_default_initial_effect_id = 1 + of_effect.iter().max_by_key(|&(eff_id, _)| eff_id).unwrap().0;
 
         for (sym, params, _) in ctx.sched.fluents.iter() {
             let t = crate::Time::from(-2);
@@ -650,12 +650,14 @@ impl Transitions {
                         fluent: sym.to_string(),
                         args: args_ground,
                     },
-                    operation: crate::EffectOp::Assign(IntTerm::ZERO),
+                    operation: crate::EffectOp::Assign(IntTerm::int_cst(
+                        ctx.sched.fluents.get_return(sym).unwrap().range.first,
+                    )),
                     prez: Lit::TRUE,
                     source: None,
                 });
 
-                let eff_id = of_effect.len();
+                let eff_id = first_default_initial_effect_id + default_initial_effects.len() - 1;
                 let tr_id = store.len();
                 of_effect.insert(eff_id, tr_id);
                 of_empty_source.push(tr_id);
@@ -699,7 +701,7 @@ impl Transitions {
                         .chain(&[c.value])
                         .map(|&term| {
                             (!term.is_cst())
-                                .then(|| src_terms.iter().position(|&t| t == term))
+                                .then(|| src_terms.iter().position(|&(t, _)| t == term))
                                 .flatten()
                         })
                         .collect()
@@ -722,7 +724,7 @@ impl Transitions {
                         })
                         .map(|&term| {
                             (!term.is_cst())
-                                .then(|| src_terms.iter().position(|&t| t == term))
+                                .then(|| src_terms.iter().position(|&(t, _)| t == term))
                                 .flatten()
                         })
                         .collect()
@@ -748,7 +750,7 @@ impl Transitions {
                         })
                         .map(|&term| {
                             (!term.is_cst())
-                                .then(|| src_terms.iter().position(|&t| t == term))
+                                .then(|| src_terms.iter().position(|&(t, _)| t == term))
                                 .flatten()
                         })
                         .collect()

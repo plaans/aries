@@ -1,12 +1,10 @@
 pub mod ground;
-// mod lprelax;
+pub mod lprelax;
 
 use std::{collections::HashSet, ops::Index};
 
 use aries::core::{INT_CST_MAX, IntCst, LongCst};
 use itertools::Itertools;
-
-pub(crate) use lprelax::{LpRelaxEncodingConstraint, LpRelaxSchedEncoder};
 
 use crate::{
     EffectId,
