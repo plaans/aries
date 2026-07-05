@@ -29,14 +29,14 @@ impl Task {
         // For each we will check that there is no missing param/arg and if not that they have compatible types.
         for i in 0..num_params {
             // check that enough arguments are provided
-            if i > args.len() {
+            if i >= args.len() {
                 return Err(name
                     .invalid("Not enough arguments in task")
                     .info(&self.params[i].name, "missing parameter"));
             }
             let arg = args[i];
             // check that no extra arguments are given
-            if i > self.num_params() {
+            if i >= self.num_params() {
                 return Err((env / arg)
                     .invalid("unexpected argument")
                     .info(&self.name, "for this task definition"));
