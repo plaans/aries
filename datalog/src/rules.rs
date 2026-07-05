@@ -362,7 +362,7 @@ fn pattern_matches_any_row(pat: &Pattern, table: &Table) -> bool {
         2 => pat.compiled::<2>().find_matches(table.rows_sized()).next().is_some(),
         3 => pat.compiled::<3>().find_matches(table.rows_sized()).next().is_some(),
         4 => pat.compiled::<4>().find_matches(table.rows_sized()).next().is_some(),
-        _ => todo!()
+        _ => table.rows().any(|row| pat.matches(row)),
     }
 }
 
@@ -526,6 +526,29 @@ impl Pattern {
         }
     }
 
+    fn matches(&self, data: &[Sym]) -> bool {
+        debug_assert_eq!(self.pattern.len(), data.len());
+        for &[id1, id2] in &self.equalities {
+            if data[id1] != data[id2] {
+                return false;
+            }
+        }
+        self.pattern
+            .iter()
+            .copied()
+            .zip(data.iter().copied())
+            .all(|(pat, sym)| pat < 0 || (pat as u32) == sym)
+    }
+
+    fn bind(&self, row: &[Sym], out: &mut [u32]) {
+        debug_assert!(self.matches(row));
+        for (i, pat) in self.pattern.iter().copied().enumerate() {
+            if let Some(var) = Self::as_var(pat) {
+                out[var as usize] = row[i];
+            }
+        }
+    }
+
     /// Gathers all bindings of this pattern of the given table.
     /// THe `out` slice, will be used as a base and partially overwritten by variables.
     ///
@@ -547,7 +570,18 @@ impl Pattern {
             1 => self.compiled::<1>().all_bindings(table.rows_sized(), out),
             2 => self.compiled::<2>().all_bindings(table.rows_sized(), out),
             3 => self.compiled::<3>().all_bindings(table.rows_sized(), out),
-            _ => unimplemented!(),
+            4 => self.compiled::<4>().all_bindings(table.rows_sized(), out),
+            _ => {
+                let mut bindings = TableBuff::new(out.len());
+                let mut out_row = Vec::from(out);
+                for row in table.rows() {
+                    if self.matches(row) {
+                        self.bind(row, &mut out_row);
+                        bindings.push(&out_row);
+                    }
+                }
+                bindings
+            }
         }
     }
 }

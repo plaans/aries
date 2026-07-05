@@ -161,6 +161,7 @@ pub(crate) struct TableBuff<T> {
 
 impl<T> TableBuff<T> {
     pub fn new(num_columns: usize) -> Self {
+        assert!(num_columns > 0);
         Self {
             num_columns,
             data: Default::default(),
@@ -211,6 +212,7 @@ pub struct Table {
 impl Table {
     /// Creates a new empty table with the given number of columns.
     pub fn new_empty(num_columns: usize) -> Self {
+        assert!(num_columns > 0);
         Self {
             num_columns,
             data: Vec::new(),
@@ -238,8 +240,15 @@ impl Table {
             2 => Table::new(Self::into_chunks::<2>(data)),
             3 => Table::new(Self::into_chunks::<3>(data)),
             4 => Table::new(Self::into_chunks::<4>(data)),
-            5 => Table::new(Self::into_chunks::<5>(data)),
-            _ => todo!(),
+            n => {
+                let mut rows: Vec<Box<[Sym]>> = data.chunks(n).map(Box::from).collect();
+                rows.sort_unstable();
+                rows.dedup();
+                Table {
+                    num_columns: n,
+                    data: rows.into_iter().flat_map(|b| b.into_vec()).collect(),
+                }
+            }
         }
     }
 
@@ -262,9 +271,12 @@ impl Table {
                 .into_flattened(),
             4 => crate::merge::merge_unique(Self::into_chunks::<4>(data), Self::into_chunks(recent.data))
                 .into_flattened(),
-            5 => crate::merge::merge_unique(Self::into_chunks::<5>(data), Self::into_chunks(recent.data))
-                .into_flattened(),
-            _ => todo!(),
+            n => {
+                let a_rows: Vec<Box<[Sym]>> = data.chunks(n).map(Box::from).collect();
+                let b_rows: Vec<Box<[Sym]>> = recent.data.chunks(n).map(Box::from).collect();
+                let merged = crate::merge::merge_unique(a_rows, b_rows);
+                merged.into_iter().flat_map(|b| b.into_vec()).collect()
+            }
         };
         self.data = data
     }
@@ -315,10 +327,26 @@ impl Table {
             2 => self.retain_distinct_spec::<2>(reference),
             3 => self.retain_distinct_spec::<3>(reference),
             4 => self.retain_distinct_spec::<4>(reference),
-            5 => self.retain_distinct_spec::<5>(reference),
-            _ => todo!(),
+            n => {
+                let data = std::mem::take(&mut self.data);
+                let mut data: Vec<Box<[Sym]>> = data.chunks(n).map(Box::from).collect();
+                let mut reference = reference.data.chunks(n);
+                let mut next_ref = reference.next();
+                data.retain(|row| {
+                    while let Some(r) = next_ref {
+                        if r < row.as_ref() {
+                            next_ref = reference.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    next_ref.is_none_or(|r| r != row.as_ref())
+                });
+                self.data = data.into_iter().flat_map(|b| b.into_vec()).collect();
+            }
         }
     }
+
     /// Arity-specialized version of [`Self::retain_distinct`]
     fn retain_distinct_spec<const N: usize>(&mut self, reference: &Table) {
         let data = std::mem::take(&mut self.data);
