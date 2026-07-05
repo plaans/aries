@@ -24,8 +24,25 @@ impl Program {
         table
     }
 
+    /// Number of predicates that have been added to the program.
+    pub fn num_predicates(&self) -> usize {
+        self.vars.len()
+    }
+
+    /// Returns a reference to the [`VarTable`] of the i-th predicate added to the program.
+    pub fn get_predicate(&self, i: usize) -> Option<&VarTable> {
+        self.vars.get(i)
+    }
+
+    /// Returns a reference to the [`VarTable`] of the i-th predicate added to the program.
+    pub fn get_predicate_mut(&mut self, i: usize) -> Option<&mut VarTable> {
+        self.vars.get_mut(i)
+    }
+
     /// Adds a new rule to the program.
-    pub fn add_rule(&mut self, rule: Rule) {
+    pub fn add_rule(&mut self, head: RuleAtom, body: impl AsRef<[RuleAtom]>) {
+        let rule = Rule::new(head, body);
+
         let steps = rule.decompose(|arity| self.new_predicate(arity));
         for step in steps {
             self.add_rule_step(step);
@@ -47,7 +64,7 @@ impl Program {
     ///
     /// This method consumes the objects as it would be a logic error to modify it again
     /// (e.g. adding new rules and running again would be a no-op because all fact would be stable already).
-    pub fn run(self) {
+    pub fn run(self) -> Vec<VarTable> {
         while !self.stable() {
             for rule in &self.rules {
                 rule.run();
@@ -57,12 +74,13 @@ impl Program {
                 var.process();
             }
         }
+        self.vars
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{Arg, Rule, program::Program};
+    use crate::{Arg, Program, VarTableExtract};
 
     #[test]
     fn test_grounding() {
@@ -104,7 +122,8 @@ mod test {
 
         let move_applicable = prog.new_predicate(3);
 
-        let move_rule = Rule::new(
+        // move rule
+        prog.add_rule(
             move_applicable.apply([Var(0), Var(1), Var(2)]),
             [
                 robot.apply([Var(0)]),
@@ -114,21 +133,78 @@ mod test {
                 connected.apply([Var(1), Var(2)]),
             ],
         );
-        prog.add_rule(move_rule);
 
-        prog.add_rule(Rule::new(
+        prog.add_rule(
             at.apply([Var(0), Var(2)]),
             [move_applicable.apply([Var(0), Var(1), Var(2)])],
-        ));
+        );
 
         prog.run();
 
-        at.stable.borrow().rows().for_each(|row| println!("at{row:?}"));
+        match &*at.stable.borrow() {
+            crate::tables::TableRepr::NonNullary(t) => {
+                t.rows().for_each(|row| println!("at{row:?}"));
+            }
+            crate::tables::TableRepr::Nullary(_) => unreachable!(),
+        }
 
-        move_applicable
-            .stable
-            .borrow()
-            .rows()
-            .for_each(|row| println!("move{row:?}"));
+        match &*move_applicable.stable.borrow() {
+            crate::tables::TableRepr::NonNullary(t) => {
+                t.rows().for_each(|row| println!("move{row:?}"));
+            }
+            crate::tables::TableRepr::Nullary(_) => unreachable!(),
+        }
+    }
+
+    /// Nullary head: `goal :- p(?x), q(?x)`. The goal is derived iff `p` and `q` share at least
+    /// one element.
+    #[test]
+    fn test_nullary_head_satisfied() {
+        let mut prog = Program::new();
+        let p = prog.new_predicate(1);
+        let q = prog.new_predicate(1);
+        let goal = prog.new_predicate(0);
+
+        p.add([1]);
+        p.add([2]);
+        p.add([3]);
+        q.add([3]);
+        q.add([4]);
+
+        use Arg::*;
+        prog.add_rule(goal.apply([] as [Arg; 0]), [p.apply([Var(0)]), q.apply([Var(0)])]);
+
+        let vars = prog.run();
+        // last predicate added is `goal` (index 2), but synthetic predicates may have been added
+        // in between by Rule::decompose. We find it by arity.
+        let goal_var = vars.iter().find(|v| v.arity() == 0).expect("nullary predicate");
+        assert!(
+            matches!(goal_var.extract(), VarTableExtract::Nullary(true)),
+            "goal should be derivable (shared element: 3)"
+        );
+    }
+
+    /// Same shape but `p` and `q` share no element: goal must not be derived.
+    #[test]
+    fn test_nullary_head_unsatisfied() {
+        let mut prog = Program::new();
+        let p = prog.new_predicate(1);
+        let q = prog.new_predicate(1);
+        let goal = prog.new_predicate(0);
+
+        p.add([1]);
+        p.add([2]);
+        q.add([3]);
+        q.add([4]);
+
+        use Arg::*;
+        prog.add_rule(goal.apply([] as [Arg; 0]), [p.apply([Var(0)]), q.apply([Var(0)])]);
+
+        let vars = prog.run();
+        let goal_var = vars.iter().find(|v| v.arity() == 0).expect("nullary predicate");
+        assert!(
+            matches!(goal_var.extract(), VarTableExtract::Nullary(false)),
+            "goal must not be derivable"
+        );
     }
 }

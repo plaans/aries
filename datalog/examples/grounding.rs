@@ -46,7 +46,7 @@ fn main() {
     //   loc(?l2),
     //   at(?r, ?l1)
     //   connected(?l1, ?l2).
-    let move_rule = Rule::new(
+    prog.add_rule(
         move_applicable.apply([Var(0), Var(1), Var(2)]),
         [
             robot.apply([Var(0)]),
@@ -56,13 +56,12 @@ fn main() {
             connected.apply([Var(1), Var(2)]),
         ],
     );
-    prog.add_rule(move_rule);
 
     // at(?r, ?l) :- move_applicable(?r, _, ?l)
-    prog.add_rule(Rule::new(
+    prog.add_rule(
         at.apply([Var(0), Var(2)]),
         [move_applicable.apply([Var(0), Var(1), Var(2)])],
-    ));
+    );
 
     // run inference until completion
     prog.run();
@@ -70,8 +69,14 @@ fn main() {
     // access the resulting variables
 
     println!("\n == reachable locations ==\n");
-    at.extract().rows().for_each(|row| println!("at{row:?}"));
+    match at.extract() {
+        VarTableExtract::NonNullary(t) => t.rows().for_each(|row| println!("at{row:?}")),
+        VarTableExtract::Nullary(_) => unreachable!(),
+    };
 
     println!("\n == applicable actions ==\n");
-    move_applicable.extract().rows().for_each(|row| println!("move{row:?}"));
+    match move_applicable.extract() {
+        VarTableExtract::NonNullary(t) => t.rows().for_each(|row| println!("move{row:?}")),
+        VarTableExtract::Nullary(_) => unreachable!(),
+    };
 }

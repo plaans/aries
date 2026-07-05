@@ -1,4 +1,3 @@
-use core::todo;
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -12,6 +11,145 @@ pub type Sym = u32;
 type Tuple<E, const N: usize> = [E; N];
 
 pub(crate) type Fact<const N: usize> = Tuple<Sym, N>;
+
+// Nullary (0-arity) predicates are represented separately to keep the non-nullary (arity > 0)
+// representation invariants simple. A nullary "table" can only ever contain
+// the empty tuple, so its content is just a single `bool` flag.
+
+/// A buffer for nullary rows. Tracks whether the empty tuple has been pushed.
+pub(crate) struct NullaryBuff {
+    pushed: bool,
+}
+
+impl NullaryBuff {
+    pub fn new() -> Self {
+        Self { pushed: false }
+    }
+
+    /// Pushes the empty tuple.
+    pub fn push(&mut self) {
+        self.pushed = true;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self.pushed
+    }
+
+    /// Moves the buffer content into a [`NullaryTable`], resetting the buffer.
+    pub fn move_to_table(&mut self) -> NullaryTable {
+        let has_row = std::mem::take(&mut self.pushed);
+        NullaryTable { has_row }
+    }
+}
+
+/// A table of arity 0: contains at most the empty tuple `()`.
+pub struct NullaryTable {
+    has_row: bool,
+}
+
+impl NullaryTable {
+    /// Creates a new empty nullary table (does not contain the empty tuple).
+    pub fn new_empty() -> Self {
+        Self { has_row: false }
+    }
+
+    /// Returns true if the table contains the empty tuple.
+    pub fn has_row(&self) -> bool {
+        self.has_row
+    }
+
+    /// Returns true if the table is empty.
+    pub fn is_empty(&self) -> bool {
+        !self.has_row
+    }
+
+    /// Merges `recent` into `self` (logical OR).
+    fn merge(&mut self, recent: NullaryTable) {
+        self.has_row = self.has_row || recent.has_row;
+    }
+
+    /// Removes the row from `self` if it is present in `reference`.
+    fn retain_distinct(&mut self, reference: &NullaryTable) {
+        if reference.has_row {
+            self.has_row = false;
+        }
+    }
+}
+
+/// Either a non-nullary or nullary table.
+pub(crate) enum TableRepr {
+    /// A table over a predicate of arity >= 1.
+    NonNullary(Table),
+    /// A table over a predicate of arity 0.
+    Nullary(NullaryTable),
+}
+
+impl TableRepr {
+    /// Returns true if the table contains no rows.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            TableRepr::NonNullary(t) => t.is_empty(),
+            TableRepr::Nullary(t) => t.is_empty(),
+        }
+    }
+
+    fn new_empty(num_columns: usize) -> Self {
+        if num_columns == 0 {
+            TableRepr::Nullary(NullaryTable::new_empty())
+        } else {
+            TableRepr::NonNullary(Table::new_empty(num_columns))
+        }
+    }
+
+    fn merge(&mut self, recent: TableRepr) {
+        match (self, recent) {
+            (TableRepr::NonNullary(a), TableRepr::NonNullary(b)) => a.merge(b),
+            (TableRepr::Nullary(a), TableRepr::Nullary(b)) => a.merge(b),
+            _ => panic!("attempted to merge tables with mismatched arities"),
+        }
+    }
+
+    fn retain_distinct(&mut self, reference: &TableRepr) {
+        match (self, reference) {
+            (TableRepr::NonNullary(a), TableRepr::NonNullary(b)) => a.retain_distinct(b),
+            (TableRepr::Nullary(a), TableRepr::Nullary(b)) => a.retain_distinct(b),
+            _ => panic!("attempted to retain_distinct on tables with mismatched arities"),
+        }
+    }
+}
+
+/// Storage for either a non-nullary or a nullary buffer.
+pub(crate) enum BuffRepr {
+    /// A buffer over a predicate of arity >= 1.
+    NonNullary(TableBuff<Sym>),
+    /// A buffer over a predicate of arity 0.
+    Nullary(NullaryBuff),
+}
+
+impl BuffRepr {
+    fn new(num_columns: usize) -> Self {
+        if num_columns == 0 {
+            BuffRepr::Nullary(NullaryBuff::new())
+        } else {
+            BuffRepr::NonNullary(TableBuff::new(num_columns))
+        }
+    }
+
+    /// Returns true if the buffer contains no pending rows.
+    pub fn is_empty(&self) -> bool {
+        match self {
+            BuffRepr::NonNullary(b) => b.is_empty(),
+            BuffRepr::Nullary(b) => b.is_empty(),
+        }
+    }
+
+    fn move_to_table(&mut self) -> TableRepr {
+        match self {
+            BuffRepr::NonNullary(b) => TableRepr::NonNullary(b.move_to_table()),
+            BuffRepr::Nullary(b) => TableRepr::Nullary(b.move_to_table()),
+        }
+    }
+}
 
 /// A buffer of rows, with no guarantees on order or redundancy.
 pub(crate) struct TableBuff<T> {
@@ -93,7 +231,9 @@ impl Table {
     /// Creates a new table from a flattened vector of rows.
     pub fn new_from_flat(num_columns: usize, data: Vec<Sym>) -> Table {
         match num_columns {
-            0 => panic!("Table with no columns in not supported (due to unnatural flattened representation)"),
+            0 => panic!(
+                "Table with no columns in not supported (due to unnatural flattened representation, use NullaryTable instead)"
+            ),
             1 => Table::new(Self::into_chunks::<1>(data)),
             2 => Table::new(Self::into_chunks::<2>(data)),
             3 => Table::new(Self::into_chunks::<3>(data)),
@@ -113,6 +253,7 @@ impl Table {
         assert_eq!(self.num_columns, recent.num_columns);
         let data = std::mem::take(&mut self.data);
         let data = match self.num_columns {
+            0 => unreachable!(),
             1 => crate::merge::merge_unique(Self::into_chunks::<1>(data), Self::into_chunks(recent.data))
                 .into_flattened(),
             2 => crate::merge::merge_unique(Self::into_chunks::<2>(data), Self::into_chunks(recent.data))
@@ -169,6 +310,7 @@ impl Table {
     /// Retains only elements of `self` that do not appear in `reference`
     fn retain_distinct(&mut self, reference: &Table) {
         match self.num_columns {
+            0 => unreachable!(),
             1 => self.retain_distinct_spec::<1>(reference),
             2 => self.retain_distinct_spec::<2>(reference),
             3 => self.retain_distinct_spec::<3>(reference),
@@ -202,22 +344,22 @@ impl Table {
 pub struct VarTable {
     /// Stable set, containing rows that were added at least two iterations ago.
     /// All rows will eventually make it to this set.
-    pub(crate) stable: Rc<RefCell<Table>>,
+    pub(crate) stable: Rc<RefCell<TableRepr>>,
     /// Rows that were added in the previous iteration of the program.
     ///
-    /// Rows are deduplicated and not present int `stable`
-    pub(crate) recent: Rc<RefCell<Table>>,
+    /// Rows are deduplicated and not present in `stable`
+    pub(crate) recent: Rc<RefCell<TableRepr>>,
     /// Rows that have been produced in the current iteration.
     /// Potentially contains redundancies.
-    pub(crate) to_add: Rc<RefCell<TableBuff<Sym>>>,
+    pub(crate) to_add: Rc<RefCell<BuffRepr>>,
 }
 
 impl VarTable {
     pub(crate) fn new(num_columns: usize) -> Self {
         Self {
-            stable: Rc::new(RefCell::new(Table::new_empty(num_columns))),
-            recent: Rc::new(RefCell::new(Table::new_empty(num_columns))),
-            to_add: Rc::new(RefCell::new(TableBuff::new(num_columns))),
+            stable: Rc::new(RefCell::new(TableRepr::new_empty(num_columns))),
+            recent: Rc::new(RefCell::new(TableRepr::new_empty(num_columns))),
+            to_add: Rc::new(RefCell::new(BuffRepr::new(num_columns))),
         }
     }
 
@@ -230,17 +372,36 @@ impl VarTable {
 
     /// Number of columns in the table (i.e. arity of the associated predicate)
     pub fn arity(&self) -> usize {
-        self.stable.borrow().num_columns
+        match &*self.stable.borrow() {
+            TableRepr::NonNullary(table) => table.num_columns,
+            TableRepr::Nullary(_) => 0,
+        }
     }
 
     /// Adds a row to the table.
     pub fn add(&self, row: impl AsRef<[Sym]>) {
-        self.to_add.borrow_mut().push(row.as_ref());
+        let row = row.as_ref();
+        match &mut *self.to_add.borrow_mut() {
+            BuffRepr::NonNullary(b) => b.push(row),
+            BuffRepr::Nullary(b) => {
+                assert!(row.is_empty(), "nullary predicate received a non-empty row");
+                b.push();
+            }
+        }
     }
 
     /// Adds several rows into the table.
     pub fn extend<'a>(&self, rows: impl IntoIterator<Item = &'a [Sym]>) {
-        self.to_add.borrow_mut().extend(rows)
+        let mut buff = self.to_add.borrow_mut();
+        match &mut *buff {
+            BuffRepr::NonNullary(b) => b.extend(rows),
+            BuffRepr::Nullary(b) => {
+                for row in rows {
+                    assert!(row.is_empty(), "nullary predicate received a non-empty row");
+                    b.push();
+                }
+            }
+        }
     }
 
     /// Creates a [`RuleAtom`], that can then be used to construct [`Rule`]s.
@@ -265,20 +426,30 @@ impl VarTable {
         self.recent.borrow().is_empty() && self.to_add.borrow().is_empty()
     }
 
-    /// Returns the table with all elements in the relation.
+    /// If nullary, returns true if table contains a row, and false otherwise.
+    /// If non-nullary, returns the table with all elements in the relation.
     ///
-    /// Will panic if the variable has unprocessed elements.
-    pub fn extract<'me>(&'me self) -> Ref<'me, Table> {
+    /// Panics if the variable has unprocessed elements.
+    pub fn extract<'me>(&'me self) -> VarTableExtract<'me> {
         assert!(
             self.stable(),
-            "VarTable has unprocessed elements, the program likely did run to completion."
+            "VarTable has unprocessed elements, the program likely did not run to completion."
         );
-        self.stable.borrow()
+
+        match &*self.stable.borrow() {
+            TableRepr::NonNullary(_) => {
+                VarTableExtract::NonNullary(Ref::map(self.stable.borrow(), |repr| match repr {
+                    TableRepr::NonNullary(table) => table,
+                    TableRepr::Nullary(_) => unreachable!(),
+                }))
+            }
+            TableRepr::Nullary(nullary_table) => VarTableExtract::<'_>::Nullary(nullary_table.has_row()),
+        }
     }
 
     pub(crate) fn process(&self) {
         // move recent to stable
-        let mut recent = Table::new_empty(self.recent.borrow().num_columns);
+        let mut recent = TableRepr::new_empty(self.arity());
         std::mem::swap(&mut recent, &mut self.recent.borrow_mut());
         self.stable.borrow_mut().merge(recent);
 
@@ -289,4 +460,13 @@ impl VarTable {
         // copy those in the recent set (erasing all the recent one that were move to stable)
         *self.recent.borrow_mut() = new;
     }
+}
+
+/// Result of [`VarTable::extract`]. Carries either a borrow on the non-nullary predicate's
+/// table or the truth value of a nullary predicate.
+pub enum VarTableExtract<'me> {
+    /// View over a non-nullary predicate.
+    NonNullary(Ref<'me, Table>),
+    /// Truth value of a nullary predicate.
+    Nullary(bool),
 }

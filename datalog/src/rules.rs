@@ -27,11 +27,19 @@ impl RuleAtom {
         assert_eq!(predicate.arity(), args.arity());
         Self { predicate, args }
     }
+
+    /// Returns a reference to the table of the atom's predicate.
+    pub fn predicate(&self) -> &VarTable {
+        &self.predicate
+    }
+    pub(crate) fn args(&self) -> impl Iterator<Item = Arg> {
+        self.args.as_args()
+    }
 }
 
 /// A rule in a datalog program, e.g. `ancestor(?x, ?z) :- parent(?x, ?y), ancestor(?y, ?z)`.
 #[derive(Clone)]
-pub struct Rule {
+pub(crate) struct Rule {
     head: RuleAtom,
     body: Vec<RuleAtom>,
 }
@@ -208,10 +216,57 @@ impl Join {
         }
     }
 
-    pub fn run(&self, table1: &Table, table2: &Table, out: &mut TableBuff<Sym>) {
+    /// Dispatches to the appropriate run_* helper based on the variant of each table/buffer.
+    pub fn run(&self, table1: &TableRepr, table2: &TableRepr, out: &mut BuffRepr) {
         if table1.is_empty() || table2.is_empty() {
             return;
         }
+        match (table1, table2, out) {
+            (TableRepr::NonNullary(t1), TableRepr::NonNullary(t2), BuffRepr::NonNullary(out)) => {
+                self.run_non_nullary(t1, t2, out);
+            }
+            (TableRepr::NonNullary(t1), TableRepr::NonNullary(t2), BuffRepr::Nullary(out)) => {
+                self.run_non_nullary_to_nullary(t1, t2, out);
+            }
+            (TableRepr::Nullary(_), TableRepr::NonNullary(t2), BuffRepr::NonNullary(out)) => {
+                // pattern1 is empty; binding loop yields one (empty) partial binding,
+                // then we iterate pattern2 over t2.
+                self.run_nullary_left(t2, out);
+            }
+            (TableRepr::NonNullary(t1), TableRepr::Nullary(_), BuffRepr::NonNullary(out)) => {
+                self.run_nullary_right(t1, out);
+            }
+            (TableRepr::Nullary(_), TableRepr::NonNullary(_), BuffRepr::Nullary(out)) => {
+                // both pattern1 and the output are nullary; if t1 has a row and pattern2 matches
+                // any row of t2, output the empty tuple. Caller already checked t1/t2 non-empty.
+                // pattern2 may further filter t2; check via the (potentially specialized) pattern.
+                if self.nullary_left_matches_any(table2) {
+                    out.push();
+                }
+            }
+            (TableRepr::NonNullary(_), TableRepr::Nullary(_), BuffRepr::Nullary(out)) => {
+                if self.nullary_right_matches_any(table1) {
+                    out.push();
+                }
+            }
+            (TableRepr::Nullary(_), TableRepr::Nullary(_), BuffRepr::Nullary(out)) => {
+                // both inputs nullary and non-empty (already checked), patterns are empty,
+                // so the output is the empty tuple.
+                debug_assert!(self.pattern1.pattern.is_empty());
+                debug_assert!(self.pattern2.pattern.is_empty());
+                out.push();
+            }
+            (TableRepr::Nullary(_), TableRepr::Nullary(_), BuffRepr::NonNullary(_)) => {
+                unreachable!(
+                    "non-nullary output with two nullary inputs: output_arity={} but num_vars=0",
+                    self.output_arity
+                );
+            }
+        }
+    }
+
+    /// Non-nullary to non-nullary join with flat output (original implementation).
+    fn run_non_nullary(&self, table1: &Table, table2: &Table, out: &mut TableBuff<Sym>) {
         let empty_bindings = (0..self.num_vars).map(|_| Sym::MAX).collect_vec();
         let binding = self.pattern1.all_bindings(table1, &empty_bindings);
         for partial_binding in binding.rows() {
@@ -224,6 +279,90 @@ impl Join {
                 out.push(output_variables);
             }
         }
+    }
+
+    /// Non-nullary to non-nullary join whose output is nullary. Pushes the empty tuple once if any
+    /// (pattern1, pattern2) combination matches a row in (table1, table2).
+    fn run_non_nullary_to_nullary(&self, table1: &Table, table2: &Table, out: &mut NullaryBuff) {
+        debug_assert_eq!(self.output_arity, 0);
+        if self.num_vars == 0 {
+            if pattern_matches_any_row(&self.pattern1, table1) && pattern_matches_any_row(&self.pattern2, table2) {
+                out.push();
+            }
+            return;
+        }
+        let empty_bindings = vec![Sym::MAX; self.num_vars];
+        let binding = self.pattern1.all_bindings(table1, &empty_bindings);
+        for partial_binding in binding.rows() {
+            let pattern2 = self.pattern2.specialized(partial_binding);
+            let full_bindings = pattern2.all_bindings(table2, partial_binding);
+            if !full_bindings.is_empty() {
+                out.push();
+                return;
+            }
+        }
+    }
+    /// pattern1 is the empty pattern over a nullary (non-empty) table. The binding loop
+    /// degenerates to one empty partial binding, then we iterate pattern2 over the flat table2.
+    fn run_nullary_left(&self, table2: &Table, out: &mut TableBuff<Sym>) {
+        debug_assert!(self.pattern1.pattern.is_empty());
+        let empty_bindings = (0..self.num_vars).map(|_| Sym::MAX).collect_vec();
+        // pattern2.specialized(empty) == pattern2 (no vars bound yet).
+        let full_bindings = self.pattern2.all_bindings(table2, &empty_bindings);
+        for row in full_bindings.rows() {
+            assert!(row.iter().all(|i| *i != Sym::MAX), "some unbound variables");
+            let output_variables = &row[..self.output_arity];
+            out.push(output_variables);
+        }
+    }
+
+    /// Symmetric of run_nullary_left.
+    fn run_nullary_right(&self, table1: &Table, out: &mut TableBuff<Sym>) {
+        debug_assert!(self.pattern2.pattern.is_empty());
+        let empty_bindings = (0..self.num_vars).map(|_| Sym::MAX).collect_vec();
+        let full_bindings = self.pattern1.all_bindings(table1, &empty_bindings);
+        for row in full_bindings.rows() {
+            assert!(row.iter().all(|i| *i != Sym::MAX), "some unbound variables");
+            let output_variables = &row[..self.output_arity];
+            out.push(output_variables);
+        }
+    }
+
+    /// True if table2 (flat) contains at least one row matching pattern2,
+    /// assuming pattern1 is the empty pattern over a non-empty nullary table.
+    fn nullary_left_matches_any(&self, table2: &TableRepr) -> bool {
+        let TableRepr::NonNullary(t2) = table2 else {
+            unreachable!()
+        };
+        if self.num_vars == 0 {
+            return pattern_matches_any_row(&self.pattern2, t2);
+        }
+        let empty_bindings = (0..self.num_vars).map(|_| Sym::MAX).collect_vec();
+        let bindings = self.pattern2.all_bindings(t2, &empty_bindings);
+        !bindings.is_empty()
+    }
+
+    fn nullary_right_matches_any(&self, table1: &TableRepr) -> bool {
+        let TableRepr::NonNullary(t1) = table1 else {
+            unreachable!()
+        };
+        if self.num_vars == 0 {
+            return pattern_matches_any_row(&self.pattern1, t1);
+        }
+        let empty_bindings = (0..self.num_vars).map(|_| Sym::MAX).collect_vec();
+        let bindings = self.pattern1.all_bindings(t1, &empty_bindings);
+        !bindings.is_empty()
+    }
+}
+
+fn pattern_matches_any_row(pat: &Pattern, table: &Table) -> bool {
+    match pat.pattern.len() {
+        0 => !table.is_empty(),
+        1 => pat.compiled::<1>().find_matches(table.rows_sized()).next().is_some(),
+        2 => pat.compiled::<2>().find_matches(table.rows_sized()).next().is_some(),
+        3 => pat.compiled::<3>().find_matches(table.rows_sized()).next().is_some(),
+        4 => pat.compiled::<4>().find_matches(table.rows_sized()).next().is_some(),
+        _ => todo!()
     }
 }
 
@@ -316,6 +455,12 @@ impl Pattern {
         cst as i32
     }
 
+    pub(crate) fn as_args(&self) -> impl Iterator<Item = Arg> {
+        self.pattern
+            .iter()
+            .map(|&i| Self::as_var(i).map_or(Arg::Sym(i as u32), Arg::Var))
+    }
+
     pub(crate) fn vars(&self) -> impl Iterator<Item = u32> + '_ {
         self.pattern.iter().copied().filter_map(Self::as_var)
     }
@@ -398,6 +543,7 @@ impl Pattern {
     ///
     fn all_bindings<'a>(&'a self, table: &'a Table, out: &'a [u32]) -> TableBuff<u32> {
         match self.pattern.len() {
+            0 => unreachable!(),
             1 => self.compiled::<1>().all_bindings(table.rows_sized(), out),
             2 => self.compiled::<2>().all_bindings(table.rows_sized(), out),
             3 => self.compiled::<3>().all_bindings(table.rows_sized(), out),
@@ -549,8 +695,13 @@ mod test {
             path_var.process();
 
             println!("\nFinal:");
-            for row in path_var.stable.borrow().rows() {
-                println!("  {row:?}");
+            match &*path_var.stable.borrow() {
+                crate::tables::TableRepr::NonNullary(t) => {
+                    for row in t.rows() {
+                        println!("  {row:?}");
+                    }
+                }
+                crate::tables::TableRepr::Nullary(_) => unreachable!(),
             }
         }
 
