@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::*;
 
 /// A program is a collection of predicates, facts and rules.
@@ -7,6 +9,9 @@ use crate::*;
 pub struct Program {
     vars: Vec<VarTable>,
     rules: Vec<Box<dyn RuleStep>>,
+
+    /// For a given symbol (key) stores the index of the interned / cached singleton predicate / table.
+    symbol_predicates_cache: HashMap<u32, usize>,
 }
 
 impl Program {
@@ -40,8 +45,84 @@ impl Program {
     }
 
     /// Adds a new rule to the program.
+    ///
+    ///
+    /// Transforms the rule by taking constant symbols in the head and "promoting" them to the body:
+    /// each head constant `c` is replaced by a fresh variable `Arg::Var(v)`,
+    /// and an atom `singleton_c(Arg::Var(v))` is appended to the body.
+    /// `singleton_c` is a fresh arity-1 predicate interned (cached) per distinct symbol
+    /// and seeded with the single fact `singleton_c(c)`.
+    ///
+    /// This keeps heads variable-only as required by the internal rule representation
+    /// while preserving the original constant constraint.
     pub fn add_rule(&mut self, head: RuleAtom, body: impl AsRef<[RuleAtom]>) {
-        let rule = Rule::new(head, body);
+        // #[cfg(debug_assertions)]
+        {
+            let max_rulelocal_var = head
+                .args()
+                .chain(body.as_ref().iter().flat_map(|a| a.args()))
+                .filter_map(|a| match a {
+                    Arg::Var(v) => Some(v),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+            let num_to_promote = head.args().filter(|a| matches!(a, Arg::Sym(_))).count() as u32;
+            assert!(
+                max_rulelocal_var + num_to_promote < i32::MAX as u32,
+                "there are not enough fresh (local) var ids to promote symbols to ({max_rulelocal_var:?}, {num_to_promote:?})"
+            );
+        }
+
+        let mut fresh = (i32::MAX - 1) as u32;
+        let mut extra_body = Vec::new();
+        let rewritten_args: Vec<Arg> = head
+            .args()
+            .map(|arg| match arg {
+                Arg::Sym(c) => {
+                    let cached_symbol_predicate = if let Some(&i) = self.symbol_predicates_cache.get(&c) {
+                        assert!(self.vars[i].arity() == 1, "cached singleton has non-arity-1 predicate");
+                        self.get_predicate(i).unwrap()
+                    } else {
+                        let i = self.num_predicates();
+                        let res = self.new_predicate(1);
+                        self.symbol_predicates_cache.insert(c, i);
+                        res.add([c]);
+                        self.get_predicate(i).unwrap()
+                    };
+                    let id = fresh;
+                    fresh = fresh.checked_sub(1).expect("fresh-id underflow");
+                    extra_body.push(cached_symbol_predicate.apply([Arg::Var(id)]));
+                    Arg::Var(id)
+                }
+                v @ Arg::Var(_) => v,
+            })
+            .collect();
+
+        let new_head = head.predicate().apply(rewritten_args);
+        let new_body = {
+            let mut res = Vec::from(body.as_ref());
+            res.append(&mut extra_body);
+            res
+        };
+
+        // #[cfg(debug_assertions)]
+        {
+            let head_vars = HashSet::<u32>::from_iter(new_head.args().filter_map(|a| match a {
+                Arg::Var(v) => Some(v),
+                _ => None,
+            }));
+            let body_vars = HashSet::<u32>::from_iter(new_body.iter().flat_map(|a| a.args()).filter_map(|a| match a {
+                Arg::Var(v) => Some(v),
+                _ => None,
+            }));
+            assert!(
+                head_vars.is_subset(&body_vars),
+                "rule is unsafe: a head variable does not appear in any body atom ({head_vars:?} {body_vars:?})"
+            );
+        }
+
+        let rule = Rule::new(new_head, new_body);
 
         let steps = rule.decompose(|arity| self.new_predicate(arity));
         for step in steps {
