@@ -1,20 +1,18 @@
 use crate::core::*;
-use crate::model::lang::ConversionError;
+use crate::lang::ConversionError;
 use core::convert::{From, Into};
 use std::cmp::Ordering;
 
-/// A literal `Lit` represents a lower or upper bound on a discrete variable
-/// (i.e. an integer, boolean or symbolic variable).
+/// Represents a lower or upper bound on an integer variable.
 ///
-/// For a boolean variable X:
-///  - the bound `x > 0` represent the true literal (`X` takes the value `true`)
-///  - the bound `x <= 0` represents the false literal (`X` takes the value `false`)
+/// For a binary variable X:
+///  - the bound `x > 0` represent the true literal (`X` takes the value `true/1`)
+///  - the bound `x <= 0` represents the false literal (`X` takes the value `false/0`)
 ///
 ///
 /// ```
-/// use aries::core::*;
-/// use aries::core::state::IntDomains;
-/// let mut state = IntDomains::new();
+/// use aries_solver::prelude::*;
+/// let mut state = Domains::new();
 /// let x = state.new_var(0, 1);
 /// let x_is_true: Lit = x.geq(1);
 /// let x_is_false: Lit = !x_is_true;
@@ -31,9 +29,8 @@ use std::cmp::Ordering;
 ///  - var >= 3   ->  -var <= -3
 ///  - var > 3    ->  -var <= -4
 /// ```
-/// use aries::core::*;
-/// use aries::core::state::IntDomains;
-/// let mut state = IntDomains::new();
+/// use aries_solver::prelude::*;
+/// let mut state = Domains::new();
 /// let x = state.new_var(0, 1);
 /// assert_eq!(x.leq(5), SignedVar::plus(x).leq(5));
 /// assert_eq!(Lit::lt(x, 5), SignedVar::plus(x).leq(4));
@@ -53,16 +50,16 @@ use std::cmp::Ordering;
 /// An important invariant is that, in a sorted list, a bound can only entail the literals immediately following it.
 ///
 /// ```
-/// use aries::core::*;
-/// let x = VarRef::from_u32(1);
-/// let y = VarRef::from_u32(2);
+/// use aries_solver::prelude::*;
+/// let x = Var::from_u32(1);
+/// let y = Var::from_u32(2);
 /// let mut literals = vec![Lit::geq(y, 4), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(x,2)];
 /// literals.sort();
 /// assert_eq!(literals, vec![Lit::geq(x,2), Lit::geq(x,1), Lit::leq(x, 3), Lit::leq(x, 4), Lit::leq(x, 6), Lit::geq(y, 4)]);
 /// ```
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Lit {
-    /// Either `+ v` or `- v` where `v` is a `VarRef`.
+    /// Either `+ v` or `- v` where `v` is a `Var`.
     svar: SignedVar,
     /// Upper bound of the signed variable.
     /// This design allows to test entailment without testing the relation of the Bound
@@ -85,9 +82,9 @@ impl std::fmt::Display for Relation {
 }
 
 impl Lit {
-    /// A literal that is always true. It is defined by stating that the special variable [VarRef::ZERO] is
+    /// A literal that is always true. It is defined by stating that the special variable [Var::ZERO] is
     /// lesser than or equal to 0, which is always true.
-    pub const TRUE: Lit = Lit::new(SignedVar::plus(VarRef::ZERO), 0);
+    pub const TRUE: Lit = Lit::new(SignedVar::plus(Var::ZERO), 0);
     /// A literal that is always false. It is defined as the negation of [Lit::TRUE].
     pub const FALSE: Lit = Lit::TRUE.not();
 
@@ -96,7 +93,7 @@ impl Lit {
     }
 
     #[inline]
-    pub fn variable(self) -> VarRef {
+    pub fn variable(self) -> Var {
         self.svar.variable()
     }
 
@@ -109,7 +106,7 @@ impl Lit {
         }
     }
 
-    pub fn unpack(self) -> (VarRef, Relation, IntCst) {
+    pub fn unpack(self) -> (Var, Relation, IntCst) {
         if self.svar.is_plus() {
             (self.svar.variable(), Relation::Leq, self.upper_bound)
         } else {
@@ -153,10 +150,10 @@ impl Lit {
     /// Return the negated version of the literal.
     ///
     /// ```
-    /// use aries::core::{Lit, VarRef};
+    /// use aries_solver::core::{Lit, Var};
     /// assert_eq!(!Lit::TRUE, Lit::FALSE);
     /// assert_eq!(!Lit::FALSE, Lit::TRUE);
-    /// let a = VarRef::from(0usize);
+    /// let a = Var::from(0usize);
     /// assert_eq!(!Lit::leq(a, 1), Lit::gt(a, 1));
     /// ```
     #[inline]
@@ -172,13 +169,13 @@ impl Lit {
     /// Note that this property is checked independently of the context where these literals appear.
     ///
     /// ```
-    /// use aries::core::{Lit, VarRef};
-    /// let a = VarRef::from(0usize);
+    /// use aries_solver::core::{Lit, Var};
+    /// let a = Var::from(0usize);
     /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 1)));
     /// assert!(Lit::leq(a, 1).entails(Lit::leq(a, 2)));
     /// assert!(!Lit::leq(a, 1).entails(Lit::leq(a, 0)));
     /// // literals on independent variables cannot entail each other.
-    /// let b = VarRef::from(1usize);
+    /// let b = Var::from(1usize);
     /// assert!(!Lit::leq(a, 1).entails(Lit::leq(b, 1)));
     /// ```
     #[inline]
@@ -197,31 +194,31 @@ impl Lit {
     /// Returns true if the literal will always be true in any model.
     ///
     /// ```
-    /// use aries::core::{Lit,VarRef};
+    /// use aries_solver::core::{Lit,Var};
     /// assert!(Lit::TRUE.tautological());
     /// assert!(!Lit::FALSE.tautological());
-    /// assert!(VarRef::ZERO.leq(10).tautological());
-    /// assert!(!VarRef::ZERO.geq(10).tautological());
-    /// assert!(VarRef::ZERO.geq(0).tautological());
-    /// assert!(!VarRef::ZERO.lt(0).tautological());
+    /// assert!(Var::ZERO.leq(10).tautological());
+    /// assert!(!Var::ZERO.geq(10).tautological());
+    /// assert!(Var::ZERO.geq(0).tautological());
+    /// assert!(!Var::ZERO.lt(0).tautological());
     /// ```
     pub fn tautological(self) -> bool {
         // +/- ZERO <= ub  where ub positive
-        self.variable() == VarRef::ZERO && self.upper_bound >= 0
+        self.variable() == Var::ZERO && self.upper_bound >= 0
     }
 
     /// Returns true if the literal can never be made true in any model.
     ///
     /// ```
-    /// use aries::core::{Lit,VarRef};
+    /// use aries_solver::core::{Lit,Var};
     /// assert!(Lit::FALSE.absurd());
-    /// assert!(VarRef::ZERO.geq(10).absurd());
-    /// assert!(VarRef::ZERO.lt(0).absurd());
+    /// assert!(Var::ZERO.geq(10).absurd());
+    /// assert!(Var::ZERO.lt(0).absurd());
     /// ```
     #[inline]
     pub fn absurd(self) -> bool {
         // +/- ZERO <= ub  where ub < 0
-        self.variable() == VarRef::ZERO && self.upper_bound < 0
+        self.variable() == Var::ZERO && self.upper_bound < 0
     }
 }
 
@@ -293,17 +290,17 @@ impl std::fmt::Debug for Lit {
 mod tests {
     use super::*;
 
-    fn leq(var: VarRef, val: IntCst) -> Lit {
+    fn leq(var: Var, val: IntCst) -> Lit {
         Lit::leq(var, val)
     }
-    fn geq(var: VarRef, val: IntCst) -> Lit {
+    fn geq(var: Var, val: IntCst) -> Lit {
         Lit::geq(var, val)
     }
 
     #[test]
     fn test_entailments() {
-        let a = VarRef::from(0usize);
-        let b = VarRef::from(1usize);
+        let a = Var::from(0usize);
+        let b = Var::from(1usize);
 
         assert!(leq(a, 0).entails(leq(a, 0)));
         assert!(leq(a, 0).entails(leq(a, 1)));

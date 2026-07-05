@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::model::Model;
 use crate::model::extensions::DomainsExt;
 use crate::solver::search::{Decision, SearchControl};
@@ -17,7 +17,7 @@ pub enum PreferredValue {
 /// Essentially intended to finish the search once all high-priority variables have been set.
 #[derive(Clone)]
 pub struct Lexical {
-    vars: Option<BTreeSet<VarRef>>,
+    vars: Option<BTreeSet<Var>>,
     pref: PreferredValue,
     lvl: DecisionLevelTracker,
 }
@@ -31,7 +31,7 @@ impl Lexical {
         }
     }
 
-    pub fn with_vars(vars: impl IntoIterator<Item = VarRef>, preferred_value: PreferredValue) -> Self {
+    pub fn with_vars(vars: impl IntoIterator<Item = Var>, preferred_value: PreferredValue) -> Self {
         Lexical {
             vars: Some(vars.into_iter().collect()),
             pref: preferred_value,

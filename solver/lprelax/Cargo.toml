@@ -5,8 +5,8 @@ authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2024"
 
 [dependencies]
-aries = { path = ".." }
-env_param = { path = "../../env_param" }
+aries-solver = { path = ".." }
+aries-env-param = { path = "../../utils/env_param" }
 highs = { git = "https://github.com/nrealus/highs.git" }
 itertools = { workspace = true }
 smallvec = { workspace = true }

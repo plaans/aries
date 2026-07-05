@@ -1,4 +1,4 @@
-use aries::prelude::{INT_CST_MAX, INT_CST_MIN, IntCst};
+use aries_solver::prelude::{INT_CST_MAX, INT_CST_MIN, IntCst};
 
 pub type LpCol = highs::Col;
 pub type LpRow = highs::Row;

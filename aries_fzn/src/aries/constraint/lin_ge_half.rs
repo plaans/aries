@@ -1,8 +1,8 @@
-use aries::core::IntCst;
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::linear::ScaledVar;
+use aries_solver::core::IntCst;
+use aries_solver::lang::BVar;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinLeHalf;

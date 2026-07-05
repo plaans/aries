@@ -8,7 +8,7 @@ edition = "2024"
 itertools = { workspace = true }
 structopt = { workspace = true }
 anyhow = { workspace = true }
-aries = { path = "../../solver", features = ["cpu_cycles"] }
+aries-solver = { path = "../../solver", features = ["cpu_cycles"] }
 aries-bench-data = { path = "../../bench/data" }
 walkdir = { workspace = true }
 

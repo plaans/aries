@@ -7,20 +7,20 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-pub use conjunction::*;
-pub use disjunction::*;
-pub use implication_graph::*;
-pub use lit_set::*;
-use smallvec::SmallVec;
-pub use watches::*;
-
-use crate::core::Lit;
-
 mod conjunction;
 mod disjunction;
 mod implication_graph;
 mod lit_set;
 mod watches;
+
+pub use conjunction::*;
+pub use disjunction::*;
+pub(crate) use implication_graph::*;
+pub use lit_set::*;
+pub(crate) use watches::*;
+
+use crate::prelude::*;
+use smallvec::SmallVec;
 
 const INLINE_SIZE: usize = 3;
 
@@ -123,7 +123,7 @@ impl Lits {
         // In the same passe, we also remove any trivially unsatisfiable literal (this could be simplified as it would always be the last of the sequence)
         self.elems.dedup_by(|curr, prev| (*curr).entails(*prev));
 
-        // the last two elements may be on `VarRef::ZERO` and thus either tautological or absurd.
+        // the last two elements may be on `Var::ZERO` and thus either tautological or absurd.
         // we remove any absurd one and simplify the clause if we find any tautological one
         if self.elems.last().is_some_and(|l| l.absurd()) {
             self.elems.pop();

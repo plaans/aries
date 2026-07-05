@@ -1,5 +1,5 @@
 use crate::core::literals::Watches;
-use crate::core::{IntCst, Lit, SignedVar, VarRef, cst_int_to_long};
+use crate::core::{IntCst, Lit, SignedVar, Var, cst_int_to_long};
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
@@ -67,16 +67,16 @@ impl Domain {
 
 #[derive(Clone, Default)]
 pub struct Domains {
-    domains: HashMap<VarRef, Domain>,
-    eq_watches: Watches<(VarRef, IntCst)>,
-    neq_watches: Watches<(VarRef, IntCst)>,
+    domains: HashMap<Var, Domain>,
+    eq_watches: Watches<(Var, IntCst)>,
+    neq_watches: Watches<(Var, IntCst)>,
 }
 
 impl Domains {
-    pub fn has_domain(&self, var: VarRef) -> bool {
+    pub fn has_domain(&self, var: Var) -> bool {
         self.domains.contains_key(&var)
     }
-    pub fn add_value(&mut self, var: VarRef, value: IntCst, lit: Lit) {
+    pub fn add_value(&mut self, var: Var, value: IntCst, lit: Lit) {
         self.domains
             .entry(var)
             .or_insert_with(Domain::new)
@@ -85,11 +85,11 @@ impl Domains {
         self.neq_watches.add_watch((var, value), !lit);
     }
 
-    pub fn eq_watches(&self, l: Lit) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
+    pub fn eq_watches(&self, l: Lit) -> impl Iterator<Item = (Var, IntCst)> + '_ {
         self.eq_watches.watches_on(l)
     }
 
-    pub fn neq_watches(&self, l: Lit) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
+    pub fn neq_watches(&self, l: Lit) -> impl Iterator<Item = (Var, IntCst)> + '_ {
         self.neq_watches.watches_on(l)
     }
 
@@ -97,7 +97,7 @@ impl Domains {
         let dom = &self.domains[&v.variable()];
         if v.is_plus() { dom.get(value) } else { dom.get(-value) }
     }
-    pub fn value(&self, v: VarRef, value: IntCst) -> Option<Lit> {
+    pub fn value(&self, v: Var, value: IntCst) -> Option<Lit> {
         let dom = &self.domains[&v];
         dom.get(value)
     }

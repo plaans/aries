@@ -1,8 +1,7 @@
 use anyhow::*;
-use aries::core::{INT_CST_MAX, INT_CST_MIN};
-use aries::model::extensions::Shaped;
-use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::prelude::*;
+use aries_solver::core::{INT_CST_MAX, INT_CST_MIN};
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::prelude::*;
 use lp_parser_rs::error::LpParseError;
 use lp_parser_rs::lexer::{Lexer, ParseResult, RawConstraint};
 use lp_parser_rs::lp::LpProblemParser;
@@ -161,18 +160,19 @@ impl IlpProblem {
         }
 
         for (coefs, lb, ub) in self.constrs.values() {
-            let sum = LinearSum::of(
+            let sum = LinSum::new(
+                0,
                 coefs
                     .iter()
-                    .map(|(var_name, coef)| LinearTerm::int(*coef, model.get_int_var(var_name).unwrap()))
-                    .collect(),
+                    .map(|(var_name, coef)| ScaledVar::new(model.shape.get_variable(var_name).unwrap(), *coef))
+                    .collect::<Vec<_>>(),
             );
 
             if *lb > INT_CST_MIN {
-                model.enforce(sum.clone().geq(*lb), []);
+                model.enforce(sum.clone().geq(*lb));
             }
             if *ub < INT_CST_MAX {
-                model.enforce(sum.clone().leq(*ub), []);
+                model.enforce(sum.clone().leq(*ub));
             }
             //println!("{}: {} <= {} <= {}", constr_name, lb, sum.clone(), ub);
         }
@@ -180,15 +180,16 @@ impl IlpProblem {
         if let Some((obj_name, coefs)) = &self.obj {
             let obj_atom = model.new_ivar(INT_CST_MIN, INT_CST_MAX, obj_name.clone());
 
-            let sum = LinearSum::of(
+            let sum = LinSum::new(
+                0,
                 coefs
                     .iter()
-                    .map(|(var_name, coef)| LinearTerm::int(*coef, model.get_int_var(var_name).unwrap()))
-                    .collect(),
+                    .map(|(var_name, coef)| ScaledVar::new(model.shape.get_variable(var_name).unwrap(), *coef))
+                    .collect::<Vec<_>>(),
             );
 
-            model.enforce(sum.clone().leq(obj_atom), []);
-            model.enforce(sum.clone().geq(obj_atom), []);
+            model.enforce(sum.clone().leq(obj_atom));
+            model.enforce(sum.clone().geq(obj_atom));
         }
 
         Ok(model)

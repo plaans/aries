@@ -1,4 +1,4 @@
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::model::Label;
 use crate::model::Model;
 use crate::solver::search::beta::var_order::VarOrder;
@@ -7,7 +7,7 @@ use crate::solver::search::beta::var_order::VarOrder;
 pub struct FirstFail;
 
 impl<Lbl: Label> VarOrder<Lbl> for FirstFail {
-    fn select(&self, model: &Model<Lbl>) -> Option<VarRef> {
+    fn select(&self, model: &Model<Lbl>) -> Option<Var> {
         model
             .state
             .variables()
@@ -28,7 +28,7 @@ mod tests {
         let mut model = Model::<String>::new();
         let _ = model.new_ivar(1, 0, "x"); // Empty domain
         let _ = model.new_ivar(3, 5, "y");
-        let z = model.new_ivar(0, 1, "z").into();
+        let z = model.new_ivar(0, 1, "z");
         assert_eq!(FirstFail.select(&model), Some(z));
     }
 }

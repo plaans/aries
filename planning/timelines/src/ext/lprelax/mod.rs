@@ -4,14 +4,14 @@ mod transition;
 
 use std::collections::{HashMap, HashSet};
 
-use aries::core::VarRef;
-use aries::core::views::Term;
-use env_param::EnvParam;
+use aries_solver::core::Var;
+use aries_solver::core::views::Term;
+use aries_env_param::EnvParam;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
-use aries::model::lang::BoolExpr;
-use aries::prelude::{Conjunction, IntCst, Lit};
+use aries_solver::lang::BoolExpr;
+use aries_solver::prelude::{Conjunction, IntCst, Lit};
 
 use aries_lprelax::*;
 
@@ -213,7 +213,7 @@ impl LpRelaxEncoding {
                 }
             } else {
                 let p = p.variable();
-                assert!(p != VarRef::ZERO);
+                assert!(p != Var::ZERO);
 
                 for &col in &cols {
                     lprelax.add_col_half_binding_default(LpCol::from(col), p);
@@ -233,11 +233,11 @@ impl LpRelaxEncoding {
         // Bind term grounding columns of the LP with corresponding literals in the main CSP.
 
         for (&term, vs) in &relations.terms_ground {
-            if term.is_cst() {
+            if term.is_constant() {
                 continue;
             }
             let var = term.variable();
-            assert!(var != VarRef::ZERO);
+            assert!(var != Var::ZERO);
 
             let mappings: Vec<(usize, IntCst)> = {
                 let mut res = vec![];
@@ -283,7 +283,7 @@ impl LpRelaxEncoding {
         for (&(transition1_id, tansition2_id), &s) in &relations.supports_lifted {
             if let Some(s) = s {
                 let s = s.variable();
-                debug_assert!(s != VarRef::ZERO);
+                debug_assert!(s != Var::ZERO);
 
                 let col = *self.cols.get(&ColTag::Support(transition1_id, tansition2_id)).unwrap();
 
@@ -786,7 +786,7 @@ impl LpRelaxEncodingRelations {
         }
 
         for (&(term, _), &v) in ctx.get_source_terms(&source).iter().zip(source_grounding.inner()) {
-            if term.is_cst() {
+            if term.is_constant() {
                 continue;
             }
             self.terms_ground.entry(term).or_default().insert(v);
@@ -877,7 +877,7 @@ impl LpRelaxEncodingRelations {
             .iter_transition_terms(transition_id)
             .zip(transition_grounding.inner())
         {
-            if term.is_cst() {
+            if term.is_constant() {
                 continue;
             }
 

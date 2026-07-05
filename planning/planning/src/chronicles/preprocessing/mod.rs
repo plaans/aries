@@ -5,7 +5,7 @@ mod state_variables;
 mod statics;
 mod unused_effects;
 
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 
 static PREPRO_STATIC: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_STATIC", "true");
 static PREPRO_STATE_VARS: EnvParam<bool> = EnvParam::new("ARIES_PLANNING_PREPRO_STATE_VARS", "true");

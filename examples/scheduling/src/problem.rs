@@ -1,8 +1,8 @@
-use crate::search::{Model, Var};
-use aries::core::{IntCst, Lit, u32_to_cst};
-use aries::model::lang::expr::{alternative, eq, leq, or};
-use aries::model::lang::{IAtom, IVar};
-use aries::reasoners::cp::no_overlap::{self, NoOverlap, Task};
+use crate::search::{Model, VarLbl};
+use aries_solver::core::{IntCst, Lit, u32_to_cst};
+use aries_solver::lang::expr::{alternative, eq, leq, or};
+use aries_solver::lang::{IAtom, Var};
+use aries_solver::reasoners::cp::no_overlap::{self, NoOverlap, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -212,7 +212,7 @@ pub struct OperationAlternative {
     pub id: OperationId,
     pub machine: u32,
     pub duration: IntCst,
-    pub start: IVar,
+    pub start: Var,
     pub presence: Lit,
 }
 
@@ -229,14 +229,14 @@ impl OperationAlternative {
 /// Encoding of a scheduling problem, where each operation and alternative is associated with its variables in the CSP.
 #[derive(Clone)]
 pub struct Encoding {
-    makespan: IVar,
+    makespan: Var,
     operations: Vec<Operation>,
     alternatives: Vec<OperationAlternative>,
 }
 
 impl Encoding {
     pub fn new(pb: &Problem, lower_bound: IntCst, upper_bound: IntCst, m: &mut Model) -> Self {
-        let makespan = m.new_ivar(lower_bound, upper_bound, Var::Makespan);
+        let makespan = m.new_ivar(lower_bound, upper_bound, VarLbl::Makespan);
 
         let mut operations = Vec::new();
         let mut alternatives = Vec::new();
@@ -254,9 +254,9 @@ impl Encoding {
                 let presence = if op.alternatives.len() == 1 {
                     Lit::TRUE
                 } else {
-                    m.new_presence_variable(Lit::TRUE, Var::Presence(id)).true_lit()
+                    m.new_presence_variable(Lit::TRUE, VarLbl::Presence(id)).true_lit()
                 };
-                let start = m.new_optional_ivar(0, upper_bound, presence, Var::Start(id));
+                let start = m.new_optional_ivar(0, upper_bound, presence, VarLbl::Start(id));
                 alternatives.push(OperationAlternative {
                     id,
                     machine: alt.machine,
@@ -286,8 +286,8 @@ impl Encoding {
                 Operation {
                     job: job_id,
                     op: op_id,
-                    start: m.new_optional_ivar(0, upper_bound, Lit::TRUE, Var::Start(id)).into(),
-                    end: m.new_optional_ivar(0, upper_bound, Lit::TRUE, Var::Start(id)).into(),
+                    start: m.new_optional_ivar(0, upper_bound, Lit::TRUE, VarLbl::Start(id)).into(),
+                    end: m.new_optional_ivar(0, upper_bound, Lit::TRUE, VarLbl::Start(id)).into(),
                 }
             };
             operations.push(operation);
@@ -346,14 +346,14 @@ pub(crate) fn encode(
 
     // enforce makespan after last alternative
     for oa in e.all_alternatives() {
-        m.enforce(leq(oa.end(), e.makespan), [oa.presence]);
+        m.enforce_scoped(leq(oa.end(), e.makespan), [oa.presence]);
     }
 
     // enforce makespan after last operation and minimal duration of operation (based on alternatives)
     for o in e.all_operations() {
-        m.enforce(leq(o.end, e.makespan), []);
+        m.enforce(leq(o.end, e.makespan));
         let min_duration = pb.operation(o.job, o.op).min_duration();
-        m.enforce(leq(o.start + min_duration, o.end), []);
+        m.enforce(leq(o.start + min_duration, o.end));
     }
 
     // make sure we have exactly one alternative per operation
@@ -363,14 +363,14 @@ pub(crate) fn encode(
 
             if use_constraints {
                 let starts = e.alternatives(j, op).map(|alt| alt.start()).collect_vec();
-                m.enforce(alternative(operation.start, starts), []);
+                m.enforce(alternative(operation.start, starts));
                 let ends = e.alternatives(j, op).map(|alt| alt.end()).collect_vec();
-                m.enforce(alternative(operation.end, ends), []);
+                m.enforce(alternative(operation.end, ends));
             } else {
                 // enforce that, if an alternative is present, it matches the operation
                 for alt in e.alternatives(j, op) {
-                    m.enforce(eq(operation.start, alt.start()), [alt.presence]);
-                    m.enforce(eq(operation.end, alt.end()), [alt.presence]);
+                    m.enforce_scoped(eq(operation.start, alt.start()), [alt.presence]);
+                    m.enforce_scoped(eq(operation.end, alt.end()), [alt.presence]);
                 }
 
                 // presence literals of all alternatives
@@ -381,11 +381,11 @@ pub(crate) fn encode(
                     "Not a flexible problem but presence is not a tautology"
                 );
                 // at least one alternative must be present
-                m.enforce(or(alts.as_slice()), []);
+                m.enforce(or(alts.as_slice()));
                 // all alternatives are mutually exclusive
                 for (i, l1) in alts.iter().copied().enumerate() {
                     for &l2 in &alts[i + 1..] {
-                        m.enforce(or([!l1, !l2]), []);
+                        m.enforce(or([!l1, !l2]));
                     }
                 }
             }
@@ -402,7 +402,7 @@ pub(crate) fn encode(
                 // variable that is true if alt1 comes first and false otherwise.
                 // in any case, setting a value to it enforces that the two tasks do not overlap
                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
-                let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
+                let prec = m.new_optional_bvar(scope, VarLbl::Prec(alt1.id, alt2.id));
 
                 m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
                 m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));
@@ -429,7 +429,7 @@ pub(crate) fn encode(
 
                     let o1 = e.operation(j, op1);
                     let o2 = e.operation(j, op2);
-                    m.enforce(leq(o1.end, o2.start), []);
+                    m.enforce(leq(o1.end, o2.start));
 
                     // add transportation time between machines.
                     // These are machine-dependent and thus placed between any pair of alternatives
@@ -438,7 +438,7 @@ pub(crate) fn encode(
                             if let Some(transport_time) = pb.transport_time(a1.machine, a2.machine)
                                 && transport_time > 0
                             {
-                                m.enforce(
+                                m.enforce_scoped(
                                     leq(a1.end() + (transport_time as IntCst), a2.start()),
                                     [a1.presence, a2.presence],
                                 );
@@ -448,7 +448,7 @@ pub(crate) fn encode(
 
                     // If there is time-lag, enforce it as a maximum delay between the two tasks.
                     if let Some(time_lag) = pb.time_lag {
-                        m.enforce(leq(o2.start, o1.end + time_lag as IntCst), []);
+                        m.enforce(leq(o2.start, o1.end + time_lag as IntCst));
                     }
                 }
             }
@@ -464,7 +464,7 @@ pub(crate) fn encode(
                                 // variable that is true if alt1 comes first and false otherwise.
                                 // in any case, setting a value to it enforces that the two tasks do not overlap
                                 let scope = m.get_conjunctive_scope(&[alt1.presence, alt2.presence]);
-                                let prec = m.new_optional_bvar(scope, Var::Prec(alt1.id, alt2.id));
+                                let prec = m.new_optional_bvar(scope, VarLbl::Prec(alt1.id, alt2.id));
 
                                 m.enforce_if(prec.true_lit(), leq(alt1.end(), alt2.start));
                                 m.enforce_if(prec.false_lit(), leq(alt2.end(), alt1.start));

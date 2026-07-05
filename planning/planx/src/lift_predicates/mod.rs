@@ -1,6 +1,6 @@
 mod substitutions;
 
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use itertools::Itertools;
 use substitutions::*;
 

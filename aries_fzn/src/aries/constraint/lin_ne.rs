@@ -1,10 +1,7 @@
-use aries::core::IntCst;
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::IVar;
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::linear::LinearTerm;
-use aries::model::lang::linear::ScaledVar;
+use aries_solver::core::IntCst;
+use aries_solver::lang::linear::*;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -35,9 +32,7 @@ impl LinNe {
 impl<Lbl: Label> Post<Lbl> for LinNe {
     fn post(&self, model: &mut Model<Lbl>) {
         let above = model.state.new_var(0, 1).geq(1);
-        let sum = self.sum.iter().fold(LinearSum::zero(), |accu, elem| {
-            accu + LinearTerm::int(elem.factor, IVar::new(elem.var))
-        });
+        let sum = LinSum::new(0, self.sum().iter().copied());
         model.enforce_if(above, sum.clone().geq(self.b + 1));
         model.enforce_if(!above, sum.leq(self.b - 1));
     }

@@ -22,7 +22,7 @@ mod theta_lambda_tree;
 /// Notable adaptations are with respect to explanations and propagation of the bounds of optional intervals in edge-finding.
 ///
 /// ```
-/// use aries::reasoners::cp::no_overlap::PropagatorKind::*;
+/// use aries_solver::reasoners::cp::no_overlap::PropagatorKind::*;
 /// assert!(Overload < OverloadWithOptional);
 /// assert!(OverloadWithOptional < EdgeFinding);
 /// ```
@@ -285,16 +285,16 @@ impl UserPropagator for NoOverlap<IAtom> {
         propagators
     }
 
-    fn satisfied(&self, dom: &Domains) -> bool {
+    fn satisfied(&self, sol: &Solution) -> bool {
         // maximum intervals of all possibly present tasks
         let itvs = self
             .tasks
             .iter()
             .filter_map(|t| {
-                if dom.entails(!t.presence) {
+                if sol.entails(!t.presence) {
                     None
                 } else {
-                    Some((dom.lb(t.start), dom.ub(t.end)))
+                    Some((sol.eval(t.start).unwrap(), sol.eval(t.end).unwrap()))
                 }
             })
             .sorted_unstable()

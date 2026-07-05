@@ -1,0 +1,58 @@
+use crate::core::views::Term;
+use crate::core::*;
+
+/// A boolean variable.
+/// It is a wrapper around an (untyped) discrete variable to provide type safety.
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
+pub struct BVar(Var);
+
+impl BVar {
+    pub fn new(dvar: Var) -> Self {
+        BVar(dvar)
+    }
+
+    /// Provides an integer view of this boolean variable
+    /// where true <-> 1   and  false <-> 0
+    pub fn int_view(self) -> Var {
+        self.0
+    }
+
+    pub fn true_lit(self) -> Lit {
+        Lit::geq(self.variable(), 1)
+    }
+    pub fn false_lit(self) -> Lit {
+        Lit::leq(self.variable(), 0)
+    }
+}
+
+impl From<BVar> for Var {
+    fn from(i: BVar) -> Self {
+        i.0
+    }
+}
+
+impl From<BVar> for Lit {
+    fn from(v: BVar) -> Self {
+        v.true_lit()
+    }
+}
+
+impl From<usize> for BVar {
+    fn from(i: usize) -> Self {
+        BVar(Var::from(i))
+    }
+}
+
+impl From<BVar> for usize {
+    fn from(b: BVar) -> Self {
+        usize::from(b.0)
+    }
+}
+
+impl std::ops::Not for BVar {
+    type Output = Lit;
+
+    fn not(self) -> Self::Output {
+        self.false_lit()
+    }
+}

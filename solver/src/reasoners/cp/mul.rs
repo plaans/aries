@@ -1,7 +1,8 @@
 use crate::prelude::*;
+use crate::reasoners::cp::UserPropagator;
 use crate::{
     core::{
-        IntCst, Lit, VarRef,
+        IntCst, Lit, Var,
         state::{Cause, Domains, DomainsSnapshot, Explanation},
     },
     reasoners::{
@@ -16,16 +17,16 @@ use crate::{
 ///
 /// Propagations are maximal for active && fact1 != fact2.
 /// Explanations are far from minimal.
-#[derive(Clone)]
-pub(super) struct Mul {
-    pub prod: VarRef,
-    pub fact1: VarRef,
-    pub fact2: VarRef,
+#[derive(Clone, Debug)]
+pub(crate) struct MulPropagator {
+    pub prod: Var,
+    pub fact1: Var,
+    pub fact2: Var,
     pub active: Lit,
     pub valid: Lit,
 }
 
-impl Propagator for Mul {
+impl Propagator for MulPropagator {
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
         context.add_watch(self.prod, id);
         context.add_watch(self.fact1, id);
@@ -101,7 +102,7 @@ impl Propagator for Mul {
     }
 }
 
-impl Mul {
+impl MulPropagator {
     /// Does one iteration of forward and backward propagation, return true if bounds updated
     fn propagate_iteration(&self, domains: &mut Domains, cause: Cause) -> Result<bool, Contradiction> {
         let mut updated = self.propagate_forward(domains, cause)?;
@@ -126,8 +127,8 @@ impl Mul {
         &self,
         domains: &mut Domains,
         cause: Cause,
-        fact: VarRef,
-        other_fact: VarRef,
+        fact: Var,
+        other_fact: Var,
     ) -> Result<bool, Contradiction> {
         let p = domains.concrete_domain(self.prod);
         let of = domains.concrete_domain(other_fact);
@@ -240,7 +241,7 @@ impl Mul {
     }
 
     /// If x = y * x case, returns y
-    fn xyx_fact(&self) -> Option<VarRef> {
+    fn xyx_fact(&self) -> Option<Var> {
         if self.fact1 == self.prod {
             Some(self.fact2)
         } else if self.fact2 == self.prod {
@@ -254,17 +255,17 @@ impl Mul {
 // Utils for common operations on domains
 impl DomainsSnapshot<'_> {
     /// Creates literal v <= ub(v)
-    fn ub_literal(&self, v: VarRef) -> Lit {
+    fn ub_literal(&self, v: Var) -> Lit {
         v.leq(self.ub(v))
     }
 
     /// Creates literal v >= lb(v)
-    fn lb_literal(&self, v: VarRef) -> Lit {
+    fn lb_literal(&self, v: Var) -> Lit {
         v.geq(self.lb(v))
     }
 
     // Pushes v <= ub(v) and v >= lb(v) into explanation
-    fn explain_var(&self, v: VarRef, out_explanation: &mut Explanation) {
+    fn explain_var(&self, v: Var, out_explanation: &mut Explanation) {
         out_explanation.push(self.lb_literal(v));
         out_explanation.push(self.ub_literal(v));
     }
@@ -272,7 +273,7 @@ impl DomainsSnapshot<'_> {
 
 impl Domains {
     // Set upper and lower bounds, return true if either changed
-    fn set_bounds(&mut self, v: VarRef, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
+    fn set_bounds(&mut self, v: Var, (lb, ub): (IntCst, IntCst), cause: Cause) -> Result<bool, Contradiction> {
         let changed1 = self.set_lb(v, lb, cause)?;
         let changed2 = self.set_ub(v, ub, cause)?;
         Ok(changed1 || changed2)
@@ -290,6 +291,22 @@ fn div_floor_ceil(x: IntCst, y: IntCst) -> (IntCst, IntCst) {
     )
 }
 
+impl UserPropagator for MulPropagator {
+    fn get_propagators(&self) -> Vec<super::DynPropagator> {
+        vec![self.clone().into()]
+    }
+
+    fn satisfied(&self, sol: &Solution) -> bool {
+        if !sol.entails(self.active) || !sol.entails(self.valid) {
+            return true; // out of scope or inactive => always holds
+        }
+        match (sol.eval(self.prod), sol.eval(self.fact1), sol.eval(self.fact2)) {
+            (Some(p), Some(f1), Some(f2)) => p == f1.saturating_mul(f2),
+            _ => panic!("Constraint is within validity scope but has absent elements in solution."),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
@@ -297,24 +314,24 @@ mod test {
     use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     use super::*;
-    use crate::{core::*, reasoners::cp::propagator::test::utils::test_explanations};
+    use crate::{core::*, reasoners::cp::testing::test_explanations};
 
     // === Assertions ===
 
     /// Asserts that bounds of var are as expected
-    fn check_bounds(v: VarRef, d: &Domains, expected_bounds: (IntCst, IntCst)) {
+    fn check_bounds(v: Var, d: &Domains, expected_bounds: (IntCst, IntCst)) {
         assert_eq!(d.bounds(v), expected_bounds, "Unexpected bounds for {v:?}");
     }
 
     /// Asserts that val is in var's bounds
-    fn check_in_bounds(d: &Domains, var: VarRef, val: IntCst) {
+    fn check_in_bounds(d: &Domains, var: Var, val: IntCst) {
         let (lb, ub) = d.bounds(var);
         assert!(lb <= val && val <= ub, "{} <= {} <= {} failed", lb, val, ub);
     }
 
     /// Asserts that two explanations contain the same literals
     #[allow(unused)]
-    fn check_explanations(prop: &Mul, lit: Lit, d: &Domains, expected: Explanation) {
+    fn check_explanations(prop: &MulPropagator, lit: Lit, d: &Domains, expected: Explanation) {
         let out_explanation = &mut Explanation::new();
         prop.explain(lit, &DomainsSnapshot::current(d), out_explanation);
         let expected_set: HashSet<&Lit> = expected.lits.iter().collect();
@@ -324,7 +341,7 @@ mod test {
 
     // === Utils ===
     #[allow(unused)]
-    fn print_domains(d: &Domains, prop: &Mul) {
+    fn print_domains(d: &Domains, prop: &MulPropagator) {
         println!("Problem: ");
         let (prod_lb, prod_ub) = d.bounds(prop.prod);
         println!("  {prod_lb} <= prod <= {prod_ub}");
@@ -335,7 +352,7 @@ mod test {
     }
 
     /// Generates factors, calculates result, returns propagator and true mult
-    fn gen_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst, IntCst))> {
+    fn gen_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, MulPropagator, (IntCst, IntCst, IntCst))> {
         let max = max as IntCst;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
@@ -353,7 +370,7 @@ mod test {
             let prod = d.new_var(prod_bounds.0, prod_bounds.1);
             let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
             let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
-            let prop = Mul {
+            let prop = MulPropagator {
                 prod,
                 fact1,
                 fact2,
@@ -369,7 +386,7 @@ mod test {
         res
     }
 
-    fn gen_square_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, Mul, (IntCst, IntCst))> {
+    fn gen_square_problems(n: u32, max: u32, always_active: bool) -> Vec<(Domains, MulPropagator, (IntCst, IntCst))> {
         let max = max as IntCst;
         let mut res = vec![];
         let mut rng = SmallRng::seed_from_u64(0);
@@ -382,7 +399,7 @@ mod test {
                 rng.random_range(prod_val..=max * max),
             );
             let fact = d.new_var(rng.random_range(-max..=fact_val), rng.random_range(fact_val..=max));
-            let prop = Mul {
+            let prop = MulPropagator {
                 prod,
                 fact1: fact,
                 fact2: fact,
@@ -414,7 +431,7 @@ mod test {
             let prod = d.new_var(prod_bounds.0, prod_bounds.1);
             let fact1 = d.new_var(fact1_bounds.0, fact1_bounds.1);
             let fact2 = d.new_var(fact2_bounds.0, fact2_bounds.1);
-            Mul {
+            MulPropagator {
                 prod,
                 fact1,
                 fact2,
@@ -442,7 +459,7 @@ mod test {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
-        let mut prop = Mul {
+        let mut prop = MulPropagator {
             prod,
             fact1: fact,
             fact2: fact,
@@ -467,7 +484,7 @@ mod test {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
-        let mut prop = Mul {
+        let mut prop = MulPropagator {
             prod,
             fact1: fact,
             fact2: prod,
@@ -486,7 +503,7 @@ mod test {
         let mut d = Domains::new();
         let prod = d.new_var(prod_bounds.0, prod_bounds.1);
         let fact = d.new_var(fact_bounds.0, fact_bounds.1);
-        let mut prop = Mul {
+        let mut prop = MulPropagator {
             prod,
             fact1: fact,
             fact2: prod,

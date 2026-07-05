@@ -29,7 +29,7 @@ impl VarView for PMIAtom {
 }
 
 impl Term for PMIAtom {
-    fn variable(self) -> VarRef {
+    fn variable(self) -> Var {
         match self {
             PMIAtom::Plus(iatom) | PMIAtom::Minus(iatom) => iatom.variable(),
         }

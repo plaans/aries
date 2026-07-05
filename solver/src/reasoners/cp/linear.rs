@@ -2,9 +2,7 @@
 
 use crate::backtrack::{DecLvl, EventIndex};
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Event, Explanation, InvalidUpdate};
-use crate::core::{
-    INT_CST_MAX, INT_CST_MIN, IntCst, Lit, LongCst, SignedVar, VarRef, cst_int_to_long, cst_long_to_int,
-};
+use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_int_to_long, cst_long_to_int_clamped};
 use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
@@ -37,7 +35,7 @@ impl std::fmt::Debug for SumElem {
 }
 
 impl SumElem {
-    pub fn new(factor: IntCst, var: VarRef) -> Self {
+    pub fn new(factor: IntCst, var: Var) -> Self {
         debug_assert_ne!(factor, 0);
         if factor > 0 {
             Self {
@@ -53,7 +51,7 @@ impl SumElem {
     }
 
     fn is_constant(&self) -> bool {
-        debug_assert!(self.var.variable() != VarRef::ONE); // TODO remove
+        debug_assert!(self.var.variable() != Var::ONE); // TODO remove
         false
     }
 
@@ -72,7 +70,7 @@ impl SumElem {
         // enforce  ub / factor >= var
         // equiv to floor(ub / factor) >= var
         let ub = div_floor(ub, cst_int_to_long(self.factor));
-        let ub = cst_long_to_int(ub.clamp(cst_int_to_long(INT_CST_MIN), cst_int_to_long(INT_CST_MAX)));
+        let ub = cst_long_to_int_clamped(ub);
         domains.set_ub(self.var, ub, cause)
     }
 }
@@ -399,7 +397,7 @@ mod tests {
         assert_eq!(e.get_upper_bound(d), ub.into());
     }
 
-    fn check_bounds_var(v: VarRef, d: &Domains, lb: IntCst, ub: IntCst) {
+    fn check_bounds_var(v: Var, d: &Domains, lb: IntCst, ub: IntCst) {
         assert_eq!(d.lb(v), lb);
         assert_eq!(d.ub(v), ub);
     }
@@ -560,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_explanations() {
-        use crate::reasoners::cp::propagator::test::utils::*;
+        use crate::reasoners::cp::testing::*;
         for (d, mut s) in gen_problems() {
             println!("\nConstraint: {s:?}");
             test_explanations(&d, &mut s, true);

@@ -1,8 +1,8 @@
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::IVar;
-use aries::model::lang::expr::leq;
+use aries_solver::lang::BVar;
+use aries_solver::lang::Var;
+use aries_solver::lang::expr::leq;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -11,21 +11,21 @@ use crate::aries::Post;
 /// `r -> a <= b`
 #[derive(Debug)]
 pub struct LeHalf {
-    a: IVar,
-    b: IVar,
+    a: Var,
+    b: Var,
     r: BVar,
 }
 
 impl LeHalf {
-    pub fn new(a: IVar, b: IVar, r: BVar) -> Self {
+    pub fn new(a: Var, b: Var, r: BVar) -> Self {
         Self { a, b, r }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &Var {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &Var {
         &self.b
     }
 
@@ -42,7 +42,7 @@ impl<Lbl: Label> Post<Lbl> for LeHalf {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_reif_model;
     use crate::aries::constraint::test::verify_all;

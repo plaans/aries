@@ -1,4 +1,4 @@
-use aries::prelude::{IntCst, Lit, VarRef};
+use aries_solver::prelude::{IntCst, Lit, Var};
 
 use crate::LpCol;
 
@@ -19,8 +19,8 @@ impl LpLit {
     }
     pub fn from_model_lit(col: LpCol, lit: Lit) -> Self {
         let (tpe, val) = match lit.relation() {
-            aries::core::Relation::Gt => (LpLitType::GEQ, -lit.ub_value()),
-            aries::core::Relation::Leq => (LpLitType::LEQ, lit.ub_value()),
+            aries_solver::core::Relation::Gt => (LpLitType::GEQ, -lit.ub_value()),
+            aries_solver::core::Relation::Leq => (LpLitType::LEQ, lit.ub_value()),
         };
         Self { col, tpe, val }
     }
@@ -38,7 +38,7 @@ impl LpLit {
             val,
         }
     }
-    pub fn into_model_lit(self, var: VarRef) -> Lit {
+    pub fn into_model_lit(self, var: Var) -> Lit {
         match self.tpe {
             LpLitType::LEQ => var.leq(self.val),
             LpLitType::GEQ => var.geq(self.val),

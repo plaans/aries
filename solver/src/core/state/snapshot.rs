@@ -62,7 +62,7 @@ impl<'a> DomainsSnapshot<'a> {
     /// Returns the presence literal of the variable
     ///
     /// Note: this is only meant to implement the [`Dom`] trait.
-    fn get_presence_literal(&self, term: VarRef) -> Lit {
+    fn get_presence_literal(&self, term: Var) -> Lit {
         self.domains().presence(term)
     }
 
@@ -103,7 +103,7 @@ impl<'a> Dom for DomainsSnapshot<'a> {
         self.get_upper_bound(svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.get_presence_literal(var)
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::backtrack::DecLvl;
-use crate::core::VarRef;
+use crate::core::Var;
 use crate::core::state::Conflict;
 use crate::core::state::Explainer;
 use crate::model::Label;
@@ -10,7 +10,7 @@ use crate::solver::search::beta::var_order::VarOrder;
 
 #[derive(Clone, Debug)]
 pub struct Activity {
-    table: HashMap<VarRef, f32>,
+    table: HashMap<Var, f32>,
     decay_factor: f32,
 }
 
@@ -24,12 +24,12 @@ impl Activity {
     }
 
     /// Return the activity of the given variable.
-    fn get(&self, var: VarRef) -> f32 {
+    fn get(&self, var: Var) -> f32 {
         *self.table.get(&var).unwrap_or(&0.0)
     }
 
     /// Bump the activity of the given variable.
-    fn bump(&mut self, var: VarRef) {
+    fn bump(&mut self, var: Var) {
         let activity = self.get(var) + 1.0;
         self.table.insert(var, activity);
     }
@@ -56,7 +56,7 @@ impl<Lbl: Label> VarOrder<Lbl> for Activity {
         }
     }
 
-    fn select(&self, model: &Model<Lbl>) -> Option<VarRef> {
+    fn select(&self, model: &Model<Lbl>) -> Option<Var> {
         model
             .state
             .variables()

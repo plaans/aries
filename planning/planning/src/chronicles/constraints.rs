@@ -1,11 +1,13 @@
 use super::*;
-use aries::core::Lit;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::linear::LinearSum;
-use aries::model::lang::{expr::*, Kind};
-use aries::model::lang::{Cst, Type};
-use aries::model::Label;
+use crate::legacy::*;
+use crate::legacy::{geq, leq, lt};
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
+use aries_solver::{core::Lit, lang::expr::or};
 use itertools::Itertools;
+
+use crate::legacy::{eq, neq};
 use std::fmt::Debug;
 use ConstraintType::*;
 
@@ -320,7 +322,7 @@ pub fn encode_constraint<L: Label>(
             };
             // Redundant constraint to enforce the precedence between start and end.
             // This form ensures that the precedence in posted in the STN.
-            model.enforce(f_leq(start, end), [presence])
+            model.enforce_scoped(f_leq(start, end), [presence])
         }
         ConstraintType::Or => {
             let mut disjuncts = Vec::with_capacity(constraint.variables.len());
@@ -331,8 +333,8 @@ pub fn encode_constraint<L: Label>(
             model.bind(or(disjuncts), value)
         }
         ConstraintType::LinearEq(sum) => {
-            model.enforce(sum.clone().leq(LinearSum::zero()), [presence]);
-            model.enforce(sum.clone().geq(LinearSum::zero()), [presence]);
+            model.enforce_scoped(sum.clone().leq(LinearSum::zero()), [presence]);
+            model.enforce_scoped(sum.clone().geq(LinearSum::zero()), [presence]);
         }
     }
 }
@@ -380,7 +382,7 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
         supported_by_a_line.push(support);
     }
     // enforce that at least one line matches the variable values
-    model.enforce(or(supported_by_a_line), [presence]);
+    model.enforce_scoped(or(supported_by_a_line), [presence]);
 
     if redundant_constraints {
         // TODO: these redundant constraints seem to trigger an underlying bug and are hence deactivated by default
@@ -425,7 +427,7 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                 .iter()
                 .map(|val| half_reif_eq(var, *val, model))
                 .collect_vec());
-            model.enforce(has_allowed_value, [presence]);
+            model.enforce_scoped(has_allowed_value, [presence]);
             match var {
                 Atom::Sym(_) => {
                     for allowed in allowed_values {
@@ -441,7 +443,7 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                             }
                         }
                         println!("{clause:?}");
-                        model.enforce(or(clause), [presence]);
+                        model.enforce_scoped(or(clause), [presence]);
                     }
                 }
                 Atom::Int(var) => {
@@ -468,8 +470,8 @@ fn enforce_table_constraint<L: Label>(model: &mut Model<L>, vars: &[Atom], table
                                 le_clause.push(support);
                             }
                         }
-                        model.enforce(or(ge_clause), [presence]);
-                        model.enforce(or(le_clause), [presence]);
+                        model.enforce_scoped(or(ge_clause), [presence]);
+                        model.enforce_scoped(or(le_clause), [presence]);
                     }
                 }
                 Atom::Bool(_) => {}

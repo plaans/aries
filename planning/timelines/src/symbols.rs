@@ -1,6 +1,6 @@
 use std::{borrow::Borrow, collections::BTreeMap, fmt::Debug, sync::Arc};
 
-use aries::core::IntCst;
+use aries_solver::core::IntCst;
 
 use crate::SymAtom;
 

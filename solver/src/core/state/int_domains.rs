@@ -12,9 +12,7 @@ use crate::core::*;
 #[derive(Copy, Clone, Debug)]
 #[repr(align(8))]
 pub struct ValueCause {
-    /// Current value of the variable bound.
     pub upper_bound: IntCst,
-    /// Index of the event that caused the current value.
     pub cause: ChangeIndex,
 }
 impl ValueCause {
@@ -30,7 +28,7 @@ impl ValueCause {
 /// **Invariant:** every domain is non empty. Hence any update that would result in an empty domain
 /// would return an `Error<EmptyDomain>`.
 #[derive(Clone)]
-pub struct IntDomains {
+pub(crate) struct IntDomains {
     /// Associates each lb/ub of each variable to its current value and the event that caused the latest update.
     pub(super) bounds: RefVec<SignedVar, ValueCause>,
     /// All events that updated the bound values.
@@ -46,14 +44,14 @@ impl IntDomains {
         };
         let zero = uninitialized.new_var(0, 0);
         let one = uninitialized.new_var(1, 1);
-        debug_assert_eq!(zero, VarRef::ZERO);
-        debug_assert_eq!(one, VarRef::ONE);
+        debug_assert_eq!(zero, Var::ZERO);
+        debug_assert_eq!(one, Var::ONE);
         debug_assert!(uninitialized.entails(Lit::TRUE));
         debug_assert!(!uninitialized.entails(Lit::FALSE));
         uninitialized
     }
 
-    pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> VarRef {
+    pub fn new_var(&mut self, lb: IntCst, ub: IntCst) -> Var {
         assert!(
             INT_CST_MIN <= lb && ub <= INT_CST_MAX,
             "Variable bounds [{lb},{ub}] exceeds maximum values [{INT_CST_MIN}, {INT_CST_MAX}]. Consider using the i64/i128 features for larger domains."
@@ -129,17 +127,8 @@ impl IntDomains {
     }
 
     /// Returns all variables.
-    pub fn variables(&self) -> impl Iterator<Item = VarRef> {
-        (0..self.num_variables()).map(VarRef::from)
-    }
-
-    /// Returns all variables whose value is fixed.
-    pub fn bound_variables(&self) -> impl Iterator<Item = (VarRef, IntCst)> + '_ {
-        self.variables().filter_map(move |v| {
-            let lb = self.lb(v);
-            let ub = self.ub(v);
-            if lb == ub { Some((v, lb)) } else { None }
-        })
+    pub fn variables(&self) -> impl Iterator<Item = Var> {
+        (0..self.num_variables()).map(Var::from)
     }
 
     // =========== History ===================
@@ -292,7 +281,7 @@ mod tests {
         let b = m.new_var(1, 1);
         let c = m.new_var(3, 7);
 
-        let vars: Vec<VarRef> = m.variables().collect();
-        assert_eq!(vars, vec![VarRef::ZERO, VarRef::ONE, a, b, c]);
+        let vars: Vec<Var> = m.variables().collect();
+        assert_eq!(vars, vec![Var::ZERO, Var::ONE, a, b, c]);
     }
 }

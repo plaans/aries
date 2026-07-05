@@ -126,6 +126,12 @@ pub struct Fluent {
     // source of the declaration of the fluent
     pub source: Option<Span>,
 }
+// impl PartialEq for Fluent {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.name == other.name && self.parameters == other.parameters && self.return_type == other.return_type
+//     }
+// }
+// impl Eq for Fluent {}
 
 impl Fluent {
     pub fn name(&self) -> &Sym {

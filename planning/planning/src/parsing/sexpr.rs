@@ -1,10 +1,10 @@
+use crate::legacy::input::*;
+use crate::legacy::utils::disp_iter;
 use anyhow::Result;
-use aries::utils::disp_iter;
-use aries::utils::input::*;
 use std::convert::TryInto;
 use std::fmt::{Debug, Display, Formatter};
 
-pub type SAtom = aries::utils::input::Sym;
+pub type SAtom = Sym;
 
 #[derive(Clone)]
 pub struct SList {

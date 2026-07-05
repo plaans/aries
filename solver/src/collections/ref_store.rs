@@ -382,7 +382,7 @@ impl<K: Into<usize>, V> IndexMut<K> for RefVec<K, V> {
 }
 
 #[derive(Clone)]
-pub struct RefMap<K, V> {
+pub(crate) struct RefMap<K, V> {
     pub(crate) entries: Vec<Option<V>>,
     phantom: PhantomData<K>,
 }
@@ -403,26 +403,6 @@ impl<K: Ref, V> RefMap<K, V> {
             self.entries.push(None);
         }
         self.entries[index] = Some(v);
-    }
-
-    /// Removes all elements from the Map.
-    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
-    pub fn clear(&mut self) {
-        for x in &mut self.entries {
-            *x = None
-        }
-    }
-
-    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
-    pub fn len(&self) -> usize {
-        #[allow(deprecated)]
-        self.entries().count()
-    }
-
-    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
-    pub fn is_empty(&self) -> bool {
-        #[allow(deprecated)]
-        (self.len() == 0)
     }
 
     pub fn remove(&mut self, k: K) {
@@ -454,12 +434,6 @@ impl<K: Ref, V> RefMap<K, V> {
             self.entries[index].as_mut()
         }
     }
-    pub fn get_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &V {
-        if !self.contains(k) {
-            self.insert(k, default())
-        }
-        &self[k]
-    }
 
     pub fn get_mut_or_insert(&mut self, k: K, default: impl FnOnce() -> V) -> &mut V {
         if !self.contains(k) {
@@ -474,11 +448,6 @@ impl<K: Ref, V> RefMap<K, V> {
     }
 
     #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
-    pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.entries.iter().filter_map(|x| x.as_ref())
-    }
-
-    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.entries.iter_mut().filter_map(|x| x.as_mut())
     }
@@ -489,14 +458,6 @@ impl<K: Ref, V> RefMap<K, V> {
             .iter()
             .enumerate()
             .filter_map(|(idx, value)| value.as_ref().map(|v| (K::from(idx), v)))
-    }
-
-    #[deprecated(note = "Performance hazard. Use an IterableRefMap instead.")]
-    pub fn entries_mut(&mut self) -> impl Iterator<Item = (K, &mut V)> {
-        self.entries
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(idx, value)| value.as_mut().map(|v| (K::from(idx), v)))
     }
 }
 

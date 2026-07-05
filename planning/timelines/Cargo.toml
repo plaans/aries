@@ -9,10 +9,11 @@ edition = "2024"
 [dependencies]
 itertools = { workspace = true }
 tracing = { workspace = true }
-aries = { path = "../../solver" }
+aries-solver = { path = "../../solver" }
 aries-lprelax = { path = "../../solver/lprelax" }
 aries-datalog = { path = "../../datalog" }
-env_param = { path = "../../env_param" }
+aries-env-param = { path = "../../utils/env_param" }
 idmap = { workspace = true }
 smallvec = { workspace = true }
 num-rational = { workspace = true }
+streaming-iterator = { workspace = true }

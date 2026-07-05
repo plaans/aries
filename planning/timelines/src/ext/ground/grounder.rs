@@ -1,4 +1,4 @@
-use aries::{core::views::Term, prelude::*};
+use aries_solver::{core::views::Term, prelude::*};
 
 use idmap::{DirectIdMap, intid::IntegerId};
 
@@ -36,7 +36,7 @@ impl std::fmt::Display for SimpleDatalogGrounderPredicateId {
 }
 #[derive(Debug, Clone)]
 enum SimpleDatalogGrounderTerm {
-    Var(VarRef),
+    Var(Var),
     Cst(IntCst),
 }
 impl std::fmt::Display for SimpleDatalogGrounderTerm {
@@ -285,7 +285,7 @@ impl SimpleDatalogGrounder {
                 .args
                 .iter()
                 .filter_map(|(t, _)| {
-                    if t.is_cst() {
+                    if t.is_constant() {
                         None
                     } else {
                         Some(SimpleDatalogGrounderTerm::Var(t.variable()))
@@ -301,7 +301,7 @@ impl SimpleDatalogGrounder {
                 .args
                 .iter()
                 .filter_map(|(t, tpe)| {
-                    if t.is_cst() {
+                    if t.is_constant() {
                         None
                     } else {
                         Some((SimpleDatalogGrounderTerm::Var(t.variable()), tpe))
@@ -580,8 +580,8 @@ fn collect_condition_datalog_terms(
     ));
 
     Ok(Vec::from_iter(terms.into_iter().map(|term| {
-        if term.is_cst() {
-            SimpleDatalogGrounderTerm::Cst(term.cst())
+        if term.is_constant() {
+            SimpleDatalogGrounderTerm::Cst(term.constant)
         } else {
             SimpleDatalogGrounderTerm::Var(term.variable())
         }
@@ -595,7 +595,7 @@ fn collect_effect_datalog_terms(
         return Err(());
     };
 
-    let negative = is_effect_boolean(eff, ctx).unwrap() && eff_value_term.is_cst() && eff_value_term.cst() == 0;
+    let negative = is_effect_boolean(eff, ctx).unwrap() && eff_value_term.is_constant() && eff_value_term.constant == 0;
 
     let terms = Vec::from_iter(eff.state_var.args.iter().copied().chain(
         // do not add effect value term if it corresponds to a boolean value
@@ -604,8 +604,8 @@ fn collect_effect_datalog_terms(
 
     Ok((
         Vec::from_iter(terms.into_iter().map(|term| {
-            if term.is_cst() {
-                SimpleDatalogGrounderTerm::Cst(term.cst())
+            if term.is_constant() {
+                SimpleDatalogGrounderTerm::Cst(term.constant)
             } else {
                 SimpleDatalogGrounderTerm::Var(term.variable())
             }
@@ -627,7 +627,7 @@ fn is_effect_boolean_negative(eff: &crate::Effect, ctx: &SchedEncoder) -> Result
     };
     let eff_value_param = ctx.sched.fluents.get_return(&eff.state_var.fluent).unwrap();
     Ok(
-        !eff_value_param.is_sym_typed() && eff_value_term.is_cst() && eff_value_term.cst() == 0, // TODO: change "!is_sym_typed" to "is_boolean_typed"
+        !eff_value_param.is_sym_typed() && eff_value_term.is_constant() && eff_value_term.constant == 0, // TODO: change "!is_sym_typed" to "is_boolean_typed"
     )
 }
 fn is_effect_boolean_positive(eff: &crate::Effect, ctx: &SchedEncoder) -> Result<bool, ()> {
@@ -636,6 +636,6 @@ fn is_effect_boolean_positive(eff: &crate::Effect, ctx: &SchedEncoder) -> Result
     };
     let eff_value_param = ctx.sched.fluents.get_return(&eff.state_var.fluent).unwrap();
     Ok(
-        !eff_value_param.is_sym_typed() && eff_value_term.is_cst() && eff_value_term.cst() == 1, // TODO: change "!is_sym_typed" to "is_boolean_typed"
+        !eff_value_param.is_sym_typed() && eff_value_term.is_constant() && eff_value_term.constant == 1, // TODO: change "!is_sym_typed" to "is_boolean_typed"
     )
 }

@@ -1,4 +1,4 @@
-use aries::prelude::Lit;
+use aries_solver::prelude::Lit;
 
 use crate::constraints::HasValueAt;
 use crate::encoder::CondId;
@@ -120,6 +120,16 @@ impl<'a> TransitionRef<'a> {
     pub fn _iter_terms_move(self) -> impl Iterator<Item = &'a IntTerm> {
         TransitionTermsIter { tr: self, next: 0 }
     }
+    // pub fn iter_terms(&self) -> impl Iterator<Item = &'a IntTerm> {
+    //     self.get_args().iter().chain(self.get_valfrom()).chain(self.get_valto())
+    // }
+    // pub fn iter_terms(&self) -> impl Iterator<Item = IntTerm> + use<'_> {
+    //     self.get_args()
+    //         .iter()
+    //         .copied()
+    //         .chain(self.get_valfrom().copied())
+    //         .chain(self.get_valto().copied())
+    // }
 }
 
 impl<'a> std::fmt::Debug for TransitionRef<'a> {

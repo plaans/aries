@@ -2,7 +2,7 @@ mod clause_storage;
 use crate::collections::ref_store::RefMap;
 use crate::core::Lit;
 use crate::create_ref_type;
-use env_param::EnvParam;
+use aries_env_param::EnvParam;
 use std::cmp::Ordering::Equal;
 use std::collections::BTreeSet;
 use std::fmt::{Display, Error, Formatter};

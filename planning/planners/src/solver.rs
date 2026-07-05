@@ -4,25 +4,26 @@ use crate::encode::warm_up::{
 use crate::encode::{encode, populate_with_task_network, populate_with_template_instances, EncodedProblem};
 use crate::encoding::Encoding;
 use crate::fmt::{format_hddl_plan, format_partial_plan, format_pddl_plan};
-use crate::search::{ForwardSearcher, ManualCausalSearch};
+use crate::search::ForwardSearcher;
 use crate::Solver;
 use anyhow::Result;
-use aries::core::{IntCst, Lit, VarRef, INT_CST_MAX};
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::IAtom;
-use aries::model::Model;
-use aries::prelude::*;
-use aries::reasoners::stn::theory::{StnConfig, TheoryPropagationLevel};
-use aries::solver::search::activity::*;
-use aries::solver::search::conflicts::ConflictBasedBrancher;
-use aries::solver::search::lexical::Lexical;
-use aries::solver::search::{Brancher, SearchControl};
+use aries_env_param::EnvParam;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::printer::Printer;
 use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
-use env_param::EnvParam;
+use aries_planning::legacy::Shaped;
+use aries_solver::core::{IntCst, Lit, Var, INT_CST_MAX};
+use aries_solver::lang::IAtom;
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Model;
+use aries_solver::prelude::*;
+use aries_solver::reasoners::stn::{StnConfig, TheoryPropagationLevel};
+use aries_solver::solver::search::activity::*;
+use aries_solver::solver::search::conflicts::ConflictBasedBrancher;
+use aries_solver::solver::search::lexical::Lexical;
+use aries_solver::solver::search::{Brancher, SearchControl};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -71,7 +72,7 @@ impl std::str::FromStr for WarmUpType {
     }
 }
 
-pub type SolverResult<Sol> = aries::solver::parallel::SolverResult<Sol>;
+pub type SolverResult<Sol> = aries_solver::solver::parallel::SolverResult<Sol>;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
@@ -205,6 +206,7 @@ pub fn solve(
     let default_best_cost = INT_CST_MAX + 1;
     let metadata = preprocess(&mut base_problem);
     let init_pb = FiniteProblem {
+        symbols: Arc::new(base_problem.context.get_symbol_table().clone()),
         model: base_problem.context.model.clone(),
         origin: base_problem.context.origin(),
         horizon: base_problem.context.horizon(),
@@ -379,7 +381,7 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
         ..Default::default()
     };
 
-    let mut solver = Box::new(aries::solver::Solver::new(model));
+    let mut solver = Box::new(aries_solver::solver::Solver::new(model));
     solver.reasoners.diff().config = stn_config;
     solver
 }
@@ -416,7 +418,7 @@ pub enum Strat {
 /// An activity-based variable selection heuristics that delays branching on temporal variables.
 struct ActivityBoolFirstHeuristic;
 impl Heuristic<VarLabel> for ActivityBoolFirstHeuristic {
-    fn decision_stage(&self, _var: VarRef, label: Option<&VarLabel>, _model: &aries::model::Model<VarLabel>) -> u8 {
+    fn decision_stage(&self, _var: Var, label: Option<&VarLabel>, _model: &aries_solver::model::Model<VarLabel>) -> u8 {
         let (lb, ub) = _model.bounds(_var);
         if ub - lb == 1 {
             return 0;
@@ -459,12 +461,9 @@ impl Strat {
     }
 }
 
-fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Brancher<VarLabel> {
-    use aries::solver::search::combinators::CombinatorExt;
+fn causal_brancher(_problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Brancher<VarLabel> {
+    use aries_solver::solver::search::combinators::CombinatorExt;
     let branching_literals: Vec<Lit> = encoding.tags.iter().map(|&(_, l)| l).collect();
-
-    // manual strategy that lets the user select branches on the command line
-    let causal = ManualCausalSearch::new(problem, encoding);
 
     // conflict directed search on tagged literals only
     let mut conflict = Box::new(ConflictBasedBrancher::new(branching_literals.clone()));
@@ -483,7 +482,7 @@ fn causal_brancher(problem: Arc<FiniteProblem>, encoding: Arc<Encoding>) -> Bran
     let act: Box<ActivityBrancher<VarLabel>> =
         Box::new(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic));
     let lexical = Box::new(Lexical::with_min());
-    let strat = causal.clone_to_box().and_then(conflict).and_then(act).and_then(lexical);
+    let strat = conflict.clone_to_box().and_then(act).and_then(lexical);
 
     strat.with_restarts(50, 1.3)
 }
@@ -557,7 +556,7 @@ fn solve_finite_problem(
     };
     if let Some(metric) = metric {
         if minimize_metric {
-            model.enforce(metric.le_lit(cost_upper_bound), []);
+            model.enforce(metric.le_lit(cost_upper_bound));
         }
     }
     let solver = init_solver(model);
@@ -574,7 +573,7 @@ fn solve_finite_problem(
     } else {
         GEN_DEFAULT_STRATEGIES
     };
-    let mut solver = aries::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
+    let mut solver = aries_solver::solver::parallel::ParSolver::new(solver, strats.len(), |id, s| {
         strats[id].adapt_solver(s, pb.clone(), encoding.clone())
     });
     if let Some((objective_value, assignment)) = initial_solution {

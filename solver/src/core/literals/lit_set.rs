@@ -12,10 +12,10 @@ use std::fmt::{Debug, Formatter};
 ///
 /// # Example
 /// ```
-/// use aries::core::literals::LitSet;
-/// use aries::core::VarRef;
+/// use aries_solver::core::literals::LitSet;
+/// use aries_solver::core::Var;
 /// let mut set = LitSet::new();
-/// let var = VarRef::from_u32(3); // arbitrary variable
+/// let var = Var::from_u32(3); // arbitrary variable
 /// assert!(!set.contains(var.leq(0)));
 /// set.insert(var.leq(0));
 /// assert!(set.contains(var.leq(0)));
@@ -189,9 +189,9 @@ mod test {
 
     use super::*;
 
-    const A: VarRef = VarRef::from_u32(1);
-    const B: VarRef = VarRef::from_u32(2);
-    const C: VarRef = VarRef::from_u32(3);
+    const A: Var = Var::from_u32(1);
+    const B: Var = Var::from_u32(2);
+    const C: Var = Var::from_u32(3);
 
     #[test]
     fn test_lit_set() {

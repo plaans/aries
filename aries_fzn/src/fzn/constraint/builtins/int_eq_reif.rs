@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
-use aries::model::lang::BVar;
-use aries::model::lang::IVar;
+use aries_solver::core::Var;
+use aries_solver::lang::BVar;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -105,11 +104,11 @@ impl From<IntEqReif> for Constraint {
 impl Encode for IntEqReif {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<(dyn Post<usize>)> {
         let a = translation.get(self.a.id()).unwrap();
         let b = translation.get(self.b.id()).unwrap();
         let r = translation.get(self.r.id()).unwrap();
-        Box::new(EqReif::new(IVar::new(*a), IVar::new(*b), BVar::new(*r)))
+        Box::new(EqReif::new(*a, *b, BVar::new(*r)))
     }
 }

@@ -1,8 +1,7 @@
 mod problem;
 
-use aries::model::extensions::Shaped;
-use aries::prelude::*;
-use aries::solver::{Exit, SearchLimit};
+use aries_solver::prelude::*;
+use aries_solver::solver::{Exit, SearchLimit};
 use aries_bench_data::IntermediateResult;
 use aries_lprelax::LpRelax;
 use clap::Parser;
@@ -12,8 +11,8 @@ use std::time::{Duration, Instant};
 
 use crate::problem::IlpProblem;
 
-type Model = aries::model::Model<String>;
-type Solver = aries::solver::Solver<String>;
+type Model = aries_solver::model::Model<String>;
+type Solver = aries_solver::solver::Solver<String>;
 
 #[derive(Parser)]
 #[command(version, about, name = "aries-ilp")]
@@ -89,8 +88,8 @@ fn solve(
     let objective = problem
         .obj
         .as_ref()
-        .and_then(|(obj_name, _)| solver.get_int_var(obj_name))
-        .unwrap_or(VarRef::ZERO.into());
+        .and_then(|(obj_name, _)| solver.model.shape.get_variable(obj_name))
+        .unwrap_or(Var::ZERO.into());
 
     let mut solution_history: Vec<IntermediateResult> = Default::default();
     let mut best = Option::None;
@@ -177,7 +176,7 @@ fn solve(
 }
 
 fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver {
-    let extra_reasoners: Vec<Box<dyn aries::reasoners::Theory>> = if use_lp_relax {
+    let extra_reasoners: Vec<Box<dyn aries_solver::reasoners::Theory>> = if use_lp_relax {
         let mut lprelax = LpRelax::default();
 
         let mut var_name_to_col_map = HashMap::new();
@@ -185,7 +184,7 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
         for (name, (lb, ub)) in &problem.vars {
             let col = lprelax.add_column(Some((*lb).into()), Some((*ub).into()));
 
-            let var = model.get_var(name).unwrap();
+            let var = model.shape.get_variable(name).unwrap();
             var_name_to_col_map.insert(name.clone(), col);
 
             lprelax.add_var_half_binding_default(var, col);
@@ -203,7 +202,7 @@ fn make_solver(problem: &IlpProblem, model: Model, use_lp_relax: bool) -> Solver
                 .iter()
                 .map(|(name, coef)| (*var_name_to_col_map.get(name).unwrap(), (*coef).into()));
 
-            let obj_var = model.get_var(obj_name).unwrap();
+            let obj_var = model.shape.get_variable(obj_name).unwrap();
             let obj_col = lprelax.add_objective_column(
                 obj_var,
                 obj_coefs,

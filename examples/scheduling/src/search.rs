@@ -3,16 +3,15 @@ mod greedy;
 use crate::problem::{Encoding, OperationId};
 use crate::search::SearchStrategy::Custom;
 use crate::search::greedy::EstBrancher;
-use aries::model::extensions::Shaped;
-use aries::prelude::*;
-use aries::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
-use aries::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
-use aries::solver::search::lexical::Lexical;
-use aries::solver::search::{Brancher, SearchControl, conflicts};
+use aries_solver::prelude::*;
+use aries_solver::solver::search::combinators::{CombinatorExt, UntilFirstConflict};
+use aries_solver::solver::search::conflicts::{ConflictBasedBrancher, ImpactMeasure};
+use aries_solver::solver::search::lexical::Lexical;
+use aries_solver::solver::search::{Brancher, SearchControl, conflicts};
 use std::str::FromStr;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Var {
+pub enum VarLbl {
     /// Variable representing the makespan (constrained to be after the end of tasks
     Makespan,
     /// Variable representing the start time of (job_number, task_number_in_job)
@@ -23,14 +22,14 @@ pub enum Var {
     Presence(OperationId),
 }
 
-impl std::fmt::Display for Var {
+impl std::fmt::Display for VarLbl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
     }
 }
 
-pub type Model = aries::model::Model<Var>;
-pub type Solver = aries::solver::Solver<Var>;
+pub type Model = aries_solver::model::Model<VarLbl>;
+pub type Solver = aries_solver::solver::Solver<VarLbl>;
 
 /// Variants of the search strategy
 #[derive(Eq, PartialEq, Debug, Clone)]
@@ -103,15 +102,15 @@ pub fn get_solver(mut base_solver: Solver, strategy: &SearchStrategy, pb: &Encod
         .state
         .variables()
         .filter_map(|v| match base_solver.model.get_label(v) {
-            Some(&Var::Prec(_, _)) => Some(v.geq(1)),
-            Some(&Var::Presence(_)) => Some(v.geq(1)),
+            Some(&VarLbl::Prec(_, _)) => Some(v.geq(1)),
+            Some(&VarLbl::Presence(_)) => Some(v.geq(1)),
             _ => None,
         })
         .collect();
 
     // creates a brancher for a given strategy
     let build_brancher = |strat: Strat| {
-        let brancher: Brancher<Var> = Box::new(ConflictBasedBrancher::with(decision_lits.clone(), strat.params));
+        let brancher: Brancher<VarLbl> = Box::new(ConflictBasedBrancher::with(decision_lits.clone(), strat.params));
         let (restart_period, restart_update) = match strat.mode {
             Mode::Stable => (2000, 1.2), // stable: few restarts
             Mode::Focused => (800, 1.0), // focused: always aggressive restarts
@@ -120,7 +119,7 @@ pub fn get_solver(mut base_solver: Solver, strategy: &SearchStrategy, pb: &Encod
     };
 
     // Bootstraping branching strategy: a greedy EST strategy to bootstrap the search
-    let first_est: Brancher<Var> = Box::new(UntilFirstConflict::new(Box::new(EstBrancher::new(pb))));
+    let first_est: Brancher<VarLbl> = Box::new(UntilFirstConflict::new(Box::new(EstBrancher::new(pb))));
     // main brancher (after first conflict and as long binary vars are not set): Conflict baed search (LRB, ...)
     let main_brancher = build_brancher(strat);
     // add last strategy to ensure that all variables are bound (main strategy only takes care of bineary decision variables)

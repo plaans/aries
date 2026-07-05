@@ -1,13 +1,10 @@
 use crate::chronicles::*;
 use crate::classical::state::{Lit, Operator, Operators, State, World};
+use crate::legacy::*;
 use anyhow::{bail, Context, Result};
 
-use aries::model::extensions::Shaped;
-use aries::model::lang::*;
-use aries::model::symbols::SymId;
-use aries::model::types::TypeId;
-use aries::utils::enumerate;
-use aries::utils::input::Sym;
+use crate::legacy::input::Sym;
+use crate::legacy::utils::enumerate;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use streaming_iterator::StreamingIterator;
@@ -104,7 +101,7 @@ fn holed_sv_to_pred(
 }
 
 pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<LiftedProblem> {
-    let symbols = chronicles.context.model.get_symbol_table().clone();
+    let symbols = chronicles.context.get_symbol_table().clone();
 
     let world = World::new(symbols, &chronicles.context.fluents)?;
     let mut state = world.make_new_state();
@@ -113,7 +110,7 @@ pub fn from_chronicles(chronicles: &crate::chronicles::Problem) -> Result<Lifted
     for instance in &chronicles.chronicles {
         let ch = &instance.chronicle;
         anyhow::ensure!(
-            ch.presence == aries::core::Lit::TRUE,
+            ch.presence == aries_solver::core::Lit::TRUE,
             "A chronicle instance is optional",
         );
         for eff in &ch.effects {

@@ -5,12 +5,9 @@ pub mod encoding;
 pub mod required_values;
 pub mod tags;
 
-use aries::{
+use aries_solver::{
     core::literals::ConjunctionBuilder,
-    model::lang::{
-        BoolExpr, IntExpr,
-        expr::{eq, lin_eq},
-    },
+    lang::{IntExpr, expr::{eq, bool2int}},
     prelude::*,
 };
 use itertools::Itertools;
@@ -19,7 +16,7 @@ use smallvec::SmallVec;
 use timelines::{
     Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
     boxes::Segment,
-    constraints::{HasValueAt, bool2int},
+    constraints::HasValueAt,
     symbols::ObjectEncoding,
 };
 
@@ -441,7 +438,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
             override_conditions.push(sched.model.reify(eq(e.transition_start, overrider.transition_start)));
             // overrider must have the same state variable arguments
             for (a1, a2) in e.state_var.args.iter().zip_eq(overrider.state_var.args.iter()) {
-                override_conditions.push(lin_eq(*a1, *a2).reified(&mut sched.model));
+                override_conditions.push(eq(*a1, *a2).reified(&mut sched.model));
             }
             let conjunction = override_conditions.build();
             let cancelled_by = sched.model.reify(conjunction);
@@ -536,8 +533,11 @@ pub fn reify_expression(
             if let Ok(i) = IntCst::try_from(*r.numer()) {
                 Ok(i.into())
             } else {
-                e.todo(format!("Cannot be converted to an {}", aries::core::INT_TYPE_NAME))
-                    .failed()
+                e.todo(format!(
+                    "Cannot be converted to an {}",
+                    aries_solver::core::INT_TYPE_NAME
+                ))
+                .failed()
             }
         }
         planx::Expr::Object(object) => {

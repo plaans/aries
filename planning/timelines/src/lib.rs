@@ -4,12 +4,11 @@ mod effects;
 pub mod encoder;
 pub mod explain;
 pub mod ext;
-pub mod rational;
 pub mod symbols;
 mod tasks;
 
-use aries::core::state::Evaluable;
-use aries::core::views::Dom;
+use aries_solver::core::state::Evaluable;
+use aries_solver::core::views::Dom;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::Hash;
@@ -17,15 +16,14 @@ use smallvec::SmallVec;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use aries::core::INT_CST_MAX;
-pub use aries::core::IntCst;
-use aries::model::lang::*;
-use aries::prelude::*;
-use aries::solver::Solver;
+use aries_solver::core::INT_CST_MAX;
+pub use aries_solver::core::IntCst;
+use aries_solver::prelude::*;
+use aries_solver::solver::Solver;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
-pub type Model = aries::model::Model<Sym>;
+pub type Model = aries_solver::model::Model<Sym>;
 use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
@@ -40,10 +38,10 @@ pub type Sym = String;
 pub type Time = IAtom;
 
 /// Type of simple int expressions (composed of at most one variable)
-pub type IntTerm = aries::prelude::LinTerm;
+pub type IntTerm = aries_solver::prelude::LinTerm;
 
 /// Type of compound integer expressions.
-pub type IntExp = aries::prelude::LinSum;
+pub type IntExp = aries_solver::prelude::LinSum;
 
 pub type SymAtom = IntTerm;
 
@@ -289,7 +287,7 @@ impl Dom for Sched {
         self.model.upper_bound(svar)
     }
 
-    fn presence(&self, var: VarRef) -> Lit {
+    fn presence(&self, var: Var) -> Lit {
         self.model.presence(var)
     }
 }

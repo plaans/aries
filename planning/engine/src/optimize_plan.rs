@@ -4,11 +4,6 @@ use std::{
     time::Instant,
 };
 
-use aries::{
-    core::{state::Evaluable, views::Boundable},
-    model::lang::{IntExpr, Store},
-    prelude::*,
-};
 use aries_plan_engine::{
     encode::{
         constraints::{ConditionConstraint, ReificationConstraint},
@@ -17,6 +12,11 @@ use aries_plan_engine::{
         *,
     },
     plans::lifted_plan::{self, LiftedPlan},
+};
+use aries_solver::{
+    core::{state::Evaluable, views::Boundable},
+    lang::{IntExpr, Store},
+    prelude::*,
 };
 use derive_more::derive::Display;
 use itertools::Itertools;
@@ -127,7 +127,7 @@ fn build_objective(
         Objective::PlanLength | Objective::Original => {
             let mut sum = LinSum::zero();
             for t in sched.tasks.iter() {
-                sum += timelines::constraints::bool2int(t.presence, &mut sched.model);
+                sum += bool2int(t.presence, &mut sched.model);
             }
             reify_sum(sum, sched)
         }
@@ -210,7 +210,7 @@ pub fn encode_plan_optimization_problem(
             args.insert(&param.name, arg);
         }
         let presence = if options.relaxation.contains(&Relaxation::ActionPresence) {
-            sched.model.new_literal(Lit::TRUE)
+            sched.model.new_optional_bool_var(Lit::TRUE)
         } else {
             Lit::TRUE
         };
@@ -273,7 +273,7 @@ pub fn encode_plan_optimization_problem(
                 .ok_or_else(|| action_name.invalid("cannot find corresponding action"))?;
 
             // free actions are optional
-            let presence = sched.model.new_literal(Lit::TRUE);
+            let presence = sched.model.new_optional_bool_var(Lit::TRUE);
 
             // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
 

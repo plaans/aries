@@ -1,6 +1,5 @@
 use crate::chronicles::{Chronicle, Condition, Effect, EffectOp, Fluent, Problem};
-use aries::model::extensions::Shaped;
-use aries::model::lang::Atom;
+use crate::legacy::*;
 
 #[derive(Default)]
 struct Effects<'a> {
@@ -123,7 +122,7 @@ pub fn preprocess_mutex_predicates(pb: &mut Problem) {
                 println!("Transforming fluents to resources")
             }
             count += 1;
-            let name = pb.context.model.get_symbol(fluent.sym).canonical_str();
+            let name = pb.context.get_symbol(fluent.sym).canonical_str();
             println!(" - {name}");
             for ch in &mut pb.templates {
                 let Some(neg_eff_id) =

@@ -2,11 +2,11 @@ mod bindings;
 mod lplit;
 mod types;
 
-use aries::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
-use aries::core::literals::ConjunctionBuilder;
-use aries::core::state::{DomainsSnapshot, Explanation, InferenceCause};
-use aries::prelude::{Domains, DomainsExt, INT_CST_MAX, INT_CST_MIN, IntCst, Lit, VarRef};
-use aries::reasoners::{Contradiction, ReasonerId, Theory};
+use aries_solver::backtrack::{Backtrack, DecLvl, EventIndex, ObsTrailCursor, Trail};
+use aries_solver::core::literals::ConjunctionBuilder;
+use aries_solver::core::state::{DomainsSnapshot, Explanation, InferenceCause};
+use aries_solver::prelude::{Domains, DomainsExt, INT_CST_MAX, INT_CST_MIN, IntCst, Lit, Var};
+use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
 use bindings::LpRelaxBindings;
 pub use bindings::{LitToLpLitsBindingFn, LpLitToLitsBindingFn};
@@ -34,7 +34,7 @@ enum LpEventCause {
     ReducedCostStrengthtening(Vec<LpLit>),
 }
 
-type ModelEvent = aries::core::state::Event;
+type ModelEvent = aries_solver::core::state::Event;
 
 #[derive(Copy, Clone)]
 struct ModelUpdateCause(EventIndex);
@@ -71,7 +71,7 @@ impl Default for LpRelaxConfig {
 #[derive(Clone)]
 struct LpRelaxObjective {
     pub col: LpCol,
-    pub var: VarRef,
+    pub var: Var,
     pub sense: LpObjectiveSense,
 }
 
@@ -234,7 +234,7 @@ impl LpRelaxState {
 
     fn add_objective_column(
         &mut self,
-        var: VarRef,
+        var: Var,
         coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         sense: LpObjectiveSense,
     ) -> LpCol {
@@ -269,7 +269,7 @@ impl LpRelaxState {
     fn get_objective_column(&self) -> Option<LpCol> {
         self.lpobjective.as_ref().map(|lpoptim| lpoptim.col)
     }
-    fn get_objective_var(&self) -> Option<VarRef> {
+    fn get_objective_var(&self) -> Option<Var> {
         self.lpobjective.as_ref().map(|lpoptim| lpoptim.var)
     }
     fn get_objective_sense(&self) -> Option<LpObjectiveSense> {
@@ -364,8 +364,10 @@ pub struct LpRelax {
     state: LpRelaxState,
     bindings: LpRelaxBindings,
 
+    //prev_propagation_attempt_trail_info: (DecLvl, u32, bool),
     stats: LpRelaxStats,
     config: LpRelaxConfig,
+    // num_propagation_call: usize,
 }
 unsafe impl Send for LpRelax {}
 unsafe impl Sync for LpRelax {}
@@ -376,8 +378,10 @@ impl Default for LpRelax {
             id: ReasonerId::Extra(0),
             state: LpRelaxState::default(),
             bindings: LpRelaxBindings::default(),
+            //prev_propagation_attempt_trail_info: (DecLvl::ROOT, 0, false),
             stats: LpRelaxStats::default(),
             config: LpRelaxConfig::default(),
+            // num_propagation_call: 0,
         }
     }
 }
@@ -439,7 +443,7 @@ impl LpRelax {
 
     pub fn add_objective_column(
         &mut self,
-        var: VarRef,
+        var: Var,
         coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         sense: LpObjectiveSense,
     ) -> LpCol {
@@ -449,14 +453,14 @@ impl LpRelax {
     pub fn get_objective_column(&self) -> Option<LpCol> {
         self.state.get_objective_column()
     }
-    pub fn get_objective_var(&self) -> Option<VarRef> {
+    pub fn get_objective_var(&self) -> Option<Var> {
         self.state.get_objective_var()
     }
     pub fn get_objective_sense(&self) -> Option<LpObjectiveSense> {
         self.state.get_objective_sense()
     }
 
-    pub fn add_var_half_binding(&mut self, var: VarRef, func: std::sync::Arc<LitToLpLitsBindingFn>) {
+    pub fn add_var_half_binding(&mut self, var: Var, func: std::sync::Arc<LitToLpLitsBindingFn>) {
         assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lit_to_lplits_binding(var, func);
     }
@@ -464,11 +468,11 @@ impl LpRelax {
         assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lplit_to_lits_binding(col, func);
     }
-    pub fn add_var_half_binding_default(&mut self, var: VarRef, col: LpCol) {
+    pub fn add_var_half_binding_default(&mut self, var: Var, col: LpCol) {
         assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lit_to_lplits_binding_default(var, col);
     }
-    pub fn add_col_half_binding_default(&mut self, col: LpCol, var: VarRef) {
+    pub fn add_col_half_binding_default(&mut self, col: LpCol, var: Var) {
         assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lplit_to_lits_binding_default(var, col);
     }
@@ -671,8 +675,19 @@ impl Theory for LpRelax {
         if model_updates_to_process > 0 {
             self.process_model_events(model)?;
         }
-        if model_updates_to_process == 0 || !self.config.use_propagation_skips {
 
+        // BROKEN // NOTE: This is a *hack* to prevent solving the LP on the "initial" propagation performed before search.
+        // BROKEN //       Indeed, in very simple problems, the LP relaxation (and its solving overhead) might not
+        // BROKEN //       even be needed to detect unsatisfiability on the first propagation loop.
+        // BROKEN self.num_propagation_call += 1;
+        // BROKEN if self.config.use_propagation_skips && self.num_propagation_call <= 2 {
+        // BROKEN     return Ok(());
+        // BROKEN }
+        //
+        // TODO: Need to find a way to avoid solving the LP when unsatisfiability
+        //       can be proven on the first propagation loop without needing it.
+
+        if model_updates_to_process == 0 || !self.config.use_propagation_skips {
             if self.config.use_propagation_skips
                 && (self.num_columns() == 0 || (self.num_rows() == 0 && self.state.lpobjective.is_none()))
             {
@@ -770,13 +785,13 @@ impl Backtrack for LpRelax {
 pub mod test {
     use crate::LpCol;
     use crate::{LpRelax, LpRelaxConfig};
-    use aries::backtrack::Backtrack;
-    use aries::core::IntCst;
-    use aries::core::state::Cause;
-    use aries::core::state::Explanation;
-    use aries::prelude::Domains;
-    use aries::reasoners::Contradiction;
-    use aries::reasoners::Theory;
+    use aries_solver::backtrack::Backtrack;
+    use aries_solver::core::IntCst;
+    use aries_solver::core::state::Cause;
+    use aries_solver::core::state::Explanation;
+    use aries_solver::prelude::Domains;
+    use aries_solver::reasoners::Contradiction;
+    use aries_solver::reasoners::Theory;
 
     #[test]
     fn test_trail_backtrack() {
