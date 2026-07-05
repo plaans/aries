@@ -1,28 +1,21 @@
-use aries::prelude::*;
+mod grounder;
 
-use crate::ext::Grounding;
+pub use grounder::{SimpleDatalogGrounder, SimpleDatalogGrounderProgramView};
+
+use aries::prelude::IntCst;
+
+use crate::ext::{Grounding, GroundingFlatId};
+
 use std::ops::Index;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub struct SourceGroundingFlatId(pub usize);
-
-impl From<usize> for SourceGroundingFlatId {
-    fn from(value: usize) -> Self {
-        Self(value)
-    }
-}
-impl From<SourceGroundingFlatId> for usize {
-    fn from(value: SourceGroundingFlatId) -> Self {
-        value.0
-    }
-}
-
+pub struct SourceGroundingFlatId(pub GroundingFlatId);
 #[derive(Debug, Clone)]
 pub struct SourceGrounding(Grounding);
 
 impl SourceGrounding {
     pub fn to_flat_id(&self, ranges: &[(IntCst, IntCst)]) -> SourceGroundingFlatId {
-        self.0.to_flat_id(ranges)
+        SourceGroundingFlatId(self.0.to_flat_id(ranges))
     }
     pub fn from(grounding: Vec<IntCst>) -> Self {
         Self(Grounding(grounding))

@@ -54,14 +54,14 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
             for tpe in f.parameters.iter().map(|p| &p.tpe) {
                 ps.push(FluentParam {
                     range: type_range(tpe, objects)?,
-                    numeric: matches!(tpe, Type::Int(_) | Type::Real),
+                    tpe: tpe.to_string(),
                 });
             }
             ps
         };
         let r#return = FluentParam {
             range: type_range(&f.return_type, objects)?,
-            numeric: matches!(f.return_type, Type::Int(_) | Type::Real),
+            tpe: f.return_type.to_string(),
         };
 
         res.add(f.name().to_string(), &params, r#return);

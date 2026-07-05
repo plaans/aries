@@ -11,6 +11,7 @@ itertools = { workspace = true }
 tracing = { workspace = true }
 aries = { path = "../../solver" }
 aries_lprelax = { path = "../../solver/lprelax" }
+aries-datalog = { path = "../../datalog" }
 env_param = { path = "../../env_param" }
 idmap = { workspace = true }
 smallvec = { workspace = true }

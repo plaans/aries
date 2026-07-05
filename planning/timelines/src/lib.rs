@@ -30,6 +30,7 @@ use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
+use crate::ext::ground::SimpleDatalogGrounder;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
@@ -49,8 +50,14 @@ pub type SymAtom = IntTerm;
 #[derive(Clone, Debug)]
 pub struct FluentParam {
     pub range: Segment,
-    pub numeric: bool,
+    pub tpe: Sym,
 }
+impl FluentParam {
+    pub fn is_sym_typed(&self) -> bool {
+        self.tpe != "bool"
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct FluentsEncoding {
     store: HashMap<Sym, usize>,
@@ -148,13 +155,13 @@ pub type ConstraintID = usize;
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
-    pub fluents: FluentsEncoding,
+    pub(crate) fluents: FluentsEncoding,
     pub time_scale: IntCst,
     /// temporal separation between events `(1/time_scale)`
     pub epsilon: IntCst,
     pub origin: Time,
     pub horizon: Time,
-    pub global_args: Vec<IntTerm>, // TODO: PLACEHOLDER
+    pub(crate) global_args: Vec<(IntTerm, Sym)>, // TODO: PLACEHOLDER
     pub makespan: Time,
     pub tasks: Tasks,
     pub effects: Effects,
@@ -235,6 +242,14 @@ impl Sched {
         project: impl Fn(ConstraintID) -> Option<T>,
     ) -> ExplainableSolver<T> {
         ExplainableSolver::new(self, project)
+    }
+
+    pub fn simple_datalog_grounder(&self, with_view: bool) -> SimpleDatalogGrounder {
+        let mut encoder: SchedEncoder = self.clone().encoder();
+        for c in &self.constraints {
+            c.enforce(&mut encoder);
+        }
+        SimpleDatalogGrounder::from(&encoder, with_view)
     }
 
     pub fn print(&self, sol: &Solution) {

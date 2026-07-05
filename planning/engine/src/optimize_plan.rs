@@ -229,7 +229,15 @@ pub fn encode_plan_optimization_problem(
             name: op.action_ref.to_string(),
             start,
             end,
-            args: args.values().copied().collect(),
+            args: args
+                .iter()
+                .map(|(&name, &t)| {
+                    (
+                        t,
+                        a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                    )
+                })
+                .collect(),
             presence,
         });
         let bindings = Scope {
@@ -288,7 +296,15 @@ pub fn encode_plan_optimization_problem(
                 name: a.name.to_string(),
                 start,
                 end,
-                args: args.values().copied().collect(),
+                args: args
+                    .iter()
+                    .map(|(&name, &t)| {
+                        (
+                            t,
+                            a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                        )
+                    })
+                    .collect(),
                 presence,
             });
             let bindings = Scope {

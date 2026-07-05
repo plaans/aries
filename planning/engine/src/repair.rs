@@ -211,7 +211,15 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
             name: format!("operation{op_id}"),
             start,
             end,
-            args: args.values().copied().collect(),
+            args: args
+                .iter()
+                .map(|(&name, &t)| {
+                    (
+                        t,
+                        a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                    )
+                })
+                .collect(),
             presence,
         });
 

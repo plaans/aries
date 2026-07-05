@@ -1,9 +1,11 @@
-mod ground;
-mod lprelax;
+pub mod ground;
+// mod lprelax;
 
 use std::{collections::HashSet, ops::Index};
 
 use aries::core::{INT_CST_MAX, IntCst, LongCst};
+use itertools::Itertools;
+
 pub(crate) use lprelax::{LpRelaxEncodingConstraint, LpRelaxSchedEncoder};
 
 use crate::{
@@ -38,7 +40,7 @@ pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> 
                     .args
                     .iter()
                     .chain(&[term])
-                    .any(|term| !term.is_cst() && !source_terms.contains(term))
+                    .any(|term| !term.is_cst() && !source_terms.iter().map(|(t, _)| *t).contains(term))
                 {
                     ambiguous_effects.insert(eff_id);
                 }
@@ -62,7 +64,7 @@ pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> 
                 .args
                 .iter()
                 .chain(&[c.value])
-                .any(|term| !term.is_cst() && !source_terms.contains(term))
+                .any(|term| !term.is_cst() && !source_terms.iter().map(|(t, _)| *t).contains(term))
             {
                 ambiguous_conditions.insert(cl.cond_id);
             }
@@ -72,6 +74,7 @@ pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> 
     (ambiguous_conditions, ambiguous_effects)
 }
 
+pub type GroundingFlatId = Option<usize>;
 /// A wrapper around a vector of constants.
 /// Can be flattened into a integer id given the first value and dimension of each "column".
 /// In practice, these come from the integer encoding ranges of state functions' parameter types.
@@ -79,24 +82,31 @@ pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> 
 pub struct Grounding(Vec<IntCst>);
 
 impl Grounding {
-    fn to_flat_id<FlatId: From<usize>>(&self, ranges: &[(IntCst, IntCst)]) -> FlatId {
+    fn to_flat_id(&self, ranges: &[(IntCst, IntCst)]) -> GroundingFlatId {
         debug_assert!(self.0.len() == ranges.len());
+
+        if self.0.is_empty() {
+            return None;
+        }
 
         let mut res = 0;
         let mut factor = 1;
-        for (&x, &(lb, ub)) in self.0.iter().zip(ranges).rev() {
-            debug_assert!((ub as LongCst - lb as LongCst) + 1 >= 0);
-            debug_assert!((ub as LongCst - lb as LongCst) < INT_CST_MAX as LongCst);
-            let (startval, d) = (lb, usize::try_from(ub - lb + 1).unwrap());
+        for (&n, &(lb, ub)) in self.0.iter().zip(ranges).rev() {
+            debug_assert!((ub as LongCst - lb as LongCst) + 1 >= 0, "{lb} {ub}");
+            debug_assert!((ub as LongCst - lb as LongCst) < INT_CST_MAX as LongCst, "{lb} {ub}");
+            let (first, dim) = (lb, usize::try_from(ub - lb + 1).unwrap());
 
-            debug_assert!((x as LongCst - startval as LongCst) >= 0);
-            debug_assert!((x as LongCst - startval as LongCst) <= INT_CST_MAX as LongCst);
-            debug_assert!(usize::try_from(x - startval).unwrap() <= d);
+            debug_assert!((n as LongCst - first as LongCst) >= 0, "{n} {first}");
+            debug_assert!(
+                (n as LongCst - first as LongCst) <= INT_CST_MAX as LongCst,
+                "{n} {first}"
+            );
+            debug_assert!(usize::try_from(n - first).unwrap() <= dim, "{n} {first}");
 
-            res += usize::try_from(x - startval).unwrap() * factor;
-            factor *= d;
+            res += usize::try_from(n - first).unwrap() * factor;
+            factor *= dim;
         }
-        FlatId::from(res)
+        Some(res)
     }
 }
 impl Index<usize> for Grounding {
