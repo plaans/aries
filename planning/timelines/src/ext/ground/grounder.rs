@@ -56,7 +56,11 @@ impl std::fmt::Display for SimpleDatalogGrounderAtom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let terms = {
             let s = self.terms.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", ");
-            (!s.is_empty()).then(|| format!("({s})")).unwrap_or_default()
+            if !s.is_empty() {
+                format!("({s})")
+            } else {
+                Default::default()
+            }
         };
         f.write_fmt(format_args!("{}{terms}", self.datalog_predicate_id))
     }
@@ -133,7 +137,7 @@ impl SimpleDatalogGrounder {
             .collect();
 
         let mut res = Self {
-            view: with_view.then(|| SimpleDatalogGrounderProgramView::default()),
+            view: with_view.then(SimpleDatalogGrounderProgramView::default),
             inner: SimpleDatalogGrounderInner::default(),
             global_args_groundings,
         };
@@ -358,10 +362,10 @@ impl SimpleDatalogGrounder {
         if let Some(view) = self.view.as_mut() {
             view.facts.push(SimpleDatalogGrounderFact(SimpleDatalogGrounderAtom {
                 datalog_predicate_id: datalog_predicate_id.clone(),
-                terms: terms.as_ref().iter().cloned().collect::<Vec<_>>(),
+                terms: terms.as_ref().to_vec(),
             }));
         }
-        self.inner.add_fact(&datalog_predicate_id, terms);
+        self.inner.add_fact(datalog_predicate_id, terms);
     }
 
     fn add_rule(
@@ -379,13 +383,13 @@ impl SimpleDatalogGrounder {
             view.rules.push(SimpleDatalogGrounderRule {
                 head: SimpleDatalogGrounderAtom {
                     datalog_predicate_id: head.0.clone(),
-                    terms: head.1.as_ref().iter().cloned().collect::<Vec<_>>(),
+                    terms: head.1.as_ref().to_vec(),
                 },
                 body: body
                     .iter()
                     .map(|pair| SimpleDatalogGrounderAtom {
                         datalog_predicate_id: pair.0.clone(),
-                        terms: pair.1.as_ref().iter().cloned().collect::<Vec<_>>(),
+                        terms: pair.1.as_ref().to_vec(),
                     })
                     .collect::<Vec<_>>(),
             });
