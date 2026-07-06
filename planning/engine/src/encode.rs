@@ -7,12 +7,19 @@ pub mod tags;
 
 use aries_solver::{
     core::literals::ConjunctionBuilder,
-    lang::{IntExpr, expr::eq},
+    lang::{
+        IntExpr,
+        expr::{bool2int, eq},
+    },
     prelude::*,
 };
 use itertools::Itertools;
-use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, errors::Spanned};
-use timelines::{constraints::HasValueAt, symbols::ObjectEncoding, *};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, Type, errors::Spanned};
+use smallvec::SmallVec;
+use timelines::{
+    Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
+};
 
 use crate::encode::{
     constraints::{ConditionConstraint, ConditionExpression},
@@ -34,6 +41,56 @@ pub fn types(model: &Model) -> ObjectEncoding {
                 .collect_vec()
         },
     )
+}
+
+pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> {
+    let mut res = FluentsEncoding::default();
+
+    for f in model.env.fluents.iter() {
+        let params = {
+            let mut ps = SmallVec::<[FluentParam; 6]>::new();
+            for tpe in f.parameters.iter().map(|p| &p.tpe) {
+                ps.push(FluentParam {
+                    range: type_range(tpe, objects)?,
+                    tpe: tpe.to_string(),
+                });
+            }
+            ps
+        };
+        let r#return = FluentParam {
+            range: type_range(&f.return_type, objects)?,
+            tpe: f.return_type.to_string(),
+        };
+
+        res.add(f.name().to_string(), &params, r#return);
+    }
+    Ok(res)
+}
+
+fn type_range(param_type: &Type, objects: &ObjectEncoding) -> Res<Segment> {
+    match param_type {
+        Type::Bool => Ok(Segment::new(0, 1)),
+        Type::Int(int_interval) => Ok(Segment::new(
+            int_interval
+                .0
+                .map(|x| IntCst::try_from(x).unwrap())
+                .unwrap_or(INT_CST_MIN),
+            int_interval
+                .1
+                .map(|x| IntCst::try_from(x).unwrap())
+                .unwrap_or(INT_CST_MAX),
+        )),
+        Type::Real => Ok(Segment::all()),
+        Type::User(var_type) => {
+            let Some(var_type) = var_type.to_single_type() else {
+                return Err(Message::error("Unsupported parameter type (union type)"));
+            };
+            let range = objects
+                .domain_of_type(var_type.name.as_str())
+                .ok_or_else(|| var_type.name.invalid("Could not determine the domain of this type."))?;
+            Ok(Segment::new(range.first, range.last))
+        }
+    }
 }
 
 /// Scope from convertion function can find the values binded in their environments, (action sart, end, presence, parameters, ...)
@@ -111,13 +168,77 @@ pub fn condition_to_constraint(
             !c
         }
         planx::Expr::App(planx::Fun::Eq, exprs) if exprs.len() == 2 => {
-            let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
-            let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
-            ConditionExpression::EqZero(e1 - e2).scoped(bindings.presence)
+            use planx::Expr::*;
+            match (model.env.node(exprs[0]).expr(), model.env.node(exprs[1]).expr()) {
+                (StateVariable(fluent_id, args), _) => {
+                    let fluent = model.env.fluents.get(*fluent_id);
+                    let mut reif_args = Vec::with_capacity(args.len());
+                    for a in args {
+                        let a = reify_sym(*a, model, sched, bindings, encoding)?;
+                        reif_args.push(a);
+                    }
+                    let state_var = StateVar {
+                        fluent: fluent.name().to_string(),
+                        args: reif_args,
+                    };
+                    let c = HasValueAt {
+                        state_var,
+                        value: reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)
+                            .map(|arg_expr| flatten_expression(arg_expr, sched, bindings))?,
+                        timepoint,
+                        prez: bindings.presence,
+                        source: bindings.source,
+                    };
+                    ConditionExpression::HasValue(c).scoped(bindings.presence)
+                }
+                (_, StateVariable(fluent_id, args)) => {
+                    let fluent = model.env.fluents.get(*fluent_id);
+                    let mut reif_args = Vec::with_capacity(args.len());
+                    for a in args {
+                        let a = reify_sym(*a, model, sched, bindings, encoding)?;
+                        reif_args.push(a);
+                    }
+                    let state_var = StateVar {
+                        fluent: fluent.name().to_string(),
+                        args: reif_args,
+                    };
+                    let c = HasValueAt {
+                        state_var,
+                        value: reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)
+                            .map(|arg_expr| flatten_expression(arg_expr, sched, bindings))?,
+                        timepoint,
+                        prez: bindings.presence,
+                        source: bindings.source,
+                    };
+                    ConditionExpression::HasValue(c).scoped(bindings.presence)
+                }
+                _ => {
+                    let e1 = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
+                    let e2 = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+                    /*{
+                        let (e1_lb, e1_ub) = e1.bounds(&sched.model);
+                        let (e2_lb, e2_ub) = e2.bounds(&sched.model);
+                        sched.model.enforce(e1.clone().leq(e2_ub), [bindings.presence]);
+                        sched.model.enforce(e2.clone().geq(e1_lb), [bindings.presence]);
+                        sched.model.enforce(e2.clone().leq(e1_ub), [bindings.presence]);
+                        sched.model.enforce(e1.clone().geq(e2_lb), [bindings.presence]);
+                        // (WARNING / BUG): bindings.presence can cause problems (try visitall with 1 action)
+                    }*/
+                    ConditionExpression::EqZero(e1 - e2).scoped(bindings.presence)
+                }
+            }
         }
         planx::Expr::App(planx::Fun::Leq, exprs) if exprs.len() == 2 => {
+            // ?TODO? separate pattern when lhs and/or rhs is a state variable ??? (like above)
             let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
             let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            /*{
+                let lhs_lb = lhs.bounds(&sched.model).0;
+                let rhs_ub = rhs.bounds(&sched.model).1;
+                sched.model.enforce(lhs.clone().leq(rhs_ub), [bindings.presence]);
+                sched.model.enforce(rhs.clone().geq(lhs_lb), [bindings.presence]);
+                // (WARNING / BUG): bindings.presence can cause problems (try visitall with 1 action)
+            }*/
             ConditionExpression::LeqZero(lhs - rhs).scoped(bindings.presence)
         }
         planx::Expr::App(planx::Fun::Or, exprs) => {
@@ -145,8 +266,16 @@ pub fn condition_to_constraint(
             ConditionExpression::And(conjuncts).scoped(bindings.presence)
         }
         planx::Expr::App(planx::Fun::Geq, exprs) if exprs.len() == 2 => {
+            // ?TODO? separate pattern when lhs and/or rhs is a state variable ??? (like above)
             let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
             let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            /*{
+                let lhs_ub = lhs.bounds(&sched.model).1;
+                let rhs_lb = rhs.bounds(&sched.model).0;
+                sched.model.enforce(rhs.clone().leq(lhs_ub), [bindings.presence]);
+                sched.model.enforce(lhs.clone().geq(rhs_lb), [bindings.presence]);
+                // (WARNING / BUG): bindings.presence can cause problems (try visitall with 1 action)
+            }*/
             ConditionExpression::LeqZero(rhs - lhs).scoped(bindings.presence)
         }
         _ => return Err(expr.todo("not supported")),
@@ -423,6 +552,7 @@ pub fn reify_expression(
             .args
             .get(param.name())
             .copied()
+            // .inspect(|id| println!("{:?}-{:?}", id.lower_bound(&sched.model), id.upper_bound(&sched.model)))
             .map(|id| id.into())
             .ok_or_else(|| param.name().invalid("unknown parameter")),
         StateVariable(fluent, args) => {
