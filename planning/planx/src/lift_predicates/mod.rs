@@ -125,6 +125,7 @@ impl<'a> AppliedSubstitutionGroup<'a> {
                 let tpe = UnionUserType::new(tpe_name.as_str(), env.types.top_user_type().hier);
 
                 env.types.add_user_type_independent(tpe.to_single_type().unwrap().name);
+                // POTENTIAL BUG / FIXME / TODO: these new "objects" could be used by other, non-related variables... -> need a new top type higher than objects.
 
                 for sub in &group.substitutions {
                     let obj_name = Sym::from(
