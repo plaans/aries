@@ -27,12 +27,16 @@ pub enum ReifExpr {
     Neq(Var, Var),
     EqVal(Var, IntCst),
     NeqVal(Var, IntCst),
+    /// Requires that at least of a set of literal is true.
     Or(Disjunction),
+    /// Requires that all literals of a set are true.
     And(Conjunction),
+    /// Requires a linear sum to be lesser than or equal to 0 (`sum <= 0`).
     LinearLeq(LinSum),
+    /// Requires a linear sum to be equal to 0 (`sum == 0`).
     LinearEq(LinSum),
+    /// Requires a linear sum to *not* be equal to 0 (`sum != 0`).
     LinearNeq(LinSum),
-    // TODO: add LinearEq and LinearNeq, and subsume in specialized Variants
     Alternative(NFAlternative),
     EqMax(NFEqMax),
 }
@@ -48,7 +52,7 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::NeqVal(a, b) => write!(f, "({a:?} != {b:?}"),
             ReifExpr::Or(or) => write!(f, "or{or:?}"),
             ReifExpr::And(and) => write!(f, "and{and:?}"),
-            ReifExpr::LinearLeq(l) => write!(f, "{l}"),
+            ReifExpr::LinearLeq(l) => write!(f, "{l} <= 0"),
             ReifExpr::LinearEq(l) => write!(f, "{l} = 0"),
             ReifExpr::LinearNeq(l) => write!(f, "{l} != 0"),
             ReifExpr::EqMax(em) => write!(f, "{em:?}"),
