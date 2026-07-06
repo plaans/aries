@@ -70,7 +70,7 @@ pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinTerm {
     } else if is_zero_one && b == b.variable().leq(0) {
         1 - b.variable()
     } else {
-        let binary_var = model.new_optional_var(0, 1, model.presence_literal(b));
+        let binary_var = model.new_optional_var(0, 1, model.presence(b));
         implies(binary_var.geq(1), b).enforce(model);
         implies(b, binary_var.geq(1)).enforce(model);
         LinTerm::from(binary_var)

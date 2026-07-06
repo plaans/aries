@@ -4,11 +4,11 @@ pub use crate::core::literals::Conjunction;
 pub use crate::core::literals::Disjunction;
 pub use crate::core::state::Domains;
 pub use crate::core::state::Solution;
+pub use crate::core::views::Dom;
 pub use crate::core::{IntCst, Lit, SignedVar, Var};
 pub use crate::lang::IAtom;
 pub use crate::lang::linear::{LinSum, LinTerm};
 pub use crate::lang::{BoolExpr, IntExpr};
-pub use crate::model::extensions::DomainsExt;
 pub use crate::solver::SearchLimit;
 pub use crate::solver::Solver;
 

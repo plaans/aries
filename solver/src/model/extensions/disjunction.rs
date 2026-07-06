@@ -1,10 +1,10 @@
-use crate::{core::*, prelude::DomainsExt};
+use crate::{core::*, prelude::Dom};
 
 /// Extension trait that provides convenience methods to query the status of disjunctions.
 pub trait DisjunctionExt<Disj>
 where
     Disj: IntoIterator<Item = Lit>,
-    Self: DomainsExt,
+    Self: Dom,
 {
     fn value_of_clause(&self, disjunction: Disj) -> Option<bool> {
         let mut found_undef = false;
@@ -41,7 +41,7 @@ where
     }
 
     fn fusable_lits(&self, l1: Lit, l2: Lit) -> bool {
-        l1 == !self.presence_literal(l2) || l2 == !self.presence_literal(l1)
+        l1 == !self.presence(l2) || l2 == !self.presence(l1)
     }
     fn unit_clause(&self, disjuncts: Disj) -> bool {
         let mut disjuncts = disjuncts.into_iter();
@@ -76,4 +76,4 @@ where
     }
 }
 
-impl<Disj: IntoIterator<Item = Lit>, State: DomainsExt> DisjunctionExt<Disj> for State {}
+impl<Disj: IntoIterator<Item = Lit>, State: Dom> DisjunctionExt<Disj> for State {}

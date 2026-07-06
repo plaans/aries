@@ -54,11 +54,11 @@ impl VarView for Var {
     type Value = IntCst;
 
     fn upper_bound(&self, dom: impl super::views::Dom) -> Self::Value {
-        dom.upper_bound(SignedVar::plus(*self))
+        dom._upper_bound(SignedVar::plus(*self))
     }
 
     fn lower_bound(&self, dom: impl super::views::Dom) -> Self::Value {
-        dom.lower_bound(SignedVar::plus(*self))
+        dom._lower_bound(SignedVar::plus(*self))
     }
 }
 

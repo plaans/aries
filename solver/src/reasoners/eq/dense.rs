@@ -3,7 +3,7 @@ use crate::core::literals::Watches;
 use crate::core::state::{Domains, DomainsSnapshot, Explanation, InvalidUpdate};
 use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar, Var};
 use crate::model::{Label, Model};
-use crate::prelude::DomainsExt;
+use crate::prelude::Dom;
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
 use crate::reif::ReifExpr;

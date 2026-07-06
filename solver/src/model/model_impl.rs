@@ -10,7 +10,6 @@ use crate::core::*;
 use crate::lang::expr::or;
 use crate::lang::reification::Reification;
 use crate::lang::*;
-use crate::model::extensions::DomainsExt;
 use crate::model::label::{Label, VariableLabels};
 use crate::model::model_impl::scopes::Scopes;
 use crate::reasoners::cp::UserPropagator;
@@ -271,7 +270,7 @@ impl<Lbl: Label> Model<Lbl> {
     ///
     /// It is required that the presence literal is on an mandatory variable.
     pub fn new_optional_variable(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
-        debug_assert!(self.presence_literal(presence).tautological());
+        debug_assert!(self.presence(presence).tautological());
         if lb <= ub {
             self.state.new_optional_var(lb, ub, presence)
         } else {
@@ -460,12 +459,7 @@ impl<Lbl: Label> Model<Lbl> {
     pub fn enforce_if<Expr: Reifiable<Lbl>>(&mut self, enabler: Lit, expr: Expr) {
         let mut expr = expr.decompose(self);
         self.simplify(&mut expr);
-        tracing::debug!(
-            "enforce if: [{:?}] {:?} => {}",
-            self.presence_literal(enabler),
-            enabler,
-            expr
-        );
+        tracing::debug!("enforce if: [{:?}] {:?} => {}", self.presence(enabler), enabler, expr);
         self.shape.add_half_reification_constraint(enabler, expr);
     }
 
@@ -479,15 +473,14 @@ impl<Lbl: Label> Model<Lbl> {
         let expression_scope = expression_scope.to_conjunction(self);
         let expression_scope = self.new_conjunctive_presence_variable(expression_scope);
         debug_assert!(
-            self.state
-                .implies(self.presence_literal(value.variable()), expression_scope),
+            self.state.implies(self.presence(value.variable()), expression_scope),
             "Inconsistent validity scope between the expression and the literal. {expr:?} <=> {value:?}"
         );
 
         if let Some(reified) = self.shape.expressions.interned_full(&expr) {
             // expression already reified, unify it with expected value
             self.bind_literals(value, reified)
-        } else if expression_scope == self.presence_literal(value.variable()) {
+        } else if expression_scope == self.presence(value.variable()) {
             // not yet reified and compatible scopes, propose our literal as the reification
             self.shape.expressions.intern_full_as(expr.clone(), value);
             self.shape.add_reification_constraint(value, expr);
@@ -531,7 +524,7 @@ impl<Lbl: Label> Model<Lbl> {
 
     pub fn print_state(&self) {
         for v in self.state.variables() {
-            let prez = format!("[{:?}]", self.presence_literal(v));
+            let prez = format!("[{:?}]", self.presence(v));
             let v_str = format!("{v:?}");
             println!("{prez:<6}  {v_str:<6} <- {:?}", self.state.domain(v));
         }
@@ -546,11 +539,11 @@ impl<Lbl: Label> Model<Lbl> {
 }
 
 impl<Lbl> Dom for Model<Lbl> {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::ub(&self.state, svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
+    fn _presence(&self, var: Var) -> Lit {
         self.state.presence(var)
     }
 }

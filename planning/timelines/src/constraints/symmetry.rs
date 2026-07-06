@@ -81,7 +81,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                         crate::EffectOp::Step(_) => false,
                     };
                     // create a new mandatory literal to capture whether the link is active (requiring also the condition to be present)
-                    let supports = Conjunction::from_slice([cl.active, ctx.presence_literal(cl.active)]).reified(ctx);
+                    let supports = Conjunction::from_slice([cl.active, ctx.presence(cl.active)]).reified(ctx);
                     links_per_action
                         .entry(task_of_effect)
                         .or_default()

@@ -1,39 +1,8 @@
+mod dom;
+
+pub use dom::Dom;
+
 use crate::prelude::*;
-
-pub trait Dom {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst;
-
-    fn presence(&self, var: Var) -> Lit;
-
-    fn lower_bound(&self, svar: SignedVar) -> IntCst {
-        -self.upper_bound(-svar)
-    }
-}
-
-impl<X: ?Sized> Dom for &X
-where
-    X: Dom,
-{
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        Dom::upper_bound(*self, svar)
-    }
-
-    fn presence(&self, var: Var) -> Lit {
-        Dom::presence(*self, var)
-    }
-}
-impl<X: ?Sized> Dom for &mut X
-where
-    X: Dom,
-{
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        Dom::upper_bound(*self, svar)
-    }
-
-    fn presence(&self, var: Var) -> Lit {
-        Dom::presence(*self, var)
-    }
-}
 
 pub trait VarView {
     type Value: Ord;
@@ -59,12 +28,12 @@ impl VarView for SignedVar {
 
     #[inline]
     fn upper_bound(&self, dom: impl Dom) -> Self::Value {
-        dom.upper_bound(*self)
+        dom._upper_bound(*self)
     }
 
     #[inline]
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
-        dom.lower_bound(*self)
+        dom._lower_bound(*self)
     }
 }
 

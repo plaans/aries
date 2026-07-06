@@ -5,7 +5,7 @@ use crate::lang::ValidityScope;
 use crate::lang::alternative::NFAlternative;
 use crate::lang::max::NFEqMax;
 use crate::model::{Label, Model};
-use crate::prelude::{Conjunction, DomainsExt, LinSum, Solution};
+use crate::prelude::{Conjunction, Dom, LinSum, Solution};
 use std::fmt::{Debug, Formatter};
 use std::ops::Not;
 

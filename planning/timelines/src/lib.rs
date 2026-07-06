@@ -190,11 +190,11 @@ impl Sched {
 }
 
 impl Dom for Sched {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        self.model.upper_bound(svar)
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.model._upper_bound(svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
-        self.model.presence(var)
+    fn _presence(&self, var: Var) -> Lit {
+        self.model._presence(var)
     }
 }

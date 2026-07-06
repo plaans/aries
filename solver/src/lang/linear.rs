@@ -87,12 +87,12 @@ impl VarView for ScaledVarImpl {
 
     fn upper_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom.upper_bound(self.var) * self.factor
+        dom._upper_bound(self.var) * self.factor
     }
 
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom.lower_bound(self.var) * self.factor
+        dom._lower_bound(self.var) * self.factor
     }
 }
 
@@ -290,7 +290,7 @@ impl LinSum {
 
     /// Returns the conjunction of all presence literals of variables appearing in the sum.
     pub fn conj_scope(&self, dom: impl Dom) -> Conjunction {
-        Conjunction::from_iter(self.vars.iter().map(|sv| dom.presence(sv.var)))
+        Conjunction::from_iter(self.vars.iter().map(|sv| dom._presence(sv.var)))
     }
 
     /// Simplify the terms of the expression, into a normalized expression that satisfies

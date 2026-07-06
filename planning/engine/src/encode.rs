@@ -320,7 +320,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
         }
         let active = active.build();
         let active = sched.model.reify(active);
-        debug_assert_eq!(sched.model.presence_literal(active), Lit::TRUE);
+        debug_assert_eq!(sched.model.presence(active), Lit::TRUE);
 
         if !active.absurd() {
             let mut eff = e.clone();

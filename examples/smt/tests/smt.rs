@@ -342,14 +342,14 @@ fn test_reification_optionals() {
     let b = model.new_optional_ivar(0, 10, pb, "b");
 
     let a_leq_b = model.reify(leq(a, b));
-    let pab = model.presence_literal(a_leq_b.variable());
+    let pab = model.presence(a_leq_b.variable());
     assert_ne!(pab, Lit::TRUE);
     assert!(model.state.implies(pab, pa));
     assert!(model.state.implies(pab, pb));
 
     // defined if (!pa | pab) <=> (!pa | (pa & pb)) <=> pb
     let or = model.reify(or([!pa, a_leq_b]));
-    let p_or = model.presence_literal(or.variable());
+    let p_or = model.presence(or.variable());
     assert!(model.state.implies(p_or, pb));
     assert!(!model.state.implies(p_or, pa));
 }
@@ -464,7 +464,7 @@ fn test_opt_leq_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    let v = model.presence_literal(l.variable());
+    let v = model.presence(l.variable());
 
     let tests = vec![
         Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
@@ -492,7 +492,7 @@ fn test_opt_leq_eager_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    let v = model.presence_literal(l.variable());
+    let v = model.presence(l.variable());
     debug_assert_eq!(v, pb);
     // model.shape.labels.insert(v.variable(), "v".to_string());
 

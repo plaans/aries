@@ -83,7 +83,7 @@ fn solve_orienteering(pb: &OrienteeringProblem) -> Option<IntCst> {
         let time = model.new_optional_variable(0, tmax, visited);
 
         // note: one can check that the presence literal of `time` is indeed `visited`
-        debug_assert_eq!(model.presence_literal(time), visited);
+        debug_assert_eq!(model.presence(time), visited);
 
         // enforce that the the visit is done before the arriving at the destination
         model.enforce_scoped(lt(time, visits[1].time), [visited]);

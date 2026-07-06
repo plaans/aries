@@ -18,7 +18,6 @@ use aries_solver::core::state::Conflict;
 use aries_solver::core::views::Term;
 use aries_solver::core::*;
 use aries_solver::lang::{expr::*, Var};
-use aries_solver::model::extensions::DomainsExt;
 use aries_solver::prelude::*;
 use numeric::iatom_mul_lit;
 use std::cmp::{max, min};
@@ -697,7 +696,7 @@ pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result
                 debug_assert!(solver
                     .model
                     .state
-                    .implies(prez_cond, solver.model.presence_literal(support_lit.variable())));
+                    .implies(prez_cond, solver.model.presence(support_lit.variable())));
 
                 // add this support expression to the support clause
                 supported.push(support_lit);

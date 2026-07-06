@@ -1,6 +1,5 @@
 use crate::lang::IAtom;
 use crate::model::Label;
-use crate::model::extensions::DomainsExt;
 use crate::prelude::*;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, SearchLimit, Solver, UnsatCore};

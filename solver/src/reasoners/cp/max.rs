@@ -109,7 +109,7 @@ where
     }
 
     fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
-        debug_assert_eq!(self.scope, domains.presence_literal(self.lhs.variable()));
+        debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
         if literal == !self.scope {
             // PROP 1
             let max_lb = domains.lb(self.lhs);

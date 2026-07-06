@@ -1,7 +1,7 @@
 use crate::{
     core::{Lit, Var},
     lang::{BoolExpr, Store},
-    prelude::{Conjunction, DomainsExt, implies},
+    prelude::{Conjunction, Dom, implies},
     reasoners::cp::mul::MulPropagator,
 };
 use std::fmt::{Debug, Formatter};
@@ -33,10 +33,10 @@ impl EqMul {
 
 impl<Ctx: Store> BoolExpr<Ctx> for EqMul {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
-        let valid = ctx.presence_literal(implicant);
+        let valid = ctx.presence(implicant);
 
         for var in [self.lhs, self.rhs1, self.rhs2] {
-            ctx.add_assertion(implies(valid, ctx.presence_literal(var)));
+            ctx.add_assertion(implies(valid, ctx.presence(var)));
         }
 
         let propagator = MulPropagator {
@@ -50,11 +50,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqMul {
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> crate::prelude::Conjunction {
-        Conjunction::from([
-            ctx.presence_literal(self.lhs),
-            ctx.presence_literal(self.rhs1),
-            ctx.presence_literal(self.rhs2),
-        ])
+        Conjunction::from([ctx.presence(self.lhs), ctx.presence(self.rhs1), ctx.presence(self.rhs2)])
     }
 }
 

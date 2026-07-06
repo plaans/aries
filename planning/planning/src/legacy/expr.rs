@@ -176,7 +176,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Eq {
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
+        [ctx.presence(self.0), ctx.presence(self.1)].into()
     }
 }
 
@@ -269,7 +269,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Neq {
         ctx.get_implicant(or(disjuncts).into())
     }
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
+        [ctx.presence(self.0), ctx.presence(self.1)].into()
     }
 }
 

@@ -16,7 +16,6 @@ use aries_planning::chronicles::*;
 use aries_planning::legacy::Shaped;
 use aries_solver::core::{IntCst, Lit, Var, INT_CST_MAX};
 use aries_solver::lang::IAtom;
-use aries_solver::model::extensions::DomainsExt;
 use aries_solver::model::Model;
 use aries_solver::prelude::*;
 use aries_solver::reasoners::stn::{StnConfig, TheoryPropagationLevel};

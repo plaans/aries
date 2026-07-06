@@ -1,5 +1,5 @@
 use crate::chronicles::{concrete, EffectOp, Fluent, Problem, StateVar};
-use aries_solver::model::extensions::DomainsExt;
+use aries_solver::prelude::Dom;
 fn is_on_fluent(target_fluent: &Fluent, state_var: &StateVar) -> bool {
     target_fluent == state_var.fluent.as_ref()
 }

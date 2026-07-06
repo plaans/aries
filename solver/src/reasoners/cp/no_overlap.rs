@@ -232,7 +232,7 @@ where
         &'a self,
         est: IntCst,
         lct: IntCst,
-        domains: &'a impl DomainsExt,
+        domains: &'a impl Dom,
     ) -> impl Iterator<Item = (usize, &'a Task<IntVar>)> {
         self.tasks.iter().enumerate().filter(move |(_id, t)| {
             domains.entails(t.presence) && domains.lb(t.start) >= est && domains.ub(t.end) <= lct

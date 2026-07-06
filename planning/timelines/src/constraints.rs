@@ -211,7 +211,7 @@ struct StepContributor {
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
-        ctx.add_assertion(implies(ctx.presence_literal(l), self.prez));
+        ctx.add_assertion(implies(ctx.presence(l), self.prez));
         let _span = tracing::debug_span!("HasValueAt");
         let _span = _span.enter();
         tracing::debug!("{l:?} => {self:?}");
@@ -288,7 +288,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             if !conjuncts.absurd() {
                 let conjuncts = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
-                ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
+                ctx.add_assertion(or([!self.prez, ctx.presence(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
                 supports.push((eff_id, establishes));
             }

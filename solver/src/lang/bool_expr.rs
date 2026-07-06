@@ -35,7 +35,7 @@ pub trait BoolExpr<Ctx: Store> {
     /// Enforce that if the expression is in scope and `l` is true and defined, then the expression should be true.
     fn opt_enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let expression_scope = self.scope(ctx);
-        let enabler_scope = ctx.presence_literal(l);
+        let enabler_scope = ctx.presence(l);
 
         // get the scope of both the expression and the enabler
         let scope = ctx.conjunctive_scope(&[expression_scope, enabler_scope]);
@@ -108,7 +108,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        let vs = self.scope(|v| ctx.presence_literal(v));
+        let vs = self.scope(|v| ctx.presence(v));
         let conj_scope = vs.to_conjunction(ctx);
         Conjunction::from_iter(conj_scope.literals()) // TODO: remove conversion when StableLitSet = Conjunction`
     }
@@ -193,7 +193,7 @@ mod test {
         }
 
         fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-            [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
+            [ctx.presence(self.0), ctx.presence(self.1)].into()
         }
     }
 
@@ -222,7 +222,7 @@ mod test {
         let mut vars = Vec::with_capacity(ints.len() * 2);
         for &i in ints {
             vars.push(i.variable());
-            vars.push(s.model.presence(i.variable()).variable());
+            vars.push(s.model._presence(i.variable()).variable());
         }
         vars.sort();
         vars.dedup();
@@ -268,12 +268,12 @@ mod test {
     }
 
     impl Dom for ModelWithMetadata {
-        fn upper_bound(&self, svar: SignedVar) -> IntCst {
-            self.model.upper_bound(svar)
+        fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+            self.model._upper_bound(svar)
         }
 
-        fn presence(&self, var: Var) -> Lit {
-            self.model.presence(var)
+        fn _presence(&self, var: Var) -> Lit {
+            self.model._presence(var)
         }
     }
 

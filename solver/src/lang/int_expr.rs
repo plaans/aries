@@ -30,7 +30,7 @@ pub trait IntExpr<Ctx: Store> {
     /// Enforce that, whenever `variable` is defined, it has the same value as the expression.
     fn enforce_eq(&self, variable: LinTerm, ctx: &mut Ctx) {
         // Create an enabler that is always true and has the same scope as `variable`
-        let enabler = ctx.tautology_of_scope(ctx.presence_literal(variable));
+        let enabler = ctx.tautology_of_scope(ctx.presence(variable));
         self.enforce_eq_if(enabler, variable, ctx);
     }
 

@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
@@ -6,7 +8,7 @@ use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::lang::BoolExpr;
 use crate::lang::expr::geq;
-use crate::model::extensions::{DisjunctionExt, DomainsExt};
+use crate::model::extensions::DisjunctionExt;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
@@ -203,7 +205,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
         let enabler = *enabler;
         assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
-        let scope = self.model.presence_literal(enabler);
+        let scope = self.model.presence(enabler);
         if self.model.entails(!scope) {
             return Ok(()); // constraint is absent, ignore
         }
@@ -331,7 +333,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         if x.factor != 1 || y.factor != 1 {
                             continue;
                         }
-                        if doms.presence(d.var) != doms.presence_literal(enabler) {
+                        if doms.presence(d.var) != doms.presence(enabler) {
                             // presence of the constraint does not match the one of the edge
                             continue;
                         }
@@ -376,7 +378,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 Ok(())
             }
             ReifExpr::Alternative(a) => {
-                let prez = |v: Var| self.model.state.presence_literal(v);
+                let prez = |v: Var| self.model.state.presence(v);
                 assert!(
                     self.model.entails(enabler),
                     "Unsupported half reified alternative constraints."
@@ -396,7 +398,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
 
                 for alt in &a.alternatives {
-                    let alt_scope = self.model.state.presence_literal(alt.var);
+                    let alt_scope = self.model.state.presence(alt.var);
                     debug_assert!(self.model.state.implies(alt_scope, scope));
                     // a.main = alt.var + alt.shift
                     // a.main - alt.var = alt.shift
@@ -413,7 +415,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     ))?;
                 }
 
-                let prez = |v: Var| self.model.state.presence_literal(v);
+                let prez = |v: Var| self.model.state.presence(v);
 
                 // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
                 self.reasoners.cp.add_propagator(AtLeastOneGeq {
@@ -504,7 +506,7 @@ impl<Lbl: Label> Solver<Lbl> {
         disjuncts: impl Into<Disjunction>,
         scope: Lit,
     ) -> (Disjunction, Lit) {
-        let prez = |l: Lit| self.model.presence_literal(l.variable());
+        let prez = |l: Lit| self.model.presence(l.variable());
         let disjuncts = disjuncts.into();
         if scope == Lit::TRUE {
             return (disjuncts, scope);
@@ -604,7 +606,7 @@ impl<Lbl: Label> Solver<Lbl> {
             {
                 variables
                     .iter()
-                    .map(|v| self.model.presence_literal(*v))
+                    .map(|v| self.model.presence(*v))
                     .filter(|p| *p != Lit::TRUE)
                     .all(|p| variables.contains(&p.variable()))
             },

@@ -60,11 +60,11 @@ pub(super) struct SolutionInternal {
 }
 
 impl Dom for Solution {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
         self.data.values[svar].upper_bound
     }
 
-    fn presence(&self, var: Var) -> Lit {
+    fn _presence(&self, var: Var) -> Lit {
         self.data.presences[var]
     }
 }

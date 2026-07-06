@@ -12,7 +12,6 @@ use aries_plan_engine::{
     plans::lifted_plan::{self, LiftedPlan},
 };
 use aries_solver::lang::Store;
-use aries_solver::model::extensions::DomainsExt;
 use aries_solver::prelude::*;
 use derive_more::derive::Display;
 use itertools::Itertools;
