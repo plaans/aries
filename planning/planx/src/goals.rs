@@ -42,7 +42,7 @@ impl<'a> Spanned for Env<'a, &Goal> {
 #[derive(Clone, Debug)]
 pub enum SimpleGoal {
     /// A statement that must be true for the entire interval.
-    /// Notably used for regular (interval: [horizon,horizon])
+    /// Notably used for regular (interval: `[horizon,horizon]`)
     HoldsDuring(TimeInterval, ExprId),
     /// A statement that must be true at least once during the given interval
     SometimeDuring(TimeInterval, ExprId),

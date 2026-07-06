@@ -1,15 +1,15 @@
 use crate::chronicles::constraints::Constraint;
 use crate::chronicles::{Condition, Effect, EffectOp, Problem, VarLabel};
-use aries::model::lang::FAtom;
-use aries::model::Model;
+use crate::legacy::*;
+use aries_solver::model::Model;
 use std::cmp::Ordering;
 
 // is the effect a possible support for this condition
 fn is_possible_support(e: &Effect, c: &Condition, model: &Model<VarLabel>) -> bool {
     if let EffectOp::Assign(assigned_value) = e.operation {
         c.state_var.fluent == e.state_var.fluent
-            && model.unifiable_seq(&e.state_var.args, &c.state_var.args)
-            && model.unifiable(assigned_value, c.value)
+            && unifiable_seq(model, &e.state_var.args, &c.state_var.args)
+            && unifiable(model, assigned_value, c.value)
     } else {
         false
     }

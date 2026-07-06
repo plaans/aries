@@ -1,17 +1,15 @@
-use aries::backtrack::Backtrack;
-use aries::core::state::OptDomain;
-use aries::core::views::Term;
-use aries::core::Lit;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::alternative::Alternative;
-use aries::model::lang::expr::*;
-use aries::model::lang::max::{EqMax, EqMin};
-use aries::model::lang::IVar;
-use aries::solver::SearchLimit;
+use aries_solver::prelude::*;
+
+use aries_solver::backtrack::Backtrack;
+use aries_solver::core::state::OptDomain;
+use aries_solver::core::views::Term;
+use aries_solver::lang::alternative::Alternative;
+use aries_solver::lang::max::{EqMax, EqMin};
+use aries_solver::solver::SearchLimit;
 use itertools::Itertools;
 
-type Model = aries::model::Model<String>;
-type Solver = aries::solver::Solver<String>;
+type Model = aries_solver::model::Model<String>;
+type Solver = aries_solver::solver::Solver<String>;
 
 #[test]
 fn sat() {
@@ -20,16 +18,16 @@ fn sat() {
     let b = model.new_bvar("b").true_lit();
 
     let mut solver = Solver::new(model);
-    solver.enforce(a, []);
+    solver.enforce_scoped(a, []);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     solver.reset();
-    solver.enforce(implies(a, b), []);
+    solver.enforce_scoped(implies(a, b), []);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
     assert_eq!(solver.model.boolean_value_of(b), Some(true));
 
-    solver.enforce(!b, []);
+    solver.enforce_scoped(!b, []);
 
     assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
@@ -44,7 +42,9 @@ fn diff_logic() {
     let constraints = vec![lt(a, b), lt(b, c), lt(c, a)];
 
     let mut solver = Solver::new(model);
-    solver.enforce_all(constraints, []);
+    for c in constraints {
+        solver.enforce(c);
+    }
     assert!(solver.solve(SearchLimit::None).unwrap().is_none());
 }
 
@@ -55,12 +55,12 @@ fn minimize() {
     let b = model.new_ivar(0, 10, "b");
     let c = model.new_ivar(0, 10, "c");
 
-    model.enforce(lt(a, b), []);
-    model.enforce(lt(b, c), []);
-    model.enforce(lt(a, c), []);
+    model.enforce(lt(a, b));
+    model.enforce(lt(b, c));
+    model.enforce(lt(a, c));
     let x = model.reify(geq(b, 6));
     let y = model.reify(geq(b, 8));
-    model.enforce(or([x, y]), []);
+    model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
@@ -79,7 +79,7 @@ fn minimize_small() {
     let x = model.reify(geq(a, 6));
     let y = model.reify(geq(a, 8));
 
-    model.enforce(or([x, y]), []);
+    model.enforce(or([x, y]));
 
     let mut solver = Solver::new(model);
     assert!(solver.solve(SearchLimit::None).unwrap().is_some());
@@ -123,7 +123,9 @@ fn int_bounds() {
     ];
 
     let mut solver = Solver::new(model);
-    solver.enforce_all(constraints, []);
+    for c in constraints {
+        solver.enforce(c);
+    }
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     let check_dom = |v, lb, ub| {
         assert_eq!(solver.model.bounds(v), (lb, ub));
@@ -142,13 +144,13 @@ fn int_bounds() {
 fn bools_as_ints() {
     let mut model = Model::new();
     let a = model.new_bvar("a");
-    let ia: IVar = a.into();
+    let ia: Var = a.into();
     let b = model.new_bvar("b");
-    let ib: IVar = b.into();
+    let ib: Var = b.into();
     let c = model.new_bvar("c");
-    let ic: IVar = c.into();
+    let ic: Var = c.into();
     let d = model.new_bvar("d");
-    let id: IVar = d.into();
+    let id: Var = d.into();
 
     let mut solver = Solver::new(model);
 
@@ -162,10 +164,10 @@ fn bools_as_ints() {
     assert_eq!(solver.model.boolean_value_of(a), None);
     assert_eq!(solver.model.bounds(ia), (0, 1));
 
-    solver.enforce(a.true_lit(), []);
-    solver.enforce(b.false_lit(), []);
-    solver.enforce(geq(ic, 1), []);
-    solver.enforce(leq(id, 0), []);
+    solver.enforce_scoped(a.true_lit(), []);
+    solver.enforce_scoped(b.false_lit(), []);
+    solver.enforce_scoped(geq(ic, 1), []);
+    solver.enforce_scoped(leq(id, 0), []);
 
     solver.propagate().unwrap();
     assert_eq!(solver.model.boolean_value_of(a), Some(true));
@@ -182,7 +184,7 @@ fn bools_as_ints() {
 fn ints_and_bools() {
     let mut model = Model::new();
     let a = model.new_bvar("a");
-    let ia: IVar = a.into();
+    let ia: Var = a.into();
     let i = model.new_ivar(-10, 10, "i");
 
     let mut solver = Solver::new(model);
@@ -192,19 +194,19 @@ fn ints_and_bools() {
     assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(leq(i, ia), []);
+    solver.enforce_scoped(leq(i, ia), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.bounds(i), (-10, 1));
     assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(gt(ia, i), []);
+    solver.enforce_scoped(gt(ia, i), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.bounds(i), (-10, 0));
     assert_eq!(solver.model.bounds(ia), (0, 1));
     assert_eq!(solver.model.boolean_value_of(a), None);
 
-    solver.enforce(geq(i, 0), []);
+    solver.enforce_scoped(geq(i, 0), []);
     assert!(solver.propagate_and_backtrack_to_consistent().is_ok());
     assert_eq!(solver.model.bounds(i), (0, 0));
     assert_eq!(solver.model.bounds(ia), (1, 1));
@@ -221,7 +223,7 @@ fn test_multiplication() {
 
     let constraint = eq_mul(a, b, c);
 
-    model.enforce(constraint, []);
+    model.enforce(constraint);
     let mut solver = Solver::new(model);
 
     println!("a = b * c");
@@ -247,7 +249,7 @@ fn optional_hierarchy() {
         .map(|i| model.new_presence_variable(p, format!("p_{i}")).true_lit())
         .collect();
     let domains = [(0, 8), (-20, -5), (5, 20)];
-    let vars: Vec<IVar> = domains
+    let vars: Vec<Var> = domains
         .iter()
         .enumerate()
         .map(|(i, (lb, ub))| model.new_optional_ivar(*lb, *ub, scopes[i], format!("i_{i}")))
@@ -258,7 +260,7 @@ fn optional_hierarchy() {
 
     for (&sub_var, &sub_scope) in vars.iter().zip(scopes.iter()) {
         // if present, must be equal to i
-        model.enforce(eq(i, sub_var), [sub_scope]);
+        model.enforce_scoped(eq(i, sub_var), [sub_scope]);
     }
 
     let mut solver = Solver::new(model);
@@ -462,9 +464,7 @@ fn test_opt_leq_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    model.shape.labels.insert(l.variable(), "l".to_string());
     let v = model.presence_literal(l.variable());
-    model.shape.labels.insert(v.variable(), "v".to_string());
 
     let tests = vec![
         Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
@@ -492,7 +492,6 @@ fn test_opt_leq_eager_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    model.shape.labels.insert(l.variable(), "l".to_string());
     let v = model.presence_literal(l.variable());
     debug_assert_eq!(v, pb);
     // model.shape.labels.insert(v.variable(), "v".to_string());
@@ -526,7 +525,7 @@ fn test_alternative_ints() {
         .collect_vec();
 
     let alt = Alternative::new(a, ais.clone());
-    model.enforce(alt, []);
+    model.enforce(alt);
 
     let tests = vec![
         Test::new(&[a.leq(3)], &[ais[0].leq(3), ais[1].leq(3)]),
@@ -561,8 +560,8 @@ fn test_max() {
     let max = model.new_ivar(0, 100, "max");
     let min = model.new_ivar(0, 100, "min");
 
-    model.enforce(EqMax::new(max, ais.clone()), []);
-    model.enforce(EqMin::new(min, ais), []);
+    model.enforce(EqMax::new(max, ais.clone()));
+    model.enforce(EqMin::new(min, ais));
 
     let tests = vec![
         Test::new(&[], &[min.geq(1), max.leq(9)]),

@@ -5,7 +5,7 @@ use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
 use crate::reasoners::eq::SplitEqTheory;
 use crate::reasoners::sat::SatSolver;
-use crate::reasoners::stn::theory::StnTheory;
+use crate::reasoners::stn::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 
@@ -100,9 +100,9 @@ pub(crate) const REASONERS: [ReasonerId; 5] = [
 pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
-    pub eq: SplitEqTheory,
-    pub cp: Cp,
-    pub tautologies: Tautologies,
+    pub(crate) eq: SplitEqTheory,
+    pub(crate) cp: Cp,
+    pub(crate) tautologies: Tautologies,
 }
 impl Reasoners {
     pub fn new() -> Self {

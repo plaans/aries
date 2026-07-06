@@ -26,7 +26,7 @@ type Arena = Bump<8>;
 /// Clauses are allocated into an internal allocation arena (bump allocator) which allows for efficient individual allocation and batched deallocation.
 ///
 /// It can be extended with new clauses but we do not provide methods for removing a single clause (because it cannot be individually deallocated).
-/// The method [`clone_with_subset`] however provides a way to
+/// The method `clone_with_subset` however provides a way to keep a subset of the clauses.
 ///
 ///
 /// # Safety
@@ -180,7 +180,7 @@ impl IndexMut<ClauseId> for Clauses {
 /// because the lifetime associated with the reference would be lost.
 ///
 /// ```compile_fail,E0308
-/// use aries::reasoners::sat::clauses::Clause;
+/// use aries_solver::reasoners::sat::clauses::Clause;
 /// let cl: &Clause = todo!();
 /// let copied: Clause = cl.clone(); // should never compile
 /// ```
@@ -319,7 +319,7 @@ impl Clause {
     ///   - UNDEF literals
     ///   - FALSE Literal, prioritizing those with the highest decision level
     ///   - left most literal in the original clause (to avoid swapping two literals with the same priority)
-    pub fn move_watches_front(
+    pub(crate) fn move_watches_front(
         &mut self,
         value_of: impl Fn(Lit) -> Option<bool>,
         implying_event: impl Fn(Lit) -> Option<EventIndex>,

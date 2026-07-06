@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 clap = { workspace = true }
 anyhow = { workspace = true }
-aries = { path = "../../solver" }
+aries-solver = { path = "../../solver" }
 varisat-dimacs = "0.2.2"
 varisat-formula = "0.2.2"
 zip = { workspace = true }

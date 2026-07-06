@@ -1,32 +1,39 @@
 #![allow(clippy::comparison_chain)]
+use std::sync::Arc;
+
 use crate::chronicles::constraints::{Constraint, ConstraintType, Duration};
 use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, Time, VarLabel, VarType};
-use aries::core::{Lit, Relation, VarRef};
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::linear::{LinearSum, LinearTerm};
-use aries::model::lang::{Atom, BVar, IAtom, IVar, SAtom};
-use aries::model::symbols::SymId;
-use aries::model::Model;
+use crate::legacy::*;
+use aries_solver::core::{Lit, Relation, Var};
+use aries_solver::lang::BVar;
+use aries_solver::model::extensions::DomainsExt;
+use aries_solver::model::Model;
+use aries_solver::prelude::*;
 
 pub struct Printer<'a> {
     model: &'a Model<VarLabel>,
+    symbols: Arc<SymbolTable>,
 }
 
 impl<'a> Printer<'a> {
     /// Prints the problem's chronicles to standard output (template and non-template)
     pub fn print_problem(pb: &Problem) {
+        let me = Printer {
+            model: &pb.context.model,
+            symbols: pb.context.symbols.clone(),
+        };
         for c in &pb.chronicles {
-            Self::print_chronicle(&c.chronicle, &pb.context.model);
+            me.chronicle(&c.chronicle);
         }
         for c in &pb.templates {
-            Self::print_chronicle(&c.chronicle, &pb.context.model);
+            me.chronicle(&c.chronicle);
         }
     }
 
-    pub fn print_chronicle(ch: &Chronicle, model: &Model<VarLabel>) {
-        let printer = Printer { model };
-        printer.chronicle(ch)
-    }
+    // pub fn print_chronicle(ch: &Chronicle, model: &Model<VarLabel>) {
+    //     let printer = Printer { model };
+    //     printer.chronicle(ch)
+    // }
 
     fn chronicle(&self, ch: &Chronicle) {
         match ch.kind {
@@ -105,21 +112,6 @@ impl<'a> Printer<'a> {
         println!()
     }
 
-    pub fn print_reif_constraints(constraints: &[aries::model::Constraint], model: &Model<VarLabel>) {
-        for c in constraints.iter() {
-            Self::print_reif_constraint(c, model);
-        }
-    }
-
-    pub fn print_reif_constraint(constraint: &aries::model::Constraint, model: &Model<VarLabel>) {
-        let printer = Printer { model };
-        printer.reif_constraint(constraint);
-    }
-
-    fn reif_constraint(&self, constraint: &aries::model::Constraint) {
-        println!("{constraint}");
-    }
-
     fn list(&self, l: &[impl Into<Atom> + Copy]) {
         for (i, e) in l.iter().enumerate() {
             if i != 0 {
@@ -137,7 +129,7 @@ impl<'a> Printer<'a> {
 
     fn time(&self, t: Time) {
         let i = t.num;
-        self.var(i.var.into());
+        self.var(i.var);
         if i.shift > 0 {
             print!(" + {}", i.shift as f32 / t.denom as f32);
         } else if i.shift < 0 {
@@ -168,10 +160,10 @@ impl<'a> Printer<'a> {
     }
 
     fn iatom(&self, i: IAtom) {
-        if i.var == IVar::ZERO {
+        if i.var == Var::ZERO {
             print!("{}", i.shift)
         } else {
-            self.var(i.var.into());
+            self.var(i.var);
             if i.shift > 0 {
                 print!(" + {}", i.shift);
             } else if i.shift < 0 {
@@ -187,7 +179,7 @@ impl<'a> Printer<'a> {
         }
     }
     fn sym(&self, s: SymId) {
-        print!("{}", self.model.shape.symbols.symbol(s))
+        print!("{}", self.symbols.symbol(s))
     }
 
     fn lit(&self, l: Lit) {
@@ -209,8 +201,8 @@ impl<'a> Printer<'a> {
         }
     }
 
-    fn var(&self, v: VarRef) {
-        if let Some(VarLabel(_container, tpe)) = self.model.shape.labels.get(v) {
+    fn var(&self, v: Var) {
+        if let Some(VarLabel(_container, tpe)) = self.model.get_label(v) {
             match tpe {
                 VarType::Horizon => print!("horizon"),
                 VarType::Makespan => print!("makespan"),
@@ -224,9 +216,9 @@ impl<'a> Printer<'a> {
                 VarType::Reification => print!("reif_{v:?}"),
                 VarType::Cost => print!("cost_{v:?}"),
             }
-        } else if v == VarRef::ZERO {
+        } else if v == Var::ZERO {
             print!("0");
-        } else if v == VarRef::ONE {
+        } else if v == Var::ONE {
             print!("1");
         } else {
             print!("{v:?}");
@@ -242,7 +234,7 @@ impl<'a> Printer<'a> {
         if term.factor() != 1 {
             print!("{}*", term.factor());
         }
-        self.var(term.var().into());
+        self.var(term.var());
     }
 
     fn linear_sum(&self, sum: &LinearSum) {

@@ -1,12 +1,13 @@
 use crate::encode::analysis;
 use crate::encoding::{ChronicleId, CondID, EffID, Encoding, Tag};
 use analysis::CausalSupport;
-use aries::core::Lit;
-use aries::model::extensions::DomainsExt;
-use aries::model::lang::expr::{and, f_leq, implies, or};
+use aries_env_param::EnvParam;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
-use env_param::EnvParam;
+use aries_planning::legacy::f_leq;
+use aries_solver::core::Lit;
+use aries_solver::lang::expr::{and, implies, or};
+use aries_solver::model::extensions::DomainsExt;
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 
@@ -78,8 +79,8 @@ pub fn add_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encoding: &E
                     if template_id1 == template_id2 && generation_id1 < generation_id2 {
                         let p1 = instance1.chronicle.presence;
                         let p2 = instance2.chronicle.presence;
-                        model.enforce(implies(p1, p2), []);
-                        model.enforce(f_leq(instance1.chronicle.start, instance2.chronicle.start), [p1, p2]);
+                        model.enforce(implies(p1, p2));
+                        model.enforce_scoped(f_leq(instance1.chronicle.start, instance2.chronicle.start), [p1, p2]);
                     }
                 }
             }
@@ -341,7 +342,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
                     }
 
                     // (x_j >= y_j OR there exists i < j such that x_i > y_i)
-                    model.enforce(or(clause.as_slice()), []);
+                    model.enforce(or(clause.as_slice()));
                     // X[1:j-1] >= Y[1:j-1] has been enforced by the previous iteration of the loop
                 }
             }
@@ -359,7 +360,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
                         let lit = cls[l].active;
                         clause.push(lit);
                     });
-                model.enforce(or(clause.as_slice()), []);
+                model.enforce(or(clause.as_slice()));
             }
         }
     }
@@ -372,6 +373,6 @@ fn print_cond(cid: CondID, pb: &FiniteProblem, model: &Model) {
         analysis::CondOrigin::ExplicitCondition(cond_id) => &ch.chronicle.conditions[cond_id].state_var,
         analysis::CondOrigin::PostIncrease(eff_id) => &ch.chronicle.effects[eff_id].state_var,
     };
-    let s = model.shape.symbols.format(&[state_var.fluent.sym]);
+    let s = pb.symbols.format(&[state_var.fluent.sym]);
     print!("  {:?}:{}", ch.origin, s)
 }

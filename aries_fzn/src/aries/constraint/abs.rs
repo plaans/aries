@@ -1,7 +1,7 @@
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::IVar;
-use aries::model::lang::linear::ScaledVar;
+use aries_solver::lang::Var;
+use aries_solver::lang::linear::ScaledVar;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 use crate::aries::constraint::LinEq;
@@ -12,20 +12,20 @@ use crate::aries::constraint::Max;
 /// `b = abs(a)`
 #[derive(Debug)]
 pub struct Abs {
-    a: IVar,
-    b: IVar,
+    a: Var,
+    b: Var,
 }
 
 impl Abs {
-    pub fn new(a: IVar, b: IVar) -> Self {
+    pub fn new(a: Var, b: Var) -> Self {
         Self { a, b }
     }
 
-    pub fn a(&self) -> &IVar {
+    pub fn a(&self) -> &Var {
         &self.a
     }
 
-    pub fn b(&self) -> &IVar {
+    pub fn b(&self) -> &Var {
         &self.b
     }
 }
@@ -35,17 +35,16 @@ impl<Lbl: Label> Post<Lbl> for Abs {
         let (lb, ub) = model.state.bounds(self.a);
 
         let minus_a = model.state.new_var(-ub, -lb);
-        let minus_a = IVar::new(minus_a);
 
         let plus_a = self.a;
 
         let sum = vec![
             ScaledVar {
-                var: plus_a.into(),
+                var: plus_a,
                 factor: 1,
             },
             ScaledVar {
-                var: minus_a.into(),
+                var: minus_a,
                 factor: 1,
             },
         ];
@@ -62,7 +61,7 @@ impl<Lbl: Label> Post<Lbl> for Abs {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_int_model_2;
     use crate::aries::constraint::test::verify_all;

@@ -1,9 +1,9 @@
 use anyhow::{ensure, Context, Result};
-use aries::model::lang::{Atom, FAtom};
-use aries::prelude::*;
 use aries_planners::encoding::ChronicleId;
 use aries_planners::fmt::{extract_plan_actions, format_atom};
 use aries_planning::chronicles::{ChronicleKind, ChronicleOrigin, FiniteProblem, TaskId};
+use aries_planning::legacy::*;
+use aries_solver::prelude::*;
 use std::collections::HashMap;
 use unified_planning as up;
 use unified_planning::{Real, Schedule};
@@ -21,7 +21,7 @@ pub fn serialize_plan(
         .filter(|ch| assignment.boolean_value_of(ch.1.chronicle.presence) == Some(true))
         .collect();
     // sort by start times
-    chronicles.sort_by_key(|ch| assignment.f_domain(ch.1.chronicle.start).num.lb);
+    chronicles.sort_by_key(|ch| assignment.lb(ch.1.chronicle.start));
 
     // helper functions that return the ChronicleId of the chronicle refining the task
     let refining_chronicle = |task_id: TaskId| -> Result<ChronicleId> {
@@ -72,7 +72,7 @@ pub fn serialize_plan(
                 let name = match ch.chronicle.kind {
                     ChronicleKind::Problem => "problem".to_string(),
                     ChronicleKind::Method | ChronicleKind::Action | ChronicleKind::DurativeAction => {
-                        format_atom(&ch.chronicle.name[0], &problem.model, assignment)
+                        format_atom(&ch.chronicle.name[0], problem, assignment)
                     }
                 };
                 let parameters = ch.chronicle.name[1..]
@@ -217,8 +217,8 @@ fn serialize_atom(atom: Atom, pb: &FiniteProblem, ass: &Solution) -> Result<up::
         }
         Atom::Fixed(f) => up::atom::Content::Real(serialize_time(f, ass)?),
         Atom::Sym(s) => {
-            let sym_id = ass.sym_value_of(s).context("Unbound sym var")?;
-            let sym = pb.model.shape.symbols.symbol(sym_id);
+            let sym_id = ass.eval(s).context("Unbound sym var")?;
+            let sym = pb.symbols.symbol(sym_id);
             up::atom::Content::Symbol(sym.to_string())
         }
     };

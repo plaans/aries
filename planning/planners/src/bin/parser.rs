@@ -2,7 +2,7 @@ use anyhow::*;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
-use aries::utils::input::Input;
+use aries_planning::legacy::input::Input;
 use aries_planning::parsing::pddl::{find_domain_of, parse_pddl_domain, parse_pddl_problem};
 use aries_planning::parsing::pddl_to_chronicles;
 

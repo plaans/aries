@@ -1,8 +1,8 @@
-use aries::core::Lit;
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::expr::or;
+use aries_solver::core::Lit;
+use aries_solver::lang::BVar;
+use aries_solver::lang::expr::or;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -35,13 +35,13 @@ impl<Lbl: Label> Post<Lbl> for Clause {
         let literals_a = self.a.iter().map(|v| v.true_lit());
         let literals_b = self.b.iter().map(|v| v.false_lit());
         let literals: Vec<Lit> = literals_a.chain(literals_b).collect();
-        model.enforce(or(literals), []);
+        model.enforce(or(literals));
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_bool_model_3;
     use crate::aries::constraint::test::verify_all;

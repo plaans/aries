@@ -11,7 +11,7 @@ pub struct SignedVar(u32);
 
 impl SignedVar {
     /// The canonical representation of the `0` value (note that more may be possible).
-    pub const ZERO: Self = SignedVar::plus(VarRef::ZERO);
+    pub const ZERO: Self = SignedVar::plus(Var::ZERO);
 
     #[inline]
     pub const fn from_raw(id: u32) -> Self {
@@ -23,20 +23,20 @@ impl SignedVar {
     }
 
     #[inline]
-    pub const fn plus(v: VarRef) -> Self {
+    pub const fn plus(v: Var) -> Self {
         SignedVar((v.to_u32() << 1) + 1)
     }
 
     #[inline]
-    pub const fn minus(v: VarRef) -> Self {
+    pub const fn minus(v: Var) -> Self {
         SignedVar(v.to_u32() << 1)
     }
 
     /// Return the opposite view of the same variable.
     ///
     /// ```
-    /// use aries::core::*;
-    /// let var = VarRef::from(1u32);
+    /// use aries_solver::core::*;
+    /// let var = Var::from(1u32);
     /// let plus_var = SignedVar::minus(var);
     /// let minus_var = SignedVar::plus(var);
     /// assert_eq!(plus_var.neg(), minus_var);
@@ -58,8 +58,8 @@ impl SignedVar {
     }
 
     #[inline]
-    pub fn variable(self) -> VarRef {
-        VarRef::from(self.0 >> 1)
+    pub fn variable(self) -> Var {
+        Var::from(self.0 >> 1)
     }
 
     /// Returns `1` if the variable is a positive view and `-1` otherwise
@@ -119,8 +119,8 @@ impl From<usize> for SignedVar {
     }
 }
 
-impl From<VarRef> for SignedVar {
-    fn from(value: VarRef) -> Self {
+impl From<Var> for SignedVar {
+    fn from(value: Var) -> Self {
         SignedVar::plus(value)
     }
 }

@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use aries::core::VarRef;
-use aries::model::lang::IVar;
+use aries_solver::core::Var;
 use flatzinc::ConstraintItem;
 
 use crate::aries::Post;
@@ -91,10 +90,9 @@ impl From<ArrayIntMinimum> for Constraint {
 impl Encode for ArrayIntMinimum {
     fn encode(
         &self,
-        translation: &HashMap<usize, VarRef>,
+        translation: &HashMap<usize, Var>,
     ) -> Box<dyn Post<usize>> {
-        let translate =
-            |v: &Rc<VarInt>| IVar::new(*translation.get(v.id()).unwrap());
+        let translate = |v: &Rc<VarInt>| *translation.get(v.id()).unwrap();
         let items = self.x.iter().map(translate).collect();
         Box::new(Min::new(items, translate(&self.m)))
     }

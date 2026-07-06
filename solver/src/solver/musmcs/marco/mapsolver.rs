@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::backtrack::Backtrack;
 use crate::core::{INT_CST_MAX, Lit};
+use crate::lang::{IAtom, expr::or};
 use crate::model::Model;
-use crate::model::lang::{IAtom, expr::or, linear::LinearSum};
 use crate::prelude::*;
 use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
 use crate::solver::{Exit, SearchLimit};
@@ -108,16 +108,16 @@ impl MapSolver {
                 Box::new(move |s: &mut Solver| s.solve(SearchLimit::None))
             }
             MapSolverMode::HighOptimize => {
-                let sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
+                let sum = LinSum::new(0, literals.iter().map(|&l| 1 * l.variable()));
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
-                solver.model.enforce(sum.geq(obj), []);
+                solver.model.enforce(sum.geq(obj));
 
                 Box::new(move |s: &mut Solver| Ok(s.maximize(obj, SearchLimit::None)?.map(|(_, doms)| doms)))
             }
             MapSolverMode::LowOptimize => {
-                let sum = LinearSum::of(literals.iter().map(|&l| IAtom::from(l.variable())).collect_vec());
+                let sum = LinSum::new(0, literals.iter().map(|&l| 1 * l.variable()));
                 let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
-                solver.model.enforce(sum.leq(obj), []);
+                solver.model.enforce(sum.leq(obj));
 
                 Box::new(move |s: &mut Solver| Ok(s.minimize(obj, SearchLimit::None)?.map(|(_, doms)| doms)))
             }
@@ -227,13 +227,13 @@ impl MapSolver {
             // May only be needed for optional optimisation
             self.known_singleton_mcses_out.insert(self.trout(singleton_mcs));
         }
-        self.solver.enforce(or(translated_mcs), []);
+        self.solver.enforce_scoped(or(translated_mcs), []);
     }
 
     /// Mark assignments containing the given MUS as forbidden.
     /// In other words, mark them as explored. Seeds further discovered won't contain them.
     pub fn block_up(&mut self, mus: &BTreeSet<Lit>) {
         let translated_mus_negs = mus.iter().map(|&l| self.trin(l).not()).collect_vec();
-        self.solver.enforce(or(translated_mus_negs), []);
+        self.solver.enforce_scoped(or(translated_mus_negs), []);
     }
 }

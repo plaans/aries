@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use aries::core::IntCst;
-use aries::core::VarRef;
-use aries::model::Model as AriesModel;
-use aries::prelude::Domains;
-use aries::prelude::DomainsExt;
-use aries::solver::Exit;
-use aries::solver::SearchLimit;
-use aries::solver::Solver as AriesSolver;
-use aries::solver::search::default_brancher;
+use aries_solver::core::IntCst;
+use aries_solver::core::Var;
+use aries_solver::model::Model as AriesModel;
+use aries_solver::prelude::Domains;
+use aries_solver::prelude::DomainsExt;
+use aries_solver::solver::Exit;
+use aries_solver::solver::SearchLimit;
+use aries_solver::solver::Solver as AriesSolver;
+use aries_solver::solver::search::default_brancher;
 
 use crate::aries::Brancher;
 use crate::aries::Post;
@@ -33,7 +33,7 @@ use crate::fzn::var::VarInt;
 pub struct Solver {
     fzn_model: FznModel,
     aries_model: AriesModel<usize>,
-    translation: HashMap<usize, VarRef>,
+    translation: HashMap<usize, Var>,
     brancher: Brancher,
 }
 
@@ -93,7 +93,7 @@ impl Solver {
                 self.aries_model.new_bvar(*var_bool.id()).int_view()
             }
         };
-        self.translation.insert(*var_bool.id(), ivar.into());
+        self.translation.insert(*var_bool.id(), ivar);
     }
 
     fn add_var_int(&mut self, var_int: &VarInt) {
@@ -113,7 +113,7 @@ impl Solver {
                 ivar
             }
         };
-        self.translation.insert(*var_int.id(), ivar.into());
+        self.translation.insert(*var_int.id(), ivar);
     }
 
     /// Add the given flatzinc constraint to the aries model.
@@ -183,7 +183,7 @@ impl Solver {
         match self.fzn_model.solve_item() {
             SolveItem::Satisfy => {
                 let output_var_ids = self.output_var_ids();
-                let var_refs: Vec<VarRef> =
+                let var_refs: Vec<Var> =
                     output_var_ids.iter().map(translate).collect();
 
                 let g =
@@ -199,7 +199,7 @@ impl Solver {
                 let obj_var = objective.variable();
                 let obj_var_ref = *self.translation.get(obj_var.id()).unwrap();
                 let is_minimize = objective.goal() == &Goal::Minimize;
-                let g = |_: IntCst, d: &aries::prelude::Solution| {
+                let g = |_: IntCst, d: &aries_solver::prelude::Solution| {
                     f(self.make_solution(d))
                 };
                 let limit = SearchLimit::None;
@@ -241,7 +241,7 @@ impl Solver {
     fn make_assignment(
         &self,
         var: &FznVar,
-        domains: &aries::prelude::Solution,
+        domains: &aries_solver::prelude::Solution,
     ) -> Assignment {
         match var {
             FznVar::Bool(v) => {
@@ -284,7 +284,10 @@ impl Solver {
     }
 
     /// Make solution from flatzinc variables.
-    fn make_solution(&self, domains: &aries::prelude::Solution) -> Solution {
+    fn make_solution(
+        &self,
+        domains: &aries_solver::prelude::Solution,
+    ) -> Solution {
         let assignments = self
             .fzn_model
             .variables()

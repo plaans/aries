@@ -1,4 +1,4 @@
-use aries::model::Model;
+use aries_solver::model::Model;
 
 /// Used to post aries constraint into aries model.
 pub trait Post<Lbl> {

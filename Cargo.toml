@@ -5,7 +5,7 @@ members = [
     "datalog",
     "bench/data",
     "bench/bench",
-    "env_param",
+    "utils/env_param",
     "planning/engine",
     "planning/planx",
     "planning/timelines",
@@ -19,7 +19,7 @@ members = [
     "examples/smt",
     "examples/gg",
     "examples/knapsack",
-    "validator",
+    "planning/validator",
 ]
 resolver = "2"
 
@@ -27,23 +27,23 @@ resolver = "2"
 anyhow = { version = "1.0" }
 arcstr = { version = "1.2" }
 async-trait = "0.1"
-bumpalo = { version = "3.19" }
-clap = { version = "4.5", features = ["derive"] }
-comfy-table = "7.0"
+bumpalo = { version = "3.20" }
+clap = { version = "4.6", features = ["derive"] }
+comfy-table = "7.2"
 criterion = "0.5.1"
 crossbeam-channel = "0.5"
 derivative = "2.2"
 derive_builder = "0.20"
 itertools = { version = "0.14" }
 fixedbitset = { version = "0.5.7", default-features = false }
-format_num = "0.1.0"
 hashbrown = "0.16"
 im = "15.1"
 lru = "0.16"
-malachite = "0.9.0"
+malachite = "0.9.1"
 num-rational = { version = "0.4.2" }
 num-integer = { default-features = false, version = "0.1.46" }
-pathfinding = "4.14.0"
+numfmt = { version = "1.2.0" }
+pathfinding = "4.15.0"
 prost = { version = "0.14" }
 rand = { version = "0.9", features = ["small_rng"] }
 readable = "0.1"
@@ -53,26 +53,27 @@ serde_json = "1.0"
 smallvec = { version = "1.15", features = ["union"] }
 structopt = "0.3"
 streaming-iterator = "0.1.9"
-test_each_file = "0.3.6"
-tonic = "0.14.2"
-tonic-prost = "0.14.2"
-tonic-prost-build = "0.14.2"
-tokio = { default-features = false, version = "1.49.0", features = [
+test_each_file = "0.3.7"
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+tonic-prost-build = "0.14.6"
+tokio = { default-features = false, version = "1.52.3", features = [
     "rt-multi-thread",
     "macros",
 ] }
 tokio-stream = { default-features = false, version = "0.1" }
-tracing = { version = "0.1", features = ["release_max_level_info"] }
+# tracing: disable the `attributes` feature that causes large compilation time (requires syn)
+tracing = { version = "0.1", default-features = false, features = ["std", "release_max_level_info"] }
 tracing-subscriber = "0.3"
 transitive = "1.2.0"
 vec_map = "0.8"
 walkdir = "2.5"
-zip = { default-features = false, features = ["deflate"], version = "7.0.0" }
+zip = { default-features = false, features = ["deflate"], version = "7.2.0" }
 derive_more = { version = "2.1", features = ["display"] }
 thiserror = "2"
-annotate-snippets = "0.12.10"
+annotate-snippets = "0.12.16"
 idmap = "0.3.5"
-compact_str = "0.9.0"
+compact_str = "0.9.1"
 
 [profile.dev]
 opt-level = 0

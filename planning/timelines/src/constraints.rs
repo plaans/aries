@@ -1,16 +1,15 @@
 pub mod symmetry;
 
-use aries::core::literals::ConjunctionBuilder;
-use aries::model::lang::element::Element;
-use aries::model::lang::exclusive_choice::exclu_choice;
-use aries::model::lang::expr::{And, geq, implies, leq, lin_eq, lin_geq, lin_gt, lin_leq, lin_lt, lt};
-use aries::prelude::*;
-use aries::{
-    core::{literals::DisjunctionBuilder, views::Dom},
-    model::lang::{
-        expr::{eq, or},
-        max::EqMax,
+use aries_solver::prelude::*;
+
+use aries_solver::lang::constraints::Element;
+use aries_solver::lang::exclusive_choice::exclu_choice;
+use aries_solver::{
+    core::{
+        literals::{ConjunctionBuilder, DisjunctionBuilder},
+        views::Dom,
     },
+    lang::max::EqMax,
 };
 
 use crate::{boxes::Segment, effects::EffectOp, *};
@@ -161,7 +160,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
                 conjuncts.push(leq(ass.mutex_end, step.mutex_end).implicant(ctx));
                 conjuncts.push(geq(ass.mutex_end, step.mutex_end).implicant(ctx));
                 for (arg1, arg2) in ass.state_var.args.iter().zip_eq(step.state_var.args.iter()) {
-                    conjuncts.push(lin_eq(*arg1, *arg2).implicant(ctx))
+                    conjuncts.push(eq(*arg1, *arg2).implicant(ctx))
                 }
                 let supports = conjuncts.build().implicant(ctx);
                 support_options.push(supports);
@@ -252,10 +251,10 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             conjuncts.push(geq(self.timepoint, eff.effective_start()).reified(ctx));
             conjuncts.push(leq(self.timepoint, eff.mutex_end).reified(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
-                conjuncts.push(lin_eq(*arg1, *arg2).reified(ctx))
+                conjuncts.push(eq(*arg1, *arg2).reified(ctx))
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = conjuncts.build();
+                let conjuncts = conjuncts.build();
                 let contributes = conjuncts.reified(ctx); // presence should be the same as self.presence?
                 step_contributors.push(StepContributor {
                     contributes,
@@ -283,11 +282,11 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             conjuncts.push(leq(self.timepoint, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
                 // note we use the conjunctive form with bot leq and geq to avoid reification of the equality
-                conjuncts.push(lin_leq(*arg1, *arg2).implicant(ctx));
-                conjuncts.push(lin_geq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(leq(*arg1, *arg2).implicant(ctx));
+                conjuncts.push(geq(*arg1, *arg2).implicant(ctx));
             }
             if !conjuncts.absurd() {
-                let conjuncts: And = conjuncts.build();
+                let conjuncts = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
                 ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
@@ -394,8 +393,8 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
         );
         let mut disjuncts = DisjunctionBuilder::new();
         for (x1, x2) in a.state_var.args.iter().zip_eq(b.state_var.args.iter()) {
-            disjuncts.push(lin_lt(*x1, *x2).implicant(ctx));
-            disjuncts.push(lin_gt(*x1, *x2).implicant(ctx));
+            disjuncts.push(lt(*x1, *x2).implicant(ctx));
+            disjuncts.push(gt(*x1, *x2).implicant(ctx));
             if disjuncts.tautological() {
                 return;
             }
@@ -412,23 +411,5 @@ impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
 
     fn conj_scope(&self, _ctx: &Ctx) -> Conjunction {
         Conjunction::tautology()
-    }
-}
-
-/// Transforms a boolean into an integer expression
-pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> IntExp {
-    let is_zero_one = model.bounds(b.variable()) == (0, 1);
-    if model.entails(b) {
-        1.into()
-    } else if model.entails(!b) {
-        0.into()
-    } else if is_zero_one && b == b.variable().geq(1) {
-        b.variable().into()
-    } else if is_zero_one && b == b.variable().leq(0) {
-        IntExp::cst(1) - b.variable()
-    } else {
-        let bvar = model.new_optional_var(0, 1, model.presence_literal(b));
-        eq(bvar.geq(1), b).enforce(model);
-        IntExp::from(bvar)
     }
 }

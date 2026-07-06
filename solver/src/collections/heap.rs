@@ -26,7 +26,7 @@ impl<K, P: PartialOrd> PartialOrd for HeapEntry<K, P> {
 }
 
 #[derive(Clone)]
-pub struct IdxHeap<K, P> {
+pub(crate) struct IdxHeap<K, P> {
     /// binary heap, the first
     heap: Vec<HeapEntry<K, P>>,
     index: RefMap<K, Entry<P>>,
@@ -78,10 +78,6 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         self.keys.clear();
     }
 
-    pub fn num_enqueued_elements(&self) -> usize {
-        self.heap.len()
-    }
-
     /// Returns all variables currently in the heap.
     pub fn enqueued_variables(&self) -> impl Iterator<Item = K> + '_ {
         self.heap.iter().map(|e| e.key)
@@ -98,15 +94,9 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
         self.keys.push(key);
     }
 
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
-    }
-
-    pub fn keys(&self) -> impl Iterator<Item = K> + '_
-    where
-        K: From<usize>,
-    {
-        self.keys.iter().copied()
     }
 
     pub fn is_enqueued(&self, key: K) -> bool {
@@ -186,10 +176,6 @@ impl<K: Ref, P: PartialOrd + Copy> IdxHeap<K, P> {
                 Out(p) => f(p),
             }
         }
-    }
-
-    pub fn set_priority(&mut self, key: K, new_priority: P) {
-        self.change_priority(key, |p| *p = new_priority);
     }
 
     fn sift_after_priority_change(&mut self, place: PlaceInHeap) {

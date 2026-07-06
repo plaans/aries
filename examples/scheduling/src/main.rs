@@ -2,13 +2,13 @@ mod parser;
 mod problem;
 mod search;
 
+use aries_solver::prelude::*;
+
 use crate::problem::{Encoding, OperationId, Problem, ProblemKind};
-use crate::search::{SearchStrategy, Solver, Var};
+use crate::search::{SearchStrategy, Solver, VarLbl};
 use anyhow::Context;
-use aries::model::lang::IVar;
-use aries::prelude::*;
-use aries::solver::{Exit, SearchLimit};
 use aries_bench_data::IntermediateResult;
+use aries_solver::solver::{Exit, SearchLimit};
 use std::fmt::Write;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -45,7 +45,7 @@ pub struct Opt {
     /// Choose the propagation level for the no-overlap constraint.
     /// Options: try it out, you will get an error message with the options
     #[structopt(long = "no-overlap", default_value = "edge-finding")]
-    no_overlap: aries::reasoners::cp::no_overlap::PropagatorKind,
+    no_overlap: aries_solver::reasoners::cp::no_overlap::PropagatorKind,
     /// Indicates a layout file, containing a matrix with the transportation times between all pairs of machines.
     #[structopt(long = "layout")]
     layout_file: Option<String>,
@@ -109,7 +109,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
     println!("Initial lower bound: {lower_bound}");
 
     let (model, encoding) = problem::encode(&pb, lower_bound, opt.upper_bound, opt.no_overlap);
-    let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
+    let makespan: Var = model.shape.get_variable(&VarLbl::Makespan).unwrap();
 
     let solver = Solver::new(model);
     let mut solver = search::get_solver(solver, &opt.search, &encoding);
@@ -255,18 +255,19 @@ fn read_file(file: impl AsRef<Path>) -> anyhow::Result<String> {
 #[cfg(test)]
 mod test {
     use crate::problem::ProblemKind;
-    use crate::search::Var;
+    use crate::search::VarLbl;
     use crate::{parser, problem};
-    use aries::core::state::witness;
-    use aries::model::Label;
-    use aries::prelude::*;
-    use aries::reasoners::cp::no_overlap;
-    use aries::solver::search::random::RandomChoice;
-    use aries::solver::{SearchLimit, Solver};
+    use aries_solver::core::state::witness;
+    use aries_solver::model::Label;
+    use aries_solver::model::Model;
+    use aries_solver::prelude::*;
+    use aries_solver::reasoners::cp::no_overlap;
+    use aries_solver::solver::search::random::RandomChoice;
+    use aries_solver::solver::{SearchLimit, Solver};
 
     /// Solve the problem multiple with different random variable ordering, ensuring that all results are as expected.
     /// It also set up solution witness to check that no learned clause prune valid solutions.
-    fn random_solves<S: Label>(model: &Model<S>, objective: IVar, num_solves: u32, expected_result: Option<IntCst>) {
+    fn random_solves<S: Label>(model: &Model<S>, objective: Var, num_solves: u32, expected_result: Option<IntCst>) {
         // when this object goes out of scope, any witness solution for the current thread will be removed
         let _clean_up = witness::on_drop_witness_cleaner();
         for seed in 0..num_solves {
@@ -322,7 +323,7 @@ mod test {
 
         // produce a model for this problem
         let (model, _encoding) = problem::encode(&pb, lower_bound, Some(opt * 2), propagation_level);
-        let makespan: IVar = IVar::new(model.shape.get_variable(&Var::Makespan).unwrap());
+        let makespan: Var = model.shape.get_variable(&VarLbl::Makespan).unwrap();
 
         // run several random solvers on the problem to assert the coherency of the results
         random_solves(&model, makespan, num_reps, Some(opt as IntCst))

@@ -1,0 +1,14 @@
+[package]
+authors = ["Roland Godet <rgodet@laas.fr>"]
+edition = "2021"
+name = "aries_plan_validator"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+aries-solver = { path = "../../solver" }
+unified_planning = { path = "../grpc/api" }
+anyhow = { workspace = true }
+im = { workspace = true }
+malachite = { workspace = true }
+regex = { workspace = true }

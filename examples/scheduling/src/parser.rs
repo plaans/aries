@@ -1,4 +1,4 @@
-use aries::core::u32_to_cst;
+use aries_solver::core::u32_to_cst;
 use itertools::Itertools;
 
 use crate::problem::*;

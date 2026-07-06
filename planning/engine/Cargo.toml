@@ -18,7 +18,7 @@ tracing-subscriber = { workspace = true }
 
 planx = { path = "../planx" }
 timelines = { package = "aries-timelines", path = "../timelines" }
-aries = { path = "../../solver" }
+aries-solver = { path = "../../solver" }
 
 
 [[bin]]

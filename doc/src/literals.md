@@ -17,7 +17,7 @@ A literal can be negated: `!(var <= val) = (var > val)`.
 
 The `true` and `false` values are provided as assertions on the zero variable:
 
- - `Lit::TRUE =  (VarRef::ZERO <= 0)`
- - `Lit::FALSE = !Lit::TRUE = (VarRef::ZERO > 0)`
+ - `Lit::TRUE =  (Var::ZERO <= 0)`
+ - `Lit::FALSE = !Lit::TRUE = (Var::ZERO > 0)`
 
-Because `VarRef::ZERO` is universally assumed to have a single possible value of `0`, it can be assumed that `Lit::TRUE` and `Lit::FALSE` can respectively represent a tautology and contradiction regardless of the context in which they appear.
+Because `Var::ZERO` is universally assumed to have a single possible value of `0`, it can be assumed that `Lit::TRUE` and `Lit::FALSE` can respectively represent a tautology and contradiction regardless of the context in which they appear.

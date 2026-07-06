@@ -1,4 +1,4 @@
-use aries::{core::views::Dom, prelude::*};
+use aries_solver::{core::views::Dom, prelude::*};
 use std::{
     fmt::{Debug, Formatter},
     ops::Index,

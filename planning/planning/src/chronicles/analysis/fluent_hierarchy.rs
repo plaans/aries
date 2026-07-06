@@ -1,7 +1,7 @@
 use crate::chronicles::analysis::TemplateID;
 use crate::chronicles::{EffectOp, Fluent, Problem};
-use aries::collections::ref_store::IterableRefMap;
-use aries::model::symbols::SymId;
+use crate::legacy::SymId;
+use aries_solver::collections::ref_store::IterableRefMap;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
@@ -53,7 +53,7 @@ pub fn hierarchy(pb: &Problem) -> HashMap<TemplateID, usize> {
     for (lvl, group) in scc.iter().enumerate() {
         print!(" - ");
         for fluent_sym in group {
-            let sym = pb.context.model.shape.symbols.symbol(*fluent_sym);
+            let sym = pb.context.symbols.symbol(*fluent_sym);
             print!("{sym}   ");
             for (template_id, template) in pb.templates.iter().enumerate() {
                 if templates_lvl.contains_key(&template_id) {
@@ -134,9 +134,10 @@ mod tarjan {
     can use `src/graph/graph_enumeration.rs` to convert their graph.
     */
 
-    use aries::collections::ref_store::IterableRefMap;
-    use aries::model::symbols::SymId;
+    use aries_solver::collections::ref_store::IterableRefMap;
     use std::collections::HashSet;
+
+    use crate::legacy::SymId;
 
     type V = SymId;
     type Graph = IterableRefMap<SymId, HashSet<SymId>>;

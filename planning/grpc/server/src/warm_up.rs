@@ -1,12 +1,7 @@
 use anyhow::{Context, Result};
-use aries::{
-    core::IntCst,
-    model::{
-        extensions::Shaped,
-        lang::{Cst, Rational},
-    },
-};
 use aries_planning::chronicles::{plan::ActionInstance, Problem, TIME_SCALE};
+use aries_planning::legacy::*;
+use aries_solver::core::IntCst;
 use unified_planning as up;
 
 type Plan = Vec<ActionInstance>;
@@ -57,7 +52,6 @@ pub fn param_from_upf(param: &up::Atom, problem: &Problem) -> Result<Cst> {
         up::atom::Content::Symbol(s) => {
             let sym = problem
                 .context
-                .model
                 .get_symbol_table()
                 .id(&s)
                 .with_context(|| format!("Unknown parameter {}", s))?;

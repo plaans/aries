@@ -94,7 +94,7 @@ pub struct SolveResult {
 
 impl SolveResult {
     /// Serializes the result to a new file in the indicated directory.
-    /// The name of the file is derived from the problem ([`Problem::filename`]).
+    /// The name of the file is derived from the problem ([`Problem::id_filename`]).
     /// If the directory does not exist, it will be created.
     /// If a file with the same name already exists, it will be overwritten.
     pub fn save_to_dir(&self, dir: &str) -> Result<()> {

@@ -1,38 +1,37 @@
 pub mod linear;
 pub mod max;
 pub mod mul;
-pub mod mul_lit;
 pub mod no_overlap;
-
 pub mod propagator;
 pub use propagator::{DynPropagator, Propagator, PropagatorId, UserPropagator};
+
+pub mod testing;
 
 use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
-use crate::core::{Lit, SignedVar, VarRef};
-use crate::model::lang::linear::NFLinearLeq;
-use crate::model::lang::mul::{EqMul, NFEqVarMulLit};
+use crate::core::{Lit, SignedVar, Var};
+use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
-use mul_lit::VarEqVarMulLit;
 use set::IterableRefSet;
 
+/// Structure that keeps track of watches on variables in a CP solver.
 #[derive(Clone, Default)]
 pub struct Watches {
     propagations: RefMap<SignedVar, Vec<PropagatorId>>,
 }
 
 impl Watches {
-    /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `
-    pub fn add_watch(&mut self, watched: VarRef, propagator_id: PropagatorId) {
+    /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `watched` variable.
+    pub fn add_watch(&mut self, watched: Var, propagator_id: PropagatorId) {
         self.add_ub_watch(watched, propagator_id);
         self.add_lb_watch(watched, propagator_id);
     }
 
     /// Request a trigger of `propagator_id` on every upper bound change of the `watched` signed variable.
-    /// If `watched` is given as a VarRef, notification will occur on the change of its upper bound.
+    /// If `watched` is given as a Var, notification will occur on the change of its upper bound.
     pub fn add_ub_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.propagations
@@ -41,7 +40,7 @@ impl Watches {
     }
 
     /// Request a trigger of `propagator_id` on every lower bound change of the `watched` signed variable.
-    /// If `watched` is given as a VarRef, notification will occur on the change of its lower bound.
+    /// If `watched` is given as a Var, notification will occur on the change of its lower bound.
     pub fn add_lb_watch(&mut self, watched: impl Into<SignedVar>, propagator_id: PropagatorId) {
         let watched = watched.into();
         self.add_ub_watch(-watched, propagator_id)
@@ -103,47 +102,23 @@ impl Cp {
         }
     }
 
-    pub fn add_linear_constraint(&mut self, leq: &NFLinearLeq, doms: &Domains) {
-        self.add_half_reif_linear_constraint(leq, Lit::TRUE, doms)
+    /// Adds a linear inequality constraint that `sum <= 0`.
+    /// The constraint is unconditional and is assumed to be always in scope
+    pub fn add_linear_leq_constraint(&mut self, leq: &LinSum, doms: &Domains) {
+        self.add_half_reif_linear_leq_constraint(leq, Lit::TRUE, doms)
     }
 
-    /// Adds a linear constraint that is only active when `active` is true.
-    pub fn add_half_reif_linear_constraint(&mut self, leq: &NFLinearLeq, active: Lit, doms: &Domains) {
+    /// Adds a linear inequality constraint that is only active when `active` is true.
+    /// This one requires that `sum <= 0`
+    pub fn add_half_reif_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let valid = doms.presence(active);
-        debug_assert!(leq.sum.iter().all(|e| doms.implies(valid, doms.presence(e.var))));
-        let elements = leq.sum.iter().map(|e| SumElem::new(e.factor, e.var)).collect();
+        debug_assert!(sum.variables().all(|var| doms.implies(valid, doms.presence(var))));
+        let elements = sum.terms().map(|e| SumElem::new(e.factor, e.var)).collect();
         let propagator = LinearSumLeq {
             elements,
-            ub: leq.upper_bound,
+            ub: -sum.constant(),
             active,
             valid,
-        };
-        self.add_propagator(propagator);
-    }
-
-    pub fn add_half_reified_mul_constraint(&mut self, mul: &EqMul, active: Lit, doms: &Domains) {
-        // TODO: this is correct but may miss opportunities for eager propagation of optional variables
-        let valid = doms.presence(active);
-        debug_assert!(
-            [mul.lhs, mul.rhs1, mul.rhs2]
-                .iter()
-                .all(|e| doms.implies(valid, doms.presence(*e)))
-        );
-        let propagator = mul::Mul {
-            prod: mul.lhs,
-            fact1: mul.rhs1,
-            fact2: mul.rhs2,
-            active,
-            valid,
-        };
-        self.add_propagator(propagator);
-    }
-
-    pub fn add_eq_var_mul_lit_constraint(&mut self, mul: &NFEqVarMulLit) {
-        let propagator = VarEqVarMulLit {
-            reified: mul.lhs,
-            original: mul.rhs,
-            lit: mul.lit,
         };
         self.add_propagator(propagator);
     }

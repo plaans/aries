@@ -1,7 +1,7 @@
-use aries::model::Label;
-use aries::model::Model;
-use aries::model::lang::BVar;
-use aries::model::lang::expr::and;
+use aries_solver::lang::BVar;
+use aries_solver::lang::expr::and;
+use aries_solver::model::Label;
+use aries_solver::model::Model;
 
 use crate::aries::Post;
 
@@ -43,7 +43,7 @@ impl<Lbl: Label> Post<Lbl> for AndReif {
 
 #[cfg(test)]
 mod tests {
-    use aries::core::IntCst;
+    use aries_solver::core::IntCst;
 
     use crate::aries::constraint::test::basic_bool_model_3;
     use crate::aries::constraint::test::verify_all;

@@ -1,20 +1,18 @@
 //! Functions related to printing and formatting (partial) plans.
 
 use anyhow::*;
-use aries::model::symbols::ContiguousSymbols;
-use aries::prelude::*;
+use aries_planning::legacy::*;
+use aries_solver::prelude::*;
 use itertools::Itertools;
 use std::fmt::Write;
 
 use crate::Model;
-use aries::model::extensions::Shaped;
-use aries::model::lang::{Atom, Cst, Rational};
 use aries_planning::chronicles::plan::ActionInstance;
 use aries_planning::chronicles::{
     ChronicleInstance, ChronicleKind, ChronicleOrigin, FiniteProblem, SubTask, TaskId, TIME_SCALE,
 };
 
-pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
+pub fn format_partial_atom<A: Into<Atom>>(x: A, pb: &FiniteProblem, ass: &Model, out: &mut String) {
     let x: Atom = x.into();
     let prefix = match ass.present(x) {
         Some(false) => {
@@ -31,12 +29,12 @@ pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
             let singleton = dom.size() == 1;
             match dom.into_singleton() {
                 Some(sym) => {
-                    write!(out, "{}", ass.shape.symbols.symbol(sym)).unwrap();
+                    write!(out, "{}", pb.symbols.symbol(sym)).unwrap();
                 }
                 None => {
                     write!(out, "{prefix}{{").unwrap();
                     for (i, sym) in dom.enumerate() {
-                        write!(out, "{}", ass.get_symbol(sym)).unwrap();
+                        write!(out, "{}", pb.symbols.symbol(sym)).unwrap();
                         if !singleton && (i as u32) != (dom.size() - 1) {
                             write!(out, ", ").unwrap();
                         }
@@ -63,7 +61,7 @@ pub fn format_partial_atom<A: Into<Atom>>(x: A, ass: &Model, out: &mut String) {
             write!(out, "{}", ass.var_domain(i)).unwrap();
         }
         Atom::Fixed(f) => {
-            write!(out, "{}", ass.f_domain(f)).unwrap();
+            write!(out, "{:?}", ass.bounds(f)).unwrap();
         }
     }
 }
@@ -80,12 +78,12 @@ pub fn format_atoms(variables: &[Atom], ass: &Model) -> Result<String> {
     Ok(str)
 }
 
-pub fn format_partial_name(name: &[impl Into<Atom> + Copy], ass: &Model) -> Result<String> {
+pub fn format_partial_name(name: &[impl Into<Atom> + Copy], pb: &FiniteProblem, ass: &Model) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
     for (i, sym) in name.iter().enumerate() {
         let sym: Atom = (*sym).into();
-        format_partial_atom(sym, ass, &mut res);
+        format_partial_atom(sym, pb, ass, &mut res);
         if i != (name.len() - 1) {
             write!(res, " ")?;
         }
@@ -94,28 +92,28 @@ pub fn format_partial_name(name: &[impl Into<Atom> + Copy], ass: &Model) -> Resu
     Ok(res)
 }
 
-pub fn format_atom(atom: &Atom, model: &Model, ass: &Solution) -> String {
+pub fn format_atom(atom: &Atom, model: &FiniteProblem, ass: &Solution) -> String {
     match atom {
         Atom::Sym(s) => {
             let sym = ass.var_domain(*s).as_singleton().unwrap();
-            model.shape.symbols.symbol(sym).to_string()
+            model.symbols.symbol(sym).to_string()
         }
         Atom::Bool(l) => ass.value_of(*l).unwrap().to_string(),
         Atom::Int(i) => ass.var_domain(*i).as_singleton().unwrap().to_string(),
-        Atom::Fixed(f) => ass.f_domain(*f).to_string(),
+        Atom::Fixed(f) => format!("{:?}", ass.bounds(*f)),
     }
 }
 
-pub fn format_cst(cst: Cst, model: &Model) -> String {
+pub fn format_cst(cst: Cst, model: &FiniteProblem) -> String {
     match cst {
-        Cst::Sym(s) => model.shape.symbols.symbol(s.sym).to_string(),
+        Cst::Sym(s) => model.symbols.symbol(s.sym).to_string(),
         Cst::Bool(l) => l.to_string(),
         Cst::Int(i) => i.to_string(),
         Cst::Fixed(f) => str(f),
     }
 }
 
-pub fn format_name(variables: &[Atom], model: &Model, ass: &Solution) -> Result<String> {
+pub fn format_name(variables: &[Atom], model: &FiniteProblem, ass: &Solution) -> Result<String> {
     let mut res = String::new();
     write!(res, "(")?;
     for (i, atom) in variables.iter().enumerate() {
@@ -133,6 +131,7 @@ type Chronicle<'a> = (usize, &'a ChronicleInstance);
 fn format_chronicle_partial(
     (ch_id, ch): Chronicle,
     chronicles: &[Chronicle],
+    pb: &FiniteProblem,
     ass: &Model,
     depth: usize,
     out: &mut String,
@@ -147,8 +146,8 @@ fn format_chronicle_partial(
             Some(false) => "-",
         }
     )?;
-    write!(out, "{} ", ass.int_bounds(ch.chronicle.start).0)?;
-    writeln!(out, " {}", format_partial_name(&ch.chronicle.name, ass)?)?;
+    write!(out, "{} ", ass.bounds(ch.chronicle.start).0)?;
+    writeln!(out, " {}", format_partial_name(&ch.chronicle.name, pb, ass)?)?;
     // writeln!(out, "         {}", format_atoms(&ch.chronicle.name, ass)?)?;
     if ass.boolean_value_of(ch.chronicle.presence) != Some(false) {
         for (task_id, task) in ch.chronicle.subtasks.iter().enumerate() {
@@ -156,7 +155,7 @@ fn format_chronicle_partial(
                 instance_id: ch_id,
                 task_id,
             };
-            format_task_partial(subtask_id, task, chronicles, ass, depth + 2, out)?;
+            format_task_partial(subtask_id, task, chronicles, pb, ass, depth + 2, out)?;
         }
     }
     Ok(())
@@ -165,18 +164,19 @@ fn format_task_partial(
     task_id: TaskId,
     task: &SubTask,
     chronicles: &[Chronicle],
+    pb: &FiniteProblem,
     ass: &Model,
     depth: usize,
     out: &mut String,
 ) -> Result<()> {
     write!(out, "{}", "  ".repeat(depth))?;
-    let start = ass.int_bounds(task.start).0;
-    write!(out, "{} {}", start, format_partial_name(&task.task_name, ass)?)?;
+    let start = ass.bounds(task.start).0;
+    write!(out, "{} {}", start, format_partial_name(&task.task_name, pb, ass)?)?;
     writeln!(out, "         {}", format_atoms(&task.task_name, ass)?)?;
     for &(i, ch) in chronicles.iter() {
         match &ch.origin {
             ChronicleOrigin::Refinement { refined, .. } if refined.contains(&task_id) => {
-                format_chronicle_partial((i, ch), chronicles, ass, depth + 2, out)?;
+                format_chronicle_partial((i, ch), chronicles, pb, ass, depth + 2, out)?;
             }
             _ => (),
         }
@@ -196,12 +196,12 @@ pub fn format_partial_plan(problem: &FiniteProblem, ass: &Model) -> Result<Strin
         // .filter(|ch| ass.boolean_value_of(ch.1.chronicle.presence) == Some(true))
         .collect();
     // sort by start times
-    chronicles.sort_by_key(|ch| ass.f_domain(ch.1.chronicle.start).num.lb);
+    chronicles.sort_by_key(|ch| ass.lb(ch.1.chronicle.start));
 
     for &(i, ch) in &chronicles {
         match ch.origin {
             ChronicleOrigin::Refinement { .. } => {}
-            _ => format_chronicle_partial((i, ch), &chronicles, ass, 0, &mut f)?,
+            _ => format_chronicle_partial((i, ch), &chronicles, problem, ass, 0, &mut f)?,
         }
     }
     Ok(f)
@@ -229,13 +229,13 @@ pub fn extract_plan_actions(
         ChronicleKind::Problem | ChronicleKind::Method => return Ok(vec![]),
         _ => {}
     }
-    let start = ass.f_domain(ch.chronicle.start).lb();
-    let end = ass.f_domain(ch.chronicle.end).lb();
+    let start = ass.lb(ch.chronicle.start);
+    let end = ass.lb(ch.chronicle.end);
     let duration = end - start;
-    let name = format_atom(&ch.chronicle.name[0], &problem.model, ass);
+    let name = format_atom(&ch.chronicle.name[0], problem, ass);
     let params = ch.chronicle.name[1..]
         .iter()
-        .map(|atom| ass.evaluate(*atom).unwrap())
+        .map(|atom| ass.eval(*atom).unwrap())
         .collect_vec();
 
     let instance = ActionInstance {
@@ -284,7 +284,7 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &Solution) -> Result<Strin
         let duration = str(a.duration);
         write!(out, "{start:>5}: ({}", a.name)?;
         for &p in &a.params {
-            write!(out, " {}", format_cst(p, &problem.model))?;
+            write!(out, " {}", format_cst(p, problem))?;
         }
         writeln!(out, ") [{duration}]")?;
     }
@@ -295,8 +295,8 @@ pub fn format_pddl_plan(problem: &FiniteProblem, ass: &Solution) -> Result<Strin
 pub fn format_hddl_plan(problem: &FiniteProblem, ass: &Solution) -> Result<String> {
     let mut f = String::new();
     writeln!(f, "==>")?;
-    let fmt1 = |x: &Atom| -> String { format_atom(x, &problem.model, ass) };
-    let fmt = |name: &[Atom]| -> Result<String> { format_name(name, &problem.model, ass) };
+    let fmt1 = |x: &Atom| -> String { format_atom(x, problem, ass) };
+    let fmt = |name: &[Atom]| -> Result<String> { format_name(name, problem, ass) };
     let mut chronicles: Vec<_> = problem
         .chronicles
         .iter()
@@ -304,7 +304,7 @@ pub fn format_hddl_plan(problem: &FiniteProblem, ass: &Solution) -> Result<Strin
         .filter(|ch| ass.boolean_value_of(ch.1.chronicle.presence) == Some(true))
         .collect();
     // sort by start times
-    chronicles.sort_by_key(|ch| ass.f_domain(ch.1.chronicle.start).num.lb);
+    chronicles.sort_by_key(|ch| ass.lb(ch.1.chronicle.start));
 
     // print all actions with their ids
     for &(i, ch) in &chronicles {

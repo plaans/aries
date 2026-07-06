@@ -10,9 +10,16 @@ edition = "2021"
 anyhow = { workspace = true }
 fixedbitset = { workspace = true }
 itertools = { workspace = true }
+num-integer = { workspace = true }
+num-rational = { workspace = true }
 tracing = { workspace = true }
 streaming-iterator = { workspace = true }
+smallvec = { workspace = true }
 regex = { workspace = true }
-aries = { path = "../../solver" }
-env_param = { path = "../../env_param" }
+aries-solver = { path = "../../solver" }
+aries-env-param = { path = "../../utils/env_param" }
 pathfinding = { workspace = true }
+vec_map = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
