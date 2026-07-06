@@ -364,8 +364,7 @@ impl LpRelaxEncodingRelations {
         };
         println!("Ended action grounder");
         for (src, grds) in &sources_groundings {
-            println!("|- {src:?}: {}", grds.len());
-            println!("{:?}", ctx.get_source(src));
+            println!("|- {src:?}: {} {}", grds.len(), if true { format!("{:?}", ctx.get_source(src)) } else { "".to_string() });
             // for grd in grds {
             //     println!("|    {grd:?}");
             // }
@@ -612,35 +611,47 @@ impl LpRelaxEncodingRelations {
                     )
                 })
                 .collect();
-            if !rhs.is_empty() {
+            if !rhs.is_empty() { // TODO: wouldn't these constraints happen to be redundant, too ?
                 row_exprs.push(RowExpr::Eq(vec![ColTag::Support(transition1_id, transition2_id)], rhs));
             }
 
-            for &(transition1_grounding_id, transition2_grounding_id) in groundings {
-                row_exprs.push(RowExpr::Leq(
-                    vec![ColTag::SupportGround(
-                        transition1_id,
-                        transition2_id,
-                        transition1_grounding_id,
-                        transition2_grounding_id,
-                    )],
-                    vec![ColTag::PresenceTransitionGround(
-                        transition1_id,
-                        transition1_grounding_id,
-                    )],
-                ));
-                row_exprs.push(RowExpr::Leq(
-                    vec![ColTag::SupportGround(
-                        transition1_id,
-                        transition2_id,
-                        transition1_grounding_id,
-                        transition2_grounding_id,
-                    )],
-                    vec![ColTag::PresenceTransitionGround(
-                        transition2_id,
-                        transition2_grounding_id,
-                    )],
-                ));
+            // No need to enforce the following constraints for all cases,
+            // as the (ground) inflow and outflow constraints are stronger.
+            // Only need it for "pure conditions" transition2, as this case is not implied by (ground) outflow constraints.
+
+            if matches!(ctx.get_transition(transition2_id), Transition::Cond(_))
+                || ctx.get_transition_ref(transition1_id).get_source().is_none() // TODO: not needed ??
+            {
+                for &(transition1_grounding_id, transition2_grounding_id) in groundings {
+                    row_exprs.push(RowExpr::Leq(
+                        vec![ColTag::SupportGround(
+                            transition1_id,
+                            transition2_id,
+                            transition1_grounding_id,
+                            transition2_grounding_id,
+                        )],
+                        vec![ColTag::PresenceTransitionGround(
+                            transition1_id,
+                            transition1_grounding_id,
+                        )],
+                    ));
+                }
+            }
+            if ctx.get_transition_ref(transition2_id).get_source().is_none() { // TODO "if false" ??
+                for &(transition1_grounding_id, transition2_grounding_id) in groundings {
+                    row_exprs.push(RowExpr::Leq(
+                        vec![ColTag::SupportGround(
+                            transition1_id,
+                            transition2_id,
+                            transition1_grounding_id,
+                            transition2_grounding_id,
+                        )],
+                        vec![ColTag::PresenceTransitionGround(
+                            transition2_id,
+                            transition2_grounding_id,
+                        )],
+                    ));
+                }
             }
 
             for &(transition1_grounding_id, transition2_grounding_id) in groundings {
@@ -828,23 +839,23 @@ impl LpRelaxEncodingRelations {
     /// Does not affect correctness.
     fn _is_transition_grounding_ignorable(
         &self,
-        _transition_id: TransitionId,
-        _transition_grounding_id: TransitionGroundingFlatId,
-        _ctx: &LpRelaxSchedEncoder,
+        transition_id: TransitionId,
+        transition_grounding_id: TransitionGroundingFlatId,
+        ctx: &LpRelaxSchedEncoder,
     ) -> bool {
-        false // NOTE: the check seems to be quite costly to perform...
+        // false // TODO NOTE: the check seems to be quite costly to perform...
 
-        // if let Some(task_id) = _ctx.get_transition_ref(_transition_id).get_source()
-        //     && self.sources_concrete_groundings_complete[task_id]
-        //     && self
-        //         .presences_ground_transitions_and_sources
-        //         .get(&(_transition_id, _transition_grounding_id))
-        //         .is_some_and(|known_compatible_source_groundings| known_compatible_source_groundings.is_empty())
-        // {
-        //     true
-        // } else {
-        //     false
-        // }
+        if let Some(task_id) = ctx.get_transition_ref(transition_id).get_source()
+            && self.sources_concrete_groundings_complete[task_id]
+            && self
+                .presences_ground_transitions_and_sources
+                .get(&(transition_id, transition_grounding_id)) // TODO NOTE costly...?
+                .is_none_or(|known_compatible_source_groundings| known_compatible_source_groundings.is_empty())
+        {
+            true
+        } else {
+            false
+        }
     }
 
     /// Due to the "ignorable" check, must be performed after all ground sources are added.
@@ -936,14 +947,15 @@ impl LpRelaxEncodingRelations {
         debug_assert!(transition1_id != transition2_id);
         debug_assert!(!matches!(ctx.get_transition(transition1_id), Transition::Cond(_)));
 
-        // let transition1_grounding_id = ctx.flatten_transition_grounding(transition1_id, transition1_grounding);
-        // let transition2_grounding_id = ctx.flatten_transition_grounding(transition2_id, transition2_grounding);
-        //
-        // if self._is_transition_grounding_ignorable(transition1_id, transition1_grounding_id, ctx)
-        //     || self._is_transition_grounding_ignorable(transition2_id, transition2_grounding_id, ctx)
-        // {
-        //     return;
-        // }
+        // TODO: THESE REPEATED FLATTENINGS ARE RELATIVELY COSTLY.
+        let transition1_grounding_id = ctx.flatten_transition_grounding(transition1_id, transition1_grounding);
+        let transition2_grounding_id = ctx.flatten_transition_grounding(transition2_id, transition2_grounding);
+        
+        if self._is_transition_grounding_ignorable(transition1_id, transition1_grounding_id, ctx)
+            || self._is_transition_grounding_ignorable(transition2_id, transition2_grounding_id, ctx)
+        {
+            return;
+        }
 
         let ground_support_valid = {
             let n = ctx.get_transition_ref(transition1_id).get_args().len();
