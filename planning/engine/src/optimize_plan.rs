@@ -4,7 +4,7 @@ use std::{
     time::Instant,
 };
 
-use aries_plan_engine::{
+use crate::{
     encode::{
         constraints::{ConditionConstraint, ReificationConstraint},
         encoding::{ActionInstance, Encoding, ObjectVar},

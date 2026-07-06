@@ -1,0 +1,20 @@
+[package]
+name = "aries-plan-engine-lprelax"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+itertools = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }
+aries-solver = { path = "../../solver", features = ["cpu_cycles"] }
+timelines = { package = "aries-timelines", path = "../../planning/timelines" }
+aries-plan-engine = { path = "../../planning/engine" }
+aries-bench-data = { path = "../../bench/data" }
+planx = { path = "../../planning/planx" }
+walkdir = { workspace = true }
+
+
+[[bin]]
+name = "ape-lprelax"
+path = "src/main.rs"

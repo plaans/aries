@@ -71,6 +71,7 @@ impl Problem {
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
     Solved,
+    SolvedUnsat,
     Timeout,
 }
 

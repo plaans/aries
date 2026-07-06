@@ -264,6 +264,7 @@ fn print_comparison_table(col: &ResultCollection, main: &SolverID, reference: &S
         let problem_name = result.run.problem.id();
         let status = match result.run.status {
             SolveStatus::Solved => "Solved",
+            SolveStatus::SolvedUnsat => "Solved(Unsat)",
             SolveStatus::Timeout => "Timeout",
         };
         let status_color = match result.reference.as_ref().map(|r| r.status) {

@@ -193,6 +193,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-plan-engine-lprelax"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries-bench-data",
+ "aries-plan-engine",
+ "aries-solver",
+ "aries-timelines",
+ "clap 4.6.1",
+ "itertools 0.14.0",
+ "planx",
+ "walkdir",
+]
+
+[[package]]
 name = "aries-solver"
 version = "0.6.0"
 dependencies = [

@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
-use aries_plan_engine::{
+use crate::{
     encode::{encoding::Encoding, tags::Tag},
     plans::lifted_plan::LiftedPlan,
 };
@@ -68,7 +68,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
     Ok(())
 }
 
-fn encode_finite_planning_problem(
+pub fn encode_finite_planning_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
     options: &Options,

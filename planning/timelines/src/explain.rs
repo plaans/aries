@@ -62,6 +62,16 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
     }
 
+    pub fn get_inner(&self) -> &Solver<crate::Sym> {
+        &self.solver
+    }
+    pub fn get_inner_mut(&mut self) -> &mut Solver<crate::Sym> {
+        &mut self.solver
+    }
+    pub fn enablers(&self) -> &BTreeMap<Lit, T> {
+        &self.enablers
+    }
+    
     /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
     pub fn check_satisfiability(&mut self) -> Option<Solution> {
         let assumptions = self.enablers.keys().copied().collect_vec();

@@ -1,12 +1,9 @@
-pub(crate) mod ctags;
-mod generate;
-pub(crate) mod optimize_plan;
+mod ctags;
 mod repair;
-mod validate;
 
 use std::{io::IsTerminal, path::PathBuf};
 
-use aries_plan_engine::plans::lifted_plan;
+use aries_plan_engine::{generate, optimize_plan, plans::lifted_plan, validate};
 use clap::*;
 use planx::{
     Message, Res,
