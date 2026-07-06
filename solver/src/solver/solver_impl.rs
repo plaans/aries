@@ -360,7 +360,9 @@ impl<Lbl: Label> Solver<Lbl> {
                         };
                         // add a dynamic edge to the STN, specifying that `tgt -src <= ub_var * ub_factor`
                         // Each time a new upper bound is inferred on `ub_var` a new edge will temporarily added.
-                        self.reasoners.diff().add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
+                        self.reasoners
+                            .diff()
+                            .add_dynamic_edge(src, tgt, ub_var, ub_factor, doms)
                     }
                     None // we posted redendant constraint, but this is not an exact reformulation, we need to post the original one as well
                 } else {

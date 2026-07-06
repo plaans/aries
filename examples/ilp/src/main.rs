@@ -1,9 +1,9 @@
 mod problem;
 
-use aries_solver::prelude::*;
-use aries_solver::solver::{Exit, SearchLimit};
 use aries_bench_data::IntermediateResult;
 use aries_lprelax::LpRelax;
+use aries_solver::prelude::*;
+use aries_solver::solver::{Exit, SearchLimit};
 use clap::Parser;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;

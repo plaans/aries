@@ -80,31 +80,6 @@ pub type GroundingFlatId = Option<usize>;
 pub struct Grounding(Vec<IntCst>);
 
 impl Grounding {
-    // fn to_vec_id<VecId: From<Vec<usize>>>(&self, startvals: &[IntCst]) -> VecId {
-    //     debug_assert!(self.0.len() == startvals.len());
-    //     VecId::from(Vec::from_iter(self.0.iter().zip(startvals.iter()).map(
-    //         |(&x, &startval)| {
-    //             debug_assert!((x as LongCst - startval as LongCst) + 1 >= 0);
-    //             debug_assert!((x as LongCst - startval as LongCst) < INT_CST_MAX as LongCst);
-    //             usize::try_from(x - startval + 1).unwrap()
-    //         },
-    //     )))
-    // }
-    /*fn to_flat_id<FlatId: From<Option<NonZeroU32>>(&self, startvals: &[IntCst], dims: &[usize]) -> FlatId {
-        debug_assert!(self.0.len() == startvals.len());
-        debug_assert!(self.0.len() == dims.len());
-        let mut res = 0;
-        let mut factor = 1;
-        for ((&x, &startval), &d) in self.0.iter().zip(startvals.iter()).zip(dims.iter()).rev() {
-            debug_assert!((x as LongCst - startval as LongCst) + 1 >= 0);
-            debug_assert!((x as LongCst - startval as LongCst) < INT_CST_MAX as LongCst);
-
-            debug_assert!(usize::try_from(x - startval + 1).unwrap() <= d);
-            res += usize::try_from(x - startval + 1).unwrap() * factor;
-            factor *= d;
-        }
-        FlatId::from(res)
-    }*/
     fn to_flat_id(&self, ranges: &[(IntCst, IntCst)]) -> GroundingFlatId {
         debug_assert!(self.0.len() == ranges.len());
 
@@ -131,19 +106,6 @@ impl Grounding {
         }
         Some(res)
     }
-    // fn from_vec_id<VecId: AsRef<[usize]>>(vec_id: &VecId, startvals: &[IntCst]) -> Self {
-    //     debug_assert!(vec_id.as_ref().len() == startvals.len());
-    //     Self(Vec::from_iter(vec_id.as_ref().iter().zip(startvals.iter()).map(
-    //         |(&n, &startval)| {
-    //             debug_assert!((n as LongCst + startval as LongCst) > INT_CST_MIN as LongCst);
-    //             debug_assert!((n as LongCst + startval as LongCst) - 1 <= INT_CST_MAX as LongCst);
-    //             IntCst::try_from(n).unwrap() + startval - 1
-    //         },
-    //     )))
-    // }
-    // fn from_flat_id<FlatId: Into<usize>>(flat_id: &FlatId, dims: &[usize], startvals: &[IntCst]) -> Self {
-    //     todo!()
-    // }
 }
 impl Index<usize> for Grounding {
     type Output = IntCst;

@@ -4,9 +4,9 @@ mod transition;
 
 use std::collections::{HashMap, HashSet};
 
+use aries_env_param::EnvParam;
 use aries_solver::core::Var;
 use aries_solver::core::views::Term;
-use aries_env_param::EnvParam;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
@@ -597,7 +597,7 @@ impl LpRelaxEncodingRelations {
             col_tags.insert(ColTag::Support(transition1_id, transition2_id));
         }
 
-        // - A support is active iff one of its groundings
+        // - A support is active iff one of its groundings is
         // - If a ground support is active, then its transitions' corresponding groundings must be active
 
         for (&(transition1_id, transition2_id), groundings) in &self.supports_ground {
@@ -665,6 +665,7 @@ impl LpRelaxEncodingRelations {
                 row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition2_id)], rhs));
             }
         }
+
         // - A ground transition is present iff it is support by another (compatible) one.
 
         for (&(transition2_id, transition2_grounding_id), transition1_ids) in &self.supports_ground_inflow {
@@ -689,6 +690,7 @@ impl LpRelaxEncodingRelations {
                 ));
             }
         }
+
         // - If a (non-condition) transition is present, then it can support at most one Eff or CondEff transition.
 
         for (transition1_id, transition2_ids) in &self.supports_lifted_outflow_pure {
@@ -832,11 +834,11 @@ impl LpRelaxEncodingRelations {
     ) -> bool {
         false // NOTE: the check seems to be quite costly to perform...
 
-        // if let Some(task_id) = ctx.get_transition_ref(transition_id).get_source()
+        // if let Some(task_id) = _ctx.get_transition_ref(_transition_id).get_source()
         //     && self.sources_concrete_groundings_complete[task_id]
         //     && self
         //         .presences_ground_transitions_and_sources
-        //         .get(&(transition_id, transition_grounding_id))
+        //         .get(&(_transition_id, _transition_grounding_id))
         //         .is_some_and(|known_compatible_source_groundings| known_compatible_source_groundings.is_empty())
         // {
         //     true
@@ -934,8 +936,8 @@ impl LpRelaxEncodingRelations {
         debug_assert!(transition1_id != transition2_id);
         debug_assert!(!matches!(ctx.get_transition(transition1_id), Transition::Cond(_)));
 
-        //let transition1_grounding_id = ctx.flatten_transition_grounding(transition1_id, transition1_grounding);
-        //let transition2_grounding_id = ctx.flatten_transition_grounding(transition2_id, transition2_grounding);
+        // let transition1_grounding_id = ctx.flatten_transition_grounding(transition1_id, transition1_grounding);
+        // let transition2_grounding_id = ctx.flatten_transition_grounding(transition2_id, transition2_grounding);
         //
         // if self._is_transition_grounding_ignorable(transition1_id, transition1_grounding_id, ctx)
         //     || self._is_transition_grounding_ignorable(transition2_id, transition2_grounding_id, ctx)

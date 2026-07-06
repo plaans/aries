@@ -7,7 +7,10 @@ pub mod tags;
 
 use aries_solver::{
     core::literals::ConjunctionBuilder,
-    lang::{IntExpr, expr::{eq, bool2int}},
+    lang::{
+        IntExpr,
+        expr::{bool2int, eq},
+    },
     prelude::*,
 };
 use itertools::Itertools;
@@ -15,9 +18,7 @@ use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, Type, err
 use smallvec::SmallVec;
 use timelines::{
     Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
-    boxes::Segment,
-    constraints::HasValueAt,
-    symbols::ObjectEncoding,
+    boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 
 use crate::encode::{

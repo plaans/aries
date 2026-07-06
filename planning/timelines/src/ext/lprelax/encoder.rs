@@ -217,7 +217,9 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                         .get_args()
                         .iter()
                         .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| term1.is_constant() && term2.is_constant() && term1.constant != term2.constant)
+                        .any(|(term1, term2)| {
+                            term1.is_constant() && term2.is_constant() && term1.constant != term2.constant
+                        })
                     {
                         None
                     } else {
@@ -232,7 +234,11 @@ impl<'a> LpRelaxSchedEncoder<'a> {
         // Supports from default effects (ignored as non-necessary in the main encoding but required for the LP relaxation)
         let supports_from_default_effects = self.iter_default_effects().flat_map(move |(eff1_id, _)| {
             let (tr1_id, _) = self.get_transition_of_effect(eff1_id).unwrap();
-            debug_assert!(self.get_transition_ref(tr1_id).iter_terms().all(|term| term.is_constant()));
+            debug_assert!(
+                self.get_transition_ref(tr1_id)
+                    .iter_terms()
+                    .all(|term| term.is_constant())
+            );
 
             let to_conditions = self.iter_conditions().filter_map(move |(cond_id, _)| {
                 let (tr2_id, _) = self.get_transition_of_condition(cond_id).unwrap();
@@ -245,7 +251,9 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                         .get_args()
                         .iter()
                         .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| term1.is_constant() && term2.is_constant() && term1.constant != term2.constant)
+                        .any(|(term1, term2)| {
+                            term1.is_constant() && term2.is_constant() && term1.constant != term2.constant
+                        })
                     {
                         return None;
                     }
@@ -278,7 +286,9 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                         .get_args()
                         .iter()
                         .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| term1.is_constant() && term2.is_constant() && term1.constant != term2.constant)
+                        .any(|(term1, term2)| {
+                            term1.is_constant() && term2.is_constant() && term1.constant != term2.constant
+                        })
                     {
                         return None;
                     }
