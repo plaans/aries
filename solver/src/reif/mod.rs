@@ -2,7 +2,6 @@ use crate::core::literals::Disjunction;
 use crate::core::state::{Evaluable, OptDomain};
 use crate::core::{IntCst, Lit, SignedVar, Var};
 use crate::lang::ValidityScope;
-use crate::lang::alternative::NFAlternative;
 use crate::lang::max::NFEqMax;
 use crate::model::{Label, Model};
 use crate::prelude::{Conjunction, Dom, LinSum, Solution};
@@ -37,7 +36,6 @@ pub enum ReifExpr {
     LinearEq(LinSum),
     /// Requires a linear sum to *not* be equal to 0 (`sum != 0`).
     LinearNeq(LinSum),
-    Alternative(NFAlternative),
     EqMax(NFEqMax),
 }
 
@@ -56,7 +54,6 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::LinearEq(l) => write!(f, "{l} = 0"),
             ReifExpr::LinearNeq(l) => write!(f, "{l} != 0"),
             ReifExpr::EqMax(em) => write!(f, "{em:?}"),
-            ReifExpr::Alternative(alt) => write!(f, "{alt:?}"),
         }
     }
 }
@@ -84,14 +81,13 @@ impl ReifExpr {
             ReifExpr::LinearLeq(lin) | ReifExpr::LinearEq(lin) | ReifExpr::LinearNeq(lin) => {
                 ValidityScope::new(lin.variables().map(presence), [])
             }
-            ReifExpr::Alternative(alt) => ValidityScope::new([presence(alt.main)], []),
             ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
         }
     }
 
     /// Returns true iff a given expression can be negated.
     pub fn negatable(&self) -> bool {
-        !matches!(self, ReifExpr::Alternative(_) | ReifExpr::EqMax(_))
+        !matches!(self, ReifExpr::EqMax(_))
     }
 
     pub fn eval(&self, assignment: &Solution) -> Option<bool> {
@@ -167,29 +163,6 @@ impl ReifExpr {
             ReifExpr::LinearLeq(lin) => lin.evaluate(assignment).map(|value| value <= 0),
             ReifExpr::LinearEq(lin) => lin.evaluate(assignment).map(|value| value == 0),
             ReifExpr::LinearNeq(lin) => lin.evaluate(assignment).map(|value| value != 0),
-            ReifExpr::Alternative(NFAlternative { main, alternatives }) => {
-                if prez(*main) {
-                    let main_value = value(*main);
-                    let mut present_alternatives = alternatives.iter().filter(|a| prez(a.var));
-                    match present_alternatives.next() {
-                        Some(alt) => {
-                            // we have at least one alternative
-                            if present_alternatives.next().is_some() {
-                                // more than on present alternative, constraint is violated
-                                Some(false)
-                            } else {
-                                Some(main_value == value(alt.var) + alt.cst)
-                            }
-                        }
-                        None => {
-                            // no alternative, constraint is violated
-                            Some(false)
-                        }
-                    }
-                } else {
-                    Some(true)
-                }
-            }
             ReifExpr::EqMax(NFEqMax { lhs, rhs }) => {
                 if sprez(*lhs) {
                     let left_value = svalue(*lhs);
@@ -258,7 +231,6 @@ impl Not for ReifExpr {
             LinearLeq(lin) => LinearLeq(-lin + 1), // lin > 0 <=> -lin < 0 <=> -lin +1 <= 0
             LinearEq(lin) => LinearNeq(lin),
             LinearNeq(lin) => LinearEq(lin),
-            Alternative(_) => panic!("Alternative is a constraint and cannot be negated"),
             EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
         }
     }

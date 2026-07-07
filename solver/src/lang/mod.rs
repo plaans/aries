@@ -62,7 +62,6 @@ use crate::prelude::*;
 #[cfg(doc)]
 use linear::*;
 
-pub mod alternative;
 mod bool_expr;
 mod boolean;
 pub mod constraints;

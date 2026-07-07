@@ -17,3 +17,6 @@ __pycache__/
 lcov.info
 profile.json.gz
 out.perf
+
+# common folder for benchmark results
+bench-res/

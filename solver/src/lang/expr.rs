@@ -2,9 +2,10 @@
 //!
 //! These are all re-exported in `[crate::prelude`].
 
+use itertools::Itertools;
+
 use crate::core::views::Dom;
-use crate::lang::alternative::Alternative;
-use crate::lang::constraints::AllDifferent;
+use crate::lang::constraints::{AllDifferent, Alternative};
 use crate::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::lang::mul::EqMul;
 use crate::lang::*;
@@ -46,13 +47,19 @@ pub fn all_different<T: Into<LinSum>>(vars: impl IntoIterator<Item = T>) -> AllD
     AllDifferent::new(vars.into_iter().map(|var| var.into()))
 }
 
+/// The `alternative` constraint, that imposes that exactly one of the `alternative` element will be selected to decide the `main` value.
+///
+/// See: [`Alternative`]
+pub fn alternative<T: Into<IAtom>, TAlt: Into<IAtom>>(
+    main: T,
+    alternatives: impl IntoIterator<Item = TAlt>,
+) -> Alternative {
+    Alternative::new(main.into(), alternatives.into_iter().map(|a| a.into()).collect_vec())
+}
+
 /// Creates a new expression that is true iff `lhs = factor1 * factor2`
 pub fn eq_mul(lhs: impl Into<Var>, factor1: impl Into<Var>, factor2: impl Into<Var>) -> EqMul {
     EqMul::new(lhs.into(), factor1.into(), factor2.into())
-}
-
-pub fn alternative<T: Into<IAtom>>(main: impl Into<IAtom>, alternatives: impl IntoIterator<Item = T>) -> Alternative {
-    Alternative::new(main, alternatives)
 }
 
 /// Transforms a boolean into an integer expression where `1` represents `true` and `0` represents false.

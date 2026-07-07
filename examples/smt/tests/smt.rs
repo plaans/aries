@@ -3,7 +3,6 @@ use aries_solver::prelude::*;
 use aries_solver::backtrack::Backtrack;
 use aries_solver::core::state::OptDomain;
 use aries_solver::core::views::Term;
-use aries_solver::lang::alternative::Alternative;
 use aries_solver::lang::max::{EqMax, EqMin};
 use aries_solver::solver::SearchLimit;
 use itertools::Itertools;
@@ -524,8 +523,7 @@ fn test_alternative_ints() {
         })
         .collect_vec();
 
-    let alt = Alternative::new(a, ais.clone());
-    model.enforce(alt);
+    model.enforce(alternative(a, ais.clone()));
 
     let tests = vec![
         Test::new(&[a.leq(3)], &[ais[0].leq(3), ais[1].leq(3)]),

@@ -3,7 +3,8 @@ use crate::core::views::{IntBoundable, Term, VarView};
 use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar};
 use crate::prelude::*;
 use crate::reasoners::Contradiction;
-use crate::reasoners::cp::{Propagator, PropagatorId, Watches};
+use crate::reasoners::cp::{DynPropagator, Propagator, PropagatorId, UserPropagator, Watches};
+use std::fmt::Debug;
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub(crate) struct MaxElem<Variable> {
@@ -30,7 +31,7 @@ impl<Variable> MaxElem<Variable> {
 /// Assumes that:   `forall i , prez(rhs[i]) => prez(lhs)`  i.e.  RHS elements are in the (sub?)scope of LHS
 ///
 /// This is not sufficient to implement a propagator of the Max constraint and is only used as one of several propagators in a decomposition.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct AtLeastOneGeq<Variable>
 where
     Variable: Send + Sync,
@@ -178,6 +179,25 @@ where
 
     fn clone_box(&self) -> Box<dyn Propagator> {
         Box::new(self.clone())
+    }
+}
+
+impl<Variable> UserPropagator for AtLeastOneGeq<Variable>
+where
+    Variable: Term + VarView<Value = IntCst> + IntBoundable + Send + Sync + Copy + Debug + 'static,
+{
+    fn get_propagators(&self) -> Vec<super::DynPropagator> {
+        vec![DynPropagator::from(self.clone())]
+    }
+
+    fn satisfied(&self, sol: &Solution) -> bool {
+        match sol.eval(self.lhs) {
+            Some(val) => self
+                .elements
+                .iter()
+                .any(|rhs_term| sol.eval(rhs_term.var).is_some_and(|rhs_val| rhs_val >= val)),
+            None => true,
+        }
     }
 }
 
