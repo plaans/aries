@@ -1,0 +1,18 @@
+[package]
+name = "aries-datalog"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+itertools = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "grounding"
+harness = false
+
+[[bin]]
+name = "grounding_benchmark"
