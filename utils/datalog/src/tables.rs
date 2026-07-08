@@ -17,8 +17,16 @@ pub(crate) type Fact<const N: usize> = Tuple<Sym, N>;
 pub(crate) struct TableBuff<T> {
     /// Number of columns in each row.
     num_columns: usize,
-    /// Flattened vector of rows.
+    /// Flattened vector of rows (only meaningful when `num_columns > 0`)
     data: Vec<T>,
+    /// Whether the table contains the unit row (only meaningful when `num_columns == 0`).
+    /// This is necessary because, when a table has no columns it can not represent its rows in a flattened vector.
+    ///
+    /// This boolean encodes the two possible states of the table:
+    ///
+    /// 1) it is empty  (`has_unit_row == false`)
+    /// 2) it contains exactly one "row", the unit row []   (`has_unit_row == true`)
+    has_unit_row: bool,
 }
 
 impl<T> TableBuff<T> {
@@ -26,6 +34,7 @@ impl<T> TableBuff<T> {
         Self {
             num_columns,
             data: Default::default(),
+            has_unit_row: false,
         }
     }
 
@@ -35,6 +44,10 @@ impl<T> TableBuff<T> {
     {
         assert_eq!(row.len(), self.num_columns);
         self.data.extend_from_slice(row);
+        if self.num_columns == 0 {
+            // we are adding something to the table, which is necessarily the unit row
+            self.has_unit_row = true
+        }
     }
 
     pub fn extend<'me, 'rows>(&'me mut self, rows: impl IntoIterator<Item = &'rows [T]>)
@@ -47,18 +60,38 @@ impl<T> TableBuff<T> {
     }
 
     pub fn rows(&self) -> impl Iterator<Item = &[T]> + '_ {
-        self.data.chunks(self.num_columns)
+        if self.num_columns == 0 {
+            // we have no columns so the flattened representation is always empty
+            // we have either 0 or 1 unit row ([]) which is captured by the `has_unit` entry
+            itertools::Either::Left(std::iter::repeat_n([].as_slice(), self.has_unit_row as usize))
+        } else {
+            itertools::Either::Right(self.data.chunks(self.num_columns))
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        // empty if we either have no data in in the flat representation (num_columns >= 1)
+        // or no the unit element (num_columns == 0)
+        debug_assert!(!self.has_unit_row || self.num_columns == 0);
+        self.data.is_empty() && !self.has_unit_row
     }
 }
 
 impl TableBuff<Sym> {
     pub fn move_to_table(&mut self) -> Table {
-        let data = std::mem::take(&mut self.data);
-        Table::new_from_flat(self.num_columns, data)
+        if self.num_columns != 0 {
+            // extract all rows from data and replace it with an empty vec
+            let data = std::mem::take(&mut self.data);
+            // move the the rows into a new `Table`
+            Table::new_from_flat(self.num_columns, data)
+        } else {
+            // create a new table that contain the unit row if we have it
+            let mut table = Table::new_empty(0);
+            table.has_unit = self.has_unit_row;
+            // remove unit row in ourself
+            self.has_unit_row = false;
+            table
+        }
     }
 }
 
@@ -67,7 +100,17 @@ pub struct Table {
     /// Number of elements in each row
     num_columns: usize,
     /// This is a flattened representation of `Vec<[Sym; num_columns]>`
+    ///
+    /// Note that this is only meaningful when `num_columns > 0`
     data: Vec<Sym>,
+    /// Whether the table contains the unit row (only meaningful when `num_columns == 0`).
+    /// This is necessary because, when a table has no columns it can not represent its rows in a flattened vector.
+    ///
+    /// This boolean encodes the two possible states of the table:
+    ///
+    /// 1) it is empty  (`has_unit_row == false`)
+    /// 2) it contains exactly one "row", the unit row []   (`has_unit_row == true`)
+    has_unit: bool,
 }
 
 impl Table {
@@ -76,6 +119,7 @@ impl Table {
         Self {
             num_columns,
             data: Vec::new(),
+            has_unit: false,
         }
     }
 
@@ -87,13 +131,14 @@ impl Table {
         Table {
             num_columns: N,
             data: data.into_flattened(),
+            has_unit: false,
         }
     }
 
     /// Creates a new table from a flattened vector of rows.
-    pub fn new_from_flat(num_columns: usize, data: Vec<Sym>) -> Table {
+    pub(crate) fn new_from_flat(num_columns: usize, data: Vec<Sym>) -> Table {
         match num_columns {
-            0 => panic!("Table with no columns in not supported (due to unnatural flattened representation)"),
+            0 => panic!("Table with no columns cannot be built from flattened representation"),
             1 => Table::new(Self::into_chunks::<1>(data)),
             2 => Table::new(Self::into_chunks::<2>(data)),
             3 => Table::new(Self::into_chunks::<3>(data)),
@@ -103,9 +148,15 @@ impl Table {
         }
     }
 
+    /// Number of columns in the table.
+    pub fn num_columns(&self) -> usize {
+        self.num_columns
+    }
+
     /// Returns true if the table is empty (has no rows)
     pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+        debug_assert!(!self.has_unit || self.num_columns == 0);
+        self.data.is_empty() && !self.has_unit
     }
 
     /// Extends this table with the rows of another table.
@@ -113,6 +164,12 @@ impl Table {
         assert_eq!(self.num_columns, recent.num_columns);
         let data = std::mem::take(&mut self.data);
         let data = match self.num_columns {
+            0 => {
+                // no columns, the table may only contain the unit element
+                // the resulting table contains the unit element it either one does
+                self.has_unit |= recent.has_unit;
+                return;
+            }
             1 => crate::merge::merge_unique(Self::into_chunks::<1>(data), Self::into_chunks(recent.data))
                 .into_flattened(),
             2 => crate::merge::merge_unique(Self::into_chunks::<2>(data), Self::into_chunks(recent.data))
@@ -132,6 +189,7 @@ impl Table {
     ///
     /// Panics if `N` does not match the number of columns.
     pub fn rows_sized<const N: usize>(&self) -> &[[Sym; N]] {
+        const { assert!(N != 0) }
         assert_eq!(self.num_columns, N);
         self.data.as_chunks().0
     }
@@ -140,7 +198,11 @@ impl Table {
     ///
     /// See [`Self::rows_sized`] when the number of columns is know at compile time.
     pub fn rows(&self) -> impl Iterator<Item = &[Sym]> {
-        self.data.chunks(self.num_columns)
+        if self.num_columns == 0 {
+            itertools::Either::Left(std::iter::repeat_n([].as_slice(), self.has_unit as usize))
+        } else {
+            itertools::Either::Right(self.data.chunks(self.num_columns))
+        }
     }
 
     /// Implementation copied and adapted from the the unstable `Vec::into_chunks` method in stdlib.
@@ -169,6 +231,10 @@ impl Table {
     /// Retains only elements of `self` that do not appear in `reference`
     fn retain_distinct(&mut self, reference: &Table) {
         match self.num_columns {
+            0 => {
+                // if reference has unit row, we can't have it as well
+                self.has_unit &= !reference.has_unit;
+            }
             1 => self.retain_distinct_spec::<1>(reference),
             2 => self.retain_distinct_spec::<2>(reference),
             3 => self.retain_distinct_spec::<3>(reference),
@@ -179,6 +245,7 @@ impl Table {
     }
     /// Arity-specialized version of [`Self::retain_distinct`]
     fn retain_distinct_spec<const N: usize>(&mut self, reference: &Table) {
+        const { assert!(N != 0) }
         let data = std::mem::take(&mut self.data);
         let mut data = Self::into_chunks::<N>(data);
         let mut reference = reference.rows_sized::<N>();

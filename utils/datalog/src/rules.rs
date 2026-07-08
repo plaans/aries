@@ -257,15 +257,15 @@ pub struct Pattern {
     /// For instance, a pattern, `[a, ?x, ?y ?x, ?x, ?y]` will have equalities: `[1, 3]`, `[3, 4]` and `[2, 5]`
     /// Note that the pair `[1, 4]` is not present checking would be redundant.
     ///
-    /// THis inforamtion is redundant with the pattern itself but allows for more efficient matches as the
+    /// This information is redundant with the pattern itself but allows for more efficient matches as the
     /// elements which must be equal are precomputed.
     equalities: Vec<[usize; 2]>,
 }
 impl Pattern {
     /// Creates a new pattern.
     ///
-    /// FOr instance the following would create a pattern of the form `[?x, c, ?y]` where `c` is a symbol
-    /// encode with the value 3.
+    /// For instance the following would create a pattern of the form `[?x, c, ?y]` where `c` is a symbol
+    /// encoded with the value 3.
     /// ```
     /// use aries_datalog::*;
     /// Pattern::new([Arg::Var(0), Arg::Sym(3), Arg::Var(1)]);
@@ -398,9 +398,23 @@ impl Pattern {
     ///
     fn all_bindings<'a>(&'a self, table: &'a Table, out: &'a [u32]) -> TableBuff<u32> {
         match self.pattern.len() {
+            0 => {
+                debug_assert_eq!(table.num_columns(), 0);
+                let mut buff = TableBuff::new(out.len());
+                if !table.is_empty() {
+                    // table contains a single element (the unit row, with no columns)
+                    // since the row is unit, it
+                    // 1) necessarily matches the pattern (no data to filter anything)
+                    // 2) will not bind any variable (no data to bind anything)
+                    buff.push(out);
+                }
+                buff
+            }
             1 => self.compiled::<1>().all_bindings(table.rows_sized(), out),
             2 => self.compiled::<2>().all_bindings(table.rows_sized(), out),
             3 => self.compiled::<3>().all_bindings(table.rows_sized(), out),
+            4 => self.compiled::<4>().all_bindings(table.rows_sized(), out),
+            5 => self.compiled::<5>().all_bindings(table.rows_sized(), out),
             _ => unimplemented!(),
         }
     }
