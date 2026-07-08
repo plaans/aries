@@ -2,10 +2,10 @@
 
 members = [
     "solver",
-    "datalog",
     "bench/data",
     "bench/bench",
     "utils/env_param",
+    "utils/datalog",
     "planning/engine",
     "planning/planx",
     "planning/timelines",
