@@ -369,7 +369,14 @@ pub fn order_colamd<'a>(size: usize, get_col: impl Fn(usize) -> &'a [usize]) -> 
 
     trace!(
         "COLAMD: ordered {} cols, singletons: {} (cheap: {}), dense_rows: {}, dense_cols: {}, cols_only_dense_rows: {}, mass_eliminated: {}",
-        size, num_singletons, num_cheap_singletons, num_dense_rows, num_dense_cols, num_cols_only_dense_rows, num_mass_eliminated);
+        size,
+        num_singletons,
+        num_cheap_singletons,
+        num_dense_rows,
+        num_dense_cols,
+        num_cols_only_dense_rows,
+        num_mass_eliminated
+    );
 
     Ok(Perm { orig2new, new2orig })
 }

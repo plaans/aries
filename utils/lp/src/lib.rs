@@ -316,7 +316,7 @@ impl Problem {
     }
 
     /// Set a new upper/lower bound to an existing variable
-    fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) {
+    pub fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) {
         debug_assert!(var.0 < self.var_maxs.len());
 
         match bound {
@@ -325,13 +325,15 @@ impl Problem {
         }
     }
 
+    const TOL: f64 = 1e-8;
+
     fn calculate_max_expr(&self, expr: &[f64]) -> f64 {
         debug_assert_eq!(expr.len(), self.var_maxs.len());
 
         expr.iter()
             .enumerate()
             .map(|(i, &coeff)| {
-                if coeff == 0.0 {
+                if coeff.abs() <= Problem::TOL {
                     0.0
                 } else if coeff < 0.0 {
                     self.var_mins[i] * coeff
@@ -348,7 +350,7 @@ impl Problem {
         expr.iter()
             .enumerate()
             .map(|(i, &coeff)| {
-                if coeff == 0.0 {
+                if coeff.abs() <= Problem::TOL {
                     0.0
                 } else if coeff > 0.0 {
                     self.var_mins[i] * coeff
@@ -411,6 +413,9 @@ impl Problem {
             ComparisonOp::Eq => {
                 let min_expr = self.calculate_min_expr(&expr);
                 let max_expr = self.calculate_max_expr(&expr);
+
+                // println!("max: {max_expr}, min: {min_expr}, bound: {bound}");
+
                 max_expr < bound || min_expr > bound
             }
         }
@@ -626,7 +631,12 @@ pub struct FeasabilityChecker {
 }
 
 impl FeasabilityChecker {
-    fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) -> Result<f64, Error> {
+    /// Set a new Upper/Lower bound for the given variable and return the previous bound
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem becomes is immideatly detected as infeasible.
+    pub fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) -> Result<f64, Error> {
         let old_val_solver = match bound {
             Bound::Lower => self.solver.set_lb_var(var.0, val)?,
             Bound::Upper => self.solver.set_ub_var(var.0, val)?,
@@ -635,8 +645,13 @@ impl FeasabilityChecker {
         Ok(old_val_solver)
     }
 
-    // TODO: modify the way we treat old_val, read it directly from the solver?
-    fn set_bound_restrict(
+    /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bouond
+    /// None is returned if nothing was modified either its the old value
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem becomes is immideatly detected as infeasible.
+    pub fn set_bound_restrict(
         &mut self,
         var: Variable,
         bound: Bound,
@@ -661,7 +676,13 @@ impl FeasabilityChecker {
         Ok(old_val_solver)
     }
 
-    fn check_feasability(&mut self) -> Result<(), Error> {
+    /// Try to restore the feasability of our problem
+    ///
+    ///  # Errors
+    ///
+    /// Will return an error if th feasability can't be restored
+    /// Note that if set_bound already returned an error, cheack_feasability might not return that the problem is infeasible, both need to be checked
+    pub fn check_feasability(&mut self) -> Result<(), Error> {
         self.solver.solve_feasability()?;
 
         Ok(())
@@ -997,7 +1018,147 @@ mod tests {
             lit_vec.push(Lit { bound, var: s, val });
         }
 
-        test_incremental_constraints(problem, lit_vec, 10, false);
+        test_incremental_constraints(problem, lit_vec, 10, false, true);
+    }
+
+    fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
+        let k = 1.0 / sparse_proportion - 1.0;
+
+        let nb_x_float = (nb_var - 1) as f32 * rng.r#gen::<f32>().powf(k); // we have a f32 in the range [0.0, nb_var - 1)
+
+        1 + nb_x_float as usize
+    }
+
+    fn gen_problem(
+        nb_var: usize,
+        nb_const: usize,
+        min: i32,
+        max: i32,
+        sparse_proportion: f32,
+        seed: u64,
+    ) -> (Problem, Vec<Lit>) {
+        let mut problem = Problem::new(OptimizationDirection::Maximize);
+
+        let mut lit_vec = Vec::new();
+
+        let mut rng = SmallRng::seed_from_u64(seed);
+
+        let vec_var: Vec<Variable> = (0..nb_var)
+            .map(|_| problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY)))
+            .collect();
+
+        for _ in 0..nb_const {
+            let s = problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY));
+
+            let nb_x = get_nb_x(sparse_proportion, &mut rng, nb_var);
+
+            let x_vec: Vec<Variable> = (0..nb_var)
+                .choose_multiple(&mut rng, nb_x)
+                .iter()
+                .map(|&i| vec_var[i])
+                .collect();
+
+            let mut expr: Vec<(Variable, f64)> = x_vec.iter().map(|&x| (x, rng.gen_range(min, max) as f64)).collect();
+
+            // println!("Const {i}: {:?}", expr);
+
+            expr.push((s, -1.0));
+
+            problem.add_constraint(expr, ComparisonOp::Eq, 0.0);
+
+            let bound = if rng.gen_bool(0.5) { Bound::Upper } else { Bound::Lower };
+
+            let val = rng.gen_range(min, max) as f64;
+
+            // println!("Bound: {:?}, val: {val}", bound);
+
+            lit_vec.push(Lit { bound, var: s, val });
+        }
+
+        (problem, lit_vec)
+    }
+
+    fn test_incremental_constraints(
+        mut problem: Problem,
+        lit_vec: Vec<Lit>,
+        nb_const: usize,
+        verbose: bool,
+        assert_on: bool,
+    ) -> (usize, usize, usize, usize) {
+        let init_feas_checker = problem.create_feasability_checker();
+
+        let init_solve = problem.solve();
+
+        if init_feas_checker.is_err() {
+            assert!(init_solve.is_err());
+            return (0, 0, 0, 0);
+        }
+
+        let mut feas_checker = init_feas_checker.unwrap();
+
+        if init_solve.is_err() {
+            assert!(feas_checker.check_feasability().is_err());
+        }
+
+        let mut solution = init_solve.unwrap();
+
+        let mut nb_cert_gen_const = 0;
+        let mut nb_val_cert_const = 0;
+
+        let mut nb_cert_gen_feas = 0;
+        let mut nb_val_cert_feas = 0;
+
+        for (i, lit) in lit_vec.iter().enumerate() {
+            problem.set_bound(lit.var, &lit.bound, lit.val);
+
+            let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val);
+
+            let res_check_feas = feas_checker.check_feasability();
+
+            let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_add_const {
+                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
+                println!("Is certificate valid add_const: {}", is_certif_valid);
+                nb_cert_gen_const += 1;
+                nb_val_cert_const += is_certif_valid as usize;
+            }
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
+                let is_certif_valid = problem.is_certificate_valid(cert);
+                println!("Is certificate valid set_bound: {}", is_certif_valid);
+                nb_cert_gen_feas += 1;
+                nb_val_cert_feas += is_certif_valid as usize;
+            }
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
+                let is_certif_valid = problem.is_certificate_valid(cert);
+                println!("Is certificate valid cheak_feas: {}", is_certif_valid);
+                nb_cert_gen_feas += 1;
+                nb_val_cert_feas += is_certif_valid as usize;
+            }
+
+            if assert_on {
+                assert_eq!(
+                    res_add_const.is_err(),
+                    res_check_feas.is_err() || res_set_bound.is_err()
+                );
+            }
+
+            if res_add_const.is_err() || res_check_feas.is_err() || res_set_bound.is_err() {
+                if verbose {
+                    println!(
+                        "{i}\nadd_const: {:?}\nset_bound: {:?}\ncheack_feas: {:?}",
+                        res_add_const, res_set_bound, res_check_feas
+                    );
+                }
+                break;
+            }
+
+            solution = res_add_const.unwrap();
+        }
+
+        (nb_val_cert_const, nb_cert_gen_const, nb_val_cert_feas, nb_cert_gen_feas)
     }
 
     #[test]
@@ -1016,137 +1177,52 @@ mod tests {
         println!("Mean: {mean}");
     }
 
-    #[test]
-    fn rand_problems() {
-        let n: u64 = 1000;
-
-        let nb_const = 100;
-
-        // Error at 649
-        for seed in 0..n {
-            println!("Seed: {seed}");
-
-            let (problem, lit_vec) = gen_problem(50, nb_const, i32::MIN as f64, i32::MAX as f64, 0.05, seed);
-
-            test_incremental_constraints(problem, lit_vec, nb_const, true);
-        }
-    }
-
-    fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
-        let k = 1.0 / sparse_proportion - 1.0;
-
-        let nb_x_float = (nb_var - 1) as f32 * rng.r#gen::<f32>().powf(k); // we have a f32 in the range [0.0, nb_var - 1)
-
-        1 + nb_x_float as usize
-    }
-
-    fn gen_problem(
+    #[allow(clippy::too_many_arguments)]
+    fn rand_problems(
+        first_seed: u64,
+        last_seed: u64,
         nb_var: usize,
         nb_const: usize,
-        min: f64,
-        max: f64,
+        min: i32,
+        max: i32,
         sparse_proportion: f32,
-        seed: u64,
-    ) -> (Problem, Vec<Lit>) {
-        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        assert_on: bool,
+    ) {
+        let mut nb_cert_gen_const = 0;
+        let mut nb_val_cert_const = 0;
 
-        let mut lit_vec = Vec::new();
+        let mut nb_cert_gen_feas = 0;
+        let mut nb_val_cert_feas = 0;
 
-        let mut rng = SmallRng::seed_from_u64(seed);
+        for seed in first_seed..last_seed {
+            println!("Seed: {seed}");
 
-        let vec_var: Vec<Variable> = (0..nb_var)
-            .map(|_| problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY)))
-            .collect();
+            let (problem, lit_vec) = gen_problem(nb_var, nb_const, min, max, sparse_proportion, seed);
 
-        for i in 0..nb_const {
-            let s = problem.add_var(0.0, (f64::NEG_INFINITY, f64::INFINITY));
+            let (nb_val_cert_const_tmp, nb_cert_gen_const_tmp, nb_val_cert_feas_tmp, nb_cert_gen_feas_tmp) =
+                test_incremental_constraints(problem, lit_vec, nb_const, true, assert_on);
+            nb_cert_gen_feas += nb_cert_gen_feas_tmp;
+            nb_val_cert_feas += nb_val_cert_feas_tmp;
 
-            let nb_x = get_nb_x(sparse_proportion, &mut rng, nb_var);
-
-            let x_vec: Vec<Variable> = (0..nb_var)
-                .choose_multiple(&mut rng, nb_x)
-                .iter()
-                .map(|&i| vec_var[i])
-                .collect();
-
-            let mut expr: Vec<(Variable, f64)> = x_vec.iter().map(|&x| (x, rng.gen_range(min, max))).collect();
-
-            // println!("Const {i}: {:?}", expr);
-
-            expr.push((s, -1.0));
-
-            problem.add_constraint(expr, ComparisonOp::Eq, 0.0);
-
-            let bound = if rng.gen_bool(0.5) { Bound::Upper } else { Bound::Lower };
-
-            let val = rng.gen_range(min, max);
-
-            lit_vec.push(Lit { bound, var: s, val });
+            nb_cert_gen_const += nb_cert_gen_const_tmp;
+            nb_val_cert_const += nb_val_cert_const_tmp;
         }
 
-        (problem, lit_vec)
+        println!(
+            "Proportion valid certificate feas checker: {}, add const: {}",
+            nb_val_cert_feas as f32 / nb_cert_gen_feas as f32,
+            nb_val_cert_const as f32 / nb_cert_gen_const as f32,
+        );
     }
 
-    fn test_incremental_constraints(mut problem: Problem, lit_vec: Vec<Lit>, nb_const: usize, verbose: bool) {
-        let init_feas_checker = problem.create_feasability_checker();
+    #[test]
+    fn rand_10_problems() {
+        rand_problems(0, 1000, 50, 100, -10, 10, 0.05, false);
+    }
 
-        let init_solve = problem.solve();
-
-        if init_feas_checker.is_err() {
-            assert!(init_solve.is_err());
-            return;
-        }
-
-        let mut feas_checker = init_feas_checker.unwrap();
-
-        if init_solve.is_err() {
-            assert!(feas_checker.check_feasability().is_err());
-        }
-
-        let mut solution = init_solve.unwrap();
-
-        for (i, lit) in lit_vec.iter().enumerate() {
-            problem.set_bound(lit.var, &lit.bound, lit.val);
-
-            let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val);
-
-            let res_check_feas = feas_checker.check_feasability();
-
-            let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
-
-            if verbose {
-                println!(
-                    "{i}\nadd_const: {:?}\nset_bound: {:?}\ncheack_feas: {:?}",
-                    res_add_const, res_set_bound, res_check_feas
-                );
-            }
-
-            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_add_const {
-                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
-                println!("Is certificate valid add_const: {}", is_certif_valid);
-            }
-
-            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
-                let is_certif_valid = problem.is_certificate_valid(cert);
-                println!("Is certificate valid set_bound: {}", is_certif_valid);
-            }
-
-            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
-                let is_certif_valid = problem.is_certificate_valid(cert);
-                println!("Is certificate valid cheak_feas: {}", is_certif_valid);
-            }
-
-            assert_eq!(
-                res_add_const.is_err(),
-                res_check_feas.is_err() || res_set_bound.is_err()
-            );
-
-            if res_add_const.is_err() || res_check_feas.is_err() || res_set_bound.is_err() {
-                break;
-            }
-
-            solution = res_add_const.unwrap();
-        }
+    #[test]
+    fn rand_i32_min_max_problems() {
+        rand_problems(0, 1000, 50, 100, i32::MIN, i32::MAX, 0.05, false);
     }
 
     #[test]
