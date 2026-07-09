@@ -5,7 +5,7 @@
 use itertools::Itertools;
 
 use crate::core::views::Dom;
-use crate::lang::constraints::{AllDifferent, Alternative};
+use crate::lang::constraints::{AllDifferent, Alternative, EqMax};
 use crate::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::lang::mul::EqMul;
 use crate::lang::*;
@@ -60,6 +60,27 @@ pub fn alternative<T: Into<IAtom>, TAlt: Into<IAtom>>(
 /// Creates a new expression that is true iff `lhs = factor1 * factor2`
 pub fn eq_mul(lhs: impl Into<Var>, factor1: impl Into<Var>, factor2: impl Into<Var>) -> EqMul {
     EqMul::new(lhs.into(), factor1.into(), factor2.into())
+}
+
+/// Requires that the value of the LHS is equal to maximum value of the RHS elements.
+///
+/// If some variables are optional, it will require that, if the LHS is present, then at least one element
+/// of the RHS is present as well.
+pub fn eq_max<Var>(lhs: Var, rhs: impl IntoIterator<Item = Var>) -> EqMax<Var> {
+    EqMax::new(lhs, rhs.into_iter().collect_vec())
+}
+
+/// Requires that the value of the LHS is equal to maximum value of the RHS elements.
+///
+/// If some variables are optional, it will require that, if the LHS is present, then at least one element
+/// of the RHS is present as well.
+///
+/// Note that constraint exploits a reformulation into an equivalent `eq_max` expression.
+pub fn eq_min<Var, NegVar>(lhs: Var, rhs: impl IntoIterator<Item = Var>) -> EqMax<NegVar>
+where
+    Var: std::ops::Neg<Output = NegVar>,
+{
+    eq_max(-lhs, rhs.into_iter().map(|e| -e))
 }
 
 /// Transforms a boolean into an integer expression where `1` represents `true` and `0` represents false.

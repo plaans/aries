@@ -7,11 +7,9 @@ use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::lang::BoolExpr;
-use crate::lang::expr::geq;
 use crate::model::extensions::DisjunctionExt;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
-use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
 use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::musmcs::MusMcsEnumerator;
@@ -375,44 +373,6 @@ impl<Lbl: Label> Solver<Lbl> {
                 let option1 = self.model.half_reify(lin.clone().lt(0));
                 let option2 = self.model.half_reify(lin.clone().gt(0));
                 self.add_clause([!enabler, option1, option2], scope)?;
-                Ok(())
-            }
-            ReifExpr::EqMax(a) => {
-                let prez = |v: SignedVar| self.model.state.presence(v);
-                assert!(
-                    self.model.entails(enabler),
-                    "Unsupported half reified eqmax constraints."
-                );
-                assert_eq!(prez(a.lhs), prez(enabler.variable().into()));
-
-                let scope = prez(a.lhs);
-                let presences = a.rhs.iter().map(|alt| prez(alt.var)).collect_vec();
-                // at least one alternative must be present
-                self.add_clause(&presences, scope)?;
-
-                // POST  forall i    lhs >= rhs[i]   (scope: prez(rhs[i]))
-                for item in &a.rhs {
-                    let item_scope = self.model.state.presence(item.var);
-                    debug_assert!(self.model.state.implies(item_scope, scope));
-                    let alt_value = self.model.get_tautology_of_scope(item_scope);
-                    // a.lhs >= item.var + item.cst
-                    let constraint = geq(a.lhs, item.var + item.cst);
-                    self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
-                }
-
-                let prez = |v: SignedVar| self.model.state.presence(v);
-
-                // POST  OR_i  (prez(rhs[i])  &&  rhs[i] >= lhs)    [scope: prez(lhs)]
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
-                    scope,
-                    lhs: a.lhs,
-                    elements: a
-                        .rhs
-                        .iter()
-                        .map(|elem| MaxElem::new(elem.var + elem.cst, prez(elem.var)))
-                        .collect_vec(),
-                });
-
                 Ok(())
             }
         }

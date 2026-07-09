@@ -1,8 +1,7 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::{Evaluable, OptDomain};
-use crate::core::{IntCst, Lit, SignedVar, Var};
+use crate::core::{IntCst, Lit, Var};
 use crate::lang::ValidityScope;
-use crate::lang::max::NFEqMax;
 use crate::model::{Label, Model};
 use crate::prelude::{Conjunction, Dom, LinSum, Solution};
 use std::fmt::{Debug, Formatter};
@@ -26,7 +25,7 @@ pub enum ReifExpr {
     Neq(Var, Var),
     EqVal(Var, IntCst),
     NeqVal(Var, IntCst),
-    /// Requires that at least of a set of literal is true.
+    /// Requires that at least one of a set of literal is true.
     Or(Disjunction),
     /// Requires that all literals of a set are true.
     And(Conjunction),
@@ -36,7 +35,6 @@ pub enum ReifExpr {
     LinearEq(LinSum),
     /// Requires a linear sum to *not* be equal to 0 (`sum != 0`).
     LinearNeq(LinSum),
-    EqMax(NFEqMax),
 }
 
 impl std::fmt::Display for ReifExpr {
@@ -53,7 +51,6 @@ impl std::fmt::Display for ReifExpr {
             ReifExpr::LinearLeq(l) => write!(f, "{l} <= 0"),
             ReifExpr::LinearEq(l) => write!(f, "{l} = 0"),
             ReifExpr::LinearNeq(l) => write!(f, "{l} != 0"),
-            ReifExpr::EqMax(em) => write!(f, "{em:?}"),
         }
     }
 }
@@ -81,13 +78,7 @@ impl ReifExpr {
             ReifExpr::LinearLeq(lin) | ReifExpr::LinearEq(lin) | ReifExpr::LinearNeq(lin) => {
                 ValidityScope::new(lin.variables().map(presence), [])
             }
-            ReifExpr::EqMax(eq_max) => ValidityScope::new([presence(eq_max.lhs.variable())], []),
         }
-    }
-
-    /// Returns true iff a given expression can be negated.
-    pub fn negatable(&self) -> bool {
-        !matches!(self, ReifExpr::EqMax(_))
     }
 
     pub fn eval(&self, assignment: &Solution) -> Option<bool> {
@@ -95,14 +86,6 @@ impl ReifExpr {
         let value = |var| match assignment.opt_domain_of(var) {
             OptDomain::Present(lb, ub) if lb == ub => lb,
             _ => panic!(),
-        };
-        let sprez = |svar: SignedVar| prez(svar.variable());
-        let svalue = |svar: SignedVar| {
-            if svar.is_plus() {
-                value(svar.variable())
-            } else {
-                -value(svar.variable())
-            }
         };
         match &self {
             ReifExpr::Lit(l) => {
@@ -163,19 +146,6 @@ impl ReifExpr {
             ReifExpr::LinearLeq(lin) => lin.evaluate(assignment).map(|value| value <= 0),
             ReifExpr::LinearEq(lin) => lin.evaluate(assignment).map(|value| value == 0),
             ReifExpr::LinearNeq(lin) => lin.evaluate(assignment).map(|value| value != 0),
-            ReifExpr::EqMax(NFEqMax { lhs, rhs }) => {
-                if sprez(*lhs) {
-                    let left_value = svalue(*lhs);
-                    let right_value = rhs.iter().filter(|e| sprez(e.var)).map(|e| svalue(e.var) + e.cst).max();
-                    if let Some(right_value) = right_value {
-                        Some(left_value == right_value)
-                    } else {
-                        Some(false) // no value in the max while the lhs is present
-                    }
-                } else {
-                    Some(true)
-                }
-            }
         }
     }
 }
@@ -231,7 +201,6 @@ impl Not for ReifExpr {
             LinearLeq(lin) => LinearLeq(-lin + 1), // lin > 0 <=> -lin < 0 <=> -lin +1 <= 0
             LinearEq(lin) => LinearNeq(lin),
             LinearNeq(lin) => LinearEq(lin),
-            EqMax(_) => panic!("EqMax is a constraint and cannot be negated"),
         }
     }
 }

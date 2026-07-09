@@ -70,7 +70,6 @@ pub mod expr;
 mod int;
 mod int_expr;
 pub mod linear;
-pub mod max;
 pub mod mul;
 mod ops;
 pub(crate) mod reification; // TODO: this should probably move to `crate::model`

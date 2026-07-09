@@ -2,7 +2,6 @@ use crate::{
     lang::{
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
-        max::{EqMax, EqMin},
         *,
     },
     prelude::*,
@@ -146,8 +145,6 @@ macro_rules! impl_reif {
 impl_reif!(Lit);
 impl_reif!(Disjunction);
 impl_reif!(Conjunction);
-impl_reif!(EqMax);
-impl_reif!(EqMin);
 impl_reif!(LinLeq);
 impl_reif!(LinEq);
 impl_reif!(LinNeq);

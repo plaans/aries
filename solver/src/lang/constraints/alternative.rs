@@ -65,7 +65,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
         // ub(main) <- max_i { ub(var_i) - cst | prez_i }
         ctx.enforce_user_propagator(AtLeastOneGeq {
             scope,
-            lhs: SignedVar::plus(a.main.var),
+            lhs: IAtom::from(a.main.var),
             elements: a
                 .alternatives
                 .iter()
@@ -80,7 +80,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
         //  ub(-main) <-   max_i {  ub(-var_i) + cst | prez_i }
         ctx.enforce_user_propagator(AtLeastOneGeq {
             scope,
-            lhs: SignedVar::minus(a.main.var),
+            lhs: LinTerm::from(-a.main.var),
             elements: a
                 .alternatives
                 .iter()

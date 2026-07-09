@@ -1,6 +1,6 @@
 use crate::core::state::{Cause, Domains, DomainsSnapshot, Explanation};
 use crate::core::views::{IntBoundable, Term, VarView};
-use crate::core::{INT_CST_MIN, IntCst, Lit, SignedVar};
+use crate::core::{INT_CST_MIN, IntCst, Lit};
 use crate::prelude::*;
 use crate::reasoners::Contradiction;
 use crate::reasoners::cp::{DynPropagator, Propagator, PropagatorId, UserPropagator, Watches};
@@ -38,7 +38,7 @@ where
 {
     /// presence of LHS and scope of the constraint
     pub scope: Lit,
-    pub lhs: SignedVar,
+    pub lhs: Variable,
     pub elements: Vec<MaxElem<Variable>>,
 }
 
@@ -64,10 +64,9 @@ where
             Single(usize),
             Several,
         }
-        let lb = |svar: SignedVar| domains.lb(svar);
 
         let mut candidates = Candidates::Empty;
-        let lhs_lb = lb(self.lhs);
+        let lhs_lb = domains.lb(self.lhs);
         let mut rhs_max = INT_CST_MIN - 1;
 
         for (idx, elem) in self.elements.iter().enumerate() {
@@ -128,7 +127,8 @@ where
                     out_explanation.push(self.lhs.geq(max_lb));
                 }
             }
-        } else if literal.svar() == self.lhs {
+        } else if literal.variable() == self.lhs.variable() {
+            // TODO: check
             // PROP 2
             // max <= max_ub   <-  And_i  (ei.var + ei.cst) <= max_ub || !ei.prez
             let max_ub = literal.ub_value();
@@ -162,7 +162,7 @@ where
                     let lit = e.var.lt(max_lb);
                     debug_assert!(domains.entails(lit));
                     out_explanation.push(lit);
-                    out_explanation.push(Lit::geq(self.lhs, max_lb))
+                    out_explanation.push(self.lhs.geq(max_lb))
                 }
             }
             if literal == elem.presence {
@@ -172,7 +172,7 @@ where
                 // PROP 3
                 let inferrable = elem.var.geq(max_lb);
                 debug_assert!(inferrable.entails(literal));
-                out_explanation.push(Lit::geq(self.lhs, max_lb));
+                out_explanation.push(self.lhs.geq(max_lb));
             }
         }
     }
@@ -227,7 +227,7 @@ mod test {
 
         let mut c = AtLeastOneGeq {
             scope: Lit::TRUE,
-            lhs: SignedVar::plus(m),
+            lhs: SignedVar::plus(m) + 0,
             elements: vec![
                 MaxElem {
                     var: SignedVar::plus(a) + 1,

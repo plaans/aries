@@ -2,15 +2,12 @@ pub mod symmetry;
 
 use aries_solver::prelude::*;
 
+use aries_solver::core::{
+    literals::{ConjunctionBuilder, DisjunctionBuilder},
+    views::Dom,
+};
 use aries_solver::lang::constraints::Element;
 use aries_solver::lang::exclusive_choice::exclu_choice;
-use aries_solver::{
-    core::{
-        literals::{ConjunctionBuilder, DisjunctionBuilder},
-        views::Dom,
-    },
-    lang::max::EqMax,
-};
 
 use crate::{boxes::Segment, effects::EffectOp, *};
 
@@ -27,7 +24,7 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
         let _span = _span.enter();
         let mut ends = ctx.sched.tasks.iter().map(|t| t.end).collect_vec();
         ends.push(IAtom::ZERO); // default value when no task is present
-        EqMax::new(ctx.sched.makespan, ends).enforce_if(l, ctx);
+        eq_max(ctx.sched.makespan, ends).enforce_if(l, ctx);
 
         // enforce the horizon to be after the end of all actions
         leq(ctx.sched.makespan, ctx.sched.horizon).enforce_if(l, ctx);

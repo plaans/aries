@@ -35,7 +35,6 @@ impl Reification {
         assert!(!self.full_map.contains_key(&e));
         self.full_map.insert(e.clone(), lit);
         self.full_inv.insert(lit, e.clone());
-        debug_assert!(e.negatable(), "Full reification of non-negatable expression");
         self.full_map.insert(!e.clone(), !lit);
         self.full_inv.insert(!lit, !e.clone());
     }

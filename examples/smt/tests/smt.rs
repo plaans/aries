@@ -3,7 +3,6 @@ use aries_solver::prelude::*;
 use aries_solver::backtrack::Backtrack;
 use aries_solver::core::state::OptDomain;
 use aries_solver::core::views::Term;
-use aries_solver::lang::max::{EqMax, EqMin};
 use aries_solver::solver::SearchLimit;
 use itertools::Itertools;
 
@@ -558,8 +557,8 @@ fn test_max() {
     let max = model.new_ivar(0, 100, "max");
     let min = model.new_ivar(0, 100, "min");
 
-    model.enforce(EqMax::new(max, ais.clone()));
-    model.enforce(EqMin::new(min, ais));
+    model.enforce(eq_max(max, ais.clone()));
+    model.enforce(eq_min(min, ais));
 
     let tests = vec![
         Test::new(&[], &[min.geq(1), max.leq(9)]),
