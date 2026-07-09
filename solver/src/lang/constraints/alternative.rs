@@ -40,8 +40,6 @@ impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
 
         assert_eq!(ctx.presence(a.main), ctx.presence(enabler));
 
-        let scope = ctx.presence(a.main);
-
         // presence of all alternatives
         let presences: Lits = (a.alternatives.iter().map(|alt| ctx.presence(alt.var))).collect();
 
@@ -64,7 +62,8 @@ impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
         // ub(main + cst) <- max_i { ub(var_i) | prez_i }
         // ub(main) <- max_i { ub(var_i) - cst | prez_i }
         ctx.enforce_user_propagator(AtLeastOneGeq {
-            scope,
+            scope: ctx.presence(implicant),
+            active: implicant,
             lhs: IAtom::from(a.main.var),
             elements: a
                 .alternatives
@@ -79,7 +78,8 @@ impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
         // -ub(-main) <- - max_i {  ub(-var_i) + cst | prez_i }
         //  ub(-main) <-   max_i {  ub(-var_i) + cst | prez_i }
         ctx.enforce_user_propagator(AtLeastOneGeq {
-            scope,
+            scope: ctx.presence(implicant),
+            active: implicant,
             lhs: LinTerm::from(-a.main.var),
             elements: a
                 .alternatives

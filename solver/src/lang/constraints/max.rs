@@ -1,12 +1,22 @@
 use crate::core::IntCst;
 use crate::core::views::{IntBoundable, Term, VarView};
 use crate::lang::{BoolExpr, Store};
-use crate::prelude::{Disjunction, LinSum, geq};
+use crate::prelude::{Disjunction, LinSum, geq, implies};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use itertools::Itertools;
 use std::fmt::Debug;
 
 /// Constraint equivalent to `lhs = max { e | e \in rhs }`
+///
+/// ## Optionality
+///
+/// In the presence of optional variables, it must be the case that for any `e in rhs`, `prez(e) => prez(lhs)`.
+/// This is not enforced by the constraint but will be assumed to hold.
+///
+/// Furthermore the constraint will enforce that whenever `lhs` is present, then there must be at least
+/// one element of `rhs` that is present (otherwise the value of `lhs` would not be defined).
+///
+/// The scope of this constraint is the scope of the `lhs`
 #[derive(Clone)]
 pub struct EqMax<Variable> {
     lhs: Variable,
@@ -24,10 +34,7 @@ where
     Variable: Term + IntBoundable + VarView<Value = IntCst> + Into<LinSum> + Send + Sync + Copy + Debug + 'static,
 {
     fn enforce_if(&self, implicant: crate::prelude::Lit, ctx: &mut Ctx) {
-        assert!(ctx.entails(implicant), "Unsupported half reified eqmax constraints.");
-        assert_eq!(ctx.presence(self.lhs), ctx.presence(implicant.variable()));
-
-        let scope = ctx.presence(self.lhs);
+        ctx.add_assertion(implies(ctx.presence(self.lhs), ctx.presence(implicant)));
 
         // at least one alternative must be present
         // prez(lhs) => OR_i  prez(alt_i)
@@ -37,18 +44,16 @@ where
 
         // POST  forall i    lhs >= rhs[i]   (scope: ctx.presence(rhs[i]))
         for item in &self.rhs {
-            // self.lhs >= item.var + item.cst
+            // self.lhs >= item
             geq(self.lhs, *item).opt_enforce_if(implicant, ctx);
-            // let item_scope = ctx.presence(item.var);
-            // debug_assert!(ctx.implies(item_scope, scope));
-            // let alt_value = ctx.tautology_of_scope(item_scope);
 
-            // self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
+            ctx.add_assertion(implies(ctx.presence(*item), ctx.presence(self.lhs)));
         }
 
         // POST  OR_i  (ctx.presence(rhs[i])  &&  rhs[i] >= lhs)    [scope: ctx.presence(lhs)]
         let prop = AtLeastOneGeq {
-            scope,
+            scope: ctx.presence(implicant),
+            active: implicant,
             lhs: self.lhs,
             elements: self
                 .rhs

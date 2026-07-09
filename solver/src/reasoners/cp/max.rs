@@ -36,8 +36,12 @@ pub(crate) struct AtLeastOneGeq<Variable>
 where
     Variable: Send + Sync,
 {
-    /// presence of LHS and scope of the constraint
+    /// scope of the constraint.
     pub scope: Lit,
+    /// True if the constraint must be active.
+    /// It must be the case that `scope => prez(active)`
+    pub active: Lit,
+    /// It must be the case that `scope => prez(lhs)`
     pub lhs: Variable,
     pub elements: Vec<MaxElem<Variable>>,
 }
@@ -47,17 +51,18 @@ where
     Variable: Term + VarView<Value = IntCst> + IntBoundable + Send + Sync + Copy + 'static,
 {
     fn setup(&self, id: PropagatorId, context: &mut Watches) {
-        context.add_watch(self.scope.variable(), id);
-        context.add_watch(self.lhs.variable(), id);
+        context.add_watch(self.scope, id);
+        context.add_watch(self.active, id);
+        context.add_watch(self.lhs, id);
         for e in &self.elements {
-            context.add_watch(e.var.variable(), id);
-            context.add_watch(e.presence.variable(), id);
+            context.add_watch(e.var, id);
+            context.add_watch(e.presence, id);
         }
     }
 
     fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> Result<(), Contradiction> {
-        if domains.entails(!self.scope) {
-            return Ok(()); // inactive, skip propagation
+        if domains.entails(!self.scope) || domains.entails(!self.active) {
+            return Ok(()); // inactive or not in scope, skip propagation
         }
         enum Candidates {
             Empty,
@@ -85,23 +90,40 @@ where
             }
         }
 
-        match candidates {
-            Candidates::Empty => {
-                let max_presence = domains.presence(self.lhs.variable());
-                domains.set(!max_presence, cause)?; // PROP 1
-            }
-            _ => {
-                domains.set_ub(self.lhs, rhs_max, cause)?; // PROP 2
-            }
+        if matches!(candidates, Candidates::Empty) {
+            // no element can be GEQ than lhs.
+            //
+            // There are three possibilities where this is valid:
+            //  - !active: the constraint is inactive
+            //  - !scope: the constraint is not in scope
+            //  - !prez(lhs): the lhs is absent
+            //
+            // So be can set: !active \/ !scope \/ !prez(lhs)
+            //
+            // note that `!prez(lhs) => !scope`, so we can simplify this to
+            //   !active \/ !scope
+            //
+            // Since scope <=> prez(active), this is equivalent to setting !active
+            domains.set(!self.active, cause)?; // PROP 1
+            return Ok(());
         }
-        if let Candidates::Single(idx) = candidates {
-            let elem = &self.elements[idx];
-            // lb(elem.var + elem.cst) <- lb(lhs)
-            // lb(elem.var) <- lb(lhs) - elem.cst
-            domains.set_lb(elem.var, domains.lb(self.lhs), cause)?; // PROP 3
-            if domains.entails(domains.presence(self.lhs)) {
-                // if the constraint is active, the elem must be present
-                domains.set(elem.presence, cause)?; // PROP 4
+
+        if domains.entails(self.active) {
+            // the constraint is active, we can thus propagate to the variables
+
+            // lhs cannot be greater that the biggest element of rhs
+            domains.set_ub(self.lhs, rhs_max, cause)?; // PROP 2
+
+            if let Candidates::Single(idx) = candidates {
+                // we have a single element can be GEQ than lhs
+                let elem = &self.elements[idx];
+                // Tighten lower bound of elem, which is only possible if `prez(var) => prez(lhs)` (which is an assumption here)
+                // lb(elem) <- lb(lhs)
+                domains.set_lb(elem.var, domains.lb(self.lhs), cause)?; // PROP 3
+                if domains.entails(domains.presence(self.lhs)) {
+                    // if lhs is present, the elem must be present
+                    domains.set(elem.presence, cause)?; // PROP 4
+                }
             }
         }
 
@@ -110,10 +132,10 @@ where
 
     fn explain(&self, literal: Lit, domains: &DomainsSnapshot, out_explanation: &mut Explanation) {
         debug_assert_eq!(self.scope, domains.presence(self.lhs.variable()));
-        if literal == !self.scope {
+        if literal == !self.active {
             // PROP 1
             let max_lb = domains.lb(self.lhs);
-            // !max_prez  <-  And_i  !ei.prez || (ei.var + ei.cst) < max_lb
+            // !max_prez  <-  And_i  !ei.prez || (ei < max_lb)
 
             for e in &self.elements {
                 if domains.entails(!e.presence) {
@@ -127,11 +149,12 @@ where
                     out_explanation.push(self.lhs.geq(max_lb));
                 }
             }
-        } else if literal.variable() == self.lhs.variable() {
-            // TODO: check
+        } else if literal.svar() == self.lhs.upper_bounding_signed_var() {
             // PROP 2
             // max <= max_ub   <-  And_i  (ei.var + ei.cst) <= max_ub || !ei.prez
             let max_ub = literal.ub_value();
+
+            out_explanation.push(self.active);
 
             for e in &self.elements {
                 if domains.entails(!e.presence) {
@@ -143,6 +166,9 @@ where
                 }
             }
         } else {
+            // all these propagations required the constraint to be active
+            out_explanation.push(self.active);
+
             // PROP 3 or 4, find the element that was propagated
             let (idx, elem) = self
                 .elements
@@ -227,6 +253,7 @@ mod test {
 
         let mut c = AtLeastOneGeq {
             scope: Lit::TRUE,
+            active: Lit::TRUE,
             lhs: SignedVar::plus(m) + 0,
             elements: vec![
                 MaxElem {
