@@ -394,7 +394,7 @@ fn enforce_refinement(t: TaskRef, supporters: Vec<TaskRef>, model: &mut Model) {
 }
 
 /// Encode a metric in the problem and returns an integer that should minimized in order to optimize the metric.
-pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAtom {
+pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> VarCst {
     match metric {
         Metric::Makespan => pb.makespan_ub.num,
         Metric::PlanLength => {
@@ -459,7 +459,7 @@ pub fn add_metric(pb: &FiniteProblem, model: &mut Model, metric: Metric) -> IAto
 
 pub struct EncodedProblem {
     pub model: Model,
-    pub objective: Option<IAtom>,
+    pub objective: Option<VarCst>,
     /// Metadata associated to variables and literals in the encoded problem.
     pub encoding: Encoding,
 }
@@ -470,7 +470,7 @@ fn unifiable_sv(model: &Model, sv1: &StateVar, sv2: &StateVar) -> bool {
 }
 
 /// Encodes a finite problem.
-/// If a metric is given, it will return along with the model an `IAtom` that should be minimized
+/// If a metric is given, it will return along with the model a `VarCst` that should be minimized
 /// Returns an error if the encoded problem is found to be unsatisfiable.
 pub fn encode(pb: &FiniteProblem, metric: Option<Metric>) -> std::result::Result<EncodedProblem, Conflict> {
     let mut encoding = Encoding::default();

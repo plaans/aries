@@ -159,7 +159,7 @@ impl<'a> Printer<'a> {
         }
     }
 
-    fn iatom(&self, i: IAtom) {
+    fn iatom(&self, i: VarCst) {
         if i.var == Var::ZERO {
             print!("{}", i.shift)
         } else {

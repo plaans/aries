@@ -31,7 +31,7 @@ pub use crate::tasks::*;
 pub type Sym = String;
 
 /// Type of timepoints
-pub type Time = IAtom;
+pub type Time = VarCst;
 
 /// Type of simple int expressions (composed of at most one variable)
 pub type IntTerm = aries_solver::prelude::LinTerm;

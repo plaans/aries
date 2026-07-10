@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 use crate::core::literals::Lits;
-use crate::lang::{BoolExpr, IAtom, ModelView};
+use crate::lang::{BoolExpr, ModelView, VarCst};
 
 /// The `alternative` constraint, that imposes that exactly one of the `alternative` element will be selected to decide the `main` value.
 ///
@@ -20,12 +20,12 @@ use crate::lang::{BoolExpr, IAtom, ModelView};
 ///    require introducing built-in interval variable types which at this point is not considered)
 #[derive(Clone)]
 pub struct Alternative {
-    main: IAtom,
-    alternatives: Vec<IAtom>,
+    main: VarCst,
+    alternatives: Vec<VarCst>,
 }
 
 impl Alternative {
-    pub(crate) fn new(main: IAtom, alternatives: Vec<IAtom>) -> Self {
+    pub(crate) fn new(main: VarCst, alternatives: Vec<VarCst>) -> Self {
         Self { main, alternatives }
     }
 }

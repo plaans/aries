@@ -35,7 +35,7 @@ pub trait PartialAssignment {
         self.sval(lit.svar()).map(|val| val <= lit.ub_value())
     }
 
-    fn evaluate_int(&self, iatom: IAtom) -> Option<IntCst> {
+    fn evaluate_int(&self, iatom: VarCst) -> Option<IntCst> {
         self.val(iatom.var.variable()).map(|i| i + iatom.shift)
     }
 
@@ -96,7 +96,7 @@ impl PartialAssignmentBuilder {
         }
     }
 
-    pub fn add_int(&mut self, ai: IAtom, i: IntCst) -> Result<(), InvalidAssignment> {
+    pub fn add_int(&mut self, ai: VarCst, i: IntCst) -> Result<(), InvalidAssignment> {
         let var = ai.var.variable();
         let value = i - ai.shift;
         self.add_var(var, value)

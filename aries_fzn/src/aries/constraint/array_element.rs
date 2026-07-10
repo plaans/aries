@@ -1,6 +1,6 @@
 use aries_solver::core::IntCst;
 use aries_solver::lang::BVar;
-use aries_solver::lang::IAtom;
+use aries_solver::lang::VarCst;
 use aries_solver::lang::expr::eq;
 use aries_solver::lang::expr::geq;
 use aries_solver::lang::expr::implies;
@@ -16,31 +16,31 @@ use crate::aries::Post;
 /// `a[i]`, `b` and `i` are integer atoms.
 #[derive(Debug)]
 pub struct ArrayElement {
-    a: Vec<IAtom>,
-    b: IAtom,
-    i: IAtom,
+    a: Vec<VarCst>,
+    b: VarCst,
+    i: VarCst,
 }
 
 impl ArrayElement {
     pub fn new(
-        a: Vec<IAtom>,
-        b: impl Into<IAtom>,
-        i: impl Into<IAtom>,
+        a: Vec<VarCst>,
+        b: impl Into<VarCst>,
+        i: impl Into<VarCst>,
     ) -> Self {
         let b = b.into();
         let i = i.into();
         Self { a, b, i }
     }
 
-    pub fn a(&self) -> &Vec<IAtom> {
+    pub fn a(&self) -> &Vec<VarCst> {
         &self.a
     }
 
-    pub fn b(&self) -> &IAtom {
+    pub fn b(&self) -> &VarCst {
         &self.b
     }
 
-    pub fn i(&self) -> &IAtom {
+    pub fn i(&self) -> &VarCst {
         &self.i
     }
 }
@@ -78,7 +78,7 @@ mod tests {
         let index_x = 2;
 
         let values = [1, 5, 0, 2, -1];
-        let mut a: Vec<IAtom> =
+        let mut a: Vec<VarCst> =
             values.iter().cloned().map(|e| e.into()).collect();
         a[index_x] = x.into();
 

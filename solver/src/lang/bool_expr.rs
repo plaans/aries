@@ -154,7 +154,7 @@ mod test {
     use crate::{
         core::views::{Dom, Term},
         lang::{
-            IAtom,
+            VarCst,
             expr::{lt, neq},
         },
         model::Label,
@@ -163,10 +163,10 @@ mod test {
     use super::*;
 
     /// All different with potentially optional variables
-    struct AllDifferent(Vec<IAtom>);
+    struct AllDifferent(Vec<VarCst>);
 
     /// True if the the two atoms are different, and undefined if at least one is absent
-    struct Different(IAtom, IAtom);
+    struct Different(VarCst, VarCst);
 
     impl<Ctx: ModelView> BoolExpr<Ctx> for AllDifferent {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
@@ -200,7 +200,7 @@ mod test {
         for i in 1..=n {
             let pi = m.new_presence_variable(Lit::TRUE, format!("p{i}")).true_lit();
             let ti = m.new_optional_ivar(0, 1, pi, format!("t{i}"));
-            tasks.push(IAtom::from(ti));
+            tasks.push(VarCst::from(ti));
         }
 
         let _activator = m.new_bvar("activator").true_lit();
@@ -213,7 +213,7 @@ mod test {
         let count = enumerate(s, &tasks);
         assert_eq!(count, 7);
     }
-    fn enumerate<L: Label>(mut s: Solver<L>, ints: &[IAtom]) -> i32 {
+    fn enumerate<L: Label>(mut s: Solver<L>, ints: &[VarCst]) -> i32 {
         let mut vars = Vec::with_capacity(ints.len() * 2);
         for &i in ints {
             vars.push(i.variable());
@@ -247,7 +247,7 @@ mod test {
     struct Ordered(TaskId, TaskId);
 
     struct ModelWithMetadata {
-        starts: Vec<IAtom>,
+        starts: Vec<VarCst>,
         model: Model,
     }
     impl ModelWrapper for ModelWithMetadata {

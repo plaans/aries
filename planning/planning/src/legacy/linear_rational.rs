@@ -370,8 +370,8 @@ impl From<FAtom> for LinearSum {
     }
 }
 
-impl From<IAtom> for LinearSum {
-    fn from(value: IAtom) -> Self {
+impl From<VarCst> for LinearSum {
+    fn from(value: VarCst) -> Self {
         let mut sum = LinearSum {
             terms: vec![LinearTerm {
                 factor: 1,
@@ -469,7 +469,7 @@ impl std::ops::Neg for LinearSum {
     }
 }
 
-impl TryFrom<LinearSum> for IAtom {
+impl TryFrom<LinearSum> for VarCst {
     type Error = ();
 
     fn try_from(value: LinearSum) -> Result<Self, Self::Error> {
@@ -951,7 +951,7 @@ mod test {
         for s in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for d in [1, 2, 5, 10, 15, 20, 50, 100] {
                 for v in [var0, var1, var2, var3] {
-                    let fa = FAtom::new(IAtom::new(v, s), d);
+                    let fa = FAtom::new(VarCst::new(v, s), d);
                     let sum = LinearSum::from(fa);
                     assert_eq!(sum.constant, 0);
                     assert_eq!(sum.denom, d);
@@ -972,7 +972,7 @@ mod test {
         let var3 = Var::from_u32(15);
         for s in [0, 1, 2, 5, 10, 15, 20, 50, 100] {
             for v in [var0, var1, var2, var3] {
-                let ia = IAtom::new(v, s);
+                let ia = VarCst::new(v, s);
                 let sum = LinearSum::from(ia);
                 assert_eq!(sum.constant, 0);
                 assert_eq!(sum.denom, 1);
@@ -994,7 +994,7 @@ mod test {
     #[test]
     fn test_sum_mul() {
         let v = Var::from_u32(5);
-        let s = LinearSum::of(vec![FAtom::new(IAtom::new(v, 5), 28)]);
+        let s = LinearSum::of(vec![FAtom::new(VarCst::new(v, 5), 28)]);
         let result = (s * 3).simplify();
         assert_eq!(result.constant, 15);
         assert_eq!(result.denom, 28);
@@ -1038,7 +1038,7 @@ mod test {
     #[test]
     fn test_sum_mul_assign() {
         let v = Var::from_u32(5);
-        let s = LinearSum::of(vec![FAtom::new(IAtom::new(v, 5), 28)]);
+        let s = LinearSum::of(vec![FAtom::new(VarCst::new(v, 5), 28)]);
         let mut result = s.clone();
         result *= 3;
         let result = result.simplify();

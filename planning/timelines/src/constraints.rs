@@ -23,7 +23,7 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
         let _span = tracing::debug_span!("MakespanIsMaxTaskEnd");
         let _span = _span.enter();
         let mut ends = ctx.sched.tasks.iter().map(|t| t.end).collect_vec();
-        ends.push(IAtom::ZERO); // default value when no task is present
+        ends.push(VarCst::ZERO); // default value when no task is present
         eq_max(ctx.sched.makespan, ends).enforce_if(l, ctx);
 
         // enforce the horizon to be after the end of all actions

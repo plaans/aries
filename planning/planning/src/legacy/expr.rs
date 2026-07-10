@@ -126,7 +126,7 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for Eq {
     }
 }
 
-fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> CoreExpr {
+fn int_eq<Lbl: Label>(a: VarCst, b: VarCst, model: &mut Model<Lbl>) -> CoreExpr {
     let lr = model.reify(leq(a, b));
     let rl = model.reify(leq(b, a));
     and([lr, rl]).into()
@@ -217,7 +217,7 @@ pub fn f_geq(lhs: impl Into<FAtom>, rhs: impl Into<FAtom>) -> Leq {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Leq(IAtom, IAtom);
+pub struct Leq(VarCst, VarCst);
 
 aries_solver::impl_reif!(Leq);
 
@@ -265,17 +265,17 @@ impl From<Leq> for CoreExpr {
     }
 }
 
-pub fn leq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+pub fn leq(lhs: impl Into<VarCst>, rhs: impl Into<VarCst>) -> Leq {
     Leq(lhs.into(), rhs.into())
 }
 
-pub fn lt(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+pub fn lt(lhs: impl Into<VarCst>, rhs: impl Into<VarCst>) -> Leq {
     leq(lhs.into(), rhs.into() - 1)
 }
 
-pub fn geq(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+pub fn geq(lhs: impl Into<VarCst>, rhs: impl Into<VarCst>) -> Leq {
     leq(rhs, lhs)
 }
-pub fn gt(lhs: impl Into<IAtom>, rhs: impl Into<IAtom>) -> Leq {
+pub fn gt(lhs: impl Into<VarCst>, rhs: impl Into<VarCst>) -> Leq {
     lt(rhs, lhs)
 }

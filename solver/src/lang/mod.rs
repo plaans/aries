@@ -12,7 +12,7 @@
 //! | **[`Var`]** | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`SignedVar`] | `±X` | Signed variable | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`ScaledVar`] | `n·X` | Variable multiplied by constant | [`VarView`], [`Term`], [`Boundable`], |
-//! | [`IAtom`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
+//! | [`VarCst`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`LinTerm`] | `n·X + c` | Scaled variable plus constant | [`VarView`], [`Term`], [`Boundable`] |
 //! | **[`LinSum`]** | `Σ(nᵢ·Xᵢ) + c` | Sum of scaled variables plus constant | [`IntExpr`] |
 //! | `dyn` [`IntExpr`] | `unknown` | Arbitrary int expression |  |
@@ -35,7 +35,7 @@
 //! ```text
 //!        Var → SignedVar → ScaledVar → LinTerm → LinSum
 //!          ↓                                  ↑
-//! IntCst  →└────────────→ IAtom ──────────────┘
+//! IntCst  →└────────────→ VarCst ─────────────┘
 //! ```
 //!
 //! All conversions upward in the hierarchy are provided through `From` implementations,
@@ -83,7 +83,7 @@ pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
 pub use core_expr::CoreExpr;
 pub use core_expr::Reifiable; // TODO: undesirable but kept around as the planning crate requires it for now
-pub use int::IAtom;
+pub use int::VarCst;
 pub use int_expr::IntExpr;
 pub use model_view::{ModelView, ModelWrapper};
 pub use validity_scope::*;

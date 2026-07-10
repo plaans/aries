@@ -125,7 +125,7 @@ impl<T: Term + Copy> Optional for T {
 
 /// An expression that is a view of exactly one variable (which may be the [`Var::ZERO`] variable).
 ///
-/// Notably implemented for  [`Var`], [`Lit`], [`IAtom`]
+/// Notably implemented for  [`Var`], [`Lit`], [`VarCst`]
 pub trait Term {
     /// Extracts the underlying variable in the expression.
     ///
@@ -147,7 +147,7 @@ impl<T: Into<Var>> Term for T {
         self.into()
     }
 }
-impl Term for IAtom {
+impl Term for VarCst {
     fn variable(self) -> Var {
         self.var.variable()
     }

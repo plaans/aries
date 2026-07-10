@@ -1,6 +1,6 @@
 use aries_solver::core::views::{Dom, Term, VarView};
 use aries_solver::core::{IntCst, Var};
-use aries_solver::lang::{ConversionError, IAtom};
+use aries_solver::lang::{ConversionError, VarCst};
 use num_rational::Ratio;
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
@@ -59,7 +59,7 @@ impl std::ops::Add<IntCst> for FVar {
 ///  - the denominator `denom` is a constant integer.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct FAtom {
-    pub num: IAtom,
+    pub num: VarCst,
     pub denom: IntCst,
 }
 impl VarView for FAtom {
@@ -102,7 +102,7 @@ impl FAtom {
     /// The smallest increment of a fixed-point expression.
     pub const EPSILON: Epsilon = Epsilon;
 
-    pub fn new(num: IAtom, denom: IntCst) -> FAtom {
+    pub fn new(num: VarCst, denom: IntCst) -> FAtom {
         assert_ne!(denom, 0);
         FAtom { num, denom }
     }
@@ -120,13 +120,13 @@ impl PartialOrd for FAtom {
 
 impl From<Rational> for FAtom {
     fn from(value: Rational) -> Self {
-        let num = IAtom::from(*value.numer());
+        let num = VarCst::from(*value.numer());
         FAtom::new(num, *value.denom())
     }
 }
 impl From<IntCst> for FAtom {
     fn from(value: IntCst) -> Self {
-        let num = IAtom::from(value);
+        let num = VarCst::from(value);
         FAtom::new(num, 1)
     }
 }

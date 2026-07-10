@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::backtrack::Backtrack;
 use crate::core::{INT_CST_MAX, Lit};
-use crate::lang::{IAtom, expr::or};
+use crate::lang::{VarCst, expr::or};
 use crate::model::Model;
 use crate::prelude::*;
 use crate::solver::search::activity::{ActivityBrancher, BranchingParams};
@@ -109,14 +109,14 @@ impl MapSolver {
             }
             MapSolverMode::HighOptimize => {
                 let sum = LinSum::new(0, literals.iter().map(|&l| 1 * l.variable()));
-                let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
+                let obj = VarCst::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.geq(obj));
 
                 Box::new(move |s: &mut Solver| Ok(s.maximize(obj, SearchLimit::None)?.map(|(_, doms)| doms)))
             }
             MapSolverMode::LowOptimize => {
                 let sum = LinSum::new(0, literals.iter().map(|&l| 1 * l.variable()));
-                let obj = IAtom::from(solver.model.state.new_var(0, INT_CST_MAX));
+                let obj = VarCst::from(solver.model.state.new_var(0, INT_CST_MAX));
                 solver.model.enforce(sum.leq(obj));
 
                 Box::new(move |s: &mut Solver| Ok(s.minimize(obj, SearchLimit::None)?.map(|(_, doms)| doms)))

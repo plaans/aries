@@ -120,7 +120,7 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> Var {
 
 /// Multiply an integer atom with a literal.
 /// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
-pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+pub fn iatom_mul_lit(model: &mut Model, atom: VarCst, lit: Lit) -> LinearSum {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert!(model.state.implies(lit, model.presence(atom.var)));
     if atom.var == Var::ZERO {

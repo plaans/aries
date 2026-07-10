@@ -259,7 +259,7 @@ where
     }
 }
 
-impl NoOverlap<IAtom> {
+impl NoOverlap<VarCst> {
     /// Creates a reversed view of the propagator, which when propagated, will operate on the lower bound.
     /// An interval `(s, d, e)` become the interval `(-e, d, -s)`
     fn reversed(&self) -> NoOverlap<PMIAtom> {
@@ -275,7 +275,7 @@ impl NoOverlap<IAtom> {
 }
 
 /// [`UserPropagator`] is only implemented for `IAtom` because we need to be able to reverse the propagator (and we don't have a trait easily capturing that).
-impl UserPropagator for NoOverlap<IAtom> {
+impl UserPropagator for NoOverlap<VarCst> {
     fn get_propagators(&self) -> Vec<super::DynPropagator> {
         let mut propagators = vec![DynPropagator::from(PropagatorWithJustifications::new(self.clone()))];
         if self.kind >= PropagatorKind::EdgeFinding {

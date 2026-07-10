@@ -212,8 +212,8 @@ fn extract_constraints(
     }
 
     // expression of the action duration
-    let dur: IAtom = if let Some(dur) = action_fixed_duration {
-        IAtom::from(dur + duration_delta)
+    let dur: VarCst = if let Some(dur) = action_fixed_duration {
+        VarCst::from(dur + duration_delta)
     } else {
         ch.chronicle.end.num + duration_delta
     };
@@ -307,7 +307,7 @@ fn extract_constraints(
     ch.chronicle.constraints.clear();
     ch.chronicle.constraints.push(Constraint::table(vars, Arc::new(table)));
     debug_assert_eq!(ch.chronicle.start.denom, ch.chronicle.end.denom);
-    let duration = LinearSum::from(FAtom::new(IAtom::from(duration_var), ch.chronicle.start.denom));
+    let duration = LinearSum::from(FAtom::new(VarCst::from(duration_var), ch.chronicle.start.denom));
     ch.chronicle
         .constraints
         .push(Constraint::duration(Duration::Fixed(duration)));

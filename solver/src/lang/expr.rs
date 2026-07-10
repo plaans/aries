@@ -60,7 +60,7 @@ pub fn all_different<T: Into<LinSum>>(vars: impl IntoIterator<Item = T>) -> AllD
 /// The `alternative` constraint, that imposes that exactly one of the `alternative` element will be selected to decide the `main` value.
 ///
 /// See: [`Alternative`]
-pub fn alternative<T: Into<IAtom>, TAlt: Into<IAtom>>(
+pub fn alternative<T: Into<VarCst>, TAlt: Into<VarCst>>(
     main: T,
     alternatives: impl IntoIterator<Item = TAlt>,
 ) -> Alternative {

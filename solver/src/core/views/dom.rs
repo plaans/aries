@@ -90,7 +90,7 @@ pub trait Dom {
     }
 
     /// Returns the domain of an optional integer expression.
-    fn opt_domain_of(&self, atom: impl Into<IAtom>) -> OptDomain {
+    fn opt_domain_of(&self, atom: impl Into<VarCst>) -> OptDomain {
         let atom = atom.into();
         let (lb, ub) = self.bounds(atom);
         let prez = self.presence(atom.var);
