@@ -1,6 +1,6 @@
 use crate::core::literals::Disjunction;
 use crate::core::state::Evaluable;
-use crate::core::{IntCst, Lit, Var};
+use crate::core::{Lit, Var};
 use crate::lang::ValidityScope;
 use crate::model::{Label, Model};
 use crate::prelude::{Conjunction, Dom, LinSum, Solution};
@@ -143,36 +143,6 @@ impl Not for ReifExpr {
             LinearEq(lin) => LinearNeq(lin),
             LinearNeq(lin) => LinearEq(lin),
         }
-    }
-}
-
-/// A difference expression of the form `b - a <= ub` where `a` and `b` are variables.
-#[derive(Ord, PartialOrd, Eq, PartialEq, Hash, Clone)]
-pub struct DifferenceExpression {
-    pub b: Var,
-    pub a: Var,
-    pub ub: IntCst,
-}
-
-impl DifferenceExpression {
-    pub fn new(b: Var, a: Var, ub: IntCst) -> Self {
-        assert_ne!(b, Var::ZERO);
-        assert_ne!(a, Var::ZERO);
-        DifferenceExpression { b, a, ub }
-    }
-}
-
-impl Debug for DifferenceExpression {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} <= {:?} + {}", self.b, self.a, self.ub)
-    }
-}
-
-impl Not for DifferenceExpression {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
-        DifferenceExpression::new(self.a, self.b, -self.ub - 1)
     }
 }
 
