@@ -1,12 +1,8 @@
 use std::ops::Not;
 
-use aries_solver::{
-    lang::{expr::*, Store},
-    reif::DifferenceExpression,
-};
+use aries_solver::lang::{expr::*, Store};
 
 use crate::legacy::*;
-use aries_env_param::EnvParam;
 use aries_solver::{
     model::{Label, Model},
     prelude::*,
@@ -14,8 +10,6 @@ use aries_solver::{
 };
 use itertools::*;
 use smallvec::*;
-
-static USE_EQUALITY_LOGIC: EnvParam<bool> = EnvParam::new("ARIES_USE_EQ_LOGIC", "false");
 
 pub fn eq(lhs: impl Into<Atom>, rhs: impl Into<Atom>) -> Eq {
     let lhs = lhs.into();
@@ -66,32 +60,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
                     and([lr, rl]).into()
                 }
                 (Int(a), Int(b)) => int_eq(a, b, model),
-                (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
-                    int_eq(a.int_view().unwrap(), b.int_view().unwrap(), model)
-                }
-                (Sym(va), Sym(vb)) => match (va, vb) {
-                    (SAtom::Var(a), SAtom::Var(b)) => {
-                        if a.var <= b.var {
-                            ReifExpr::Eq(a.var, b.var)
-                        } else {
-                            ReifExpr::Eq(b.var, a.var)
-                        }
-                    }
-                    (SAtom::Cst(a), SAtom::Cst(b)) => {
-                        let l = if a == b { Lit::TRUE } else { Lit::FALSE };
-                        ReifExpr::Lit(l)
-                    }
-                    (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
-                        let var = x.var;
-                        let value = v.sym.int_value();
-                        let (lb, ub) = model.state.bounds(var);
-                        if (lb..=ub).contains(&value) {
-                            ReifExpr::EqVal(x.var, v.sym.int_value())
-                        } else {
-                            ReifExpr::Lit(Lit::FALSE)
-                        }
-                    }
-                },
+                (Sym(_), Sym(_)) => int_eq(a.int_view().unwrap(), b.int_view().unwrap(), model),
                 (Fixed(a), Fixed(b)) => {
                     debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
                     int_eq(a.num, b.num, model)
@@ -104,7 +73,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
 
 impl Eq {
     /// Returns an equivalent *conjunction* of `ReifExpr`
-    fn as_elementary_constraints<Ctx: Store>(&self, store: &mut Ctx) -> SmallVec<[ReifExpr; 2]> {
+    fn as_elementary_constraints<Ctx: Store>(&self, _store: &mut Ctx) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {
@@ -120,34 +89,11 @@ impl Eq {
                 (Int(a), Int(b)) => {
                     smallvec![leq(a, b).into(), leq(b, a).into()]
                 }
-                (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
+                (Sym(_), Sym(_)) => {
                     let a = a.int_view().unwrap();
                     let b = b.int_view().unwrap();
                     smallvec![leq(a, b).into(), leq(b, a).into()]
                 }
-                (Sym(va), Sym(vb)) => match (va, vb) {
-                    (SAtom::Var(a), SAtom::Var(b)) => {
-                        if a.var <= b.var {
-                            smallvec![ReifExpr::Eq(a.var, b.var)]
-                        } else {
-                            smallvec![ReifExpr::Eq(b.var, a.var)]
-                        }
-                    }
-                    (SAtom::Cst(a), SAtom::Cst(b)) => {
-                        let l2 = if a == b { Lit::TRUE } else { Lit::FALSE };
-                        smallvec![l2.into()]
-                    }
-                    (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
-                        let var = x.var;
-                        let value = v.sym.int_value();
-                        let (lb, ub) = store.bounds(var);
-                        if (lb..=ub).contains(&value) {
-                            smallvec![ReifExpr::EqVal(x.var, v.sym.int_value())]
-                        } else {
-                            smallvec![Lit::FALSE.into()]
-                        }
-                    }
-                },
                 (Fixed(a), Fixed(b)) => {
                     debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
                     smallvec![leq(a.num, b.num).into(), leq(b.num, a.num).into()]
@@ -196,7 +142,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Neq {
 
 impl Neq {
     /// Returns an equivalent *disjunction* of `ReifExpr`
-    pub fn as_elementary_disjuncts<Ctx: Store>(&self, store: &Ctx) -> SmallVec<[ReifExpr; 2]> {
+    pub fn as_elementary_disjuncts<Ctx: Store>(&self, _store: &Ctx) -> SmallVec<[ReifExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[ReifExpr; 2]> = if a == b {
@@ -215,34 +161,11 @@ impl Neq {
                 (Int(a), Int(b)) => {
                     smallvec![lt(a, b).into(), lt(b, a).into()] // note: exclusive
                 }
-                (Sym(_), Sym(_)) if !USE_EQUALITY_LOGIC.get() => {
+                (Sym(_), Sym(_)) => {
                     let a = a.int_view().unwrap();
                     let b = b.int_view().unwrap();
                     smallvec![lt(a, b).into(), lt(b, a).into()] // note: exclusive
                 }
-                (Sym(va), Sym(vb)) => match (va, vb) {
-                    (SAtom::Var(a), SAtom::Var(b)) => {
-                        if a.var <= b.var {
-                            smallvec![ReifExpr::Neq(a.var, b.var)]
-                        } else {
-                            smallvec![ReifExpr::Neq(b.var, a.var)]
-                        }
-                    }
-                    (SAtom::Cst(a), SAtom::Cst(b)) => {
-                        let l2 = if a != b { Lit::TRUE } else { Lit::FALSE };
-                        smallvec![ReifExpr::Lit(l2)]
-                    }
-                    (SAtom::Var(x), SAtom::Cst(v)) | (SAtom::Cst(v), SAtom::Var(x)) => {
-                        let var = x.var;
-                        let value = v.sym.int_value();
-                        let (lb, ub) = store.bounds(var);
-                        if (lb..=ub).contains(&value) {
-                            smallvec![ReifExpr::NeqVal(x.var, v.sym.int_value())]
-                        } else {
-                            smallvec![ReifExpr::Lit(Lit::TRUE)]
-                        }
-                    }
-                },
                 (Fixed(a), Fixed(b)) => {
                     debug_assert_eq!(a.denom, b.denom); // should be guarded by the kind comparison
                     smallvec![lt(a.num, b.num).into(), gt(a.num, b.num).into()]
@@ -337,7 +260,7 @@ impl From<Leq> for ReifExpr {
             // 0 <= rhs + rhs_add   <=>  -rhs_add <= rhs
             Lit::geq(rhs, -rhs_add).into()
         } else {
-            ReifExpr::MaxDiff(DifferenceExpression::new(lhs, rhs, rhs_add))
+            aries_solver::prelude::leq(lhs, rhs + rhs_add).into()
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::core::literals::Disjunction;
-use crate::core::state::{Evaluable, OptDomain};
+use crate::core::state::Evaluable;
 use crate::core::{IntCst, Lit, Var};
 use crate::lang::ValidityScope;
 use crate::model::{Label, Model};
@@ -20,11 +20,6 @@ impl<Lbl: Label, Expr: Into<ReifExpr>> Reifiable<Lbl> for Expr {
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 pub enum ReifExpr {
     Lit(Lit),
-    MaxDiff(DifferenceExpression),
-    Eq(Var, Var),
-    Neq(Var, Var),
-    EqVal(Var, IntCst),
-    NeqVal(Var, IntCst),
     /// Requires that at least one of a set of literal is true.
     Or(Disjunction),
     /// Requires that all literals of a set are true.
@@ -41,11 +36,6 @@ impl std::fmt::Display for ReifExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             ReifExpr::Lit(l) => write!(f, "{l:?}"),
-            ReifExpr::MaxDiff(md) => write!(f, "{md:?}"),
-            ReifExpr::Eq(a, b) => write!(f, "({a:?} = {b:?}"),
-            ReifExpr::Neq(a, b) => write!(f, "({a:?} != {b:?}"),
-            ReifExpr::EqVal(a, b) => write!(f, "({a:?} = {b:?}"),
-            ReifExpr::NeqVal(a, b) => write!(f, "({a:?} != {b:?}"),
             ReifExpr::Or(or) => write!(f, "or{or:?}"),
             ReifExpr::And(and) => write!(f, "and{and:?}"),
             ReifExpr::LinearLeq(l) => write!(f, "{l} <= 0"),
@@ -59,11 +49,6 @@ impl ReifExpr {
     pub fn scope(&self, presence: impl Fn(Var) -> Lit) -> ValidityScope {
         match self {
             ReifExpr::Lit(l) => ValidityScope::new([presence(l.variable())], []),
-            ReifExpr::MaxDiff(diff) => ValidityScope::new([presence(diff.b), presence(diff.a)], []),
-            ReifExpr::Eq(a, b) => ValidityScope::new([presence(*a), presence(*b)], []),
-            ReifExpr::Neq(a, b) => ValidityScope::new([presence(*a), presence(*b)], []),
-            ReifExpr::EqVal(a, _) => ValidityScope::new([presence(*a)], []),
-            ReifExpr::NeqVal(a, _) => ValidityScope::new([presence(*a)], []),
             ReifExpr::Or(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals.iter().filter(|l| presence(l.variable()) == Lit::TRUE),
@@ -83,49 +68,10 @@ impl ReifExpr {
 
     pub fn eval(&self, assignment: &Solution) -> Option<bool> {
         let prez = |var| assignment.present(var).unwrap();
-        let value = |var| match assignment.opt_domain_of(var) {
-            OptDomain::Present(lb, ub) if lb == ub => lb,
-            _ => panic!(),
-        };
         match &self {
             ReifExpr::Lit(l) => {
                 if prez(l.variable()) {
                     Some(assignment.value_of(*l).unwrap())
-                } else {
-                    None
-                }
-            }
-            ReifExpr::MaxDiff(diff) => {
-                if prez(diff.b) && prez(diff.a) {
-                    Some(value(diff.b) - value(diff.a) <= diff.ub)
-                } else {
-                    None
-                }
-            }
-            ReifExpr::Eq(a, b) => {
-                if prez(*a) && prez(*b) {
-                    Some(value(*a) == value(*b))
-                } else {
-                    None
-                }
-            }
-            ReifExpr::Neq(a, b) => {
-                if prez(*a) && prez(*b) {
-                    Some(value(*a) != value(*b))
-                } else {
-                    None
-                }
-            }
-            ReifExpr::EqVal(a, b) => {
-                if prez(*a) {
-                    Some(value(*a) == *b)
-                } else {
-                    None
-                }
-            }
-            ReifExpr::NeqVal(a, b) => {
-                if prez(*a) {
-                    Some(value(*a) != *b)
                 } else {
                     None
                 }
@@ -191,11 +137,6 @@ impl Not for ReifExpr {
         use ReifExpr::*;
         match self {
             Lit(l) => Lit(!l),
-            MaxDiff(diff) => MaxDiff(!diff),
-            Eq(a, b) => Neq(a, b),
-            Neq(a, b) => Eq(a, b),
-            EqVal(a, b) => NeqVal(a, b),
-            NeqVal(a, b) => EqVal(a, b),
             Or(lits) => And(!lits),
             And(lits) => Or(!lits),
             LinearLeq(lin) => LinearLeq(-lin + 1), // lin > 0 <=> -lin < 0 <=> -lin +1 <= 0

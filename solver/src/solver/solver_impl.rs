@@ -11,7 +11,7 @@ use crate::model::extensions::DisjunctionExt;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
-use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
+use crate::reif::{ReifExpr, Reifiable};
 use crate::solver::musmcs::MusMcsEnumerator;
 use crate::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
@@ -215,48 +215,6 @@ impl<Lbl: Label> Solver<Lbl> {
                 self.add_clause([!enabler, lit], scope)?; // value => lit
                 Ok(())
             }
-            ReifExpr::MaxDiff(diff) => {
-                let rhs = diff.a;
-                let rhs_add = diff.ub;
-                let lhs = diff.b;
-                self.reasoners
-                    .diff
-                    .add_half_reified_edge(enabler, rhs, lhs, rhs_add, &self.model.state);
-                Ok(())
-            }
-            ReifExpr::Eq(a, b) => {
-                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::Neq(a, b) => {
-                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::EqVal(a, b) => {
-                let (lb, ub) = self.model.state.bounds(*a);
-                let lit = if (lb..=ub).contains(b) {
-                    self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
-                } else {
-                    Lit::FALSE
-                };
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::NeqVal(a, b) => {
-                let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
             ReifExpr::Or(disjuncts) => {
                 if self.model.entails(enabler) {
                     self.add_clause(disjuncts, scope)
@@ -303,11 +261,14 @@ impl<Lbl: Label> Solver<Lbl> {
                         debug_assert!(factor > 0);
                         // cst + factor *(b - a) <= 0
                         // (b - a) <= -cst / factor
-                        Some(ReifExpr::MaxDiff(DifferenceExpression {
-                            b,
+                        self.reasoners.diff.add_half_reified_edge(
+                            enabler,
                             a,
-                            ub: num_integer::div_floor(-cst, factor),
-                        }))
+                            b,
+                            num_integer::div_floor(-cst, factor),
+                            &self.model.state,
+                        );
+                        Some(ReifExpr::Lit(Lit::TRUE)) // we already enforced it, nothing else to do so we provide tautology
                     } else {
                         None
                     }

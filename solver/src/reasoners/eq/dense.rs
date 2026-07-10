@@ -6,7 +6,6 @@ use crate::model::{Label, Model};
 use crate::prelude::Dom;
 use crate::reasoners::eq::domain;
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
-use crate::reif::ReifExpr;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
@@ -900,25 +899,26 @@ impl<L: Label> ReifyEq for Model<L> {
         }
     }
 
-    fn reify_eq(&mut self, a: Node, b: Node) -> Lit {
-        use Node::*;
-        match (a, b) {
-            (Var(a), Var(b)) => {
-                let e = if a < b { ReifExpr::Eq(a, b) } else { ReifExpr::Eq(b, a) };
-                self.reify_core(e, false)
-            }
-            (Var(a), Val(b)) | (Val(b), Var(a)) => {
-                let e = ReifExpr::EqVal(a, b);
-                self.reify_core(e, false)
-            }
-            (Val(a), Val(b)) => {
-                if a == b {
-                    Lit::TRUE
-                } else {
-                    Lit::FALSE
-                }
-            }
-        }
+    fn reify_eq(&mut self, _a: Node, _b: Node) -> Lit {
+        todo!()
+        // use Node::*;
+        // match (a, b) {
+        //     (Var(a), Var(b)) => {
+        //         let e = if a < b { ReifExpr::Eq(a, b) } else { ReifExpr::Eq(b, a) };
+        //         self.reify_core(e, false)
+        //     }
+        //     (Var(a), Val(b)) | (Val(b), Var(a)) => {
+        //         let e = ReifExpr::EqVal(a, b);
+        //         self.reify_core(e, false)
+        //     }
+        //     (Val(a), Val(b)) => {
+        //         if a == b {
+        //             Lit::TRUE
+        //         } else {
+        //             Lit::FALSE
+        //         }
+        //     }
+        // }
     }
 
     fn presence_implication(&self, a: Var, b: Var) -> Lit {

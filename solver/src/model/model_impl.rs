@@ -361,26 +361,6 @@ impl<Lbl: Label> Model<Lbl> {
                     _ => {}
                 }
             }
-            ReifExpr::Eq(v1, v2) => {
-                if v1 < v2 {
-                    std::mem::swap(v1, v2);
-                }
-                let (lb1, ub1) = self.state.bounds(*v1);
-                let (lb2, ub2) = self.state.bounds(*v2);
-                if ub1 < lb2 || ub2 < lb1 {
-                    *expr = ReifExpr::Lit(Lit::FALSE);
-                } else if lb1 == ub1 && ub1 == lb2 && lb2 == ub2 {
-                    *expr = ReifExpr::Lit(Lit::TRUE);
-                }
-            }
-            ReifExpr::EqVal(v1, v2) => {
-                let (lb, ub) = self.state.bounds(*v1);
-                if *v2 < lb || *v2 > ub {
-                    *expr = ReifExpr::Lit(Lit::FALSE)
-                } else if *v2 == lb && *v2 == ub {
-                    *expr = ReifExpr::Lit(Lit::TRUE)
-                }
-            }
             // linear sums are always  simplified and in canonical form
             _ => {}
         }
