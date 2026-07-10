@@ -1,10 +1,7 @@
 use crate::prelude::*;
 
 use crate::core::literals::Lits;
-use crate::lang::linear::ScaledVar;
 use crate::lang::{BoolExpr, IAtom, Store};
-use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
-use itertools::Itertools;
 
 /// The `alternative` constraint, that imposes that exactly one of the `alternative` element will be selected to decide the `main` value.
 ///
@@ -15,11 +12,11 @@ use itertools::Itertools;
 ///
 /// This original constraint is traditionally state on intervals, where as here it is stated on normal variables.
 ///
-/// See: [`crate::lang::expr::alternative`] for instanciation.
+/// See: [`crate::lang::expr::alternative`] for instantiation.
 ///
 /// TODO:
-///  - the constraint could be generalized to other variable types (Var, Linterm, ...)
-///  - a version specialized for intervals may be useful (it is a common expecteation in scheduling solver, but it would
+///  - the constraint could be generalized to other variable types (Var, LinTerm, ...)
+///  - a version specialized for intervals may be useful (it is a common expectation in scheduling solver, but it would
 ///    require introducing built-in interval variable types which at this point is not considered)
 #[derive(Clone)]
 pub struct Alternative {
@@ -53,45 +50,13 @@ impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
         or(presences).enforce_if(implicant, ctx);
 
         for &alt in &a.alternatives {
-            // debug_assert!(self.model.state.implies(alt_scope, scope));
-
             // lhs = alt (when alt is present)
             eq(alt, self.main).opt_enforce_if(implicant, ctx);
         }
 
-        // ub(main + cst) <- max_i { ub(var_i) | prez_i }
-        // ub(main) <- max_i { ub(var_i) - cst | prez_i }
-        ctx.enforce_user_propagator(AtLeastOneGeq {
-            scope: ctx.presence(implicant),
-            active: implicant,
-            lhs: IAtom::from(a.main.var),
-            elements: a
-                .alternatives
-                .iter()
-                .map(|alt| MaxElem::new(*alt - a.main.shift, ctx.presence(alt.var)))
-                .collect_vec(),
-        });
-
-        //  lb(main + cst)  <-   min_i {  lb(var_i) | prez_i }
-        //  lb(main)  <-   min_i {  lb(var_i) - cst| prez_i }
-        // -ub(-main) <-   min_i { -ub(-var_i) - cst | prez_i }
-        // -ub(-main) <- - max_i {  ub(-var_i) + cst | prez_i }
-        //  ub(-main) <-   max_i {  ub(-var_i) + cst | prez_i }
-        ctx.enforce_user_propagator(AtLeastOneGeq {
-            scope: ctx.presence(implicant),
-            active: implicant,
-            lhs: LinTerm::from(-a.main.var),
-            elements: a
-                .alternatives
-                .iter()
-                .map(|alt| {
-                    MaxElem::new(
-                        LinTerm::new(ScaledVar::new(alt.var, -1), -alt.shift + a.main.shift),
-                        ctx.presence(alt.var),
-                    )
-                })
-                .collect_vec(),
-        });
+        // redundant constraints that provide stronger propagation by tightening the upper and lower bounds
+        eq_max(self.main, self.alternatives.iter().copied()).enforce_if(implicant, ctx);
+        eq_min(self.main, self.alternatives.iter().copied()).enforce_if(implicant, ctx);
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
