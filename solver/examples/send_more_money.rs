@@ -10,7 +10,7 @@ The first letter of each word is not zero.
 Returns an option of a Vec with each letter from the problem and its value. Or None if no solution was found.
  */
 
-fn solve(problem: &str) -> Option<Vec<(char, i32)>> {
+fn solve(problem: &str) -> Option<Vec<(char, usize)>> {
     let mut model = Model::new();
 
     //decision variables
@@ -28,14 +28,13 @@ fn solve(problem: &str) -> Option<Vec<(char, i32)>> {
             pos_equal = i;
         } else {
             //Other than + and =, the characters must be uppercase letters
-            assert!(byte >= b'A' && byte <= b'Z');
+            assert!(byte.is_ascii_uppercase());
             if i == 0 || (i == pos_plus + 1 || i == pos_equal + 1) && i != 1 {
-                vars.insert(byte, model.new_variable(1, 9)); //can replace a variable ranged [0,9]
+                //can replace a variable ranged [0,9]
+                vars.insert(byte, model.new_variable(1, 9));
             } else {
-                if !vars.contains_key(&byte) {
-                    //otherwise byte can replace a variable ranged [1,9]
-                    vars.insert(byte, model.new_variable(0, 9));
-                }
+                //can't replace a variable ranged [1,9]
+                vars.entry(byte).or_insert_with(|| model.new_variable(0, 9));
             }
         }
     }
@@ -67,10 +66,13 @@ fn solve(problem: &str) -> Option<Vec<(char, i32)>> {
     match solver.solve(SearchLimit::None) {
         Ok(Some(solution)) => {
             //converts the solution into readable format
-            let mut vars_values: Vec<(char, i32)> = Vec::new();
+            let mut vars_solved: Vec<(char, usize)> = Vec::new();
             for &byte in bytes.iter() {
                 if byte != b'+' && byte != b'=' {
-                    vars_values.push((byte as char, solution.eval(vars[&byte]).unwrap()));
+                    vars_solved.push((
+                        byte as char,
+                        solution.eval(vars[&byte]).expect("All letters should have a value.") as usize,
+                    ));
                 }
             }
 
@@ -78,10 +80,10 @@ fn solve(problem: &str) -> Option<Vec<(char, i32)>> {
                 pos_plus,
                 pos_equal - pos_plus - 1,
                 bytes.len() - pos_equal - 1,
-                &vars_values,
+                &vars_solved,
             );
 
-            Some(vars_values)
+            Some(vars_solved)
         }
         Ok(None) => {
             println!("No solution.\n");
@@ -104,7 +106,7 @@ fn print_problem(len1: usize, len2: usize, len3: usize, bytes: &[u8]) {
         //1st line padding
         print!(" ");
     }
-    for i in 0..bytes.len() {
+    for (i, byte) in bytes.iter().enumerate() {
         if i == len1 {
             println!();
             print!("+ ");
@@ -120,18 +122,18 @@ fn print_problem(len1: usize, len2: usize, len3: usize, bytes: &[u8]) {
                 print!(" ");
             }
         } else {
-            print!("{}", bytes[i] as char);
+            print!("{}", *byte as char);
         }
     }
     println!();
     println!();
 }
 
-fn print_solution(len1: usize, len2: usize, len3: usize, vars_values: &Vec<(char, i32)>) {
+fn print_solution(len1: usize, len2: usize, len3: usize, vars_solved: &[(char, usize)]) {
     println!("Solution:");
     let max_len = len1.max(len2.max(len3));
 
-    for i in 0..len1 + len2 + len3 {
+    for (i, value) in vars_solved.iter().enumerate() {
         if i == 0 {
             for _i in 0..max_len - len1 + 2 {
                 //1st line padding
@@ -152,7 +154,7 @@ fn print_solution(len1: usize, len2: usize, len3: usize, vars_values: &Vec<(char
                 print!(" ");
             }
         }
-        print!("{}", vars_values[i].1);
+        print!("{}", value.1);
     }
     println!();
     println!();
@@ -164,7 +166,7 @@ mod test {
 
     #[test]
     fn test_send_more_money() {
-        let sol: Vec<(char, i32)> = vec![
+        let sol: Vec<(char, usize)> = vec![
             ('S', 9),
             ('E', 5),
             ('N', 6),
@@ -179,7 +181,7 @@ mod test {
             ('E', 5),
             ('Y', 2),
         ];
-        assert_eq!(solve("SEND+MORE=MONEY").unwrap(), sol);
+        assert_eq!(solve("SEND+MORE=MONEY").expect("Should have a solution."), sol);
     }
 
     #[test]
