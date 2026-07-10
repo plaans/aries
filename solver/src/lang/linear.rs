@@ -4,9 +4,8 @@ use smallvec::SmallVec;
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
-use crate::lang::{BoolExpr, IntExpr, Store};
+use crate::lang::{BoolExpr, CoreExpr, IntExpr, Store};
 use crate::prelude::Conjunction;
-use crate::reif::CoreExpr;
 use std::fmt::{Debug, Display};
 
 /* ========================================================================== */

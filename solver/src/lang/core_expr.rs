@@ -149,7 +149,7 @@ impl Not for CoreExpr {
 
 #[cfg(test)]
 mod test {
-    use crate::{core::Lit, reif::CoreExpr};
+    use crate::{core::Lit, lang::CoreExpr};
 
     #[test]
     fn test_reif_expr_size() {

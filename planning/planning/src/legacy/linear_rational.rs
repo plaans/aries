@@ -4,7 +4,7 @@ use std::fmt::Display;
 use crate::legacy::*;
 use aries_solver::core::state::Evaluable;
 use aries_solver::lang::{linear::*, Store};
-use aries_solver::{prelude::*, reif::CoreExpr};
+use aries_solver::{lang::CoreExpr, prelude::*};
 use num_integer::lcm;
 /* ========================================================================== */
 /*                                  LinearLeq                                 */

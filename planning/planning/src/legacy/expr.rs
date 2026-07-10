@@ -4,9 +4,9 @@ use aries_solver::lang::{expr::*, Store};
 
 use crate::legacy::*;
 use aries_solver::{
+    lang::{CoreExpr, Reifiable},
     model::{Label, Model},
     prelude::*,
-    reif::{CoreExpr, Reifiable},
 };
 use itertools::*;
 use smallvec::*;

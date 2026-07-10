@@ -1,5 +1,4 @@
-use crate::core::*;
-use crate::reif::CoreExpr;
+use crate::{core::*, lang::CoreExpr};
 use hashbrown::HashMap;
 
 /// A structure to keep track of all reification of expressions.

@@ -10,10 +10,10 @@ use crate::core::*;
 use crate::lang::expr::or;
 use crate::lang::reification::Reification;
 use crate::lang::*;
+use crate::lang::{CoreExpr, Reifiable};
 use crate::model::label::{Label, VariableLabels};
 use crate::model::model_impl::scopes::Scopes;
 use crate::reasoners::cp::UserPropagator;
-use crate::reif::{CoreExpr, Reifiable};
 
 mod scopes;
 

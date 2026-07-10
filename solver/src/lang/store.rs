@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use crate::lang::CoreExpr;
 use crate::model::Model;
 use crate::{
     backtrack::DecLvl,
@@ -7,7 +8,6 @@ use crate::{
     model::Label,
     prelude::*,
     reasoners::cp::UserPropagator,
-    reif::CoreExpr,
 };
 
 /// Trait that abstracts the core capabilities of a mutable [`Model`] and used as backend for posting constraints

@@ -65,6 +65,7 @@ use linear::*;
 mod bool_expr;
 mod boolean;
 pub mod constraints;
+mod core_expr;
 pub mod exclusive_choice;
 pub mod expr;
 mod int;
@@ -80,6 +81,8 @@ pub use crate::core::Lit;
 pub use crate::core::Var;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
+pub use core_expr::CoreExpr;
+pub use core_expr::Reifiable; // TODO: undesirable
 pub use int::IAtom;
 pub use int_expr::IntExpr;
 pub use store::{ModelWrapper, Store};

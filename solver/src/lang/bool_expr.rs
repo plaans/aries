@@ -1,11 +1,11 @@
 use crate::{
+    lang::CoreExpr,
     lang::{
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
         *,
     },
     prelude::*,
-    reif::CoreExpr,
 };
 
 /// Representation of a boolean expression, that can be reified, made conditional or enforced
