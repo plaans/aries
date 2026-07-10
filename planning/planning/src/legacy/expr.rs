@@ -6,7 +6,7 @@ use crate::legacy::*;
 use aries_solver::{
     model::{Label, Model},
     prelude::*,
-    reif::{ReifExpr, Reifiable},
+    reif::{CoreExpr, Reifiable},
 };
 use itertools::*;
 use smallvec::*;
@@ -44,7 +44,7 @@ impl Not for &Eq {
 }
 
 impl<Lbl: Label> Reifiable<Lbl> for Eq {
-    fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
+    fn decompose(self, model: &mut Model<Lbl>) -> CoreExpr {
         let a = self.0;
         let b = self.1;
         if a == b {
@@ -73,10 +73,10 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
 
 impl Eq {
     /// Returns an equivalent *conjunction* of `ReifExpr`
-    fn as_elementary_constraints<Ctx: Store>(&self, _store: &mut Ctx) -> SmallVec<[ReifExpr; 2]> {
+    fn as_elementary_constraints<Ctx: Store>(&self, _store: &mut Ctx) -> SmallVec<[CoreExpr; 2]> {
         let a = self.0;
         let b = self.1;
-        let subs: SmallVec<[ReifExpr; 2]> = if a == b {
+        let subs: SmallVec<[CoreExpr; 2]> = if a == b {
             smallvec![]
         } else if a.kind() != b.kind() {
             panic!("Attempting to build an equality between expression with incompatible types.");
@@ -114,7 +114,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Eq {
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
         let elems = self.as_elementary_constraints(ctx);
-        if elems.contains(&ReifExpr::Lit(Lit::FALSE)) {
+        if elems.contains(&CoreExpr::Lit(Lit::FALSE)) {
             return Lit::FALSE;
         }
         let conjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
@@ -126,7 +126,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Eq {
     }
 }
 
-fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> ReifExpr {
+fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> CoreExpr {
     let lr = model.reify(leq(a, b));
     let rl = model.reify(leq(b, a));
     and([lr, rl]).into()
@@ -135,17 +135,17 @@ fn int_eq<Lbl: Label>(a: IAtom, b: IAtom, model: &mut Model<Lbl>) -> ReifExpr {
 pub struct Neq(Atom, Atom);
 
 impl<Lbl: Label> Reifiable<Lbl> for Neq {
-    fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr {
+    fn decompose(self, model: &mut Model<Lbl>) -> CoreExpr {
         !eq(self.0, self.1).decompose(model)
     }
 }
 
 impl Neq {
     /// Returns an equivalent *disjunction* of `ReifExpr`
-    pub fn as_elementary_disjuncts<Ctx: Store>(&self, _store: &Ctx) -> SmallVec<[ReifExpr; 2]> {
+    pub fn as_elementary_disjuncts<Ctx: Store>(&self, _store: &Ctx) -> SmallVec<[CoreExpr; 2]> {
         let a = self.0;
         let b = self.1;
-        let subs: SmallVec<[ReifExpr; 2]> = if a == b {
+        let subs: SmallVec<[CoreExpr; 2]> = if a == b {
             smallvec![Lit::FALSE.into()]
         } else if a.kind() != b.kind() {
             panic!("Attempting to build an equality between expression with incompatible types.");
@@ -185,7 +185,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for Neq {
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
         let elems = self.as_elementary_disjuncts(ctx);
-        if elems.contains(&ReifExpr::Lit(Lit::TRUE)) {
+        if elems.contains(&CoreExpr::Lit(Lit::TRUE)) {
             return Lit::TRUE;
         }
         let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();
@@ -236,7 +236,7 @@ impl Not for &Leq {
     }
 }
 
-impl From<Leq> for ReifExpr {
+impl From<Leq> for CoreExpr {
     fn from(value: Leq) -> Self {
         let lhs = value.0;
         let rhs = value.1;

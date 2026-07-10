@@ -4,7 +4,7 @@ use std::fmt::Display;
 use crate::legacy::*;
 use aries_solver::core::state::Evaluable;
 use aries_solver::lang::{linear::*, Store};
-use aries_solver::{prelude::*, reif::ReifExpr};
+use aries_solver::{prelude::*, reif::CoreExpr};
 use num_integer::lcm;
 /* ========================================================================== */
 /*                                  LinearLeq                                 */
@@ -37,14 +37,14 @@ impl LinearLeq {
 }
 
 // TODO: this is very suboptimal and misses many potential optimizations (e.g. 0 <= 0 should yield Lit::TRUE)
-impl From<LinearLeq> for ReifExpr {
+impl From<LinearLeq> for CoreExpr {
     fn from(value: LinearLeq) -> Self {
-        ReifExpr::from(&value)
+        CoreExpr::from(&value)
     }
 }
-impl From<&LinearLeq> for ReifExpr {
+impl From<&LinearLeq> for CoreExpr {
     fn from(value: &LinearLeq) -> Self {
-        ReifExpr::LinearLeq(LinSum::new(
+        CoreExpr::LinearLeq(LinSum::new(
             value.sum.constant - value.ub,
             value.sum.terms().iter().map(|t| ScaledVar {
                 var: t.var,
@@ -55,11 +55,11 @@ impl From<&LinearLeq> for ReifExpr {
 }
 impl<Ctx: Store> BoolExpr<Ctx> for LinearLeq {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
-        ReifExpr::from(self).enforce_if(implicant, ctx);
+        CoreExpr::from(self).enforce_if(implicant, ctx);
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        ReifExpr::from(self).conj_scope(ctx)
+        CoreExpr::from(self).conj_scope(ctx)
     }
 }
 

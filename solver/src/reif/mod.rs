@@ -8,17 +8,18 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Not;
 
 pub trait Reifiable<Lbl> {
-    fn decompose(self, model: &mut Model<Lbl>) -> ReifExpr;
+    fn decompose(self, model: &mut Model<Lbl>) -> CoreExpr;
 }
 
-impl<Lbl: Label, Expr: Into<ReifExpr>> Reifiable<Lbl> for Expr {
-    fn decompose(self, _: &mut Model<Lbl>) -> ReifExpr {
+impl<Lbl: Label, Expr: Into<CoreExpr>> Reifiable<Lbl> for Expr {
+    fn decompose(self, _: &mut Model<Lbl>) -> CoreExpr {
         self.into()
     }
 }
 
+/// The core boolean expressions supported by the solver.
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
-pub enum ReifExpr {
+pub enum CoreExpr {
     Lit(Lit),
     /// Requires that at least one of a set of literal is true.
     Or(Disjunction),
@@ -32,35 +33,35 @@ pub enum ReifExpr {
     LinearNeq(LinSum),
 }
 
-impl std::fmt::Display for ReifExpr {
+impl std::fmt::Display for CoreExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ReifExpr::Lit(l) => write!(f, "{l:?}"),
-            ReifExpr::Or(or) => write!(f, "or{or:?}"),
-            ReifExpr::And(and) => write!(f, "and{and:?}"),
-            ReifExpr::LinearLeq(l) => write!(f, "{l} <= 0"),
-            ReifExpr::LinearEq(l) => write!(f, "{l} = 0"),
-            ReifExpr::LinearNeq(l) => write!(f, "{l} != 0"),
+            CoreExpr::Lit(l) => write!(f, "{l:?}"),
+            CoreExpr::Or(or) => write!(f, "or{or:?}"),
+            CoreExpr::And(and) => write!(f, "and{and:?}"),
+            CoreExpr::LinearLeq(l) => write!(f, "{l} <= 0"),
+            CoreExpr::LinearEq(l) => write!(f, "{l} = 0"),
+            CoreExpr::LinearNeq(l) => write!(f, "{l} != 0"),
         }
     }
 }
 
-impl ReifExpr {
+impl CoreExpr {
     pub fn scope(&self, presence: impl Fn(Var) -> Lit) -> ValidityScope {
         match self {
-            ReifExpr::Lit(l) => ValidityScope::new([presence(l.variable())], []),
-            ReifExpr::Or(literals) => ValidityScope::new(
+            CoreExpr::Lit(l) => ValidityScope::new([presence(l.variable())], []),
+            CoreExpr::Or(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals.iter().filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
-            ReifExpr::And(literals) => ValidityScope::new(
+            CoreExpr::And(literals) => ValidityScope::new(
                 literals.iter().map(|l| presence(l.variable())),
                 literals
                     .iter()
                     .map(|l| !l)
                     .filter(|l| presence(l.variable()) == Lit::TRUE),
             ),
-            ReifExpr::LinearLeq(lin) | ReifExpr::LinearEq(lin) | ReifExpr::LinearNeq(lin) => {
+            CoreExpr::LinearLeq(lin) | CoreExpr::LinearEq(lin) | CoreExpr::LinearNeq(lin) => {
                 ValidityScope::new(lin.variables().map(presence), [])
             }
         }
@@ -69,14 +70,14 @@ impl ReifExpr {
     pub fn eval(&self, assignment: &Solution) -> Option<bool> {
         let prez = |var| assignment.present(var).unwrap();
         match &self {
-            ReifExpr::Lit(l) => {
+            CoreExpr::Lit(l) => {
                 if prez(l.variable()) {
                     Some(assignment.value_of(*l).unwrap())
                 } else {
                     None
                 }
             }
-            ReifExpr::Or(lits) => {
+            CoreExpr::Or(lits) => {
                 for l in lits {
                     if prez(l.variable()) && assignment.entails(l) {
                         return Some(true);
@@ -88,53 +89,53 @@ impl ReifExpr {
                 assert!(lits.iter().any(|l| !prez(l.variable())));
                 None
             }
-            ReifExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
-            ReifExpr::LinearLeq(lin) => lin.evaluate(assignment).map(|value| value <= 0),
-            ReifExpr::LinearEq(lin) => lin.evaluate(assignment).map(|value| value == 0),
-            ReifExpr::LinearNeq(lin) => lin.evaluate(assignment).map(|value| value != 0),
+            CoreExpr::And(_) => (!self.clone()).eval(assignment).map(|value| !value),
+            CoreExpr::LinearLeq(lin) => lin.evaluate(assignment).map(|value| value <= 0),
+            CoreExpr::LinearEq(lin) => lin.evaluate(assignment).map(|value| value == 0),
+            CoreExpr::LinearNeq(lin) => lin.evaluate(assignment).map(|value| value != 0),
         }
     }
 }
 
-impl From<bool> for ReifExpr {
+impl From<bool> for CoreExpr {
     fn from(value: bool) -> Self {
-        ReifExpr::Lit(value.into())
+        CoreExpr::Lit(value.into())
     }
 }
 
-impl From<Lit> for ReifExpr {
+impl From<Lit> for CoreExpr {
     fn from(value: Lit) -> Self {
-        ReifExpr::Lit(value)
+        CoreExpr::Lit(value)
     }
 }
 
-impl From<Disjunction> for ReifExpr {
+impl From<Disjunction> for CoreExpr {
     fn from(value: Disjunction) -> Self {
         if value.is_tautology() {
-            ReifExpr::Lit(Lit::TRUE)
+            CoreExpr::Lit(Lit::TRUE)
         } else if value.literals().is_empty() {
-            ReifExpr::Lit(Lit::FALSE)
+            CoreExpr::Lit(Lit::FALSE)
         } else if value.literals().len() == 1 {
-            ReifExpr::Lit(*value.literals().first().unwrap())
+            CoreExpr::Lit(*value.literals().first().unwrap())
         } else {
-            ReifExpr::Or(value)
+            CoreExpr::Or(value)
         }
     }
 }
-impl From<Conjunction> for ReifExpr {
+impl From<Conjunction> for CoreExpr {
     fn from(value: Conjunction) -> Self {
         // go through a disjunction to reuse the simplications
         // this may be a bit wasteful and coudl beneift from a direct implementation
         // (but conjunctions are pretty rare in most problems)
-        !ReifExpr::from(!value)
+        !CoreExpr::from(!value)
     }
 }
 
-impl Not for ReifExpr {
+impl Not for CoreExpr {
     type Output = Self;
 
     fn not(self) -> Self::Output {
-        use ReifExpr::*;
+        use CoreExpr::*;
         match self {
             Lit(l) => Lit(!l),
             Or(lits) => And(!lits),
@@ -148,12 +149,12 @@ impl Not for ReifExpr {
 
 #[cfg(test)]
 mod test {
-    use crate::{core::Lit, reif::ReifExpr};
+    use crate::{core::Lit, reif::CoreExpr};
 
     #[test]
     fn test_reif_expr_size() {
         if std::mem::size_of::<Lit>() == 8 {
-            assert_eq!(std::mem::size_of::<ReifExpr>(), 40)
+            assert_eq!(std::mem::size_of::<CoreExpr>(), 40)
         }
     }
 }

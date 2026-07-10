@@ -11,7 +11,7 @@ use crate::model::extensions::DisjunctionExt;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
-use crate::reif::{ReifExpr, Reifiable};
+use crate::reif::{CoreExpr, Reifiable};
 use crate::solver::musmcs::MusMcsEnumerator;
 use crate::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
@@ -211,11 +211,11 @@ impl<Lbl: Label> Solver<Lbl> {
             return Ok(()); // constraint is inactive, ignore
         }
         match constraint {
-            &ReifExpr::Lit(lit) => {
+            &CoreExpr::Lit(lit) => {
                 self.add_clause([!enabler, lit], scope)?; // value => lit
                 Ok(())
             }
-            ReifExpr::Or(disjuncts) => {
+            CoreExpr::Or(disjuncts) => {
                 if self.model.entails(enabler) {
                     self.add_clause(disjuncts, scope)
                 } else {
@@ -230,7 +230,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     Ok(())
                 }
             }
-            ReifExpr::And(conjuncts) => {
+            CoreExpr::And(conjuncts) => {
                 if self.model.entails(!enabler) {
                     // (and a b ...)
                     for lit in conjuncts {
@@ -245,13 +245,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 Ok(())
             }
-            ReifExpr::LinearLeq(lin) => {
+            CoreExpr::LinearLeq(lin) => {
                 let reformulation = if let Some((cst, [])) = lin.extract() {
-                    Some(ReifExpr::Lit((cst <= 0).into()))
+                    Some(CoreExpr::Lit((cst <= 0).into()))
                 } else if let Some((cst, [(f, v)])) = lin.extract() {
                     debug_assert_ne!(f, 0); // should be guaranteed by `LinSum`
                     // cst + f * v <= 0
-                    Some(ReifExpr::Lit((f * v).leq(-cst)))
+                    Some(CoreExpr::Lit((f * v).leq(-cst)))
                 } else if let Some((cst, [(f1, v1), (f2, v2)])) = lin.extract() {
                     debug_assert_ne!(f1, 0); // should be guaranteed by `LinSum`
                     debug_assert_ne!(f2, 0); // should be guaranteed by `LinSum`
@@ -268,7 +268,7 @@ impl<Lbl: Label> Solver<Lbl> {
                             num_integer::div_floor(-cst, factor),
                             &self.model.state,
                         );
-                        Some(ReifExpr::Lit(Lit::TRUE)) // we already enforced it, nothing else to do so we provide tautology
+                        Some(CoreExpr::Lit(Lit::TRUE)) // we already enforced it, nothing else to do so we provide tautology
                     } else {
                         None
                     }
@@ -326,11 +326,11 @@ impl<Lbl: Label> Solver<Lbl> {
                     Ok(())
                 }
             }
-            ReifExpr::LinearEq(lin) => {
-                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(lin.clone()), enabler))?;
-                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(-lin.clone()), enabler))
+            CoreExpr::LinearEq(lin) => {
+                self.post_constraint(&Constraint::HalfReified(CoreExpr::LinearLeq(lin.clone()), enabler))?;
+                self.post_constraint(&Constraint::HalfReified(CoreExpr::LinearLeq(-lin.clone()), enabler))
             }
-            ReifExpr::LinearNeq(lin) => {
+            CoreExpr::LinearNeq(lin) => {
                 let option1 = self.model.half_reify(lin.clone().lt(0));
                 let option2 = self.model.half_reify(lin.clone().gt(0));
                 self.add_clause([!enabler, option1, option2], scope)?;

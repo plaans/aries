@@ -6,7 +6,7 @@ use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
 use crate::lang::{BoolExpr, IntExpr, Store};
 use crate::prelude::Conjunction;
-use crate::reif::ReifExpr;
+use crate::reif::CoreExpr;
 use std::fmt::{Debug, Display};
 
 /* ========================================================================== */
@@ -485,19 +485,19 @@ impl std::ops::Not for &LinLeq {
     }
 }
 
-impl From<LinLeq> for ReifExpr {
+impl From<LinLeq> for CoreExpr {
     fn from(value: LinLeq) -> Self {
-        ReifExpr::LinearLeq(value.0)
+        CoreExpr::LinearLeq(value.0)
     }
 }
-impl From<LinEq> for ReifExpr {
+impl From<LinEq> for CoreExpr {
     fn from(value: LinEq) -> Self {
-        ReifExpr::LinearEq(value.0)
+        CoreExpr::LinearEq(value.0)
     }
 }
-impl From<LinNeq> for ReifExpr {
+impl From<LinNeq> for CoreExpr {
     fn from(value: LinNeq) -> Self {
-        ReifExpr::LinearNeq(value.0)
+        CoreExpr::LinearNeq(value.0)
     }
 }
 

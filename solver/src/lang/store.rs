@@ -7,7 +7,7 @@ use crate::{
     model::Label,
     prelude::*,
     reasoners::cp::UserPropagator,
-    reif::ReifExpr,
+    reif::CoreExpr,
 };
 
 /// Trait that abstracts the core capabilities of a mutable [`Model`] and used as backend for posting constraints
@@ -18,9 +18,9 @@ pub trait Store: Dom {
     fn new_bool_var(&mut self) -> Lit;
     fn new_optional_bool_var(&mut self, presence: Lit) -> Lit;
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var;
-    fn get_implicant(&mut self, e: ReifExpr) -> Lit;
-    fn reify(&mut self, e: ReifExpr) -> Lit;
-    fn add_implies(&mut self, l: Lit, e: ReifExpr);
+    fn get_implicant(&mut self, e: CoreExpr) -> Lit;
+    fn reify(&mut self, e: CoreExpr) -> Lit;
+    fn add_implies(&mut self, l: Lit, e: CoreExpr);
 
     /// Given a set of scope literals, return a (possibly new) scope literal that
     /// exactly represents the intersection of thoses scope.
@@ -131,14 +131,14 @@ where
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
         self.get_model_mut().new_optional_variable(lb, ub, presence)
     }
-    fn get_implicant(&mut self, e: ReifExpr) -> Lit {
+    fn get_implicant(&mut self, e: CoreExpr) -> Lit {
         self.get_model_mut().half_reify(e.clone())
     }
-    fn reify(&mut self, e: ReifExpr) -> Lit {
+    fn reify(&mut self, e: CoreExpr) -> Lit {
         self.get_model_mut().reify_core(e, false)
     }
 
-    fn add_implies(&mut self, l: Lit, e: ReifExpr) {
+    fn add_implies(&mut self, l: Lit, e: CoreExpr) {
         self.get_model_mut().enforce_if(l, e);
     }
 

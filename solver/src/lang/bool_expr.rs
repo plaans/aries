@@ -5,7 +5,7 @@ use crate::{
         *,
     },
     prelude::*,
-    reif::ReifExpr,
+    reif::CoreExpr,
 };
 
 /// Representation of a boolean expression, that can be reified, made conditional or enforced
@@ -100,7 +100,7 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     //TODO: implement all other methods to make sure we use the most specific implementation
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
+impl<Ctx: Store> BoolExpr<Ctx> for CoreExpr {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         ctx.add_implies(l, self.clone());
     }
@@ -111,7 +111,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
         Conjunction::from_iter(conj_scope.literals()) // TODO: remove conversion when StableLitSet = Conjunction`
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
-        if let ReifExpr::Lit(l) = self {
+        if let CoreExpr::Lit(l) = self {
             *l // short circuit happy case
         } else {
             ctx.get_implicant(self.clone())
@@ -125,23 +125,23 @@ macro_rules! impl_reif {
         impl<Ctx: Store> BoolExpr<Ctx> for $A
         where
             $A: Clone,
-            ReifExpr: From<$A>,
+            CoreExpr: From<$A>,
         {
             fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-                ReifExpr::from(self.clone()).enforce_if(l, ctx);
+                CoreExpr::from(self.clone()).enforce_if(l, ctx);
             }
             fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-                ReifExpr::from(self.clone()).conj_scope(ctx)
+                CoreExpr::from(self.clone()).conj_scope(ctx)
             }
             fn implicant(&self, ctx: &mut Ctx) -> Lit {
-                ctx.get_implicant(ReifExpr::from(self.clone()))
+                ctx.get_implicant(CoreExpr::from(self.clone()))
             }
             // TODO: add reification impl
         }
     };
 }
 
-// Derive `impl BoolExpr<_>` for Expression convertible to `ReifExpr`
+// Derive `impl BoolExpr<_>` for Expression convertible to `CoreExpr`
 impl_reif!(Lit);
 impl_reif!(Disjunction);
 impl_reif!(Conjunction);

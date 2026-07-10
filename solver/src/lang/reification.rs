@@ -1,5 +1,5 @@
 use crate::core::*;
-use crate::reif::ReifExpr;
+use crate::reif::CoreExpr;
 use hashbrown::HashMap;
 
 /// A structure to keep track of all reification of expressions.
@@ -8,30 +8,30 @@ use hashbrown::HashMap;
 #[derive(Default, Clone)]
 pub(crate) struct Reification {
     /// Associates each canonical atom to a single literal.
-    full_map: HashMap<ReifExpr, Lit>,
-    full_inv: HashMap<Lit, ReifExpr>,
-    half_map: HashMap<ReifExpr, Lit>,
-    half_inv: HashMap<Lit, ReifExpr>,
+    full_map: HashMap<CoreExpr, Lit>,
+    full_inv: HashMap<Lit, CoreExpr>,
+    half_map: HashMap<CoreExpr, Lit>,
+    half_inv: HashMap<Lit, CoreExpr>,
 }
 
 impl Reification {
     /// If this expression was previously interned, returns the literal it was bound to.
-    pub fn interned_full(&mut self, e: &ReifExpr) -> Option<Lit> {
+    pub fn interned_full(&mut self, e: &CoreExpr) -> Option<Lit> {
         match e {
-            ReifExpr::Lit(l) => Some(*l),
+            CoreExpr::Lit(l) => Some(*l),
             _ => self.full_map.get(e).copied(),
         }
     }
-    pub fn interned_half(&mut self, e: &ReifExpr) -> Option<Lit> {
+    pub fn interned_half(&mut self, e: &CoreExpr) -> Option<Lit> {
         match e {
-            ReifExpr::Lit(l) => Some(*l),
+            CoreExpr::Lit(l) => Some(*l),
             _ => self.half_map.get(e).copied(),
         }
     }
 
     /// Interns the user-facing expression.
     /// Panics, if the expression is already interned.
-    pub fn intern_full_as(&mut self, e: ReifExpr, lit: Lit) {
+    pub fn intern_full_as(&mut self, e: CoreExpr, lit: Lit) {
         assert!(!self.full_map.contains_key(&e));
         self.full_map.insert(e.clone(), lit);
         self.full_inv.insert(lit, e.clone());
@@ -39,7 +39,7 @@ impl Reification {
         self.full_inv.insert(!lit, !e.clone());
     }
 
-    pub fn intern_half_as(&mut self, e: ReifExpr, lit: Lit) {
+    pub fn intern_half_as(&mut self, e: CoreExpr, lit: Lit) {
         assert!(!self.half_map.contains_key(&e));
         self.half_map.insert(e.clone(), lit);
         self.half_inv.insert(lit, e.clone());
@@ -59,8 +59,8 @@ mod tests {
     fn test_reif() {
         let t = Lit::TRUE;
         let f = Lit::FALSE;
-        let l1: ReifExpr = leq(A, B + (3 as IntCst)).into();
-        let l2: ReifExpr = leq(A, C).into();
+        let l1: CoreExpr = leq(A, B + (3 as IntCst)).into();
+        let l2: CoreExpr = leq(A, C).into();
 
         let mut reif = Reification::default();
         reif.intern_full_as(l1.clone(), t);
