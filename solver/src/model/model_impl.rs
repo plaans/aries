@@ -314,15 +314,6 @@ impl<Lbl: Label> Model<Lbl> {
         let decomposed = expr.decompose(self);
         self.reify_core(decomposed, false)
     }
-    // TODO: replace reify with this one
-    #[cfg(test)]
-    pub(crate) fn reif<'a, Expr: BoolExpr<Self> + 'a, NotExpr>(&mut self, expr: &'a Expr) -> Lit
-    where
-        &'a Expr: std::ops::Not<Output = NotExpr>,
-        NotExpr: BoolExpr<Self>,
-    {
-        expr.reified(self)
-    }
 
     /// Returns a new literal that, if set to true, will force the given expression to be true.
     /// This is done by posting a half-reified constraint.
