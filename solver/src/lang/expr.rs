@@ -87,7 +87,7 @@ where
 ///
 /// In most cases, this will reuse the variable underlying the literal but it may in some case require the introduction
 /// of an auxiliary variable.
-pub fn bool2int<Ctx: Store + Dom>(b: Lit, model: &mut Ctx) -> LinTerm {
+pub fn bool2int<Ctx: ModelView + Dom>(b: Lit, model: &mut Ctx) -> LinTerm {
     let is_zero_one = model.bounds(b.variable()) == (0, 1);
     if model.entails(b) {
         1.into()

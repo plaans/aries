@@ -1,5 +1,5 @@
 use crate::{
-    lang::{BoolExpr, Store},
+    lang::{BoolExpr, ModelView},
     prelude::*,
 };
 
@@ -24,7 +24,7 @@ impl AllDifferent {
     }
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for AllDifferent {
+impl<Ctx: ModelView> BoolExpr<Ctx> for AllDifferent {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
         for (i, x) in self.vars.iter().enumerate() {
             for y in &self.vars[i + 1..] {

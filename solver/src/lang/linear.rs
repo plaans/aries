@@ -4,7 +4,7 @@ use smallvec::SmallVec;
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
-use crate::lang::{BoolExpr, CoreExpr, IntExpr, Store};
+use crate::lang::{BoolExpr, CoreExpr, IntExpr, ModelView};
 use crate::prelude::Conjunction;
 use std::fmt::{Debug, Display};
 
@@ -368,7 +368,7 @@ impl LinSum {
     }
 }
 
-impl<Ctx: Store> IntExpr<Ctx> for LinSum {
+impl<Ctx: ModelView> IntExpr<Ctx> for LinSum {
     fn enforce_eq_if(&self, implicant: Lit, variable: LinTerm, ctx: &mut Ctx) {
         self.clone().eq(variable).enforce_if(implicant, ctx);
     }

@@ -3,7 +3,7 @@ use aries_solver::{
         state::{Cause, DomainsSnapshot, Explanation, OptDomain},
         IntCst,
     },
-    lang::{BoolExpr, Store},
+    lang::{BoolExpr, ModelView},
     prelude::{Conjunction, Dom, Domains, Solution},
     reasoners::{
         cp::{Propagator, PropagatorId, UserPropagator, Watches},
@@ -47,7 +47,7 @@ impl EqVarMulLit {
 //     }
 // }
 
-impl<Ctx: Store> BoolExpr<Ctx> for EqVarMulLit {
+impl<Ctx: ModelView> BoolExpr<Ctx> for EqVarMulLit {
     fn enforce_if(&self, implicant: aries_solver::prelude::Lit, ctx: &mut Ctx) {
         assert!(ctx.entails(implicant));
         let propagator = VarEqVarMulLit {

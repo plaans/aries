@@ -1,6 +1,6 @@
 use std::ops::Not;
 
-use aries_solver::lang::{expr::*, Store};
+use aries_solver::lang::{expr::*, ModelView};
 
 use crate::legacy::*;
 use aries_solver::{
@@ -73,7 +73,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Eq {
 
 impl Eq {
     /// Returns an equivalent *conjunction* of `ReifExpr`
-    fn as_elementary_constraints<Ctx: Store>(&self, _store: &mut Ctx) -> SmallVec<[CoreExpr; 2]> {
+    fn as_elementary_constraints<Ctx: ModelView>(&self, _store: &mut Ctx) -> SmallVec<[CoreExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[CoreExpr; 2]> = if a == b {
@@ -105,7 +105,7 @@ impl Eq {
     }
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for Eq {
+impl<Ctx: ModelView> BoolExpr<Ctx> for Eq {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let elems = self.as_elementary_constraints(ctx);
         for elem in elems {
@@ -142,7 +142,7 @@ impl<Lbl: Label> Reifiable<Lbl> for Neq {
 
 impl Neq {
     /// Returns an equivalent *disjunction* of `ReifExpr`
-    pub fn as_elementary_disjuncts<Ctx: Store>(&self, _store: &Ctx) -> SmallVec<[CoreExpr; 2]> {
+    pub fn as_elementary_disjuncts<Ctx: ModelView>(&self, _store: &Ctx) -> SmallVec<[CoreExpr; 2]> {
         let a = self.0;
         let b = self.1;
         let subs: SmallVec<[CoreExpr; 2]> = if a == b {
@@ -177,7 +177,7 @@ impl Neq {
     }
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for Neq {
+impl<Ctx: ModelView> BoolExpr<Ctx> for Neq {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let elems = self.as_elementary_disjuncts(ctx);
         let disjuncts = elems.into_iter().map(|e| ctx.get_implicant(e)).collect_vec();

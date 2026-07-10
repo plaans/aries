@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 use crate::core::literals::Lits;
-use crate::lang::{BoolExpr, IAtom, Store};
+use crate::lang::{BoolExpr, IAtom, ModelView};
 
 /// The `alternative` constraint, that imposes that exactly one of the `alternative` element will be selected to decide the `main` value.
 ///
@@ -30,7 +30,7 @@ impl Alternative {
     }
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for Alternative {
+impl<Ctx: ModelView> BoolExpr<Ctx> for Alternative {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
         let a = self;
         let enabler = implicant;

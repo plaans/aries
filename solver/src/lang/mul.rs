@@ -1,6 +1,6 @@
 use crate::{
     core::{Lit, Var},
-    lang::{BoolExpr, Store},
+    lang::{BoolExpr, ModelView},
     prelude::{Conjunction, Dom, implies},
     reasoners::cp::mul::MulPropagator,
 };
@@ -31,7 +31,7 @@ impl EqMul {
     }
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for EqMul {
+impl<Ctx: ModelView> BoolExpr<Ctx> for EqMul {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
         let valid = ctx.presence(implicant);
 

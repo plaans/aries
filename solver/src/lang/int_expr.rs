@@ -1,7 +1,7 @@
-use crate::{lang::Store, prelude::*};
+use crate::{lang::ModelView, prelude::*};
 
 /// Represents an integer expression that can be reified or made equal to another variable
-pub trait IntExpr<Ctx: Store> {
+pub trait IntExpr<Ctx: ModelView> {
     /// Reifies the expression into a term with a single variable.
     fn reify(&self, scope: impl Into<Conjunction>, ctx: &mut Ctx) -> LinTerm {
         let scope = scope.into();

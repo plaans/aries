@@ -1,6 +1,6 @@
 use crate::core::IntCst;
 use crate::core::views::{IntBoundable, Term, VarView};
-use crate::lang::{BoolExpr, Store};
+use crate::lang::{BoolExpr, ModelView};
 use crate::prelude::{Disjunction, LinSum, geq, implies};
 use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use itertools::Itertools;
@@ -29,7 +29,7 @@ impl<Variable> EqMax<Variable> {
     }
 }
 
-impl<Ctx: Store, Variable> BoolExpr<Ctx> for EqMax<Variable>
+impl<Ctx: ModelView, Variable> BoolExpr<Ctx> for EqMax<Variable>
 where
     Variable: Term + IntBoundable + VarView<Value = IntCst> + Into<LinSum> + Send + Sync + Copy + Debug + 'static,
 {

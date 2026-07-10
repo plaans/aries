@@ -2,7 +2,7 @@ mod utils;
 
 use itertools::Itertools;
 
-use aries_solver::lang::Store;
+use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
 
 /// Representation of an Orienteering problem.

@@ -10,7 +10,7 @@ use crate::{
 
 /// Representation of a boolean expression, that can be reified, made conditional or enforced
 /// in a [`Model`].
-pub trait BoolExpr<Ctx: Store> {
+pub trait BoolExpr<Ctx: ModelView> {
     /// Enforce the expression to be true when `implicant` is true and defined.
     ///
     /// IMPORTANT: it must be the case that expression is defined whenever `implicant` is.
@@ -85,7 +85,7 @@ pub trait BoolExpr<Ctx: Store> {
     }
 }
 
-impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
+impl<Ctx: ModelView, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         (*self).enforce_if(l, ctx);
     }
@@ -100,7 +100,7 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     //TODO: implement all other methods to make sure we use the most specific implementation
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for CoreExpr {
+impl<Ctx: ModelView> BoolExpr<Ctx> for CoreExpr {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         ctx.add_implies(l, self.clone());
     }
@@ -122,7 +122,7 @@ impl<Ctx: Store> BoolExpr<Ctx> for CoreExpr {
 #[macro_export] // TODO: remove
 macro_rules! impl_reif {
     ($A: ty) => {
-        impl<Ctx: Store> BoolExpr<Ctx> for $A
+        impl<Ctx: ModelView> BoolExpr<Ctx> for $A
         where
             $A: Clone,
             CoreExpr: From<$A>,
@@ -168,7 +168,7 @@ mod test {
     /// True if the the two atoms are different, and undefined if at least one is absent
     struct Different(IAtom, IAtom);
 
-    impl<Ctx: Store> BoolExpr<Ctx> for AllDifferent {
+    impl<Ctx: ModelView> BoolExpr<Ctx> for AllDifferent {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
             for (i, t1) in self.0.iter().copied().enumerate() {
                 for t2 in self.0[i + 1..].iter().copied() {
@@ -182,7 +182,7 @@ mod test {
         }
     }
 
-    impl<Ctx: Store> BoolExpr<Ctx> for Different {
+    impl<Ctx: ModelView> BoolExpr<Ctx> for Different {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
             neq(self.0, self.1).opt_enforce_if(l, ctx);
         }

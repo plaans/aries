@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::legacy::*;
 use aries_solver::core::state::Evaluable;
-use aries_solver::lang::{linear::*, Store};
+use aries_solver::lang::{linear::*, ModelView};
 use aries_solver::{lang::CoreExpr, prelude::*};
 use num_integer::lcm;
 /* ========================================================================== */
@@ -53,7 +53,7 @@ impl From<&LinearLeq> for CoreExpr {
         ))
     }
 }
-impl<Ctx: Store> BoolExpr<Ctx> for LinearLeq {
+impl<Ctx: ModelView> BoolExpr<Ctx> for LinearLeq {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
         CoreExpr::from(self).enforce_if(implicant, ctx);
     }

@@ -380,7 +380,7 @@ struct Exclusive<'a> {
     a: &'a IntervalOnStateVariable<'a>,
     b: &'a IntervalOnStateVariable<'a>,
 }
-impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
+impl<'a, Ctx: ModelView + Dom> BoolExpr<Ctx> for Exclusive<'a> {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let a = &self.a;
         let b = &self.b;

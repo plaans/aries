@@ -71,10 +71,10 @@ pub mod expr;
 mod int;
 mod int_expr;
 pub mod linear;
+mod model_view;
 pub mod mul;
 mod ops;
 pub(crate) mod reification; // TODO: this should probably move to `crate::model`
-mod store;
 mod validity_scope;
 
 pub use crate::core::Lit;
@@ -82,10 +82,10 @@ pub use crate::core::Var;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
 pub use core_expr::CoreExpr;
-pub use core_expr::Reifiable; // TODO: undesirable
+pub use core_expr::Reifiable; // TODO: undesirable but kept around as the planning crate requires it for now
 pub use int::IAtom;
 pub use int_expr::IntExpr;
-pub use store::{ModelWrapper, Store};
+pub use model_view::{ModelView, ModelWrapper};
 pub use validity_scope::*;
 
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};

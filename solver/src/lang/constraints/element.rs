@@ -46,7 +46,7 @@ impl Element {
     }
 }
 
-impl<Ctx: Store> IntExpr<Ctx> for Element {
+impl<Ctx: ModelView> IntExpr<Ctx> for Element {
     fn enforce_eq_if(&self, implicant: Lit, value: LinTerm, ctx: &mut Ctx) {
         let constraint = EqElement {
             variable: value,
@@ -83,7 +83,7 @@ pub struct EqElement {
     element: Element,
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
+impl<Ctx: ModelView> BoolExpr<Ctx> for EqElement {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let _span = tracing::debug_span!("EqElement");
         let _span = _span.enter();
