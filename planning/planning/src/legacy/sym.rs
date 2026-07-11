@@ -2,7 +2,7 @@ use crate::legacy::*;
 use aries_solver::core::state::Evaluable;
 use aries_solver::core::views::VarView;
 use aries_solver::core::*;
-use aries_solver::lang::{ConversionError, VarCst, Var};
+use aries_solver::lang::{ConversionError, Var, VarCst};
 use std::convert::TryFrom;
 use std::fmt::Debug;
 
