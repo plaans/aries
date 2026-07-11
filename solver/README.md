@@ -36,4 +36,67 @@ While the aries solver library is built with automated planning problems in mind
 
 ## Example usage
 
-Several examples are available in the `examples/` directory of this crate:
+The snippet below solves a tiny scheduling problem. We have a few tasks, each with a fixed duration, and some tasks must finish before others can start (*precedence* constraints). 
+We look for start times that respect the precedences while finishing the whole project as early as possible (i.e. minimizing the *makespan*).
+
+```rust
+use aries_solver::prelude::*;
+
+fn main() {
+    // Duration of each task (here a tiny "morning routine"):
+    //   0: wake up (5), 1: shower (10), 2: breakfast (15), 3: commute (30)
+    let durations = [5, 10, 15, 30];
+
+    // Precedences as (before, after) pairs: `before` must end before `after` starts.
+    let precedences = [(0, 1), (0, 2), (1,3), (2, 3)];
+
+    let mut model = Model::new();
+
+    // One decision variable per task: its start time, somewhere in [0, 100].
+    let starts: Vec<Var> = durations.iter().map(|_| model.new_variable(0, 100)).collect();
+
+    // Precedence constraints: end of `before` <= start of `after`.
+    for &(before, after) in &precedences {
+        model.enforce(leq(starts[before] + durations[before], starts[after]));
+    }
+
+    // The makespan is the time at which the last task finishes: it must be at
+    // least the end time of every task. Minimizing it yields the shortest schedule.
+    let makespan = model.new_variable(0, 100);
+    for (task, &duration) in durations.iter().enumerate() {
+        model.enforce(geq(makespan, starts[task] + duration));
+    }
+
+    // Search for the schedule that minimizes the makespan.
+    let mut solver = Solver::new(model);
+    match solver.minimize(makespan, SearchLimit::None) {
+        Ok(Some((optimal_makespan, solution))) => {
+            println!("Optimal makespan: {optimal_makespan}");
+            for task in 0..durations.len() {
+                println!("  task {task}: starts at {}", solution.eval(starts[task]).unwrap());
+            }
+        }
+        Ok(None) => println!("No feasible schedule"),
+        Err(_) => unreachable!("without a search limit the solver always returns a result"),
+    }
+}
+```
+
+```text
+Optimal makespan: 60
+  task 0: starts at 0
+  task 1: starts at 5
+  task 2: starts at 15
+  task 3: starts at 30
+```
+
+Several other examples are available in the `examples/` directory of this crate:
+
+- [`sudoku.rs`](https://github.com/plaans/aries/blob/master/solver/examples/sudoku.rs): a Sudoku solver built on the `all_different` constraint.
+- [`nqueens.rs`](https://github.com/plaans/aries/blob/master/solver/examples/nqueens.rs): the N-Queens problem, using `!=` constraints.
+- [`knapsack.rs`](https://github.com/plaans/aries/blob/master/solver/examples/knapsack.rs): the 0/1 knapsack problem, maximizing a linear objective.
+- [`ilp.rs`](https://github.com/plaans/aries/blob/master/solver/examples/ilp.rs): a generic integer linear program solver.
+- [`sat.rs`](https://github.com/plaans/aries/blob/master/solver/examples/sat.rs): a SAT solver working on clauses (disjunctions of literals).
+- [`orienteering.rs`](https://github.com/plaans/aries/blob/master/solver/examples/orienteering.rs): the orienteering routing problem.
+
+Examples can be run with cargo, e.g., `cargo run --example sudoku`

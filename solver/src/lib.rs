@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub mod backtrack;
 #[doc(hidden)]
 pub mod collections;
