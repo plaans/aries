@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2004-pipesworld-tankage-nontemporal-strips/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":57813180},"objective_value":null,"metrics":{"NumConflicts":73.0,"NumDecisions":3153.0,"NumDomUpdates":21765.0},"objective_history":[]}

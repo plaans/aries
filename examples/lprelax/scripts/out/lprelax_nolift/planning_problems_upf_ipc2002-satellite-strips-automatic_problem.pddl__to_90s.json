@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2002-satellite-strips-automatic/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":31226199},"objective_value":null,"metrics":{"NumConflicts":57.0,"NumDecisions":429.0,"NumDomUpdates":4578.0},"objective_history":[]}

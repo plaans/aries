@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2006-pipesworld-propositional/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":69477286},"objective_value":null,"metrics":{"NumConflicts":35.0,"NumDecisions":823.0,"NumDomUpdates":11767.0},"objective_history":[]}

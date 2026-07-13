@@ -1,0 +1,1 @@
+{"problem":{"name":"examples/lprelax/instances/visitall-bool/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":2071333},"objective_value":null,"metrics":{"NumConflicts":11.0,"NumDecisions":49.0,"NumDomUpdates":488.0},"objective_history":[]}

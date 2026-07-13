@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2004-psr-small-strips/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":3784988},"objective_value":null,"metrics":{"NumConflicts":21.0,"NumDecisions":122.0,"NumDomUpdates":1343.0},"objective_history":[]}

@@ -1,0 +1,94 @@
+{
+  "NumDecisions": {
+    "examples/lprelax/instances/visitall-bool/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 49.0,
+      "nolprelax-nolift": 31.0
+    },
+    "planning/problems/upf/ipc1998-gripper-round1-adl/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc1998-gripper-round1-strips/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 63.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc2000-blocks-strips-typed/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc2000-blocks-strips-untyped/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc2002-depots-strips-automatic/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc2002-rovers-strips-automatic/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc2002-satellite-strips-automatic/problem.pddl": {
+      "lprelax-lift": 18.0,
+      "lprelax-nolift": 429.0,
+      "nolprelax-lift": 18.0,
+      "nolprelax-nolift": 429.0
+    },
+    "planning/problems/upf/ipc2004-pipesworld-no-tankage-nontemporal-strips/problem.pddl": {
+      "lprelax-lift": 661.0,
+      "lprelax-nolift": 436.0,
+      "nolprelax-lift": 661.0,
+      "nolprelax-nolift": 436.0
+    },
+    "planning/problems/upf/ipc2004-pipesworld-tankage-nontemporal-strips/problem.pddl": {
+      "lprelax-lift": 3153.0,
+      "lprelax-nolift": 823.0,
+      "nolprelax-lift": 3153.0,
+      "nolprelax-nolift": 823.0
+    },
+    "planning/problems/upf/ipc2004-psr-small-strips/problem.pddl": {
+      "lprelax-lift": 122.0,
+      "lprelax-nolift": 167.0,
+      "nolprelax-lift": 122.0,
+      "nolprelax-nolift": 167.0
+    },
+    "planning/problems/upf/ipc2004-satellite-strips/problem.pddl": {
+      "lprelax-lift": 18.0,
+      "lprelax-nolift": 515.0,
+      "nolprelax-lift": 18.0,
+      "nolprelax-nolift": 515.0
+    },
+    "planning/problems/upf/ipc2006-pipesworld-propositional/problem.pddl": {
+      "lprelax-lift": 3153.0,
+      "lprelax-nolift": 823.0,
+      "nolprelax-lift": 3153.0,
+      "nolprelax-nolift": 823.0
+    },
+    "planning/problems/upf/ipc2006-rovers-propositional/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    },
+    "planning/problems/upf/ipc2006-tpp-propositional/problem.pddl": {
+      "lprelax-lift": 0.0,
+      "lprelax-nolift": 0.0,
+      "nolprelax-lift": 0.0,
+      "nolprelax-nolift": 0.0
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2002-rovers-strips-automatic/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":5433853},"objective_value":null,"metrics":{"NumConflicts":1.0,"NumDecisions":0.0,"NumDomUpdates":425.0},"objective_history":[]}

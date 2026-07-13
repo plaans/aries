@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc1998-gripper-round1-strips/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":5423511},"objective_value":null,"metrics":{"NumConflicts":0.0,"NumDecisions":0.0,"NumDomUpdates":442.0},"objective_history":[]}

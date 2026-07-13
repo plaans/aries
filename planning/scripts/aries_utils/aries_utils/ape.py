@@ -75,7 +75,7 @@ class ApeRunner:
         ...     print("Validation passed!")
     """
 
-    def __init__(self, profile: str = "ci", auto_build: bool = True):
+    def __init__(self, profile: str = "ci", auto_build: bool = True, bin_="ape"):
         """
         Initialize APE runner and optionally build APE.
 
@@ -84,7 +84,8 @@ class ApeRunner:
             auto_build: If True, build APE on initialization (default: True)
         """
         self.profile = profile
-        self.ape_path = f"target/{profile}/ape"
+        self.bin_ = bin_
+        self.ape_path = f"target/{profile}/{bin_}"
 
         if auto_build:
             self.build()
@@ -93,7 +94,7 @@ class ApeRunner:
         """Build APE from source using cargo with the configured profile."""
         print(f"Building APE (profile: {self.profile})...")
         subprocess.run(
-            ["cargo", "build", "--profile", self.profile, "--bin", "ape"], check=True
+            ["cargo", "build", "--profile", self.profile, "--bin", self.bin_], check=True
         )
 
     def run(

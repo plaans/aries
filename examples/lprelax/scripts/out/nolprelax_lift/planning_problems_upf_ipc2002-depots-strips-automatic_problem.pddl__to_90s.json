@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2002-depots-strips-automatic/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":3308293},"objective_value":null,"metrics":{"NumConflicts":0.0,"NumDecisions":0.0,"NumDomUpdates":148.0},"objective_history":[]}

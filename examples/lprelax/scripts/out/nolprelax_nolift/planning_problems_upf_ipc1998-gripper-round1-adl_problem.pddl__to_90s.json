@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc1998-gripper-round1-adl/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":6791905},"objective_value":null,"metrics":{"NumConflicts":0.0,"NumDecisions":0.0,"NumDomUpdates":374.0},"objective_history":[]}

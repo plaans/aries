@@ -1,0 +1,1 @@
+{"problem":{"name":"planning/problems/upf/ipc2000-blocks-strips-typed/problem.pddl","timeout":{"secs":90,"nanos":0},"flags":{}},"status":"SolvedUnsat","runtime":{"secs":0,"nanos":6699566},"objective_value":null,"metrics":{"NumConflicts":0.0,"NumDecisions":0.0,"NumDomUpdates":194.0},"objective_history":[]}

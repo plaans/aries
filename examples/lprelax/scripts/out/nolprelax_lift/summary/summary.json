@@ -1,0 +1,335 @@
+{
+  "run_name": "nolprelax-lift",
+  "entries": [
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2004-psr-small-strips/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 3784988
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 21.0,
+        "NumDecisions": 122.0,
+        "NumDomUpdates": 1343.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2004-pipesworld-tankage-nontemporal-strips/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 57813180
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 73.0,
+        "NumDecisions": 3153.0,
+        "NumDomUpdates": 21765.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2004-satellite-strips/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 5138231
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 6.0,
+        "NumDecisions": 18.0,
+        "NumDomUpdates": 785.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2006-pipesworld-propositional/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 58347895
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 73.0,
+        "NumDecisions": 3153.0,
+        "NumDomUpdates": 21765.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "examples/lprelax/instances/visitall-bool/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 2071333
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 11.0,
+        "NumDecisions": 49.0,
+        "NumDomUpdates": 488.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2006-tpp-propositional/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 2183094
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 1.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 236.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2000-blocks-strips-untyped/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 5913768
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 0.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 194.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2006-rovers-propositional/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 5437530
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 1.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 359.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2000-blocks-strips-typed/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 6699566
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 0.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 194.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc1998-gripper-round1-strips/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 5171470
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 4.0,
+        "NumDecisions": 63.0,
+        "NumDomUpdates": 571.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2002-satellite-strips-automatic/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 6458328
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 6.0,
+        "NumDecisions": 18.0,
+        "NumDomUpdates": 792.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc1998-gripper-round1-adl/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 3819773
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 0.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 306.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2004-pipesworld-no-tankage-nontemporal-strips/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 45773230
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 74.0,
+        "NumDecisions": 661.0,
+        "NumDomUpdates": 15880.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2002-depots-strips-automatic/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 3308293
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 0.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 148.0
+      },
+      "objective_history": []
+    },
+    {
+      "problem": {
+        "name": "planning/problems/upf/ipc2002-rovers-strips-automatic/problem.pddl",
+        "timeout": {
+          "secs": 90,
+          "nanos": 0
+        },
+        "flags": {}
+      },
+      "status": "SolvedUnsat",
+      "runtime": {
+        "secs": 0,
+        "nanos": 6177215
+      },
+      "objective_value": null,
+      "metrics": {
+        "NumConflicts": 1.0,
+        "NumDecisions": 0.0,
+        "NumDomUpdates": 359.0
+      },
+      "objective_history": []
+    }
+  ]
+}
