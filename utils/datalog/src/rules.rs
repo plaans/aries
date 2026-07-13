@@ -27,13 +27,22 @@ impl RuleAtom {
         assert_eq!(predicate.arity(), args.arity());
         Self { predicate, args }
     }
+
+    /// Returns a reference to the table of the atom's predicate.
+    pub fn predicate(&self) -> &VarTable {
+        &self.predicate
+    }
+
+    pub(crate) fn args(&self) -> impl Iterator<Item = Arg> {
+        self.args.as_args()
+    }
 }
 
 /// A rule in a datalog program, e.g. `ancestor(?x, ?z) :- parent(?x, ?y), ancestor(?y, ?z)`.
 #[derive(Clone)]
 pub struct Rule {
-    head: RuleAtom,
-    body: Vec<RuleAtom>,
+    pub(crate) head: RuleAtom,
+    pub(crate) body: Vec<RuleAtom>,
 }
 
 impl Rule {
@@ -325,6 +334,11 @@ impl Pattern {
                 *i = Self::from_var(f(var))
             }
         }
+    }
+    pub(crate) fn as_args(&self) -> impl Iterator<Item = Arg> {
+        self.pattern
+            .iter()
+            .map(|&i| Self::as_var(i).map_or(Arg::Sym(i as u32), Arg::Var))
     }
 
     /// Creates a new pattern where some variables are bound to a constant value.
