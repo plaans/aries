@@ -48,6 +48,23 @@ pub struct Rule {
 impl Rule {
     /// Creates an new rule from an head (single atom left of `:-`) and a body (conjunction of atoms on the right-side)
     pub fn new(head: RuleAtom, body: impl AsRef<[RuleAtom]>) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            let head_vars = HashSet::<u32>::from_iter(head.args().filter_map(|a| match a {
+                Arg::Var(v) => Some(v),
+                _ => None,
+            }));
+            let body_vars =
+                HashSet::<u32>::from_iter(body.as_ref().iter().flat_map(|a| a.args()).filter_map(|a| match a {
+                    Arg::Var(v) => Some(v),
+                    _ => None,
+                }));
+            assert!(
+                head_vars.is_subset(&body_vars),
+                "rule is unsafe: a head variable does not appear in any body atom ({head_vars:?} {body_vars:?})"
+            );
+        }
+
         Self {
             head,
             body: body.as_ref().iter().cloned().collect_vec(),
