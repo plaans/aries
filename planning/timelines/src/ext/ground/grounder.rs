@@ -337,9 +337,9 @@ impl SimpleDatalogGrounder {
         for (_, eff) in effects.iter().filter(|(eff_id, _)| !effects_to_ignore.contains(eff_id)) {
             let effect_rule_head = {
                 let (terms, negative) = collect_effect_datalog_terms(eff, ctx).unwrap();
-                // if negative {
-                //     continue;
-                // }
+                if negative {
+                    continue;
+                }
                 (
                     &SimpleDatalogGrounderPredicateId::Fluent(eff.state_var.fluent.clone()),
                     terms,
