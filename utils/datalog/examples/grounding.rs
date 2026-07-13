@@ -64,6 +64,29 @@ fn main() {
         [move_applicable.apply([Var(0), Var(1), Var(2)])],
     ));
 
+    // goal predicates (mainly here to demonstrate 0-arity predicates)
+    let g1 = prog.new_predicate(0);
+    prog.add_rule(Rule::new(
+        g1.apply([]),
+        [at.apply([Arg::Sym(11), Arg::Sym(1)])], // goal1: robot r1 can reach location l1
+    ));
+    let g2 = prog.new_predicate(0);
+    prog.add_rule(Rule::new(
+        g2.apply([]),
+        [at.apply([Arg::Sym(11), Arg::Sym(4)])], // goal1: robot r1 can reach location l4
+    ));
+    let g3 = prog.new_predicate(0);
+    prog.add_rule(Rule::new(
+        g3.apply([]),
+        [at.apply([Arg::Sym(11), Arg::Sym(7)])], // goal1: robot r1 can reach location 7
+    ));
+    // g1g2 :- g1, g2.
+    let g1g2 = prog.new_predicate(0);
+    prog.add_rule(Rule::new(g1g2.apply([]), [g1.apply([]), g2.apply([])]));
+    // all_goals : g1g2, g3.
+    let all_goals = prog.new_predicate(0);
+    prog.add_rule(Rule::new(all_goals.apply([]), [g1g2.apply([]), g3.apply([])]));
+
     // run inference until completion
     prog.run();
 
@@ -74,4 +97,14 @@ fn main() {
 
     println!("\n == applicable actions ==\n");
     move_applicable.extract().rows().for_each(|row| println!("move{row:?}"));
+
+    println!("\n == goals ==\n");
+    g1.extract().rows().for_each(|row| println!("g1{row:?}"));
+    g2.extract().rows().for_each(|row| println!("g2{row:?}"));
+    g3.extract().rows().for_each(|row| println!("g3{row:?}"));
+    g1g2.extract().rows().for_each(|row| println!("g1&g2{row:?}"));
+    all_goals.extract().rows().for_each(|row| println!("all_goals{row:?}"));
+
+    assert!(!g1g2.extract().is_empty()); // should hold <=> table contains the unit row
+    assert!(all_goals.extract().is_empty()); // should not hold <=> table is empty
 }
