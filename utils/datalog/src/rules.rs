@@ -319,10 +319,10 @@ impl Pattern {
         (term < 0).then(|| (-term - 1) as u32)
     }
     fn from_var(var: u32) -> i32 {
-        -(var as i32) - 1
+        -i32::try_from(var).unwrap() - 1
     }
     fn from_cst(cst: u32) -> i32 {
-        cst as i32
+        i32::try_from(cst).unwrap()
     }
 
     pub(crate) fn vars(&self) -> impl Iterator<Item = u32> + '_ {
