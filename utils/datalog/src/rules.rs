@@ -415,7 +415,39 @@ impl Pattern {
             3 => self.compiled::<3>().all_bindings(table.rows_sized(), out),
             4 => self.compiled::<4>().all_bindings(table.rows_sized(), out),
             5 => self.compiled::<5>().all_bindings(table.rows_sized(), out),
-            _ => unimplemented!(),
+            _ => {
+                let mut bindings = TableBuff::new(out.len());
+                let mut out_row = Vec::from(out);
+                for row in table.rows() {
+                    if self.matches(row) {
+                        self.bind(row, &mut out_row);
+                        bindings.push(&out_row);
+                    }
+                }
+                bindings
+            }
+        }
+    }
+
+    fn matches(&self, data: &[Sym]) -> bool {
+        debug_assert_eq!(self.pattern.len(), data.len());
+        for &[id1, id2] in &self.equalities {
+            if data[id1] != data[id2] {
+                return false;
+            }
+        }
+        self.pattern
+            .iter()
+            .copied()
+            .zip(data.iter().copied())
+            .all(|(pat, sym)| pat < 0 || (pat as u32) == sym)
+    }
+    fn bind(&self, row: &[Sym], out: &mut [u32]) {
+        debug_assert!(self.matches(row));
+        for (i, pat) in self.pattern.iter().copied().enumerate() {
+            if let Some(var) = Self::as_var(pat) {
+                out[var as usize] = row[i];
+            }
         }
     }
 }
