@@ -3,33 +3,28 @@
 use aries_solver::prelude::*;
 use std::collections::HashMap;
 
-/* Takes a str with format [A-Z]+'+'[A-Z]+'='[A-Z]+
-Each of the 3 words ([A-Z]+) represents a number, with each distinct letter being a different digit.
-The sum of the 1st and 2nd word must equal the 3rd word.
-The first letter of each word is not zero.
-Returns an option of a Vec with each letter from the problem and its value. Or None if no solution was found.
- */
-
-fn solve(problem: &str) -> Option<Vec<(char, usize)>> {
+// Takes a str with format [A-Z]+'+'[A-Z]+'='[A-Z]+
+// Each of the 3 words ([A-Z]+) represents a number, with each distinct letter being a different digit.
+// The sum of the 1st and 2nd word must equal the 3rd word.
+// The first letter of each word is not zero.
+// Returns an option of a HashMap where the keys are the letters and the values the solved values for each letter.
+fn solve(problem: &str) -> Option<HashMap<char, usize>> {
     let mut model = Model::new();
 
-    //decision variables
+    //Transforming the problem into an array of 3 words
+    let mut words: [&str; 3] = [""; 3];
+    (words[0], words[1]) = problem.split_once('+').unwrap();
+    (words[1], words[2]) = words[1].split_once('=').unwrap();
+    print_problem(words);
+
+    //create a decision variable par letter and check validity of the words
     let mut vars: HashMap<u8, Var> = HashMap::new();
-
-    let bytes = problem.as_bytes();
-    assert_eq!(problem.len(), bytes.len()); //Check if all characters are ASCII (1 byte)
-    let mut pos_plus: usize = 0; //index of '+'
-    let mut pos_equal: usize = 0; //index of '='
-
-    for (i, &byte) in bytes.iter().enumerate() {
-        if byte == b'+' {
-            pos_plus = i;
-        } else if byte == b'=' {
-            pos_equal = i;
-        } else {
-            //Other than + and =, the characters must be uppercase letters
+    for word in words {
+        assert!(!word.is_empty());
+        let bytes = word.as_bytes();
+        for (i, &byte) in bytes.iter().enumerate() {
             assert!(byte.is_ascii_uppercase());
-            if i == 0 || (i == pos_plus + 1 || i == pos_equal + 1) && i != 1 {
+            if i == 0 {
                 //can replace a variable ranged [0,9]
                 vars.insert(byte, model.new_variable(1, 9));
             } else {
@@ -38,23 +33,10 @@ fn solve(problem: &str) -> Option<Vec<(char, usize)>> {
             }
         }
     }
-    //checks if the position of the '+' and '=' satisfy [A-Z]+'+'[A-Z]+'='[A-Z]+
-    assert!(0 < pos_plus && pos_plus + 1 < pos_equal && pos_equal < bytes.len() - 2);
 
     // create linear expressions containing the sums
-    let mut sum: LinSum = LinSum::zero();
-    let mut result: LinSum = LinSum::zero();
-    for i in 0..pos_plus {
-        sum += vars[&bytes[i]] * 10i32.pow((pos_plus - 1 - i) as u32);
-    }
-    for i in pos_plus + 1..pos_equal {
-        sum += vars[&bytes[i]] * 10i32.pow((pos_equal - 1 - i) as u32);
-    }
-    for i in pos_equal + 1..problem.len() {
-        result += vars[&bytes[i]] * 10i32.pow((problem.len() - 1 - i) as u32);
-    }
-
-    print_problem(pos_plus, pos_equal - pos_plus - 1, bytes.len() - pos_equal - 1, bytes);
+    let sum: LinSum = word_to_linsum(words[0], &vars) + word_to_linsum(words[1], &vars);
+    let result: LinSum = word_to_linsum(words[2], &vars);
 
     //Constraints of the problem
     model.enforce(sum.eq(result));
@@ -66,23 +48,16 @@ fn solve(problem: &str) -> Option<Vec<(char, usize)>> {
     match solver.solve(SearchLimit::None) {
         Ok(Some(solution)) => {
             //converts the solution into readable format
-            let mut vars_solved: Vec<(char, usize)> = Vec::new();
-            for &byte in bytes.iter() {
-                if byte != b'+' && byte != b'=' {
-                    vars_solved.push((
-                        byte as char,
-                        solution.eval(vars[&byte]).expect("All letters should have a value.") as usize,
-                    ));
-                }
-            }
-
-            print_solution(
-                pos_plus,
-                pos_equal - pos_plus - 1,
-                bytes.len() - pos_equal - 1,
-                &vars_solved,
-            );
-
+            let vars_solved: HashMap<char, usize> = vars
+                .iter()
+                .map(|(k, v)| {
+                    (
+                        *k as char,
+                        solution.eval(*v).expect("All letters should have a value.") as usize,
+                    )
+                })
+                .collect();
+            print_solution(words, &vars_solved);
             Some(vars_solved)
         }
         Ok(None) => {
@@ -99,65 +74,59 @@ fn main() {
     solve("SEND+MORE=MONEY");
 }
 
-fn print_problem(len1: usize, len2: usize, len3: usize, bytes: &[u8]) {
-    println!("Problem:");
-    let max_len = len1.max(len2.max(len3));
-    for _i in 0..max_len - len1 + 2 {
-        //1st line padding
-        print!(" ");
+fn word_to_linsum(word: &str, vars: &HashMap<u8, Var>) -> LinSum {
+    let mut sum: LinSum = LinSum::zero();
+    let bytes = word.as_bytes();
+    for (i, &byte) in bytes.iter().enumerate() {
+        sum += vars[&byte] * 10i32.pow((bytes.len() - 1 - i) as u32);
     }
-    for (i, byte) in bytes.iter().enumerate() {
-        if i == len1 {
-            println!();
-            print!("+ ");
-            for _i in 0..max_len - len2 {
-                //2nd line padding
-                print!(" ");
-            }
-        } else if i == len1 + len2 + 1 {
-            println!();
-            print!("= ");
-            for _i in 0..max_len - len3 {
-                //3rd line padding
-                print!(" ");
-            }
-        } else {
-            print!("{}", *byte as char);
-        }
-    }
-    println!();
-    println!();
+    sum
 }
 
-fn print_solution(len1: usize, len2: usize, len3: usize, vars_solved: &[(char, usize)]) {
-    println!("Solution:");
-    let max_len = len1.max(len2.max(len3));
-
-    for (i, value) in vars_solved.iter().enumerate() {
-        if i == 0 {
-            for _i in 0..max_len - len1 + 2 {
-                //1st line padding
-                print!(" ");
-            }
-        } else if i == len1 {
-            println!();
-            print!("+ ");
-            for _i in 0..max_len - len2 {
-                //2nd line padding
-                print!(" ");
-            }
-        } else if i == len1 + len2 {
-            println!();
-            print!("= ");
-            for _i in 0..max_len - len3 {
-                //3rd line padding
-                print!(" ");
-            }
-        }
-        print!("{}", value.1);
+fn padding(len: usize) {
+    for _i in 0..len {
+        print!(" ");
     }
-    println!();
-    println!();
+}
+fn print_word(word: &str) {
+    let bytes = word.as_bytes();
+    for byte in bytes.iter() {
+        print!("{}", *byte as char);
+    }
+}
+fn print_word_value(word: &str, vars_solved: &HashMap<char, usize>) {
+    let bytes = word.as_bytes();
+    for byte in bytes.iter() {
+        print!("{}", vars_solved.get(&(*byte as char)).unwrap());
+    }
+}
+
+fn print_problem(words: [&str; 3]) {
+    println!("Problem:");
+    let max_len = words.iter().map(|w| w.len()).max().unwrap();
+    padding(max_len - words[0].len() + 2);
+    print_word(words[0]);
+    print!("\n+ ");
+    padding(max_len - words[1].len());
+    print_word(words[1]);
+    print!("\n= ");
+    padding(max_len - words[2].len());
+    print_word(words[2]);
+    println!("\n");
+}
+
+fn print_solution(words: [&str; 3], vars_solved: &HashMap<char, usize>) {
+    println!("Solution:");
+    let max_len = words.iter().map(|w| w.len()).max().unwrap();
+    padding(max_len - words[0].len() + 2);
+    print_word_value(words[0], vars_solved);
+    print!("\n+ ");
+    padding(max_len - words[1].len());
+    print_word_value(words[1], vars_solved);
+    print!("\n= ");
+    padding(max_len - words[2].len());
+    print_word_value(words[2], vars_solved);
+    println!("\n");
 }
 
 #[cfg(test)]
@@ -166,22 +135,25 @@ mod test {
 
     #[test]
     fn test_send_more_money() {
-        let sol: Vec<(char, usize)> = vec![
-            ('S', 9),
-            ('E', 5),
-            ('N', 6),
-            ('D', 7),
-            ('M', 1),
-            ('O', 0),
-            ('R', 8),
-            ('E', 5),
-            ('M', 1),
-            ('O', 0),
-            ('N', 6),
-            ('E', 5),
-            ('Y', 2),
-        ];
+        let sol: HashMap<char, usize> = HashMap::from([
+            ('S', 9 as usize),
+            ('E', 5 as usize),
+            ('N', 6 as usize),
+            ('D', 7 as usize),
+            ('M', 1 as usize),
+            ('O', 0 as usize),
+            ('R', 8 as usize),
+            ('Y', 2 as usize),
+        ]);
         assert_eq!(solve("SEND+MORE=MONEY").expect("Should have a solution."), sol);
+    }
+
+    #[test]
+    fn test_symetry() {
+        assert_eq!(
+            solve("SEND+MORE=MONEY").expect("Should have a solution."),
+            solve("MORE+SEND=MONEY").expect("Should have a solution.")
+        );
     }
 
     #[test]

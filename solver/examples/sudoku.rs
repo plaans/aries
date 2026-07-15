@@ -13,7 +13,7 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
         .map(|_| (0..9).map(|_| model.new_variable(1, 9)).collect())
         .collect();
 
-    // if the input nimpose a value for a cell, force the correspondig variable to take this value
+    // if the input impose a value for a cell, force the correspondig variable to take this value
     for line in 0..9 {
         for col in 0..9 {
             let cell_value = initial_grid[line][col];
