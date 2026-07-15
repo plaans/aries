@@ -6,8 +6,8 @@ use crate::chronicles::{Chronicle, ChronicleKind, EffectOp, Problem, StateVar, T
 use crate::legacy::*;
 use aries_solver::core::{Lit, Relation, Var};
 use aries_solver::lang::BVar;
-use aries_solver::model::extensions::DomainsExt;
 use aries_solver::model::Model;
+use aries_solver::prelude::Dom;
 use aries_solver::prelude::*;
 
 pub struct Printer<'a> {
@@ -159,7 +159,7 @@ impl<'a> Printer<'a> {
         }
     }
 
-    fn iatom(&self, i: IAtom) {
+    fn iatom(&self, i: VarCst) {
         if i.var == Var::ZERO {
             print!("{}", i.shift)
         } else {
@@ -224,7 +224,7 @@ impl<'a> Printer<'a> {
             print!("{v:?}");
         }
 
-        let prez = self.model.presence_literal(v);
+        let prez = self.model.presence(v);
         if prez != Lit::TRUE {
             print!("[{prez:?}]")
         }

@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, str::FromStr};
 
-/// Simplistic parser to help reading problem definition.
+/// Simplistic parser to help reading a problem definition.
 ///
 /// Note: will panic anytime something is not exactly as expected.
 pub struct Parser<'a> {

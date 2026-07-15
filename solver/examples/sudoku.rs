@@ -82,23 +82,6 @@ fn solve_sudoku(initial_grid: &[Vec<usize>]) -> Option<Vec<Vec<usize>>> {
     }
 }
 
-fn print_grid(grid: &[Vec<usize>]) {
-    for line in 0..9 {
-        for col in 0..9 {
-            print!("{} ", grid[line][col]);
-            if col == 2 || col == 5 {
-                print!("| ")
-            }
-        }
-
-        println!();
-
-        if line == 2 || line == 5 {
-            println!("---------------------")
-        }
-    }
-}
-
 fn main() {
     let grid = vec![
         vec![0, 0, 3, 0, 2, 0, 6, 0, 0],
@@ -113,6 +96,29 @@ fn main() {
     ];
 
     solve_sudoku(&grid);
+}
+
+/// Prints a sudoku 9x9 grid
+fn print_grid(grid: &[Vec<usize>]) {
+    for line in 0..9 {
+        for col in 0..9 {
+            let val = grid[line][col];
+            if val == 0 {
+                print!(". ")
+            } else {
+                print!("{val} ");
+            }
+            if col == 2 || col == 5 {
+                print!("| ")
+            }
+        }
+
+        println!();
+
+        if line == 2 || line == 5 {
+            println!("---------------------")
+        }
+    }
 }
 
 #[cfg(test)]

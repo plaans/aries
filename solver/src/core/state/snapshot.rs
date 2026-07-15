@@ -16,7 +16,7 @@ use crate::prelude::*;
 ///    as the snapshot does not bring any added value compared to the wrapped state).
 ///    Query and construction should remain with a very low overhead
 ///
-/// The type implements the [`Dom`] view trait that exposes many methods through the [`DomainsExt`] extension trait.
+/// The type implements the [`Dom`] view trait that exposes many methods.
 pub enum DomainsSnapshot<'a> {
     Current { doms: &'a Domains },
     Past { doms: &'a Domains, next_event: EventIndex },
@@ -99,11 +99,11 @@ impl<'a> DomainsSnapshot<'a> {
 }
 
 impl<'a> Dom for DomainsSnapshot<'a> {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
         self.get_upper_bound(svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
+    fn _presence(&self, var: Var) -> Lit {
         self.get_presence_literal(var)
     }
 }

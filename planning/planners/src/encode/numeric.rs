@@ -13,7 +13,6 @@ use aries_solver::backtrack::DecLvl;
 use aries_solver::core::state::Conflict;
 use aries_solver::core::*;
 use aries_solver::lang::expr::*;
-use aries_solver::model::extensions::DomainsExt;
 use itertools::Itertools;
 
 /// Parameter that activates additional constraints for borrow patterns.
@@ -95,7 +94,7 @@ impl BorrowPattern {
 fn lit_to_ivar(model: &mut Model, lit: Lit) -> Var {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
     debug_assert_eq!(
-        model.presence_literal(lit.variable()),
+        model.presence(lit.variable()),
         Lit::TRUE,
         "Optional variables not supported by this function"
     );
@@ -121,9 +120,9 @@ fn lit_to_ivar(model: &mut Model, lit: Lit) -> Var {
 
 /// Multiply an integer atom with a literal.
 /// The result is a linear sum evaluated to the atom if the literal is true, and to 0 otherwise.
-pub fn iatom_mul_lit(model: &mut Model, atom: IAtom, lit: Lit) -> LinearSum {
+pub fn iatom_mul_lit(model: &mut Model, atom: VarCst, lit: Lit) -> LinearSum {
     debug_assert_eq!(model.current_decision_level(), DecLvl::ROOT);
-    debug_assert!(model.state.implies(lit, model.presence_literal(atom.var)));
+    debug_assert!(model.state.implies(lit, model.presence(atom.var)));
     if atom.var == Var::ZERO {
         // Constant variable
         if atom.shift == 0 || model.entails(!lit) {
@@ -380,7 +379,7 @@ fn add_condition_support_constraints(
             // enforce the condition value to be the sum of the assignment values and the increase values
             for term in cond_val_sum.terms() {
                 // compute some static implication for better propagation
-                let p = solver.model.presence_literal(term.var());
+                let p = solver.model.presence(term.var());
                 if !solver.model.entails(p) {
                     solver.model.state.add_implication(supported_by, p);
                 }
@@ -525,7 +524,7 @@ fn add_condition_support_increase_contribution_non_factorized(
         }
         // each term of the increase value is present
         for term in inc_val.terms() {
-            let p = solver.model.presence_literal(term.var());
+            let p = solver.model.presence(term.var());
             active_inc_conjunction.push(p);
         }
         // compute wether the increase is active in the condition value
@@ -536,7 +535,7 @@ fn add_condition_support_increase_contribution_non_factorized(
         inc_support.entry(inc_id).or_default().push(active_inc);
         for term in inc_val.terms() {
             // compute some static implication for better propagation
-            let p = solver.model.presence_literal(term.var());
+            let p = solver.model.presence(term.var());
             if !solver.model.entails(p) {
                 solver.model.state.add_implication(active_inc, p);
             }
@@ -646,7 +645,7 @@ fn add_condition_support_increase_contribution_factorized(
 
         for term in inc_val.terms() {
             // compute some static implication for better propagation
-            let p = solver.model.presence_literal(term.var());
+            let p = solver.model.presence(term.var());
             if !solver.model.entails(p) {
                 solver.model.state.add_implication(inc_support_cond, p);
             }
@@ -919,13 +918,13 @@ fn compute_inc_contrib_to_ass(
                     }
                     // Each term of the increase value is present
                     for term in inc_val.terms() {
-                        contribute_conjunction.push(solver.model.presence_literal(term.var()));
+                        contribute_conjunction.push(solver.model.presence(term.var()));
                     }
                     // Compute the contribution
                     let contribute = solver.reify(and(contribute_conjunction));
                     for term in inc_val.terms() {
                         // compute some static implication for better propagation
-                        let p = solver.model.presence_literal(term.var());
+                        let p = solver.model.presence(term.var());
                         if !solver.model.entails(p) {
                             solver.model.state.add_implication(contribute, p);
                         }

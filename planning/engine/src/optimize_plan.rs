@@ -15,7 +15,7 @@ use aries_plan_engine::{
 };
 use aries_solver::{
     core::{state::Evaluable, views::Boundable},
-    lang::{IntExpr, Store},
+    lang::{IntExpr, ModelView},
     prelude::*,
 };
 use derive_more::derive::Display;

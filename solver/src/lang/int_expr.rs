@@ -1,7 +1,7 @@
-use crate::{lang::Store, prelude::*};
+use crate::{lang::ModelView, prelude::*};
 
 /// Represents an integer expression that can be reified or made equal to another variable
-pub trait IntExpr<Ctx: Store> {
+pub trait IntExpr<Ctx: ModelView> {
     /// Reifies the expression into a term with a single variable.
     fn reify(&self, scope: impl Into<Conjunction>, ctx: &mut Ctx) -> LinTerm {
         let scope = scope.into();
@@ -30,7 +30,7 @@ pub trait IntExpr<Ctx: Store> {
     /// Enforce that, whenever `variable` is defined, it has the same value as the expression.
     fn enforce_eq(&self, variable: LinTerm, ctx: &mut Ctx) {
         // Create an enabler that is always true and has the same scope as `variable`
-        let enabler = ctx.tautology_of_scope(ctx.presence_literal(variable));
+        let enabler = ctx.tautology_of_scope(ctx.presence(variable));
         self.enforce_eq_if(enabler, variable, ctx);
     }
 

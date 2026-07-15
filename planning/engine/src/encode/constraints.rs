@@ -167,6 +167,6 @@ impl BoolExpr<SchedEncoder> for ReificationConstraint {
     }
 
     fn conj_scope(&self, ctx: &SchedEncoder) -> Conjunction {
-        ctx.presence_literal(self.reification).into()
+        ctx.presence(self.reification).into()
     }
 }

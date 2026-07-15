@@ -1,5 +1,5 @@
 use crate::{
-    lang::{BoolExpr, Store, expr::or},
+    lang::{BoolExpr, ModelView, expr::or},
     prelude::*,
 };
 
@@ -26,11 +26,11 @@ pub struct ExclusiveChoice<T> {
     alt2: T,
 }
 
-impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
+impl<Ctx: ModelView, T: BoolExpr<Ctx>> BoolExpr<Ctx> for ExclusiveChoice<T> {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         if ctx.entails(l) {
             // a tautology, create a single variable representing both options
-            let choice_var = ctx.new_optional_bool_var(ctx.presence_literal(l));
+            let choice_var = ctx.new_optional_bool_var(ctx.presence(l));
             self.alt1.opt_enforce_if(choice_var, ctx);
             self.alt2.opt_enforce_if(!choice_var, ctx);
         } else {

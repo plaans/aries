@@ -3,8 +3,8 @@ use aries_solver::{
         state::{Cause, DomainsSnapshot, Explanation, OptDomain},
         IntCst,
     },
-    lang::{BoolExpr, Store},
-    prelude::{Conjunction, Domains, Solution},
+    lang::{BoolExpr, ModelView},
+    prelude::{Conjunction, Dom, Domains, Solution},
     reasoners::{
         cp::{Propagator, PropagatorId, UserPropagator, Watches},
         Contradiction,
@@ -47,7 +47,7 @@ impl EqVarMulLit {
 //     }
 // }
 
-impl<Ctx: Store> BoolExpr<Ctx> for EqVarMulLit {
+impl<Ctx: ModelView> BoolExpr<Ctx> for EqVarMulLit {
     fn enforce_if(&self, implicant: aries_solver::prelude::Lit, ctx: &mut Ctx) {
         assert!(ctx.entails(implicant));
         let propagator = VarEqVarMulLit {
@@ -59,16 +59,13 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqVarMulLit {
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> aries_solver::prelude::Conjunction {
-        Conjunction::from(ctx.presence_literal(self.lhs))
+        Conjunction::from(ctx.presence(self.lhs))
     }
 }
 
 use std::cmp::{max, min};
 
-use aries_solver::{
-    core::{Lit, Relation, Var},
-    model::extensions::DomainsExt,
-};
+use aries_solver::core::{Lit, Relation, Var};
 
 #[derive(Clone, Debug)]
 /// Propagator for the constraint `reified <=> original * lit`
@@ -94,7 +91,7 @@ impl Propagator for VarEqVarMulLit {
     fn propagate(&mut self, domains: &mut Domains, cause: Cause) -> std::result::Result<(), Contradiction> {
         let n = domains.trail().len();
 
-        let orig_prez = domains.presence_literal(self.original);
+        let orig_prez = domains.presence(self.original);
         debug_assert!(domains.implies(self.lit, orig_prez));
 
         if domains.entails(self.lit) {
@@ -146,7 +143,7 @@ impl Propagator for VarEqVarMulLit {
 
         let (reif_lb, reif_ub) = state.bounds(self.reified);
         let (orig_lb, orig_ub) = state.bounds(self.original);
-        let orig_prez = state.presence_literal(self.original);
+        let orig_prez = state.presence(self.original);
 
         if literal == self.lit {
             // Explain why lit is true

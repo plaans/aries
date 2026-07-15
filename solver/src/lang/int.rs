@@ -6,12 +6,12 @@ use std::fmt::Debug;
 /// An int-valued atom `(variable + constant)`
 /// It can be used to represent a constant value by using [Var::ZERO] as the variable.
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
-pub struct IAtom {
+pub struct VarCst {
     pub var: Var,
     pub shift: IntCst,
 }
 
-impl VarView for IAtom {
+impl VarView for VarCst {
     type Value = IntCst;
 
     fn upper_bound(&self, dom: impl views::Dom) -> Self::Value {
@@ -24,7 +24,7 @@ impl VarView for IAtom {
 }
 
 // Implement Debug for IAtom
-impl Debug for IAtom {
+impl Debug for VarCst {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.var == Var::ZERO {
             write!(f, "{}", self.shift)
@@ -36,19 +36,19 @@ impl Debug for IAtom {
     }
 }
 
-impl IAtom {
-    pub const ZERO: IAtom = IAtom {
+impl VarCst {
+    pub const ZERO: VarCst = VarCst {
         var: Var::ZERO,
         shift: 0,
     };
-    pub const ONE: IAtom = IAtom {
+    pub const ONE: VarCst = VarCst {
         var: Var::ZERO,
         shift: 1,
     };
-    pub const TRUE: IAtom = Self::ONE;
-    pub const FALSE: IAtom = Self::ZERO;
-    pub fn new(var: Var, shift: IntCst) -> IAtom {
-        IAtom { var, shift }
+    pub const TRUE: VarCst = Self::ONE;
+    pub const FALSE: VarCst = Self::ZERO;
+    pub fn new(var: Var, shift: IntCst) -> VarCst {
+        VarCst { var, shift }
     }
 
     /// Returns a literal representing whether this atom is lesser than the given value.
@@ -89,7 +89,7 @@ impl IAtom {
 /// Comparison on the values that can be taken for two atoms.
 /// We can only carry out the comparison if they are on the same variable.
 /// Otherwise, we cannot say in which order their values will be.
-impl PartialOrd for IAtom {
+impl PartialOrd for VarCst {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.var == other.var {
             Some(self.shift.cmp(&other.shift))
@@ -99,7 +99,7 @@ impl PartialOrd for IAtom {
     }
 }
 
-impl Boundable for IAtom {
+impl Boundable for VarCst {
     type Value = IntCst;
 
     #[inline]

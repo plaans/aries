@@ -1,3 +1,5 @@
+use crate::prelude::*;
+
 use crate::backtrack::{Backtrack, DecLvl};
 use crate::collections::set::IterableRefSet;
 use crate::core::literals::{Disjunction, Lits};
@@ -5,13 +7,11 @@ use crate::core::state::*;
 use crate::core::views::{Boundable, VarView};
 use crate::core::*;
 use crate::lang::BoolExpr;
-use crate::lang::expr::geq;
-use crate::model::extensions::{DisjunctionExt, DomainsExt};
+use crate::lang::{CoreExpr, Reifiable};
+use crate::model::extensions::DisjunctionExt;
 use crate::model::{Constraint, Label, Model};
 use crate::prelude::LinTerm;
-use crate::reasoners::cp::max::{AtLeastOneGeq, MaxElem};
 use crate::reasoners::{Contradiction, ReasonerId, Reasoners};
-use crate::reif::{DifferenceExpression, ReifExpr, Reifiable};
 use crate::solver::musmcs::MusMcsEnumerator;
 use crate::solver::musmcs::marco::{MapSolverMode, Marco, SubsetSolverOptiMode};
 use crate::solver::parallel::signals::{InputSignal, InputStream, SolverOutput, Synchro};
@@ -203,7 +203,7 @@ impl<Lbl: Label> Solver<Lbl> {
 
         let enabler = *enabler;
         assert_eq!(self.model.state.current_decision_level(), DecLvl::ROOT);
-        let scope = self.model.presence_literal(enabler);
+        let scope = self.model.presence(enabler);
         if self.model.entails(!scope) {
             return Ok(()); // constraint is absent, ignore
         }
@@ -211,53 +211,11 @@ impl<Lbl: Label> Solver<Lbl> {
             return Ok(()); // constraint is inactive, ignore
         }
         match constraint {
-            &ReifExpr::Lit(lit) => {
+            &CoreExpr::Lit(lit) => {
                 self.add_clause([!enabler, lit], scope)?; // value => lit
                 Ok(())
             }
-            ReifExpr::MaxDiff(diff) => {
-                let rhs = diff.a;
-                let rhs_add = diff.ub;
-                let lhs = diff.b;
-                self.reasoners
-                    .diff
-                    .add_half_reified_edge(enabler, rhs, lhs, rhs_add, &self.model.state);
-                Ok(())
-            }
-            ReifExpr::Eq(a, b) => {
-                let lit = self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::Neq(a, b) => {
-                let lit = !self.reasoners.eq.add_edge(*a, *b, &mut self.model);
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::EqVal(a, b) => {
-                let (lb, ub) = self.model.state.bounds(*a);
-                let lit = if (lb..=ub).contains(b) {
-                    self.reasoners.eq.add_val_edge(*a, *b, &mut self.model)
-                } else {
-                    Lit::FALSE
-                };
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::NeqVal(a, b) => {
-                let lit = !self.reasoners.eq.add_val_edge(*a, *b, &mut self.model);
-                if lit != enabler {
-                    self.add_clause([!enabler, lit], scope)?; // value => lit
-                }
-                Ok(())
-            }
-            ReifExpr::Or(disjuncts) => {
+            CoreExpr::Or(disjuncts) => {
                 if self.model.entails(enabler) {
                     self.add_clause(disjuncts, scope)
                 } else {
@@ -272,7 +230,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     Ok(())
                 }
             }
-            ReifExpr::And(conjuncts) => {
+            CoreExpr::And(conjuncts) => {
                 if self.model.entails(!enabler) {
                     // (and a b ...)
                     for lit in conjuncts {
@@ -287,13 +245,13 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 Ok(())
             }
-            ReifExpr::LinearLeq(lin) => {
+            CoreExpr::LinearLeq(lin) => {
                 let reformulation = if let Some((cst, [])) = lin.extract() {
-                    Some(ReifExpr::Lit((cst <= 0).into()))
+                    Some(CoreExpr::Lit((cst <= 0).into()))
                 } else if let Some((cst, [(f, v)])) = lin.extract() {
                     debug_assert_ne!(f, 0); // should be guaranteed by `LinSum`
                     // cst + f * v <= 0
-                    Some(ReifExpr::Lit((f * v).leq(-cst)))
+                    Some(CoreExpr::Lit((f * v).leq(-cst)))
                 } else if let Some((cst, [(f1, v1), (f2, v2)])) = lin.extract() {
                     debug_assert_ne!(f1, 0); // should be guaranteed by `LinSum`
                     debug_assert_ne!(f2, 0); // should be guaranteed by `LinSum`
@@ -303,11 +261,14 @@ impl<Lbl: Label> Solver<Lbl> {
                         debug_assert!(factor > 0);
                         // cst + factor *(b - a) <= 0
                         // (b - a) <= -cst / factor
-                        Some(ReifExpr::MaxDiff(DifferenceExpression {
-                            b,
+                        self.reasoners.diff.add_half_reified_edge(
+                            enabler,
                             a,
-                            ub: num_integer::div_floor(-cst, factor),
-                        }))
+                            b,
+                            num_integer::div_floor(-cst, factor),
+                            &self.model.state,
+                        );
+                        Some(CoreExpr::Lit(Lit::TRUE)) // we already enforced it, nothing else to do so we provide tautology
                     } else {
                         None
                     }
@@ -331,7 +292,7 @@ impl<Lbl: Label> Solver<Lbl> {
                         if x.factor != 1 || y.factor != 1 {
                             continue;
                         }
-                        if doms.presence(d.var) != doms.presence_literal(enabler) {
+                        if doms.presence(d.var) != doms.presence(enabler) {
                             // presence of the constraint does not match the one of the edge
                             continue;
                         }
@@ -365,118 +326,14 @@ impl<Lbl: Label> Solver<Lbl> {
                     Ok(())
                 }
             }
-            ReifExpr::LinearEq(lin) => {
-                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(lin.clone()), enabler))?;
-                self.post_constraint(&Constraint::HalfReified(ReifExpr::LinearLeq(-lin.clone()), enabler))
+            CoreExpr::LinearEq(lin) => {
+                self.post_constraint(&Constraint::HalfReified(CoreExpr::LinearLeq(lin.clone()), enabler))?;
+                self.post_constraint(&Constraint::HalfReified(CoreExpr::LinearLeq(-lin.clone()), enabler))
             }
-            ReifExpr::LinearNeq(lin) => {
+            CoreExpr::LinearNeq(lin) => {
                 let option1 = self.model.half_reify(lin.clone().lt(0));
                 let option2 = self.model.half_reify(lin.clone().gt(0));
                 self.add_clause([!enabler, option1, option2], scope)?;
-                Ok(())
-            }
-            ReifExpr::Alternative(a) => {
-                let prez = |v: Var| self.model.state.presence_literal(v);
-                assert!(
-                    self.model.entails(enabler),
-                    "Unsupported half reified alternative constraints."
-                );
-                assert_eq!(prez(a.main), prez(enabler.variable()));
-
-                let scope = prez(a.main);
-                let presences = a.alternatives.iter().map(|alt| prez(alt.var)).collect_vec();
-                // at least one alternative must be present
-                self.add_clause(&presences, scope)?;
-
-                // at most one must be present
-                for (i, p1) in presences.iter().copied().enumerate() {
-                    for &p2 in &presences[i + 1..] {
-                        self.add_clause([!p1, !p2], scope)?;
-                    }
-                }
-
-                for alt in &a.alternatives {
-                    let alt_scope = self.model.state.presence_literal(alt.var);
-                    debug_assert!(self.model.state.implies(alt_scope, scope));
-                    // a.main = alt.var + alt.shift
-                    // a.main - alt.var = alt.shift
-                    // alt.cst <= a.main - alt.var <= alt.cst
-                    // -alt.cst >= alt.var - a.main   &&   a.main - alt.var <= alt.cst
-                    let alt_value = self.model.get_tautology_of_scope(alt_scope);
-                    self.post_constraint(&Constraint::HalfReified(
-                        ReifExpr::MaxDiff(DifferenceExpression::new(alt.var, a.main, -alt.cst)),
-                        alt_value,
-                    ))?;
-                    self.post_constraint(&Constraint::HalfReified(
-                        ReifExpr::MaxDiff(DifferenceExpression::new(a.main, alt.var, alt.cst)),
-                        alt_value,
-                    ))?;
-                }
-
-                let prez = |v: Var| self.model.state.presence_literal(v);
-
-                // ub(main) <- max_i { ub(var_i) + cst_i  | prez_i }
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
-                    scope,
-                    lhs: SignedVar::plus(a.main),
-                    elements: a
-                        .alternatives
-                        .iter()
-                        .map(|alt| MaxElem::new(alt.var + alt.cst, prez(alt.var)))
-                        .collect_vec(),
-                });
-
-                //  lb(main)  <-   min_i {  lb(var_i)  + cst_i | prez_i }
-                // -ub(-main) <-   min_i { -ub(-var_i) + cst_i | prez_i }
-                // -ub(-main) <- - max_i {  ub(-var_i) + cst_i | prez_i }
-                //  ub(-main) <-   max_i {  ub(-var_i) + cst_i | prez_i }
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
-                    scope,
-                    lhs: SignedVar::minus(a.main),
-                    elements: a
-                        .alternatives
-                        .iter()
-                        .map(|alt| MaxElem::new(-alt.var + alt.cst, prez(alt.var)))
-                        .collect_vec(),
-                });
-                Ok(())
-            }
-            ReifExpr::EqMax(a) => {
-                let prez = |v: SignedVar| self.model.state.presence(v);
-                assert!(
-                    self.model.entails(enabler),
-                    "Unsupported half reified eqmax constraints."
-                );
-                assert_eq!(prez(a.lhs), prez(enabler.variable().into()));
-
-                let scope = prez(a.lhs);
-                let presences = a.rhs.iter().map(|alt| prez(alt.var)).collect_vec();
-                // at least one alternative must be present
-                self.add_clause(&presences, scope)?;
-
-                // POST  forall i    lhs >= rhs[i]   (scope: prez(rhs[i]))
-                for item in &a.rhs {
-                    let item_scope = self.model.state.presence(item.var);
-                    debug_assert!(self.model.state.implies(item_scope, scope));
-                    let alt_value = self.model.get_tautology_of_scope(item_scope);
-                    // a.lhs >= item.var + item.cst
-                    let constraint = geq(a.lhs, item.var + item.cst);
-                    self.post_constraint(&Constraint::HalfReified(constraint.into(), alt_value))?;
-                }
-
-                let prez = |v: SignedVar| self.model.state.presence(v);
-
-                // POST  OR_i  (prez(rhs[i])  &&  rhs[i] >= lhs)    [scope: prez(lhs)]
-                self.reasoners.cp.add_propagator(AtLeastOneGeq {
-                    scope,
-                    lhs: a.lhs,
-                    elements: a
-                        .rhs
-                        .iter()
-                        .map(|elem| MaxElem::new(elem.var + elem.cst, prez(elem.var)))
-                        .collect_vec(),
-                });
-
                 Ok(())
             }
         }
@@ -504,7 +361,7 @@ impl<Lbl: Label> Solver<Lbl> {
         disjuncts: impl Into<Disjunction>,
         scope: Lit,
     ) -> (Disjunction, Lit) {
-        let prez = |l: Lit| self.model.presence_literal(l.variable());
+        let prez = |l: Lit| self.model.presence(l.variable());
         let disjuncts = disjuncts.into();
         if scope == Lit::TRUE {
             return (disjuncts, scope);
@@ -604,7 +461,7 @@ impl<Lbl: Label> Solver<Lbl> {
             {
                 variables
                     .iter()
-                    .map(|v| self.model.presence_literal(*v))
+                    .map(|v| self.model.presence(*v))
                     .filter(|p| *p != Lit::TRUE)
                     .all(|p| variables.contains(&p.variable()))
             },

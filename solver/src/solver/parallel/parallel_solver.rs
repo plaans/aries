@@ -1,6 +1,5 @@
-use crate::lang::IAtom;
+use crate::lang::VarCst;
 use crate::model::Label;
-use crate::model::extensions::DomainsExt;
 use crate::prelude::*;
 use crate::solver::parallel::signals::{InputSignal, InputStream, OutputSignal, SolverOutput, ThreadID};
 use crate::solver::{Exit, SearchLimit, Solver, UnsatCore};
@@ -183,7 +182,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
     }
 
     /// Minimize the value of the given expression.
-    pub fn minimize(&mut self, objective: impl Into<IAtom>, deadline: Option<Instant>) -> SolverResult<Solution> {
+    pub fn minimize(&mut self, objective: impl Into<VarCst>, deadline: Option<Instant>) -> SolverResult<Solution> {
         // TODO: leverage deadline search
         let objective = objective.into();
         self.race_solvers(
@@ -202,7 +201,7 @@ impl<Lbl: Label> ParSolver<Lbl> {
     /// assignment will be passed to the given callback.
     pub fn minimize_with(
         &mut self,
-        objective: impl Into<IAtom>,
+        objective: impl Into<VarCst>,
         on_improved_solution: impl Fn(Solution),
         deadline: Option<Instant>,
     ) -> SolverResult<Solution> {

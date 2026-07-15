@@ -860,11 +860,11 @@ impl Debug for Conflict {
 }
 
 impl crate::core::views::Dom for Domains {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
         Domains::upper_bound(self, svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
+    fn _presence(&self, var: Var) -> Lit {
         Domains::presence(self, var)
     }
 }

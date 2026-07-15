@@ -1,18 +1,16 @@
 use crate::{
+    lang::CoreExpr,
     lang::{
-        alternative::Alternative,
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
-        max::{EqMax, EqMin},
         *,
     },
     prelude::*,
-    reif::ReifExpr,
 };
 
 /// Representation of a boolean expression, that can be reified, made conditional or enforced
 /// in a [`Model`].
-pub trait BoolExpr<Ctx: Store> {
+pub trait BoolExpr<Ctx: ModelView> {
     /// Enforce the expression to be true when `implicant` is true and defined.
     ///
     /// IMPORTANT: it must be the case that expression is defined whenever `implicant` is.
@@ -35,7 +33,7 @@ pub trait BoolExpr<Ctx: Store> {
     /// Enforce that if the expression is in scope and `l` is true and defined, then the expression should be true.
     fn opt_enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let expression_scope = self.scope(ctx);
-        let enabler_scope = ctx.presence_literal(l);
+        let enabler_scope = ctx.presence(l);
 
         // get the scope of both the expression and the enabler
         let scope = ctx.conjunctive_scope(&[expression_scope, enabler_scope]);
@@ -87,7 +85,7 @@ pub trait BoolExpr<Ctx: Store> {
     }
 }
 
-impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
+impl<Ctx: ModelView, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         (*self).enforce_if(l, ctx);
     }
@@ -102,18 +100,18 @@ impl<Ctx: Store, T: BoolExpr<Ctx>> BoolExpr<Ctx> for &T {
     //TODO: implement all other methods to make sure we use the most specific implementation
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
+impl<Ctx: ModelView> BoolExpr<Ctx> for CoreExpr {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         ctx.add_implies(l, self.clone());
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        let vs = self.scope(|v| ctx.presence_literal(v));
+        let vs = self.scope(|v| ctx.presence(v));
         let conj_scope = vs.to_conjunction(ctx);
         Conjunction::from_iter(conj_scope.literals()) // TODO: remove conversion when StableLitSet = Conjunction`
     }
     fn implicant(&self, ctx: &mut Ctx) -> Lit {
-        if let ReifExpr::Lit(l) = self {
+        if let CoreExpr::Lit(l) = self {
             *l // short circuit happy case
         } else {
             ctx.get_implicant(self.clone())
@@ -124,32 +122,29 @@ impl<Ctx: Store> BoolExpr<Ctx> for ReifExpr {
 #[macro_export] // TODO: remove
 macro_rules! impl_reif {
     ($A: ty) => {
-        impl<Ctx: Store> BoolExpr<Ctx> for $A
+        impl<Ctx: ModelView> BoolExpr<Ctx> for $A
         where
             $A: Clone,
-            ReifExpr: From<$A>,
+            CoreExpr: From<$A>,
         {
             fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
-                ReifExpr::from(self.clone()).enforce_if(l, ctx);
+                CoreExpr::from(self.clone()).enforce_if(l, ctx);
             }
             fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-                ReifExpr::from(self.clone()).conj_scope(ctx)
+                CoreExpr::from(self.clone()).conj_scope(ctx)
             }
             fn implicant(&self, ctx: &mut Ctx) -> Lit {
-                ctx.get_implicant(ReifExpr::from(self.clone()))
+                ctx.get_implicant(CoreExpr::from(self.clone()))
             }
             // TODO: add reification impl
         }
     };
 }
 
-// Derive `impl BoolExpr<_>` for Expression convertible to `ReifExpr`
+// Derive `impl BoolExpr<_>` for Expression convertible to `CoreExpr`
 impl_reif!(Lit);
 impl_reif!(Disjunction);
 impl_reif!(Conjunction);
-impl_reif!(EqMax);
-impl_reif!(EqMin);
-impl_reif!(Alternative);
 impl_reif!(LinLeq);
 impl_reif!(LinEq);
 impl_reif!(LinNeq);
@@ -159,7 +154,7 @@ mod test {
     use crate::{
         core::views::{Dom, Term},
         lang::{
-            IAtom,
+            VarCst,
             expr::{lt, neq},
         },
         model::Label,
@@ -168,12 +163,12 @@ mod test {
     use super::*;
 
     /// All different with potentially optional variables
-    struct AllDifferent(Vec<IAtom>);
+    struct AllDifferent(Vec<VarCst>);
 
     /// True if the the two atoms are different, and undefined if at least one is absent
-    struct Different(IAtom, IAtom);
+    struct Different(VarCst, VarCst);
 
-    impl<Ctx: Store> BoolExpr<Ctx> for AllDifferent {
+    impl<Ctx: ModelView> BoolExpr<Ctx> for AllDifferent {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
             for (i, t1) in self.0.iter().copied().enumerate() {
                 for t2 in self.0[i + 1..].iter().copied() {
@@ -187,13 +182,13 @@ mod test {
         }
     }
 
-    impl<Ctx: Store> BoolExpr<Ctx> for Different {
+    impl<Ctx: ModelView> BoolExpr<Ctx> for Different {
         fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
             neq(self.0, self.1).opt_enforce_if(l, ctx);
         }
 
         fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-            [ctx.presence_literal(self.0), ctx.presence_literal(self.1)].into()
+            [ctx.presence(self.0), ctx.presence(self.1)].into()
         }
     }
 
@@ -205,7 +200,7 @@ mod test {
         for i in 1..=n {
             let pi = m.new_presence_variable(Lit::TRUE, format!("p{i}")).true_lit();
             let ti = m.new_optional_ivar(0, 1, pi, format!("t{i}"));
-            tasks.push(IAtom::from(ti));
+            tasks.push(VarCst::from(ti));
         }
 
         let _activator = m.new_bvar("activator").true_lit();
@@ -218,11 +213,11 @@ mod test {
         let count = enumerate(s, &tasks);
         assert_eq!(count, 7);
     }
-    fn enumerate<L: Label>(mut s: Solver<L>, ints: &[IAtom]) -> i32 {
+    fn enumerate<L: Label>(mut s: Solver<L>, ints: &[VarCst]) -> i32 {
         let mut vars = Vec::with_capacity(ints.len() * 2);
         for &i in ints {
             vars.push(i.variable());
-            vars.push(s.model.presence(i.variable()).variable());
+            vars.push(s.model._presence(i.variable()).variable());
         }
         vars.sort();
         vars.dedup();
@@ -252,7 +247,7 @@ mod test {
     struct Ordered(TaskId, TaskId);
 
     struct ModelWithMetadata {
-        starts: Vec<IAtom>,
+        starts: Vec<VarCst>,
         model: Model,
     }
     impl ModelWrapper for ModelWithMetadata {
@@ -268,12 +263,12 @@ mod test {
     }
 
     impl Dom for ModelWithMetadata {
-        fn upper_bound(&self, svar: SignedVar) -> IntCst {
-            self.model.upper_bound(svar)
+        fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+            self.model._upper_bound(svar)
         }
 
-        fn presence(&self, var: Var) -> Lit {
-            self.model.presence(var)
+        fn _presence(&self, var: Var) -> Lit {
+            self.model._presence(var)
         }
     }
 

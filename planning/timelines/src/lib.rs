@@ -31,7 +31,7 @@ pub use crate::tasks::*;
 pub type Sym = String;
 
 /// Type of timepoints
-pub type Time = IAtom;
+pub type Time = VarCst;
 
 /// Type of simple int expressions (composed of at most one variable)
 pub type IntTerm = aries_solver::prelude::LinTerm;
@@ -190,11 +190,11 @@ impl Sched {
 }
 
 impl Dom for Sched {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        self.model.upper_bound(svar)
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.model._upper_bound(svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
-        self.model.presence(var)
+    fn _presence(&self, var: Var) -> Lit {
+        self.model._presence(var)
     }
 }

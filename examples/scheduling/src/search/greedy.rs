@@ -3,11 +3,12 @@
 use crate::VarLbl;
 use crate::problem::Encoding;
 use crate::search::Model;
+
+use aries_solver::prelude::*;
+
 use aries_solver::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
 use aries_solver::core::state::OptDomain;
 use aries_solver::core::views::Term;
-use aries_solver::core::{IntCst, Lit, Var};
-use aries_solver::model::extensions::DomainsExt;
 use aries_solver::solver::search::{Decision, SearchControl};
 use aries_solver::solver::stats::Stats;
 
@@ -34,7 +35,7 @@ impl SearchControl<VarLbl> for EstBrancher {
         // decision is to set the start time to the selected task to the smallest possible value.
         // if no task was selected, it means that they are all instantiated and we have a complete schedule
         best.map(|(var, est, _)| {
-            let prez = model.presence_literal(var);
+            let prez = model.presence(var);
             if !model.entails(prez) {
                 Decision::SetLiteral(prez)
             } else {

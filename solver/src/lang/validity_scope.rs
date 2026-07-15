@@ -2,7 +2,7 @@ use smallvec::SmallVec;
 
 use crate::core::Lit;
 use crate::core::literals::{LitSet, StableLitSet};
-use crate::lang::Store;
+use crate::lang::ModelView;
 
 /// Represents the scope in which a given expression is valid.
 ///
@@ -60,7 +60,7 @@ impl ValidityScope {
     ///  - the decomposition of each scope literal
     ///  - which literals are tautological in the model
     ///  - which scope literal are implied by another one
-    pub fn to_conjunction<Ctx: Store>(&self, ctx: &Ctx) -> StableLitSet {
+    pub fn to_conjunction<Ctx: ModelView>(&self, ctx: &Ctx) -> StableLitSet {
         let mut set = LitSet::new();
         for l in self.required_presence.literals() {
             // decomposes a conjunctive scope into its components

@@ -15,8 +15,7 @@ use aries_planning::chronicles::Problem;
 use aries_planning::chronicles::*;
 use aries_planning::legacy::Shaped;
 use aries_solver::core::{IntCst, Lit, Var, INT_CST_MAX};
-use aries_solver::lang::IAtom;
-use aries_solver::model::extensions::DomainsExt;
+use aries_solver::lang::VarCst;
 use aries_solver::model::Model;
 use aries_solver::prelude::*;
 use aries_solver::reasoners::stn::{StnConfig, TheoryPropagationLevel};
@@ -84,10 +83,10 @@ pub enum Metric {
     ActionCosts,
     /// Minimize value of a given variable
     /// The variable can, e.g., represent the final value of a state variable
-    MinimizeVar(IAtom),
+    MinimizeVar(VarCst),
     /// Maximize value of a given variable
     /// The variable can, e.g., represent the final value of a state variable
-    MaximizeVar(IAtom),
+    MaximizeVar(VarCst),
 }
 
 impl FromStr for Metric {

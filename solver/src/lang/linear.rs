@@ -4,9 +4,8 @@ use smallvec::SmallVec;
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
 use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
-use crate::lang::{BoolExpr, IntExpr, Store};
+use crate::lang::{BoolExpr, CoreExpr, IntExpr, ModelView};
 use crate::prelude::Conjunction;
-use crate::reif::ReifExpr;
 use std::fmt::{Debug, Display};
 
 /* ========================================================================== */
@@ -87,12 +86,12 @@ impl VarView for ScaledVarImpl {
 
     fn upper_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom.upper_bound(self.var) * self.factor
+        dom._upper_bound(self.var) * self.factor
     }
 
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom.lower_bound(self.var) * self.factor
+        dom._lower_bound(self.var) * self.factor
     }
 }
 
@@ -290,7 +289,7 @@ impl LinSum {
 
     /// Returns the conjunction of all presence literals of variables appearing in the sum.
     pub fn conj_scope(&self, dom: impl Dom) -> Conjunction {
-        Conjunction::from_iter(self.vars.iter().map(|sv| dom.presence(sv.var)))
+        Conjunction::from_iter(self.vars.iter().map(|sv| dom._presence(sv.var)))
     }
 
     /// Simplify the terms of the expression, into a normalized expression that satisfies
@@ -369,7 +368,7 @@ impl LinSum {
     }
 }
 
-impl<Ctx: Store> IntExpr<Ctx> for LinSum {
+impl<Ctx: ModelView> IntExpr<Ctx> for LinSum {
     fn enforce_eq_if(&self, implicant: Lit, variable: LinTerm, ctx: &mut Ctx) {
         self.clone().eq(variable).enforce_if(implicant, ctx);
     }
@@ -384,6 +383,28 @@ impl Evaluable for LinSum {
             value += (var.factor as LongCst) * (solution.eval(var.var)? as LongCst)
         }
         Some(cst_long_to_int_clamped(value))
+    }
+}
+
+impl Evaluable for LinLeq {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        self.0.evaluate(solution).map(|value| value <= 0)
+    }
+}
+impl Evaluable for LinEq {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        self.0.evaluate(solution).map(|value| value == 0)
+    }
+}
+impl Evaluable for LinNeq {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        self.0.evaluate(solution).map(|value| value != 0)
     }
 }
 
@@ -485,19 +506,19 @@ impl std::ops::Not for &LinLeq {
     }
 }
 
-impl From<LinLeq> for ReifExpr {
+impl From<LinLeq> for CoreExpr {
     fn from(value: LinLeq) -> Self {
-        ReifExpr::LinearLeq(value.0)
+        CoreExpr::LinearLeq(value.0)
     }
 }
-impl From<LinEq> for ReifExpr {
+impl From<LinEq> for CoreExpr {
     fn from(value: LinEq) -> Self {
-        ReifExpr::LinearEq(value.0)
+        CoreExpr::LinearEq(value.0)
     }
 }
-impl From<LinNeq> for ReifExpr {
+impl From<LinNeq> for CoreExpr {
     fn from(value: LinNeq) -> Self {
-        ReifExpr::LinearNeq(value.0)
+        CoreExpr::LinearNeq(value.0)
     }
 }
 

@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use crate::lang::CoreExpr;
 use crate::model::Model;
 use crate::{
     backtrack::DecLvl,
@@ -7,25 +8,22 @@ use crate::{
     model::Label,
     prelude::*,
     reasoners::cp::UserPropagator,
-    reif::ReifExpr,
 };
 
 /// Trait that abstracts the core capabilities of a mutable [`Model`] and used as backend for posting constraints
 /// to the model.
-///
-/// TODO: the name `Store` is mostly historical and should be change to align it with other views.
-pub trait Store: Dom {
+pub trait ModelView: Dom {
     fn new_bool_var(&mut self) -> Lit;
     fn new_optional_bool_var(&mut self, presence: Lit) -> Lit;
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var;
-    fn get_implicant(&mut self, e: ReifExpr) -> Lit;
-    fn reify(&mut self, e: ReifExpr) -> Lit;
-    fn add_implies(&mut self, l: Lit, e: ReifExpr);
+    fn get_implicant(&mut self, e: CoreExpr) -> Lit;
+    fn reify(&mut self, e: CoreExpr) -> Lit;
+    fn add_implies(&mut self, l: Lit, e: CoreExpr);
 
     /// Given a set of scope literals, return a (possibly new) scope literal that
     /// exactly represents the intersection of thoses scope.
     ///
-    /// One can retrieve the intersected scope with [`Store::decompose_scope`].
+    /// One can retrieve the intersected scope with [`Self::decompose_scope`].
     fn conjunctive_scope(&mut self, lits: &[Lit]) -> Lit;
 
     /// Returns a literal that is always true and with scope `scope`.
@@ -35,7 +33,7 @@ pub trait Store: Dom {
 
     /// Given a scope literal, returns an equivalent conjunction of scope literals.
     ///
-    /// This method is the inverse of [`Store::conjunctive_scope`] and allows breaking an intersection scope into its intersected components.
+    /// This method is the inverse of [`Self::conjunctive_scope`] and allows breaking an intersection scope into its intersected components.
     /// If the scope is not an interesection scope, it will return the intersection with a single element.
     fn decompose_scope(&self, scope: Lit) -> Conjunction;
 
@@ -53,7 +51,7 @@ pub trait Store: Dom {
 
     /// Adds a debug assertion on solutions, i.e., an expression that is assumed to always evaluate to true.
     ///
-    /// IMPORTANT: the assertion has NO effect on the solving process and only checked when debug assertions are enabled (not in release mode)
+    /// IMPORTANT: the assertion has NO effect on the solving process and only checked on solutions when debug assertions are enabled (not in release mode)
     ///
     /// TODO: this could be provided on the `Model` it self to be more generally useful
     #[track_caller]
@@ -100,7 +98,7 @@ pub trait Store: Dom {
 }
 
 /// Convenience trait for anything that wraps a [`Model`]. Implementing [`ModelWrapper`] will automatically derive
-/// [`Store`].
+/// [`ModelView`].
 pub trait ModelWrapper {
     type Lbl: Label;
     fn get_model(&self) -> &Model<Self::Lbl>;
@@ -118,7 +116,7 @@ impl<L: Label> ModelWrapper for Model<L> {
     }
 }
 
-impl<T> Store for T
+impl<T> ModelView for T
 where
     T: ModelWrapper + Dom,
 {
@@ -131,14 +129,14 @@ where
     fn new_optional_var(&mut self, lb: IntCst, ub: IntCst, presence: Lit) -> Var {
         self.get_model_mut().new_optional_variable(lb, ub, presence)
     }
-    fn get_implicant(&mut self, e: ReifExpr) -> Lit {
+    fn get_implicant(&mut self, e: CoreExpr) -> Lit {
         self.get_model_mut().half_reify(e.clone())
     }
-    fn reify(&mut self, e: ReifExpr) -> Lit {
+    fn reify(&mut self, e: CoreExpr) -> Lit {
         self.get_model_mut().reify_core(e, false)
     }
 
-    fn add_implies(&mut self, l: Lit, e: ReifExpr) {
+    fn add_implies(&mut self, l: Lit, e: CoreExpr) {
         self.get_model_mut().enforce_if(l, e);
     }
 
