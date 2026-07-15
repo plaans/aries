@@ -7,8 +7,7 @@ This crate provides a library for general purpose constraint programming that is
 
 The Aries project thus provides an innovative combinatorial solver that is built from the ground up by (1) mixing several techniques from constraint programming and automated reasoning, and (2) providing original representations and technologies relevant for automated planning:
 
-
-- **Finite domain CSP**: at the core of a model are discrete variables with a finite domain denoting the set of possible values they can take.
+- **Finite domain CSP**: at the core of a model are discrete variables with a finite integer domain denoting the set of possible values they can take.
 - Literals represent expressions on the bounds of variables, for instance `(x <= 11)` or `(y > 10)`.
   This generalizes the literals in SAT solvers to non-boolean variables (whereas SMT or CSP solver typically maintain a correspondence table between such expressions and literals).
 - Various **inference engines** are provided in the solver:
@@ -29,7 +28,7 @@ While the aries solver library is built with automated planning problems in mind
  - `core`: Low-level representation of variables, domains, literals. It also provides the implementation for the state (collection of domains) supporting backtracking and explanations.
  - `model`: Higher-level data structures and API to represent variables, expressions and their combination into constraint satisfaction problems.
  - `solver`: Implementation of combinatorial solvers with capabilities from SAT, SMT and CSP solvers. The solver provides an interface that accepts additional reasoners.
- - `reasoners`: Specialized reasoners that provide inference capabilities to main solver. It currently includes a reasoner for difference logic and one experimental CP-like module.
+ - `reasoners`: Specialized reasoners that provide inference capabilities to main solver. It currently includes a reasoner for clauses, difference logic and one CP-like reasoner for classical propagators.
  - `backtrack`: Data structures for implementing trails that record event and allow undoing them. This crate provides a trail implementation meant for internal use in backtrackable structures and one that allows other entities to read the events that were pushed to the queue.
  - `collections`: Various collections that are focused on key-value collection where the key can be transformed into an array index.
 
@@ -111,3 +110,16 @@ Several other examples are available in the `examples/` directory of this crate:
 - [`orienteering.rs`](https://github.com/plaans/aries/blob/master/solver/examples/orienteering.rs): the orienteering routing problem.
 
 Examples can be run with cargo, e.g., `cargo run --example sudoku`
+
+Note that the examples here are intended as introductory examples to showcase the API and do not leverage all features of the solvers and most likely leave some performance on the table.
+
+
+## References
+
+   - Arthur Bit-Monnot. *Enhancing Hybrid CP-SAT Search for Disjunctive Scheduling* -- ECAI 2023 [(link)](https://hal.science/hal-04174800)
+     - describes the core solver design, based on lazy clause generation, and reports on performance on disjunctive scheduling problems (Jobshop and Openshop)
+   - Arthur Bit-Monnot. *Revisiting Optional Variables in Lazy Clause Generation Solvers for Flexible Scheduling* -- CP 2026 [(link)](https://doi.org/10.4230/LIPIcs.CP.2026.7)
+     - Describes the support for optional variables in the solver and reports on the performance on flexible scheduling problems (Flexible jobshop, and variants with transport times and maximum time-lag)
+     - Repository with benchmark instances and code: [https://github.com/plaans/flexible-jobshop-benchmarks](https://github.com/plaans/flexible-jobshop-benchmarks)
+
+The scheduling solver for the two references above in the [`examples/scheduling`](https://github.com/plaans/aries/tree/master/examples/scheduling) directory of the [`plaans/aries`](https://github.com/plaans/aries) main repository.
