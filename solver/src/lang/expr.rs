@@ -76,8 +76,8 @@ pub fn eq_mul(lhs: impl Into<Var>, factor1: impl Into<Var>, factor2: impl Into<V
 ///
 /// If some variables are optional, it will require that, if the LHS is present, then at least one element
 /// of the RHS is present as well.
-pub fn eq_max<Var>(lhs: Var, rhs: impl IntoIterator<Item = Var>) -> EqMax<Var> {
-    EqMax::new(lhs, rhs.into_iter().collect_vec())
+pub fn eq_max<Var>(lhs: impl Into<Var>, rhs: impl IntoIterator<Item = Var>) -> EqMax<Var> {
+    EqMax::new(lhs.into(), rhs.into_iter().collect_vec())
 }
 
 /// Requires that the value of the LHS is equal to maximum value of the RHS elements.
@@ -86,11 +86,11 @@ pub fn eq_max<Var>(lhs: Var, rhs: impl IntoIterator<Item = Var>) -> EqMax<Var> {
 /// of the RHS is present as well.
 ///
 /// Note that constraint exploits a reformulation into an equivalent `eq_max` expression.
-pub fn eq_min<Var, NegVar>(lhs: Var, rhs: impl IntoIterator<Item = Var>) -> EqMax<NegVar>
+pub fn eq_min<Var, NegVar>(lhs: impl Into<Var>, rhs: impl IntoIterator<Item = Var>) -> EqMax<NegVar>
 where
     Var: std::ops::Neg<Output = NegVar>,
 {
-    eq_max(-lhs, rhs.into_iter().map(|e| -e))
+    eq_max(-lhs.into(), rhs.into_iter().map(|e| -e))
 }
 
 /// Transforms a boolean into an integer expression where `1` represents `true` and `0` represents `false`.
