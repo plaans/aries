@@ -386,6 +386,28 @@ impl Evaluable for LinSum {
     }
 }
 
+impl Evaluable for LinLeq {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        self.0.evaluate(solution).map(|value| value <= 0)
+    }
+}
+impl Evaluable for LinEq {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        self.0.evaluate(solution).map(|value| value == 0)
+    }
+}
+impl Evaluable for LinNeq {
+    type Value = bool;
+
+    fn evaluate(&self, solution: &crate::prelude::Solution) -> Option<Self::Value> {
+        self.0.evaluate(solution).map(|value| value != 0)
+    }
+}
+
 impl std::fmt::Display for LinSum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, e) in self.vars.iter().enumerate() {
