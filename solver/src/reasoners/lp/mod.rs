@@ -2,10 +2,13 @@ use std::collections::HashMap;
 
 use minilp::{Bound, ComparisonOp, Error, OptimizationDirection, Problem, Variable};
 
-type IntCst = i32;
+use crate::{
+    core::{IntCst, Var},
+    lang::linear::{LinSum, ScaledVar},
+};
 
 #[derive(Debug, Clone)]
-struct Lit {
+struct ActivationLit {
     var: Variable,
     bound: Bound,
     val: IntCst,
@@ -24,27 +27,27 @@ struct IntegerConstraint {
 }
 
 #[derive(Debug)]
-pub struct Interface {
+pub struct Lp {
     problem: Problem,
 
     // Used to store an exact version of our original problem with integers
     bounds: Vec<IntBounds>,
     constraints: Vec<IntegerConstraint>,
 
-    lit_vec: Vec<Lit>,
+    lit_vec: Vec<ActivationLit>,
 
-    memory_s: HashMap<Vec<(usize, IntCst)>, Variable>,
-    memory_x: HashMap<usize, Variable>,
-    memory_x_reversed: HashMap<Variable, usize>,
+    memory_s: HashMap<Vec<ScaledVar>, Variable>,
+    memory_x: HashMap<Var, Variable>,
+    memory_x_reversed: HashMap<Variable, Var>,
 }
 
-impl Default for Interface {
+impl Default for Lp {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Interface {
+impl Lp {
     /// Create a new empty interface instance
     pub fn new() -> Self {
         Self {
@@ -136,7 +139,7 @@ impl Interface {
 
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
 
-        let cert_i128 = Interface::convert_certificate_i128(cert);
+        let cert_i128 = Lp::convert_certificate_i128(cert);
 
         for (const_i, &coef_cert) in cert_i128.iter().enumerate() {
             if coef_cert == 0 {
@@ -157,71 +160,80 @@ impl Interface {
     }
 
     // Return a linear sum wich is the opposite in termes of coefficient that the one given
-    fn get_opposite_linear_sum(linear_sum: &[(usize, IntCst)]) -> Vec<(usize, IntCst)> {
+    fn get_opposite_linear_sum(linear_sum: &[ScaledVar]) -> Vec<ScaledVar> {
         let mut opp = Vec::new();
-        for (x, coeff) in linear_sum {
-            opp.push((*x, -coeff));
+        for &svar in linear_sum {
+            opp.push(ScaledVar {
+                var: svar.var,
+                factor: -svar.factor,
+            });
         }
         opp
     }
 
-    fn add_x_var(&mut self, x: usize) {
+    fn add_x_var(&mut self, x: Var) {
         let var = self.create_variable(IntCst::MIN, IntCst::MAX);
 
         self.memory_x.insert(x, var);
         self.memory_x_reversed.insert(var, x);
     }
 
-    fn add_s_var(&mut self, linear_sum: &[(usize, IntCst)]) -> Variable {
-        for (x, _) in linear_sum {
-            if !self.memory_x.contains_key(x) {
-                self.add_x_var(*x);
+    fn add_s_var(&mut self, linear_sum: &[ScaledVar]) -> Variable {
+        for &svar in linear_sum {
+            if !self.memory_x.contains_key(&svar.var) {
+                self.add_x_var(svar.var);
             }
         }
 
         // If we depend on only one x variable with a factor 1, no need to create a s var
-        if linear_sum.len() == 1 && linear_sum[0].1 == 1 {
-            return *self.memory_x.get(&linear_sum[0].0).unwrap();
+        if linear_sum.len() == 1 && linear_sum[0].factor == 1 {
+            return *self.memory_x.get(&linear_sum[0].var).unwrap();
         }
 
         let s = self.create_variable(IntCst::MIN, IntCst::MAX);
 
-        let mut lin_sum = vec![(s, -1)];
+        let mut constraint = vec![(s, -1)];
 
-        for (x, coeff) in linear_sum {
-            let var = *self.memory_x.get(x).unwrap();
-            lin_sum.push((var, *coeff));
+        for &svar in linear_sum {
+            let var = *self.memory_x.get(&svar.var).unwrap();
+            constraint.push((var, svar.factor));
         }
 
         // We force s to be egal to our linear sum
-        self.add_constraint(lin_sum);
+        self.add_constraint(constraint);
 
         self.memory_s.insert(linear_sum.to_vec(), s);
 
         s
     }
 
-    fn process_constraint(&mut self, linear_sum: &[(usize, IntCst)], bound_val: IntCst) {
-        let opp_lin_sum = Interface::get_opposite_linear_sum(linear_sum);
-        let lit: Lit;
-        if self.memory_s.contains_key(linear_sum) {
-            let &s = self.memory_s.get(linear_sum).unwrap();
-            lit = Lit {
+    fn process_constraint(&mut self, sum: &LinSum) {
+        let bound_val = -sum.constant();
+
+        let elements = sum.terms_slice().to_vec();
+
+        let opp_lin_sum = Lp::get_opposite_linear_sum(&elements);
+
+        let lit: ActivationLit;
+
+        if self.memory_s.contains_key(&elements) {
+            let &s = self.memory_s.get(&elements).unwrap();
+            lit = ActivationLit {
                 var: s,
                 bound: Bound::Upper,
                 val: bound_val,
             };
         } else if self.memory_s.contains_key(&opp_lin_sum) {
             let &s = self.memory_s.get(&opp_lin_sum).unwrap();
-            lit = Lit {
+            lit = ActivationLit {
                 var: s,
                 bound: Bound::Lower,
                 val: -bound_val,
             };
         } else {
-            let s = self.add_s_var(linear_sum);
+            let s = self.add_s_var(&elements);
 
-            lit = Lit {
+            lit = ActivationLit {
                 var: s,
                 bound: Bound::Upper,
                 val: bound_val,
@@ -265,43 +277,46 @@ impl Interface {
     }
 }
 
-fn main() {
-    let mut interface = Interface::new();
-
-    interface.process_constraint(&[(0, 1)], 2);
-    interface.process_constraint(&[(1, 1)], 2);
-    interface.process_constraint(&[(0, -1), (1, -1)], -5);
-
-    interface.solve_iterative();
-
-    // println!("{:?}", interface);
-}
-
 #[cfg(test)]
 mod tests {
     use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IteratorRandom};
 
-    use crate::{Error, IntCst, Interface};
+    use crate::{
+        core::{IntCst, Var},
+        lang::linear::{LinSum, ScaledVar},
+        reasoners::lp::{Error, Lp},
+    };
 
     #[test]
     fn opposite_linear_sum() {
         {
-            let lin_sum = vec![(1, 4), (3, -1), (2, 6)];
+            let v1 = Var::from_u32(1);
+            let v2 = Var::from_u32(2);
+            let v3 = Var::from_u32(3);
+            let lin_sum = vec![
+                ScaledVar { var: v1, factor: 4 },
+                ScaledVar { var: v3, factor: -1 },
+                ScaledVar { var: v2, factor: 6 },
+            ];
 
             assert_eq!(
-                Interface::get_opposite_linear_sum(&lin_sum),
-                vec![(1, -4), (3, 1), (2, -6)]
+                Lp::get_opposite_linear_sum(&lin_sum),
+                vec![
+                    ScaledVar { var: v1, factor: -4 },
+                    ScaledVar { var: v3, factor: 1 },
+                    ScaledVar { var: v2, factor: -6 },
+                ]
             )
         }
 
         {
             let lin_sum = vec![];
 
-            assert_eq!(Interface::get_opposite_linear_sum(&lin_sum), vec![])
+            assert_eq!(Lp::get_opposite_linear_sum(&lin_sum), vec![])
         }
     }
 
-    impl Interface {
+    impl Lp {
         fn get_validity_certificates(&mut self) -> Option<(bool, bool)> {
             let feas_check_res = self.problem.create_feasability_checker();
 
@@ -347,7 +362,7 @@ mod tests {
     fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
         let k = 1.0 / sparse_proportion - 1.0;
 
-        let nb_x_float = (nb_var - 1) as f32 * rng.r#gen::<f32>().powf(k); // we have a f32 in the range [0.0, nb_var - 1)
+        let nb_x_float = (nb_var - 1) as f32 * rng.random::<f32>().powf(k); // we have a f32 in the range [0.0, nb_var - 1)
 
         1 + nb_x_float as usize
     }
@@ -359,23 +374,35 @@ mod tests {
         max: IntCst,
         sparse_proportion: f32,
         seed: u64,
-    ) -> Interface {
-        let mut interface = Interface::new();
+    ) -> Lp {
+        let mut interface = Lp::new();
 
         let mut rng = SmallRng::seed_from_u64(seed);
 
         for _ in 0..nb_const {
             let nb_x = get_nb_x(sparse_proportion, &mut rng, nb_var);
 
-            let x_vec: Vec<usize> = (0..nb_var).choose_multiple(&mut rng, nb_x);
+            let x_vec: Vec<Var> = (0..nb_var)
+                .choose_multiple(&mut rng, nb_x)
+                .iter()
+                .map(|&x| Var::from_u32((x + 1) as u32))
+                .collect();
 
-            let linear_sum: Vec<(usize, IntCst)> = x_vec.iter().map(|&x| (x, rng.gen_range(min, max))).collect();
+            let vars: Vec<ScaledVar> = x_vec
+                .iter()
+                .map(|&v| ScaledVar {
+                    var: v,
+                    factor: rng.random_range(min..=max),
+                })
+                .collect();
 
             // println!("constraint: {:?}", linear_sum);
 
-            let bound_val = rng.gen_range(min, max);
+            let bound_val = rng.random_range(min..=max);
 
-            interface.process_constraint(&linear_sum, bound_val);
+            let sum = LinSum::new(bound_val, vars);
+
+            interface.process_constraint(&sum);
         }
 
         interface

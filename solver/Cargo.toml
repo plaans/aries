@@ -41,6 +41,7 @@ num-integer = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 hashbrown = { workspace = true }
+minilp = { version = "0.2.2", path = "../utils/lp" }
 
 
 [[example]]
