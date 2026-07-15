@@ -84,20 +84,20 @@ impl<IntVar> Task<IntVar> {
     }
 }
 
-/// No-overlap propagtor that propagates the presence, earliest start and latest end time of a set of tasks.
+/// No-overlap propagator that propagates the presence, earliest start and latest end time of a set of tasks.
 ///
 /// The propagator implements the algorithms for overload checking and edge-finding, the level of propagation should be set
-/// with [`NoOverlap::with_kind`] method.
+/// with [`NoOverlapPropagator::with_kind`] method.
 ///
 /// Important note: the propagator should be considered as an additional (redundant) one on top of disjunctive precedences that should
 /// be posted independently.
 #[derive(Debug, Clone)]
-pub struct NoOverlap<IntVar> {
-    kind: PropagatorKind,
-    tasks: Vec<Task<IntVar>>,
+pub struct NoOverlapPropagator<IntVar> {
+    pub(crate) kind: PropagatorKind,
+    pub(crate) tasks: Vec<Task<IntVar>>,
 }
 
-impl<IntVar> NoOverlap<IntVar>
+impl<IntVar> NoOverlapPropagator<IntVar>
 where
     IntVar: VarView<Value = IntCst> + Copy + Boundable<Value = IntCst>,
 {
@@ -259,13 +259,13 @@ where
     }
 }
 
-impl NoOverlap<VarCst> {
+impl NoOverlapPropagator<VarCst> {
     /// Creates a reversed view of the propagator, which when propagated, will operate on the lower bound.
     /// An interval `(s, d, e)` become the interval `(-e, d, -s)`
-    fn reversed(&self) -> NoOverlap<PMIAtom> {
+    fn reversed(&self) -> NoOverlapPropagator<PMIAtom> {
         let p = |i| PMIAtom::Plus(i);
         let m = |i| PMIAtom::Minus(i);
-        NoOverlap::new(
+        NoOverlapPropagator::new(
             self.tasks
                 .iter()
                 .map(|t| Task::new(m(t.end), p(t.duration), m(t.start), t.presence)),
@@ -275,7 +275,7 @@ impl NoOverlap<VarCst> {
 }
 
 /// [`UserPropagator`] is only implemented for `IAtom` because we need to be able to reverse the propagator (and we don't have a trait easily capturing that).
-impl UserPropagator for NoOverlap<VarCst> {
+impl UserPropagator for NoOverlapPropagator<VarCst> {
     fn get_propagators(&self) -> Vec<super::DynPropagator> {
         let mut propagators = vec![DynPropagator::from(PropagatorWithJustifications::new(self.clone()))];
         if self.kind >= PropagatorKind::EdgeFinding {
@@ -336,7 +336,7 @@ enum Justification {
     },
 }
 
-impl<IntVar> JustifiedPropagator<Justification> for NoOverlap<IntVar>
+impl<IntVar> JustifiedPropagator<Justification> for NoOverlapPropagator<IntVar>
 where
     IntVar: VarView<Value = IntCst> + Copy + Send + Sync + Debug + Term + Boundable<Value = IntCst> + 'static,
 {

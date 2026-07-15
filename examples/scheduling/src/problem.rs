@@ -2,7 +2,7 @@ use crate::search::{Model, VarLbl};
 use aries_solver::core::{IntCst, Lit, u32_to_cst};
 use aries_solver::lang::expr::{alternative, eq, leq, or};
 use aries_solver::lang::{Var, VarCst};
-use aries_solver::reasoners::cp::no_overlap::{self, NoOverlap, Task};
+use aries_solver::reasoners::cp::no_overlap::{self, NoOverlapPropagator, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -413,7 +413,8 @@ pub(crate) fn encode(
             let tasks_on_machine = alts
                 .iter()
                 .map(|op| Task::<VarCst>::new(op.start, op.duration, op.end(), op.presence));
-            let no_overlap: NoOverlap<VarCst> = NoOverlap::new(tasks_on_machine).with_kind(no_overlap);
+            let no_overlap: NoOverlapPropagator<VarCst> =
+                NoOverlapPropagator::new(tasks_on_machine).with_kind(no_overlap);
             m.enforce_user_propagator(no_overlap);
         }
     }

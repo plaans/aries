@@ -16,7 +16,7 @@ The Aries project thus provides an innovative combinatorial solver that is built
   - Difference Logic engine (aka STN), for propagating temporal constraints or general difference constraints between two variables.
     The difference logic engine notably supports forward checking (or theory propagation) and native reasoning on optional variables.
   - General purpose CP engine for adding arbitrary constraints and the associated propagators (linear, max, no-overlap, ...).
-- **Explanation and Clause learning** are supported by the various engine.
+- **Explanation and Clause learning** are supported by the various engines.
   When a conflict is detected during search, a new constraint will be inferred that prevents the solver of doing the same mistake.
 - **Optional variables**: some variables can be optional: their presence in the solution will be determined by the value of a literal.
   This allows eager reasoning and constraint propagation by decoupling the presence literal and the domain of the variable.
@@ -52,20 +52,28 @@ fn main() {
 
     let mut model = Model::new();
 
-    // One decision variable per task: its start time, somewhere in [0, 100].
-    let starts: Vec<Var> = durations.iter().map(|_| model.new_variable(0, 100)).collect();
+    // For each task, create an interval with:
+    //  - one decision variable denoting its start time, somewhere in [0, 100].
+    //  - its fixed duration 
+    let tasks: Vec<Interval> = durations.into_iter().map(|duration| {
+        Interval::new_fixed_duration(
+            model.new_variable(0,100),
+            duration
+        )
+    }).collect();
 
     // Precedence constraints: end of `before` <= start of `after`.
     for &(before, after) in &precedences {
-        model.enforce(leq(starts[before] + durations[before], starts[after]));
+        model.enforce(leq(tasks[before].end, tasks[after].start));
     }
 
-    // The makespan is the time at which the last task finishes: it must be at
-    // least the end time of every task. Minimizing it yields the shortest schedule.
+    // no two tasks can be carried out concurrently
+    model.enforce(no_overlap(tasks.clone()));
+
+    // The makespan is the time at which the last task finishes.
+    // Minimizing it yields the shortest schedule.
     let makespan = model.new_variable(0, 100);
-    for (task, &duration) in durations.iter().enumerate() {
-        model.enforce(geq(makespan, starts[task] + duration));
-    }
+    model.enforce(eq_max(makespan, tasks.iter().map(|t| t.end)));
 
     // Search for the schedule that minimizes the makespan.
     let mut solver = Solver::new(model);
@@ -73,14 +81,17 @@ fn main() {
         Ok(Some((optimal_makespan, solution))) => {
             println!("Optimal makespan: {optimal_makespan}");
             for task in 0..durations.len() {
-                println!("  task {task}: starts at {}", solution.eval(starts[task]).unwrap());
+                println!("  task {task}: starts at {}", solution.eval(tasks[task].start).unwrap());
             }
+            assert_eq!(optimal_makespan, 60, "Sanity check: the expected optimal makespan is 60");
         }
         Ok(None) => println!("No feasible schedule"),
         Err(_) => unreachable!("without a search limit the solver always returns a result"),
     }
 }
 ```
+
+The above example should print out a schedule like so (one of the two optimal schedules):
 
 ```text
 Optimal makespan: 60

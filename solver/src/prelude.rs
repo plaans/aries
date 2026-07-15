@@ -12,6 +12,7 @@ pub use crate::lang::{BoolExpr, IntExpr};
 pub use crate::solver::SearchLimit;
 pub use crate::solver::Solver;
 
+pub use crate::lang::constraints::Interval;
 pub use crate::lang::expr::*;
 
 pub type Model = crate::model::Model<String>;

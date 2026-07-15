@@ -5,7 +5,7 @@
 use itertools::Itertools;
 
 use crate::core::views::Dom;
-use crate::lang::constraints::{AllDifferent, Alternative, EqMax};
+use crate::lang::constraints::{AllDifferent, Alternative, EqMax, Interval, NoOverlap};
 use crate::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::lang::mul::EqMul;
 use crate::lang::*;
@@ -55,6 +55,11 @@ pub fn implies(a: impl Into<Lit>, b: impl Into<Lit>) -> Disjunction {
 /// Requires that all integer expressions have a different value, ignoring those that are absent.
 pub fn all_different<T: Into<LinSum>>(vars: impl IntoIterator<Item = T>) -> AllDifferent {
     AllDifferent::new(vars.into_iter().map(|var| var.into()))
+}
+
+/// Requires that no intervals overlap in time (see [`NoOverlap`])
+pub fn no_overlap<Itv: Into<Interval>>(intervals: impl IntoIterator<Item = Itv>) -> NoOverlap {
+    NoOverlap::new(intervals.into_iter().map(|itv| itv.into()).collect_vec())
 }
 
 /// The `alternative` constraint, that imposes that exactly one of the `alternative` element will be selected to decide the `main` value.

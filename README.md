@@ -56,7 +56,7 @@ This compiles artifacts and place them in the `target/debug` or `target/release`
 
 This repository contains several crates that provide various functionalities for automated problem solving. In a topological order :
 
- - `solver`: contains the `aries` crate with the core library for the CP solver (CSP model, propagators, search, ...)
+ - `solver`: contains the `aries_solver` crate with the core library for the CP solver (CSP model, propagators, search, ...)
  - `env_param`: Utils to read parameters from environment variables, used in various places to allow changing the default parameters of the solver
  - `planning`: Several crates related to automated planning. In particular:
    - `planning/planners`: provides a complete PDDL and HDDL planner, with support for temporal and numeric models
