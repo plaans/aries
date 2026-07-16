@@ -177,9 +177,11 @@ pub enum SubstitutionGroupReturnType {
 
 impl std::fmt::Debug for SubstitutionGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for sub in &self.substitutions {
-            write!(f, "{sub:?}:")?
+        for i in 0..self.substitutions.len() - 1 {
+            write!(f, "{:?}, ", self.substitutions[i])?;
         }
+        let i = self.substitutions.len() - 1;
+        write!(f, "{:?}", self.substitutions[i])?;
         Ok(())
     }
 }

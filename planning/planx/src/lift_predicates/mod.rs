@@ -121,14 +121,14 @@ impl<'a> AppliedSubstitutionGroup<'a> {
             SubstitutionGroupReturnType::NewHelperType => {
                 let mut helper_objects = vec![];
 
-                let tpe_name = ["_help_tpe_", group.to_string().as_str()].join("");
+                let tpe_name = ["_help-tpe-", group.to_string().as_str()].join("");
                 let tpe = UnionUserType::new(tpe_name.as_str(), env.types.top_user_type().hier);
 
                 env.types.add_user_type_independent(tpe.to_single_type().unwrap().name);
 
                 for sub in &group.substitutions {
                     let obj_name = Sym::from(
-                        ["_help_obj_", env.fluents.get(sub.predicate_id).name().as_str()]
+                        ["_help-obj-", env.fluents.get(sub.predicate_id).name().as_str()]
                             .join("")
                             .as_str(),
                     );
@@ -186,8 +186,8 @@ impl<'a> AppliedSubstitutionGroup<'a> {
 ///
 /// When none of the group's predicates have a lifted return parameter (i.e. the group's return type is a new helper type),
 /// the transformations for a group composed of `pred1` and `pred2` are:
-/// `(pred1)` -> `(= (pred1) _help_obj_pred1)`, `(not (pred1))` -> `(not (= (pred1) _help_obj_pred1))`,
-/// `(pred2)` -> `(= (pred2) _help_obj_pred1)`, and `(not (pred2))` -> `(not (= (pred2) _help_obj_pred2))`,
+/// `(pred1)` -> `(= (pred1) _help-obj-pred1)`, `(not (pred1))` -> `(not (= (pred1) _help-obj-pred1))`,
+/// `(pred2)` -> `(= (pred2) _help-obj-pred1)`, and `(not (pred2))` -> `(not (= (pred2) _help-obj-pred2))`,
 fn transform_noneffect_exprs_recursive(
     expr_id: ExprId,
     group: &AppliedSubstitutionGroup,
