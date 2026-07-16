@@ -65,6 +65,7 @@ impl Program {
     ///
     /// `singleton_c` is a fresh arity-1 predicate that is interned (cached)
     /// per distinct `Arg::Sym(c)` and seeded with the single fact `singleton_c(c)`.
+    /// This is why this method borrows `self` as mutable.
     ///
     /// If `Arg::Sym(c)` is the `i`-th encountered constant in the head, then `v` is chosen to be
     /// the `i`-th integer in descending order starting from the maximum allowable value for `v`.
@@ -219,5 +220,32 @@ mod test {
             .borrow()
             .rows()
             .for_each(|row| println!("move{row:?}"));
+    }
+
+    #[test]
+    fn test_normalize_rule() {
+        let mut prog = Program::new();
+
+        let p = prog.new_predicate(2);
+        let q = prog.new_predicate(2);
+        let r = prog.new_predicate(1);
+
+        q.add([1, 10]);
+        q.add([2, 20]);
+        r.add([10]);
+
+        use Arg::*;
+
+        // p(1, ?x) :- q(?x, ?y), r(?y)
+        // Expect: p(1, 1) derived
+        prog.add_rule(Rule::new(
+            p.apply([Sym(1), Var(0)]),
+            [q.apply([Var(0), Var(1)]), r.apply([Var(1)])],
+        ));
+
+        prog.run();
+
+        let p_facts: Vec<Vec<_>> = p.stable.borrow().rows().map(|r| r.to_vec()).collect();
+        assert_eq!(p_facts, vec![vec![1, 1]]);
     }
 }
