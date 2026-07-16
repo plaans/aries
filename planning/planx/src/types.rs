@@ -108,7 +108,7 @@ impl Types {
 }
 
 /// Represent a type as the union of possible user types.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct UnionUserType {
     union: SmallVec<[Sym; 1]>,
     hier: Arc<UserTypes>,
@@ -136,6 +136,18 @@ impl UnionUserType {
             None
         }
     }
+
+    pub fn overlaps(&self, other: &Self) -> bool {
+        let b1 = self
+            .union
+            .iter()
+            .any(|t| other.union.iter().any(|t2| self.hier.is_subtype_of(t, t2)));
+        let b2 = other
+            .union
+            .iter()
+            .any(|t| self.union.iter().any(|t2| other.hier.is_subtype_of(t, t2)));
+        b1 || b2
+    }
 }
 
 impl Display for UnionUserType {
@@ -151,7 +163,7 @@ impl Display for UnionUserType {
 }
 
 /// Represents a single user-defined type within a a type hierarchy
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct UserType {
     pub name: Sym,
     pub hier: Arc<UserTypes>,
@@ -194,7 +206,7 @@ impl Debug for UserType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UserTypes {
     top_type: Sym,
     /// All types with their parents.
@@ -257,8 +269,8 @@ impl UserTypes {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct IntInterval(Option<IntValue>, Option<IntValue>);
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct IntInterval(pub Option<IntValue>, pub Option<IntValue>);
 
 impl IntInterval {
     pub const FULL: IntInterval = IntInterval(None, None);
@@ -300,7 +312,7 @@ impl From<RangeInclusive<IntValue>> for IntInterval {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub enum Type {
     Bool,
     Int(IntInterval),
@@ -358,6 +370,13 @@ impl Type {
 
     /// Returns true if two types are overlapping
     pub fn overlaps(&self, other: &Type) -> bool {
-        self.is_subtype_of(other) || other.is_subtype_of(self)
+        match (self, other) {
+            (Bool, Bool) => true,
+            (Real, Real) => true,
+            (Int(_), Real) | (Real, Int(_)) => true,
+            (Int(bounds1), Int(bounds2)) => bounds1.0 >= bounds2.1 || bounds2.0 >= bounds1.1,
+            (User(left), User(right)) => left.overlaps(right),
+            _ => false,
+        }
     }
 }
