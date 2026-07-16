@@ -47,6 +47,12 @@ impl<'a> TExpr<'a> {
             Err(Message::error("expected boolean value").snippet(self.error("not a boolean")))
         }
     }
+    pub fn is_cst(&self) -> bool {
+        matches!(
+            &self.get().expr,
+            crate::Expr::Bool(_) | crate::Expr::Real(_) | crate::Expr::Object(_)
+        )
+    }
     pub fn state_variable(&self) -> Result<(FluentId, &'a [ExprId]), Message> {
         if let Expr::StateVariable(fun, args) = &self.get().expr {
             Ok((*fun, args.as_slice()))

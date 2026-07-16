@@ -52,6 +52,16 @@ impl Types {
         }
     }
 
+    pub fn add_user_type_independent(&mut self, name: impl Into<Sym> + Clone) -> bool {
+        if self.get_user_type(name.clone()).is_ok() {
+            return false;
+        }
+        let mut types = (*self.user_types).clone();
+        types.add_type(name, None);
+        self.user_types = Arc::new(types);
+        true
+    }
+
     pub fn top_user_type(&self) -> UserType {
         UserType::new(self.user_types.top_type.clone(), self.user_types.clone())
     }

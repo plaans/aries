@@ -1621,6 +1621,7 @@ version = "0.1.0"
 dependencies = [
  "annotate-snippets",
  "arcstr",
+ "aries-env-param",
  "clap 4.6.1",
  "compact_str",
  "derive_more",
@@ -1631,6 +1632,7 @@ dependencies = [
  "regex",
  "smallvec",
  "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]
