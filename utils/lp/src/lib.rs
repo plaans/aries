@@ -635,7 +635,7 @@ impl FeasabilityChecker {
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem becomes is immideatly detected as infeasible.
+    /// Will return an error if the problem is immediatly detected as infeasible.
     pub fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) -> Result<f64, Error> {
         let old_val_solver = match bound {
             Bound::Lower => self.solver.set_lb_var(var.0, val)?,
@@ -645,12 +645,12 @@ impl FeasabilityChecker {
         Ok(old_val_solver)
     }
 
-    /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bouond
+    /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bound
     /// None is returned if nothing was modified either its the old value
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem becomes is immideatly detected as infeasible.
+    /// Will return an error if the problem is immediatly detected as infeasible.
     pub fn set_bound_restrict(
         &mut self,
         var: Variable,
