@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     Effect, EffectOp, Environment, Expr, ExprId, Fluent, FluentId, Model, Param, RealValue, Sym, TimeRef, Timestamp,
-    Type, UnionUserType,
+    Type,
 };
 
 use itertools::Itertools;
@@ -202,7 +202,7 @@ pub(super) struct ParamsReordering {
 impl SubstitutionGroup {
     /// Attempts to create a combination of the given substitutions into a syntactically valid group.
     /// Return None if the substitutions could not be unified.
-    fn new(substitutions: &[&PredicateSubstitution], env: &Environment) -> Option<Self> {
+    fn new(substitutions: &[&PredicateSubstitution], _env: &Environment) -> Option<Self> {
         tracing::trace!("{substitutions:?}");
 
         // Representative substitution (the one that will be used as basis and for comparisons)
@@ -299,15 +299,36 @@ impl SubstitutionGroup {
                 }
             }
 
-            let top_type = Type::User(UnionUserType::new(
-                env.types.top_user_type().name,
-                env.types.top_user_type().hier,
-            ));
-            SubstitutionGroupReturnType::KnownType(top_type)
-            // ? TODO: ? Ideally, the unified type should be:
-            // - `repr_sub.get_return_type().clone()` (if all types the same)
-            // - a common supertype
-            // - else, union of the (distinct, non-overlapping (if that's even possible?)) user types
+            let return_types_to_make_a_union_of = {
+                let mut res = Vec::with_capacity(return_types.len());
+
+                for (i, tpe1) in return_types.iter().enumerate() {
+                    let Type::User(tpe1) = tpe1 else { unreachable!() };
+
+                    let mut future_duplicate_found = false;
+                    for tpe2 in &return_types[i + 1..] {
+                        let Type::User(tpe2) = tpe2 else { unreachable!() };
+
+                        if tpe1.to_string() == tpe2.to_string() {
+                            future_duplicate_found = true;
+                            break;
+                        }
+                    }
+                    if !future_duplicate_found {
+                        res.push(tpe1);
+                    }
+                }
+                res
+            };
+            debug_assert!(!return_types_to_make_a_union_of.is_empty());
+
+            if return_types_to_make_a_union_of.len() == 1 {
+                SubstitutionGroupReturnType::KnownType(Type::User(return_types_to_make_a_union_of[0].clone()))
+            } else {
+                // TODO: let union_type = Type::User(todo!("requires support for 'true' union types"));
+                // TODO: SubstitutionGroupReturnType::KnownType(union_type)
+                return None; // In the meanwhile...
+            }
         };
 
         Some(Self {
