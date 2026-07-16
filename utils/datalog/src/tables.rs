@@ -144,12 +144,12 @@ impl Table {
             4 => Table::new(Self::into_chunks::<4>(data)),
             5 => Table::new(Self::into_chunks::<5>(data)),
             n => {
-                let mut rows: Vec<Box<[Sym]>> = data.chunks(n).map(Box::from).collect();
+                let mut rows = into_chunks_generic(data, n);
                 rows.sort_unstable();
                 rows.dedup();
                 Table {
                     num_columns: n,
-                    data: rows.into_iter().flat_map(|b| b.into_vec()).collect(),
+                    data: into_flattened_generic(rows),
                     has_unit: false,
                 }
             }
@@ -189,8 +189,8 @@ impl Table {
             5 => crate::merge::merge_unique(Self::into_chunks::<5>(data), Self::into_chunks(recent.data))
                 .into_flattened(),
             n => {
-                let a_rows: Vec<Box<[Sym]>> = data.chunks(n).map(Box::from).collect();
-                let b_rows: Vec<Box<[Sym]>> = recent.data.chunks(n).map(Box::from).collect();
+                let a_rows = into_chunks_generic(data, n);
+                let b_rows = into_chunks_generic(recent.data, n);
                 let merged = crate::merge::merge_unique(a_rows, b_rows);
                 merged.into_iter().flat_map(|b| b.into_vec()).collect()
             }
@@ -255,7 +255,7 @@ impl Table {
             5 => self.retain_distinct_spec::<5>(reference),
             n => {
                 let data = std::mem::take(&mut self.data);
-                let mut data: Vec<Box<[Sym]>> = data.chunks(n).map(Box::from).collect();
+                let mut data = into_chunks_generic(data, n);
                 let mut reference = reference.data.chunks(n);
                 let mut next_ref = reference.next();
                 data.retain(|row| {
@@ -286,6 +286,13 @@ impl Table {
         });
         self.data = data.into_flattened();
     }
+}
+
+fn into_chunks_generic(data: Vec<Sym>, n: usize) -> Vec<Box<[Sym]>> {
+    data.chunks(n).map(Box::from).collect()
+}
+fn into_flattened_generic(data: Vec<Box<[Sym]>>) -> Vec<Sym> {
+    data.into_iter().flat_map(|b| b.into_vec()).collect()
 }
 
 /// A table to which elements can be added, either manually or as a result of running the program.
