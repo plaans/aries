@@ -192,7 +192,7 @@ impl Table {
                 let a_rows = into_chunks_generic(data, n);
                 let b_rows = into_chunks_generic(recent.data, n);
                 let merged = crate::merge::merge_unique(a_rows, b_rows);
-                merged.into_iter().flat_map(|b| b.into_vec()).collect()
+                into_flattened_generic(merged)
             }
         };
         self.data = data
@@ -268,7 +268,7 @@ impl Table {
                     }
                     next_ref.is_none_or(|r| r != row.as_ref())
                 });
-                self.data = data.into_iter().flat_map(|b| b.into_vec()).collect();
+                self.data = into_flattened_generic(data);
             }
         }
     }
