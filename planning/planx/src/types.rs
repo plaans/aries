@@ -233,7 +233,7 @@ impl Default for UserTypes {
 
 impl UserTypes {
     pub fn new() -> Self {
-        Self::with_top_type("★object★")
+        Self::with_top_type("top-type")
     }
 
     pub fn with_top_type(top_type: impl Into<Sym>) -> Self {
