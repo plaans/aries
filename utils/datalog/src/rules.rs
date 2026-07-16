@@ -415,7 +415,39 @@ impl Pattern {
             3 => self.compiled::<3>().all_bindings(table.rows_sized(), out),
             4 => self.compiled::<4>().all_bindings(table.rows_sized(), out),
             5 => self.compiled::<5>().all_bindings(table.rows_sized(), out),
-            _ => unimplemented!(),
+            _ => {
+                let mut bindings = TableBuff::new(out.len());
+                let mut out_row = Vec::from(out);
+                for row in table.rows() {
+                    if self.matches(row) {
+                        self.bind(row, &mut out_row);
+                        bindings.push(&out_row);
+                    }
+                }
+                bindings
+            }
+        }
+    }
+
+    fn matches(&self, data: &[Sym]) -> bool {
+        debug_assert_eq!(self.pattern.len(), data.len());
+        for &[id1, id2] in &self.equalities {
+            if data[id1] != data[id2] {
+                return false;
+            }
+        }
+        self.pattern
+            .iter()
+            .copied()
+            .zip(data.iter().copied())
+            .all(|(pat, sym)| pat < 0 || (pat as u32) == sym)
+    }
+    fn bind(&self, row: &[Sym], out: &mut [u32]) {
+        debug_assert!(self.matches(row));
+        for (i, pat) in self.pattern.iter().copied().enumerate() {
+            if let Some(var) = Self::as_var(pat) {
+                out[var as usize] = row[i];
+            }
         }
     }
 }
@@ -487,7 +519,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_pattern() {
+    fn test_pattern_spec() {
         let mut table = [
             [1, 2, 1],
             [1, 2, 2],
@@ -510,8 +542,6 @@ mod test {
         ];
         table.sort();
 
-        use Arg::*;
-
         let check_matches = |pattern: [Arg; 3], expected: &[Fact<3>]| {
             let pattern = Pattern::new(pattern.as_slice());
             let pattern = pattern.compiled();
@@ -519,6 +549,8 @@ mod test {
             let expected = expected.iter().cloned().sorted().collect_vec();
             assert_eq!(matches, expected)
         };
+
+        use Arg::*;
 
         check_matches([Var(0), Var(1), Sym(3)], &[[1, 2, 3], [2, 2, 3], [1, 3, 3]]);
 
@@ -529,6 +561,50 @@ mod test {
 
         // let pattern = Pattern::new([Var(0), Sym(1), Var(0)]);
         // let bindings: &mut [u32] = &mut [0; 2];
+    }
+
+    #[test]
+    fn test_pattern_generic() {
+        let table = Table::new_from_flat(
+            6,
+            vec![
+                1, 2, 3, 10, 5, 20, 2, 2, 3, 11, 5, 21, 1, 3, 3, 12, 5, 22, 2, 2, 3, 30, 5, 30, 4, 4, 3, 40, 5, 40, 1,
+                5, 1, 50, 5, 50, 2, 6, 2, 60, 5, 60, 1, 3, 6, 70, 5, 70,
+            ],
+        );
+
+        let check_matches = |pattern: &[Arg], expected: &[&[_]]| {
+            let pattern = Pattern::new(pattern);
+            let num_vars = pattern.vars().unique().count();
+            let empty_bindings = vec![super::Sym::MAX; num_vars];
+            let bindings = pattern.all_bindings(&table, &empty_bindings);
+            let mut results: Vec<Vec<_>> = bindings.rows().map(|r| r.to_vec()).collect();
+            results.sort();
+            let mut expected: Vec<Vec<_>> = expected.iter().map(|e| e.to_vec()).collect();
+            expected.sort();
+            assert_eq!(results, expected)
+        };
+
+        use Arg::*;
+
+        check_matches(
+            &[Var(0), Var(1), Sym(3), Var(2), Sym(5), Var(3)],
+            &[
+                &[1, 2, 10, 20],
+                &[2, 2, 11, 21],
+                &[1, 3, 12, 22],
+                &[2, 2, 30, 30],
+                &[4, 4, 40, 40],
+            ],
+        );
+
+        check_matches(&[Var(0), Var(0), Sym(3), Var(1), Sym(5), Var(1)], &[&[2, 30], &[4, 40]]);
+        check_matches(
+            &[Var(0), Var(1), Var(0), Var(2), Sym(5), Var(2)],
+            &[&[1, 5, 50], &[2, 6, 60]],
+        );
+        check_matches(&[Sym(1), Sym(3), Sym(6), Var(0), Sym(5), Var(0)], &[&[70]]);
+        check_matches(&[Sym(1), Sym(3), Sym(0), Var(0), Sym(5), Var(0)], &[]);
     }
 
     #[test]
