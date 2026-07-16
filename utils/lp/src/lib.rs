@@ -645,37 +645,6 @@ impl FeasabilityChecker {
         Ok(old_val_solver)
     }
 
-    /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bound
-    /// None is returned if nothing was modified either its the old value
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem is immediatly detected as infeasible.
-    pub fn set_bound_restrict(
-        &mut self,
-        var: Variable,
-        bound: Bound,
-        new_val: f64,
-        old_val: f64,
-    ) -> Result<Option<f64>, Error> {
-        let mut old_val_solver = None;
-
-        match bound {
-            Bound::Lower => {
-                if new_val > old_val {
-                    old_val_solver = Some(self.solver.set_lb_var(var.0, new_val)?);
-                }
-            }
-            Bound::Upper => {
-                if new_val < old_val {
-                    old_val_solver = Some(self.solver.set_ub_var(var.0, new_val)?);
-                }
-            }
-        };
-
-        Ok(old_val_solver)
-    }
-
     /// Try to restore the feasability of our problem
     ///
     ///  # Errors

@@ -1,4 +1,8 @@
-use crate::core::IntCst;
+use crate::{
+    backtrack::Trail,
+    core::IntCst,
+    reasoners::lp::{ActivationLit, LpEvent},
+};
 
 use minilp::{Bound, ComparisonOp, Error, FeasabilityChecker, OptimizationDirection, Problem, Variable};
 
@@ -62,6 +66,47 @@ impl Solver {
         self.problem.set_bound(var, &bound, val as f64); // Used for test only
 
         feas_checker.set_bound(var, &bound, val as f64)?;
+
+        Ok(())
+    }
+
+    /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bound
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem is immediatly detected as infeasible.
+    pub fn set_bound_restrict(
+        &mut self,
+        var: Variable,
+        bound: Bound,
+        val: IntCst,
+        trail: &mut Trail<LpEvent>,
+    ) -> Result<(), Error> {
+        let mut is_bound_set = false;
+
+        let old_val;
+
+        match bound {
+            Bound::Lower => {
+                old_val = self.bounds[var.idx()].lower;
+                if val > old_val {
+                    self.set_bound(var, bound, val)?;
+                    is_bound_set = true;
+                }
+            }
+            Bound::Upper => {
+                old_val = self.bounds[var.idx()].upper;
+
+                if val < old_val {
+                    self.set_bound(var, bound, val)?;
+                    is_bound_set = true;
+                }
+            }
+        }
+
+        if is_bound_set {
+            trail.push(LpEvent::BoundSet(ActivationLit { var, bound, val }, old_val));
+        }
 
         Ok(())
     }
