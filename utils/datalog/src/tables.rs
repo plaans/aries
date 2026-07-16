@@ -1,4 +1,3 @@
-use core::todo;
 use std::{
     cell::{Ref, RefCell},
     rc::Rc,
@@ -144,7 +143,16 @@ impl Table {
             3 => Table::new(Self::into_chunks::<3>(data)),
             4 => Table::new(Self::into_chunks::<4>(data)),
             5 => Table::new(Self::into_chunks::<5>(data)),
-            _ => todo!(),
+            n => {
+                let mut rows = into_chunks_generic(data, n);
+                rows.sort_unstable();
+                rows.dedup();
+                Table {
+                    num_columns: n,
+                    data: into_flattened_generic(rows),
+                    has_unit: false,
+                }
+            }
         }
     }
 
@@ -180,7 +188,12 @@ impl Table {
                 .into_flattened(),
             5 => crate::merge::merge_unique(Self::into_chunks::<5>(data), Self::into_chunks(recent.data))
                 .into_flattened(),
-            _ => todo!(),
+            n => {
+                let a_rows = into_chunks_generic(data, n);
+                let b_rows = into_chunks_generic(recent.data, n);
+                let merged = crate::merge::merge_unique(a_rows, b_rows);
+                into_flattened_generic(merged)
+            }
         };
         self.data = data
     }
@@ -240,7 +253,23 @@ impl Table {
             3 => self.retain_distinct_spec::<3>(reference),
             4 => self.retain_distinct_spec::<4>(reference),
             5 => self.retain_distinct_spec::<5>(reference),
-            _ => todo!(),
+            n => {
+                let data = std::mem::take(&mut self.data);
+                let mut data = into_chunks_generic(data, n);
+                let mut reference = reference.data.chunks(n);
+                let mut next_ref = reference.next();
+                data.retain(|row| {
+                    while let Some(r) = next_ref {
+                        if r < row.as_ref() {
+                            next_ref = reference.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    next_ref.is_none_or(|r| r != row.as_ref())
+                });
+                self.data = into_flattened_generic(data);
+            }
         }
     }
     /// Arity-specialized version of [`Self::retain_distinct`]
@@ -257,6 +286,13 @@ impl Table {
         });
         self.data = data.into_flattened();
     }
+}
+
+fn into_chunks_generic(data: Vec<Sym>, n: usize) -> Vec<Box<[Sym]>> {
+    data.chunks(n).map(Box::from).collect()
+}
+fn into_flattened_generic(data: Vec<Box<[Sym]>>) -> Vec<Sym> {
+    data.into_iter().flat_map(|b| b.into_vec()).collect()
 }
 
 /// A table to which elements can be added, either manually or as a result of running the program.
