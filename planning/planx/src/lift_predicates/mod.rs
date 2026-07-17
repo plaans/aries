@@ -247,9 +247,14 @@ fn transform_noneffect_exprs_recursive(
                 aux_closure(eid, predicate_id, args, env)?;
             }
             Some(PredicateExpr::Negative(_, inner_eid, predicate_id, args)) if group.group.contains(predicate_id) => {
+                // WARNING: POTENTIAL BUG (TODO FIXME):
+                // Until "null"/"undefined" values/objects for user types are introduced, may theoretically result in unexpected behavior.
+                // For example, suppose we are changing `(not (at r l))` into `(not (= (at r) l))`.
+                // Indeed the semantics also technically change from "r is not at l" to "r is *somewhere other* than l".
+                // With "null"/"undefined" values, the new semantics wouldn't break the old ones, as "r" would be allowed to take the "undefined" value.
+                // Without such values, there is no guarantee that the behavior would be the same as without lifting, in the general case.
+                // FIXME @arbimo correct ?
                 aux_closure(inner_eid, predicate_id, args, env)?;
-                // WARNING: UNTIL "NULL/UNDEFINED" VALUES ARE INTRODUCED (FOR (USER) TYPES, VIA UNION TYPES ?),
-                //          MAY (THEORETICALLY) RESULT IN INCOMPLETENESS (SOUNDNESS STILL HOLDS THOUGH).
             }
             _ => (),
         };
@@ -364,19 +369,18 @@ fn transform_effect_exprs(
         eff.state_variable.fluent = group.substitution_fluent_id;
     }
 
-    for _idx in neg_effects_to_null {
-        todo!(
-            // let eff = &mut effects[idx].effect_expression;
-            // debug_assert!(group.group.contains(eff.state_variable.fluent));
-            //
-            // let _lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
-            //
-            // eff.operation = EffectOp::Assign(env.intern(Expr::Object(TODO_NULL_OBJECT), None)?);
-            // if let Some(lifted_param_idx) = lifted_param_idx {
-            //     eff.state_variable.arguments.remove(lifted_param_idx);
-            // }
-            // eff.state_variable.fluent = group.substitution_fluent_id;
-        );
+    for idx in neg_effects_to_null {
+        let eff = &mut effects[idx].effect_expression;
+        debug_assert!(group.group.contains(eff.state_variable.fluent));
+ 
+        let _lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
+
+        todo!("TODO requires a 'null'/'undefined' objects for all user types TODO");
+        // eff.operation = EffectOp::Assign(env.intern(Expr::Object(TODO_NULL_OBJECT), None)?);
+        // if let Some(lifted_param_idx) = _lifted_param_idx {
+        //     eff.state_variable.arguments.remove(lifted_param_idx);
+        // }
+        // eff.state_variable.fluent = group.substitution_fluent_id;
     }
 
     for idx in neg_effects_to_del.into_iter().sorted().rev() {

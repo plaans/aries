@@ -379,11 +379,9 @@ impl SubstitutionGroup {
                 .collect::<Option<_>>()
         };
 
-        // Unsupported: when an expression over a predicate of the group features non-simple arguments
-        // (i.e. only support constant or plain parameter symbols, no complex nestings).
-        //
         // 1. check that globally (outside of actions/tasks):
-        //   1.1. there are no negative conditions on any of the group's predicates. // (TODO: liftable requirement ? (requires a "null" value for all user types)
+        //   1.1. there are no negative conditions on any of the group's predicates.
+        //        (TODO ? is this requirement liftable when there are "null"/"undefined" values/objects for user types ? TODO)
         //   1.2. check there is at most one positive effect on any of the group's predicates, for the same non-return parameters (outside actions),
         //        and that not all "initial/global" effects on a predicate of the group are set to the default value (i.e. false)
         // 2. check that in actions/tasks:
@@ -398,6 +396,9 @@ impl SubstitutionGroup {
                 | Some(PredicateExpr::Negative(_, _, predicate_id, args))
                     if self.contains(predicate_id) && try_into_simple_args(predicate_id, &args).is_none() =>
                 {
+                    // We do not support a predicate of the group to be used in expressions featuring non-simple arguments
+                    // (i.e. only support constant or plain parameter symbols, no complex nestings).
+                    // We short-circuit and do not consider such groups for substitution.
                     tracing::trace!("non-simple arguments in condition/constraint");
                     return Err(crate::Message::error(""));
                 }
@@ -565,16 +566,16 @@ impl SubstitutionGroup {
                     return false;
                 }
 
-                // Recall that by convention, when a positive and negative effect (on the same non-return parameters)
+                // Recall that by convention, when a positive and negative effect (over the same non-return parameters)
                 // start at the same time, the "tie-breaker" is that the negative is applied before the positive one.
                 // ("delete-before-add")
 
-                // WIP (requires NULL object value) // // We do not support the case where the negative effect can start strictly after the positive one
-                // WIP (requires NULL object value) // // (TODO: liftable requirement ?)
-                // WIP (requires NULL object value) // if !timing_is_necessarily_before_or_eq(neg.effect_expression.timing, pos.effect_expression.timing) {
-                // WIP (requires NULL object value) //     tracing::trace!("unrecognized pattern for temporal split");
-                // WIP (requires NULL object value) //     return false;
-                // WIP (requires NULL object value) // }
+                // We do not support the case where the negative effect can start strictly after the positive one
+                if !timing_is_necessarily_before_or_eq(neg.effect_expression.timing, pos.effect_expression.timing) {
+                    // (TODO ? is this requirement liftable when there are "null"/"undefined" values/objects for user types ? TODO)
+                    tracing::trace!("unrecognized pattern for temporal split");
+                    return false;
+                }
                 if neg.effect_expression.timing != pos.effect_expression.timing {
                     tracing::trace!(
                         "unrecognized pattern for temporal split [for now, only support case with exact same timestamps]"
@@ -611,9 +612,8 @@ pub(super) fn timing_is_necessarily_before_or_eq(t1: Timestamp, t2: Timestamp) -
     }
 }
 
-/// Returns true if the fluent is static,
-/// meaning that all effects over it are only contain constants
-/// and are at the temporal origin (TODO: ? this is a nonstandard requirement, right ? (@arbimo)).
+/// Returns true if the fluent is static, meaning that all effects over it only contain
+/// constants and are at the temporal origin. This last requirement is nonstandard. (FIXME @arbimo right ?)
 ///
 /// Works for any fluent / state function (not just boolean predicates).
 fn is_fluent_static(fluent_id: FluentId, model: &Model) -> bool {
