@@ -178,7 +178,7 @@ impl<'a> AppliedSubstitutionGroup<'a> {
     }
 
     fn get_lifted_param_idx(&self, predicate_id: FluentId) -> Option<usize> {
-        get_lifted_param_idx(&self.group, predicate_id)
+        get_lifted_param_idx(self.group, predicate_id)
     }
 }
 
@@ -373,7 +373,7 @@ fn transform_effect_exprs(
     for idx in neg_effects_to_null {
         let eff = &mut effects[idx].effect_expression;
         debug_assert!(group.group.contains(eff.state_variable.fluent));
- 
+
         let _lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
 
         todo!("TODO requires a 'null'/'undefined' objects for all user types TODO");
