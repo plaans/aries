@@ -6,18 +6,19 @@ use crate::{
 
 use minilp::{Bound, ComparisonOp, Error, FeasabilityChecker, OptimizationDirection, Problem, Variable};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct IntBounds {
     lower: IntCst,
     upper: IntCst,
 }
 
 // No need to store a bound or an op as all of our constraints are equalities between an s variable and linear sum of x variables
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct IntegerConstraint {
     lin_sum: Vec<(Variable, IntCst)>,
 }
 
+#[derive(Clone)]
 pub struct Solver {
     pub problem: Problem,
 
@@ -38,7 +39,7 @@ impl Solver {
         }
     }
 
-    // Create a new solver variable both for Problem and the mirror of our problem
+    /// Create a new solver variable both for Problem and the mirror of our problem
     pub fn create_variable(&mut self, lb: IntCst, ub: IntCst) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
 
@@ -48,7 +49,11 @@ impl Solver {
         var
     }
 
-    // Modify the bound of an existing variable
+    /// Set a new Upper/Lower bound for the given variable
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem is immediatly detected as infeasible.
     pub fn set_bound(&mut self, var: Variable, bound: Bound, val: IntCst) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasability_checker()?);
@@ -123,7 +128,7 @@ impl Solver {
         Ok(())
     }
 
-    // Create a new solver constraint both for Problem and the mirror of our problem, we assume we only have equality constraint
+    /// Create a new solver constraint both for Problem and the mirror of our problem
     pub fn add_constraint(&mut self, lin_sum: Vec<(Variable, IntCst)>) {
         let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|&(var, coef)| (var, coef as f64)).collect();
 
@@ -132,7 +137,7 @@ impl Solver {
         self.constraints.push(IntegerConstraint { lin_sum });
     }
 
-    // Return the maximum value that the given linear sum can take respect to its bounds
+    /// Return the maximum value that the given linear sum can take respect to its bounds
     fn max_lin_sum(&self, lin_sum: &[i128]) -> i128 {
         lin_sum
             .iter()
@@ -149,7 +154,7 @@ impl Solver {
             .sum()
     }
 
-    // Return the minimum value that the given linear sum can take respect to its bounds
+    /// Return the minimum value that the given linear sum can take respect to its bounds
     fn min_lin_sum(&self, lin_sum: &[i128]) -> i128 {
         lin_sum
             .iter()
@@ -166,7 +171,7 @@ impl Solver {
             .sum()
     }
 
-    // Convert a certificate with f64 coefficients in an a equivalent i128 certificate
+    /// Convert a certificate with f64 coefficients in an a equivalent i128 certificate
     fn convert_certificate_i128(cert: &[f64]) -> Vec<i128> {
         let coef = 2.0_f64.powi(52);
 

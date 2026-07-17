@@ -625,7 +625,7 @@ impl From<Bound> for ComparisonOp {
 }
 
 /// Allow us to check the faisability of a problem and modify the bounds of its variables
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FeasabilityChecker {
     solver: Solver,
 }

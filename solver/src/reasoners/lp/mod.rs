@@ -7,9 +7,14 @@ use solver::Solver;
 use minilp::{Bound, Error, Variable};
 
 use crate::{
-    backtrack::{Backtrack, DecLvl, Trail},
-    core::{IntCst, Lit, Var, literals::Watches},
+    backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
+    core::{
+        IntCst, Lit, Var,
+        literals::Watches,
+        state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause, InvalidUpdate},
+    },
     lang::linear::{LinSum, ScaledVar},
+    reasoners::{Contradiction, ReasonerId, Theory},
 };
 
 #[derive(Debug, Clone)]
@@ -19,19 +24,24 @@ struct ActivationLit {
     val: IntCst,
 }
 
+#[derive(Clone)]
 enum LpEvent {
     BoundSet(ActivationLit, IntCst),
 }
 
+#[derive(Clone)]
 pub struct Lp {
+    id: ReasonerId,
+
     solver: Solver,
 
-    lit_vec: Vec<ActivationLit>,
+    act_lit_vec: Vec<ActivationLit>,
 
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
     memory_x: HashMap<Var, Variable>,
     memory_x_reversed: HashMap<Variable, Var>,
 
+    model_events: ObsTrailCursor<Event>,
     watches_act_lit: Watches<usize>,
     trail: Trail<LpEvent>,
 }
@@ -46,14 +56,16 @@ impl Lp {
     /// Create a new empty interface instance
     pub fn new() -> Self {
         Self {
+            id: ReasonerId::Cp,
             solver: Solver::new(),
 
-            lit_vec: Vec::new(),
+            act_lit_vec: Vec::new(),
 
             memory_s: HashMap::new(),
             memory_x: HashMap::new(),
             memory_x_reversed: HashMap::new(),
 
+            model_events: ObsTrailCursor::new(),
             watches_act_lit: Default::default(),
             trail: Default::default(),
         }
@@ -140,10 +152,87 @@ impl Lp {
             };
         }
 
-        let index = self.lit_vec.len();
+        let index = self.act_lit_vec.len();
 
         self.watches_act_lit.add_watch(index, active);
-        self.lit_vec.push(lit);
+        self.act_lit_vec.push(lit);
+    }
+
+    fn explain_set_bound(&self, res: Result<(), Error>) -> Result<(), Contradiction> {
+        match res {
+            Err(Error::InfeasibleWithCertificate(cert)) => {
+                if self.solver.is_certificate_valid(&cert) {
+                    todo!()
+                } else {
+                    todo!()
+                }
+            }
+            Err(Error::Instable) => todo!(),
+            Err(_) => {
+                todo!()
+            }
+            Ok(_) => {}
+        }
+
+        Ok(())
+    }
+}
+
+impl Theory for Lp {
+    fn identity(&self) -> ReasonerId {
+        self.id
+    }
+
+    fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        while let Some(&event) = self.model_events.pop(domains.trail()) {
+            let lit = event.new_literal();
+
+            for watcher in self.watches_act_lit.watches_on(lit) {
+                let act_lit = &self.act_lit_vec[watcher];
+
+                let res = self
+                    .solver
+                    .set_bound_restrict(act_lit.var, act_lit.bound, act_lit.val, &mut self.trail);
+
+                self.explain_set_bound(res)?;
+            }
+
+            let var = event.affected_bound.variable();
+
+            if let Some(&x_var) = self.memory_x.get(&var) {
+                let res =
+                    // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
+                    if event.affected_bound.is_plus() {
+                        self.solver
+                            .set_bound_restrict(x_var, Bound::Upper, event.new_upper_bound, &mut self.trail)
+                    } else {
+                        self.solver
+                            .set_bound_restrict(x_var, Bound::Lower, -event.new_upper_bound, &mut self.trail)
+                    };
+
+                self.explain_set_bound(res)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn explain(
+        &mut self,
+        literal: Lit,
+        context: InferenceCause,
+        state: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
+    ) {
+        todo!()
+    }
+
+    fn print_stats(&self) {
+        todo!()
+    }
+
+    fn clone_box(&self) -> Box<dyn Theory> {
+        Box::new(self.clone())
     }
 }
 
@@ -157,10 +246,8 @@ impl Backtrack for Lp {
     }
 
     fn restore_last(&mut self) {
-        let trail = &mut self.trail;
-
-        trail.restore_last_with(|LpEvent::BoundSet(act_lit, old_val)| {
-            let _ = self.solver.set_bound(act_lit.var, act_lit.bound, old_val); // Should not return an error as we are only relaxing the lp
+        self.trail.restore_last_with(|LpEvent::BoundSet(lit, old_val)| {
+            let _ = self.solver.set_bound(lit.var, lit.bound, old_val); // Should not return an error as we are only relaxing the lp
         });
     }
 }
@@ -206,7 +293,7 @@ mod tests {
 
     impl Lp {
         fn get_validity_certificates(&mut self) -> Option<(bool, bool)> {
-            let lit_vec = self.lit_vec.clone();
+            let lit_vec = self.act_lit_vec.clone();
 
             for lit in lit_vec {
                 let res_set_bound = self.solver.set_bound(lit.var, lit.bound, lit.val);

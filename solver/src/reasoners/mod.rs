@@ -4,6 +4,7 @@ use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
 use crate::reasoners::eq::SplitEqTheory;
+use crate::reasoners::lp::Lp;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
@@ -25,6 +26,7 @@ pub enum ReasonerId {
     Cp,
     Eq(u16),
     Tautologies,
+    Lp,
 }
 
 impl ReasonerId {
@@ -45,6 +47,7 @@ impl Display for ReasonerId {
                 Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
+                Lp => "LP",
             }
         )
     }
@@ -104,6 +107,7 @@ pub struct Reasoners {
     pub(crate) eq: SplitEqTheory,
     pub(crate) cp: Cp,
     pub(crate) tautologies: Tautologies,
+    pub(crate) lp: Lp,
 }
 impl Reasoners {
     pub fn new() -> Self {
@@ -113,6 +117,7 @@ impl Reasoners {
             eq: Default::default(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
+            lp: Lp::new(),
         }
     }
 
@@ -123,6 +128,7 @@ impl Reasoners {
             ReasonerId::Eq(_) => &self.eq,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
+            ReasonerId::Lp => &self.lp,
         }
     }
 
@@ -133,6 +139,7 @@ impl Reasoners {
             ReasonerId::Eq(_) => &mut self.eq,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
+            ReasonerId::Lp => &mut self.lp,
         }
     }
 
