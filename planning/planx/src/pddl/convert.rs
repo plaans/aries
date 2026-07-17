@@ -178,10 +178,6 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
         model.task_network = Some(tn);
     }
 
-    if lift_predicates::ARIES_LIFT_PREDICATES.get() {
-        lift_predicates::lift_predicates_to_state_functions(&mut model)?;
-    }
-
     Ok(model)
 }
 

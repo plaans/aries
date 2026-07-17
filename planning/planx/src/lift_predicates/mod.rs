@@ -1,6 +1,5 @@
 mod substitutions;
 
-use aries_env_param::EnvParam;
 use itertools::Itertools;
 use substitutions::*;
 
@@ -11,8 +10,6 @@ use crate::{
     Action, Effect, EffectOp, Environment, Expr, ExprId, FluentId, Fun, Model, Object, Res, SeqExprId, SimpleGoal, Sym,
     Type, UnionUserType,
 };
-
-pub static ARIES_LIFT_PREDICATES: EnvParam<bool> = EnvParam::new("ARIES_LIFT_PREDICATES", "false");
 
 /// Substitute predicates into state functions where applicable.
 ///
