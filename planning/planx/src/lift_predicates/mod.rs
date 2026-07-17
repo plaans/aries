@@ -176,6 +176,21 @@ impl<'a> AppliedSubstitutionGroup<'a> {
                 .position(|sub| sub.predicate_id == predicate_id)?,
         )
     }
+
+    fn get_lifted_param_idx(&self, predicate_id: FluentId) -> Option<usize> {
+        get_lifted_param_idx(&self.group, predicate_id)
+    }
+}
+
+fn get_lifted_param_idx(group: &SubstitutionGroup, predicate_id: FluentId) -> Option<usize> {
+    let mut ii = group
+        .substitutions
+        .iter()
+        .filter(|sub| sub.predicate_id == predicate_id && sub.return_param_idx.is_some())
+        .flat_map(|sub| sub.return_param_idx);
+    let i = ii.next();
+    debug_assert!(ii.next().is_none());
+    i
 }
 
 /// Recursively visits the expressions under the given one,
@@ -194,17 +209,7 @@ fn transform_noneffect_exprs_recursive(
     env: &mut Environment,
 ) -> Res<()> {
     let aux_closure = |eid: ExprId, predicate_id: FluentId, args: SeqExprId, env: &mut Environment| -> Res<()> {
-        let lifted_param_idx = {
-            let mut ii = group
-                .group
-                .substitutions
-                .iter()
-                .filter(|sub| sub.predicate_id == predicate_id && sub.return_param_idx.is_some())
-                .flat_map(|sub| sub.return_param_idx);
-            let i = ii.next();
-            debug_assert!(ii.next().is_none());
-            i
-        };
+        let lifted_param_idx = group.get_lifted_param_idx(predicate_id);
 
         let (val_expr, new_sv_expr) = if let Some(lifted_param_idx) = lifted_param_idx {
             debug_assert!(
@@ -328,7 +333,7 @@ fn transform_effect_exprs(
                 effects[j].effect_expression.timing,
             ));
             if effects[i].effect_expression.timing != effects[j].effect_expression.timing {
-                // positive effect is necessarily strictly after
+                // positive effect is necessarily strictly after the negative one (can happen in durative actions FIXME @arbimo right ?).
                 debug_assert!(!timing_is_necessarily_before_or_eq(
                     effects[j].effect_expression.timing,
                     effects[i].effect_expression.timing,
@@ -345,17 +350,7 @@ fn transform_effect_exprs(
         let eff = &mut effects[idx].effect_expression;
         debug_assert!(group.group.contains(eff.state_variable.fluent));
 
-        let lifted_param_idx = {
-            let mut ii = group
-                .group
-                .substitutions
-                .iter()
-                .filter(|sub| sub.predicate_id == eff.state_variable.fluent && sub.return_param_idx.is_some())
-                .flat_map(|sub| sub.return_param_idx);
-            let i = ii.next();
-            debug_assert!(ii.next().is_none());
-            i
-        };
+        let lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
 
         if let Some(lifted_param_idx) = lifted_param_idx {
             eff.operation = EffectOp::Assign(eff.state_variable.arguments[lifted_param_idx]);
@@ -373,6 +368,8 @@ fn transform_effect_exprs(
         todo!(
             // let eff = &mut effects[idx].effect_expression;
             // debug_assert!(group.group.contains(eff.state_variable.fluent));
+            //
+            // let _lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
             //
             // eff.operation = EffectOp::Assign(env.intern(Expr::Object(TODO_NULL_OBJECT), None)?);
             // if let Some(lifted_param_idx) = lifted_param_idx {
