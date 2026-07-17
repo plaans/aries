@@ -338,7 +338,8 @@ fn transform_effect_exprs(
                 effects[j].effect_expression.timing,
             ));
             if effects[i].effect_expression.timing != effects[j].effect_expression.timing {
-                // positive effect is necessarily strictly after the negative one (can happen in durative actions FIXME @arbimo right ?).
+                // here, positive effect is necessarily strictly after the negative one,
+                // as the other case is filtered out (substitution group not deemed substitutable).
                 debug_assert!(!timing_is_necessarily_before_or_eq(
                     effects[j].effect_expression.timing,
                     effects[i].effect_expression.timing,
