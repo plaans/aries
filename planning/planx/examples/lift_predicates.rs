@@ -59,7 +59,7 @@ fn main() -> Res<()> {
     );
 
     let atrobby_lifted = get_fluent_by_name(&lifted_model, "at-robby")?;
-    assert!(atrobby_lifted.parameters.len() == 0);
+    assert!(atrobby_lifted.parameters.is_empty());
     assert!(matches!(atrobby_lifted.return_type, planx::Type::User(_)));
 
     let carry_at_lifted = get_fluent_by_name(&lifted_model, "carry:at")?;
