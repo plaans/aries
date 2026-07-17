@@ -1,3 +1,7 @@
+mod grounder;
+
+pub use grounder::{SimpleDatalogGrounder, SimpleDatalogGrounderProgramView};
+
 use aries_solver::prelude::IntCst;
 
 use crate::ext::{Grounding, GroundingFlatId};

@@ -1,6 +1,6 @@
 pub mod symmetry;
 
-use aries_solver::lang::Store;
+use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
 
 use aries_solver::core::{

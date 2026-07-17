@@ -24,6 +24,21 @@ impl Program {
         table
     }
 
+    /// Number of predicates that have been added to the program.
+    pub fn num_predicates(&self) -> usize {
+        self.vars.len()
+    }
+
+    /// Returns a reference to the [`VarTable`] of the i-th predicate added to the program.
+    pub fn get_predicate(&self, i: usize) -> Option<&VarTable> {
+        self.vars.get(i)
+    }
+
+    /// Returns a reference to the [`VarTable`] of the i-th predicate added to the program.
+    pub fn get_predicate_mut(&mut self, i: usize) -> Option<&mut VarTable> {
+        self.vars.get_mut(i)
+    }
+
     /// Adds a new rule to the program.
     pub fn add_rule(&mut self, rule: Rule) {
         let steps = rule.decompose(|arity| self.new_predicate(arity));
@@ -47,7 +62,7 @@ impl Program {
     ///
     /// This method consumes the objects as it would be a logic error to modify it again
     /// (e.g. adding new rules and running again would be a no-op because all fact would be stable already).
-    pub fn run(self) {
+    pub fn run(self) -> Vec<VarTable> {
         while !self.stable() {
             for rule in &self.rules {
                 rule.run();
@@ -57,6 +72,7 @@ impl Program {
                 var.process();
             }
         }
+        self.vars
     }
 }
 
