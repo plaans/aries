@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-use planx::{errors::*, pddl::*};
+use planx::{errors::*, lift_predicates::lift_predicates_to_state_functions, pddl::*};
 
 /// A simple parser for PDDL and its extension HDDL.
 ///
@@ -15,6 +15,9 @@ struct Args {
     domain: Option<PathBuf>,
     /// Path to the problem file to parse.
     problem: PathBuf,
+    /// Whether to lift groups of eligible boolean predicates into state functions.
+    #[arg(long, short)]
+    lift: bool,
 }
 
 fn main() -> Res<()> {
@@ -41,7 +44,13 @@ fn main() -> Res<()> {
     let domain = parser::parse_pddl_domain(domain_file)?;
     let problem = parser::parse_pddl_problem(problem_file)?;
 
-    let model = build_model(&domain, &problem)?;
+    let model = {
+        let mut res = build_model(&domain, &problem)?;
+        if opt.lift {
+            lift_predicates_to_state_functions(&mut res)?;
+        }
+        res
+    };
 
     println!("{model}");
 

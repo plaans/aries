@@ -5,6 +5,7 @@ pub mod errors;
 mod expressions;
 mod fluents;
 mod goals;
+pub mod lift_predicates;
 mod metrics;
 mod model;
 mod objects;

@@ -11,6 +11,7 @@ use thiserror::Error;
 #[derive(Debug)]
 pub enum TypeError {
     UnknownType(Sym),
+    NotSubtype(Sym, Sym),
     IncompatibleType(ExprId, Type),
     MissingParameter(Param),
     UnexpectedArgument(ExprId),
@@ -20,6 +21,7 @@ impl ToEnvMessage for TypeError {
     fn to_message(self, env: &Environment) -> Message {
         match self {
             TypeError::UnknownType(tpe) => tpe.invalid("unknown type"),
+            TypeError::NotSubtype(tpe1, tpe2) => tpe1.invalid(format!("not subtype of {tpe2}")),
             TypeError::IncompatibleType(expr, expected) => {
                 let expr = env / expr;
                 expr.invalid(format!(
@@ -52,6 +54,16 @@ impl Types {
         }
     }
 
+    pub fn add_user_type_independent(&mut self, name: impl Into<Sym> + Clone) -> bool {
+        if self.get_user_type(name.clone()).is_ok() {
+            return false;
+        }
+        let mut types = (*self.user_types).clone();
+        types.add_type(name, None);
+        self.user_types = Arc::new(types);
+        true
+    }
+
     pub fn top_user_type(&self) -> UserType {
         UserType::new(self.user_types.top_type.clone(), self.user_types.clone())
     }
@@ -66,7 +78,7 @@ impl Types {
 
     pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, Box<TypeError>> {
         let name = name.into();
-        self.check_type(&name)?;
+        self.check_type(&name, None)?;
         Ok(UserType::new(name, self.user_types.clone()))
     }
 
@@ -78,26 +90,41 @@ impl Types {
         }
     }
 
-    fn check_type(&self, name: &Sym) -> Result<(), Box<TypeError>> {
+    fn check_type(&self, name: &Sym, supertype: Option<&Sym>) -> Result<(), Box<TypeError>> {
+        if let Some(supertype) = supertype
+            && !self.user_types.contains(supertype.clone())
+        {
+            return Err(Box::new(TypeError::UnknownType(supertype.clone())));
+        }
         if !self.user_types.contains(name.clone()) {
-            Err(Box::new(TypeError::UnknownType(name.clone())))
+            if let Some(supertype) = supertype
+                && !self.user_types.is_subtype_of(name, supertype)
+            {
+                Err(Box::new(TypeError::NotSubtype(name.clone(), supertype.clone())))
+            } else {
+                Err(Box::new(TypeError::UnknownType(name.clone())))
+            }
         } else {
             Ok(())
         }
     }
 
-    pub fn get_union_type<'a, T>(&self, types: &'a [T]) -> Result<Type, Box<TypeError>>
+    pub fn get_union_type<'a, T>(&self, types: &'a [T], supertype: Option<&'a T>) -> Result<Type, Box<TypeError>>
     where
         &'a T: Into<Sym>,
     {
         let mut union = SmallVec::with_capacity(types.len());
         for t in types {
             let t = t.into();
-            self.check_type(&t)?;
+            self.check_type(&t, supertype.map(|t| t.into()).as_ref())?;
             union.push(t);
         }
         if types.is_empty() {
-            Ok((&self.top_user_type()).into())
+            if let Some(supertype) = supertype {
+                Ok((&self.get_user_type(supertype)?).into())
+            } else {
+                Ok((&self.top_user_type()).into())
+            }
         } else {
             Ok(Type::User(UnionUserType {
                 union,
@@ -108,7 +135,7 @@ impl Types {
 }
 
 /// Represent a type as the union of possible user types.
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct UnionUserType {
     union: SmallVec<[Sym; 1]>,
     hier: Arc<UserTypes>,
@@ -136,6 +163,22 @@ impl UnionUserType {
             None
         }
     }
+
+    pub fn members(&self) -> &[Sym] {
+        &self.union
+    }
+
+    pub fn overlaps(&self, other: &Self) -> bool {
+        let b1 = self
+            .union
+            .iter()
+            .any(|t| other.union.iter().any(|t2| self.hier.is_subtype_of(t, t2)));
+        let b2 = other
+            .union
+            .iter()
+            .any(|t| self.union.iter().any(|t2| other.hier.is_subtype_of(t, t2)));
+        b1 || b2
+    }
 }
 
 impl Display for UnionUserType {
@@ -151,7 +194,7 @@ impl Display for UnionUserType {
 }
 
 /// Represents a single user-defined type within a a type hierarchy
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub struct UserType {
     pub name: Sym,
     pub hier: Arc<UserTypes>,
@@ -194,7 +237,7 @@ impl Debug for UserType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UserTypes {
     top_type: Sym,
     /// All types with their parents.
@@ -211,7 +254,7 @@ impl Default for UserTypes {
 
 impl UserTypes {
     pub fn new() -> Self {
-        Self::with_top_type("★object★")
+        Self::with_top_type("top-type")
     }
 
     pub fn with_top_type(top_type: impl Into<Sym>) -> Self {
@@ -257,8 +300,8 @@ impl UserTypes {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct IntInterval(Option<IntValue>, Option<IntValue>);
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct IntInterval(pub Option<IntValue>, pub Option<IntValue>);
 
 impl IntInterval {
     pub const FULL: IntInterval = IntInterval(None, None);
@@ -300,7 +343,7 @@ impl From<RangeInclusive<IntValue>> for IntInterval {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq)]
 pub enum Type {
     Bool,
     Int(IntInterval),
@@ -358,6 +401,13 @@ impl Type {
 
     /// Returns true if two types are overlapping
     pub fn overlaps(&self, other: &Type) -> bool {
-        self.is_subtype_of(other) || other.is_subtype_of(self)
+        match (self, other) {
+            (Bool, Bool) => true,
+            (Real, Real) => true,
+            (Int(_), Real) | (Real, Int(_)) => true,
+            (Int(bounds1), Int(bounds2)) => bounds1.0 >= bounds2.1 || bounds2.0 >= bounds1.1,
+            (User(left), User(right)) => left.overlaps(right),
+            _ => false,
+        }
     }
 }
