@@ -11,22 +11,25 @@ use crate::{
     core::{
         IntCst, Lit, Var,
         literals::Watches,
-        state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause, InvalidUpdate},
+        state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
     },
     lang::linear::{LinSum, ScaledVar},
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
-#[derive(Debug, Clone)]
-struct ActivationLit {
+#[derive(Debug, Clone, Copy)]
+struct BoundConstraint {
     var: Variable,
     bound: Bound,
     val: IntCst,
 }
 
 #[derive(Clone)]
-enum LpEvent {
-    BoundSet(ActivationLit, IntCst),
+struct LpEvent {
+    var: Variable,
+    bound: Bound,
+    old_val: IntCst,
+    lit: Lit,
 }
 
 #[derive(Clone)]
@@ -35,14 +38,15 @@ pub struct Lp {
 
     solver: Solver,
 
-    act_lit_vec: Vec<ActivationLit>,
+    bound_cons_vec: Vec<BoundConstraint>,
+    lit_vec: Vec<Lit>,
 
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
     memory_x: HashMap<Var, Variable>,
     memory_x_reversed: HashMap<Variable, Var>,
 
     model_events: ObsTrailCursor<Event>,
-    watches_act_lit: Watches<usize>,
+    watches: Watches<usize>,
     trail: Trail<LpEvent>,
 }
 
@@ -59,14 +63,15 @@ impl Lp {
             id: ReasonerId::Cp,
             solver: Solver::new(),
 
-            act_lit_vec: Vec::new(),
+            bound_cons_vec: Vec::new(),
+            lit_vec: Vec::new(),
 
             memory_s: HashMap::new(),
             memory_x: HashMap::new(),
             memory_x_reversed: HashMap::new(),
 
             model_events: ObsTrailCursor::new(),
-            watches_act_lit: Default::default(),
+            watches: Default::default(),
             trail: Default::default(),
         }
     }
@@ -119,25 +124,27 @@ impl Lp {
         s
     }
 
-    pub fn process_constraint(&mut self, sum: &LinSum, active: Lit) {
+    pub fn process_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
+        assert!(doms.presence(active) == Lit::TRUE);
+
         let bound_val = -sum.constant();
 
         let elements = sum.terms_slice().to_vec();
 
         let opp_lin_sum = Lp::get_opposite_linear_sum(&elements);
 
-        let lit: ActivationLit;
+        let bound_cons: BoundConstraint;
 
         if self.memory_s.contains_key(&elements) {
             let &s = self.memory_s.get(&elements).unwrap();
-            lit = ActivationLit {
+            bound_cons = BoundConstraint {
                 var: s,
                 bound: Bound::Upper,
                 val: bound_val,
             };
         } else if self.memory_s.contains_key(&opp_lin_sum) {
             let &s = self.memory_s.get(&opp_lin_sum).unwrap();
-            lit = ActivationLit {
+            bound_cons = BoundConstraint {
                 var: s,
                 bound: Bound::Lower,
                 val: -bound_val,
@@ -145,36 +152,42 @@ impl Lp {
         } else {
             let s = self.add_s_var(&elements);
 
-            lit = ActivationLit {
+            bound_cons = BoundConstraint {
                 var: s,
                 bound: Bound::Upper,
                 val: bound_val,
             };
         }
 
-        let index = self.act_lit_vec.len();
+        let index = self.bound_cons_vec.len();
 
-        self.watches_act_lit.add_watch(index, active);
-        self.act_lit_vec.push(lit);
+        self.watches.add_watch(index, active);
+        self.bound_cons_vec.push(bound_cons);
+        self.lit_vec.push(active);
     }
 
-    fn explain_set_bound(&self, res: Result<(), Error>) -> Result<(), Contradiction> {
+    fn explain_set_bound(&self, res: Result<(), Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
-            Err(Error::InfeasibleWithCertificate(cert)) => {
-                if self.solver.is_certificate_valid(&cert) {
-                    todo!()
-                } else {
-                    todo!()
-                }
+            Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
+                Some(explanation) => Err(Contradiction::Explanation(explanation)),
+                None => Ok(()),
+            },
+            Err(Error::Infeasible) => {
+                let explanation = self.solver.explain_infeasible_var(var);
+                Err(Contradiction::Explanation(explanation))
             }
-            Err(Error::Instable) => todo!(),
-            Err(_) => {
-                todo!()
-            }
-            Ok(_) => {}
+            _ => Ok(()),
         }
+    }
 
-        Ok(())
+    fn explain_check_feas(&self, res: Result<(), Error>) -> Result<(), Contradiction> {
+        match res {
+            Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
+                Some(explanation) => Err(Contradiction::Explanation(explanation)),
+                None => Ok(()),
+            },
+            _ => Ok(()),
+        }
     }
 }
 
@@ -187,14 +200,19 @@ impl Theory for Lp {
         while let Some(&event) = self.model_events.pop(domains.trail()) {
             let lit = event.new_literal();
 
-            for watcher in self.watches_act_lit.watches_on(lit) {
-                let act_lit = &self.act_lit_vec[watcher];
+            for watcher in self.watches.watches_on(lit) {
+                let bound_cons = &self.bound_cons_vec[watcher];
+                let active_lit = self.lit_vec[watcher];
 
-                let res = self
-                    .solver
-                    .set_bound_restrict(act_lit.var, act_lit.bound, act_lit.val, &mut self.trail);
+                let res = self.solver.set_bound_restrict(
+                    bound_cons.var,
+                    bound_cons.bound,
+                    bound_cons.val,
+                    active_lit,
+                    &mut self.trail,
+                );
 
-                self.explain_set_bound(res)?;
+                self.explain_set_bound(res, bound_cons.var)?;
             }
 
             let var = event.affected_bound.variable();
@@ -204,31 +222,35 @@ impl Theory for Lp {
                     // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, event.new_upper_bound, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Upper, event.new_upper_bound, lit, &mut self.trail)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, -event.new_upper_bound, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Lower, -event.new_upper_bound, lit, &mut self.trail)
                     };
 
-                self.explain_set_bound(res)?;
+                self.explain_set_bound(res, x_var)?;
             }
         }
+
+        let res = self.solver.check_feasability();
+
+        self.explain_check_feas(res)?;
 
         Ok(())
     }
 
     fn explain(
         &mut self,
-        literal: Lit,
-        context: InferenceCause,
-        state: &DomainsSnapshot,
-        out_explanation: &mut Explanation,
+        _literal: Lit,
+        _context: InferenceCause,
+        _state: &DomainsSnapshot,
+        _out_explanation: &mut Explanation,
     ) {
-        todo!()
+        unreachable!()
     }
 
     fn print_stats(&self) {
-        todo!()
+        // TODO
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -246,8 +268,10 @@ impl Backtrack for Lp {
     }
 
     fn restore_last(&mut self) {
-        self.trail.restore_last_with(|LpEvent::BoundSet(lit, old_val)| {
-            let _ = self.solver.set_bound(lit.var, lit.bound, old_val); // Should not return an error as we are only relaxing the lp
+        self.trail.restore_last_with(|lp_event| {
+            let _ = self
+                .solver
+                .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.lit); // Should not return an error as we are only relaxing the lp
         });
     }
 }
@@ -257,7 +281,7 @@ mod tests {
     use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IteratorRandom};
 
     use crate::{
-        core::{IntCst, Lit, Var},
+        core::{IntCst, Lit, Var, state::Domains},
         lang::linear::{LinSum, ScaledVar},
         reasoners::lp::{Error, Lp},
     };
@@ -293,10 +317,12 @@ mod tests {
 
     impl Lp {
         fn get_validity_certificates(&mut self) -> Option<(bool, bool)> {
-            let lit_vec = self.act_lit_vec.clone();
+            let bound_cons_vec = self.bound_cons_vec.clone();
 
-            for lit in lit_vec {
-                let res_set_bound = self.solver.set_bound(lit.var, lit.bound, lit.val);
+            for bound_cons in bound_cons_vec {
+                let res_set_bound = self
+                    .solver
+                    .set_bound(bound_cons.var, bound_cons.bound, bound_cons.val, Lit::TRUE);
 
                 let res_check_feas = self.solver.check_feasability();
 
@@ -305,7 +331,7 @@ mod tests {
                         // println!("Cert: {:?}", cert);
 
                         let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.is_certificate_valid(cert);
+                        let is_certif_valid_int = self.solver.check_certificate(cert).is_some();
                         return Some((is_certif_valid_int, is_certif_valid_float));
                     }
 
@@ -313,7 +339,7 @@ mod tests {
                         // println!("Cert: {:?}", cert);
 
                         let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.is_certificate_valid(cert);
+                        let is_certif_valid_int = self.solver.check_certificate(cert).is_some();
                         return Some((is_certif_valid_int, is_certif_valid_float));
                     }
 
@@ -368,7 +394,7 @@ mod tests {
 
             let sum = LinSum::new(bound_val, vars);
 
-            interface.process_constraint(&sum, Lit::TRUE);
+            interface.process_constraint(&sum, Lit::TRUE, &Domains::new());
         }
 
         interface
@@ -397,11 +423,13 @@ mod tests {
         println!("float: {nb_val_cert_f}, int: {nb_val_cert_i}, total: {nb_cert}");
     }
 
+    #[ignore]
     #[test]
     fn compile_stats_certificate_single() {
         compile_stats_certificate(50, 100, -10, 10);
     }
 
+    #[ignore]
     #[test]
     fn compile_stats_certificate_multiple() {
         for max in [10, 1000, i32::MAX] {

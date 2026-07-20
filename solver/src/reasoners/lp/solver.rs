@@ -1,7 +1,7 @@
 use crate::{
     backtrack::Trail,
-    core::IntCst,
-    reasoners::lp::{ActivationLit, LpEvent},
+    core::{IntCst, Lit, state::Explanation},
+    reasoners::lp::LpEvent,
 };
 
 use minilp::{Bound, ComparisonOp, Error, FeasabilityChecker, OptimizationDirection, Problem, Variable};
@@ -9,7 +9,9 @@ use minilp::{Bound, ComparisonOp, Error, FeasabilityChecker, OptimizationDirecti
 #[derive(Debug, Clone)]
 struct IntBounds {
     lower: IntCst,
+    lower_lit: Lit,
     upper: IntCst,
+    upper_lit: Lit,
 }
 
 // No need to store a bound or an op as all of our constraints are equalities between an s variable and linear sum of x variables
@@ -45,7 +47,12 @@ impl Solver {
 
         debug_assert_eq!(var.idx(), self.bounds.len());
 
-        self.bounds.push(IntBounds { lower: lb, upper: ub });
+        self.bounds.push(IntBounds {
+            lower: lb,
+            upper: ub,
+            lower_lit: Lit::TRUE,
+            upper_lit: Lit::TRUE,
+        });
         var
     }
 
@@ -54,7 +61,7 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the problem is immediatly detected as infeasible.
-    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: IntCst) -> Result<(), Error> {
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: IntCst, lit: Lit) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasability_checker()?);
         }
@@ -64,8 +71,14 @@ impl Solver {
         debug_assert!(var.idx() < self.bounds.len());
 
         match bound {
-            Bound::Lower => self.bounds[var.idx()].lower = val,
-            Bound::Upper => self.bounds[var.idx()].upper = val,
+            Bound::Lower => {
+                self.bounds[var.idx()].lower = val;
+                self.bounds[var.idx()].lower_lit = lit;
+            }
+            Bound::Upper => {
+                self.bounds[var.idx()].upper = val;
+                self.bounds[var.idx()].upper_lit = lit;
+            }
         }
 
         self.problem.set_bound(var, &bound, val as f64); // Used for test only
@@ -85,6 +98,7 @@ impl Solver {
         var: Variable,
         bound: Bound,
         val: IntCst,
+        lit: Lit,
         trail: &mut Trail<LpEvent>,
     ) -> Result<(), Error> {
         let mut is_bound_set = false;
@@ -95,7 +109,7 @@ impl Solver {
             Bound::Lower => {
                 old_val = self.bounds[var.idx()].lower;
                 if val > old_val {
-                    self.set_bound(var, bound, val)?;
+                    self.set_bound(var, bound, val, lit)?;
                     is_bound_set = true;
                 }
             }
@@ -103,14 +117,19 @@ impl Solver {
                 old_val = self.bounds[var.idx()].upper;
 
                 if val < old_val {
-                    self.set_bound(var, bound, val)?;
+                    self.set_bound(var, bound, val, lit)?;
                     is_bound_set = true;
                 }
             }
         }
 
         if is_bound_set {
-            trail.push(LpEvent::BoundSet(ActivationLit { var, bound, val }, old_val));
+            trail.push(LpEvent {
+                var,
+                bound,
+                old_val,
+                lit,
+            });
         }
 
         Ok(())
@@ -179,7 +198,7 @@ impl Solver {
     }
 
     /// Verify the certificate of unsatisfiability
-    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
+    pub fn check_certificate(&self, cert: &[f64]) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
@@ -201,6 +220,55 @@ impl Solver {
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
 
-        max_lin_sum < 0 || min_lin_sum > 0
+        if max_lin_sum < 0 {
+            let mut explanation = Explanation::new();
+
+            explanation.lits = lin_sum
+                .iter()
+                .enumerate()
+                .filter(|&(_, &coeff)| coeff != 0)
+                .map(|(i, &coeff)| {
+                    if coeff > 0 {
+                        self.bounds[i].upper_lit
+                    } else {
+                        self.bounds[i].lower_lit
+                    }
+                })
+                .collect();
+
+            return Some(explanation);
+        }
+
+        if min_lin_sum > 0 {
+            let mut explanation = Explanation::new();
+
+            explanation.lits = lin_sum
+                .iter()
+                .enumerate()
+                .filter(|&(_, &coeff)| coeff != 0)
+                .map(|(i, &coeff)| {
+                    if coeff < 0 {
+                        self.bounds[i].upper_lit
+                    } else {
+                        self.bounds[i].lower_lit
+                    }
+                })
+                .collect();
+
+            return Some(explanation);
+        }
+
+        None
+    }
+
+    pub fn explain_infeasible_var(&self, var: Variable) -> Explanation {
+        let mut explanation = Explanation::new();
+
+        let int_bound = &self.bounds[var.idx()];
+
+        explanation.push(int_bound.upper_lit);
+        explanation.push(int_bound.lower_lit);
+
+        explanation
     }
 }

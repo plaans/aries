@@ -91,12 +91,13 @@ impl From<Explanation> for Contradiction {
 ///
 /// SAT should always be first because we should not allow anything to happen between
 /// the moment a clause is learned and the moment it is is propagated.
-pub(crate) const REASONERS: [ReasonerId; 5] = [
+pub(crate) const REASONERS: [ReasonerId; 6] = [
     ReasonerId::Sat,
     ReasonerId::Tautologies,
     ReasonerId::Diff,
     ReasonerId::Eq(0),
     ReasonerId::Cp,
+    ReasonerId::Lp,
 ];
 
 /// A set of inference modules for constraint propagation.
