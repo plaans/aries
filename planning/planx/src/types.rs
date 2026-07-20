@@ -147,6 +147,10 @@ impl UnionUserType {
         }
     }
 
+    pub fn members(&self) -> &[Sym] {
+        &self.union
+    }
+
     pub fn overlaps(&self, other: &Self) -> bool {
         let b1 = self
             .union

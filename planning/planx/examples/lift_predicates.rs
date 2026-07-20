@@ -28,11 +28,14 @@ fn get_fluent_by_name<'a>(model: &'a Model, fluent_name: &'a str) -> Res<&'a pla
     ))
 }
 
-fn main() -> Res<()> {
-    let domain_file = PathBuf::from("planning/problems/pddl/tests/gripper.dom.pddl");
-    let problem_file = PathBuf::from("planning/problems/pddl/tests/gripper.pb.pddl");
-
-    let (nonlifted_model, lifted_model) = parse_pddl(&domain_file, &problem_file)?;
+fn simple_test(
+    domain_file: &Path,
+    problem_file: &Path,
+    expected_lifted_fluents: usize,
+    expected_lifted_fluents_with_helper_types: usize,
+    expected_lifted_fluents_shapes: &[(&str, usize, &str)],
+) -> Res<()> {
+    let (nonlifted_model, lifted_model) = parse_pddl(domain_file, problem_file)?;
 
     println!("== BEFORE LIFTING PREDICATES ==");
     println!("{nonlifted_model}");
@@ -44,27 +47,53 @@ fn main() -> Res<()> {
             .env
             .fluents
             .iter()
-            .filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
+            .filter(|fluent| matches!(&fluent.return_type, planx::Type::User(_)))
             .count()
             == 0
+    );
+
+    assert!(
+        lifted_model
+            .env
+            .fluents
+            .iter()
+            .filter(|fluent| matches!(&fluent.return_type, planx::Type::User(_)))
+            .count()
+            == expected_lifted_fluents
     );
     assert!(
         lifted_model
             .env
             .fluents
             .iter()
-            .filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
+            .filter(|fluent| matches!(
+                &fluent.return_type, planx::Type::User(tpe)
+                if tpe.to_single_type().unwrap().name.as_str().starts_with("_help-tpe-")
+            ))
             .count()
-            == 2
+            == expected_lifted_fluents_with_helper_types
     );
 
-    let atrobby_lifted = get_fluent_by_name(&lifted_model, "at-robby")?;
-    assert!(atrobby_lifted.parameters.is_empty());
-    assert!(matches!(atrobby_lifted.return_type, planx::Type::User(_)));
+    for &(fluent_name, expected_num_params, expected_return_type_name) in expected_lifted_fluents_shapes {
+        let fluent = get_fluent_by_name(&lifted_model, fluent_name)?;
+        assert!(fluent.parameters.len() == expected_num_params);
+        assert!(matches!(
+            &fluent.return_type, planx::Type::User(user_type)
+            if user_type.members() == [expected_return_type_name]
+        ));
+    }
 
-    let carry_at_lifted = get_fluent_by_name(&lifted_model, "carry:at")?;
-    assert!(carry_at_lifted.parameters.len() == 1);
-    assert!(matches!(carry_at_lifted.return_type, planx::Type::User(_)));
+    Ok(())
+}
+
+fn main() -> Res<()> {
+    simple_test(
+        &PathBuf::from("planning/problems/pddl/tests/gripper.dom.pddl"),
+        &PathBuf::from("planning/problems/pddl/tests/gripper.pb.pddl"),
+        2,
+        0,
+        &[("at-robby", 0, "top-type"), ("carry:at", 1, "top-type")],
+    )?;
 
     Ok(())
 }
@@ -75,73 +104,23 @@ mod test {
 
     #[test]
     fn test1() -> Res<()> {
-        let domain_file = PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/domain.pddl");
-        let problem_file = PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/problem.pddl");
-
-        let (nonlifted_model, lifted_model) = parse_pddl(&domain_file, &problem_file)?;
-
-        println!("== BEFORE LIFTING PREDICATES ==");
-        println!("{nonlifted_model}");
-        println!("== AFTER LIFTING PREDICATES ==");
-        print!("{lifted_model}");
-
-        assert!(
-            nonlifted_model
-                .env
-                .fluents
-                .iter()
-                .filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
-                .count()
-                == 0
-        );
-        assert!(
-            lifted_model
-                .env
-                .fluents
-                .iter()
-                .filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
-                .count()
-                == 4
-        );
-
-        Ok(())
+        simple_test(
+            &PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/domain.pddl"),
+            &PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/problem.pddl"),
+            4,
+            0,
+            &[],
+        )
     }
 
     #[test]
     fn test2() -> Res<()> {
-        let domain_file = PathBuf::from("../problems/upf/ipc2004-psr-small-strips/domain.pddl");
-        let problem_file = PathBuf::from("../problems/upf/ipc2004-psr-small-strips/problem.pddl");
-
-        let (nonlifted_model, lifted_model) = parse_pddl(&domain_file, &problem_file)?;
-
-        println!("== BEFORE LIFTING PREDICATES ==");
-        println!("{nonlifted_model}");
-        println!("== AFTER LIFTING PREDICATES ==");
-        print!("{lifted_model}");
-
-        assert!(
-            nonlifted_model
-                .env
-                .fluents
-                .iter()
-                .filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
-                .count()
-                == 0
-        );
-        assert!(
-            lifted_model
-                .env
-                .fluents
-                .iter()
-                .filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
-                .count()
-                == 5
-        );
-        assert!(
-            lifted_model.env.fluents.iter().filter(|fluent| matches!(fluent.return_type, planx::Type::User(_)))
-                .all(|fluent| matches!(&fluent.return_type, planx::Type::User(tpe) if tpe.to_single_type().unwrap().name.as_str().starts_with("_help-tpe-")))
-        );
-
-        Ok(())
+        simple_test(
+            &PathBuf::from("../problems/upf/ipc2004-psr-small-strips/domain.pddl"),
+            &PathBuf::from("../problems/upf/ipc2004-psr-small-strips/problem.pddl"),
+            5,
+            5,
+            &[],
+        )
     }
 }
