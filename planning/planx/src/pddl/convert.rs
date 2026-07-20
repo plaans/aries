@@ -54,7 +54,7 @@ fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
             continue; // already added
         }
         match tpe.tpe.as_slice() {
-            [] => types.add_type(&tpe.symbol, None),
+            [] => types.add_type(&tpe.symbol, Some(&Sym::from("object"))),
             [parent] => types.add_type(&tpe.symbol, Some(parent)),
             [_, second_parent, ..] => {
                 return Err(second_parent
@@ -99,7 +99,7 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
 
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
         let tpe = match obj.tpe.as_slice() {
-            [] => model.env.types.top_user_type(),
+            [] => model.env.types.get_user_type("object").msg(&model.env)?,
             [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
             [_, tpe, ..] => return Err(tpe.invalid("object with more than one type")),
         };
@@ -502,7 +502,7 @@ fn parse_subtask(t: &pddl::Task, env: &mut Environment, actions: &Actions, bindi
 fn parse_parameters(params: &[pddl::Param], types: &Types) -> Result<Vec<Param>, Box<TypeError>> {
     let mut parameters = Vec::with_capacity(params.len());
     for a in params {
-        let tpe = types.get_union_type(&a.tpe)?;
+        let tpe = types.get_union_type(&a.tpe, Some(&Sym::from("object")))?;
         parameters.push(Param::new(&a.symbol, tpe))
     }
     Ok(parameters)
