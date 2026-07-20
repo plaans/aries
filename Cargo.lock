@@ -156,6 +156,7 @@ dependencies = [
 name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
+ "aries-bench-data",
  "aries-solver",
  "aries-timelines",
  "clap 4.6.1",

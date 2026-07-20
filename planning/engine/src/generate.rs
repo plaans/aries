@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
+use aries_bench_data::{SolveStatus, SolverMetric};
 use aries_plan_engine::{
     encode::{encoding::Encoding, tags::Tag},
     plans::lifted_plan::LiftedPlan,
@@ -32,6 +33,10 @@ pub struct Options {
     /// If provided, the final plan will be written to this file.
     #[arg(short = 'w', long = "write-plan")]
     plan_file: Option<PathBuf>,
+
+    /// If provided, the benchmark report will be written to a file in this directory.
+    #[arg(short = 'r', long = "write-report")]
+    report: Option<PathBuf>,
 }
 
 pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()> {
@@ -58,13 +63,46 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
         println!("{}\n", encoding.plan(sol));
     };
 
-    if let Some(solution) = solver.find_optimal(solver_objective, &print, []) {
+    let solution = solver.find_optimal(solver_objective, &print, []);
+
+    if let Some(solution) = solution.as_ref() {
         println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
-        print(&solution);
-        encoding.plan(&solution).write_to_file(options.plan_file.as_ref())?;
+        print(solution);
+        encoding.plan(solution).write_to_file(options.plan_file.as_ref())?;
     } else {
         println!("No solution !!!!");
     }
+    let status = SolveStatus::Solved;
+
+    if let Some(report_dir) = options.report.as_ref() {
+        let result = aries_bench_data::SolveResult {
+            problem: aries_bench_data::Problem {
+                name: options
+                    .plan_file
+                    .as_ref()
+                    .map(|p| p.to_string_lossy())
+                    .unwrap_or_default()
+                    .to_string(),
+                timeout: std::time::Duration::MAX,
+                flags: Default::default(),
+            },
+            status,
+            runtime: start.elapsed(),
+            objective_value: solution
+                .as_ref()
+                .and_then(|sol| solver_objective.evaluate(sol).map(|x| x.into())),
+            metrics: Default::default(),
+            objective_history: vec![],
+        }
+        .with_metric(SolverMetric::NumConflicts, solver.get().stats.num_conflicts as f64)
+        .with_metric(SolverMetric::NumDecisions, solver.get().stats.num_decisions as f64)
+        .with_metric(SolverMetric::NumDomUpdates, solver.get().stats.num_dom_updates as f64);
+
+        result
+            .save_to_dir(&report_dir.to_string_lossy())
+            .map_err(|e| planx::Message::error(format!("{e}")))?;
+    }
+
     Ok(())
 }
 

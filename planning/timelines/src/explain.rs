@@ -50,6 +50,10 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
     }
 
+    pub fn get(&self) -> &Solver<crate::Sym> {
+        &self.solver
+    }
+
     /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
     pub fn check_satisfiability(&mut self) -> Option<Solution> {
         let assumptions = self.enablers.keys().copied().collect_vec();
