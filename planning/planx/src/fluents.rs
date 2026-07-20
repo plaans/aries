@@ -141,7 +141,7 @@ impl Fluent {
             return Err(Box::new(TypeError::UnexpectedArgument(args[self.parameters.len()])));
         }
         for (i, arg) in args.iter().enumerate() {
-            self.parameters[i].tpe.accepts(*arg, env)?;
+            self.parameters[i].tpe().accepts(*arg, env)?;
         }
         Ok(self.return_type.clone())
     }

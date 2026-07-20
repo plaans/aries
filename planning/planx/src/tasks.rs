@@ -32,7 +32,7 @@ impl Task {
             if i >= args.len() {
                 return Err(name
                     .invalid("Not enough arguments in task")
-                    .info(&self.params[i].name, "missing parameter"));
+                    .info(self.params[i].name(), "missing parameter"));
             }
             let arg = args[i];
             // check that no extra arguments are given
@@ -44,7 +44,7 @@ impl Task {
             let param = &self.params[i];
 
             // check that the argument has a compatible type
-            param.tpe.accepts(arg, env).msg(env)?;
+            param.tpe().accepts(arg, env).msg(env)?;
         }
         Ok(())
     }

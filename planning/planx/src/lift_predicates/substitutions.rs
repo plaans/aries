@@ -137,7 +137,7 @@ impl PredicateSubstitution {
         self.predicate
             .parameters
             .iter()
-            .map(|p| &p.tpe)
+            .map(|p| p.tpe())
             .enumerate()
             .filter_map(|(i, tpe)| {
                 if Some(i) == self.return_param_idx {
@@ -151,7 +151,7 @@ impl PredicateSubstitution {
 
     pub fn get_return_type(&self) -> &Type {
         if let Some(lifted_param_idx) = self.return_param_idx {
-            &self.predicate.parameters[lifted_param_idx].tpe
+            self.predicate.parameters[lifted_param_idx].tpe()
         } else {
             debug_assert!(self.predicate.return_type == Type::Bool);
             &self.predicate.return_type
