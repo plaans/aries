@@ -311,7 +311,7 @@ fn init_bool(sched: &mut Sched, fluent: &str, args: &[IntCst], value: bool) {
     });
 }
 
-fn init_val(sched: &mut Sched, fluent: &str, args: &[IntCst], value: i32) {
+fn init_val(sched: &mut Sched, fluent: &str, args: &[IntCst], value: IntCst) {
     let mutex_end = sched.new_timepoint();
     sched.add_effect(Effect {
         transition_start: sched.origin,
