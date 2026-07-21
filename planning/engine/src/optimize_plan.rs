@@ -164,8 +164,9 @@ pub fn encode_plan_optimization_problem(
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values
     let objs = types(model);
+    let fluents = fluents(model, &objs)?;
     let object_decoder = objs.decoder();
-    let mut sched = timelines::Sched::new(1, objs);
+    let mut sched = timelines::Sched::new(1, objs, fluents);
 
     let global_scope = Scope::global(&sched);
 
@@ -228,6 +229,15 @@ pub fn encode_plan_optimization_problem(
             name: op.action_ref.to_string(),
             start,
             end,
+            args: args
+                .iter()
+                .map(|(&name, &t)| {
+                    (
+                        t,
+                        a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                    )
+                })
+                .collect(),
             presence,
         });
         let bindings = Scope {
@@ -286,6 +296,15 @@ pub fn encode_plan_optimization_problem(
                 name: a.name.to_string(),
                 start,
                 end,
+                args: args
+                    .iter()
+                    .map(|(&name, &t)| {
+                        (
+                            t,
+                            a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                        )
+                    })
+                    .collect(),
                 presence,
             });
             let bindings = Scope {

@@ -190,6 +190,7 @@ dependencies = [
 name = "aries-timelines"
 version = "0.1.0"
 dependencies = [
+ "aries-datalog",
  "aries-env-param",
  "aries-solver",
  "idmap",

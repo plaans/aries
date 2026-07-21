@@ -68,7 +68,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                 let mut links_per_action: BTreeMap<TaskId, Vec<_>> = Default::default();
                 let links = ctx.causal_links.get_links().copied().collect_vec();
                 for cl in links {
-                    let eff = ctx.sched.effects.get(cl.eff);
+                    let eff = &ctx.sched.effects[cl.eff_id];
                     let Some(task_of_effect) = eff.source else {
                         // this is not associated to a task, and thus no in any equivalent class
                         continue;
@@ -82,10 +82,11 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                     };
                     // create a new mandatory literal to capture whether the link is active (requiring also the condition to be present)
                     let supports = Conjunction::from_slice([cl.active, ctx.presence(cl.active)]).reified(ctx);
+                    let cond_source = ctx.causal_links.conditions[cl.cond_id].source;
                     links_per_action
                         .entry(task_of_effect)
                         .or_default()
-                        .push((cl.cond, supports, is_exclusive));
+                        .push((cond_source, supports, is_exclusive));
                 }
 
                 for equiv in &self.equivalence_classes {
@@ -97,7 +98,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                                 // ignore the conditions originating from `a` and `b` that require some special handling otherwise.
                                 // This corresponds to (ECAI 25, eq. 3) and slightly weaker than the one propose immediately after.
                                 // TODO: implement the complete form (not much more complex but requires some mechanics to handle swapping links between the two signatures)
-                                .filter(|cl| cl.0.source != Some(a) && cl.0.source != Some(b))
+                                .filter(|cl| cl.0 != Some(a) && cl.0 != Some(b))
                                 // we sort the elements by their source. This can have a great effect because the earlier
                                 // elements are more influential. Here this order only ensures that the condition from the problem (with a `None` source)
                                 // are considered first. These are typically the most critical because they are always present and usually ground.
@@ -106,7 +107,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                                 //
                                 // TODO: The ECAI 25 paper also propose to use abstraction hierarchies to define the order which can bring
                                 //       significant performance improvement
-                                .sorted_by_key(|cl| cl.0.source) // elements from domain first
+                                .sorted_by_key(|cl| cl.0) // elements from domain first
                                 .collect_vec()
                         };
                         let a_supports = supports(a);

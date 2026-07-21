@@ -10,6 +10,7 @@ edition = "2024"
 itertools = { workspace = true }
 tracing = { workspace = true }
 aries-solver = { path = "../../solver" }
+aries-datalog = { path = "../../utils/datalog" }
 aries-env-param = { path = "../../utils/env_param" }
 idmap = { workspace = true }
 smallvec = { workspace = true }
