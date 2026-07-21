@@ -37,7 +37,8 @@ type Loc = IntCst;
 
 fn solve_routing(pb: &Problem) -> Option<Vec<Op>> {
     let objects = ObjectEncoding::empty();
-    let mut model = aries_timelines::Sched::new(1, objects);
+    let fluents = FluentsEncoding::empty();
+    let mut model = aries_timelines::Sched::new(1, objects, fluents);
 
     let (first_truck, last_truck) = pb.trucks();
 

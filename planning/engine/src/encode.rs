@@ -44,7 +44,7 @@ pub fn types(model: &Model) -> ObjectEncoding {
 }
 
 pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> {
-    let mut res = FluentsEncoding::default();
+    let mut res = FluentsEncoding::empty();
 
     for f in model.env.fluents.iter() {
         let params = {

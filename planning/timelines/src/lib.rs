@@ -9,6 +9,7 @@ mod tasks;
 
 use aries_solver::core::state::Evaluable;
 use aries_solver::core::views::Dom;
+use aries_solver::lang::ModelWrapper;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::Hash;
@@ -56,13 +57,20 @@ impl FluentParam {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct FluentsEncoding {
     store: HashMap<Sym, usize>,
     params: Vec<SmallVec<[FluentParam; 6]>>,
     returns: Vec<FluentParam>,
 }
 impl FluentsEncoding {
+    pub fn empty() -> Self {
+        Self {
+            store: Default::default(),
+            params: Default::default(),
+            returns: Default::default(),
+        }
+    }
     pub fn add(&mut self, name: Sym, params: &[FluentParam], r#return: FluentParam) -> bool {
         if self.store.contains_key(&name) {
             return false;
