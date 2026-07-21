@@ -2,6 +2,7 @@ mod solver;
 
 use std::collections::HashMap;
 
+use aries_env_param::EnvParam;
 use solver::Solver;
 
 use minilp::{Bound, Error, Variable};
@@ -17,6 +18,8 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
+pub static LP_ACTIVE: EnvParam<bool> = EnvParam::new("ARIES_LP_ACTIVE", "false");
+
 #[derive(Debug, Clone, Copy)]
 struct BoundConstraint {
     var: Variable,
@@ -30,6 +33,29 @@ struct LpEvent {
     bound: Bound,
     old_val: IntCst,
     lit: Lit,
+}
+
+#[derive(Clone)]
+struct Stats {
+    nb_certif: usize,
+    nb_valid_certif: usize,
+}
+
+impl Stats {
+    fn new() -> Self {
+        Self {
+            nb_certif: 0,
+            nb_valid_certif: 0,
+        }
+    }
+
+    fn increment_certif(&mut self) {
+        self.nb_certif += 1;
+    }
+
+    fn increment_valid_certif(&mut self) {
+        self.nb_valid_certif += 1;
+    }
 }
 
 #[derive(Clone)]
@@ -48,6 +74,10 @@ pub struct Lp {
     model_events: ObsTrailCursor<Event>,
     watches: Watches<usize>,
     trail: Trail<LpEvent>,
+
+    stats: Stats,
+
+    active: bool,
 }
 
 impl Default for Lp {
@@ -73,6 +103,10 @@ impl Lp {
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
             trail: Default::default(),
+
+            stats: Stats::new(),
+
+            active: LP_ACTIVE.get(),
         }
     }
 
@@ -172,6 +206,7 @@ impl Lp {
                 Some(explanation) => Err(Contradiction::Explanation(explanation)),
                 None => Ok(()),
             },
+
             Err(Error::Infeasible) => {
                 let explanation = self.solver.explain_infeasible_var(var);
                 Err(Contradiction::Explanation(explanation))
@@ -197,6 +232,10 @@ impl Theory for Lp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        if !self.active {
+            return Ok(());
+        }
+
         while let Some(&event) = self.model_events.pop(domains.trail()) {
             let lit = event.new_literal();
 
@@ -250,7 +289,11 @@ impl Theory for Lp {
     }
 
     fn print_stats(&self) {
-        // TODO
+        if self.active {
+            println!("ENABLED");
+        } else {
+            println!("DISABLED");
+        }
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
