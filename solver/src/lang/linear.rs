@@ -166,7 +166,7 @@ impl LinTerm {
         LinSum::from(*self).eq(other.into())
     }
 
-    pub fn is_constant(&self) -> bool {
+    pub fn is_cst(&self) -> bool {
         self.scaled_var.is_zero()
     }
 }

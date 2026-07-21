@@ -37,7 +37,7 @@ pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> 
                     .args
                     .iter()
                     .chain(&[term])
-                    .any(|term| !term.is_constant() && !source_terms.iter().map(|(t, _)| *t).contains(term))
+                    .any(|term| !term.is_cst() && !source_terms.iter().map(|(t, _)| *t).contains(term))
                 {
                     ambiguous_effects.insert(eff_id);
                 }
@@ -61,7 +61,7 @@ pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> 
                 .args
                 .iter()
                 .chain(&[c.value])
-                .any(|term| !term.is_constant() && !source_terms.iter().map(|(t, _)| *t).contains(term))
+                .any(|term| !term.is_cst() && !source_terms.iter().map(|(t, _)| *t).contains(term))
             {
                 ambiguous_conditions.insert(cl.cond_id);
             }
