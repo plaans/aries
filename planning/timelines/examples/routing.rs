@@ -110,16 +110,6 @@ fn add_move_to_action(truck: Option<IntCst>, to: IntCst, model: &mut Sched, pb: 
     let start: VarCst = model.new_opt_timepoint(presence);
     let end: VarCst = start + 1; // assumes a duration of 1
 
-    // records a new task for this action
-    // The tasks is necessary to determine things like the makespan of the plan (max end time of all present tasks)
-    // We use the returned task id to attach the conditions and effect to it.
-    let task_id = model.add_task(Task {
-        name: "move".to_string(),
-        start,
-        end,
-        presence,
-    });
-
     // variable denoting which truck is moved by this action
     let (first_truck, last_truck) = pb.trucks();
     let truck: VarCst = if let Some(truck) = truck {
@@ -132,6 +122,21 @@ fn add_move_to_action(truck: Option<IntCst>, to: IntCst, model: &mut Sched, pb: 
     // create a variable capturing the initial location of the truck
     let (first_loc, last_loc) = pb.locations();
     let from = model.new_optional_var(first_loc, last_loc, presence);
+
+    // records a new task for this action
+    // The tasks is necessary to determine things like the makespan of the plan (max end time of all present tasks)
+    // We use the returned task id to attach the conditions and effect to it.
+    let task_id = model.add_task(Task {
+        name: "move".to_string(),
+        start,
+        end,
+        presence,
+        args: vec![
+            (truck.into(), "truck".into()),
+            (from.into(), "location".into()),
+            (to.into(), "location".into()),
+        ],
+    });
 
     // effect that updates the truck location
     // [start, end] loc(truck) <- to
