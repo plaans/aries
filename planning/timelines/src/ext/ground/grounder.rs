@@ -1,5 +1,7 @@
 use aries_solver::{core::views::Term, prelude::*};
 
+use aries_datalog::{Program as DatalogProgram, Rule as DatalogRule, Arg as DatalogArg, VarTable as DatalogPredicate, Sym as DatalogSym};
+
 use idmap::{DirectIdMap, intid::IntegerId};
 
 use crate::{
@@ -400,7 +402,7 @@ impl SimpleDatalogGrounder {
 
 #[derive(Default)]
 struct SimpleDatalogGrounderInner {
-    prog: aries_datalog::Program,
+    prog: DatalogProgram,
 
     predicates: HashMap<SimpleDatalogGrounderPredicateId, usize>,
 
@@ -454,8 +456,8 @@ impl SimpleDatalogGrounderInner {
             .as_ref()
             .iter()
             .map(|t| match t {
-                SimpleDatalogGrounderTerm::Var(v) => aries_datalog::Arg::Var(v.to_u32()),
-                SimpleDatalogGrounderTerm::Cst(c) => aries_datalog::Arg::Sym(self.get_or_intern_datalog_sym_of_cst(*c)),
+                SimpleDatalogGrounderTerm::Var(v) => DatalogArg::Var(v.to_u32()),
+                SimpleDatalogGrounderTerm::Cst(c) => DatalogArg::Sym(self.get_or_intern_datalog_sym_of_cst(*c)),
             })
             .collect::<Vec<_>>();
         let head = self
@@ -470,9 +472,9 @@ impl SimpleDatalogGrounderInner {
                     .as_ref()
                     .iter()
                     .map(|t| match t {
-                        SimpleDatalogGrounderTerm::Var(v) => aries_datalog::Arg::Var(v.to_u32()),
+                        SimpleDatalogGrounderTerm::Var(v) => DatalogArg::Var(v.to_u32()),
                         SimpleDatalogGrounderTerm::Cst(c) => {
-                            aries_datalog::Arg::Sym(self.get_or_intern_datalog_sym_of_cst(*c))
+                            DatalogArg::Sym(self.get_or_intern_datalog_sym_of_cst(*c))
                         }
                     })
                     .collect::<Vec<_>>();
@@ -481,7 +483,7 @@ impl SimpleDatalogGrounderInner {
             })
             .collect::<Vec<_>>();
 
-        self.prog.add_rule(aries_datalog::Rule::new(head, body));
+        self.prog.add_rule(DatalogRule::new(head, body));
     }
 
     fn run(self) -> HashMap<Source, Vec<SourceGrounding>> {
@@ -502,7 +504,7 @@ impl SimpleDatalogGrounderInner {
         &mut self,
         predicate_id: &SimpleDatalogGrounderPredicateId,
         arity: usize,
-    ) -> &aries_datalog::VarTable {
+    ) -> &DatalogPredicate {
         if !self.predicates.contains_key(predicate_id) {
             self.predicates.insert(predicate_id.clone(), self.prog.num_predicates());
             self.prog.new_predicate(arity);
@@ -515,7 +517,7 @@ impl SimpleDatalogGrounderInner {
         &mut self,
         predicate_id: &SimpleDatalogGrounderPredicateId,
         arity: usize,
-    ) -> &mut aries_datalog::VarTable {
+    ) -> &mut DatalogPredicate {
         if !self.predicates.contains_key(predicate_id) {
             self.predicates.insert(predicate_id.clone(), self.prog.num_predicates());
             self.prog.new_predicate(arity);
@@ -524,7 +526,7 @@ impl SimpleDatalogGrounderInner {
         assert!(res.arity() == arity);
         res
     }
-    fn get_or_intern_datalog_sym_of_cst(&mut self, cst: IntCst) -> aries_datalog::Sym {
+    fn get_or_intern_datalog_sym_of_cst(&mut self, cst: IntCst) -> DatalogSym {
         let res = *self
             .datalog_sym_of_cst
             .entry(cst)
