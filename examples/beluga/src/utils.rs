@@ -15,6 +15,6 @@ pub type RackId = usize;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Side {
-    Beluga,
-    Factory,
+    Beluga = 0,
+    Factory = 1,
 }

@@ -47,14 +47,16 @@ pub struct Flight {
 pub struct Instance {
     pub jig_types: Vec<JigType>,
     pub jigs: Vec<Jig>,
-    pub trailers: Vec<Trailer>,
+    pub trailers_beluga: Vec<Trailer>,
+    pub trailers_factory : Vec<Trailer>,
     pub hangars: Vec<String>,
     pub racks: Vec<Rack>,
     pub production_lines: Vec<ProductionLine>,
     pub flights: Vec<Flight>,
 }
 
-pub enum JigHolder { Incoming=0, Outgoing=1, Rack=2, Hangar=3, Trailer=4 }
+#[derive(Debug)]
+pub enum JigHolder { Incoming=0, Outgoing=1, Rack=2, Hangar=3, TrailerBeluga=4, TrailerFactory=5 }
 
 impl Instance {
     pub fn build(filepath: &str) -> Result<Instance, Box<dyn Error>> {
@@ -63,7 +65,8 @@ impl Instance {
         let mut instance = Instance {
             jig_types: vec![],
             jigs: vec![],
-            trailers: vec![],
+            trailers_beluga: vec![],
+            trailers_factory: vec![],
             hangars: vec![],
             racks: vec![],
             production_lines: vec![],
@@ -89,13 +92,13 @@ impl Instance {
         }
         //trailers
         for t in json_instance.trailers_beluga {
-            instance.trailers.push(Trailer {
+            instance.trailers_beluga.push(Trailer {
                 name: t.name,
                 side: Side::Beluga,
             })
         }
         for t in json_instance.trailers_factory {
-            instance.trailers.push(Trailer {
+            instance.trailers_factory.push(Trailer {
                 name: t.name,
                 side: Side::Factory,
             })
@@ -192,11 +195,12 @@ impl Instance {
 
     pub fn bounds_jig_holder(&self) -> (i32, i32) {
         let (lb, mut ub) : (i32, i32) = (0,0);
-        ub = ub.max(self.bounds_incoming().0);
-        ub = ub.max(self.bounds_outgoing().0);
-        ub = ub.max(self.bounds_rack().0);
-        ub = ub.max(self.bounds_hangar().0);
-        ub = ub.max(self.bounds_trailer().0);
+        ub = ub.max(self.bounds_incoming().1);
+        ub = ub.max(self.bounds_outgoing().1);
+        ub = ub.max(self.bounds_rack().1);
+        ub = ub.max(self.bounds_hangar().1);
+        ub = ub.max(self.bounds_trailer_beluga().1);
+        ub = ub.max(self.bounds_trailer_factory().1);
         (lb, ub)
     }
 
@@ -214,8 +218,11 @@ impl Instance {
         }
         (0, ub)
     }
-    pub fn bounds_trailer(&self) -> (i32, i32) {
-        (0, (&self.trailers.len()-1) as i32)
+    pub fn bounds_trailer_beluga(&self) -> (i32, i32) {
+        (0, (&self.trailers_beluga.len()-1) as i32)
+    }
+    pub fn bounds_trailer_factory(&self) -> (i32, i32) {
+        (0, (&self.trailers_factory.len()-1) as i32)
     }
     pub fn bounds_rack(&self) -> (i32, i32) {
         (0, (&self.racks.len()-1) as i32)
@@ -271,7 +278,8 @@ mod test {
                     empty: false,
                 },
             ],
-            trailers: vec![],
+            trailers_beluga: vec![],
+            trailers_factory: vec![],
             hangars: vec![],
             racks: vec![],
             production_lines: vec![ProductionLine {
