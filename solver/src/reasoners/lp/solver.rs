@@ -7,7 +7,7 @@ use crate::{
 use minilp::{Bound, ComparisonOp, Error, FeasabilityChecker, OptimizationDirection, Problem, Variable};
 
 #[derive(Debug, Clone)]
-struct IntBounds {
+pub(super) struct IntBounds {
     lower: IntCst,
     lower_lit: Lit,
     upper: IntCst,
@@ -25,7 +25,7 @@ pub struct Solver {
     pub problem: Problem,
 
     // Used to store an exact version of our original problem with integers
-    bounds: Vec<IntBounds>,
+    pub(super) bounds: Vec<IntBounds>,
     constraints: Vec<IntegerConstraint>,
 
     opt_feas_checker: Option<FeasabilityChecker>,
@@ -39,6 +39,10 @@ impl Solver {
             constraints: Vec::new(),
             opt_feas_checker: None,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.opt_feas_checker = None;
     }
 
     /// Create a new solver variable both for Problem and the mirror of our problem
@@ -101,35 +105,34 @@ impl Solver {
         lit: Lit,
         trail: &mut Trail<LpEvent>,
     ) -> Result<(), Error> {
-        let mut is_bound_set = false;
-
-        let old_val;
-
         match bound {
             Bound::Lower => {
-                old_val = self.bounds[var.idx()].lower;
+                let old_val = self.bounds[var.idx()].lower;
+                let old_lit = self.bounds[var.idx()].lower_lit;
                 if val > old_val {
+                    trail.push(LpEvent {
+                        var,
+                        bound,
+                        old_val,
+                        old_lit,
+                    });
                     self.set_bound(var, bound, val, lit)?;
-                    is_bound_set = true;
                 }
             }
             Bound::Upper => {
-                old_val = self.bounds[var.idx()].upper;
+                let old_val = self.bounds[var.idx()].upper;
+                let old_lit = self.bounds[var.idx()].upper_lit;
 
                 if val < old_val {
+                    trail.push(LpEvent {
+                        var,
+                        bound,
+                        old_val,
+                        old_lit,
+                    });
                     self.set_bound(var, bound, val, lit)?;
-                    is_bound_set = true;
                 }
             }
-        }
-
-        if is_bound_set {
-            trail.push(LpEvent {
-                var,
-                bound,
-                old_val,
-                lit,
-            });
         }
 
         Ok(())

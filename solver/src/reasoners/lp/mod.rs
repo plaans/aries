@@ -18,7 +18,7 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
-pub static LP_ACTIVE: EnvParam<bool> = EnvParam::new("ARIES_LP_ACTIVE", "false");
+pub static LP_ACTIVE: EnvParam<bool> = EnvParam::new("ARIES_LP_ACTIVE", "true");
 
 #[derive(Debug, Clone, Copy)]
 struct BoundConstraint {
@@ -32,7 +32,7 @@ struct LpEvent {
     var: Variable,
     bound: Bound,
     old_val: IntCst,
-    lit: Lit,
+    old_lit: Lit,
 }
 
 #[derive(Clone)]
@@ -69,7 +69,6 @@ pub struct Lp {
 
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
     memory_x: HashMap<Var, Variable>,
-    memory_x_reversed: HashMap<Variable, Var>,
 
     model_events: ObsTrailCursor<Event>,
     watches: Watches<usize>,
@@ -98,7 +97,6 @@ impl Lp {
 
             memory_s: HashMap::new(),
             memory_x: HashMap::new(),
-            memory_x_reversed: HashMap::new(),
 
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
@@ -122,17 +120,16 @@ impl Lp {
         opp
     }
 
-    fn add_x_var(&mut self, x: Var) {
-        let var = self.solver.create_variable(IntCst::MIN, IntCst::MAX);
+    fn add_x_var(&mut self, x: Var, doms: &Domains) {
+        let var = self.solver.create_variable(doms.lb(x), doms.ub(x));
 
         self.memory_x.insert(x, var);
-        self.memory_x_reversed.insert(var, x);
     }
 
-    fn add_s_var(&mut self, linear_sum: &[ScaledVar]) -> Variable {
+    fn add_s_var(&mut self, linear_sum: &[ScaledVar], doms: &Domains) -> Variable {
         for &svar in linear_sum {
             if !self.memory_x.contains_key(&svar.var) {
-                self.add_x_var(svar.var);
+                self.add_x_var(svar.var, doms);
             }
         }
 
@@ -184,7 +181,7 @@ impl Lp {
                 val: -bound_val,
             };
         } else {
-            let s = self.add_s_var(&elements);
+            let s = self.add_s_var(&elements, doms);
 
             bound_cons = BoundConstraint {
                 var: s,
@@ -203,7 +200,10 @@ impl Lp {
     fn explain_set_bound(&self, res: Result<(), Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
-                Some(explanation) => Err(Contradiction::Explanation(explanation)),
+                Some(explanation) => {
+                    // println!("{:?}", explanation);
+                    Err(Contradiction::Explanation(explanation))
+                }
                 None => Ok(()),
             },
 
@@ -312,22 +312,30 @@ impl Backtrack for Lp {
 
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|lp_event| {
-            let _ = self
+            let res = self
                 .solver
-                .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.lit); // Should not return an error as we are only relaxing the lp
+                .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.old_lit);
+
+            // If we have an error, that means our solver is in an instable state, therefore we reset it
+            // if res.is_err() {
+            //     println!("toto");
+            //     self.solver.reset();
+            // }
         });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng, rngs::SmallRng, seq::IteratorRandom};
-
-    use crate::{
-        core::{IntCst, Lit, Var, state::Domains},
-        lang::linear::{LinSum, ScaledVar},
-        reasoners::lp::{Error, Lp},
+    use rand::{
+        Rng, SeedableRng,
+        rngs::SmallRng,
+        seq::{IteratorRandom, SliceRandom},
     };
+
+    use crate::{core::state::Cause, reasoners::cp::testing::pick_decisions};
+
+    use super::*;
 
     #[test]
     fn opposite_linear_sum() {
@@ -402,30 +410,30 @@ mod tests {
         1 + nb_x_float as usize
     }
 
-    fn gen_filled_lp(
+    fn gen_filled_lp_domain(
         nb_var: usize,
         nb_const: usize,
         min: IntCst,
         max: IntCst,
         sparse_proportion: f32,
         seed: u64,
-    ) -> Lp {
-        let mut interface = Lp::new();
+    ) -> (Lp, Domains) {
+        let mut lp_reasonner = Lp::new();
+
+        let mut d = Domains::new();
 
         let mut rng = SmallRng::seed_from_u64(seed);
+
+        let var_vec: Vec<Var> = (0..nb_var).map(|_| d.new_var(min, max)).collect();
 
         for _ in 0..nb_const {
             let nb_x = get_nb_x(sparse_proportion, &mut rng, nb_var);
 
-            let x_vec: Vec<Var> = (0..nb_var)
-                .choose_multiple(&mut rng, nb_x)
-                .iter()
-                .map(|&x| Var::from_u32((x + 1) as u32))
-                .collect();
+            let x_vec: Vec<&Var> = var_vec.iter().choose_multiple(&mut rng, nb_x);
 
             let vars: Vec<ScaledVar> = x_vec
                 .iter()
-                .map(|&v| ScaledVar {
+                .map(|&&v| ScaledVar {
                     var: v,
                     factor: rng.random_range(min..=max),
                 })
@@ -437,10 +445,14 @@ mod tests {
 
             let sum = LinSum::new(bound_val, vars);
 
-            interface.process_constraint(&sum, Lit::TRUE, &Domains::new());
+            let active = d.new_var(-1, 1).geq(0); // Inspired from mul.rs, might need to be changed
+
+            // println!("active var: {:?}, constraint: {:?}", active, sum);
+
+            lp_reasonner.process_constraint(&sum, active, &d);
         }
 
-        interface
+        (lp_reasonner, d)
     }
 
     fn compile_stats_certificate(nb_var: usize, nb_const: usize, min: IntCst, max: IntCst) {
@@ -453,9 +465,9 @@ mod tests {
         let mut nb_cert = 0;
 
         for seed in 0..n {
-            let mut interface = gen_filled_lp(nb_var, nb_const, min, max, 0.1, seed);
+            let (mut lp, _) = gen_filled_lp_domain(nb_var, nb_const, min, max, 0.1, seed);
 
-            if let Some((is_val_cert_i, is_val_cert_f)) = interface.get_validity_certificates() {
+            if let Some((is_val_cert_i, is_val_cert_f)) = lp.get_validity_certificates() {
                 nb_val_cert_i += is_val_cert_i as usize;
                 nb_val_cert_f += is_val_cert_f as usize;
 
@@ -482,6 +494,94 @@ mod tests {
                     compile_stats_certificate(nb_var, nb_const, if max == i32::MAX { i32::MIN } else { -max }, max);
                 }
             }
+        }
+    }
+
+    /// Adapted from testing.rs in cp reasonner
+    ///
+    /// Test that triggers propagation of random decisions and checks the explanations are correct
+    ///
+    /// IMPORTANT: These tests rely on the `propagate` implementation and are not meaningful if this one is buggy
+    /// (but they may show that it is in fact incoherent when called in different contexts)
+    fn test_explanations(d: &Domains, lp: &mut Lp) {
+        let mut decisions_rng = SmallRng::seed_from_u64(0);
+        // function that returns a given number of decisions to be applied later
+        // it use the RNG above to drive its random choices
+        // new rng for local use
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        // println!("\nBounds 1: {:?}", lp.solver.bounds);
+
+        lp.save_state();
+
+        let mut nb_explanation = 0;
+
+        // repeat a large number of random tests
+        for _ in 0..100 {
+            let mut lp = lp.clone();
+
+            if d.variables().all(|v| d.is_bound(v)) {
+                println!("Warning: all variables are bound, no tests run");
+                return;
+            }
+
+            // pick a random set of decisions
+            let decisions = pick_decisions(d, 1, 30, &mut decisions_rng);
+            // println!("decisions: {decisions:?}");
+
+            // get a copy of the domain on which to apply all decisions
+            let mut d = d.clone();
+            d.save_state();
+
+            // apply all decisions (note: some may be ignored because they are no-op or contradictions)
+            // println!("Decisions: ");
+            for dec in decisions {
+                let res = d.set(dec, Cause::Decision);
+                if res == Ok(true) {
+                    // println!("  {dec:?}");
+                }
+            }
+            // propagate
+            match lp.propagate(&mut d) {
+                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasonner can't infer new lit
+                Err(contradiction) => {
+                    // propagation failure, check that the contradiction is a valid one
+                    let explanation = match contradiction {
+                        Contradiction::Explanation(expl) => expl,
+                        Contradiction::InvalidUpdate(_) => Explanation::new(), // Unreachable branch as our lp never returns InvalidUpdate
+                    };
+                    lp.reset();
+
+                    // println!("\nBounds 2:\n {:?}", lp.solver.bounds);
+                    nb_explanation += 1;
+
+                    let mut d = d.clone();
+                    d.reset();
+                    // get the conjunction and shuffle it
+                    //note that we do not check minimality here
+                    let mut conjuncts = explanation.lits;
+                    conjuncts.shuffle(&mut rng);
+                    for &conjunct in &conjuncts {
+                        d.set(conjunct, Cause::Decision).unwrap();
+                    }
+
+                    assert!(
+                        lp.propagate(&mut d).is_err(),
+                        "explanation: {conjuncts:?} did not trigger an inconsistency\n"
+                    );
+                }
+            }
+        }
+        println!("{nb_explanation}");
+    }
+
+    #[test]
+    fn test_propagate_random() {
+        let n = 100;
+        for seed in 0..n {
+            println!("seed: {seed}");
+            let (mut lp, d) = gen_filled_lp_domain(30, 30, -100, 100, 0.1, seed);
+            test_explanations(&d, &mut lp);
         }
     }
 }

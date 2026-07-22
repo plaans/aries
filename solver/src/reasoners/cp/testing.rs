@@ -120,7 +120,7 @@ pub fn test_explanations(d: &Domains, propagator: &mut dyn Propagator, check_min
 /// Utility function to select a number of decisions to be made on a given domain
 ///
 /// Note: some decisions may be redundant or contradictory
-fn pick_decisions(d: &Domains, min: usize, max: usize, rng: &mut SmallRng) -> Vec<Lit> {
+pub(crate) fn pick_decisions(d: &Domains, min: usize, max: usize, rng: &mut SmallRng) -> Vec<Lit> {
     let num_decisions = rng.random_range(min..=max);
     let vars = d.variables().filter(|v| !d.is_bound(*v)).collect_vec();
     let mut lits = Vec::with_capacity(num_decisions);
