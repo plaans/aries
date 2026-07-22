@@ -20,37 +20,6 @@ fn solve(instance: instance::Instance) -> Option<Vec<Op>> {
     states::set_end_state(&mut model, &instance);
 
     let mut actions: Vec<Action> = Vec::new();
-    /*
-    let mut locations : Vec<(Var, Var)> = Vec::new();
-
-    let param = ActParam {
-        start : 2.into(),
-        end : 2.into(),
-        presence : Lit::TRUE,
-        source : None
-    };
-
-    let start : VarCst = model.new_opt_timepoint(Lit::TRUE);
-
-    add_beluga_to_rack(0.into(), 0.into(), start, &mut model, &mut actions, &instance);
-    let start2 : VarCst = model.new_opt_timepoint(Lit::TRUE);
-    add_beluga_to_rack(1.into(), 0.into(), start2, &mut model, &mut actions, &instance);
-
-    model.add_constraint(lt(start, start2));
-    let mut solver: ExplainableSolver<()> = aries_timelines::explain::ExplainableSolver::new(&model, |_| None);
-
-    if let Some(solution) = solver.check_satisfiability() {
-        let sol : Vec<(i32, i32)> = locations.iter().map(|(holder, num)| (solution.eval(*holder).unwrap(), solution.eval(*num).unwrap())).collect();
-        println!("{:#?}", sol);
-        //println!("t = {:?}", solution.eval(t).unwrap());
-        let mut operations: Vec<Op> = actions.iter().filter_map(|act| act.evaluate(&solution)).collect_vec();
-        operations.sort_by_key(|op| op.start);
-        Some(operations)
-    } else {
-        // no plan found
-        println!("{:#?}", actions);
-        None
-    } */
 
     for (b, beluga) in instance.flights.iter().enumerate() {
         // let b = 0;
@@ -157,20 +126,34 @@ fn instance_test_1() -> instance::Instance {
             side: Side::Factory,
         }],
         hangars: vec!["hangar0".to_string()],
-        racks: vec![instance::Rack {
-            name: "rack00".to_string(),
-            size: 26,
-            jigs: vec![0],
-        }],
+        racks: vec![
+            instance::Rack {
+                name: "rack00".to_string(),
+                size: 17,
+                jigs: vec![],
+            },
+            instance::Rack {
+                name: "rack00".to_string(),
+                size: 4,
+                jigs: vec![],
+            },
+        ],
         production_lines: vec![instance::ProductionLine {
             name: "pl1".to_string(),
-            schedule: vec![1, 0],
+            schedule: vec![0],
         }],
-        flights: vec![instance::Flight {
-            name: String::from("beluga1"),
-            incoming: vec![1, 2],
-            outgoing: vec![],
-        }],
+        flights: vec![
+            instance::Flight {
+                name: String::from("beluga1"),
+                incoming: vec![0, 1],
+                outgoing: vec![],
+            },
+            instance::Flight {
+                name: String::from("beluga1"),
+                incoming: vec![2],
+                outgoing: vec![],
+            },
+        ],
     }
 }
 
@@ -181,7 +164,7 @@ fn main() {
         process::exit(1);
     });
     //println!("{:#?}", instance);
-    let plan = solve(instance_test_1());
+    let plan = solve(instance);
     if let Some(plan) = plan {
         println!("Found plan:");
         for op in plan {

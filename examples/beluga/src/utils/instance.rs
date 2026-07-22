@@ -156,14 +156,12 @@ impl Instance {
         Ok(instance)
     }
 
-    pub fn size_of_jig(&self, jig_id: JigId) -> Option<u32> {
+    pub fn size_of_jig(&self, jig_id: JigId, jig_empty: bool) -> Option<u32> {
         let jig_type;
-        let jig_empty: bool;
         match self.jigs.get(jig_id) {
             None => return None,
             Some(jig) => {
                 jig_type = jig.jig_type;
-                jig_empty = jig.empty;
             }
         }
         let size: u32;
@@ -189,15 +187,6 @@ impl Instance {
 
     pub fn next_in_beluga_outgoing(&self, current_beluga: BelugaId, content: &Vec<JigId>) -> JigTypeId {
         *&self.flights[current_beluga].outgoing[content.len()]
-    }
-
-    pub fn fits_on_rack(&self, rack: RackId, rack_content: Vec<JigId>, new_jig: JigId) -> bool {
-        let mut sum: u32 = 0;
-        for j in rack_content {
-            sum += &self.size_of_jig(j).unwrap();
-        }
-        sum += &self.size_of_jig(new_jig).unwrap();
-        sum <= *&self.racks[rack].size
     }
 
     pub fn bounds_jig_holder(&self) -> (i32, i32) {
@@ -300,8 +289,8 @@ mod test {
     #[test]
     fn test_size_of_jig() {
         let instance = instance_for_tests();
-        assert_eq!(4, instance.size_of_jig(0).unwrap());
-        assert_eq!(11, instance.size_of_jig(1).unwrap());
+        assert_eq!(4, instance.size_of_jig(0, true).unwrap());
+        assert_eq!(11, instance.size_of_jig(1, false).unwrap());
     }
 
     #[test]

@@ -149,7 +149,7 @@ pub struct Op {
 //use new_pick_up_rack(..), new_deliver_to_hangar(..), new_get_from_hangar(..) and new_put_down_rack(..) to create task that take a jig from a rack to a hangar
 //the actions are then pushed into actions
 pub fn add_send_to_prod(
-    j: VarCst,
+    j: JigId,
     pl: VarCst,
     start: VarCst,
     model: &mut Sched,
@@ -202,16 +202,24 @@ pub fn add_send_to_prod(
     let side = Side::Factory;
 
     //Pick up rack
-    actions.push(new_pick_up_rack(j, t1.into(), r1.into(), side, model, &param));
+    actions.push(new_pick_up_rack(j.into(), t1.into(), r1.into(), side, model, &param));
 
     //Deliver_to_hangar
-    actions.push(new_deliver_to_hangar(j, h.into(), t1.into(), pl, model, &param2));
+    actions.push(new_deliver_to_hangar(
+        j,
+        h.into(),
+        t1.into(),
+        pl,
+        model,
+        &param2,
+        instance,
+    ));
 
     //Get from hangar
-    actions.push(new_get_from_hangar(j, h.into(), t2.into(), model, &param3));
+    actions.push(new_get_from_hangar(j.into(), h.into(), t2.into(), model, &param3));
 
     //Put down rack
-    actions.push(new_put_down_rack(j, t2.into(), r2.into(), side, model, &param4));
+    actions.push(new_put_down_rack(j.into(), t2.into(), r2.into(), side, model, &param4));
 
     //precedence
     model.add_constraint(lt(start, start2));
@@ -259,14 +267,7 @@ pub fn add_beluga_to_rack(
     let side = Side::Beluga;
 
     //Unload_beluga
-    actions.push(new_unload_beluga_action(
-        j.into(),
-        b.into(),
-        t.into(),
-        model,
-        &param,
-        instance,
-    ));
+    actions.push(new_unload_beluga_action(j.into(), b.into(), t.into(), model, &param));
 
     //Put down rack
     actions.push(new_put_down_rack(j.into(), t.into(), r.into(), side, model, &param2));
@@ -319,7 +320,7 @@ pub fn add_rack_to_beluga(
     actions.push(new_pick_up_rack(j.into(), t.into(), r, side, model, &param));
 
     //Load beluga
-    actions.push(new_load_beluga_action(j.into(), b, t.into(), model, &param2, instance));
+    actions.push(new_load_beluga_action(j.into(), b, t.into(), model, &param2));
 
     model.add_constraint(lt(start, start2));
 }
@@ -350,46 +351,26 @@ pub fn add_switch_to_next_beluga(
     actions.push(new_switch_to_next_beluga(b, model, &param, instance));
 }
 
-pub fn new_load_beluga_action(
-    j: VarCst,
-    b: VarCst,
-    t: VarCst,
-    model: &mut Sched,
-    param: &ActParam,
-    instance: &instance::Instance,
-) -> Action {
-    //Var Pos = next_pos_in_flight
-    let (lb, ub) = instance.bounds_outgoing();
-    let pos: VarCst = model
-        .new_optional_var(lb as IntCst, ub as IntCst, param.presence)
-        .into();
-    model.add_constraint(HasValueAt {
-        state_var: next_pos_in_outgoing(),
-        value: pos.into(),
-        timepoint: param.start,
-        prez: param.presence,
-        source: param.source,
-    });
+pub fn new_load_beluga_action(j: VarCst, b: VarCst, t: VarCst, model: &mut Sched, param: &ActParam) -> Action {
+    let pos: Var = get_current_value(next_pos_in_outgoing(), model, param);
 
     //EFFECTS
-    //update j state
-    let new_jig_state = JigState {
+    //update j loc
+    let new_j_loc = JigLoc {
         held_by: Some((JigHolder::Outgoing as usize).into()),
         num: Some(b.into()),
         pos: Some(pos.into()),
-        empty: None,
     };
-    effect_on_jig_state(j, &new_jig_state, model, param);
+    effect_on_jig_loc(j, &new_j_loc, model, param);
 
     //conditions
-    //previous j state
-    let prev_jig_state = JigState {
+    //previous j loc
+    let prev_j_loc = JigLoc {
         held_by: Some((JigHolder::TrailerBeluga as usize).into()),
         num: Some(t.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    cond_on_jig_state(j, &prev_jig_state, model, param);
+    cond_on_jig_loc(j, &prev_j_loc, model, param);
     //current_beluga = b
     model.add_constraint(HasValueAt {
         state_var: current_beluga(),
@@ -407,35 +388,17 @@ pub fn new_load_beluga_action(
     }
 }
 
-pub fn new_unload_beluga_action(
-    j: VarCst,
-    b: VarCst,
-    t: VarCst,
-    model: &mut Sched,
-    param: &ActParam,
-    instance: &instance::Instance,
-) -> Action {
+pub fn new_unload_beluga_action(j: VarCst, b: VarCst, t: VarCst, model: &mut Sched, param: &ActParam) -> Action {
     //Var Pos = next_pos_in_flight
-    let (lb, ub) = instance.bounds_incoming();
-    let pos: VarCst = model
-        .new_optional_var(lb as IntCst, ub as IntCst, param.presence)
-        .into();
-    model.add_constraint(HasValueAt {
-        state_var: next_pos_in_incoming(),
-        value: pos.into(),
-        timepoint: param.start,
-        prez: param.presence,
-        source: param.source,
-    });
+    let pos: Var = get_current_value(next_pos_in_incoming(), model, param);
 
     //EFFECTS
-    let new_j_state = JigState {
+    let new_j_loc = JigLoc {
         held_by: Some((JigHolder::TrailerBeluga as usize).into()),
         num: Some(t.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    effect_on_jig_state(j, &new_j_state, model, &param);
+    effect_on_jig_loc(j, &new_j_loc, model, &param);
     //Decrement the pos in incoming
 
     let mutex_end = model.new_timepoint();
@@ -450,14 +413,13 @@ pub fn new_unload_beluga_action(
     });
 
     //CONDITIONS
-    //prev j state
-    let prev_j_state = JigState {
+    //prev j loc
+    let prev_j_loc = JigLoc {
         held_by: Some((JigHolder::Incoming as usize).into()),
         num: Some(b.into()),
         pos: Some(pos.into()),
-        empty: None,
     };
-    cond_on_jig_state(j, &prev_j_state, model, &param);
+    cond_on_jig_loc(j, &prev_j_loc, model, &param);
 
     //current_beluga == b
     model.add_constraint(HasValueAt {
@@ -477,32 +439,47 @@ pub fn new_unload_beluga_action(
 }
 
 pub fn new_put_down_rack(j: VarCst, t: VarCst, r: VarCst, side: Side, model: &mut Sched, param: &ActParam) -> Action {
+    let size_of_j: Var = get_current_value(jig_state(j, JigStateAttr::Size), model, param);
+
     //EFFECTS
-    let new_j_state = JigState {
+    let new_j_loc = JigLoc {
         held_by: Some((JigHolder::Rack as usize).into()),
         num: Some(r.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    effect_on_jig_state(j, &new_j_state, model, param);
+    effect_on_jig_loc(j, &new_j_loc, model, param);
 
+    //reduce free space on rack
+    let mutex_end = model.new_timepoint();
+    model.add_effect(Effect {
+        transition_start: param.start,
+        transition_end: param.end,
+        mutex_end,
+        state_var: free_space_on_rack(r),
+        operation: EffectOp::Step((-size_of_j).into()),
+        prez: param.presence,
+        source: param.source,
+    });
+
+    //CONDITIONS
     let held_by: Option<LinTerm> = match side {
         Side::Beluga => Some((JigHolder::TrailerBeluga as usize).into()),
         Side::Factory => Some((JigHolder::TrailerFactory as usize).into()),
     };
-
-    //CONDITIONS
-    let prev_j_state = JigState {
+    let prev_j_loc = JigLoc {
         held_by,
         num: Some(t.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    cond_on_jig_state(j, &prev_j_state, model, param);
+    cond_on_jig_loc(j, &prev_j_loc, model, param);
+
+    //enough free space
+    let free_space = get_current_value(free_space_on_rack(r), model, param);
+    model.add_constraint(leq(size_of_j, free_space));
 
     Action {
         action_type: ActionType::PutDownRack {
-            j,
+            j: j.into(),
             t,
             r,
             side: (side as usize).into(),
@@ -519,22 +496,33 @@ pub fn new_pick_up_rack(j: VarCst, t: VarCst, r: VarCst, side: Side, model: &mut
         Side::Beluga => Some((JigHolder::TrailerBeluga as usize).into()),
         Side::Factory => Some((JigHolder::TrailerFactory as usize).into()),
     };
-    let new_j_state = JigState {
+    let new_j_loc = JigLoc {
         held_by,
         num: Some(t.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    effect_on_jig_state(j, &new_j_state, model, param);
+    effect_on_jig_loc(j.into(), &new_j_loc, model, param);
+
+    //release free space on rack
+    let size_of_j: Var = get_current_value(jig_state(j, JigStateAttr::Size), model, param);
+    let mutex_end = model.new_timepoint();
+    model.add_effect(Effect {
+        transition_start: param.start,
+        transition_end: param.end,
+        mutex_end,
+        state_var: free_space_on_rack(r),
+        operation: EffectOp::Step(size_of_j.into()),
+        prez: param.presence,
+        source: param.source,
+    });
 
     //CONDITIONS
-    let prev_j_state = JigState {
+    let prev_j_loc = JigLoc {
         held_by: Some((JigHolder::Rack as usize).into()),
         num: Some(r.into()),
-        pos: None,
-        empty: None,
+        pos: None, //TODO
     };
-    cond_on_jig_state(j, &prev_j_state, model, param);
+    cond_on_jig_loc(j.into(), &prev_j_loc, model, param);
 
     Action {
         action_type: ActionType::PickUpRack {
@@ -549,15 +537,29 @@ pub fn new_pick_up_rack(j: VarCst, t: VarCst, r: VarCst, side: Side, model: &mut
     }
 }
 
-fn new_deliver_to_hangar(j: VarCst, h: VarCst, t: VarCst, pl: VarCst, model: &mut Sched, param: &ActParam) -> Action {
+// The j is a JigId and not a VarCst because we need to access its new size now that it's empty
+// That's also why we need the instance
+fn new_deliver_to_hangar(
+    j: JigId,
+    h: VarCst,
+    t: VarCst,
+    pl: VarCst,
+    model: &mut Sched,
+    param: &ActParam,
+    instance: &instance::Instance,
+) -> Action {
     //EFFECTS
-    let new_j_state = JigState {
+    let new_j_loc = JigLoc {
         held_by: Some((JigHolder::Hangar as usize).into()),
         num: Some(h.into()),
         pos: Some(0.into()),
-        empty: Some((true as usize).into()),
     };
-    effect_on_jig_state(j, &new_j_state, model, param);
+    let new_j_state = JigState {
+        empty: Some((true as usize).into()),
+        size: Some(instance.size_of_jig(j, true).unwrap().into()),
+    };
+    effect_on_jig_loc(j.into(), &new_j_loc, model, param);
+    effect_on_jig_state(j.into(), &new_j_state, model, param);
 
     //One step of the pl is completed
     let mutex_end = model.new_timepoint();
@@ -572,16 +574,20 @@ fn new_deliver_to_hangar(j: VarCst, h: VarCst, t: VarCst, pl: VarCst, model: &mu
     });
 
     //CONDITIONS
-    let prev_j_state = JigState {
+    let prev_j_loc = JigLoc {
         held_by: Some((JigHolder::TrailerFactory as usize).into()),
         num: Some(t.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    cond_on_jig_state(j, &prev_j_state, model, param);
+    let prev_j_state = JigState {
+        empty: Some((false as usize).into()),
+        size: None,
+    };
+    cond_on_jig_loc(j.into(), &prev_j_loc, model, param);
+    cond_on_jig_state(j.into(), &prev_j_state, model, param);
 
     Action {
-        action_type: ActionType::DeliverToHangar { j, h, t, pl },
+        action_type: ActionType::DeliverToHangar { j: j.into(), h, t, pl },
         presence: param.presence,
         start: param.start,
         task_id: param.source.unwrap(),
@@ -590,22 +596,20 @@ fn new_deliver_to_hangar(j: VarCst, h: VarCst, t: VarCst, pl: VarCst, model: &mu
 
 fn new_get_from_hangar(j: VarCst, h: VarCst, t: VarCst, model: &mut Sched, param: &ActParam) -> Action {
     //EFFECTS
-    let new_j_state = JigState {
+    let new_j_loc = JigLoc {
         held_by: Some((JigHolder::TrailerFactory as usize).into()),
         num: Some(t.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    effect_on_jig_state(j, &new_j_state, model, param);
+    effect_on_jig_loc(j, &new_j_loc, model, param);
 
     //CONDITIONS
-    let prev_j_state = JigState {
+    let prev_j_loc = JigLoc {
         held_by: Some((JigHolder::Hangar as usize).into()),
         num: Some(h.into()),
         pos: Some(0.into()),
-        empty: None,
     };
-    cond_on_jig_state(j, &prev_j_state, model, param);
+    cond_on_jig_loc(j, &prev_j_loc, model, param);
 
     Action {
         action_type: ActionType::GetFromHangar { j, h, t },
