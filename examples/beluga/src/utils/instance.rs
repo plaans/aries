@@ -48,7 +48,7 @@ pub struct Instance {
     pub jig_types: Vec<JigType>,
     pub jigs: Vec<Jig>,
     pub trailers_beluga: Vec<Trailer>,
-    pub trailers_factory : Vec<Trailer>,
+    pub trailers_factory: Vec<Trailer>,
     pub hangars: Vec<String>,
     pub racks: Vec<Rack>,
     pub production_lines: Vec<ProductionLine>,
@@ -56,7 +56,14 @@ pub struct Instance {
 }
 
 #[derive(Debug)]
-pub enum JigHolder { Incoming=0, Outgoing=1, Rack=2, Hangar=3, TrailerBeluga=4, TrailerFactory=5 }
+pub enum JigHolder {
+    Incoming = 0,
+    Outgoing = 1,
+    Rack = 2,
+    Hangar = 3,
+    TrailerBeluga = 4,
+    TrailerFactory = 5,
+}
 
 impl Instance {
     pub fn build(filepath: &str) -> Result<Instance, Box<dyn Error>> {
@@ -180,12 +187,12 @@ impl Instance {
         next
     }
 
-    pub fn next_in_beluga_outgoing(&self, current_beluga : BelugaId, content : &Vec<JigId>) -> JigTypeId {
+    pub fn next_in_beluga_outgoing(&self, current_beluga: BelugaId, content: &Vec<JigId>) -> JigTypeId {
         *&self.flights[current_beluga].outgoing[content.len()]
     }
 
-    pub fn fits_on_rack(&self, rack : RackId, rack_content : Vec<JigId>, new_jig : JigId) -> bool {
-        let mut sum : u32 = 0;
+    pub fn fits_on_rack(&self, rack: RackId, rack_content: Vec<JigId>, new_jig: JigId) -> bool {
+        let mut sum: u32 = 0;
         for j in rack_content {
             sum += &self.size_of_jig(j).unwrap();
         }
@@ -194,7 +201,7 @@ impl Instance {
     }
 
     pub fn bounds_jig_holder(&self) -> (i32, i32) {
-        let (lb, mut ub) : (i32, i32) = (0,0);
+        let (lb, mut ub): (i32, i32) = (0, 0);
         ub = ub.max(self.bounds_incoming().1);
         ub = ub.max(self.bounds_outgoing().1);
         ub = ub.max(self.bounds_rack().1);
@@ -205,33 +212,33 @@ impl Instance {
     }
 
     pub fn bounds_incoming(&self) -> (i32, i32) {
-        let mut ub : i32 = 0;
+        let mut ub: i32 = 0;
         for f in self.flights.iter() {
             ub = ub.max(f.incoming.len() as i32);
         }
         (0, ub)
     }
     pub fn bounds_outgoing(&self) -> (i32, i32) {
-        let mut ub : i32 = 0;
+        let mut ub: i32 = 0;
         for f in self.flights.iter() {
             ub = ub.max(f.outgoing.len() as i32);
         }
         (0, ub)
     }
     pub fn bounds_trailer_beluga(&self) -> (i32, i32) {
-        (0, (&self.trailers_beluga.len()-1) as i32)
+        (0, (&self.trailers_beluga.len() - 1) as i32)
     }
     pub fn bounds_trailer_factory(&self) -> (i32, i32) {
-        (0, (&self.trailers_factory.len()-1) as i32)
+        (0, (&self.trailers_factory.len() - 1) as i32)
     }
     pub fn bounds_rack(&self) -> (i32, i32) {
-        (0, (&self.racks.len()-1) as i32)
+        (0, (&self.racks.len() - 1) as i32)
     }
     pub fn bounds_hangar(&self) -> (i32, i32) {
-        (0, (&self.hangars.len()-1) as i32)
+        (0, (&self.hangars.len() - 1) as i32)
     }
     pub fn bounds_jig(&self) -> (i32, i32) {
-        (0, (&self.jigs.len()-1) as i32)
+        (0, (&self.jigs.len() - 1) as i32)
     }
 }
 

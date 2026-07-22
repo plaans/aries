@@ -1,7 +1,7 @@
-pub mod states;
+pub mod actions;
 pub mod instance;
 pub mod json_instance;
-pub mod actions;
+pub mod states;
 
 pub type JigId = usize;
 pub type JigTypeId = usize;
@@ -12,7 +12,6 @@ pub type ProdLineId = usize;
 pub type RackId = usize;
 
 #[derive(Debug)]
-
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum Side {
     Beluga = 0,
