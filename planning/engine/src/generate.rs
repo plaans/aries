@@ -34,9 +34,9 @@ pub struct Options {
     #[arg(short = 'w', long = "write-plan")]
     plan_file: Option<PathBuf>,
 
-    /// If provided, the benchmark report will be written to a file in this directory.
+    /// If provided, the benchmark report will be written to this file.
     #[arg(short = 'r', long = "write-report")]
-    report: Option<PathBuf>,
+    report_file: Option<PathBuf>,
 }
 
 pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()> {
@@ -74,14 +74,13 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
     }
     let status = SolveStatus::Solved;
 
-    if let Some(report_dir) = options.report.as_ref() {
+    if let Some(report_file) = options.report_file.as_ref() {
         let result = aries_bench_data::SolveResult {
             problem: aries_bench_data::Problem {
-                name: options
-                    .plan_file
-                    .as_ref()
-                    .map(|p| p.to_string_lossy())
-                    .unwrap_or_default()
+                name: report_file
+                    .file_stem()
+                    .ok_or(planx::Message::error("invalid export file"))?
+                    .to_string_lossy()
                     .to_string(),
                 timeout: std::time::Duration::MAX,
                 flags: Default::default(),
@@ -99,7 +98,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
         .with_metric(SolverMetric::NumDomUpdates, solver.get().stats.num_dom_updates as f64);
 
         result
-            .save_to_dir(&report_dir.to_string_lossy())
+            .save_to_file(&report_file.to_string_lossy())
             .map_err(|e| planx::Message::error(format!("{e}")))?;
     }
 
