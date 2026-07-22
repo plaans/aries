@@ -103,7 +103,7 @@ pub(crate) struct ReasonersTheories {
     pub diff: StnTheory,
     pub cp: Cp,
     pub tautologies: Tautologies,
-    pub extra: Vec<Box<dyn Theory>>,
+    pub extra: Vec<Option<Box<dyn Theory>>>,
 }
 impl Clone for ReasonersTheories {
     fn clone(&self) -> Self {
@@ -112,7 +112,11 @@ impl Clone for ReasonersTheories {
             diff: self.diff.clone(),
             cp: self.cp.clone(),
             tautologies: self.tautologies.clone(),
-            extra: self.extra.iter().map(|th| th.clone_box()).collect(),
+            extra: self
+                .extra
+                .iter()
+                .map(|th| th.as_ref().map(|th| th.clone_box()))
+                .collect(),
         }
     }
 }
@@ -135,6 +139,21 @@ impl ReasonersTheories {
         );
         assert!(extra.iter().map(|r| r.identity()).all_unique());
 
+        let extra = {
+            let mut res = vec![];
+            for r in extra {
+                let ReasonerId::Extra(i) = r.identity() else {
+                    unreachable!()
+                };
+                let i = i as usize;
+                while res.len() <= i {
+                    res.push(None);
+                }
+                res[i] = Some(r);
+            }
+            res
+        };
+
         ReasonersTheories {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
@@ -149,7 +168,7 @@ impl ReasonersTheories {
             ReasonerId::Diff => &self.diff,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
-            ReasonerId::Extra(id) => self.extra.get(id as usize).unwrap().as_ref(),
+            ReasonerId::Extra(id) => self.extra.get(id as usize).unwrap().as_ref().unwrap().as_ref(),
         }
     }
     pub fn get_mut(&mut self, id: ReasonerId) -> &mut dyn Theory {
@@ -158,7 +177,7 @@ impl ReasonersTheories {
             ReasonerId::Diff => &mut self.diff,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
-            ReasonerId::Extra(id) => self.extra.get_mut(id as usize).unwrap().as_mut(),
+            ReasonerId::Extra(id) => self.extra.get_mut(id as usize).unwrap().as_mut().unwrap().as_mut(),
         }
     }
 }
@@ -173,7 +192,7 @@ impl ReasonersWriters {
             writers: REASONERS.to_vec(),
         }
     }
-    pub fn with_extra(extra: &Vec<Box<dyn Theory>>) -> Self {
+    pub fn with_extra(extra: &[Box<dyn Theory>]) -> Self {
         assert!(
             extra
                 .iter()
@@ -226,8 +245,8 @@ impl Reasoners {
     pub fn tautologies(&mut self) -> &mut Tautologies {
         &mut self.theories.tautologies
     }
-    pub fn extra(&mut self) -> &mut [Box<dyn Theory>] {
-        &mut self.theories.extra
+    pub fn extra(&mut self) -> impl Iterator<Item = &mut Box<dyn Theory>> + '_ {
+        self.theories.extra.iter_mut().filter_map(|th| th.as_mut())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (ReasonerId, &dyn Theory)> + '_ {
