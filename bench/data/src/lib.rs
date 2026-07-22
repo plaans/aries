@@ -70,7 +70,8 @@ impl Problem {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
-    Solved,
+    /// The boolean value indicates whether the problem was found satisfiable or not.
+    Solved(bool),
     Timeout,
 }
 
@@ -163,7 +164,7 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 flags: Default::default(),
             },
-            status: SolveStatus::Solved,
+            status: SolveStatus::Solved(true),
             runtime: Duration::from_secs(5),
             objective_value: Some(42),
             metrics,

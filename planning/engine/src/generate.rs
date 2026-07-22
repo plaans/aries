@@ -72,7 +72,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
     } else {
         println!("No solution !!!!");
     }
-    let status = SolveStatus::Solved;
+    let status = SolveStatus::Solved(solution.is_some());
 
     if let Some(report_file) = options.report_file.as_ref() {
         let result = aries_bench_data::SolveResult {
