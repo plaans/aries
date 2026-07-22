@@ -381,7 +381,7 @@ pub fn init_solver(model: Model<VarLabel>) -> Box<Solver> {
     };
 
     let mut solver = Box::new(aries_solver::solver::Solver::new(model));
-    solver.reasoners.diff.config = stn_config;
+    solver.reasoners.diff().config = stn_config;
     solver
 }
 
@@ -446,11 +446,11 @@ impl Strat {
             }
             Strat::ActivityBoolLight => {
                 solver.set_brancher(ActivityBrancher::new_with_heuristic(ActivityBoolFirstHeuristic));
-                solver.reasoners.diff.config.theory_propagation = TheoryPropagationLevel::Bounds;
+                solver.reasoners.diff().config.theory_propagation = TheoryPropagationLevel::Bounds;
             }
             Strat::Forward => {
                 solver.set_brancher(ForwardSearcher::new(problem));
-                solver.reasoners.diff.config.theory_propagation = TheoryPropagationLevel::Bounds;
+                solver.reasoners.diff().config.theory_propagation = TheoryPropagationLevel::Bounds;
             }
             Strat::Causal => {
                 let strat = causal_brancher(problem, encoding);
