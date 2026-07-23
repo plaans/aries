@@ -19,4 +19,3 @@ There are instances in the instances/ directory.
 
 This first model of the beluga problem excludes :
 - the fact that jigs have to be on an extremity of the rack to be picked up
-- the side of the trailers (any trailer can take a jig from any side and go to any side)

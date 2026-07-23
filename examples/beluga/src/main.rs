@@ -9,6 +9,7 @@ use aries_solver::prelude::*;
 use aries_timelines::explain::ExplainableSolver;
 use aries_timelines::symbols::ObjectEncoding;
 use itertools::Itertools;
+use std::time::{Duration, Instant};
 use utils::actions::*;
 use utils::*;
 
@@ -17,14 +18,11 @@ fn solve(instance: instance::Instance) -> Option<Vec<Op>> {
     let mut model = aries_timelines::Sched::new(1, objects);
 
     states::set_initial_state(&mut model, &instance);
-    states::set_end_state(&mut model, &instance);
+    //states::set_end_state(&mut model, &instance);
 
     let mut actions: Vec<Action> = Vec::new();
 
     for (b, beluga) in instance.flights.iter().enumerate() {
-        // let b = 0;
-        // let beluga = & instance.flights[0];
-
         let mut precedence: [VarCst; 2] = [(-1).into(); 2];
         for &j_in in beluga.incoming.iter() {
             let start: VarCst = model.new_opt_timepoint(Lit::TRUE);
@@ -37,12 +35,9 @@ fn solve(instance: instance::Instance) -> Option<Vec<Op>> {
         }
 
         let start_switch: VarCst = model.new_opt_timepoint(Lit::TRUE);
-        model.add_constraint(lt(precedence[1], start_switch));
+        //model.add_constraint(lt(precedence[1], start_switch));
 
-        let mut precedence: [VarCst; 2] = [VarCst {
-            var: Var::ZERO,
-            shift: -1,
-        }; 2];
+        let mut precedence: [VarCst; 2] = [(-1).into(); 2];
         for &j_out in beluga.outgoing.iter() {
             let start: VarCst = model.new_opt_timepoint(Lit::TRUE);
             add_rack_to_beluga(j_out, b.into(), start, &mut model, &mut actions, &instance);
@@ -54,7 +49,7 @@ fn solve(instance: instance::Instance) -> Option<Vec<Op>> {
         }
 
         add_switch_to_next_beluga(b, start_switch, &mut model, &mut actions, &instance);
-        model.add_constraint(lt(precedence[1], start_switch));
+        //model.add_constraint(lt(precedence[1], start_switch));
     }
 
     for (pl, prod_line) in instance.production_lines.iter().enumerate() {
@@ -69,19 +64,26 @@ fn solve(instance: instance::Instance) -> Option<Vec<Op>> {
             model.add_constraint(lt(precedence[0], precedence[1]));
         }
     }
-    //Les actions ne peuvent pas se chevaucher
-    let starts: Vec<VarCst> = actions.iter().map(|a| a.start).collect();
-    //model.add_constraint(all_different(starts));
 
     let mut solver: ExplainableSolver<()> = aries_timelines::explain::ExplainableSolver::new(&model, |_| None);
 
-    if let Some(solution) = solver.check_satisfiability() {
+    if let Some(solution) = solver.find_optimal(
+        model.makespan.into(),
+        |solution| {
+            let mut operations: Vec<Op> = actions.iter().filter_map(|act| act.evaluate(solution)).collect_vec();
+            operations.sort_by_key(|op| op.start);
+            println!("Found solution :");
+            for op in operations {
+                println!(" - {op:?}");
+            }
+        },
+        vec![],
+    ) {
         let mut operations: Vec<Op> = actions.iter().filter_map(|act| act.evaluate(&solution)).collect_vec();
         operations.sort_by_key(|op| op.start);
         Some(operations)
     } else {
         // no plan found
-        println!("{:#?}", actions);
         None
     }
 }
@@ -116,6 +118,11 @@ fn instance_test_1() -> instance::Instance {
                 jig_type: 0,
                 empty: false,
             },
+            instance::Jig {
+                name: String::from("jig004"),
+                jig_type: 0,
+                empty: false,
+            },
         ],
         trailers_beluga: vec![instance::Trailer {
             name: String::from("beluga_trailer_1"),
@@ -130,47 +137,93 @@ fn instance_test_1() -> instance::Instance {
             instance::Rack {
                 name: "rack00".to_string(),
                 size: 17,
-                jigs: vec![],
+                jigs: vec![0],
             },
             instance::Rack {
                 name: "rack00".to_string(),
-                size: 4,
+                size: 12,
                 jigs: vec![],
             },
         ],
-        production_lines: vec![instance::ProductionLine {
-            name: "pl1".to_string(),
-            schedule: vec![0],
-        }],
+        production_lines: vec![
+            instance::ProductionLine {
+                name: "pl0".to_string(),
+                schedule: vec![1, 3],
+            },
+            instance::ProductionLine {
+                name: "pl0".to_string(),
+                schedule: vec![0],
+            },
+        ],
         flights: vec![
             instance::Flight {
                 name: String::from("beluga1"),
-                incoming: vec![0, 1],
+                incoming: vec![1, 2],
                 outgoing: vec![],
             },
             instance::Flight {
                 name: String::from("beluga1"),
-                incoming: vec![2],
-                outgoing: vec![],
+                incoming: vec![3],
+                outgoing: vec![0, 0],
             },
         ],
     }
 }
 
 fn main() {
+    let now = Instant::now();
+
     let file_path = "examples/beluga/instances/problem_s1_j4_r2_oc00_f3.json";
     let instance = instance::Instance::build(file_path).unwrap_or_else(|err| {
         println!("Application error: {err}");
         process::exit(1);
     });
-    //println!("{:#?}", instance);
-    let plan = solve(instance);
-    if let Some(plan) = plan {
-        println!("Found plan:");
-        for op in plan {
-            println!(" - {op:?}");
+
+    for _i in 0..10 {
+        let plan = solve(instance_test_1());
+        if let Some(plan) = plan {
+            println!("Found optimal solution:");
+            for op in plan {
+                println!(" - {op:?}");
+            }
+        } else {
+            println!("No plan...")
         }
-    } else {
-        println!("No plan...")
+    }
+    print_time(now.elapsed());
+}
+
+fn print_time(time: Duration) {
+    let millis: u16 = (time.as_millis() % 1000) as u16;
+    let secs: u8 = (time.as_secs() % 60) as u8;
+    let min: u64 = time.as_secs() / 60;
+    println!("Executed in {}min {}s {}ms ({}ms)", min, secs, millis, time.as_millis());
+}
+
+fn run_all_instances() {
+    let mut json_instances: Vec<&str> = vec![];
+    json_instances.push("examples/beluga/instances/problem_s1_j4_r2_oc00_f3.json");
+    json_instances.push("examples/beluga/instances/problem_s1_j6_r2_oc00_f3.json");
+    json_instances.push("examples/beluga/instances/problem_s1_j8_r2_oc00_f3.json");
+    json_instances.push("examples/beluga/instances/problem_s1_j13_r2_oc00_f3.json");
+    for file_path in json_instances {
+        let now = Instant::now();
+        match instance::Instance::build(file_path) {
+            Ok(instance) => {
+                let plan = solve(instance);
+                if let Some(plan) = plan {
+                    println!("Found optimal solution:");
+                    for op in plan {
+                        println!(" - {op:?}");
+                    }
+                } else {
+                    println!("No plan...")
+                }
+            }
+            Err(err) => {
+                println!("Application error: {err}");
+            }
+        }
+        print_time(now.elapsed());
     }
 }

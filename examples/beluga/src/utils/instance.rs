@@ -175,20 +175,6 @@ impl Instance {
         Some(size)
     }
 
-    //Get a vector of all the jigs we can send next to the production lines
-    //pl_state : key=production_line (index in production_lines) ; v = jig (index in pl.schedule)
-    pub fn next_in_production(&self, pl_state: HashMap<ProdLineId, usize>) -> Vec<JigId> {
-        let mut next: Vec<JigId> = vec![];
-        for (pl_i, jig_i) in pl_state {
-            next.push(self.production_lines[pl_i].schedule[jig_i]);
-        }
-        next
-    }
-
-    pub fn next_in_beluga_outgoing(&self, current_beluga: BelugaId, content: &Vec<JigId>) -> JigTypeId {
-        *&self.flights[current_beluga].outgoing[content.len()]
-    }
-
     pub fn bounds_jig_holder(&self) -> (i32, i32) {
         let (lb, mut ub): (i32, i32) = (0, 0);
         ub = ub.max(self.bounds_incoming().1);
@@ -201,16 +187,16 @@ impl Instance {
     }
 
     pub fn bounds_incoming(&self) -> (i32, i32) {
-        let mut ub: i32 = 0;
+        let mut ub: i32 = -1;
         for f in self.flights.iter() {
-            ub = ub.max(f.incoming.len() as i32);
+            ub = ub.max(f.incoming.len() as i32 - 1);
         }
         (0, ub)
     }
     pub fn bounds_outgoing(&self) -> (i32, i32) {
-        let mut ub: i32 = 0;
+        let mut ub: i32 = -1;
         for f in self.flights.iter() {
-            ub = ub.max(f.outgoing.len() as i32);
+            ub = ub.max(f.outgoing.len() as i32 - 1);
         }
         (0, ub)
     }
@@ -242,62 +228,4 @@ fn map_to_vec<T>(hash: HashMap<String, T>) -> (Vec<T>, HashMap<String, usize>) {
         .collect();
     let vector: Vec<T> = pairs.into_iter().map(|(_k, v)| v).collect();
     (vector, dict)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    fn instance_for_tests() -> Instance {
-        Instance {
-            jig_types: vec![
-                JigType {
-                    name: String::from("typeA"),
-                    size_empty: 4,
-                    size_loaded: 6,
-                },
-                JigType {
-                    name: String::from("typeB"),
-                    size_empty: 8,
-                    size_loaded: 11,
-                },
-            ],
-            jigs: vec![
-                Jig {
-                    name: String::from("jig001"),
-                    jig_type: 0,
-                    empty: true,
-                },
-                Jig {
-                    name: String::from("jig002"),
-                    jig_type: 1,
-                    empty: false,
-                },
-            ],
-            trailers_beluga: vec![],
-            trailers_factory: vec![],
-            hangars: vec![],
-            racks: vec![],
-            production_lines: vec![ProductionLine {
-                name: String::from("pl0"),
-                schedule: vec![0, 1],
-            }],
-            flights: vec![],
-        }
-    }
-
-    #[test]
-    fn test_size_of_jig() {
-        let instance = instance_for_tests();
-        assert_eq!(4, instance.size_of_jig(0, true).unwrap());
-        assert_eq!(11, instance.size_of_jig(1, false).unwrap());
-    }
-
-    #[test]
-    fn test_next_jigs_in_pl() {
-        let instance = instance_for_tests();
-        let state = HashMap::from([(0, 1)]);
-        let expected = vec![1];
-        assert_eq!(expected, instance.next_in_production(state));
-    }
 }
