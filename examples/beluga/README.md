@@ -13,9 +13,3 @@ This will produce an executable binary `target/release/beluga` (target being at 
 ./beluga <path/to/instance>
 ```
 There are instances in the instances/ directory.
-
-
-### Restrictions
-
-This first model of the beluga problem excludes :
-- the fact that jigs have to be on an extremity of the rack to be picked up

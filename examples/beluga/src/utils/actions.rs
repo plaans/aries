@@ -134,6 +134,7 @@ impl Evaluable for Action {
         }
         Some(Op {
             start: solution.eval(self.start).unwrap(),
+            task: self.task_id,
             op,
         })
     }
@@ -143,10 +144,77 @@ impl Evaluable for Action {
 #[derive(Debug)]
 pub struct Op {
     pub start: IntCst,
+    task: TaskId,
     op: String,
 }
 
-//use new_pick_up_rack(..), new_deliver_to_hangar(..), new_get_from_hangar(..) and new_put_down_rack(..) to create task that take a jig from a rack to a hangar
+//use new_pick_up_rack(..) and new_put_down_rack(..) to create task that swap a jig from a rack to another
+//the actions are then pushed into actions
+//this time the actions are optionnal
+pub fn add_swap_racks(
+    side: Side,
+    presence: Lit,
+    model: &mut Sched,
+    actions: &mut Vec<Action>,
+    instance: &instance::Instance,
+) {
+    let start1 = model.new_opt_timepoint(presence);
+    let start2 = model.new_opt_timepoint(presence);
+    let task_id = model.add_task(Task {
+        name: "swap_racks".to_string(),
+        start: start1,
+        end: start2 + 1,
+        presence,
+    });
+    let param1 = states::ActParam {
+        start: start1,
+        end: start1 + 1,
+        presence,
+        source: Some(task_id),
+    };
+    let param2 = states::ActParam {
+        start: start2,
+        end: start2 + 1,
+        presence,
+        source: Some(task_id),
+    };
+
+    //variables
+    let (lb, ub) = instance.bounds_rack();
+    let r1 = model.new_optional_var(lb, ub, presence);
+    let r2 = model.new_optional_var(lb, ub, presence);
+    let (lb, ub) = instance.bounds_jig();
+    let j = model.new_optional_var(lb, ub, presence);
+    let t: Var = match side {
+        Side::Beluga => get_empty_trailer_beluga(model, &param1, instance),
+        Side::Factory => get_empty_trailer_factory(model, &param1, instance),
+    };
+
+    actions.push(new_pick_up_rack(
+        j.into(),
+        t.into(),
+        r1.into(),
+        side,
+        model,
+        &param1,
+        instance,
+    ));
+    actions.push(new_put_down_rack(
+        j.into(),
+        t.into(),
+        r2.into(),
+        side,
+        model,
+        &param2,
+        instance,
+    ));
+
+    //model.add_constraint(lt(start1, start2));
+}
+
+//use new_pick_up_rack(..), new_deliver_to_hangar(..), new_get_from_hangar(..) and new_put_down_rack(..) to create 2 tasks
+//task 1 takes a jig from a rack to a hangar
+//task 2 takes a jig from a hangar to a rack
 //the actions are then pushed into actions
 pub fn add_send_to_prod(
     j: JigId,
@@ -161,35 +229,41 @@ pub fn add_send_to_prod(
     let start2: VarCst = model.new_opt_timepoint(presence);
     let start3: VarCst = model.new_opt_timepoint(presence);
     let start4: VarCst = model.new_opt_timepoint(presence);
-    let task_id = model.add_task(Task {
+    let task_1: TaskId = model.add_task(Task {
         name: "send_to_prod".to_string(),
         start,
         end: start2 + 1,
+        presence,
+    });
+    let task_2: TaskId = model.add_task(Task {
+        name: "send_to_prod".to_string(),
+        start: start3,
+        end: start4 + 1,
         presence,
     });
     let param = states::ActParam {
         start,
         end: start + 1,
         presence,
-        source: Some(task_id),
+        source: Some(task_1),
     };
     let param2 = states::ActParam {
         start: start2,
         end: start2 + 1,
         presence,
-        source: Some(task_id),
+        source: Some(task_1),
     };
     let param3 = states::ActParam {
         start: start3,
         end: start3 + 1,
         presence,
-        source: Some(task_id),
+        source: Some(task_2),
     };
     let param4 = states::ActParam {
         start: start4,
         end: start4 + 1,
         presence,
-        source: Some(task_id),
+        source: Some(task_2),
     };
 
     //variables
@@ -238,9 +312,9 @@ pub fn add_send_to_prod(
     ));
 
     //precedence
-    model.add_constraint(lt(start, start2));
+    /* model.add_constraint(lt(start, start2));
     model.add_constraint(lt(start2, start3));
-    model.add_constraint(lt(start3, start4));
+    model.add_constraint(lt(start3, start4)); */
 }
 
 //use new_unload_beluga(..) and new_put_down_rack(..) to create task that take a jig from an incoming beluga to a rack
@@ -296,7 +370,7 @@ pub fn add_beluga_to_rack(
         instance,
     ));
 
-    model.add_constraint(lt(start, start2));
+    //model.add_constraint(lt(start, start2));
 }
 
 //use new_pick_up_rack(..) and new_load_beluga(..) to create task that take a jig from a rack to a outgoing beluga
@@ -346,10 +420,11 @@ pub fn add_rack_to_beluga(
     //Load beluga
     actions.push(new_load_beluga_action(j.into(), b, t.into(), model, &param2));
 
-    model.add_constraint(lt(start, start2));
+    //model.add_constraint(lt(start, start2));
 }
 
-//b is current beluga id
+//push a new switch_beluga action into actions
+//b is the current beluga id
 pub fn add_switch_to_next_beluga(
     b: BelugaId,
     start: VarCst,
@@ -699,18 +774,6 @@ pub fn new_deliver_to_hangar(
     effect_on_jig_loc(j.into(), &new_j_loc, model, param);
     effect_on_jig_state(j.into(), &new_j_state, model, param);
 
-    //One step of the pl is completed
-    let mutex_end = model.new_timepoint();
-    model.add_effect(Effect {
-        transition_start: param.start,
-        transition_end: param.end,
-        mutex_end,
-        state_var: prod_state(pl),
-        operation: EffectOp::Step((1).into()),
-        prez: param.presence,
-        source: param.source,
-    });
-
     //CONDITIONS
     let prev_j_loc = JigLoc {
         held_by: Some((JigHolder::TrailerFactory as usize).into()),
@@ -807,6 +870,7 @@ pub fn new_switch_to_next_beluga(
         prez: param.presence,
         source: param.source,
     });
+
     Action {
         action_type: ActionType::SwitchToNextBeluga,
         presence: param.presence,
