@@ -1,10 +1,10 @@
 use crate::{
     backtrack::Trail,
     core::{IntCst, Lit, state::Explanation},
-    reasoners::lp::LpEvent,
+    reasoners::lp::{LpEvent, Stats},
 };
 
-use minilp::{Bound, ComparisonOp, Error, FeasabilityChecker, OptimizationDirection, Problem, Variable};
+use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
 #[derive(Debug, Clone)]
 pub(super) struct IntBounds {
@@ -14,7 +14,7 @@ pub(super) struct IntBounds {
     upper_lit: Lit,
 }
 
-// No need to store a bound or an op as all of our constraints are equalities between an s variable and linear sum of x variables
+// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
 #[derive(Debug, Clone)]
 struct IntegerConstraint {
     lin_sum: Vec<(Variable, IntCst)>,
@@ -28,7 +28,7 @@ pub struct Solver {
     pub(super) bounds: Vec<IntBounds>,
     constraints: Vec<IntegerConstraint>,
 
-    opt_feas_checker: Option<FeasabilityChecker>,
+    opt_feas_checker: Option<FeasibilityChecker>,
 }
 
 impl Solver {
@@ -46,8 +46,10 @@ impl Solver {
     }
 
     /// Create a new solver variable both for Problem and the mirror of our problem
-    pub fn create_variable(&mut self, lb: IntCst, ub: IntCst) -> Variable {
+    pub fn create_variable(&mut self, lb: IntCst, ub: IntCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
+
+        stats.nb_variables += 1;
 
         debug_assert_eq!(var.idx(), self.bounds.len());
 
@@ -67,7 +69,7 @@ impl Solver {
     /// Will return an error if the problem is immediatly detected as infeasible.
     pub fn set_bound(&mut self, var: Variable, bound: Bound, val: IntCst, lit: Lit) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
-            self.opt_feas_checker = Some(self.problem.create_feasability_checker()?);
+            self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
         }
 
         let feas_checker = self.opt_feas_checker.as_mut().unwrap();
@@ -85,7 +87,7 @@ impl Solver {
             }
         }
 
-        self.problem.set_bound(var, &bound, val as f64); // Used for test only
+        self.problem.set_bound(var, &bound, val as f64);
 
         feas_checker.set_bound(var, &bound, val as f64)?;
 
@@ -138,19 +140,24 @@ impl Solver {
         Ok(())
     }
 
-    pub fn check_feasability(&mut self) -> Result<(), Error> {
+    /// Restore the feasibilty of the lp solver
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if it can't be stored
+    pub fn check_feasibility(&mut self) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
-            self.opt_feas_checker = Some(self.problem.create_feasability_checker()?);
+            self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
         }
 
         let feas_checker = self.opt_feas_checker.as_mut().unwrap();
 
-        feas_checker.check_feasability()?;
+        feas_checker.check_feasibility()?;
 
         Ok(())
     }
 
-    /// Create a new solver constraint both for Problem and the mirror of our problem
+    /// Add a new constraint in both float and integer problems
     pub fn add_constraint(&mut self, lin_sum: Vec<(Variable, IntCst)>) {
         let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|&(var, coef)| (var, coef as f64)).collect();
 
@@ -201,6 +208,8 @@ impl Solver {
     }
 
     /// Verify the certificate of unsatisfiability
+    ///
+    /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
     pub fn check_certificate(&self, cert: &[f64]) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
@@ -208,6 +217,7 @@ impl Solver {
 
         let cert_i128 = Solver::convert_certificate_i128(cert);
 
+        // We build the constraint that should be infeasible based on the certificate, it's only a linear sum as our constraints are equalities
         for (const_i, &coef_cert) in cert_i128.iter().enumerate() {
             if coef_cert == 0 {
                 continue;
@@ -223,6 +233,7 @@ impl Solver {
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
 
+        // To detect the infeasibility, we check if 0 is in the range [min, max] as our linear sum should be equal to 0
         if max_lin_sum < 0 {
             let mut explanation = Explanation::new();
 
@@ -264,6 +275,7 @@ impl Solver {
         None
     }
 
+    /// Return an explanation containing the upper and lower lit associated with a var, used to explain trivial errors (with no certificate)
     pub fn explain_infeasible_var(&self, var: Variable) -> Explanation {
         let mut explanation = Explanation::new();
 

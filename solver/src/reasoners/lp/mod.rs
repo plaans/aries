@@ -9,6 +9,7 @@ use minilp::{Bound, Error, Variable};
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
+    collections::ref_store::RefMap,
     core::{
         IntCst, Lit, Var,
         literals::Watches,
@@ -37,24 +38,22 @@ struct LpEvent {
 
 #[derive(Clone)]
 struct Stats {
-    nb_certif: usize,
-    nb_valid_certif: usize,
+    nb_ok_propagate: usize,
+    nb_propagate: usize,
+
+    nb_constraints: usize,
+    nb_variables: usize,
 }
 
 impl Stats {
     fn new() -> Self {
         Self {
-            nb_certif: 0,
-            nb_valid_certif: 0,
+            nb_ok_propagate: 0,
+            nb_propagate: 0,
+
+            nb_constraints: 0,
+            nb_variables: 0,
         }
-    }
-
-    fn increment_certif(&mut self) {
-        self.nb_certif += 1;
-    }
-
-    fn increment_valid_certif(&mut self) {
-        self.nb_valid_certif += 1;
     }
 }
 
@@ -68,7 +67,7 @@ pub struct Lp {
     lit_vec: Vec<Lit>,
 
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
-    memory_x: HashMap<Var, Variable>,
+    memory_x: RefMap<Var, Variable>,
 
     model_events: ObsTrailCursor<Event>,
     watches: Watches<usize>,
@@ -86,7 +85,6 @@ impl Default for Lp {
 }
 
 impl Lp {
-    /// Create a new empty interface instance
     pub fn new() -> Self {
         Self {
             id: ReasonerId::Cp,
@@ -96,7 +94,7 @@ impl Lp {
             lit_vec: Vec::new(),
 
             memory_s: HashMap::new(),
-            memory_x: HashMap::new(),
+            memory_x: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
@@ -108,7 +106,7 @@ impl Lp {
         }
     }
 
-    // Return a linear sum wich is the opposite in termes of coefficient that the one given
+    /// Return a linear sum wich is the opposite in terms of coefficient that the one given
     fn get_opposite_linear_sum(linear_sum: &[ScaledVar]) -> Vec<ScaledVar> {
         let mut opp = Vec::new();
         for &svar in linear_sum {
@@ -120,34 +118,36 @@ impl Lp {
         opp
     }
 
+    /// Add an x variable which is a variable directly mapped with a var in aries solver
     fn add_x_var(&mut self, x: Var, doms: &Domains) {
-        let var = self.solver.create_variable(doms.lb(x), doms.ub(x));
+        let var = self.solver.create_variable(doms.lb(x), doms.ub(x), &mut self.stats);
 
         self.memory_x.insert(x, var);
     }
 
+    /// Add an s variable, it corresponds to a linear constraint in aries solver
     fn add_s_var(&mut self, linear_sum: &[ScaledVar], doms: &Domains) -> Variable {
         for &svar in linear_sum {
-            if !self.memory_x.contains_key(&svar.var) {
+            if !self.memory_x.contains(svar.var) {
                 self.add_x_var(svar.var, doms);
             }
         }
 
         // If we depend on only one x variable with a factor 1, no need to create a s var
         if linear_sum.len() == 1 && linear_sum[0].factor == 1 {
-            return *self.memory_x.get(&linear_sum[0].var).unwrap();
+            return *self.memory_x.get(linear_sum[0].var).unwrap();
         }
 
-        let s = self.solver.create_variable(IntCst::MIN, IntCst::MAX);
+        let s = self.solver.create_variable(IntCst::MIN, IntCst::MAX, &mut self.stats);
 
         let mut constraint = vec![(s, -1)];
 
         for &svar in linear_sum {
-            let var = *self.memory_x.get(&svar.var).unwrap();
+            let var = *self.memory_x.get(svar.var).unwrap();
             constraint.push((var, svar.factor));
         }
 
-        // We force s to be egal to our linear sum
+        // We force s to be equal to our linear sum
         self.solver.add_constraint(constraint);
 
         self.memory_s.insert(linear_sum.to_vec(), s);
@@ -155,8 +155,17 @@ impl Lp {
         s
     }
 
+    /// Adds a linear inequality constraint that `sum <= 0`.
+    /// We assume that the active literal is always present
     pub fn process_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
+        if !self.active {
+            return;
+        }
+
+        // Check that the given constraint is always present (not optionnal)
         assert!(doms.presence(active) == Lit::TRUE);
+
+        self.stats.nb_constraints += 1;
 
         let bound_val = -sum.constant();
 
@@ -191,12 +200,14 @@ impl Lp {
         }
 
         let index = self.bound_cons_vec.len();
-
         self.watches.add_watch(index, active);
+
+        // We memorize our constraint and its active lit to be able to access it during propagation
         self.bound_cons_vec.push(bound_cons);
         self.lit_vec.push(active);
     }
 
+    /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
     fn explain_set_bound(&self, res: Result<(), Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
@@ -215,6 +226,7 @@ impl Lp {
         }
     }
 
+    /// Takes the result of a call to solver.check_feasibility and returns either Ok or a Contradiction if infeasibilty was detected
     fn explain_check_feas(&self, res: Result<(), Error>) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
@@ -236,9 +248,14 @@ impl Theory for Lp {
             return Ok(());
         }
 
+        self.stats.nb_propagate += 1;
+
         while let Some(&event) = self.model_events.pop(domains.trail()) {
             let lit = event.new_literal();
 
+            // println!("Lit: {:?}", lit);
+
+            // We first set the bounds associated with the active lit triggered by the newly inferred lit
             for watcher in self.watches.watches_on(lit) {
                 let bound_cons = &self.bound_cons_vec[watcher];
                 let active_lit = self.lit_vec[watcher];
@@ -256,7 +273,8 @@ impl Theory for Lp {
 
             let var = event.affected_bound.variable();
 
-            if let Some(&x_var) = self.memory_x.get(&var) {
+            // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
+            if let Some(&x_var) = self.memory_x.get(var) {
                 let res =
                     // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
@@ -271,13 +289,16 @@ impl Theory for Lp {
             }
         }
 
-        let res = self.solver.check_feasability();
+        let res = self.solver.check_feasibility();
 
         self.explain_check_feas(res)?;
+
+        self.stats.nb_ok_propagate += 1;
 
         Ok(())
     }
 
+    // Should not be called as this reasonner never infers new lit, it only gives contradictions
     fn explain(
         &mut self,
         _literal: Lit,
@@ -290,7 +311,13 @@ impl Theory for Lp {
 
     fn print_stats(&self) {
         if self.active {
-            println!("ENABLED");
+            println!("# propagations: {}", self.stats.nb_propagate);
+            println!(
+                "# contradictions: {}",
+                self.stats.nb_propagate - self.stats.nb_ok_propagate
+            );
+            println!("# constraints: {}", self.stats.nb_constraints);
+            println!("# variables: {}", self.stats.nb_variables);
         } else {
             println!("DISABLED");
         }
@@ -375,7 +402,7 @@ mod tests {
                     .solver
                     .set_bound(bound_cons.var, bound_cons.bound, bound_cons.val, Lit::TRUE);
 
-                let res_check_feas = self.solver.check_feasability();
+                let res_check_feas = self.solver.check_feasibility();
 
                 if res_set_bound.is_err() || res_check_feas.is_err() {
                     if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
@@ -512,13 +539,12 @@ mod tests {
 
         // println!("\nBounds 1: {:?}", lp.solver.bounds);
 
-        lp.save_state();
-
         let mut nb_explanation = 0;
 
         // repeat a large number of random tests
         for _ in 0..100 {
             let mut lp = lp.clone();
+            let mut lp_bis = lp.clone();
 
             if d.variables().all(|v| d.is_bound(v)) {
                 println!("Warning: all variables are bound, no tests run");
@@ -548,11 +574,9 @@ mod tests {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
                         Contradiction::Explanation(expl) => expl,
-                        Contradiction::InvalidUpdate(_) => Explanation::new(), // Unreachable branch as our lp never returns InvalidUpdate
+                        Contradiction::InvalidUpdate(_) => unreachable!(), // Unreachable branch as our lp never returns InvalidUpdate
                     };
-                    lp.reset();
 
-                    // println!("\nBounds 2:\n {:?}", lp.solver.bounds);
                     nb_explanation += 1;
 
                     let mut d = d.clone();
@@ -566,7 +590,7 @@ mod tests {
                     }
 
                     assert!(
-                        lp.propagate(&mut d).is_err(),
+                        lp_bis.propagate(&mut d).is_err(),
                         "explanation: {conjuncts:?} did not trigger an inconsistency\n"
                     );
                 }

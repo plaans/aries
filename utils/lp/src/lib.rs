@@ -310,9 +310,9 @@ impl Problem {
     /// Will return an error, if the problem is trivially infeasible:
     /// - min > max for a the domain of a var
     /// - contradiction in a constraint free of any var: 0.0 <= -1.0 for example
-    pub fn create_feasability_checker(&self) -> Result<FeasabilityChecker, Error> {
+    pub fn create_feasibility_checker(&self) -> Result<FeasibilityChecker, Error> {
         let solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
-        Ok(FeasabilityChecker { solver })
+        Ok(FeasibilityChecker { solver })
     }
 
     /// Set a new upper/lower bound to an existing variable
@@ -626,11 +626,11 @@ impl From<Bound> for ComparisonOp {
 
 /// Allow us to check the faisability of a problem and modify the bounds of its variables
 #[derive(Debug, Clone)]
-pub struct FeasabilityChecker {
+pub struct FeasibilityChecker {
     solver: Solver,
 }
 
-impl FeasabilityChecker {
+impl FeasibilityChecker {
     /// Set a new Upper/Lower bound for the given variable and return the previous bound
     ///
     /// # Errors
@@ -645,14 +645,14 @@ impl FeasabilityChecker {
         Ok(old_val_solver)
     }
 
-    /// Try to restore the feasability of our problem
+    /// Try to restore the feasibility of our problem
     ///
     ///  # Errors
     ///
-    /// Will return an error if th feasability can't be restored
-    /// Note that if set_bound already returned an error, cheack_feasability might not return that the problem is infeasible, both need to be checked
-    pub fn check_feasability(&mut self) -> Result<(), Error> {
-        self.solver.solve_feasability()?;
+    /// Will return an error if th feasibility can't be restored
+    /// Note that if set_bound already returned an error, cheack_feasibility might not return that the problem is infeasible, both need to be checked
+    pub fn check_feasibility(&mut self) -> Result<(), Error> {
+        self.solver.solve_feasibility()?;
 
         Ok(())
     }
@@ -911,9 +911,9 @@ mod tests {
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-            let mut feas_checker = problem.create_feasability_checker().unwrap();
+            let mut feas_checker = problem.create_feasibility_checker().unwrap();
 
-            assert!(feas_checker.check_feasability().is_ok());
+            assert!(feas_checker.check_feasibility().is_ok());
         }
 
         {
@@ -923,9 +923,9 @@ mod tests {
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 5.0);
 
-            let mut feas_checker = problem.create_feasability_checker().unwrap();
+            let mut feas_checker = problem.create_feasibility_checker().unwrap();
 
-            assert!(feas_checker.check_feasability().is_err());
+            assert!(feas_checker.check_feasibility().is_err());
         }
     }
 
@@ -938,18 +938,18 @@ mod tests {
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-            let mut feas_checker = problem.create_feasability_checker().unwrap();
+            let mut feas_checker = problem.create_feasibility_checker().unwrap();
 
-            assert!(feas_checker.check_feasability().is_ok());
+            assert!(feas_checker.check_feasibility().is_ok());
 
             let r1 = feas_checker.set_bound(v2, &Bound::Lower, 2.0);
             let r2 = feas_checker.set_bound(v1, &Bound::Lower, 4.0);
 
-            assert!(feas_checker.check_feasability().is_err() || r1.is_err() || r2.is_err());
+            assert!(feas_checker.check_feasibility().is_err() || r1.is_err() || r2.is_err());
 
             let _ = feas_checker.set_bound(v1, &Bound::Lower, 2.0);
 
-            assert!(feas_checker.check_feasability().is_ok());
+            assert!(feas_checker.check_feasibility().is_ok());
         }
     }
 
@@ -1054,7 +1054,7 @@ mod tests {
         verbose: bool,
         assert_on: bool,
     ) -> (usize, usize, usize, usize) {
-        let init_feas_checker = problem.create_feasability_checker();
+        let init_feas_checker = problem.create_feasibility_checker();
 
         let init_solve = problem.solve();
 
@@ -1066,7 +1066,7 @@ mod tests {
         let mut feas_checker = init_feas_checker.unwrap();
 
         if init_solve.is_err() {
-            assert!(feas_checker.check_feasability().is_err());
+            assert!(feas_checker.check_feasibility().is_err());
         }
 
         let mut solution = init_solve.unwrap();
@@ -1082,7 +1082,7 @@ mod tests {
 
             let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val);
 
-            let res_check_feas = feas_checker.check_feasability();
+            let res_check_feas = feas_checker.check_feasibility();
 
             let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
 

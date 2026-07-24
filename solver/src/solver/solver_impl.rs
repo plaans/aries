@@ -362,6 +362,8 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.reasoners
                         .cp
                         .add_half_reif_linear_leq_constraint(lin, enabler, &self.model.state);
+
+                    self.reasoners.lp.process_constraint(lin, enabler, &self.model.state);
                     Ok(())
                 }
             }

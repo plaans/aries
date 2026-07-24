@@ -571,7 +571,7 @@ impl Solver {
         self.num_vars + self.num_constraints()
     }
 
-    pub(crate) fn solve_feasability(&mut self) -> Result<(), Error> {
+    pub(crate) fn solve_feasibility(&mut self) -> Result<(), Error> {
         if !self.is_primal_feasible {
             self.restore_feasibility()?;
         }
