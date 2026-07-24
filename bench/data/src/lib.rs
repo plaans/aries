@@ -70,7 +70,8 @@ impl Problem {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
-    Solved,
+    /// The boolean value indicates whether the problem was found satisfiable or not.
+    Solved(bool),
     Timeout,
 }
 
@@ -118,6 +119,12 @@ impl SolveResult {
     }
 
     pub fn save_to_file(&self, file: &str) -> Result<()> {
+        let file = PathBuf::from(file);
+        if let Some(parent) = file.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
         let serialized = self.serialize().context("Failed to serialize result")?;
         std::fs::write(file, serialized).context("Failed to write to file")?;
         Ok(())
@@ -163,7 +170,7 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 flags: Default::default(),
             },
-            status: SolveStatus::Solved,
+            status: SolveStatus::Solved(true),
             runtime: Duration::from_secs(5),
             objective_value: Some(42),
             metrics,

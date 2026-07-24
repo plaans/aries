@@ -8,7 +8,10 @@ use aries_solver::{core::state::Evaluable, prelude::*};
 use planx::{Model, Res};
 use timelines::{Sched, explain::ExplainableSolver};
 
-use crate::optimize_plan::{self, Objective};
+use crate::{
+    export,
+    optimize_plan::{self, Objective},
+};
 
 pub type RelaxableConstraint = Tag;
 
@@ -32,6 +35,10 @@ pub struct Options {
     /// If provided, the final plan will be written to this file.
     #[arg(short = 'w', long = "write-plan")]
     plan_file: Option<PathBuf>,
+
+    /// If provided, the benchmark report will be written to this file.
+    #[arg(short = 'r', long = "write-report")]
+    report_file: Option<PathBuf>,
 }
 
 pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()> {
@@ -58,13 +65,20 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
         println!("{}\n", encoding.plan(sol));
     };
 
-    if let Some(solution) = solver.find_optimal(solver_objective, &print, []) {
+    let solution = solver.find_optimal(solver_objective, &print, []);
+
+    if let Some(solution) = solution.as_ref() {
         println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
-        print(&solution);
-        encoding.plan(&solution).write_to_file(options.plan_file.as_ref())?;
+        print(solution);
+        encoding.plan(solution).write_to_file(options.plan_file.as_ref())?;
     } else {
         println!("No solution !!!!");
     }
+
+    if let Some(report_file) = options.report_file.as_ref() {
+        export::export_report_to_file(report_file, solution, solver_objective, start.elapsed(), solver.get())?;
+    }
+
     Ok(())
 }
 
