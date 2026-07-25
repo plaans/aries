@@ -70,9 +70,16 @@ impl Problem {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
-    /// The boolean value indicates whether the problem was found satisfiable or not.
-    Solved(bool),
+    SolvedSat,
+    SolvedUnsat,
+    SolvedOpt,
     Timeout,
+}
+
+impl SolveStatus {
+    pub fn is_sat_or_opt(&self) -> bool {
+        matches!(self, Self::SolvedSat | SolveStatus::SolvedOpt)
+    }
 }
 
 pub type MetricValue = i64;
@@ -88,7 +95,7 @@ pub struct SolveResult {
     pub problem: Problem,
     pub status: SolveStatus,
     pub runtime: Duration,
-    pub objective_value: Option<i64>,
+    pub objective_value: Option<MetricValue>,
     pub metrics: BTreeMap<SolverMetric, f64>,
     pub objective_history: Vec<IntermediateResult>,
 }
@@ -170,7 +177,7 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 flags: Default::default(),
             },
-            status: SolveStatus::Solved(true),
+            status: SolveStatus::SolvedSat,
             runtime: Duration::from_secs(5),
             objective_value: Some(42),
             metrics,

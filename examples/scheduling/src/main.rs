@@ -137,19 +137,22 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
             assert_eq!(obj, optimum); // sanity check
             println!("> OPTIMAL (cost: {optimum})");
 
-            if let Some(expected) = opt.expected_makespan {
+            let solve_status = if let Some(expected) = opt.expected_makespan {
                 assert_eq!(
                     optimum as u32, expected,
                     "The makespan found ({optimum}) is not the expected one ({expected})"
                 );
-            }
+                aries_bench_data::SolveStatus::SolvedOpt
+            } else {
+                aries_bench_data::SolveStatus::SolvedSat
+            };
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
-            aries_bench_data::SolveStatus::Solved(true)
+            solve_status
         }
         Ok(None) => {
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
-            aries_bench_data::SolveStatus::Solved(false)
+            aries_bench_data::SolveStatus::SolvedUnsat
         }
         Err(Exit::Interrupted) => match best.as_ref() {
             Some(sol) => {

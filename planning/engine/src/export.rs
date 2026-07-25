@@ -13,7 +13,11 @@ pub(crate) fn export_report_to_file<Lbl: aries_solver::model::Label>(
     runtime: std::time::Duration,
     solver: &Solver<Lbl>,
 ) -> Res<()> {
-    let status = SolveStatus::Solved(solution.is_some());
+    let status = if solution.is_some() {
+        SolveStatus::SolvedSat
+    } else {
+        SolveStatus::SolvedUnsat
+    };
 
     let result = aries_bench_data::SolveResult {
         problem: aries_bench_data::Problem {
