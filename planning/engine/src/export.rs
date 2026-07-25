@@ -1,49 +1,51 @@
 use std::path::Path;
 
-use aries_bench_data::{SolveStatus, SolverMetric};
-
-use aries_solver::{core::state::Evaluable, prelude::*};
+use aries_solver::prelude::*;
 
 use planx::Res;
 
-pub(crate) fn export_report_to_file<Lbl: aries_solver::model::Label>(
-    report_file: &Path,
-    solution: Option<Solution>,
-    objective: LinTerm,
-    runtime: std::time::Duration,
-    solver: &Solver<Lbl>,
-) -> Res<()> {
-    let status = if solution.is_some() {
-        SolveStatus::SolvedSat
-    } else {
-        SolveStatus::SolvedUnsat
-    };
+use crate::generate::PlanGenerationResult;
 
-    let result = aries_bench_data::SolveResult {
-        problem: aries_bench_data::Problem {
-            name: report_file
-                .file_stem()
-                .ok_or(planx::Message::error("invalid export file"))?
-                .to_string_lossy()
-                .to_string(),
-            timeout: std::time::Duration::MAX,
-            flags: Default::default(),
-        },
-        status,
-        runtime,
-        objective_value: solution
-            .as_ref()
-            .and_then(|sol| objective.evaluate(sol).map(|x| x.into())),
+pub type SolveStatus = aries_bench_data::SolveStatus;
+pub type ReportMetadata = aries_bench_data::Problem;
+pub type Report = aries_bench_data::SolveResult;
+
+fn default_report_metadata() -> ReportMetadata {
+    ReportMetadata {
+        name: "".to_string(),
+        timeout: std::time::Duration::MAX,
+        flags: Default::default(),
+    }
+}
+
+pub fn make_default_report_from_plangen_result<Lbl>(
+    plangen_result: &PlanGenerationResult,
+    solver: &Solver<Lbl>,
+) -> Report {
+    Report {
+        problem: default_report_metadata(),
+        status: plangen_result.status,
+        runtime: plangen_result.runtime,
+        objective_value: plangen_result.objective_value.map(|x| x as i64),
         metrics: Default::default(),
         objective_history: vec![],
     }
-    .with_metric(SolverMetric::NumConflicts, solver.stats.num_conflicts as f64)
-    .with_metric(SolverMetric::NumDecisions, solver.stats.num_decisions as f64)
-    .with_metric(SolverMetric::NumDomUpdates, solver.stats.num_dom_updates as f64);
+    .with_metric(
+        aries_bench_data::SolverMetric::NumConflicts,
+        solver.stats.num_conflicts as f64,
+    )
+    .with_metric(
+        aries_bench_data::SolverMetric::NumDecisions,
+        solver.stats.num_decisions as f64,
+    )
+    .with_metric(
+        aries_bench_data::SolverMetric::NumDomUpdates,
+        solver.stats.num_dom_updates as f64,
+    )
+}
 
-    result
-        .save_to_file(&report_file.to_string_lossy())
-        .map_err(|e| planx::Message::error(format!("{e}")))?;
-
-    Ok(())
+pub(crate) fn export_report_to_dir(report_dir: &Path, report: Report) -> Res<()> {
+    report
+        .save_to_dir(&report_dir.to_string_lossy())
+        .map_err(|e| planx::Message::error(format!("{e}")))
 }

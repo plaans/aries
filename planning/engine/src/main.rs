@@ -310,7 +310,17 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
     let model = pddl::build_model(&dom, &pb)?;
     println!("{model}");
 
-    generate::solve_finite_planning_problem(&model, &command.options)
+    let (_, mut report, report_dir) = generate::solve_finite_planning_problem(&model, &command.options)?;
+    report.problem = export::ReportMetadata {
+        name: pb.problem_name.to_string(),
+        timeout: std::time::Duration::MAX,
+        flags: Default::default(),
+    };
+    if let Some(report_dir) = report_dir {
+        export::export_report_to_dir(&report_dir, report)?;
+    }
+
+    Ok(())
 }
 
 fn repair(command: &DomRepair) -> Res<()> {

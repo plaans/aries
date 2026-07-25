@@ -36,12 +36,24 @@ pub struct Options {
     #[arg(short = 'w', long = "write-plan")]
     plan_file: Option<PathBuf>,
 
-    /// If provided, the benchmark report will be written to this file.
+    /// If provided, the benchmark report will be written to a file in this directory.
     #[arg(short = 'r', long = "write-report")]
-    report_file: Option<PathBuf>,
+    report_dir: Option<PathBuf>,
 }
 
-pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()> {
+#[allow(dead_code)]
+pub struct PlanGenerationResult {
+    pub encoding: Encoding,
+    pub solution: Option<Solution>,
+    pub objective_value: Option<IntCst>,
+    pub status: export::SolveStatus,
+    pub runtime: std::time::Duration,
+}
+
+pub fn solve_finite_planning_problem(
+    model: &Model,
+    options: &Options,
+) -> Res<(PlanGenerationResult, export::Report, Option<PathBuf>)> {
     // create a dummy plan with the appropriate number of actions
     // this is temporary a workaround to reuse the existing `optimize_plan` facilities
     let plan = LiftedPlan::default();
@@ -75,11 +87,22 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
         println!("No solution !!!!");
     }
 
-    if let Some(report_file) = options.report_file.as_ref() {
-        export::export_report_to_file(report_file, solution, solver_objective, start.elapsed(), solver.get())?;
-    }
+    let objective_value = solution.as_ref().and_then(|sol| objective.evaluate(sol));
 
-    Ok(())
+    let res = PlanGenerationResult {
+        objective_value,
+        runtime: start.elapsed(),
+        status: if solution.is_some() {
+            export::SolveStatus::SolvedSat
+        } else {
+            export::SolveStatus::SolvedUnsat
+        },
+        solution,
+        encoding,
+    };
+    let report_data = export::make_default_report_from_plangen_result(&res, solver.get());
+
+    Ok((res, report_data, options.report_dir.clone()))
 }
 
 fn encode_finite_planning_problem(
