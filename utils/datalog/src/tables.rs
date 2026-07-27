@@ -49,6 +49,15 @@ impl<T> TableBuff<T> {
         }
     }
 
+    /// Adds a single element of a row.
+    ///
+    /// Careful: This will leave a row incomplete and it is the responsibility
+    /// of the caller to ensure the row is completed before any other operation occurs.
+    pub(crate) fn push_single(&mut self, elem: T) {
+        debug_assert_ne!(self.num_columns, 0);
+        self.data.push(elem);
+    }
+
     pub fn extend<'me, 'rows>(&'me mut self, rows: impl IntoIterator<Item = &'rows [T]>)
     where
         T: Clone + 'static,

@@ -164,15 +164,9 @@ impl JoinRule {
                 })
             });
         }
-        assert_eq!(
-            head.args.pattern,
-            (0..(head.args.pattern.len()))
-                .map(|i| Pattern::from_var(i as u32))
-                .collect_vec()
-        );
 
         Self {
-            join: Join::new(head.args.pattern.len(), body1.args, body2.args),
+            join: Join::new(head.args, body1.args, body2.args),
             table1: body1.predicate,
             table2: body2.predicate,
             out_table: head.predicate,
@@ -181,14 +175,14 @@ impl JoinRule {
 }
 
 pub(crate) struct Join {
-    output_arity: usize,
+    output: Pattern,
     num_vars: usize,
     pattern1: Pattern,
     pattern2: Pattern,
 }
 
 impl Join {
-    pub(crate) fn new(output_arity: usize, pattern1: Pattern, pattern2: Pattern) -> Self {
+    pub(crate) fn new(output: Pattern, pattern1: Pattern, pattern2: Pattern) -> Self {
         let vars = pattern1
             .pattern
             .iter()
@@ -199,9 +193,8 @@ impl Join {
             .collect_vec();
         let num_vars = vars.len();
         assert_eq!(vars, (0..num_vars).collect_vec());
-        assert!(output_arity <= num_vars);
         Self {
-            output_arity,
+            output,
             num_vars,
             pattern1,
             pattern2,
@@ -219,9 +212,24 @@ impl Join {
 
             let full_bindings = pattern2.all_bindings(table2, partial_binding);
             for row in full_bindings.rows() {
-                assert!(row.iter().all(|i| *i != Sym::MAX), "some unbound variables");
-                let output_variables = &row[..self.output_arity];
-                out.push(output_variables);
+                debug_assert!(row.iter().all(|i| *i != Sym::MAX), "some unbound variables");
+
+                // the row gives the value of all variables
+                // for each element of the output pattern (variable or constant),
+                // we retrieve the value it has and add it to the output
+                for &out_elem in &self.output.pattern {
+                    let value = if let Some(var) = Pattern::as_var(out_elem) {
+                        row[var as usize]
+                    } else {
+                        out_elem as Sym
+                    };
+                    out.push_single(value);
+                }
+                if self.output.pattern.is_empty() {
+                    // if the output table has a 0-arity, no single element will be added but we still need to
+                    // notify it that we have a match so we add an empty row
+                    out.push(&[]);
+                }
             }
         }
     }
@@ -246,7 +254,7 @@ pub enum Arg {
 ///
 /// in which it would only match the second row `[a, c, b]` (which `?x=a` and `?y=b`).
 ///
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Pattern {
     /// Encoding of the pattern, where constant are represented with positive values and variables with negative values.
     ///
@@ -611,7 +619,7 @@ mod test {
     fn test_join() {
         // path(x, y) :- edge(x, z), path(z, y)
         let join = Join::new(
-            2, // only select the first two variables
+            Pattern::new([Arg::Var(0), Arg::Var(1)]), // only select the first two variables
             Pattern::new([Arg::Var(0), Arg::Var(2)]),
             Pattern::new([Arg::Var(2), Arg::Var(1)]),
         );

@@ -131,4 +131,43 @@ mod test {
             .rows()
             .for_each(|row| println!("move{row:?}"));
     }
+
+    #[test]
+    fn test_non_standard_heads() {
+        let mut prog = Program::new();
+
+        let p = prog.new_predicate(2);
+        let p2 = prog.new_predicate(2);
+        let q = prog.new_predicate(2);
+        let r = prog.new_predicate(1);
+
+        q.add([1, 10]);
+        q.add([2, 20]);
+        r.add([10]);
+
+        use Arg::*;
+
+        // output pattern with constant
+        // p(1, ?x) :- q(?x, ?y), r(?y)
+        // Expect: p(1, 1) derived
+        prog.add_rule(Rule::new(
+            p.apply([Sym(1), Var(0)]),
+            [q.apply([Var(0), Var(1)]), r.apply([Var(1)])],
+        ));
+        // output pattern with repeated var
+        // p(?x, ?x) :- q(?x, ?y), r(?y)
+        // Expect: p(1, 1) derived
+        prog.add_rule(Rule::new(
+            p2.apply([Var(0), Var(0)]),
+            [q.apply([Var(0), Var(1)]), r.apply([Var(1)])],
+        ));
+
+        prog.run();
+
+        let p_facts: Vec<Vec<_>> = p.extract().rows().map(|r| r.to_vec()).collect();
+        assert_eq!(p_facts, vec![vec![1, 1]]);
+
+        let p2_facts: Vec<Vec<_>> = p2.extract().rows().map(|r| r.to_vec()).collect();
+        assert_eq!(p2_facts, vec![vec![1, 1]]);
+    }
 }

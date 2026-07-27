@@ -59,4 +59,6 @@ If known beforehand, the makespan of the optimal solution can be specified on th
 
 ### Reference
 
- - Arthur Bit-Monnot. *Enhancing Hybrid CP-SAT Search for Disjunctive Scheduling*. 26th European Conference on Artificial Intelligence (ECAI 2023)), Sep 2023. [⟨hal-04174800⟩](https://hal.science/hal-04174800)
+
+- Arthur Bit-Monnot. *Enhancing Hybrid CP-SAT Search for Disjunctive Scheduling* -- ECAI 2023 [(link)](https://hal.science/hal-04174800)
+- Arthur Bit-Monnot. *Revisiting Optional Variables in Lazy Clause Generation Solvers for Flexible Scheduling* -- CP 2026 [(link)](https://doi.org/10.4230/LIPIcs.CP.2026.7)
