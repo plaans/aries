@@ -123,7 +123,28 @@ mod test {
             &PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/problem.pddl"),
             4,
             0,
-            &[],
+            &[
+                ("calibration_target", 1, "direction"),
+                ("pointing", 1, "direction"),
+                ("supports", 1, "mode"),
+                ("on_board", 1, "satellite"),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_satellite_time() -> Res<()> {
+        simple_test(
+            &PathBuf::from("../problems/upf/ipc2002-satellite-time-simple-automatic/domain.pddl"),
+            &PathBuf::from("../problems/upf/ipc2002-satellite-time-simple-automatic/problem.pddl"),
+            4,
+            0,
+            &[
+                ("calibration_target", 1, "direction"),
+                ("pointing", 1, "direction"),
+                ("supports", 1, "mode"),
+                ("on_board", 1, "satellite"),
+            ],
         )
     }
 
@@ -134,7 +155,97 @@ mod test {
             &PathBuf::from("../problems/upf/ipc2004-psr-small-strips/problem.pddl"),
             5,
             5,
-            &[],
+            &[
+                (
+                    "do_normal:do_wait_cb1_condeffs:do_close_sd1_condeffs",
+                    0,
+                    "_help-tpe-do_normal:do_wait_cb1_condeffs:do_close_sd1_condeffs",
+                ),
+                (
+                    "not_updated_cb1:updated_cb1",
+                    0,
+                    "_help-tpe-not_updated_cb1:updated_cb1",
+                ),
+                ("closed_sd1:not_closed_sd1", 0, "_help-tpe-closed_sd1:not_closed_sd1"),
+                ("closed_sd2:not_closed_sd2", 0, "_help-tpe-closed_sd2:not_closed_sd2"),
+                ("closed_cb1:not_closed_cb1", 0, "_help-tpe-closed_cb1:not_closed_cb1"),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_rovers_strips() -> Res<()> {
+        simple_test(
+            &PathBuf::from("../problems/upf/ipc2002-rovers-strips-automatic/domain.pddl"),
+            &PathBuf::from("../problems/upf/ipc2002-rovers-strips-automatic/problem.pddl"),
+            13,
+            1,
+            &[
+                ("full:empty", 1, "_help-tpe-full:empty"),
+                ("channel_free", 0, "lander"),
+                ("on_board", 1, "rover"),
+                ("calibration_target", 1, "objective"),
+                ("store_of", 1, "rover"),
+                ("available", 0, "rover"),
+                ("supports", 1, "camera"),
+                ("equipped_for_imaging", 0, "rover"),
+                ("equipped_for_rock_analysis", 0, "rover"),
+                ("equipped_for_soil_analysis", 0, "rover"),
+                ("can_traverse", 2, "rover"),
+                ("at_lander", 1, "waypoint"),
+                ("at_", 1, "waypoint"),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_rovers_time() -> Res<()> {
+        simple_test(
+            &PathBuf::from("../problems/upf/ipc2002-rovers-time-simple-automatic/domain.pddl"),
+            &PathBuf::from("../problems/upf/ipc2002-rovers-time-simple-automatic/problem.pddl"),
+            13,
+            1,
+            &[
+                ("full:empty", 1, "_help-tpe-full:empty"),
+                ("channel_free", 0, "lander"),
+                ("on_board", 1, "rover"),
+                ("calibration_target", 1, "objective"),
+                ("store_of", 1, "rover"),
+                ("available", 0, "rover"),
+                ("supports", 1, "camera"),
+                ("equipped_for_imaging", 0, "rover"),
+                ("equipped_for_rock_analysis", 0, "rover"),
+                ("equipped_for_soil_analysis", 0, "rover"),
+                ("can_traverse", 2, "rover"),
+                ("at_lander", 1, "waypoint"),
+                ("at_", 1, "waypoint"),
+            ],
+        )
+    }
+
+    #[test]
+    fn test_rovers_numeric() -> Res<()> {
+        simple_test(
+            &PathBuf::from("../problems/upf/ipc2002-rovers-numeric-automatic/domain.pddl"),
+            &PathBuf::from("../problems/upf/ipc2002-rovers-numeric-automatic/problem.pddl"),
+            14,
+            1,
+            &[
+                ("full:empty", 1, "_help-tpe-full:empty"),
+                ("in_sun", 0, "waypoint"),
+                ("channel_free", 0, "lander"),
+                ("on_board", 1, "rover"),
+                ("calibration_target", 1, "objective"),
+                ("store_of", 1, "rover"),
+                ("available", 0, "rover"),
+                ("supports", 1, "camera"),
+                ("equipped_for_imaging", 0, "rover"),
+                ("equipped_for_rock_analysis", 0, "rover"),
+                ("equipped_for_soil_analysis", 0, "rover"),
+                ("can_traverse", 2, "rover"),
+                ("at_lander", 1, "waypoint"),
+                ("at_", 1, "waypoint"),
+            ],
         )
     }
 }
