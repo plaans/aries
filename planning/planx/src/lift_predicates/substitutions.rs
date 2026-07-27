@@ -6,8 +6,8 @@ use super::{
     visit_exprs_recursive_and_check,
 };
 use crate::{
-    Effect, EffectOp, Environment, Expr, ExprId, Fluent, FluentId, Model, Param, RealValue, Sym, TimeRef, Timestamp,
-    Type,
+    Duration, Effect, EffectOp, Environment, Expr, ExprId, Fluent, FluentId, Model, Param, RealValue, Sym, TimeRef,
+    Timestamp, Type,
 };
 
 use itertools::Itertools;
@@ -387,9 +387,10 @@ impl SubstitutionGroup {
         //   2.1. there are no negative conditions on any of the group's predicates
         //   2.2. there is exactly one positive and negative effect on any of the group's
         //        predicates, for the same non-return parameters (if any! -- this notably means that, for the group's predicates, having no effects at all is allowed).
-        //   2.3. they (these two effects) cover exactly the same interval
-        //   NOTE: in the legacy code, negative conditions could be allowed if they were before the
-        //         positive and negative conditions (which still had to cover the same interval) and all had the same non-return parameters.
+        //   2.3. the negative effect must start before (or at the same time) as the positive one.
+        //   NOTE: in the legacy code, negative conditions (for some given non-return parameters) could be allowed if:
+        //         (i) they were before the positive and negative effects (on the same non-return parameters) (if any),
+        //         (ii) the positive and negative effects covered the same interval (impliying they started at the same time)
 
         // 1.1.
 
@@ -573,8 +574,13 @@ impl SubstitutionGroup {
                 // start at the same time, the "tie-breaker" is that the negative is applied before the positive one.
                 // ("delete-before-add")
 
-                // We do not support the case where the negative effect can start strictly after the positive one
-                if !timing_is_necessarily_before_or_eq(neg.effect_expression.timing, pos.effect_expression.timing) {
+                if timing_is_necessarily_before_or_eq(
+                    neg.effect_expression.timing,
+                    pos.effect_expression.timing,
+                    get_duration_bounds(&act.duration, &model.env),
+                ) {
+                    // 2.3
+                } else {
                     tracing::trace!("unrecognized pattern for temporal split");
                     return false;
                 }
@@ -587,11 +593,42 @@ impl SubstitutionGroup {
     }
 }
 
-pub(super) fn timing_is_necessarily_before_or_eq(t1: Timestamp, t2: Timestamp) -> bool {
+pub(super) fn get_duration_bounds(duration: &Duration, env: &Environment) -> Option<(RealValue, RealValue)> {
+    match duration {
+        Duration::Instantaneous => Some((0.into(), 0.into())),
+        Duration::Fixed(expr_id) => match env.node(*expr_id).expr() {
+            Expr::Real(x) => Some((*x, *x)),
+            _ => None,
+        },
+        Duration::Bounded(expr1_id, expr2_id) => match (env.node(*expr1_id).expr(), env.node(*expr2_id).expr()) {
+            (Expr::Real(a), Expr::Real(b)) => Some((*a, *b)),
+            _ => None,
+        },
+        Duration::Subtasks => None,
+    }
+}
+
+pub(super) fn timing_is_necessarily_before_or_eq(
+    t1: Timestamp,
+    t2: Timestamp,
+    container_duration_bounds: Option<(RealValue, RealValue)>,
+) -> bool {
     match (t1.reference, t2.reference) {
         (tt1, tt2) if tt1 == tt2 => t1.delay <= t2.delay,
-        (TimeRef::ActionStart, TimeRef::ActionEnd) => t1.delay <= t2.delay,
-        (TimeRef::ActionEnd, TimeRef::ActionStart) => false,
+        (TimeRef::ActionStart, TimeRef::ActionEnd) => {
+            if let Some((d_lb, _)) = container_duration_bounds {
+                t1.delay <= d_lb + t2.delay
+            } else {
+                false // Unable to decide
+            }
+        }
+        (TimeRef::ActionEnd, TimeRef::ActionStart) => {
+            if let Some((_, d_ub)) = container_duration_bounds {
+                d_ub + t1.delay <= t2.delay
+            } else {
+                false // Unable to decide
+            }
+        }
         _ => unreachable!(),
     }
 }

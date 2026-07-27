@@ -7,8 +7,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::errors::EnvError;
 use crate::{
-    Action, Effect, EffectOp, Environment, Expr, ExprId, FluentId, Fun, Model, Object, Res, SeqExprId, SimpleGoal, Sym,
-    Type, UnionUserType,
+    Action, Duration, Effect, EffectOp, Environment, Expr, ExprId, FluentId, Fun, Model, Object, Res, SeqExprId,
+    SimpleGoal, Sym, Type, UnionUserType,
 };
 
 /// Substitute predicates into state functions where applicable.
@@ -78,7 +78,7 @@ fn lift(model: &mut Model, group: &SubstitutionGroup) -> Res<()> {
         }
 
         let (model_env, effects) = get_mut_global_effect_exprs(model);
-        transform_effect_exprs(effects, &group, model_env)?;
+        transform_effect_exprs(effects, &group, model_env, None)?;
     }
 
     // In actions
@@ -88,7 +88,8 @@ fn lift(model: &mut Model, group: &SubstitutionGroup) -> Res<()> {
         for &expr_id in iter_action_noneffect_exprs(act) {
             transform_noneffect_exprs_recursive(expr_id, &group, &mut model.env)?;
         }
-        transform_effect_exprs(get_mut_action_effect_exprs(act), &group, &mut model.env)?;
+        let d = act.duration.clone();
+        transform_effect_exprs(get_mut_action_effect_exprs(act), &group, &mut model.env, Some(d))?;
     }
 
     Ok(())
@@ -273,7 +274,10 @@ fn transform_effect_exprs(
     effects: &mut Vec<Effect>,
     group: &AppliedSubstitutionGroup,
     env: &mut Environment,
+    container_duration: Option<Duration>,
 ) -> Res<()> {
+    let container_duration_bounds = container_duration.and_then(|d| get_duration_bounds(&d, env));
+
     let try_into_simple_args = |predicate_id: FluentId, args: &[ExprId]| -> Option<Vec<SimpleArg>> {
         debug_assert!(group.group.contains(predicate_id));
         let sub_idx = group
@@ -330,20 +334,14 @@ fn transform_effect_exprs(
 
     for (k, &(i, _)) in &neg_effects {
         if let Some(&(j, _)) = pos_effects.get(k) {
-            debug_assert!(timing_is_necessarily_before_or_eq(
+            if timing_is_necessarily_before_or_eq(
                 effects[i].effect_expression.timing,
                 effects[j].effect_expression.timing,
-            ));
-            if effects[i].effect_expression.timing != effects[j].effect_expression.timing {
-                // here, positive effect is necessarily strictly after the negative one,
-                // as the other case is filtered out (substitution group not deemed substitutable).
-                debug_assert!(!timing_is_necessarily_before_or_eq(
-                    effects[j].effect_expression.timing,
-                    effects[i].effect_expression.timing,
-                ));
-                neg_effects_to_null.push(i);
-            } else {
+                container_duration_bounds,
+            ) {
                 neg_effects_to_del.push(i);
+            } else {
+                neg_effects_to_null.push(i);
             }
         }
     }
@@ -373,12 +371,13 @@ fn transform_effect_exprs(
 
         let _lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
 
-        todo!("TODO requires a 'null'/'undefined' objects for all user types TODO");
-        // eff.operation = EffectOp::Assign(env.intern(Expr::Object(TODO_NULL_OBJECT), None)?);
-        // if let Some(lifted_param_idx) = _lifted_param_idx {
-        //     eff.state_variable.arguments.remove(lifted_param_idx);
-        // }
-        // eff.state_variable.fluent = group.substitution_fluent_id;
+        todo!("TODO requires EffectOp::Erase")
+        // todo!("TODO requires a 'null'/'undefined' objects for all user types TODO");
+        // // eff.operation = EffectOp::Assign(env.intern(Expr::Object(TODO_NULL_OBJECT), None)?);
+        // // if let Some(lifted_param_idx) = _lifted_param_idx {
+        // //     eff.state_variable.arguments.remove(lifted_param_idx);
+        // // }
+        // // eff.state_variable.fluent = group.substitution_fluent_id;
     }
 
     for idx in neg_effects_to_del.into_iter().sorted().rev() {
