@@ -71,7 +71,7 @@ impl Actions {
     pub fn get_action(&self, name: &ActionRef) -> Option<&Action> {
         self.actions.get(name)
     }
-    pub fn get_action_mut(&mut self, name: &ActionRef) -> Option<&mut Action> {
+    pub(crate) fn get_action_mut(&mut self, name: &ActionRef) -> Option<&mut Action> {
         self.actions.get_mut(name)
     }
 

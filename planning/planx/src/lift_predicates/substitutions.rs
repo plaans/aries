@@ -13,7 +13,7 @@ use crate::{
 use itertools::Itertools;
 
 /// Identifies a set of candidate groups of predicates, each of which may be substituted with a state function.
-pub fn collect_candidate_substitution_groups(model: &Model) -> Vec<SubstitutionGroup> {
+pub(super) fn collect_candidate_substitution_groups(model: &Model) -> Vec<SubstitutionGroup> {
     let mut valid_candidates = vec![];
 
     // detect groups of 1 predicate
@@ -73,7 +73,7 @@ pub fn collect_candidate_substitution_groups(model: &Model) -> Vec<SubstitutionG
 ///
 /// When no such parameter is indicated, the substitution does not change anything and keeps the predicate as it was.
 #[derive(Clone)]
-pub struct PredicateSubstitution {
+pub(super) struct PredicateSubstitution {
     pub predicate_id: FluentId,
     predicate: Arc<Fluent>,
     pub return_param_idx: Option<usize>,
@@ -118,7 +118,7 @@ impl PredicateSubstitution {
     }
 
     /// Returns, for the given predicate, a list of potential substitutions.
-    pub fn candidates(predicate_id: FluentId, env: &Environment) -> Vec<Self> {
+    fn candidates(predicate_id: FluentId, env: &Environment) -> Vec<Self> {
         let predicate = Arc::new(env.fluents.get(predicate_id).clone());
 
         if predicate.return_type != Type::Bool {
@@ -133,7 +133,7 @@ impl PredicateSubstitution {
         candidates
     }
 
-    pub fn collect_params(&self) -> Vec<(usize, &Type)> {
+    fn collect_params(&self) -> Vec<(usize, &Type)> {
         self.predicate
             .parameters
             .iter()
@@ -149,7 +149,7 @@ impl PredicateSubstitution {
             .collect()
     }
 
-    pub fn get_return_type(&self) -> &Type {
+    fn get_return_type(&self) -> &Type {
         if let Some(lifted_param_idx) = self.return_param_idx {
             self.predicate.parameters[lifted_param_idx].tpe()
         } else {
@@ -162,7 +162,7 @@ impl PredicateSubstitution {
 /// A group of predicate substitutions that are syntactically compatible (after potential parameter reorderings)
 /// to be applied as one subtitution. Or, in other words, that expressions over these predicates
 /// can be subtituted with expressions over one new state function.
-pub struct SubstitutionGroup {
+pub(super) struct SubstitutionGroup {
     pub substitutions: Vec<PredicateSubstitution>,
     pub reorderings: Vec<ParamsReordering>,
     pub params: Vec<Param>,
@@ -170,7 +170,7 @@ pub struct SubstitutionGroup {
 }
 
 #[derive(Debug, Clone)]
-pub enum SubstitutionGroupReturnType {
+pub(super) enum SubstitutionGroupReturnType {
     NewHelperType,
     KnownType(Type),
 }

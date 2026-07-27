@@ -110,7 +110,7 @@ struct AppliedSubstitutionGroup<'a> {
 
 impl<'a> AppliedSubstitutionGroup<'a> {
     /// NOTE: deletes the group's predicates and adds the substituting state function
-    pub fn new(group: &'a SubstitutionGroup, env: &mut Environment) -> Res<Self> {
+    fn new(group: &'a SubstitutionGroup, env: &mut Environment) -> Res<Self> {
         let (return_type, helper_objects) = match &group.return_type {
             SubstitutionGroupReturnType::KnownType(return_type) => {
                 debug_assert!(matches!(return_type, Type::User(_)));
@@ -165,7 +165,7 @@ impl<'a> AppliedSubstitutionGroup<'a> {
         })
     }
 
-    pub fn helper_object(&self, predicate_id: FluentId) -> Option<&Object> {
+    fn helper_object(&self, predicate_id: FluentId) -> Option<&Object> {
         assert!(self.helper_objects.is_some());
         self.helper_objects.as_ref().unwrap().get(
             self.group

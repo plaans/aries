@@ -97,7 +97,7 @@ impl Fluents {
         }
     }
 
-    pub fn remove(&mut self, func: impl Fn(FluentId, &Fluent) -> bool) {
+    pub(crate) fn remove(&mut self, func: impl Fn(FluentId, &Fluent) -> bool) {
         let mut acc = vec![];
         for (fid, f) in self.fluents.iter() {
             if func(fid, f) {

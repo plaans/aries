@@ -54,7 +54,7 @@ impl Types {
         }
     }
 
-    pub fn add_user_type_independent(&mut self, name: impl Into<Sym> + Clone) -> bool {
+    pub(crate) fn add_user_type_independent(&mut self, name: impl Into<Sym> + Clone) -> bool {
         if self.get_user_type(name.clone()).is_ok() {
             return false;
         }
@@ -405,7 +405,7 @@ impl Type {
             (Bool, Bool) => true,
             (Real, Real) => true,
             (Int(_), Real) | (Real, Int(_)) => true,
-            (Int(bounds1), Int(bounds2)) => bounds1.0 >= bounds2.1 || bounds2.0 >= bounds1.1,
+            (Int(bounds1), Int(bounds2)) => !(bounds1.0 <= bounds2.1 || bounds2.0 <= bounds1.1),
             (User(left), User(right)) => left.overlaps(right),
             _ => false,
         }

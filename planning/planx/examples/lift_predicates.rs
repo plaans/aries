@@ -108,8 +108,8 @@ mod test {
     #[test]
     fn test_gripper() -> Res<()> {
         simple_test(
-            &PathBuf::from("planning/problems/pddl/tests/gripper.dom.pddl"),
-            &PathBuf::from("planning/problems/pddl/tests/gripper.pb.pddl"),
+            &PathBuf::from("../problems/pddl/tests/gripper.dom.pddl"),
+            &PathBuf::from("../problems/pddl/tests/gripper.pb.pddl"),
             2,
             0,
             &[("at-robby", 0, "object"), ("carry:at", 1, "object")],

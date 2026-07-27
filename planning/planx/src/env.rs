@@ -43,7 +43,12 @@ impl Environment {
         Ok(id)
     }
 
-    pub fn replace(&mut self, expr_id: ExprId, expr: Expr, span: impl Into<Option<Span>>) -> Result<(), Message> {
+    pub(crate) fn replace(
+        &mut self,
+        expr_id: ExprId,
+        expr: Expr,
+        span: impl Into<Option<Span>>,
+    ) -> Result<(), Message> {
         let tpe = expr.tpe(self)?;
         let entry = self.exprs.get_mut(expr_id).unwrap();
         *entry = ExprNode::new(expr, tpe, span.into());
