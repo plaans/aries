@@ -327,7 +327,7 @@ impl SubstitutionGroup {
             } else {
                 // TODO: let union_type = Type::User(todo!("requires support for 'true' union types"));
                 // TODO: SubstitutionGroupReturnType::KnownType(union_type)
-                return None; // In the meanwhile...
+                return None; // In the meantime...
             }
         };
 
@@ -381,12 +381,15 @@ impl SubstitutionGroup {
 
         // 1. check that globally (outside of actions/tasks):
         //   1.1. there are no negative conditions on any of the group's predicates.
-        //        (TODO ? is this requirement liftable when there are "null"/"undefined" values/objects for user types ? TODO)
         //   1.2. check there is at most one positive effect on any of the group's predicates, for the same non-return parameters (outside actions),
         //        and that not all "initial/global" effects on a predicate of the group are set to the default value (i.e. false)
         // 2. check that in actions/tasks:
-        //   2.1. there is exactly one positive and negative effect on any of the group's predicates, for the same non-return parameters.
-        //   2.2. they (these two effects) cover exactly the same interval or there are no negative conditions on any of the group's predicates.
+        //   2.1. there are no negative conditions on any of the group's predicates
+        //   2.2. there is exactly one positive and negative effect on any of the group's
+        //        predicates, for the same non-return parameters (if any! -- this notably means that, for the group's predicates, having no effects at all is allowed).
+        //   2.3. they (these two effects) cover exactly the same interval
+        //   NOTE: in the legacy code, negative conditions could be allowed if they were before the
+        //         positive and negative conditions (which still had to cover the same interval) and all had the same non-return parameters.
 
         // 1.1.
 
@@ -399,14 +402,14 @@ impl SubstitutionGroup {
                     // We do not support a predicate of the group to be used in expressions featuring non-simple arguments
                     // (i.e. only support constant or plain parameter symbols, no complex nestings).
                     // We short-circuit and do not consider such groups for substitution.
-                    tracing::trace!("non-simple arguments in condition/constraint");
+                    tracing::trace!("non-simple arguments in condition");
                     return Err(crate::Message::error(""));
                 }
                 _ => (),
             }
             match try_into_predicate_expr(expr_id, env) {
                 Some(PredicateExpr::Negative(_, _, predicate_id, _)) if self.contains(predicate_id) => {
-                    tracing::trace!("negative condition/constraint in global exprs");
+                    tracing::trace!("negative condition");
                     return Err(crate::Message::error(""));
                 }
                 _ => (),
@@ -481,23 +484,23 @@ impl SubstitutionGroup {
         // 2.
 
         for act in model.actions.iter() {
-            // preparation for 2.2
-            let mut has_negative_condition = false;
-
             let mut closure = |expr_id: ExprId, env: &Environment| {
                 match try_into_predicate_expr(expr_id, env) {
                     Some(PredicateExpr::Positive(_, predicate_id, args))
                     | Some(PredicateExpr::Negative(_, _, predicate_id, args))
                         if self.contains(predicate_id) && try_into_simple_args(predicate_id, &args).is_none() =>
                     {
-                        tracing::trace!("non-simple arguments in condition/constraint");
+                        tracing::trace!("non-simple arguments in condition");
                         return Err(crate::Message::error(""));
                     }
                     _ => (),
                 }
                 match try_into_predicate_expr(expr_id, env) {
                     Some(PredicateExpr::Negative(_, _, predicate_id, _)) if self.contains(predicate_id) => {
-                        has_negative_condition = true;
+                        // 2.1.
+
+                        tracing::trace!("negative condition");
+                        return Err(crate::Message::error(""));
                     }
                     _ => (),
                 }
@@ -508,8 +511,6 @@ impl SubstitutionGroup {
                     return false;
                 }
             }
-
-            // 2.1 + 2.2.
 
             for (_, effs) in &act
                 .effects
@@ -538,6 +539,8 @@ impl SubstitutionGroup {
                         _ => false,
                     })
                     .collect();
+
+                // 2.2
 
                 // we must have exactly one positive and on negative effect
                 if positives.len() != 1 || negatives.len() != 1 || effs.len() != 2 {
@@ -572,26 +575,7 @@ impl SubstitutionGroup {
 
                 // We do not support the case where the negative effect can start strictly after the positive one
                 if !timing_is_necessarily_before_or_eq(neg.effect_expression.timing, pos.effect_expression.timing) {
-                    // (TODO ? is this requirement liftable when there are "null"/"undefined" values/objects for user types ? TODO)
                     tracing::trace!("unrecognized pattern for temporal split");
-                    return false;
-                }
-                if neg.effect_expression.timing != pos.effect_expression.timing {
-                    tracing::trace!(
-                        "unrecognized pattern for temporal split [for now, only support case with exact same timestamps]"
-                    );
-                    return false;
-                }
-
-                // When there is a negative condition (on the same non-return parameters as the two effects),
-                // and the two effects do not start at the same time,
-                // there is a risk of the negative condition being required between them.
-                // For example, if the negative effect starts before the positive one (but not at the same time),
-                // and the negative condition is between them,
-                // then we cannot safely lift, as the (lifted) value after the negative effect and before the positive one
-                // could only be the "unknown" value, so not a value that is provably different from the one forbidden by the negative condition.
-                if has_negative_condition && pos.effect_expression.timing != neg.effect_expression.timing {
-                    tracing::trace!("not at same timestamps + negative conditions");
                     return false;
                 }
             }
