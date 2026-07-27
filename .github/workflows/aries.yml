@@ -177,6 +177,8 @@ jobs:
         run: ./planning/ext/init.sh
       - name: PDDL Parsing all IPC problems
         run: just ci-pddl-parse-all
+      - name: PDDL Parsing all IPC problems (with predicate lifting)
+        run: just ci-pddl-parse-all true
       - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: APE validator and plan optimizer

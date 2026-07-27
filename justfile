@@ -55,17 +55,34 @@ samply bin +args:
     samply record target/perf/{{ bin }} {{ args }}
 
 # Parses all instance-1.pddl [HP]DDL files in planning/ext/pddl except for the few known to be unsupported.
-ci-pddl-parse-all filter="d":
+ci-pddl-parse-all lift="false" filter="d":
     #!/usr/bin/env bash
     set -e  # stop on first error
     cargo build --profile ci --bin pddl-parser
+
     # ignore the following domains
     #  - from 1998 IPC (non stabilized syntax)
     #  - with derived predicates
     #  - temporal machine shop (TMS, IPC 2011 and 2014) that contains an object declared twice with two distinct type (valid PDDL but unsupported)
-    for f in `find planning/ext/pddl/ -name instance-1.[hp]ddl | sort | grep -v "1998" | grep {{ filter }} |  grep -v derived | grep -v temporal-machine-shop `; do
+    #  - cyber-security-sequential-satisficing-strips as it (`instance-1.pddl`) as it is VERY long to lift
+    #  - organic-synthesis-split-sequential-satisficing (same reason)
+    # note: promela-optical-telegraph-strips is slightly long to lift but manageable
+
+    LIFT=""
+    if [ "{{ lift }}" = "true" ]; then LIFT="--lift"; fi
+
+    for f in `\
+        find planning/ext/pddl/ -name instance-1.[hp]ddl \
+        | sort \
+        | grep -v "1998" \
+        | grep {{ filter }} \
+        | grep -v derived \
+        | grep -v temporal-machine-shop \
+        | grep -v cyber-security-sequential-satisficing-strips \
+        | grep -v organic-synthesis-split-sequential-satisficing \
+    `; do
         echo $f
-        target/ci/pddl-parser  $f > /dev/null
+        target/ci/pddl-parser $LIFT $f > /dev/null
     done
 
 # Attempts to validate and optimize all the plan files it can find the planning/problems/upf. Fails if an inconsistency is detected
