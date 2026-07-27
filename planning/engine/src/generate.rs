@@ -93,7 +93,11 @@ pub fn solve_finite_planning_problem(
         objective_value,
         runtime: start.elapsed(),
         status: if solution.is_some() {
-            export::SolveStatus::SolvedSat
+            if options.optimize {
+                export::SolveStatus::SolvedOpt
+            } else {
+                export::SolveStatus::SolvedSat
+            }
         } else {
             export::SolveStatus::SolvedUnsat
         },
