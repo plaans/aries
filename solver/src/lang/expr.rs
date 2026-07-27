@@ -2,10 +2,12 @@
 //!
 //! These are all re-exported in [`crate::prelude`].
 
+use std::sync::Arc;
+
 use itertools::Itertools;
 
 use crate::core::views::Dom;
-use crate::lang::constraints::{AllDifferent, Alternative, EqMax, Interval, NoOverlap};
+use crate::lang::constraints::{AllDifferent, Alternative, EqMax, HasValueIn, InTable, Interval, NoOverlap, Table};
 use crate::lang::linear::{LinEq, LinLeq, LinNeq};
 use crate::lang::mul::EqMul;
 use crate::lang::*;
@@ -118,4 +120,20 @@ pub fn bool2int<Ctx: ModelView>(b: Lit, model: &mut Ctx) -> LinTerm {
         implies(b, binary_var.geq(1)).enforce(model);
         LinTerm::from(binary_var)
     }
+}
+
+/// Enforces that the list of variables takes a value in the list of allowed value tuples.
+pub fn in_table<Variable: Into<VarCst>>(
+    variables: impl IntoIterator<Item = Variable>,
+    allowed_assignments: impl Into<Arc<Table<IntCst>>>,
+) -> InTable {
+    InTable::new(
+        variables.into_iter().map(|v| v.into()).collect(),
+        allowed_assignments.into(),
+    )
+}
+
+/// Enforces that the variables takes one of the specified value.
+pub fn has_value_in(variable: impl Into<VarCst>, allowed_values: impl IntoIterator<Item = IntCst>) -> HasValueIn {
+    HasValueIn::new(variable.into(), allowed_values.into_iter().collect())
 }
