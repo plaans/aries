@@ -76,11 +76,14 @@ fn simple_test(
 
     for &(fluent_name, expected_num_params, expected_return_type_name) in expected_lifted_fluents_shapes {
         let fluent = get_fluent_by_name(&lifted_model, fluent_name)?;
-        assert!(fluent.parameters.len() == expected_num_params);
-        assert!(matches!(
-            &fluent.return_type, planx::Type::User(user_type)
-            if user_type.members() == [expected_return_type_name]
-        ));
+        assert!(fluent.parameters.len() == expected_num_params, "{fluent_name:?}");
+        assert!(
+            matches!(
+                &fluent.return_type, planx::Type::User(user_type)
+                if user_type.members() == [expected_return_type_name]
+            ),
+            "{fluent_name:?}",
+        );
     }
 
     Ok(())
@@ -92,7 +95,7 @@ fn main() -> Res<()> {
         &PathBuf::from("planning/problems/pddl/tests/gripper.pb.pddl"),
         2,
         0,
-        &[("at-robby", 0, "top-type"), ("carry:at", 1, "top-type")],
+        &[("at-robby", 0, "object"), ("carry:at", 1, "object")],
     )?;
 
     Ok(())
@@ -103,7 +106,18 @@ mod test {
     use super::*;
 
     #[test]
-    fn test1() -> Res<()> {
+    fn test_gripper() -> Res<()> {
+        simple_test(
+            &PathBuf::from("planning/problems/pddl/tests/gripper.dom.pddl"),
+            &PathBuf::from("planning/problems/pddl/tests/gripper.pb.pddl"),
+            2,
+            0,
+            &[("at-robby", 0, "object"), ("carry:at", 1, "object")],
+        )
+    }
+
+    #[test]
+    fn test_satellite_strips() -> Res<()> {
         simple_test(
             &PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/domain.pddl"),
             &PathBuf::from("../problems/upf/ipc2002-satellite-strips-automatic/problem.pddl"),
@@ -114,7 +128,7 @@ mod test {
     }
 
     #[test]
-    fn test2() -> Res<()> {
+    fn test_psr() -> Res<()> {
         simple_test(
             &PathBuf::from("../problems/upf/ipc2004-psr-small-strips/domain.pddl"),
             &PathBuf::from("../problems/upf/ipc2004-psr-small-strips/problem.pddl"),
