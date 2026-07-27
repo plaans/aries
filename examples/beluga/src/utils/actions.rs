@@ -8,7 +8,7 @@ use aries_timelines::{constraints::HasValueAt, *};
 use super::states::*;
 use super::*;
 
-#[derive(Debug)]
+#[derive(Debug,Clone,Copy)]
 pub enum ActionType {
     LoadBeluga {
         j: VarCst,
@@ -46,16 +46,54 @@ pub enum ActionType {
     SwitchToNextBeluga,
 }
 
+#[derive(Debug)]
+pub enum ActionSolved {
+    LoadBeluga {
+        j: i32,
+        b: i32,
+        t: i32,
+    },
+    UnloadBeluga {
+        j: i32,
+        b: i32,
+        t: i32,
+    },
+    GetFromHangar {
+        j: i32,
+        h: i32,
+        t: i32,
+    },
+    DeliverToHangar {
+        j: i32,
+        h: i32,
+        t: i32,
+        pl: i32,
+    },
+    PutDownRack {
+        j: i32,
+        t: i32,
+        r: i32,
+        side: i32,
+    },
+    PickUpRack {
+        j: i32,
+        t: i32,
+        r: i32,
+        side: i32,
+    },
+    SwitchToNextBeluga,
+}
+
 impl fmt::Display for ActionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ActionType::LoadBeluga { .. } => write!(f, "LoadBeluga"),
-            ActionType::UnloadBeluga { .. } => write!(f, "UnloadBeluga"),
-            ActionType::GetFromHangar { .. } => write!(f, "GetFromHangar"),
-            ActionType::DeliverToHangar { .. } => write!(f, "DeliverToHangar"),
-            ActionType::PutDownRack { .. } => write!(f, "PutDownRack"),
-            ActionType::PickUpRack { .. } => write!(f, "PickUpRack"),
-            ActionType::SwitchToNextBeluga => write!(f, "SwitchToNextBeluga"),
+            ActionType::LoadBeluga { .. } => write!(f, "load_beluga"),
+            ActionType::UnloadBeluga { .. } => write!(f, "unload_beluga"),
+            ActionType::GetFromHangar { .. } => write!(f, "get_from_hangar"),
+            ActionType::DeliverToHangar { .. } => write!(f, "deliver_to_hangar"),
+            ActionType::PutDownRack { .. } => write!(f, "put_down_rack"),
+            ActionType::PickUpRack { .. } => write!(f, "pick_up_rack"),
+            ActionType::SwitchToNextBeluga => write!(f, "switch_to_next_beluga"),
         }
     }
 }
@@ -76,65 +114,58 @@ impl Evaluable for Action {
             // action is absent
             return None;
         }
-        let op: String;
-        match self.action_type {
+        let action_solved : ActionSolved = match self.action_type {
             ActionType::LoadBeluga { j, b, t } => {
-                op = format!(
-                    "load_beluga(j:{}, b:{}, t:{})",
-                    solution.eval(j).unwrap(),
-                    solution.eval(b).unwrap(),
-                    solution.eval(t).unwrap()
-                )
+                ActionSolved::LoadBeluga {
+                    j: solution.eval(j).unwrap(),
+                    b : solution.eval(b).unwrap(),
+                    t : solution.eval(t).unwrap()
+                }
             }
             ActionType::UnloadBeluga { j, b, t } => {
-                op = format!(
-                    "unload_beluga(j:{}, b:{}, t:{})",
-                    solution.eval(j).unwrap(),
-                    solution.eval(b).unwrap(),
-                    solution.eval(t).unwrap()
-                )
+                ActionSolved::UnloadBeluga {
+                    j: solution.eval(j).unwrap(),
+                    b : solution.eval(b).unwrap(),
+                    t : solution.eval(t).unwrap()
+                }
             }
             ActionType::GetFromHangar { j, h, t } => {
-                op = format!(
-                    "get_from_hangar(j:{}, h:{}, t:{})",
-                    solution.eval(j).unwrap(),
-                    solution.eval(h).unwrap(),
-                    solution.eval(t).unwrap()
-                )
+                ActionSolved::GetFromHangar {
+                    j: solution.eval(j).unwrap(),
+                    h : solution.eval(h).unwrap(),
+                    t : solution.eval(t).unwrap()
+                }
             }
             ActionType::DeliverToHangar { j, h, t, pl } => {
-                op = format!(
-                    "deliver_to_hangar(j:{}, h:{}, t:{}, pl:{})",
-                    solution.eval(j).unwrap(),
-                    solution.eval(h).unwrap(),
-                    solution.eval(t).unwrap(),
-                    solution.eval(pl).unwrap()
-                )
+                ActionSolved::DeliverToHangar {
+                    j: solution.eval(j).unwrap(),
+                    h : solution.eval(h).unwrap(),
+                    t : solution.eval(t).unwrap(),
+                    pl : solution.eval(pl).unwrap()
+                }
             }
             ActionType::PutDownRack { j, t, r, side } => {
-                op = format!(
-                    "put_down_rack(j:{}, t:{}, r:{}, s:{})",
-                    solution.eval(j).unwrap(),
-                    solution.eval(t).unwrap(),
-                    solution.eval(r).unwrap(),
-                    solution.eval(side).unwrap()
-                )
+                ActionSolved::PutDownRack {
+                    j: solution.eval(j).unwrap(),
+                    t : solution.eval(t).unwrap(),
+                    r : solution.eval(r).unwrap(),
+                    side : solution.eval(side).unwrap()
+                }
             }
             ActionType::PickUpRack { j, t, r, side } => {
-                op = format!(
-                    "pick_up_rack(j:{}, t:{}, r:{}, s:{})",
-                    solution.eval(j).unwrap(),
-                    solution.eval(t).unwrap(),
-                    solution.eval(r).unwrap(),
-                    solution.eval(side).unwrap()
-                )
+                ActionSolved::PickUpRack {
+                    j: solution.eval(j).unwrap(),
+                    t : solution.eval(t).unwrap(),
+                    r : solution.eval(r).unwrap(),
+                    side : solution.eval(side).unwrap()
+                }
             }
-            ActionType::SwitchToNextBeluga => op = format!("switch_to_next_beluga()"),
-        }
+            ActionType::SwitchToNextBeluga => ActionSolved::SwitchToNextBeluga,
+        };
         Some(Op {
             start: solution.eval(self.start).unwrap(),
             task: self.task_id,
-            op,
+            action_solved
         })
     }
 }
@@ -143,8 +174,8 @@ impl Evaluable for Action {
 #[derive(Debug)]
 pub struct Op {
     pub start: IntCst,
-    task: TaskId,
-    op: String,
+    pub task: TaskId,
+    pub action_solved : ActionSolved
 }
 
 //use new_pick_up_rack(..) and new_put_down_rack(..) to create task that swap a jig from a rack to another

@@ -3,8 +3,11 @@
 
 mod utils;
 
+use std::fs::File;
 use std::process;
 use std::time::{Duration, Instant};
+use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use aries_solver::prelude::*;
 use aries_timelines::explain::ExplainableSolver;
@@ -89,7 +92,7 @@ fn solve(instance: &instance::Instance, n_swaps_beluga: u32, n_swaps_factory: u3
     }
 }
 
-fn find_optimal(instance: instance::Instance) {
+fn find_optimal(instance: &instance::Instance) -> Option<Vec<Op>> {
     let max_n_swaps = 5;
     for n_swaps in 0..=max_n_swaps {
         for i in 0..=n_swaps {
@@ -97,19 +100,92 @@ fn find_optimal(instance: instance::Instance) {
             let n_swaps_beluga = i;
             let n_swaps_factory = n_swaps - n_swaps_beluga;
             println!("\nTrying to solve with {n_swaps_beluga} swaps_beluga and {n_swaps_factory} swaps_factory");
-            let sol = solve(&instance, n_swaps_beluga, n_swaps_factory);
+            let sol = solve(instance, n_swaps_beluga, n_swaps_factory);
             print_runtime(now.elapsed());
-            if let Some(ops) = &sol {
+            if let Some(ops) = sol {
                 println!("Found solution with {n_swaps_beluga} swaps_beluga and {n_swaps_factory} swaps_factory");
-                for op in ops {
+                for op in ops.iter() {
                     println!(" - {op:?}");
                 }
-                return;
+                return Some(ops);
             }
         }
     }
     println!("No solution found in {max_n_swaps} total max swaps...");
+    None
 }
+
+//take a sorted set of ops and print them into a file
+fn print_ops_to_file(ops : Vec<Op>, instance : &instance::Instance, file_path : &str) -> Result<(), Box<dyn std::error::Error>> {
+    let path = Path::new(file_path);
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    write!(writer, "[");
+    for op in ops {
+        match op.action_solved {
+            ActionSolved::LoadBeluga { j, b, t } => {
+                let j : &str = &instance.jigs[j as usize].name;
+                let b : &str = &instance.flights[b as usize].name;
+                let t : &str = &instance.trailers_beluga[t as usize].name;
+                write!(writer, "{{\"name\": \"load_beluga\", \"j\":\"{}\", \"b\":\"{}\", \"t\":\"{}\"}}", j, b, t);
+            },
+            ActionSolved::UnloadBeluga { j, b, t } => {
+                let j : &str = &instance.jigs[j as usize].name;
+                let b : &str = &instance.flights[b as usize].name;
+                let t : &str = &instance.trailers_beluga[t as usize].name;
+                write!(writer, "{{\"name\": \"unload_beluga\", \"j\":\"{}\", \"b\":\"{}\", \"t\":\"{}\"}}", j, b, t);
+            },
+            ActionSolved::GetFromHangar { j, h, t } => {
+                let j : &str = &instance.jigs[j as usize].name;
+                let h : &str = &instance.hangars[h as usize];
+                let t : &str = &instance.trailers_factory[t as usize].name;
+                write!(writer, "{{\"name\": \"get_from_hangar\", \"j\":\"{}\", \"h\":\"{}\", \"t\":\"{}\"}}", j, h, t);
+            },
+            ActionSolved::DeliverToHangar { j, h, t, pl } => {
+                let j : &str = &instance.jigs[j as usize].name;
+                let h : &str = &instance.hangars[h as usize];
+                let t : &str = &instance.trailers_factory[t as usize].name;
+                let pl : &str = &instance.production_lines[pl as usize].name;
+                write!(writer, "{{\"name\": \"deliver_to_hangar\", \"j\":\"{}\", \"h\":\"{}\", \"t\":\"{}\", \"pl\":\"{}\"}}", j, h, t, pl);
+            },
+            ActionSolved::PutDownRack { j, t : t_id, r, side } => {
+                let j : &str = &instance.jigs[j as usize].name;
+                let t : &str ;
+                let r : &str = &instance.racks[r as usize].name;
+                let s : &str;
+                if side==0 {
+                    s = "beluga";
+                    t = &instance.trailers_beluga[t_id as usize].name;
+                } else {
+                    s = "factory";
+                    t = &instance.trailers_factory[t_id as usize].name;
+                }
+                write!(writer, "{{\"name\": \"put_down_rack\", \"j\":\"{}\", \"t\":\"{}\", \"r\":\"{}\", \"s\":\"{}\"}}", j, t, r, s);
+            },
+            ActionSolved::PickUpRack { j, t : t_id, r, side } => {
+                let j : &str = &instance.jigs[j as usize].name;
+                let t : &str ;
+                let r : &str = &instance.racks[r as usize].name;
+                let s : &str;
+                if side==0 {
+                    s = "beluga";
+                    t = &instance.trailers_beluga[t_id as usize].name;
+                } else {
+                    s = "factory";
+                    t = &instance.trailers_factory[t_id as usize].name;
+                }
+                write!(writer, "{{\"name\": \"pick_up_rack\", \"j\":\"{}\", \"t\":\"{}\", \"r\":\"{}\", \"s\":\"{}\"}}", j, t, r, s);
+            },
+            ActionSolved::SwitchToNextBeluga => {
+                write!(writer, "{{\"name\": \"switch_to_next_beluga\"}}");
+            }
+        }
+        writeln!(writer, ",");
+    }
+    write!(writer, "]");
+    Ok(())
+}
+
 
 fn instance_test_1() -> instance::Instance {
     instance::Instance {
@@ -340,7 +416,12 @@ fn main() {
         process::exit(1);
     });
 
-    find_optimal(instance);
+    if let Some(ops) = find_optimal(&instance) {
+        print_ops_to_file(ops, &instance, "examples/beluga/outputs/solution_s1_j6_r2_oc00_f3.json").unwrap_or_else(|err| {
+            println!("Application error: {err}");
+            process::exit(1);
+        });
+    }
 
     print!("Total : ");
     print_runtime(now.elapsed());
