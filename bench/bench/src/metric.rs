@@ -27,7 +27,7 @@ impl Metric for Solved {
     }
 
     fn compute(&self, result: &SolveResult, _all_results_for_pb: &ProblemResults) -> Self::T {
-        if result.status.is_sat_or_opt() { 1 } else { 0 }
+        if result.status.is_solved() { 1 } else { 0 }
     }
 
     fn compare(&self, m1: Self::T, m2: Self::T) -> Ordering {
@@ -49,7 +49,7 @@ impl Metric for SolvedHist {
 
     fn compute(&self, result: &SolveResult, _all_results_for_pb: &ProblemResults) -> Self::T {
         let mut hist = vec![(Duration::ZERO, 0.0)];
-        if result.status.is_sat_or_opt() {
+        if result.status.is_solved() {
             hist.push((result.runtime, 1.0));
         }
         TimeSerie::from_constant_per_part(hist, result.problem.timeout)

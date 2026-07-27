@@ -85,15 +85,24 @@ impl Problem {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
+    /// Solved a satisfaction problem (did not timeout)
     SolvedSat,
+    /// Solver proved unsatisfiability.
     SolvedUnsat,
+    /// Solver found a provably optimal solution.
     SolvedOpt,
+    /// Run did not terminate (even it has found a solution)
     Timeout,
 }
 
 impl SolveStatus {
-    pub fn is_sat_or_opt(&self) -> bool {
-        matches!(self, Self::SolvedSat | SolveStatus::SolvedOpt)
+    /// Returns true is the problems was solved (exhausted the search space, regardless of whether the outcome was SAT/OPT/UNSAT).
+    pub fn is_solved(&self) -> bool {
+        use SolveStatus::*;
+        match self {
+            SolvedSat | SolvedOpt | SolvedUnsat => true,
+            Timeout => false,
+        }
     }
 }
 
