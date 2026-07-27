@@ -20,6 +20,21 @@ pub struct Problem {
 }
 
 impl Problem {
+    pub fn new(name: String, timeout: Option<Duration>) -> Self {
+        Self {
+            name,
+            timeout: timeout.unwrap_or(Duration::from_secs(0)),
+            flags: Default::default(),
+        }
+    }
+
+    /// Attaches a flag to the [`Problem`].
+    /// Flags are typically used to denote variants of the problem
+    /// (that makes them different even though they may use the same input file).
+    pub fn with_flag(mut self, key: impl ToString, value: impl ToString) -> Self {
+        self.flags.insert(key.to_string(), value.to_string());
+        self
+    }
     /// A unique identifier of the problem.
     pub fn id(&self) -> String {
         let mut id = self.name.clone();

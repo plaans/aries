@@ -4,7 +4,7 @@ use aries_plan_engine::{
     encode::{encoding::Encoding, tags::Tag},
     plans::lifted_plan::LiftedPlan,
 };
-use aries_solver::{core::state::Evaluable, prelude::*};
+use aries_solver::{core::state::Evaluable, prelude::*, solver::stats::Stats};
 use planx::{Model, Res};
 use timelines::{Sched, explain::ExplainableSolver};
 
@@ -34,26 +34,25 @@ pub struct Options {
 
     /// If provided, the final plan will be written to this file.
     #[arg(short = 'w', long = "write-plan")]
-    plan_file: Option<PathBuf>,
+    pub plan_file: Option<PathBuf>,
 
     /// If provided, the benchmark report will be written to a file in this directory.
     #[arg(short = 'r', long = "write-report")]
-    report_dir: Option<PathBuf>,
+    pub report_dir: Option<PathBuf>,
 }
 
-#[allow(dead_code)]
 pub struct PlanGenerationResult {
+    #[allow(unused)]
     pub encoding: Encoding,
+    #[allow(unused)]
     pub solution: Option<Solution>,
     pub objective_value: Option<IntCst>,
     pub status: export::SolveStatus,
     pub runtime: std::time::Duration,
+    pub solver_stats: Stats,
 }
 
-pub fn solve_finite_planning_problem(
-    model: &Model,
-    options: &Options,
-) -> Res<(PlanGenerationResult, export::Report, Option<PathBuf>)> {
+pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<PlanGenerationResult> {
     // create a dummy plan with the appropriate number of actions
     // this is temporary a workaround to reuse the existing `optimize_plan` facilities
     let plan = LiftedPlan::default();
@@ -103,10 +102,10 @@ pub fn solve_finite_planning_problem(
         },
         solution,
         encoding,
+        solver_stats: solver.get().stats.clone(),
     };
-    let report_data = export::make_default_report_from_plangen_result(&res, solver.get());
 
-    Ok((res, report_data, options.report_dir.clone()))
+    Ok(res)
 }
 
 fn encode_finite_planning_problem(

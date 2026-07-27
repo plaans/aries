@@ -16,7 +16,7 @@ use planx::{
 };
 use timelines::IntCst;
 
-use crate::repair::RepairOptions;
+use crate::{export::ReportMetadata, repair::RepairOptions};
 
 /// Aries Planning Engine (APE)
 #[derive(Parser, Debug)]
@@ -310,10 +310,16 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
     let model = pddl::build_model(&dom, &pb)?;
     println!("{model}");
 
-    let (_, mut report, report_dir) = generate::solve_finite_planning_problem(&model, &command.options)?;
-    report.problem.name = pb.problem_name.to_string();
-    if let Some(report_dir) = report_dir {
-        export::export_report_to_dir(&report_dir, report)?;
+    let result = generate::solve_finite_planning_problem(&model, &command.options)?;
+    if let Some(report_dir) = command.options.report_dir.as_ref() {
+        // export a report to store in the associated directory
+        // with the filename as identifier (there may be many problems with the same name)
+        // and specifies the maximum depth to ensure we have distinct report for different depths.
+        let report = result.generate_report(
+            ReportMetadata::new(command.pb.problem.to_string_lossy().to_string(), None)
+                .with_flag("depth", command.options.max_instances),
+        );
+        export::export_report_to_dir(report_dir, report)?;
     }
 
     Ok(())
@@ -399,11 +405,11 @@ impl PlanAndProblem {
 #[derive(::clap::Args, Debug)]
 pub struct Problem {
     /// Path to the PDDL problem file.
-    problem: PathBuf,
+    pub problem: PathBuf,
     /// Path to the PDDL domain file.
     /// If not specified, we will attempt to automatically infer it based on the problem file.
     #[arg(short, long)]
-    domain: Option<PathBuf>,
+    pub domain: Option<PathBuf>,
 }
 impl Problem {
     /// Parses the domain and problem and returns them.
