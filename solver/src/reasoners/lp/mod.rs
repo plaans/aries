@@ -19,7 +19,7 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
-pub static LP_ACTIVE: EnvParam<bool> = EnvParam::new("ARIES_LP_ACTIVE", "true");
+pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "true");
 
 #[derive(Debug, Clone, Copy)]
 struct BoundConstraint {
@@ -76,6 +76,7 @@ pub struct Lp {
     stats: Stats,
 
     active: bool,
+    enable: bool,
 }
 
 impl Default for Lp {
@@ -102,8 +103,17 @@ impl Lp {
 
             stats: Stats::new(),
 
-            active: LP_ACTIVE.get(),
+            enable: LP_ENABLE.get(),
+            active: true,
         }
+    }
+
+    pub fn activate(&mut self) {
+        self.active = true;
+    }
+
+    pub fn deactivate(&mut self) {
+        self.active = false;
     }
 
     /// Return a linear sum wich is the opposite in terms of coefficient that the one given
@@ -157,8 +167,8 @@ impl Lp {
 
     /// Adds a linear inequality constraint that `sum <= 0`.
     /// We assume that the active literal is always present
-    pub fn process_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
-        if !self.active {
+    pub fn add_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
+        if !self.enable {
             return;
         }
 
@@ -244,7 +254,7 @@ impl Theory for Lp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.active {
+        if !self.active || !self.enable {
             return Ok(());
         }
 
@@ -476,7 +486,7 @@ mod tests {
 
             // println!("active var: {:?}, constraint: {:?}", active, sum);
 
-            lp_reasonner.process_constraint(&sum, active, &d);
+            lp_reasonner.add_linear_leq_constraint(&sum, active, &d);
         }
 
         (lp_reasonner, d)
@@ -606,6 +616,85 @@ mod tests {
             println!("seed: {seed}");
             let (mut lp, d) = gen_filled_lp_domain(30, 30, -100, 100, 0.1, seed);
             test_explanations(&d, &mut lp);
+        }
+    }
+
+    fn backtracking_single(d: &mut Domains, lp: &mut Lp) {
+        let mut decisions_rng = SmallRng::seed_from_u64(0);
+        // function that returns a given number of decisions to be applied later
+        // it use the RNG above to drive its random choices
+        // new rng for local use
+        let mut rng = SmallRng::seed_from_u64(0);
+
+        let init_solver = lp.solver.clone();
+
+        // repeat a large number of random tests
+        for _ in 0..100 {
+            lp.save_state();
+
+            if d.variables().all(|v| d.is_bound(v)) {
+                println!("Warning: all variables are bound, no tests run");
+                return;
+            }
+
+            // pick a random set of decisions
+            let decisions = pick_decisions(d, 1, 30, &mut decisions_rng);
+            // println!("decisions: {decisions:?}");
+
+            d.save_state();
+
+            // apply all decisions (note: some may be ignored because they are no-op or contradictions)
+            // println!("Decisions: ");
+            for dec in decisions {
+                let res = d.set(dec, Cause::Decision);
+                if res == Ok(true) {
+                    // println!("  {dec:?}");
+                }
+            }
+            // propagate
+            match lp.propagate(d) {
+                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasonner can't infer new lit
+                Err(contradiction) => {
+                    // propagation failure, check that the contradiction is a valid one
+                    let explanation = match contradiction {
+                        Contradiction::Explanation(expl) => expl,
+                        Contradiction::InvalidUpdate(_) => unreachable!(), // Unreachable branch as our lp never returns InvalidUpdate
+                    };
+                    lp.restore_last();
+                    lp.save_state();
+
+                    d.restore_last();
+                    d.save_state();
+
+                    // get the conjunction and shuffle it
+                    //note that we do not check minimality here
+                    let mut conjuncts = explanation.lits;
+                    conjuncts.shuffle(&mut rng);
+                    for &conjunct in &conjuncts {
+                        d.set(conjunct, Cause::Decision).unwrap();
+                    }
+
+                    assert!(
+                        lp.propagate(d).is_err(),
+                        "explanation: {conjuncts:?} did not trigger an inconsistency\n"
+                    );
+                }
+            }
+
+            d.restore_last();
+            lp.restore_last();
+
+            assert!(init_solver == lp.solver);
+        }
+    }
+
+    #[test]
+    fn test_backtracking() {
+        let n = 100;
+        for seed in 0..n {
+            println!("seed: {seed}");
+            let (mut lp, mut d) = gen_filled_lp_domain(30, 30, -100, 100, 0.1, seed);
+            backtracking_single(&mut d, &mut lp);
         }
     }
 }

@@ -6,7 +6,7 @@ use crate::{
 
 use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct IntBounds {
     lower: IntCst,
     lower_lit: Lit,
@@ -15,7 +15,7 @@ pub(super) struct IntBounds {
 }
 
 // No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct IntegerConstraint {
     lin_sum: Vec<(Variable, IntCst)>,
 }
@@ -29,6 +29,12 @@ pub struct Solver {
     constraints: Vec<IntegerConstraint>,
 
     opt_feas_checker: Option<FeasibilityChecker>,
+}
+
+impl PartialEq for Solver {
+    fn eq(&self, other: &Self) -> bool {
+        self.bounds == other.bounds && self.constraints == other.constraints && self.problem == other.problem
+    }
 }
 
 impl Solver {

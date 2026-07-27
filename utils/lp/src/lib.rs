@@ -61,7 +61,7 @@ mod sparse;
 use solver::Solver;
 
 /// An enum indicating whether to minimize or maximize objective function.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OptimizationDirection {
     /// Minimize the objective function.
     Minimize,
@@ -160,7 +160,7 @@ impl std::iter::Extend<(Variable, f64)> for LinearExpr {
 }
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ComparisonOp {
     /// The == operator (equal to)
     Eq,
@@ -198,7 +198,7 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// A specification of a linear programming problem.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Problem {
     direction: OptimizationDirection,
     obj_coeffs: Vec<f64>,
