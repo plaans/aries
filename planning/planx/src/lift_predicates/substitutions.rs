@@ -382,7 +382,7 @@ impl SubstitutionGroup {
         // 1. check that globally (outside of actions/tasks):
         //   1.1. there are no negative conditions on any of the group's predicates.
         //   1.2. check there is at most one positive effect on any of the group's predicates, for the same non-return parameters (outside actions),
-        //        and that not all "initial/global" effects on a predicate of the group are set to the default value (i.e. false)
+        //        and that there are no explicit (i.e. non-default) "initial/global" negative effects on a predicate of the group.
         // 2. check that in actions/tasks:
         //   2.1. there are no negative conditions on any of the group's predicates
         //   2.2. there is exactly one positive and negative effect on any of the group's
@@ -574,7 +574,7 @@ impl SubstitutionGroup {
                 // start at the same time, the "tie-breaker" is that the negative is applied before the positive one.
                 // ("delete-before-add")
 
-                if timing_is_necessarily_before_or_eq(
+                if timing_is_necessarily_leq(
                     neg.effect_expression.timing,
                     pos.effect_expression.timing,
                     get_duration_bounds(&act.duration, &model.env),
@@ -608,7 +608,7 @@ pub(super) fn get_duration_bounds(duration: &Duration, env: &Environment) -> Opt
     }
 }
 
-pub(super) fn timing_is_necessarily_before_or_eq(
+pub(super) fn timing_is_necessarily_leq(
     t1: Timestamp,
     t2: Timestamp,
     container_duration_bounds: Option<(RealValue, RealValue)>,
@@ -624,12 +624,37 @@ pub(super) fn timing_is_necessarily_before_or_eq(
         }
         (TimeRef::ActionEnd, TimeRef::ActionStart) => {
             if let Some((_, d_ub)) = container_duration_bounds {
-                d_ub + t1.delay <= t2.delay
+                t2.delay >= d_ub + t1.delay
             } else {
                 false // Unable to decide
             }
         }
-        _ => unreachable!(),
+        _ => unimplemented!(),
+    }
+}
+
+pub(super) fn timing_is_necessarily_lt(
+    t1: Timestamp,
+    t2: Timestamp,
+    container_duration_bounds: Option<(RealValue, RealValue)>,
+) -> bool {
+    match (t1.reference, t2.reference) {
+        (tt1, tt2) if tt1 == tt2 => t1.delay < t2.delay,
+        (TimeRef::ActionStart, TimeRef::ActionEnd) => {
+            if let Some((d_lb, _)) = container_duration_bounds {
+                t1.delay < d_lb + t2.delay
+            } else {
+                false // Unable to decide
+            }
+        }
+        (TimeRef::ActionEnd, TimeRef::ActionStart) => {
+            if let Some((_, d_ub)) = container_duration_bounds {
+                t2.delay > d_ub + t1.delay
+            } else {
+                false // Unable to decide
+            }
+        }
+        _ => unimplemented!(),
     }
 }
 

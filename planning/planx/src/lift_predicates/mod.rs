@@ -269,7 +269,6 @@ fn transform_effect_exprs(
     env: &mut Environment,
     container_duration: Option<Duration>,
 ) -> Res<()> {
-    let container_duration_bounds = container_duration.and_then(|d| get_duration_bounds(&d, env));
 
     let try_into_simple_args = |predicate_id: FluentId, args: &[ExprId]| -> Option<Vec<SimpleArg>> {
         debug_assert!(group.group.contains(predicate_id));
@@ -305,41 +304,52 @@ fn transform_effect_exprs(
 
         if let EffectOp::Assign(eid) = eff.operation {
             match env.node(eid).expr() {
-                Expr::Bool(false) => {
-                    neg_effects.insert(
-                        try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
-                        (i, eff.state_variable.fluent),
-                    );
-                }
                 Expr::Bool(true) => {
                     pos_effects.insert(
                         try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
                         (i, eff.state_variable.fluent),
-                    );
+                    )
+                    .inspect(|_| unreachable!());
+                }
+                Expr::Bool(false) => {
+                    neg_effects.insert(
+                        try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
+                        (i, eff.state_variable.fluent),
+                    )
+                    .inspect(|_| unreachable!());
                 }
                 _ => (),
             }
         }
     }
 
+    let container_duration_bounds = container_duration.as_ref().and_then(|d| get_duration_bounds(d, env));
+
+    let mut neg_effects_to_null = vec![];
     let mut neg_effects_to_del = vec![];
 
-    for (k, &(i, _)) in &neg_effects {
-        if let Some(&(j, _)) = pos_effects.get(k) {
-            if timing_is_necessarily_before_or_eq(
+    for (k, (i, _)) in neg_effects {
+        if let Some(&(j, _)) = pos_effects.get(&k) {
+            debug_assert!(timing_is_necessarily_leq(
+                effects[i].effect_expression.timing,
+                effects[j].effect_expression.timing,
+                container_duration_bounds,
+            ));
+            if timing_is_necessarily_lt(
                 effects[i].effect_expression.timing,
                 effects[j].effect_expression.timing,
                 container_duration_bounds,
             ) {
-                neg_effects_to_del.push(i);
+                neg_effects_to_null.push(i);
             } else {
-                unreachable!("groups with such a pattern are deemed unsubstitutable");
+                neg_effects_to_del.push(i);
             }
+        } else {
+            neg_effects_to_null.push(i);
         }
     }
 
-    let pos_and_neg_effs = pos_effects.into_values().chain(neg_effects.into_values());
-    for (idx, _) in pos_and_neg_effs {
+    for (idx, _) in pos_effects.into_values() {
         let eff = &mut effects[idx].effect_expression;
         debug_assert!(group.group.contains(eff.state_variable.fluent));
 
@@ -355,6 +365,20 @@ fn transform_effect_exprs(
             )?);
         }
         eff.state_variable.fluent = group.substitution_fluent_id;
+    }
+
+    for _idx in neg_effects_to_null {
+        todo!();
+        /*let eff = &mut effects[_idx].effect_expression;
+        debug_assert!(group.group.contains(eff.state_variable.fluent));
+
+        let lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
+
+        //eff.operation = EffectOp::Erase;
+        if let Some(lifted_param_idx) = lifted_param_idx {
+            eff.state_variable.arguments.remove(lifted_param_idx);
+        }
+        eff.state_variable.fluent = group.substitution_fluent_id;*/
     }
 
     for idx in neg_effects_to_del.into_iter().sorted().rev() {
