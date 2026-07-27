@@ -2,6 +2,7 @@ pub mod actions;
 pub mod instance;
 pub mod json_instance;
 pub mod states;
+#[cfg(test)]
 pub mod test;
 
 pub type JigId = usize;

@@ -2,7 +2,7 @@ use aries_solver::{lang::ModelView, prelude::*};
 use aries_timelines::StateVar;
 use aries_timelines::{constraints::HasValueAt, *};
 
-use super::{instance::JigHolder, *};
+use super::*;
 use std::clone::Clone;
 
 pub enum JigLocAttr {
@@ -15,6 +15,20 @@ pub enum JigStateAttr {
     Empty = 0,
     Size = 1,
 }
+
+
+#[derive(Debug, Copy, Clone)]
+pub enum JigHolder {
+    Incoming = 0,
+    Outgoing = 1,
+    Rack = 2,
+    Hangar = 3,
+    TrailerBeluga = 4,
+    TrailerFactory = 5,
+}
+
+
+//STATEVARS
 
 pub fn current_beluga() -> StateVar {
     StateVar {
@@ -37,6 +51,9 @@ pub fn jig_state(j: impl Into<LinTerm>, attr: JigStateAttr) -> StateVar {
     }
 }
 
+//when new flight arrives, is flight.incoming.len()-1
+//decrements each time a new jig is unloaded
+//When the flight departs, is -1 (no more jig to unload)
 pub fn next_pos_in_incoming() -> StateVar {
     StateVar {
         fluent: "next_pos_in_incoming".to_string(),
@@ -44,6 +61,9 @@ pub fn next_pos_in_incoming() -> StateVar {
     }
 }
 
+//when new flight arrives, is 0
+//increment each time a new jig is loaded
+//When the flight departs, is flight.outgoing.len() (all jigs are loaded)
 pub fn next_pos_in_outgoing() -> StateVar {
     StateVar {
         fluent: "next_pos_in_outgoing".to_string(),
@@ -51,9 +71,19 @@ pub fn next_pos_in_outgoing() -> StateVar {
     }
 }
 
+//is incremented everytime we push a jig on the back (factory side)
+//is incremented everytime we pop a jig from the back (factory side)
 pub fn last_pos_on_rack(r: impl Into<LinTerm>) -> StateVar {
     StateVar {
         fluent: "last_pos_on_rack".to_string(),
+        args: vec![r.into()],
+    }
+}
+//is decremented everytime we push a jig on the front (beluga side)
+//is incremented everytime we pop a jig from the front (beluga side)
+pub fn first_pos_on_rack(r: impl Into<LinTerm>) -> StateVar {
+    StateVar {
+        fluent: "first_pos_on_rack".to_string(),
         args: vec![r.into()],
     }
 }
@@ -65,8 +95,23 @@ pub fn free_space_on_rack(r: impl Into<LinTerm>) -> StateVar {
     }
 }
 
+pub fn is_empty(holder : JigHolder, num : impl Into<LinTerm>) -> StateVar {
+    StateVar {
+        fluent: "is_empty".to_string(),
+        args: vec![(holder as usize).into(), num.into()],
+    }
+}
+
+//Attribute 'end' is only used when creating effects, not constraints
+pub struct EffectOrCondParam {
+    pub start: VarCst,
+    pub end: VarCst,
+    pub presence: Lit,
+    pub source: Option<TaskId>,
+}
+
 //get a variable representing the value of a statevar at time = param.start
-pub fn get_current_value(statevar: StateVar, model: &mut Sched, param: &ActParam) -> Var {
+pub fn get_current_value(statevar: StateVar, model: &mut Sched, param: &EffectOrCondParam) -> Var {
     let value: Var = model.new_optional_var(INT_CST_MIN, INT_CST_MAX - 1, param.presence);
     model.add_constraint(HasValueAt {
         state_var: statevar,
@@ -89,14 +134,8 @@ pub struct JigState {
     pub size: Option<IntTerm>,
 }
 
-pub struct ActParam {
-    pub start: VarCst,
-    pub end: VarCst,
-    pub presence: Lit,
-    pub source: Option<TaskId>,
-}
 
-pub fn effect_on_jig_loc(j: VarCst, new_loc: &JigLoc, model: &mut Sched, param: &ActParam) {
+pub fn effect_on_jig_loc(j: VarCst, new_loc: &JigLoc, model: &mut Sched, param: &EffectOrCondParam) {
     //heldby
     if let Some(holder) = new_loc.held_by {
         let mutex_end = model.new_timepoint();
@@ -138,7 +177,7 @@ pub fn effect_on_jig_loc(j: VarCst, new_loc: &JigLoc, model: &mut Sched, param: 
     }
 }
 
-pub fn cond_on_jig_loc(j: VarCst, expected_loc: &JigLoc, model: &mut Sched, param: &ActParam) {
+pub fn cond_on_jig_loc(j: VarCst, expected_loc: &JigLoc, model: &mut Sched, param: &EffectOrCondParam) {
     //heldby
     if let Some(holder) = expected_loc.held_by {
         model.add_constraint(HasValueAt {
@@ -171,7 +210,7 @@ pub fn cond_on_jig_loc(j: VarCst, expected_loc: &JigLoc, model: &mut Sched, para
     }
 }
 
-pub fn effect_on_jig_state(j: VarCst, new_state: &JigState, model: &mut Sched, param: &ActParam) {
+pub fn effect_on_jig_state(j: VarCst, new_state: &JigState, model: &mut Sched, param: &EffectOrCondParam) {
     //empty
     if let Some(empty) = new_state.empty {
         let mutex_end = model.new_timepoint();
@@ -200,7 +239,7 @@ pub fn effect_on_jig_state(j: VarCst, new_state: &JigState, model: &mut Sched, p
     }
 }
 
-pub fn cond_on_jig_state(j: VarCst, expected_state: &JigState, model: &mut Sched, param: &ActParam) {
+pub fn cond_on_jig_state(j: VarCst, expected_state: &JigState, model: &mut Sched, param: &EffectOrCondParam) {
     //empty
     if let Some(empty) = expected_state.empty {
         model.add_constraint(HasValueAt {
@@ -223,50 +262,10 @@ pub fn cond_on_jig_state(j: VarCst, expected_state: &JigState, model: &mut Sched
     }
 }
 
-pub fn get_empty_trailer_beluga(model: &mut Sched, param: &ActParam, instance: &instance::Instance) -> Var {
-    let (lb, ub) = instance.bounds_trailer_beluga();
-    let t: Var = model.new_optional_var(lb, ub, param.presence);
-    for j in 0..instance.jigs.len() {
-        //get what is currently holding j
-        let (holder, num) = j_is_in(j.into(), model, param, instance);
-        //t is not currently holding j
-        let x = model.reify(neq(holder, JigHolder::TrailerBeluga as i32).into());
-        let y = model.reify(neq(num, t).into());
-        model.add_constraint(or([x, y]));
-    }
-    t
-}
-
-pub fn get_empty_trailer_factory(model: &mut Sched, param: &ActParam, instance: &instance::Instance) -> Var {
-    let (lb, ub) = instance.bounds_trailer_factory();
-    let t: Var = model.new_optional_var(lb as IntCst, ub as IntCst, param.presence);
-    for j in 0..instance.jigs.len() {
-        let (holder, num) = j_is_in(j.into(), model, param, instance);
-        //t is not currently holding j
-        let x = model.reify(neq(holder, JigHolder::TrailerFactory as i32).into());
-        let y = model.reify(neq(num, t).into());
-        model.add_constraint(or([x, y]));
-    }
-    t
-}
-
-pub fn get_empty_hangar(model: &mut Sched, param: &ActParam, instance: &instance::Instance) -> Var {
-    let (lb, ub) = instance.bounds_hangar();
-    let h: Var = model.new_optional_var(lb as IntCst, ub as IntCst, param.presence);
-    for j in 0..instance.jigs.len() {
-        let (holder, num) = j_is_in(j.into(), model, param, instance);
-        //t is not currently holding j
-        let x = model.reify(neq(holder, JigHolder::Hangar as i32).into());
-        let y = model.reify(neq(num, h).into());
-        model.add_constraint(or([x, y]));
-    }
-    h
-}
-
 pub fn get_jig_from_jigtype(
     j_type: JigTypeId,
     model: &mut Sched,
-    param: &ActParam,
+    param: &EffectOrCondParam,
     instance: &instance::Instance,
 ) -> Var {
     let (lb, ub) = instance.bounds_jig();
@@ -282,7 +281,7 @@ pub fn get_jig_from_jigtype(
 }
 
 //gives current holder and num of j
-pub fn j_is_in(j: VarCst, model: &mut Sched, param: &ActParam, instance: &instance::Instance) -> (Var, Var) {
+pub fn j_is_in(j: VarCst, model: &mut Sched, param: &EffectOrCondParam, instance: &instance::Instance) -> (Var, Var) {
     let holder = model.new_optional_var(0, 5, param.presence);
     let (lb, ub) = instance.bounds_jig_holder();
     let num = model.new_optional_var(lb, ub, param.presence);
@@ -308,7 +307,7 @@ pub fn set_initial_state(model: &mut Sched, instance: &instance::Instance) {
         source: None,
     });
     //Set jig initial state
-    let initial_param = ActParam {
+    let initial_param = EffectOrCondParam {
         start: model.origin,
         end: model.origin,
         presence: Lit::TRUE,
@@ -374,6 +373,17 @@ pub fn set_initial_state(model: &mut Sched, instance: &instance::Instance) {
             prez: Lit::TRUE,
             source: None,
         });
+        //set initial first_pos_on_rack
+        let mutex_end = model.new_timepoint();
+        model.add_effect(Effect {
+            transition_start: model.origin,
+            transition_end: model.origin,
+            mutex_end,
+            state_var: first_pos_on_rack(r),
+            operation: EffectOp::Assign(0.into()),
+            prez: Lit::TRUE,
+            source: None,
+        });
     }
     //Set next pos in flights
     let mutex_end = model.new_timepoint();
@@ -396,4 +406,41 @@ pub fn set_initial_state(model: &mut Sched, instance: &instance::Instance) {
         prez: Lit::TRUE,
         source: None,
     });
+    //Set is_empty to true
+    for t in 0..instance.trailers_beluga.len() {
+        let mutex_end = model.new_timepoint();
+        model.add_effect(Effect {
+            transition_start: model.origin,
+            transition_end: model.origin,
+            mutex_end,
+            state_var: is_empty(JigHolder::TrailerBeluga, t),
+            operation: EffectOp::Assign((true as usize).into()),
+            prez: Lit::TRUE,
+            source: None,
+        });
+    }
+    for t in 0..instance.trailers_factory.len() {
+        let mutex_end = model.new_timepoint();
+        model.add_effect(Effect {
+            transition_start: model.origin,
+            transition_end: model.origin,
+            mutex_end,
+            state_var: is_empty(JigHolder::TrailerFactory, t),
+            operation: EffectOp::Assign((true as usize).into()),
+            prez: Lit::TRUE,
+            source: None,
+        });
+    }
+    for h in 0..instance.hangars.len() {
+        let mutex_end = model.new_timepoint();
+        model.add_effect(Effect {
+            transition_start: model.origin,
+            transition_end: model.origin,
+            mutex_end,
+            state_var: is_empty(JigHolder::Hangar, h),
+            operation: EffectOp::Assign((true as usize).into()),
+            prez: Lit::TRUE,
+            source: None,
+        });
+    }
 }

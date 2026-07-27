@@ -12,6 +12,7 @@ use crate::{
 /// Scope: always defined (absent variables are ignored).
 ///
 /// The constraint is decomposed into pair-wise difference constraints between all pairs of terms.
+#[derive(Clone, Debug)]
 pub struct AllDifferent {
     vars: Vec<LinSum>,
 }

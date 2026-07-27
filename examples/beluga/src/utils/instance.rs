@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 
+
 #[derive(Debug)]
 pub struct JigType {
     pub name: String,
@@ -55,15 +56,6 @@ pub struct Instance {
     pub flights: Vec<Flight>,
 }
 
-#[derive(Debug)]
-pub enum JigHolder {
-    Incoming = 0,
-    Outgoing = 1,
-    Rack = 2,
-    Hangar = 3,
-    TrailerBeluga = 4,
-    TrailerFactory = 5,
-}
 
 impl Instance {
     pub fn build(filepath: &str) -> Result<Instance, Box<dyn Error>> {

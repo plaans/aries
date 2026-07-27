@@ -1,16 +1,17 @@
 #![allow(dead_code)]
+#![allow(unused)]
 
 mod utils;
 
 use std::process;
+use std::time::{Duration, Instant};
 
-use aries_solver::core::state::Evaluable;
-use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
 use aries_timelines::explain::ExplainableSolver;
 use aries_timelines::symbols::ObjectEncoding;
+use aries_solver::core::state::Evaluable;
 use itertools::Itertools;
-use std::time::{Duration, Instant};
+
 use utils::actions::*;
 use utils::*;
 
@@ -114,35 +115,106 @@ fn instance_test_1() -> instance::Instance {
     instance::Instance {
         jig_types: vec![
             instance::JigType {
-                name: String::from("typeA"),
+                name: String::from("type0"),
                 size_empty: 4,
                 size_loaded: 6,
             },
             instance::JigType {
-                name: String::from("typeB"),
+                name: String::from("type1"),
                 size_empty: 8,
                 size_loaded: 11,
             },
         ],
         jigs: vec![
             instance::Jig {
-                name: String::from("jig001"),
+                name: String::from("jig000"),
                 jig_type: 0,
+                empty: false,
+            },
+            instance::Jig {
+                name: String::from("jig001"),
+                jig_type: 1,
+                empty: true,
+            },
+            instance::Jig {
+                name: String::from("jig002"),
+                jig_type: 0,
+                empty: false,
+            },
+            instance::Jig {
+                name: String::from("jig003"),
+                jig_type: 0,
+                empty: false,
+            },
+        ],
+        trailers_beluga: vec![instance::Trailer {
+            name: String::from("beluga_trailer_1"),
+            side: Side::Beluga,
+        }],
+        trailers_factory: vec![instance::Trailer {
+            name: String::from("beluga_factory_1"),
+            side: Side::Factory,
+        }],
+        hangars: vec!["hangar0".to_string()],
+        racks: vec![
+            instance::Rack {
+                name: "rack00".to_string(),
+                size: 67,
+                jigs: vec![0,1],
+            },
+            instance::Rack {
+                name: "rack00".to_string(),
+                size: 54,
+                jigs: vec![2],
+            },
+        ],
+        production_lines: vec![instance::ProductionLine {
+            name: "pl0".to_string(),
+            schedule: vec![3],
+        }],
+        flights: vec![
+            instance::Flight {
+                name: String::from("beluga1"),
+                incoming: vec![3],
+                outgoing: vec![],
+            },
+            instance::Flight {
+                name: String::from("beluga1"),
+                incoming: vec![],
+                outgoing: vec![1],
+            },
+        ],
+    }
+}
+
+fn instance_1_swap_factory() -> instance::Instance {
+    instance::Instance {
+        jig_types: vec![
+            instance::JigType {
+                name: String::from("type0"),
+                size_empty: 4,
+                size_loaded: 6,
+            },
+            instance::JigType {
+                name: String::from("type1"),
+                size_empty: 8,
+                size_loaded: 11,
+            },
+        ],
+        jigs: vec![
+            instance::Jig {
+                name: String::from("jig000"),
+                jig_type: 0,
+                empty: false,
+            },
+            instance::Jig {
+                name: String::from("jig001"),
+                jig_type: 1,
                 empty: false,
             },
             instance::Jig {
                 name: String::from("jig002"),
                 jig_type: 0,
-                empty: true,
-            },
-            instance::Jig {
-                name: String::from("jig003"),
-                jig_type: 1,
-                empty: false,
-            },
-            instance::Jig {
-                name: String::from("jig004"),
-                jig_type: 1,
                 empty: false,
             },
         ],
@@ -169,22 +241,95 @@ fn instance_test_1() -> instance::Instance {
         ],
         production_lines: vec![instance::ProductionLine {
             name: "pl0".to_string(),
-            schedule: vec![2, 3],
+            schedule: vec![2],
         }],
         flights: vec![
             instance::Flight {
                 name: String::from("beluga1"),
-                incoming: vec![2, 3],
+                incoming: vec![2],
+                outgoing: vec![],
+            }
+        ],
+    }
+}
+
+//1 swap factory and 1 swap beluga
+fn instance_2_swaps() -> instance::Instance {
+    instance::Instance {
+        jig_types: vec![
+            instance::JigType {
+                name: String::from("type0"),
+                size_empty: 4,
+                size_loaded: 6,
+            },
+            instance::JigType {
+                name: String::from("type1"),
+                size_empty: 8,
+                size_loaded: 11,
+            },
+        ],
+        jigs: vec![
+            instance::Jig {
+                name: String::from("jig000"),
+                jig_type: 0,
+                empty: false,
+            },
+            instance::Jig {
+                name: String::from("jig001"),
+                jig_type: 1,
+                empty: true,
+            },
+            instance::Jig {
+                name: String::from("jig002"),
+                jig_type: 0,
+                empty: false,
+            },
+            instance::Jig {
+                name: String::from("jig003"),
+                jig_type: 0,
+                empty: false,
+            },
+        ],
+        trailers_beluga: vec![instance::Trailer {
+            name: String::from("beluga_trailer_1"),
+            side: Side::Beluga,
+        }],
+        trailers_factory: vec![instance::Trailer {
+            name: String::from("beluga_factory_1"),
+            side: Side::Factory,
+        }],
+        hangars: vec!["hangar0".to_string()],
+        racks: vec![
+            instance::Rack {
+                name: "rack00".to_string(),
+                size: 67,
+                jigs: vec![0,1],
+            },
+            instance::Rack {
+                name: "rack00".to_string(),
+                size: 54,
+                jigs: vec![2],
+            },
+        ],
+        production_lines: vec![instance::ProductionLine {
+            name: "pl0".to_string(),
+            schedule: vec![3],
+        }],
+        flights: vec![
+            instance::Flight {
+                name: String::from("beluga1"),
+                incoming: vec![3],
                 outgoing: vec![],
             },
             instance::Flight {
                 name: String::from("beluga1"),
                 incoming: vec![],
-                outgoing: vec![1, 0],
+                outgoing: vec![1],
             },
         ],
     }
 }
+
 
 fn main() {
     let now = Instant::now();
@@ -195,7 +340,8 @@ fn main() {
         process::exit(1);
     });
 
-    find_optimal(instance_test_1());
+    find_optimal(instance);
+
     print!("Total : ");
     print_runtime(now.elapsed());
 }
