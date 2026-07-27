@@ -13,7 +13,7 @@ pub type Report = aries_bench_data::SolveResult;
 fn default_report_metadata() -> ReportMetadata {
     ReportMetadata {
         name: "".to_string(),
-        timeout: std::time::Duration::MAX,
+        timeout: std::time::Duration::ZERO,
         flags: Default::default(),
     }
 }

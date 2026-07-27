@@ -311,11 +311,7 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
     println!("{model}");
 
     let (_, mut report, report_dir) = generate::solve_finite_planning_problem(&model, &command.options)?;
-    report.problem = export::ReportMetadata {
-        name: pb.problem_name.to_string(),
-        timeout: std::time::Duration::MAX,
-        flags: Default::default(),
-    };
+    report.problem.name = pb.problem_name.to_string();
     if let Some(report_dir) = report_dir {
         export::export_report_to_dir(&report_dir, report)?;
     }
