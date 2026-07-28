@@ -489,7 +489,14 @@ where
         }
         Expr::Exists(_, eid) => visit_exprs_recursive_and_apply_mut(*eid, func, env)?,
         Expr::Forall(_, eid) => visit_exprs_recursive_and_apply_mut(*eid, func, env)?,
-        _ => (),
+        Expr::Real(_)
+        | Expr::Bool(_)
+        | Expr::Object(_)
+        | Expr::Param(_)
+        | Expr::Instant(_)
+        | Expr::Duration
+        | Expr::Makespan
+        | Expr::ViolationCount(_) => (),
     }
     Ok(())
 }
@@ -508,7 +515,14 @@ where
         }
         Expr::Exists(_, eid) => visit_exprs_recursive_and_apply(*eid, func, env)?,
         Expr::Forall(_, eid) => visit_exprs_recursive_and_apply(*eid, func, env)?,
-        _ => (),
+        Expr::Real(_)
+        | Expr::Bool(_)
+        | Expr::Object(_)
+        | Expr::Param(_)
+        | Expr::Instant(_)
+        | Expr::Duration
+        | Expr::Makespan
+        | Expr::ViolationCount(_) => (),
     }
     Ok(())
 }
@@ -527,7 +541,14 @@ where
         }
         Expr::Exists(_, eid) => visit_exprs_recursive_and_check(*eid, func, env)?,
         Expr::Forall(_, eid) => visit_exprs_recursive_and_check(*eid, func, env)?,
-        _ => (),
+        Expr::Real(_)
+        | Expr::Bool(_)
+        | Expr::Object(_)
+        | Expr::Param(_)
+        | Expr::Instant(_)
+        | Expr::Duration
+        | Expr::Makespan
+        | Expr::ViolationCount(_) => (),
     }
     Ok(())
 }

@@ -529,14 +529,14 @@ impl SubstitutionGroup {
                 let positives: Vec<_> = effs
                     .iter()
                     .filter(|e| match e.effect_expression.operation {
-                        EffectOp::Assign(eid) => matches!(model.env.node(eid).bool(), Ok(true)),
+                        EffectOp::Assign(eid) => model.env.node(eid).bool().is_ok_and(|b| b),
                         EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => false,
                     })
                     .collect();
                 let negatives: Vec<_> = effs
                     .iter()
                     .filter(|e| match e.effect_expression.operation {
-                        EffectOp::Assign(eid) => matches!(model.env.node(eid).bool(), Ok(false)),
+                        EffectOp::Assign(eid) => model.env.node(eid).bool().is_ok_and(|b| !b),
                         EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => false,
                     })
                     .collect();
