@@ -6,12 +6,10 @@ use errors::{Message, Spanned};
 use smallvec::{SmallVec, smallvec};
 use std::fmt::Debug;
 use std::{ops::RangeInclusive, sync::Arc};
-use thiserror::Error;
 
 #[derive(Debug)]
 pub enum TypeError {
     UnknownType(Sym),
-    NotSubtype(Sym, Sym),
     IncompatibleType(ExprId, Type),
     MissingParameter(Param),
     UnexpectedArgument(ExprId),
@@ -21,7 +19,6 @@ impl ToEnvMessage for TypeError {
     fn to_message(self, env: &Environment) -> Message {
         match self {
             TypeError::UnknownType(tpe) => tpe.invalid("unknown type"),
-            TypeError::NotSubtype(tpe1, tpe2) => tpe1.invalid(format!("not subtype of {tpe2}")),
             TypeError::IncompatibleType(expr, expected) => {
                 let expr = env / expr;
                 expr.invalid(format!(
@@ -39,8 +36,21 @@ impl ToEnvMessage for TypeError {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum UserTypeDeclarationError {}
+#[derive(Debug)]
+pub enum UserTypeDeclarationError {
+    TopTypeName(Sym),
+}
+
+impl UserTypeDeclarationError {
+    pub fn to_message(self) -> Message {
+        match self {
+            UserTypeDeclarationError::TopTypeName(tpe) => tpe.invalid(format!(
+                "new type cannot have the same name as top type ({})",
+                UserTypes::TOP_TYPE_NAME
+            )),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Types {
@@ -54,14 +64,18 @@ impl Types {
         }
     }
 
-    pub(crate) fn add_user_type_independent(&mut self, name: impl Into<Sym> + Clone) -> bool {
+    /// Adds a new "independent" type (direct child of the top user type).
+    ///
+    /// Internally, clones the `UserTypes` structure behind the `Arc`, adds the type to int, and then uses a new `Arc` of it.
+    /// But this shouldn't be an issue performance-wise as this function is not expected to be called in a hot path.
+    pub(crate) fn add_top_type_child(&mut self, name: impl Into<Sym> + Clone) -> Res<bool> {
         if self.get_user_type(name.clone()).is_ok() {
-            return false;
+            return Ok(false);
         }
         let mut types = (*self.user_types).clone();
-        types.add_type(name, None);
+        types.add_type(name, None).map_err(|e| e.to_message())?;
         self.user_types = Arc::new(types);
-        true
+        Ok(true)
     }
 
     pub fn top_user_type(&self) -> UserType {
@@ -78,7 +92,7 @@ impl Types {
 
     pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, Box<TypeError>> {
         let name = name.into();
-        self.check_type(&name, None)?;
+        self.check_type(&name)?;
         Ok(UserType::new(name, self.user_types.clone()))
     }
 
@@ -90,41 +104,26 @@ impl Types {
         }
     }
 
-    fn check_type(&self, name: &Sym, supertype: Option<&Sym>) -> Result<(), Box<TypeError>> {
-        if let Some(supertype) = supertype
-            && !self.user_types.contains(supertype.clone())
-        {
-            return Err(Box::new(TypeError::UnknownType(supertype.clone())));
-        }
+    fn check_type(&self, name: &Sym) -> Result<(), Box<TypeError>> {
         if !self.user_types.contains(name.clone()) {
-            if let Some(supertype) = supertype
-                && !self.user_types.is_subtype_of(name, supertype)
-            {
-                Err(Box::new(TypeError::NotSubtype(name.clone(), supertype.clone())))
-            } else {
-                Err(Box::new(TypeError::UnknownType(name.clone())))
-            }
+            Err(Box::new(TypeError::UnknownType(name.clone())))
         } else {
             Ok(())
         }
     }
 
-    pub fn get_union_type<'a, T>(&self, types: &'a [T], supertype: Option<&'a T>) -> Result<Type, Box<TypeError>>
+    pub fn get_union_type<'a, T>(&self, types: &'a [T]) -> Result<Type, Box<TypeError>>
     where
         &'a T: Into<Sym>,
     {
         let mut union = SmallVec::with_capacity(types.len());
         for t in types {
             let t = t.into();
-            self.check_type(&t, supertype.map(|t| t.into()).as_ref())?;
+            self.check_type(&t)?;
             union.push(t);
         }
         if types.is_empty() {
-            if let Some(supertype) = supertype {
-                Ok((&self.get_user_type(supertype)?).into())
-            } else {
-                Ok((&self.top_user_type()).into())
-            }
+            Ok((&self.top_user_type()).into())
         } else {
             Ok(Type::User(UnionUserType {
                 union,
@@ -253,12 +252,13 @@ impl Default for UserTypes {
 }
 
 impl UserTypes {
-    pub fn new() -> Self {
-        Self::with_top_type("top-type")
-    }
+    /// The stars are just there to avoid conflicts if a user-defined type called `top-type` was to be added.
+    pub const TOP_TYPE_NAME: &str = "★top-type★";
+    /// Name used for the "object" type, for example in PDDL.
+    pub const OBJECT_TYPE_NAME: &str = "object";
 
-    pub fn with_top_type(top_type: impl Into<Sym>) -> Self {
-        let tt = top_type.into();
+    pub fn new() -> Self {
+        let tt: Sym = Self::TOP_TYPE_NAME.into();
         let mut types = Self {
             top_type: tt.clone(),
             types: Default::default(),
@@ -285,18 +285,26 @@ impl UserTypes {
     }
 
     /// Records a new type with the given parent.
-    /// If the parent is not recorded yet, it is created (asuming no parents)
-    /// If the type already exists, a new parent is added (multiple inheritence)
-    pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) {
+    /// If the parent is not recorded yet, it is created (asuming no parents).
+    /// If the type already exists, a new parent is added (multiple inheritence).
+    pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) -> Result<(), UserTypeDeclarationError> {
         let tpe = tpe.into();
         let parent = parent.map(|p| p.into()).filter(|parent| parent != &tpe); // TODO: ugly work around for doamins that declare object as subtype of itself
         let parent = parent.unwrap_or(self.top_type.clone());
         if !self.types.contains_key(&parent) {
             self.types.insert(parent.clone(), Vec::new());
         }
-        self.types.entry(tpe.clone()).or_default().push(parent.clone());
-        self.subtypes.entry(tpe.clone()).or_default();
-        self.subtypes.entry(parent).or_default().push(tpe);
+        let parents = self.types.entry(tpe.clone()).or_default();
+        if !parents.contains(&parent) {
+            parents.push(parent.clone());
+        }
+        let subtypes = self.subtypes.entry(parent).or_default();
+        if !subtypes.contains(&tpe) {
+            subtypes.push(tpe.clone());
+        }
+        self.subtypes.entry(tpe).or_default();
+
+        Ok(())
     }
 }
 
