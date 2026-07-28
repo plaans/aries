@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use crate::errors::EnvError;
 use crate::{
     Action, Duration, Effect, EffectOp, Environment, Expr, ExprId, FluentId, Fun, Model, Object, Res, SeqExprId,
-    SimpleGoal, Sym, Type, UnionUserType,
+    SimpleGoal, Sym, Type,
 };
 
 /// Substitute predicates into state functions where applicable.
@@ -120,9 +120,9 @@ impl<'a> AppliedSubstitutionGroup<'a> {
                 let mut helper_objects = vec![];
 
                 let tpe_name = ["_help-tpe-", group.to_string().as_str()].join("");
-                let tpe = UnionUserType::new(tpe_name.as_str(), env.types.top_user_type().hier);
 
-                env.types.add_top_type_child(tpe.to_single_type().unwrap().name)?;
+                env.types.add_top_type_child(tpe_name.as_str())?;
+                let tpe = env.types.get_union_user_type(tpe_name.as_str()).msg(env)?;
 
                 for sub in &group.substitutions {
                     let obj_name = Sym::from(

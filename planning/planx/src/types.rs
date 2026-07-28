@@ -66,7 +66,7 @@ impl Types {
 
     /// Adds a new "independent" type (direct child of the top user type).
     ///
-    /// Internally, clones the `UserTypes` structure behind the `Arc`, adds the type to int, and then uses a new `Arc` of it.
+    /// Internally, clones the `UserTypes` structure behind the `Arc`, adds the type to it, and then uses a new `Arc` of it.
     /// But this shouldn't be an issue performance-wise as this function is not expected to be called in a hot path.
     pub(crate) fn add_top_type_child(&mut self, name: impl Into<Sym> + Clone) -> Res<bool> {
         if self.get_user_type(name.clone()).is_ok() {
@@ -88,6 +88,12 @@ impl Types {
 
     pub fn subtypes(&self, tpe: impl Into<Sym>) -> impl Iterator<Item = &Sym> {
         self.user_types.subtypes.get(&tpe.into()).unwrap().iter()
+    }
+
+    pub fn get_union_user_type(&self, name: impl Into<Sym>) -> Result<UnionUserType, Box<TypeError>> {
+        let name = name.into();
+        self.check_type(&name)?;
+        Ok(UnionUserType::new(name, self.user_types.clone()))
     }
 
     pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, Box<TypeError>> {
@@ -196,7 +202,7 @@ impl Display for UnionUserType {
 #[derive(Clone, Eq)]
 pub struct UserType {
     pub name: Sym,
-    pub hier: Arc<UserTypes>,
+    hier: Arc<UserTypes>,
 }
 impl UserType {
     fn new(name: Sym, hier: Arc<UserTypes>) -> Self {
@@ -207,6 +213,7 @@ impl UserType {
     }
 
     pub fn is_subtype_of(&self, other: &UserType) -> bool {
+        debug_assert!(self.hier == other.hier);
         self.hier.is_subtype_of(&self.name, &other.name)
     }
 }
