@@ -34,7 +34,7 @@ fn simple_test(
     expected_lifted_fluents: usize,
     expected_lifted_fluents_with_helper_types: usize,
     expected_lifted_fluents_shapes: &[(&str, usize, &str)],
-) -> Res<()> {
+) -> Res<(Model, Model)> {
     let (nonlifted_model, lifted_model) = parse_pddl(domain_file, problem_file)?;
 
     println!("== BEFORE LIFTING PREDICATES ==");
@@ -86,7 +86,7 @@ fn simple_test(
         );
     }
 
-    Ok(())
+    Ok((nonlifted_model, lifted_model))
 }
 
 fn main() -> Res<()> {
@@ -108,12 +108,13 @@ mod test {
     #[test]
     fn test_gripper() -> Res<()> {
         simple_test(
-            &PathBuf::from("../problems/pddl/tests/gripper.dom.pddl"),
-            &PathBuf::from("../problems/pddl/tests/gripper.pb.pddl"),
+            &PathBuf::from("../problems/pddl/ipc/1998-gripper-round-1-strips/domain.pddl"),
+            &PathBuf::from("../problems/pddl/ipc/1998-gripper-round-1-strips/instance.1.pb.pddl"),
             2,
             0,
             &[("at-robby", 0, "object"), ("carry:at", 1, "object")],
-        )
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -129,12 +130,13 @@ mod test {
                 ("supports", 1, "mode"),
                 ("on_board", 1, "satellite"),
             ],
-        )
+        )?;
+        Ok(())
     }
 
     #[test]
     fn test_satellite_time() -> Res<()> {
-        simple_test(
+        let (_, lifted_model) = simple_test(
             &PathBuf::from("../problems/upf/ipc2002-satellite-time-simple-automatic/domain.pddl"),
             &PathBuf::from("../problems/upf/ipc2002-satellite-time-simple-automatic/problem.pddl"),
             4,
@@ -145,7 +147,39 @@ mod test {
                 ("supports", 1, "mode"),
                 ("on_board", 1, "satellite"),
             ],
-        )
+        )?;
+
+        let turn_to = lifted_model.actions.get_action(&planx::Sym::from("turn_to")).unwrap();
+        assert!(turn_to.effects.len() == 2);
+
+        let eff_pointing_end = &turn_to.effects[0].effect_expression;
+        let eff_pointing_start = &turn_to.effects[1].effect_expression;
+
+        assert!(eff_pointing_start.timing.reference == planx::TimeRef::ActionStart);
+        assert!(
+            lifted_model
+                .env
+                .fluents
+                .get(eff_pointing_start.state_variable.fluent)
+                .name()
+                .as_str()
+                == "pointing"
+        );
+        assert!(matches!(eff_pointing_start.operation, planx::EffectOp::Erase));
+
+        assert!(eff_pointing_end.timing.reference == planx::TimeRef::ActionEnd);
+        assert!(
+            lifted_model
+                .env
+                .fluents
+                .get(eff_pointing_end.state_variable.fluent)
+                .name()
+                .as_str()
+                == "pointing"
+        );
+        assert!(matches!(eff_pointing_end.operation, planx::EffectOp::Assign(_)));
+
+        Ok(())
     }
 
     #[test]
@@ -170,7 +204,8 @@ mod test {
                 ("closed_sd2:not_closed_sd2", 0, "_help-tpe-closed_sd2:not_closed_sd2"),
                 ("closed_cb1:not_closed_cb1", 0, "_help-tpe-closed_cb1:not_closed_cb1"),
             ],
-        )
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -195,7 +230,8 @@ mod test {
                 ("at_lander", 1, "waypoint"),
                 ("at_", 1, "waypoint"),
             ],
-        )
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -220,7 +256,8 @@ mod test {
                 ("at_lander", 1, "waypoint"),
                 ("at_", 1, "waypoint"),
             ],
-        )
+        )?;
+        Ok(())
     }
 
     #[test]
@@ -246,6 +283,7 @@ mod test {
                 ("at_lander", 1, "waypoint"),
                 ("at_", 1, "waypoint"),
             ],
-        )
+        )?;
+        Ok(())
     }
 }
