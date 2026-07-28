@@ -673,9 +673,10 @@ fn is_fluent_static(fluent_id: FluentId, model: &Model) -> bool {
             return false;
         }
         match eff.effect_expression.operation {
-            EffectOp::Assign(value_eid) if !model.env.node(value_eid).is_cst() => return false,
-            EffectOp::Assign(_) => (),
-            EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => return false,
+            EffectOp::Assign(value_eid) if model.env.node(value_eid).is_cst() => (),
+            EffectOp::Assign(_) => return false,
+            EffectOp::Erase => (),
+            EffectOp::Increase(_) | EffectOp::Decrease(_) => return false,
         }
         if eff.effect_expression.timing.reference != TimeRef::Origin {
             return false;
