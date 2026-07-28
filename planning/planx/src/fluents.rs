@@ -97,6 +97,9 @@ impl Fluents {
         }
     }
 
+    /// Removes fluents (assumed to be known) for which `func` returns true.
+    /// As a result, the internal storage of fluents could end up having "holes"
+    /// (which won't be filled / reused by the current implementation of `add_fluent`).
     pub(crate) fn remove(&mut self, func: impl Fn(FluentId, &Fluent) -> bool) {
         let mut acc = vec![];
         for (fid, f) in self.fluents.iter() {
@@ -105,7 +108,7 @@ impl Fluents {
             }
         }
         for fid in acc {
-            self.fluents.remove(fid);
+            self.fluents.remove(fid).expect("unknown fluent id");
         }
     }
 

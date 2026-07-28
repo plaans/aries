@@ -43,6 +43,7 @@ impl Environment {
         Ok(id)
     }
 
+    /// Replaces an already interned expression (with id `expr_id`) by another one (`expr`). No new id is created.
     pub(crate) fn replace(
         &mut self,
         expr_id: ExprId,

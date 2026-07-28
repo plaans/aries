@@ -165,7 +165,7 @@ mod test {
                 .as_str()
                 == "pointing"
         );
-        assert!(matches!(eff_pointing_start.operation, planx::EffectOp::Erase));
+        assert!(eff_pointing_start.operation == planx::EffectOp::Erase);
 
         assert!(eff_pointing_end.timing.reference == planx::TimeRef::ActionEnd);
         assert!(

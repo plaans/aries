@@ -530,14 +530,14 @@ impl SubstitutionGroup {
                     .iter()
                     .filter(|e| match e.effect_expression.operation {
                         EffectOp::Assign(eid) => matches!(model.env.node(eid).bool(), Ok(true)),
-                        _ => false,
+                        EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => false,
                     })
                     .collect();
                 let negatives: Vec<_> = effs
                     .iter()
                     .filter(|e| match e.effect_expression.operation {
                         EffectOp::Assign(eid) => matches!(model.env.node(eid).bool(), Ok(false)),
-                        _ => false,
+                        EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => false,
                     })
                     .collect();
 
@@ -658,8 +658,7 @@ pub(super) fn timing_is_necessarily_lt(
     }
 }
 
-/// Returns true if the fluent is static, meaning that all effects over it only contain
-/// constants and are at the temporal origin. This last requirement is nonstandard. (FIXME @arbimo right ?)
+/// Returns true if the fluent is static, meaning that all effects over it only contain constants and are at the temporal origin.
 ///
 /// Works for any fluent / state function (not just boolean predicates).
 fn is_fluent_static(fluent_id: FluentId, model: &Model) -> bool {
@@ -676,7 +675,7 @@ fn is_fluent_static(fluent_id: FluentId, model: &Model) -> bool {
         match eff.effect_expression.operation {
             EffectOp::Assign(value_eid) if !model.env.node(value_eid).is_cst() => return false,
             EffectOp::Assign(_) => (),
-            _ => return false,
+            EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => return false,
         }
         if eff.effect_expression.timing.reference != TimeRef::Origin {
             return false;

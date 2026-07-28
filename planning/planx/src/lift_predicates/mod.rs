@@ -122,7 +122,7 @@ impl<'a> AppliedSubstitutionGroup<'a> {
                 let tpe_name = ["_help-tpe-", group.to_string().as_str()].join("");
                 let tpe = UnionUserType::new(tpe_name.as_str(), env.types.top_user_type().hier);
 
-                env.types.add_user_type_independent(tpe.to_single_type().unwrap().name);
+                env.types.add_top_type_child(tpe.to_single_type().unwrap().name)?;
 
                 for sub in &group.substitutions {
                     let obj_name = Sym::from(
