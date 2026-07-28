@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-use planx::{errors::*, lift_predicates::lift_predicates_to_state_functions, pddl::*};
+use planx::{errors::*, pddl::*, preprocessing::lift_predicates_to_state_functions};
 
 /// A simple parser for PDDL and its extension HDDL.
 ///

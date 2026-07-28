@@ -41,7 +41,7 @@ mod test {
 
         let mut _model = convert::build_model(&domain, &problem)?;
         if lift {
-            crate::lift_predicates::lift_predicates_to_state_functions(&mut _model)?;
+            crate::preprocessing::lift_predicates_to_state_functions(&mut _model)?;
         }
 
         Ok(())
