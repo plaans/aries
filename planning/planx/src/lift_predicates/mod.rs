@@ -269,7 +269,6 @@ fn transform_effect_exprs(
     env: &mut Environment,
     container_duration: Option<Duration>,
 ) -> Res<()> {
-
     let try_into_simple_args = |predicate_id: FluentId, args: &[ExprId]| -> Option<Vec<SimpleArg>> {
         debug_assert!(group.group.contains(predicate_id));
         let sub_idx = group
@@ -305,18 +304,20 @@ fn transform_effect_exprs(
         if let EffectOp::Assign(eid) = eff.operation {
             match env.node(eid).expr() {
                 Expr::Bool(true) => {
-                    pos_effects.insert(
-                        try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
-                        (i, eff.state_variable.fluent),
-                    )
-                    .inspect(|_| unreachable!());
+                    pos_effects
+                        .insert(
+                            try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
+                            (i, eff.state_variable.fluent),
+                        )
+                        .inspect(|_| unreachable!());
                 }
                 Expr::Bool(false) => {
-                    neg_effects.insert(
-                        try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
-                        (i, eff.state_variable.fluent),
-                    )
-                    .inspect(|_| unreachable!());
+                    neg_effects
+                        .insert(
+                            try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
+                            (i, eff.state_variable.fluent),
+                        )
+                        .inspect(|_| unreachable!());
                 }
                 _ => (),
             }
@@ -367,18 +368,17 @@ fn transform_effect_exprs(
         eff.state_variable.fluent = group.substitution_fluent_id;
     }
 
-    for _idx in neg_effects_to_null {
-        todo!();
-        /*let eff = &mut effects[_idx].effect_expression;
+    for idx in neg_effects_to_null {
+        let eff = &mut effects[idx].effect_expression;
         debug_assert!(group.group.contains(eff.state_variable.fluent));
 
         let lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
 
-        //eff.operation = EffectOp::Erase;
+        eff.operation = EffectOp::Erase;
         if let Some(lifted_param_idx) = lifted_param_idx {
             eff.state_variable.arguments.remove(lifted_param_idx);
         }
-        eff.state_variable.fluent = group.substitution_fluent_id;*/
+        eff.state_variable.fluent = group.substitution_fluent_id;
     }
 
     for idx in neg_effects_to_del.into_iter().sorted().rev() {

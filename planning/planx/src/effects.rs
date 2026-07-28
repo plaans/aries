@@ -35,6 +35,7 @@ pub enum EffectOp {
     Assign(ExprId),
     Increase(ExprId),
     Decrease(ExprId),
+    Erase,
 }
 
 impl<'env> Display for Env<'env, &EffectOp> {
@@ -43,6 +44,7 @@ impl<'env> Display for Env<'env, &EffectOp> {
             EffectOp::Assign(expr_id) => write!(f, ":= {}", self.env / *expr_id),
             EffectOp::Increase(delta) => write!(f, "+= {}", self.env / *delta),
             EffectOp::Decrease(delta) => write!(f, "-= {}", self.env / *delta),
+            EffectOp::Erase => write!(f, ":= ⊥"),
         }
     }
 }

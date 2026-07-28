@@ -195,6 +195,7 @@ pub fn convert_effect(
         planx::EffectOp::Decrease(v) => {
             EffectOp::Step(-reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
         }
+        planx::EffectOp::Erase => todo!("add EffectOp::Erase in timelines"),
     };
     let eff = timelines::Effect {
         transition_start: if transition_time_after { t } else { t - sched.epsilon },
