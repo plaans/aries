@@ -6,6 +6,7 @@ use crate::{
 
 use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
+/// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct IntBounds {
     lower: IntCst,
@@ -22,7 +23,7 @@ struct IntegerConstraint {
 
 #[derive(Clone)]
 pub struct Solver {
-    pub problem: Problem,
+    pub(super) problem: Problem,
 
     // Used to store an exact version of our original problem with integers
     pub(super) bounds: Vec<IntBounds>,
@@ -47,15 +48,11 @@ impl Solver {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.opt_feas_checker = None;
-    }
-
     /// Create a new solver variable both for Problem and the mirror of our problem
     pub fn create_variable(&mut self, lb: IntCst, ub: IntCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
 
-        stats.nb_variables += 1;
+        stats.num_variables += 1;
 
         debug_assert_eq!(var.idx(), self.bounds.len());
 
@@ -150,7 +147,7 @@ impl Solver {
     ///
     /// # Errors
     ///
-    /// Will return an error if it can't be stored
+    /// Will return an error if it can't be restored
     pub fn check_feasibility(&mut self) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);

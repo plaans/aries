@@ -28,6 +28,7 @@ struct BoundConstraint {
     val: IntCst,
 }
 
+// Store all the necessary information for backtracking after modifying a bound
 #[derive(Clone)]
 struct LpEvent {
     var: Variable,
@@ -38,21 +39,22 @@ struct LpEvent {
 
 #[derive(Clone)]
 struct Stats {
-    nb_ok_propagate: usize,
-    nb_propagate: usize,
+    // Number of propagations where no contradaction was detected
+    num_ok_propagate: usize,
+    num_propagate: usize,
 
-    nb_constraints: usize,
-    nb_variables: usize,
+    num_constraints: usize,
+    num_variables: usize,
 }
 
 impl Stats {
     fn new() -> Self {
         Self {
-            nb_ok_propagate: 0,
-            nb_propagate: 0,
+            num_ok_propagate: 0,
+            num_propagate: 0,
 
-            nb_constraints: 0,
-            nb_variables: 0,
+            num_constraints: 0,
+            num_variables: 0,
         }
     }
 }
@@ -60,22 +62,29 @@ impl Stats {
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
-
+    /// Encapsulates both float and integer versions of our constraints and an instance of the minilp solver
     solver: Solver,
-
-    bound_cons_vec: Vec<BoundConstraint>,
-    lit_vec: Vec<Lit>,
-
+    /// Associates each bound constraint with its activation lit
+    bound_cons_lit_vec: Vec<(BoundConstraint, Lit)>,
+    /// Associates linear sums with its corresponding variable in the minilp solver
+    ///
+    /// It is used to avoid duplicate variables that should be the same
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
+    /// Maps var from aries solver with their coresponding variable in minilp (if they appear in the post constraints)
     memory_x: RefMap<Var, Variable>,
-
     model_events: ObsTrailCursor<Event>,
+    /// The watcher corresponds to an index in bound_cons_lit_vec
     watches: Watches<usize>,
+    /// History of changes made to the LP with all information necessary to undo them.
     trail: Trail<LpEvent>,
-
     stats: Stats,
-
+    /// Used to activate/deactivate the propagation of the reasonner
+    ///
+    /// It can be controlled with activate and deactivate methods
     active: bool,
+    /// Used to enable/disable the reasonner
+    ///
+    /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
     enable: bool,
 }
 
@@ -91,8 +100,7 @@ impl Lp {
             id: ReasonerId::Cp,
             solver: Solver::new(),
 
-            bound_cons_vec: Vec::new(),
-            lit_vec: Vec::new(),
+            bound_cons_lit_vec: Vec::new(),
 
             memory_s: HashMap::new(),
             memory_x: RefMap::default(),
@@ -107,16 +115,19 @@ impl Lp {
             active: true,
         }
     }
-
+    /// Activate propagation of the LP
     pub fn activate(&mut self) {
         self.active = true;
     }
 
+    /// Deactivate propagation of the LP
     pub fn deactivate(&mut self) {
         self.active = false;
     }
 
     /// Return a linear sum wich is the opposite in terms of coefficient that the one given
+    ///
+    /// We use it to detect that 2 constraints could use the same s variable in minilp
     fn get_opposite_linear_sum(linear_sum: &[ScaledVar]) -> Vec<ScaledVar> {
         let mut opp = Vec::new();
         for &svar in linear_sum {
@@ -175,7 +186,7 @@ impl Lp {
         // Check that the given constraint is always present (not optionnal)
         assert!(doms.presence(active) == Lit::TRUE);
 
-        self.stats.nb_constraints += 1;
+        self.stats.num_constraints += 1;
 
         let bound_val = -sum.constant();
 
@@ -193,6 +204,8 @@ impl Lp {
                 val: bound_val,
             };
         } else if self.memory_s.contains_key(&opp_lin_sum) {
+            // If an s variable already exists for the opposite of our linear sum, we can use the same be inverting our constraint
+
             let &s = self.memory_s.get(&opp_lin_sum).unwrap();
             bound_cons = BoundConstraint {
                 var: s,
@@ -209,12 +222,11 @@ impl Lp {
             };
         }
 
-        let index = self.bound_cons_vec.len();
+        let index = self.bound_cons_lit_vec.len();
         self.watches.add_watch(index, active);
 
         // We memorize our constraint and its active lit to be able to access it during propagation
-        self.bound_cons_vec.push(bound_cons);
-        self.lit_vec.push(active);
+        self.bound_cons_lit_vec.push((bound_cons, active));
     }
 
     /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
@@ -258,8 +270,9 @@ impl Theory for Lp {
             return Ok(());
         }
 
-        self.stats.nb_propagate += 1;
+        self.stats.num_propagate += 1;
 
+        // We process all the newly inferred literals since last propagation
         while let Some(&event) = self.model_events.pop(domains.trail()) {
             let lit = event.new_literal();
 
@@ -267,8 +280,7 @@ impl Theory for Lp {
 
             // We first set the bounds associated with the active lit triggered by the newly inferred lit
             for watcher in self.watches.watches_on(lit) {
-                let bound_cons = &self.bound_cons_vec[watcher];
-                let active_lit = self.lit_vec[watcher];
+                let (bound_cons, active_lit) = self.bound_cons_lit_vec[watcher];
 
                 let res = self.solver.set_bound_restrict(
                     bound_cons.var,
@@ -299,11 +311,11 @@ impl Theory for Lp {
             }
         }
 
+        // After updating all the bounds, we check that our lp solver is still in a feasible state
         let res = self.solver.check_feasibility();
-
         self.explain_check_feas(res)?;
 
-        self.stats.nb_ok_propagate += 1;
+        self.stats.num_ok_propagate += 1;
 
         Ok(())
     }
@@ -321,13 +333,13 @@ impl Theory for Lp {
 
     fn print_stats(&self) {
         if self.active {
-            println!("# propagations: {}", self.stats.nb_propagate);
+            println!("# propagations: {}", self.stats.num_propagate);
             println!(
                 "# contradictions: {}",
-                self.stats.nb_propagate - self.stats.nb_ok_propagate
+                self.stats.num_propagate - self.stats.num_ok_propagate
             );
-            println!("# constraints: {}", self.stats.nb_constraints);
-            println!("# variables: {}", self.stats.nb_variables);
+            println!("# constraints: {}", self.stats.num_constraints);
+            println!("# variables: {}", self.stats.num_variables);
         } else {
             println!("DISABLED");
         }
@@ -349,15 +361,9 @@ impl Backtrack for Lp {
 
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|lp_event| {
-            let res = self
+            let _ = self
                 .solver
                 .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.old_lit);
-
-            // If we have an error, that means our solver is in an instable state, therefore we reset it
-            // if res.is_err() {
-            //     println!("toto");
-            //     self.solver.reset();
-            // }
         });
     }
 }
@@ -405,9 +411,9 @@ mod tests {
 
     impl Lp {
         fn get_validity_certificates(&mut self) -> Option<(bool, bool)> {
-            let bound_cons_vec = self.bound_cons_vec.clone();
+            let bound_cons_lit_vec = self.bound_cons_lit_vec.clone();
 
-            for bound_cons in bound_cons_vec {
+            for (bound_cons, _) in bound_cons_lit_vec {
                 let res_set_bound = self
                     .solver
                     .set_bound(bound_cons.var, bound_cons.bound, bound_cons.val, Lit::TRUE);
