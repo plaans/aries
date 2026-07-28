@@ -445,14 +445,10 @@ fn try_into_predicate_expr(expr_id: ExprId, env: &Environment) -> Option<Predica
     None
 }
 
-fn iter_global_noneffect_exprs(model: &Model) -> impl IntoIterator<Item = ExprId> {
+fn iter_global_preferences_exprs(model: &Model) -> impl IntoIterator<Item = ExprId> {
     let mut res = vec![];
 
-    for goal in model
-        .goals
-        .iter()
-        .chain(model.preferences.iter().map(|pref| &pref.goal))
-    {
+    for goal in model.preferences.iter().map(|pref| &pref.goal) {
         match goal.goal_expression {
             SimpleGoal::HoldsDuring(_time_interval, expr_id) => res.push(expr_id),
             SimpleGoal::SometimeDuring(_time_interval, expr_id) => res.push(expr_id),
@@ -475,6 +471,36 @@ fn iter_global_noneffect_exprs(model: &Model) -> impl IntoIterator<Item = ExprId
             }
         }
     }
+    res
+}
+
+fn iter_global_noneffect_exprs(model: &Model) -> impl IntoIterator<Item = ExprId> {
+    let mut res = vec![];
+
+    for goal in model.goals.iter() {
+        match goal.goal_expression {
+            SimpleGoal::HoldsDuring(_time_interval, expr_id) => res.push(expr_id),
+            SimpleGoal::SometimeDuring(_time_interval, expr_id) => res.push(expr_id),
+            SimpleGoal::AtMostOnceDuring(_time_interval, expr_id) => res.push(expr_id),
+            SimpleGoal::SometimeBefore { when, then } => {
+                res.push(when);
+                res.push(then)
+            }
+            SimpleGoal::SometimeAfter { when, then } => {
+                res.push(when);
+                res.push(then)
+            }
+            SimpleGoal::AlwaysWithin {
+                delay: _delay,
+                when,
+                then,
+            } => {
+                res.push(when);
+                res.push(then)
+            }
+        }
+    }
+    res.extend(iter_global_preferences_exprs(model));
     res.extend(
         get_global_effect_exprs(model)
             .iter()
@@ -484,12 +510,16 @@ fn iter_global_noneffect_exprs(model: &Model) -> impl IntoIterator<Item = ExprId
     res
 }
 
+fn iter_action_preferences_exprs(action: &Action) -> impl Iterator<Item = &ExprId> {
+    action.preferences.iter().map(|pref| &pref.goal.cond)
+}
+
 fn iter_action_noneffect_exprs(action: &Action) -> impl Iterator<Item = &ExprId> {
     let res = action
         .conditions
         .iter()
-        .chain(action.preferences.iter().map(|pref| &pref.goal))
         .map(|cond| &cond.cond)
+        .chain(iter_action_preferences_exprs(action))
         .chain(action.effects.iter().flat_map(|eff| &eff.effect_expression.condition));
 
     res.chain(action.subtasks.constraints.iter())

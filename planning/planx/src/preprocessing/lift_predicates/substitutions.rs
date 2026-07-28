@@ -2,8 +2,8 @@ use std::{collections::HashSet, sync::Arc};
 
 use super::{
     PredicateExpr, get_action_effect_exprs, get_global_effect_exprs, iter_action_noneffect_exprs,
-    iter_global_noneffect_exprs, try_into_predicate_expr, visit_exprs_recursive_and_apply,
-    visit_exprs_recursive_and_check,
+    iter_action_preferences_exprs, iter_global_noneffect_exprs, iter_global_preferences_exprs, try_into_predicate_expr,
+    visit_exprs_recursive_and_apply, visit_exprs_recursive_and_check,
 };
 use crate::{
     Duration, Effect, EffectOp, Environment, Expr, ExprId, Fluent, FluentId, Model, Param, RealValue, Sym, TimeRef,
@@ -383,6 +383,11 @@ impl SubstitutionGroup {
                 .collect::<Option<_>>()
         };
 
+        // 0. check that no expression on a predicate of the group (whether it is a positive condition or a negative one) appears in
+        //    any preference (both outside and inside actions/tasks).
+        //    (this is because down the line, in the solver, such expressions would need to be reified for
+        //     *both* the positive and negative case -- i.e. preference satisfied or violated -- and the reification
+        //     of the latter could cause issues after lifting)
         // 1. check that globally (outside of actions/tasks):
         //   1.1. there are no negative conditions on any of the group's predicates.
         //   1.2. check there is at most one positive effect on any of the group's predicates, for the same non-return parameters (outside actions),
@@ -395,6 +400,36 @@ impl SubstitutionGroup {
         //   NOTE: in the legacy code, negative conditions (for some given non-return parameters) could be allowed if:
         //         (i) they were before the positive and negative effects (on the same non-return parameters) (if any),
         //         (ii) the positive and negative effects covered the same interval (impliying they started at the same time)
+
+        // 0.
+
+        let closure = |expr_id: ExprId, env: &Environment| {
+            match try_into_predicate_expr(expr_id, env) {
+                Some(PredicateExpr::Positive(_, predicate_id, _))
+                | Some(PredicateExpr::Negative(_, _, predicate_id, _))
+                    if self.contains(predicate_id) =>
+                {
+                    // (see 0.)
+                    tracing::trace!("expression (positive OR negative) used in a preference");
+                    return Err(crate::Message::error(""));
+                }
+                _ => (),
+            }
+            Ok(())
+        };
+
+        for expr_id in iter_global_preferences_exprs(model) {
+            if visit_exprs_recursive_and_check(expr_id, &closure, &model.env).is_err() {
+                return false;
+            }
+        }
+        for a in model.actions.iter() {
+            for &expr_id in iter_action_preferences_exprs(a) {
+                if visit_exprs_recursive_and_check(expr_id, &closure, &model.env).is_err() {
+                    return false;
+                }
+            }
+        }
 
         // 1.1.
 
