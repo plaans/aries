@@ -455,6 +455,9 @@ impl SubstitutionGroup {
                         return false;
                     }
                 }
+            } else if let EffectOp::Erase = &eff.effect_expression.operation {
+                tracing::trace!("negative constant effect");
+                return false;
             } else {
                 tracing::trace!("non-assignment effect");
                 return false;
@@ -541,7 +544,8 @@ impl SubstitutionGroup {
                     .iter()
                     .filter(|e| match e.effect_expression.operation {
                         EffectOp::Assign(eid) => model.env.node(eid).bool().is_ok_and(|b| !b),
-                        EffectOp::Increase(_) | EffectOp::Decrease(_) | EffectOp::Erase => false,
+                        EffectOp::Erase => true,
+                        EffectOp::Increase(_) | EffectOp::Decrease(_) => false,
                     })
                     .collect();
 

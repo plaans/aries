@@ -321,6 +321,13 @@ fn transform_effect_exprs(
                 }
                 _ => (),
             }
+        } else if let EffectOp::Erase = eff.operation {
+            neg_effects
+                .insert(
+                    try_into_simple_args(eff.state_variable.fluent, &eff.state_variable.arguments).unwrap(),
+                    (i, eff.state_variable.fluent),
+                )
+                .inspect(|_| unreachable!());
         }
     }
 
@@ -332,25 +339,34 @@ fn transform_effect_exprs(
 
     let mut neg_effects_to_null = vec![];
     let mut neg_effects_to_del = vec![];
+    let mut neg_effects_to_keep = vec![];
 
     for (k, (i, _)) in neg_effects {
         if let Some(&(j, _)) = pos_effects.get(&k) {
-            let delay = get_timings_delay_lower_bound(
+            let Some(delay) = get_timings_delay_lower_bound(
                 effects[i].effect_expression.timing,
                 effects[j].effect_expression.timing,
                 container_duration_bounds,
-            );
+            ) else {
+                unreachable!()
+            };
             // (t1 necessarily <= t2)
-            debug_assert!(delay.is_some_and(|delay| delay >= 0.into()));
+            debug_assert!(delay >= 0.into());
 
             // (t1 necessarily < t2)
-            if delay.is_some_and(|delay| delay > 0.into()) {
-                neg_effects_to_null.push(i);
-            } else {
+            if delay == 0.into() {
                 neg_effects_to_del.push(i);
+            } else if matches!(effects[i].effect_expression.operation, EffectOp::Erase) {
+                neg_effects_to_keep.push(i);
+            } else {
+                neg_effects_to_null.push(i);
             }
         } else {
-            neg_effects_to_null.push(i);
+            if matches!(effects[i].effect_expression.operation, EffectOp::Erase) {
+                neg_effects_to_keep.push(i);
+            } else {
+                neg_effects_to_null.push(i);
+            }
         }
     }
 
@@ -361,13 +377,27 @@ fn transform_effect_exprs(
         let lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
 
         if let Some(lifted_param_idx) = lifted_param_idx {
-            eff.operation = EffectOp::Assign(eff.state_variable.arguments[lifted_param_idx]);
+            if !matches!(eff.operation, EffectOp::Erase) {
+                eff.operation = EffectOp::Assign(eff.state_variable.arguments[lifted_param_idx]);
+            }
             eff.state_variable.arguments.remove(lifted_param_idx);
         } else {
-            eff.operation = EffectOp::Assign(env.intern(
-                Expr::Object(group.helper_object(eff.state_variable.fluent).unwrap().clone()),
-                None,
-            )?);
+            if !matches!(eff.operation, EffectOp::Erase) {
+                eff.operation = EffectOp::Assign(env.intern(
+                    Expr::Object(group.helper_object(eff.state_variable.fluent).unwrap().clone()),
+                    None,
+                )?);
+            }
+        }
+        eff.state_variable.fluent = group.substitution_fluent_id;
+    }
+
+    for idx in neg_effects_to_keep {
+        let eff = &mut effects[idx].effect_expression;
+        debug_assert!(group.group.contains(eff.state_variable.fluent));
+
+        if let Some(lifted_param_idx) = group.get_lifted_param_idx(eff.state_variable.fluent) {
+            eff.state_variable.arguments.remove(lifted_param_idx);
         }
         eff.state_variable.fluent = group.substitution_fluent_id;
     }
@@ -376,10 +406,9 @@ fn transform_effect_exprs(
         let eff = &mut effects[idx].effect_expression;
         debug_assert!(group.group.contains(eff.state_variable.fluent));
 
-        let lifted_param_idx = group.get_lifted_param_idx(eff.state_variable.fluent);
-
         eff.operation = EffectOp::Erase;
-        if let Some(lifted_param_idx) = lifted_param_idx {
+
+        if let Some(lifted_param_idx) = group.get_lifted_param_idx(eff.state_variable.fluent) {
             eff.state_variable.arguments.remove(lifted_param_idx);
         }
         eff.state_variable.fluent = group.substitution_fluent_id;
