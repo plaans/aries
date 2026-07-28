@@ -324,23 +324,27 @@ fn transform_effect_exprs(
         }
     }
 
-    let container_duration_bounds = container_duration.as_ref().and_then(|d| get_duration_bounds(d, env));
+    let container_duration_bounds = if let Some(d) = container_duration.as_ref() {
+        get_duration_lower_and_upper_bounds(d, env)
+    } else {
+        (0.into(), None)
+    };
 
     let mut neg_effects_to_null = vec![];
     let mut neg_effects_to_del = vec![];
 
     for (k, (i, _)) in neg_effects {
         if let Some(&(j, _)) = pos_effects.get(&k) {
-            debug_assert!(timing_is_necessarily_leq(
+            let delay = get_timings_delay_lower_bound(
                 effects[i].effect_expression.timing,
                 effects[j].effect_expression.timing,
                 container_duration_bounds,
-            ));
-            if timing_is_necessarily_lt(
-                effects[i].effect_expression.timing,
-                effects[j].effect_expression.timing,
-                container_duration_bounds,
-            ) {
+            );
+            // (t1 necessarily <= t2)
+            debug_assert!(delay.is_some_and(|delay| delay >= 0.into()));
+
+            // (t1 necessarily < t2)
+            if delay.is_some_and(|delay| delay > 0.into()) {
                 neg_effects_to_null.push(i);
             } else {
                 neg_effects_to_del.push(i);
@@ -392,7 +396,7 @@ enum PredicateExpr {
     Positive(ExprId, FluentId, SeqExprId),
     /// Negative predicate expression, stating the predicate must not hold. (e.g. `(not (at x y)`).
     /// The first id is that of the `not` function application, and the second one is that of its contents (e.g. `(at x y)`).
-    #[allow(unused)]
+    #[allow(unused)] // First parameter is currently unused
     Negative(ExprId, ExprId, FluentId, SeqExprId),
 }
 

@@ -578,11 +578,14 @@ impl SubstitutionGroup {
                 // start at the same time, the "tie-breaker" is that the negative is applied before the positive one.
                 // ("delete-before-add")
 
-                if timing_is_necessarily_leq(
+                // (t1 necessarily leq t2)
+                if get_timings_delay_lower_bound(
                     neg.effect_expression.timing,
                     pos.effect_expression.timing,
-                    get_duration_bounds(&act.duration, &model.env),
-                ) {
+                    get_duration_lower_and_upper_bounds(&act.duration, &model.env),
+                )
+                .is_some_and(|delay| delay >= 0.into())
+                {
                     // 2.3
                 } else {
                     tracing::trace!("unrecognized pattern for temporal split");
@@ -597,66 +600,39 @@ impl SubstitutionGroup {
     }
 }
 
-pub(super) fn get_duration_bounds(duration: &Duration, env: &Environment) -> Option<(RealValue, RealValue)> {
+pub(super) fn get_duration_lower_and_upper_bounds(
+    duration: &Duration,
+    env: &Environment,
+) -> (RealValue, Option<RealValue>) {
     match duration {
-        Duration::Instantaneous => Some((0.into(), 0.into())),
+        Duration::Instantaneous => (0.into(), Some(0.into())),
         Duration::Fixed(expr_id) => match env.node(*expr_id).expr() {
-            Expr::Real(x) => Some((*x, *x)),
-            _ => None,
+            Expr::Real(x) => (*x, Some(*x)),
+            _ => (0.into(), None),
         },
         Duration::Bounded(expr1_id, expr2_id) => match (env.node(*expr1_id).expr(), env.node(*expr2_id).expr()) {
-            (Expr::Real(a), Expr::Real(b)) => Some((*a, *b)),
-            _ => None,
+            (Expr::Real(a), Expr::Real(b)) => (*a, Some(*b)),
+            _ => (0.into(), None),
         },
-        Duration::Subtasks => None,
+        Duration::Subtasks => (0.into(), None),
     }
 }
 
-pub(super) fn timing_is_necessarily_leq(
+/// Returns the lower bound on the delay between timesteps (i.e. lower bound of "t2 - t1").
+/// As such, t1 is necessarily before (or equal to) t2 when this lower bound is >= 0.
+pub(super) fn get_timings_delay_lower_bound(
     t1: Timestamp,
     t2: Timestamp,
-    container_duration_bounds: Option<(RealValue, RealValue)>,
-) -> bool {
+    container_duration_bounds: (RealValue, Option<RealValue>),
+) -> Option<RealValue> {
     match (t1.reference, t2.reference) {
-        (tt1, tt2) if tt1 == tt2 => t1.delay <= t2.delay,
+        (tt1, tt2) if tt1 == tt2 => Some(t2.delay - t1.delay),
         (TimeRef::ActionStart, TimeRef::ActionEnd) => {
-            if let Some((d_lb, _)) = container_duration_bounds {
-                t1.delay <= d_lb + t2.delay
-            } else {
-                false // Unable to decide
-            }
+            let d_lb = container_duration_bounds.0;
+            Some(d_lb + t2.delay - t1.delay)
         }
         (TimeRef::ActionEnd, TimeRef::ActionStart) => {
-            if let Some((_, d_ub)) = container_duration_bounds {
-                t2.delay >= d_ub + t1.delay
-            } else {
-                false // Unable to decide
-            }
-        }
-        _ => unimplemented!(),
-    }
-}
-
-pub(super) fn timing_is_necessarily_lt(
-    t1: Timestamp,
-    t2: Timestamp,
-    container_duration_bounds: Option<(RealValue, RealValue)>,
-) -> bool {
-    match (t1.reference, t2.reference) {
-        (tt1, tt2) if tt1 == tt2 => t1.delay < t2.delay,
-        (TimeRef::ActionStart, TimeRef::ActionEnd) => {
-            if let Some((d_lb, _)) = container_duration_bounds {
-                t1.delay < d_lb + t2.delay
-            } else {
-                false // Unable to decide
-            }
-        }
-        (TimeRef::ActionEnd, TimeRef::ActionStart) => {
-            if let Some((_, d_ub)) = container_duration_bounds {
-                t2.delay > d_ub + t1.delay
-            } else {
-                false // Unable to decide
-            }
+            container_duration_bounds.1.map(|d_ub| t1.delay - d_ub - t2.delay)
         }
         _ => unimplemented!(),
     }
