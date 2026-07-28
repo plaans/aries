@@ -212,6 +212,10 @@ impl SubstitutionGroup {
             tracing::trace!("  not a predicate (non-boolean fluent)");
             return None;
         }
+        if !substitutions.iter().map(|sub| sub.predicate.name()).all_unique() {
+            tracing::trace!("  group features some substitutions on the same predicate");
+            return None;
+        }
         if substitutions.is_empty() {
             tracing::trace!("  empty group");
             return None;
