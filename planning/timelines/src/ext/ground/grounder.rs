@@ -561,7 +561,7 @@ fn collect_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondI
         }
     }
     for cl in ctx.causal_links.get_links() {
-        if conditions_to_ignore.contains(&cl.eff_id) {
+        if effects_to_ignore.contains(&cl.eff_id) {
             conditions_to_ignore.insert(cl.cond_id);
         }
     }
