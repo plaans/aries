@@ -35,6 +35,7 @@ pub enum EffectOp {
     Assign(ExprId),
     Increase(ExprId),
     Decrease(ExprId),
+    /// States that the state variable's value is undefined (until the next (non-erase) effect) 
     Erase,
 }
 
