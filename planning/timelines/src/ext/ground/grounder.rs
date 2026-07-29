@@ -29,7 +29,7 @@ impl Grounder {
     ///          Indeed, the goals of the problem are otherwise inacessible and won't participate in the goal rule
     ///          (which will thus be a fact and result in even trivially inconsistent groundings to be computed).
     pub fn from(ctx: &SchedEncoder) -> Self {
-        let (conditions_to_ignore, effects_to_ignore) = collect_conditions_and_effects_to_relax(ctx);
+        let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
 
         let global_args_groundings = ctx
             .sched
@@ -355,37 +355,8 @@ impl Grounder {
     }
 }
 
-/// Corresponds to ambiguous conditions and effects + step effects and conditions they potentially support.
-///
-/// Alternative view: ignores (relaxes) conditions and effects over state variables
-/// used in ambiguous or ill-defined conditions or effects.
-fn collect_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondId>, HashSet<EffectId>) {
-    let (ambiguous_conditions, ambiguous_effects) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
-
-    let (mut conditions_to_ignore, mut effects_to_ignore) = (ambiguous_conditions, ambiguous_effects);
-
-    for (eff_id, e) in ctx.sched.effects.iter().enumerate() {
-        match e.operation {
-            crate::EffectOp::Assign(_) => (),
-            crate::EffectOp::Step(_) => {
-                effects_to_ignore.insert(eff_id);
-            }
-        }
-    }
-    for cl in ctx.causal_links.get_links() {
-        if effects_to_ignore.contains(&cl.eff_id) {
-            conditions_to_ignore.insert(cl.cond_id);
-        }
-    }
-
-    (conditions_to_ignore, effects_to_ignore)
-}
-
 fn collect_condition_datalog_terms(cond: &HasValueAt) -> Result<Vec<GrounderTerm>, ()> {
-    let terms = Vec::from_iter(cond.state_var.args.iter().copied().chain(
-        // do not add effect value term if it corresponds to a boolean value
-        [cond.value], //(!is_condition_boolean(cond, ctx).unwrap()).then_some(cond.value),
-    ));
+    let terms = Vec::from_iter(cond.state_var.args.iter().copied().chain([cond.value]));
 
     Ok(Vec::from_iter(terms.into_iter().map(|term| {
         if term.is_cst() {
@@ -400,10 +371,7 @@ fn collect_effect_datalog_terms(eff: &Effect) -> Result<Vec<GrounderTerm>, ()> {
         return Err(());
     };
 
-    let terms = Vec::from_iter(eff.state_var.args.iter().copied().chain(
-        // do not add effect value term if it corresponds to a boolean value
-        [eff_value_term], //(!is_effect_boolean(eff, ctx).unwrap()).then_some(eff_value_term),
-    ));
+    let terms = Vec::from_iter(eff.state_var.args.iter().copied().chain([eff_value_term]));
 
     Ok(Vec::from_iter(terms.into_iter().map(|term| {
         if term.is_cst() {
