@@ -125,7 +125,28 @@ impl Grounder {
             };
 
             if terms.iter().all(|t| matches!(t, GrounderTerm::Cst(_))) {
+                // If all terms in the initial effect are constants (the effect is ground),
+                // then add the corresponding fact directly.
                 program.add_fact((&GrounderPredicateId::Fluent(eff.state_var.fluent.clone()), terms));
+            } else {
+                // If some terms in the initial effect are non-constant (variables),
+                // then the relaxation is to consider all assignments / groundings of that effect as holding,
+                // and we add the corresponding facts.
+                let terms_bounds = terms
+                    .iter()
+                    .map(|t| match t {
+                        GrounderTerm::Var(v) => {
+                            let b = ctx.sched.bounds(*v);
+                            b.0..=b.1
+                        }
+                        GrounderTerm::Cst(c) => *c..=*c,
+                    })
+                    .collect();
+                let mut assignments = crate::boxes::enumeration::enumerate(terms_bounds);
+                while let Some(terms) = assignments.next() {
+                    let terms = Vec::from_iter(terms.iter().map(|&c| GrounderTerm::Cst(c)));
+                    program.add_fact((&GrounderPredicateId::Fluent(eff.state_var.fluent.clone()), terms));
+                }
             }
         }
     }
