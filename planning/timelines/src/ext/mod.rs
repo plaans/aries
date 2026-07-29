@@ -1,75 +1,13 @@
 pub mod ground;
+mod nonsimple;
 
-use std::{collections::HashSet, ops::Index};
+use std::ops::Index;
 
 use aries_solver::core::{INT_CST_MAX, IntCst, LongCst};
-use itertools::Itertools;
 
-use crate::{
-    EffectId,
-    encoder::{CondId, SchedEncoder},
-};
+pub use nonsimple::collect_nonsimple_conditions_and_effects_to_relax;
 
 pub(crate) type Source = Option<crate::TaskId>;
-
-/// Collects conditions and effects whose (non-constant) terms do not all appear in their source's args.
-/// For each such effect, also ignores all conditions that effect could support.
-///
-/// These "ambiguous" conditions / effects are to be relaxed / ignored when collecting transitions to encode the LP relaxation.
-///
-/// Notably, a condition / effect using a reified variable as a term will be considered ambiguous.
-pub fn collect_ambiguous_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondId>, HashSet<EffectId>) {
-    let (mut ambiguous_conditions, mut ambiguous_effects) = (HashSet::new(), HashSet::new());
-
-    let get_source_terms = |src| {
-        if let Some(task_id) = src {
-            ctx.sched.tasks[task_id].args.as_slice()
-        } else {
-            ctx.sched.global_args.as_slice()
-        }
-    };
-
-    for (eff_id, e) in ctx.sched.effects.iter().enumerate() {
-        let source_terms = get_source_terms(e.source);
-        match e.operation {
-            crate::EffectOp::Assign(term) => {
-                if e.state_var
-                    .args
-                    .iter()
-                    .chain(&[term])
-                    .any(|term| !term.is_cst() && !source_terms.iter().map(|(t, _)| *t).contains(term))
-                {
-                    ambiguous_effects.insert(eff_id);
-                }
-            }
-            crate::EffectOp::Step(_term) => {
-                ambiguous_effects.insert(eff_id);
-            }
-        }
-    }
-
-    for cl in ctx.causal_links.get_links() {
-        if ambiguous_conditions.contains(&cl.cond_id) {
-            continue;
-        }
-        if ambiguous_effects.contains(&cl.eff_id) {
-            ambiguous_conditions.insert(cl.cond_id);
-        } else {
-            let c = &ctx.causal_links.conditions[cl.cond_id];
-            let source_terms = get_source_terms(c.source);
-            if c.state_var
-                .args
-                .iter()
-                .chain(&[c.value])
-                .any(|term| !term.is_cst() && !source_terms.iter().map(|(t, _)| *t).contains(term))
-            {
-                ambiguous_conditions.insert(cl.cond_id);
-            }
-        }
-    }
-
-    (ambiguous_conditions, ambiguous_effects)
-}
 
 pub type GroundingFlatId = Option<usize>;
 /// A wrapper around a vector of constants.
