@@ -70,30 +70,21 @@ fn make_nonlifted_nav() -> Sched {
     fluents.add(
         "at".into(),
         &[FluentParam {
-            range: any,
-            tpe: "room".into(),
+            range: any, // room
         }],
-        FluentParam {
-            range: bool_range,
-            tpe: "bool".into(),
-        },
+        FluentParam { range: bool_range },
     );
     fluents.add(
         "connected".into(),
         &[
             FluentParam {
-                range: any,
-                tpe: "room".into(),
+                range: any, // room
             },
             FluentParam {
-                range: any,
-                tpe: "room".into(),
+                range: any, // room
             },
         ],
-        FluentParam {
-            range: bool_range,
-            tpe: "bool".into(),
-        },
+        FluentParam { range: bool_range },
     );
 
     let mut sched = Sched::new(1, objects, fluents);
@@ -125,40 +116,34 @@ fn make_lifted_nav() -> Sched {
     let bool_range = Segment::new(0, 1);
 
     fluents.add(
-        "robot_at".into(),
+        "at".into(),
         &[],
         FluentParam {
-            range: Segment::new(a, c),
-            tpe: "room".into(),
+            range: Segment::new(a, c), // room
         },
     );
     fluents.add(
         "connected".into(),
         &[
             FluentParam {
-                range: any,
-                tpe: "room".into(),
+                range: any, // room
             },
             FluentParam {
-                range: any,
-                tpe: "room".into(),
+                range: any, // room
             },
         ],
-        FluentParam {
-            range: bool_range,
-            tpe: "bool".into(),
-        },
+        FluentParam { range: bool_range },
     );
 
     let mut sched = Sched::new(1, objects, fluents);
 
-    init_val(&mut sched, "robot_at", &[], a);
+    init_val(&mut sched, "at", &[], a);
     init_val(&mut sched, "connected", &[a, b], 1);
     init_val(&mut sched, "connected", &[b, c], 1);
 
     sched.add_constraint(HasValueAt {
         state_var: StateVar {
-            fluent: "robot_at".into(),
+            fluent: "at".into(),
             args: vec![],
         },
         value: IntTerm::from(c),
@@ -185,7 +170,7 @@ fn add_go_nonlifted(sched: &mut Sched) -> TaskId {
         start,
         end,
         presence,
-        args: vec![(from.into(), "room".into()), (to.into(), "room".into())],
+        args: vec![from.into(), to.into()], // rooms
     });
 
     sched.add_constraint(HasValueAt {
@@ -254,12 +239,12 @@ fn add_go_lifted(sched: &mut Sched) -> TaskId {
         start,
         end,
         presence,
-        args: vec![(from.into(), "room".into()), (to.into(), "room".into())],
+        args: vec![from.into(), to.into()], // rooms
     });
 
     sched.add_constraint(HasValueAt {
         state_var: StateVar {
-            fluent: "robot_at".into(),
+            fluent: "at".into(),
             args: vec![],
         },
         value: from.into(),
@@ -270,7 +255,7 @@ fn add_go_lifted(sched: &mut Sched) -> TaskId {
     sched.add_constraint(HasValueAt {
         state_var: StateVar {
             fluent: "connected".into(),
-            args: vec![from.into(), to.into()],
+            args: vec![from.into(), to.into()], // rooms
         },
         value: IntTerm::TRUE,
         timepoint: start,
@@ -284,7 +269,7 @@ fn add_go_lifted(sched: &mut Sched) -> TaskId {
         transition_end: end,
         mutex_end: me,
         state_var: StateVar {
-            fluent: "robot_at".into(),
+            fluent: "at".into(),
             args: vec![],
         },
         operation: EffectOp::Assign(to.into()),
@@ -357,12 +342,12 @@ fn naive_groundings(sched: &Sched) -> HashMap<Option<TaskId>, Vec<SourceGroundin
         let domains: Vec<_> = task
             .args
             .iter()
-            .filter_map(|(term, type_name)| {
+            .filter_map(|term| {
                 if term.is_cst() {
                     return None;
                 }
-                let range = sched.objects.domain_of_type(type_name)?;
-                Some(range.first..=range.last)
+                let (lb, ub) = sched.bounds(term);
+                Some(lb..=ub)
             })
             .collect();
 

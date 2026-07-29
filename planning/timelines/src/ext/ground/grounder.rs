@@ -9,10 +9,9 @@ use aries_solver::{core::views::Term, prelude::*};
 use idmap::{DirectIdMap, intid::IntegerId};
 use itertools::Itertools;
 
-use crate::constraints::HasValueAt;
 use crate::encoder::{CondId, SchedEncoder};
 use crate::ext::{Source, collect_nonsimple_conditions_and_effects_to_relax, ground::SourceGrounding};
-use crate::{Effect, EffectId, TaskId};
+use crate::{Effect, EffectId, HasValueAt, Task, TaskId};
 
 use std::collections::{HashMap, HashSet};
 
@@ -36,33 +35,41 @@ impl Grounder {
             .sched
             .global_args
             .iter()
-            .map(|(t, _)| ctx.sched.bounds(t).0..=ctx.sched.bounds(t).1)
+            .map(|t| ctx.sched.bounds(t).0..=ctx.sched.bounds(t).1)
             .multi_cartesian_product()
             .map(SourceGrounding::from)
             .collect();
 
+        // all concrete sources by default
+        let concrete_sources = ctx
+            .sched
+            .tasks
+            .iter()
+            .enumerate()
+            .map(|(task_id, _)| TaskId::from_int(task_id as u32))
+            .collect::<Vec<_>>();
+
         let mut program = GrounderProgram::new_empty();
 
-        Self::add_types_facts(&mut program, ctx);
-        Self::add_initial_effects_facts(&mut program, &effects_to_ignore, ctx);
-        Self::add_goal_rule(&mut program, &conditions_to_ignore, ctx);
+        // Instead of "type facts", we have "domain facts" that are added for every variable's domain.
+        // They are added in the the 3 functions below when encountering a variable.
+        // And the hashset is a cache used to avoid repeatedly adding the same "domain facts".
+        let mut cache_seen_doms = HashSet::<VarDom>::default();
+
+        Self::add_initial_effects_facts(&mut program, &effects_to_ignore, ctx, &mut cache_seen_doms);
+        Self::add_goal_rule(&mut program, &conditions_to_ignore, ctx, &mut cache_seen_doms);
         Self::add_all_actions_applicability_and_effects_rules(
             &mut program,
-            &conditions_to_ignore,
-            &effects_to_ignore,
+            &concrete_sources,
+            (&conditions_to_ignore, &effects_to_ignore),
             ctx,
+            &mut cache_seen_doms,
         );
 
         Self {
             program,
             global_args_groundings,
-            concrete_sources: ctx
-                .sched
-                .tasks
-                .iter()
-                .enumerate()
-                .map(|(task_id, _)| TaskId::from_int(task_id as u32))
-                .collect(),
+            concrete_sources,
         }
     }
 
@@ -98,14 +105,33 @@ impl Grounder {
         self.program.print();
     }
 
-    /// Adds facts specifying the type of each object (represented by its (unique) associated constant)
-    fn add_types_facts(program: &mut GrounderProgram, ctx: &SchedEncoder) {
-        for tpe in ctx.sched.objects.iter_types() {
-            let grounder_predicate_id = GrounderPredicateId::Type(tpe.clone());
+    fn add_domain_fact_for_vardom(
+        program: &mut GrounderProgram,
+        vardom: VarDom,
+        cache_seen_doms: &mut HashSet<VarDom>,
+    ) {
+        if cache_seen_doms.contains(&vardom) {
+            return;
+        }
+        for c in vardom.0..=vardom.1 {
+            program.add_fact((&GrounderPredicateId::Domain(vardom), [GrounderTerm::Cst(c)]));
+        }
+        cache_seen_doms.insert(vardom);
+    }
 
-            let r = ctx.sched.objects.domain_of_type(tpe).unwrap();
-            for c in r.first..=r.last {
-                program.add_fact((&grounder_predicate_id, &[GrounderTerm::Cst(c)]));
+    fn add_domain_facts_for_terms<'a>(
+        program: &mut GrounderProgram,
+        terms: impl Iterator<Item = &'a GrounderTerm>,
+        ctx: &SchedEncoder,
+        cache_seen_doms: &mut HashSet<VarDom>,
+    ) {
+        for term in terms {
+            match term {
+                GrounderTerm::Cst(_) => continue,
+                GrounderTerm::Var(v) => {
+                    let vardom = ctx.sched.bounds(v);
+                    Self::add_domain_fact_for_vardom(program, vardom, cache_seen_doms);
+                }
             }
         }
     }
@@ -114,15 +140,17 @@ impl Grounder {
         program: &mut GrounderProgram,
         effects_to_ignore: &HashSet<EffectId>,
         ctx: &SchedEncoder,
+        cache_seen_doms: &mut HashSet<VarDom>,
     ) {
         for (eff_id, eff) in ctx.sched.effects.iter().enumerate() {
             if eff.source.is_some() || effects_to_ignore.contains(&eff_id) {
                 continue;
             }
 
-            let Ok((terms, _)) = collect_effect_datalog_terms(eff, ctx) else {
+            let Ok(terms) = collect_effect_datalog_terms(eff) else {
                 unreachable!()
             };
+            Self::add_domain_facts_for_terms(program, terms.iter(), ctx, cache_seen_doms);
 
             if terms.iter().all(|t| matches!(t, GrounderTerm::Cst(_))) {
                 // If all terms in the initial effect are constants (the effect is ground),
@@ -136,8 +164,8 @@ impl Grounder {
                     .iter()
                     .map(|t| match t {
                         GrounderTerm::Var(v) => {
-                            let b = ctx.sched.bounds(*v);
-                            b.0..=b.1
+                            let (lb, ub) = ctx.sched.bounds(*v);
+                            lb..=ub
                         }
                         GrounderTerm::Cst(c) => *c..=*c,
                     })
@@ -151,7 +179,12 @@ impl Grounder {
         }
     }
 
-    fn add_goal_rule(program: &mut GrounderProgram, conditions_to_ignore: &HashSet<CondId>, ctx: &SchedEncoder) {
+    fn add_goal_rule(
+        program: &mut GrounderProgram,
+        conditions_to_ignore: &HashSet<CondId>,
+        ctx: &SchedEncoder,
+        cache_seen_doms: &mut HashSet<VarDom>,
+    ) {
         let goals = ctx
             .causal_links
             .conditions
@@ -162,9 +195,11 @@ impl Grounder {
         let mut goal_rule_body = vec![];
 
         for (_, goal) in goals.filter(|(cond_id, _)| !conditions_to_ignore.contains(cond_id)) {
-            let Ok(terms) = collect_condition_datalog_terms(goal, ctx) else {
+            let Ok(terms) = collect_condition_datalog_terms(goal) else {
                 unreachable!()
             };
+            Self::add_domain_facts_for_terms(program, terms.iter(), ctx, cache_seen_doms);
+
             goal_rule_body.push((GrounderPredicateId::Fluent(goal.state_var.fluent.clone()), terms));
         }
 
@@ -181,10 +216,13 @@ impl Grounder {
 
     fn add_all_actions_applicability_and_effects_rules(
         program: &mut GrounderProgram,
-        conditions_to_ignore: &HashSet<CondId>,
-        effects_to_ignore: &HashSet<EffectId>,
+        tasks: &[TaskId],
+        conditions_and_effects_to_ignore: (&HashSet<CondId>, &HashSet<EffectId>),
         ctx: &SchedEncoder,
+        cache_seen_doms: &mut HashSet<VarDom>,
     ) {
+        let (conditions_to_ignore, effects_to_ignore) = conditions_and_effects_to_ignore;
+
         let mut task_conditions = DirectIdMap::new();
         let mut task_effects = DirectIdMap::new();
         for (cond_id, c) in ctx.causal_links.conditions.iter().enumerate() {
@@ -210,45 +248,53 @@ impl Grounder {
             }
         }
 
-        for (task_id, _) in ctx.sched.tasks.iter().enumerate() {
-            let conditions = if task_conditions.contains_key(task_id) {
-                task_conditions[task_id].as_slice()
-            } else {
-                [].as_slice()
-            };
-            let effects = if task_effects.contains_key(task_id) {
-                task_effects[task_id].as_slice()
-            } else {
-                [].as_slice()
+        for &task_id in tasks {
+            let (conditions, effects) = {
+                let task_id = usize::try_from(task_id.to_int()).unwrap();
+
+                let conditions = if task_conditions.contains_key(task_id) {
+                    task_conditions[task_id].as_slice()
+                } else {
+                    [].as_slice()
+                };
+                let effects = if task_effects.contains_key(task_id) {
+                    task_effects[task_id].as_slice()
+                } else {
+                    [].as_slice()
+                };
+                (conditions, effects)
             };
 
             Self::add_action_applicability_and_effects_rules(
                 program,
-                TaskId::from_int(u32::try_from(task_id).unwrap()),
+                (task_id, &ctx.sched.tasks[task_id]),
                 conditions,
                 effects,
-                conditions_to_ignore,
-                effects_to_ignore,
+                (conditions_to_ignore, effects_to_ignore),
                 ctx,
+                cache_seen_doms,
             )
         }
     }
 
     fn add_action_applicability_and_effects_rules(
         program: &mut GrounderProgram,
-        task_id: TaskId,
-        conditions: &[(CondId, &crate::constraints::HasValueAt)],
-        effects: &[(EffectId, &crate::effects::Effect)],
-        conditions_to_ignore: &HashSet<CondId>,
-        effects_to_ignore: &HashSet<EffectId>,
+        task: (TaskId, &Task),
+        conditions: &[(CondId, &HasValueAt)],
+        effects: &[(EffectId, &Effect)],
+        conditions_and_effects_to_ignore: (&HashSet<CondId>, &HashSet<EffectId>),
         ctx: &SchedEncoder,
+        cache_seen_doms: &mut HashSet<VarDom>,
     ) {
+        let (task_id, task) = task;
+        let (conditions_to_ignore, effects_to_ignore) = conditions_and_effects_to_ignore;
+
         let applicability_rule_head = (
             &GrounderPredicateId::ActionApplicable(task_id),
-            &ctx.sched.tasks[task_id]
+            &task
                 .args
                 .iter()
-                .filter_map(|(t, _)| {
+                .filter_map(|t| {
                     if t.is_cst() {
                         None
                     } else {
@@ -261,24 +307,27 @@ impl Grounder {
         let mut applicability_rule_body = vec![];
 
         applicability_rule_body.extend(
-            ctx.sched.tasks[task_id]
-                .args
+            task.args
                 .iter()
-                .filter_map(|(t, tpe)| {
+                .filter_map(|t| {
                     if t.is_cst() {
                         None
                     } else {
-                        Some((GrounderTerm::Var(t.variable()), tpe))
+                        Some((GrounderTerm::Var(t.variable()), ctx.sched.bounds(t)))
                     }
                 })
-                .map(|(t, tpe)| (GrounderPredicateId::Type(tpe.clone()), vec![t])),
+                .map(|(t, vardom)| {
+                    Self::add_domain_fact_for_vardom(program, vardom, cache_seen_doms);
+
+                    (GrounderPredicateId::Domain(vardom), vec![t])
+                }),
         );
         applicability_rule_body.extend(
             conditions
                 .iter()
                 .filter(|(cond_id, _)| !conditions_to_ignore.contains(cond_id))
                 .map(|(_, cond)| {
-                    let Ok(terms) = collect_condition_datalog_terms(cond, ctx) else {
+                    let Ok(terms) = collect_condition_datalog_terms(cond) else {
                         unreachable!()
                     };
                     (GrounderPredicateId::Fluent(cond.state_var.fluent.clone()), terms)
@@ -297,10 +346,7 @@ impl Grounder {
 
         for (_, eff) in effects.iter().filter(|(eff_id, _)| !effects_to_ignore.contains(eff_id)) {
             let effect_rule_head = {
-                let (terms, negative) = collect_effect_datalog_terms(eff, ctx).unwrap();
-                // if negative {
-                //     continue;
-                // }
+                let terms = collect_effect_datalog_terms(eff).unwrap();
                 (&GrounderPredicateId::Fluent(eff.state_var.fluent.clone()), terms)
             };
 
@@ -335,7 +381,7 @@ fn collect_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondI
     (conditions_to_ignore, effects_to_ignore)
 }
 
-fn collect_condition_datalog_terms(cond: &HasValueAt, _ctx: &SchedEncoder) -> Result<Vec<GrounderTerm>, ()> {
+fn collect_condition_datalog_terms(cond: &HasValueAt) -> Result<Vec<GrounderTerm>, ()> {
     let terms = Vec::from_iter(cond.state_var.args.iter().copied().chain(
         // do not add effect value term if it corresponds to a boolean value
         [cond.value], //(!is_condition_boolean(cond, ctx).unwrap()).then_some(cond.value),
@@ -349,52 +395,21 @@ fn collect_condition_datalog_terms(cond: &HasValueAt, _ctx: &SchedEncoder) -> Re
         }
     })))
 }
-fn collect_effect_datalog_terms(eff: &Effect, ctx: &SchedEncoder) -> Result<(Vec<GrounderTerm>, bool), ()> {
+fn collect_effect_datalog_terms(eff: &Effect) -> Result<Vec<GrounderTerm>, ()> {
     let crate::EffectOp::Assign(eff_value_term) = eff.operation else {
         return Err(());
     };
-
-    let negative = is_effect_boolean(eff, ctx).unwrap() && eff_value_term.is_cst() && eff_value_term.constant == 0;
 
     let terms = Vec::from_iter(eff.state_var.args.iter().copied().chain(
         // do not add effect value term if it corresponds to a boolean value
         [eff_value_term], //(!is_effect_boolean(eff, ctx).unwrap()).then_some(eff_value_term),
     ));
 
-    Ok((
-        Vec::from_iter(terms.into_iter().map(|term| {
-            if term.is_cst() {
-                GrounderTerm::Cst(term.constant)
-            } else {
-                GrounderTerm::Var(term.variable())
-            }
-        })),
-        negative,
-    ))
-}
-
-// fn is_condition_boolean(cond: &crate::HasValueAt, ctx: &SchedEncoder) -> Result<bool, ()> {
-//     let cond_value_param = ctx.sched.fluents.get_return(&cond.state_var.fluent).unwrap();
-//     Ok(!cond_value_param.is_sym_typed()) // TODO: change "!is_sym_typed" to "is_boolean_typed"
-// }
-fn is_effect_boolean(eff: &crate::Effect, ctx: &SchedEncoder) -> Result<bool, ()> {
-    Ok(is_effect_boolean_positive(eff, ctx)? || is_effect_boolean_negative(eff, ctx)?)
-}
-fn is_effect_boolean_negative(eff: &crate::Effect, ctx: &SchedEncoder) -> Result<bool, ()> {
-    let crate::EffectOp::Assign(eff_value_term) = eff.operation else {
-        return Err(());
-    };
-    let eff_value_param = ctx.sched.fluents.get_return(&eff.state_var.fluent).unwrap();
-    Ok(
-        !eff_value_param.is_sym_typed() && eff_value_term.is_cst() && eff_value_term.constant == 0, // TODO: change "!is_sym_typed" to "is_boolean_typed"
-    )
-}
-fn is_effect_boolean_positive(eff: &crate::Effect, ctx: &SchedEncoder) -> Result<bool, ()> {
-    let crate::EffectOp::Assign(eff_value_term) = eff.operation else {
-        return Err(());
-    };
-    let eff_value_param = ctx.sched.fluents.get_return(&eff.state_var.fluent).unwrap();
-    Ok(
-        !eff_value_param.is_sym_typed() && eff_value_term.is_cst() && eff_value_term.constant == 1, // TODO: change "!is_sym_typed" to "is_boolean_typed"
-    )
+    Ok(Vec::from_iter(terms.into_iter().map(|term| {
+        if term.is_cst() {
+            GrounderTerm::Cst(term.constant)
+        } else {
+            GrounderTerm::Var(term.variable())
+        }
+    })))
 }

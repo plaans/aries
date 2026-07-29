@@ -5,9 +5,12 @@ use idmap::intid::IntegerId;
 
 use crate::{Sym, TaskId};
 
+/// TODO: anticipate union types and have multiple intervals ?
+pub(super) type VarDom = (IntCst, IntCst);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum GrounderPredicateId {
-    Type(Sym),
+    Domain(VarDom),
     Fluent(Sym),
     ActionApplicable(TaskId),
     Goal,
@@ -15,7 +18,7 @@ pub(super) enum GrounderPredicateId {
 impl std::fmt::Display for GrounderPredicateId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (head, tail) = match self {
-            Self::Type(s) => ("type".to_string(), Some(s)),
+            Self::Domain((lb, ub)) => ("domain".to_string(), Some(&format!("{lb}_{ub}"))),
             Self::Fluent(s) => ("fluent".to_string(), Some(s)),
             Self::ActionApplicable(task_id) => ("applicable".to_string(), Some(&format!("task_{}", task_id.to_int()))),
             Self::Goal => ("goal".to_string(), None),
