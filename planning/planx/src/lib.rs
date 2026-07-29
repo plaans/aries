@@ -10,6 +10,7 @@ mod model;
 mod objects;
 mod params;
 pub mod pddl;
+pub mod preprocessing;
 mod sym;
 mod tasks;
 mod timing;

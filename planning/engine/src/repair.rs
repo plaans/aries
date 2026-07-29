@@ -198,7 +198,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 .union(&seg);
 
             // add argument to the bindings
-            args.insert(&param.name, arg);
+            args.insert(param.name(), arg);
         }
         // start time is the index of the action in the plan
         let start = Time::from(op.start);

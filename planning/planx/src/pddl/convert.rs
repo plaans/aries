@@ -47,14 +47,17 @@ impl Bindings {
 }
 
 fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
-    let mut types = UserTypes::with_top_type("object");
+    let mut types = UserTypes::new();
+    types.add_type(UserTypes::OBJECT_TYPE_NAME, None).unwrap();
     for tpe in &dom.types {
-        if tpe.symbol == "object" {
-            continue; // already added as the top type
+        if tpe.symbol == UserTypes::TOP_TYPE_NAME || tpe.symbol == UserTypes::OBJECT_TYPE_NAME {
+            continue; // already added
         }
         match tpe.tpe.as_slice() {
-            [] => types.add_type(&tpe.symbol, None),
-            [parent] => types.add_type(&tpe.symbol, Some(parent)),
+            [] => types
+                .add_type(&tpe.symbol, Some(&Sym::from(UserTypes::OBJECT_TYPE_NAME)))
+                .map_err(|e| e.to_message())?,
+            [parent] => types.add_type(&tpe.symbol, Some(parent)).map_err(|e| e.to_message())?,
             [_, second_parent, ..] => {
                 return Err(second_parent
                     .invalid("unexpected second parent type")
@@ -98,7 +101,11 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
 
     for obj in dom.constants.iter().chain(prob.objects.iter()) {
         let tpe = match obj.tpe.as_slice() {
-            [] => model.env.types.top_user_type(),
+            [] => model
+                .env
+                .types
+                .get_user_type(UserTypes::OBJECT_TYPE_NAME)
+                .msg(&model.env)?,
             [tpe] => model.env.types.get_user_type(tpe).msg(&model.env)?,
             [_, tpe, ..] => return Err(tpe.invalid("object with more than one type")),
         };
