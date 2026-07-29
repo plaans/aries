@@ -207,7 +207,7 @@ pub fn encode_plan_optimization_problem(
             };
 
             // add argument to the bindings
-            args.insert(&param.name, arg);
+            args.insert(param.name(), arg);
         }
         let presence = if options.relaxation.contains(&Relaxation::ActionPresence) {
             sched.model.new_optional_bool_var(Lit::TRUE)
@@ -234,7 +234,12 @@ pub fn encode_plan_optimization_problem(
                 .map(|(&name, &t)| {
                     (
                         t,
-                        a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                        a.parameters
+                            .iter()
+                            .find(|p| p.name() == name)
+                            .unwrap()
+                            .tpe()
+                            .to_string(),
                     )
                 })
                 .collect(),
@@ -256,7 +261,7 @@ pub fn encode_plan_optimization_problem(
             arguments: a
                 .parameters
                 .iter()
-                .map(|param| ObjectVar::new(bindings.args[&param.name], &object_decoder))
+                .map(|param| ObjectVar::new(bindings.args[param.name()], &object_decoder))
                 .collect(),
         });
 
@@ -280,8 +285,8 @@ pub fn encode_plan_optimization_problem(
             // Create all arguments, that shared the same scope `presence` as the action
             let mut args = im::OrdMap::new();
             for param in a.parameters.iter() {
-                let arg = create_param_variable(&param.name, param.tpe(), presence, &mut sched)?;
-                args.insert(&param.name, arg);
+                let arg = create_param_variable(param.name(), param.tpe(), presence, &mut sched)?;
+                args.insert(param.name(), arg);
             }
             let start = sched.new_opt_timepoint(presence);
             if a.duration != Duration::Instantaneous {
@@ -301,7 +306,12 @@ pub fn encode_plan_optimization_problem(
                     .map(|(&name, &t)| {
                         (
                             t,
-                            a.parameters.iter().find(|p| p.name == *name).unwrap().tpe().to_string(),
+                            a.parameters
+                                .iter()
+                                .find(|p| p.name() == name)
+                                .unwrap()
+                                .tpe()
+                                .to_string(),
                         )
                     })
                     .collect(),
@@ -323,7 +333,7 @@ pub fn encode_plan_optimization_problem(
                 arguments: a
                     .parameters
                     .iter()
-                    .map(|param| ObjectVar::new(bindings.args[&param.name], &object_decoder))
+                    .map(|param| ObjectVar::new(bindings.args[param.name()], &object_decoder))
                     .collect(),
             });
 

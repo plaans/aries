@@ -49,7 +49,7 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
     for f in model.env.fluents.iter() {
         let params = {
             let mut ps = SmallVec::<[FluentParam; 6]>::new();
-            for tpe in f.parameters.iter().map(|p| &p.tpe) {
+            for tpe in f.parameters.iter().map(|p| p.tpe()) {
                 ps.push(FluentParam {
                     range: type_range(tpe, objects)?,
                     tpe: tpe.to_string(),
@@ -305,6 +305,7 @@ pub fn convert_effect(
         planx::EffectOp::Decrease(v) => {
             EffectOp::Step(-reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
         }
+        planx::EffectOp::Erase => todo!("add EffectOp::Erase in timelines"),
     };
     let eff = timelines::Effect {
         transition_start: if transition_time_after { t } else { t - sched.epsilon },

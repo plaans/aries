@@ -20,6 +20,21 @@ pub struct Problem {
 }
 
 impl Problem {
+    pub fn new(name: String, timeout: Option<Duration>) -> Self {
+        Self {
+            name,
+            timeout: timeout.unwrap_or(Duration::from_secs(0)),
+            flags: Default::default(),
+        }
+    }
+
+    /// Attaches a flag to the [`Problem`].
+    /// Flags are typically used to denote variants of the problem
+    /// (that makes them different even though they may use the same input file).
+    pub fn with_flag(mut self, key: impl ToString, value: impl ToString) -> Self {
+        self.flags.insert(key.to_string(), value.to_string());
+        self
+    }
     /// A unique identifier of the problem.
     pub fn id(&self) -> String {
         let mut id = self.name.clone();
@@ -70,8 +85,25 @@ impl Problem {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, PartialOrd, Clone, Copy)]
 pub enum SolveStatus {
-    Solved,
+    /// Solved a satisfaction problem (did not timeout)
+    SolvedSat,
+    /// Solver proved unsatisfiability.
+    SolvedUnsat,
+    /// Solver found a provably optimal solution.
+    SolvedOpt,
+    /// Run did not terminate (even it has found a solution)
     Timeout,
+}
+
+impl SolveStatus {
+    /// Returns true is the problems was solved (exhausted the search space, regardless of whether the outcome was SAT/OPT/UNSAT).
+    pub fn is_solved(&self) -> bool {
+        use SolveStatus::*;
+        match self {
+            SolvedSat | SolvedOpt | SolvedUnsat => true,
+            Timeout => false,
+        }
+    }
 }
 
 pub type MetricValue = i64;
@@ -87,7 +119,7 @@ pub struct SolveResult {
     pub problem: Problem,
     pub status: SolveStatus,
     pub runtime: Duration,
-    pub objective_value: Option<i64>,
+    pub objective_value: Option<MetricValue>,
     pub metrics: BTreeMap<SolverMetric, f64>,
     pub objective_history: Vec<IntermediateResult>,
 }
@@ -118,6 +150,12 @@ impl SolveResult {
     }
 
     pub fn save_to_file(&self, file: &str) -> Result<()> {
+        let file = PathBuf::from(file);
+        if let Some(parent) = file.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
         let serialized = self.serialize().context("Failed to serialize result")?;
         std::fs::write(file, serialized).context("Failed to write to file")?;
         Ok(())
@@ -163,7 +201,7 @@ mod tests {
                 timeout: Duration::from_secs(60),
                 flags: Default::default(),
             },
-            status: SolveStatus::Solved,
+            status: SolveStatus::SolvedSat,
             runtime: Duration::from_secs(5),
             objective_value: Some(42),
             metrics,
