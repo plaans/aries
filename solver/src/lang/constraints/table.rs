@@ -147,7 +147,7 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
 
 /// Constraint that explicitly defines the allowed values for a variable.
 /// This is primarily useful when the domain of a variable has holes in it.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HasValueIn {
     /// Variable on which the constraint is placed
     variable: VarCst,
