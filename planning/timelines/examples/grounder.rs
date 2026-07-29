@@ -22,11 +22,11 @@ fn main() {
 }
 
 fn run(label: &str, sched: &Sched) {
-    let grounder = sched.simple_datalog_grounder(true);
-    if let Some(view) = grounder.get_view() {
-        println!("Datalog program ({label}):");
-        view.print();
-    }
+    let grounder = sched.sources_simple_grounder();
+
+    println!("Datalog program ({label}):");
+    grounder.print_datalog_program();
+
     println!();
 
     let datalog = grounder.run();

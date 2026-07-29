@@ -29,7 +29,7 @@ use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
-use crate::ext::ground::SimpleDatalogGrounder;
+use crate::ext::ground::SourcesGrounderSimple;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
@@ -250,12 +250,12 @@ impl Sched {
         ExplainableSolver::new(self, project)
     }
 
-    pub fn simple_datalog_grounder(&self, with_view: bool) -> SimpleDatalogGrounder {
+    pub fn sources_simple_grounder(&self) -> SourcesGrounderSimple {
         let mut encoder: SchedEncoder = self.clone().encoder();
         for c in &self.constraints {
             c.enforce(&mut encoder);
         }
-        SimpleDatalogGrounder::from(&encoder, with_view)
+        SourcesGrounderSimple::from(&encoder)
     }
 
     pub fn print(&self, sol: &Solution) {
