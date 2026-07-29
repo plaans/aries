@@ -49,12 +49,6 @@ pub type SymAtom = IntTerm;
 #[derive(Clone, Debug)]
 pub struct FluentParam {
     pub range: Segment,
-    pub tpe: Sym,
-}
-impl FluentParam {
-    pub fn is_sym_typed(&self) -> bool {
-        self.tpe != "bool"
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -161,13 +155,13 @@ pub type ConstraintID = usize;
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
-    pub(crate) fluents: FluentsEncoding,
+    pub fluents: FluentsEncoding,
     pub time_scale: IntCst,
     /// temporal separation between events `(1/time_scale)`
     pub epsilon: IntCst,
     pub origin: Time,
     pub horizon: Time,
-    pub(crate) global_args: Vec<(IntTerm, Sym)>, // TODO: PLACEHOLDER
+    pub(crate) global_args: Vec<IntTerm>, // TODO: PLACEHOLDER
     pub makespan: Time,
     pub tasks: Tasks,
     pub effects: Effects,

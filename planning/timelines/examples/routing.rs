@@ -131,11 +131,7 @@ fn add_move_to_action(truck: Option<IntCst>, to: IntCst, model: &mut Sched, pb: 
         start,
         end,
         presence,
-        args: vec![
-            (truck.into(), "truck".into()),
-            (from.into(), "location".into()),
-            (to.into(), "location".into()),
-        ],
+        args: vec![(truck.into()), (from.into()), (to.into())],
     });
 
     // effect that updates the truck location

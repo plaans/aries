@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use itertools::Itertools;
-
 use crate::{
     EffectId, IntTerm,
     encoder::{CondId, SchedEncoder},
@@ -75,12 +73,10 @@ fn all_nonconstant_terms_are_included_in_source_terms(
     src: Source,
     ctx: &SchedEncoder,
 ) -> bool {
-    let mut source_terms = if let Some(task_id) = src {
+    let source_terms = if let Some(task_id) = src {
         ctx.sched.tasks[task_id].args.as_slice()
     } else {
         ctx.sched.global_args.as_slice()
-    }
-    .iter()
-    .map(|(t, _)| *t);
+    };
     terms.all(|term| term.is_cst() || source_terms.contains(&term))
 }

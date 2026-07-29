@@ -52,14 +52,12 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
             for tpe in f.parameters.iter().map(|p| p.tpe()) {
                 ps.push(FluentParam {
                     range: type_range(tpe, objects)?,
-                    tpe: tpe.to_string(),
                 });
             }
             ps
         };
         let r#return = FluentParam {
             range: type_range(&f.return_type, objects)?,
-            tpe: f.return_type.to_string(),
         };
 
         res.add(f.name().to_string(), &params, r#return);
