@@ -91,6 +91,14 @@ impl ObjectEncoding {
             decoder: Arc::new(id_to_object),
         }
     }
+
+    pub fn iter_types(&self) -> impl Iterator<Item = &Sym> {
+        self.types.keys()
+    }
+
+    pub fn iter_objects(&self) -> impl Iterator<Item = &Sym> {
+        self.objects.keys()
+    }
 }
 
 /// Mapping from object ID to object names.

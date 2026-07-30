@@ -1,5 +1,6 @@
 pub mod symmetry;
 
+use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
 
 use aries_solver::core::{
@@ -173,7 +174,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HasValueAt {
     pub state_var: StateVar,
     pub value: IntTerm,
@@ -291,7 +292,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             }
         }
 
-        ctx.causal_links.add_new_condition_participants(self.source, supports);
+        ctx.causal_links.add_new_condition_participants(self.clone(), supports);
 
         {
             let _span = tracing::debug_span!("main");
