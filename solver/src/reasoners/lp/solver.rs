@@ -63,9 +63,13 @@ impl Solver {
             assert_eq!(idx_var, var.idx());
         }
 
-        const TRESHOLD_WARNING: i128 = 2_i128.pow(40); // Experimentally computed
+        const TRESHOLD_WARNING: i128 = 1_i128 << 40; // Experimentally computed
 
-        if lb.abs() as i128 > TRESHOLD_WARNING || ub.abs() as i128 > TRESHOLD_WARNING {
+        if (lb as i128) > TRESHOLD_WARNING
+            || (lb as i128) < -TRESHOLD_WARNING
+            || (ub as i128) > TRESHOLD_WARNING
+            || (ub as i128) < -TRESHOLD_WARNING
+        {
             tracing::warn!(
                 "Variable {} in the LP has important bounds, LP stability isn't expected",
                 var.idx()
