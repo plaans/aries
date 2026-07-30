@@ -165,12 +165,12 @@ impl Lp {
 
         let mut constraint = vec![];
 
-        let mut lb = 0;
-        let mut ub = 0;
+        let mut lb: LongCst = 0;
+        let mut ub: LongCst = 0;
 
         for &svar in linear_sum {
-            ub += svar.upper_bound_long(doms);
-            lb += svar.lower_bound_long(doms);
+            ub = ub.saturating_add(svar.upper_bound_long(doms));
+            lb = ub.saturating_add(svar.lower_bound_long(doms));
 
             let var = *self.memory_x.get(svar.var).unwrap();
             constraint.push((var, svar.factor));
