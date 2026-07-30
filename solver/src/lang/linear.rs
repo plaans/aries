@@ -3,7 +3,7 @@ use smallvec::SmallVec;
 
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
-use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_long_to_int_clamped};
+use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_int_to_long, cst_long_to_int_clamped};
 use crate::lang::{BoolExpr, IntExpr, Store};
 use crate::prelude::Conjunction;
 use crate::reif::ReifExpr;
@@ -114,6 +114,18 @@ impl Boundable for ScaledVarImpl {
     }
 }
 
+impl ScaledVarImpl {
+    fn upper_bound_long(&self, dom: impl Dom) -> LongCst {
+        debug_assert!(self.factor > 0);
+        cst_int_to_long(dom.upper_bound(self.var)).saturating_mul(cst_int_to_long(self.factor))
+    }
+
+    fn lower_bound_long(&self, dom: impl Dom) -> LongCst {
+        debug_assert!(self.factor > 0);
+        cst_int_to_long(dom.lower_bound(self.var)).saturating_mul(cst_int_to_long(self.factor))
+    }
+}
+
 impl VarView for ScaledVar {
     type Value = IntCst; // TODO: this should be LongCst to avoid possible overflows
 
@@ -123,6 +135,16 @@ impl VarView for ScaledVar {
 
     fn lower_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
         ScaledVarImpl::from(*self).lower_bound(dom)
+    }
+}
+
+impl ScaledVar {
+    pub fn upper_bound_long(&self, dom: impl crate::core::views::Dom) -> LongCst {
+        ScaledVarImpl::from(*self).upper_bound_long(dom)
+    }
+
+    pub fn lower_bound_long(&self, dom: impl crate::core::views::Dom) -> LongCst {
+        ScaledVarImpl::from(*self).lower_bound_long(dom)
     }
 }
 

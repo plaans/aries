@@ -711,7 +711,7 @@ impl Solver {
 
     pub(crate) fn add_constraint(&mut self, mut coeffs: CsVec, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
         assert!(self.is_primal_feasible);
-        // assert!(self.is_dual_feasible); // necesarry if we want to garanty optimality, not the case for us
+        // assert!(self.is_dual_feasible); // necesarry if we want to garanty optimality after adding the constraint
 
         if coeffs.indices().is_empty() {
             let is_tautological = match cmp_op {

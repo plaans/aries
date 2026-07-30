@@ -11,10 +11,9 @@ use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
     collections::ref_store::RefMap,
     core::{
-        INT_CST_MAX, INT_CST_MIN, IntCst, Lit, Var,
+        Lit, LongCst, Var, cst_int_to_long,
         literals::Watches,
         state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
-        views::VarView,
     },
     lang::linear::{LinSum, ScaledVar},
     reasoners::{Contradiction, ReasonerId, Theory},
@@ -26,7 +25,7 @@ pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "true");
 struct BoundConstraint {
     var: Variable,
     bound: Bound,
-    val: IntCst,
+    val: LongCst,
 }
 
 // Store all the necessary information for backtracking after modifying a bound
@@ -34,7 +33,7 @@ struct BoundConstraint {
 struct LpEvent {
     var: Variable,
     bound: Bound,
-    old_val: IntCst,
+    old_val: LongCst,
     old_lit: Lit,
 }
 
@@ -142,7 +141,11 @@ impl Lp {
 
     /// Add an x variable which is a variable directly mapped with a var in aries solver
     fn add_x_var(&mut self, x: Var, doms: &Domains) {
-        let var = self.solver.create_variable(doms.lb(x), doms.ub(x), &mut self.stats);
+        let var = self.solver.create_variable(
+            cst_int_to_long(doms.lb(x)),
+            cst_int_to_long(doms.ub(x)),
+            &mut self.stats,
+        );
 
         self.memory_x.insert(x, var);
     }
@@ -166,8 +169,8 @@ impl Lp {
         let mut ub = 0;
 
         for &svar in linear_sum {
-            ub += svar.upper_bound(doms);
-            lb += svar.lower_bound(doms);
+            ub += svar.upper_bound_long(doms);
+            lb += svar.lower_bound_long(doms);
 
             let var = *self.memory_x.get(svar.var).unwrap();
             constraint.push((var, svar.factor));
@@ -197,7 +200,7 @@ impl Lp {
 
         self.stats.num_constraints += 1;
 
-        let bound_val = -sum.constant();
+        let bound_val = cst_int_to_long(-sum.constant());
 
         let elements = sum.terms_slice().to_vec();
 
@@ -310,10 +313,10 @@ impl Theory for Lp {
                     // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, event.new_upper_bound, lit, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), lit, &mut self.trail)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, -event.new_upper_bound, lit, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), lit, &mut self.trail)
                     };
 
                 self.explain_set_bound(res, x_var)?;
@@ -386,7 +389,7 @@ mod tests {
     };
 
     use crate::{
-        core::{INT_CST_MAX, INT_CST_MIN, state::Cause},
+        core::{INT_CST_MAX, INT_CST_MIN, IntCst, state::Cause},
         reasoners::cp::testing::pick_decisions,
     };
 

@@ -1,6 +1,6 @@
 use crate::{
     backtrack::Trail,
-    core::{IntCst, Lit, state::Explanation},
+    core::{IntCst, Lit, LongCst, state::Explanation},
     reasoners::lp::{LpEvent, Stats},
 };
 
@@ -9,9 +9,9 @@ use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirecti
 /// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct IntBounds {
-    lower: IntCst,
+    lower: LongCst,
     lower_lit: Lit,
-    upper: IntCst,
+    upper: LongCst,
     upper_lit: Lit,
 }
 
@@ -49,7 +49,7 @@ impl Solver {
     }
 
     /// Create a new solver variable both for Problem and the mirror of our problem
-    pub fn create_variable(&mut self, lb: IntCst, ub: IntCst, stats: &mut Stats) -> Variable {
+    pub fn create_variable(&mut self, lb: LongCst, ub: LongCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
 
         // If the minilp instance is already created, we need to update it
@@ -90,7 +90,7 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the problem is immediatly detected as infeasible.
-    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: IntCst, lit: Lit) -> Result<(), Error> {
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: LongCst, lit: Lit) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
         }
@@ -126,7 +126,7 @@ impl Solver {
         &mut self,
         var: Variable,
         bound: Bound,
-        val: IntCst,
+        val: LongCst,
         lit: Lit,
         trail: &mut Trail<LpEvent>,
     ) -> Result<(), Error> {
@@ -196,37 +196,41 @@ impl Solver {
     }
 
     /// Return the maximum value that the given linear sum can take respect to its bounds
-    fn max_lin_sum(&self, lin_sum: &[i128]) -> i128 {
-        lin_sum
-            .iter()
-            .enumerate()
-            .map(|(i, &coeff)| {
-                if coeff == 0 {
-                    0
-                } else if coeff < 0 {
-                    self.bounds[i].lower as i128 * coeff
+    fn max_lin_sum(&self, lin_sum: &[i128]) -> Option<i128> {
+        lin_sum.iter().enumerate().try_fold(0i128, |acc, (i, &coeff)| {
+            if coeff == 0 {
+                Some(acc)
+            } else {
+                let bound = if coeff < 0 {
+                    self.bounds[i].lower as i128
                 } else {
-                    self.bounds[i].upper as i128 * coeff
-                }
-            })
-            .sum()
+                    self.bounds[i].upper as i128
+                };
+
+                let prod = bound.checked_mul(coeff)?;
+
+                acc.checked_add(prod)
+            }
+        })
     }
 
     /// Return the minimum value that the given linear sum can take respect to its bounds
-    fn min_lin_sum(&self, lin_sum: &[i128]) -> i128 {
-        lin_sum
-            .iter()
-            .enumerate()
-            .map(|(i, &coeff)| {
-                if coeff == 0 {
-                    0
-                } else if coeff > 0 {
-                    self.bounds[i].lower as i128 * coeff
+    fn min_lin_sum(&self, lin_sum: &[i128]) -> Option<i128> {
+        lin_sum.iter().enumerate().try_fold(0i128, |acc, (i, &coeff)| {
+            if coeff == 0 {
+                Some(acc)
+            } else {
+                let bound = if coeff > 0 {
+                    self.bounds[i].lower as i128
                 } else {
-                    self.bounds[i].upper as i128 * coeff
-                }
-            })
-            .sum()
+                    self.bounds[i].upper as i128
+                };
+
+                let prod = bound.checked_mul(coeff)?;
+
+                acc.checked_add(prod)
+            }
+        })
     }
 
     /// Convert a certificate with f64 coefficients in an a equivalent i128 certificate
@@ -253,12 +257,13 @@ impl Solver {
             }
 
             for &(var_i, coef_var) in self.constraints[const_i].lin_sum.iter() {
-                lin_sum[var_i.idx()] += coef_cert * coef_var as i128;
+                let prod = coef_cert.checked_mul(coef_var as i128)?;
+                lin_sum[var_i.idx()] = lin_sum[var_i.idx()].checked_add(prod)?;
             }
         }
 
-        let min_lin_sum = self.min_lin_sum(&lin_sum);
-        let max_lin_sum = self.max_lin_sum(&lin_sum);
+        let min_lin_sum = self.min_lin_sum(&lin_sum)?;
+        let max_lin_sum = self.max_lin_sum(&lin_sum)?;
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
 
