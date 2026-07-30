@@ -34,12 +34,12 @@ pub trait ModelView: Dom {
     /// Given a scope literal, returns an equivalent conjunction of scope literals.
     ///
     /// This method is the inverse of [`Self::conjunctive_scope`] and allows breaking an intersection scope into its intersected components.
-    /// If the scope is not an interesection scope, it will return the intersection with a single element.
+    /// If the scope is not an intersection scope, it will return the intersection with a single element.
     fn decompose_scope(&self, scope: Lit) -> Conjunction;
 
-    /// Returns the list of literals that are known to be always implied `l`.
+    /// Returns the list of literals that are known to be always implied by `l`.
     ///
-    /// The mehtod may not find all possible implication.
+    /// The method may not find all possible implications.
     ///
     /// Currently, it will only detect that for implication explicitly declared with [`Domains::add_implication`] (which is only intended for scope literals).
     fn statically_implied_by(&self, l: Lit) -> impl Iterator<Item = Lit>;
@@ -47,13 +47,73 @@ pub trait ModelView: Dom {
     /// Returns `true` if the literal is tautological in this model (entailed at the root level).
     fn statically_entailed(&self, l: Lit) -> bool;
 
+    /// Adds a user-provided propagator to the CP engine, treated as a black-box by the engine.
     fn enforce_user_propagator(&mut self, propagator: impl UserPropagator + 'static);
+
+    /// Half-reifies a boolean expression into a literal `l` such that `l -> bool_expr`
+    /// and returns `l`.
+    ///
+    /// The returned literal will have the same scope as the boolean expression (and notably will be optional if
+    /// the bool expression is not always defined).
+    ///
+    /// Reference for half-reification: "Half Reification and Flattening" (Feydy et al)
+    fn half_reify(&mut self, bool_expr: impl BoolExpr<Self>) -> Lit
+    where
+        Self: Sized,
+    {
+        bool_expr.implicant(self)
+    }
+
+    /// Enforces the boolean expression to be always true *when in scope*.
+    ///
+    /// This method is provided for convenience for models without optional variables (where constraints are always in scope).
+    /// When having models with optional variables, it should always be preferred to use [`Self::enforce_scoped`] that allows
+    /// specifying the scope of a constraint explicitly.
+    fn enforce(&mut self, bool_expr: impl BoolExpr<Self>)
+    where
+        Self: Sized,
+    {
+        bool_expr.enforce(self);
+    }
+
+    /// Enforces the boolean expression to be always, when we are in the provided scope.
+    ///
+    /// The scope may be *smaller* than the one of the boolean expression: it must only hold that
+    /// when `scope` is entailed, the boolean expression is defined.
+    fn enforce_scoped(&mut self, bool_expr: impl BoolExpr<Self>, scope: impl Into<Conjunction>)
+    where
+        Self: Sized,
+    {
+        let scope = scope.into();
+        let scope = self.conjunctive_scope(&scope);
+        // retrieve or create an optional variable that is always true in the scope
+        let tauto = self.tautology_of_scope(scope);
+
+        bool_expr.enforce_if(tauto, self);
+    }
+
+    /// Enforces that if `condition` is *present* and *entailed*, then the boolean expression must be satisfied (and thus defined).
+    ///
+    /// IMPORTANT: it MUST be the case that, whenever `condition` is present, then the boolean expression must be defined.
+    /// See [`Self::opt_enforce_if`] for a variant that relaxes this requirements (with different semantics.)
+    fn enforce_if(&mut self, condition: Lit, bool_expr: impl BoolExpr<Self>)
+    where
+        Self: Sized,
+    {
+        bool_expr.enforce_if(condition, self);
+    }
+
+    /// Enforces that when `condition` is present and entailed, the boolean expression is satisfied or undefined (out of scope).
+    fn opt_enforce_if(&mut self, condition: Lit, bool_expr: impl BoolExpr<Self>)
+    where
+        Self: Sized,
+    {
+        bool_expr.opt_enforce_if(condition, self);
+    }
 
     /// Adds a debug assertion on solutions, i.e., an expression that is assumed to always evaluate to true.
     ///
     /// IMPORTANT: the assertion has NO effect on the solving process and only checked on solutions when debug assertions are enabled (not in release mode)
-    ///
-    /// TODO: this could be provided on the `Model` it self to be more generally useful
     #[track_caller]
     fn add_assertion<Expr: Evaluable<Value = bool> + Debug + Send + Sync + 'static>(&mut self, condition: Expr) {
         // The assertion is costly to create and evaluate so it is only active when debug assertions are activated

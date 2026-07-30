@@ -7,8 +7,8 @@ use crate::{Env, Sym, types::Type};
 #[derive(Clone, Display)]
 #[display("{name}")]
 pub struct Param {
-    pub name: Sym,
-    pub tpe: Type,
+    name: Sym,
+    tpe: Type,
 }
 impl PartialOrd for Param {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {

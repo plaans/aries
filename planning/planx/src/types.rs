@@ -6,7 +6,6 @@ use errors::{Message, Spanned};
 use smallvec::{SmallVec, smallvec};
 use std::fmt::Debug;
 use std::{ops::RangeInclusive, sync::Arc};
-use thiserror::Error;
 
 #[derive(Debug)]
 pub enum TypeError {
@@ -37,8 +36,21 @@ impl ToEnvMessage for TypeError {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum UserTypeDeclarationError {}
+#[derive(Debug)]
+pub enum UserTypeDeclarationError {
+    TopTypeName(Sym),
+}
+
+impl UserTypeDeclarationError {
+    pub fn to_message(self) -> Message {
+        match self {
+            UserTypeDeclarationError::TopTypeName(tpe) => tpe.invalid(format!(
+                "new type cannot have the same name as top type ({})",
+                UserTypes::TOP_TYPE_NAME
+            )),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Types {
@@ -52,14 +64,18 @@ impl Types {
         }
     }
 
-    pub fn add_user_type_independent(&mut self, name: impl Into<Sym> + Clone) -> bool {
+    /// Adds a new "independent" type (direct child of the top user type).
+    ///
+    /// Internally, clones the `UserTypes` structure behind the `Arc`, adds the type to it, and then uses a new `Arc` of it.
+    /// But this shouldn't be an issue performance-wise as this function is not expected to be called in a hot path.
+    pub(crate) fn add_top_type_child(&mut self, name: impl Into<Sym> + Clone) -> Res<bool> {
         if self.get_user_type(name.clone()).is_ok() {
-            return false;
+            return Ok(false);
         }
         let mut types = (*self.user_types).clone();
-        types.add_type(name, None);
+        types.add_type(name, None).map_err(|e| e.to_message())?;
         self.user_types = Arc::new(types);
-        true
+        Ok(true)
     }
 
     pub fn top_user_type(&self) -> UserType {
@@ -72,6 +88,12 @@ impl Types {
 
     pub fn subtypes(&self, tpe: impl Into<Sym>) -> impl Iterator<Item = &Sym> {
         self.user_types.subtypes.get(&tpe.into()).unwrap().iter()
+    }
+
+    pub fn get_union_user_type(&self, name: impl Into<Sym>) -> Result<UnionUserType, Box<TypeError>> {
+        let name = name.into();
+        self.check_type(&name)?;
+        Ok(UnionUserType::new(name, self.user_types.clone()))
     }
 
     pub fn get_user_type(&self, name: impl Into<Sym>) -> Result<UserType, Box<TypeError>> {
@@ -147,6 +169,10 @@ impl UnionUserType {
         }
     }
 
+    pub fn members(&self) -> &[Sym] {
+        &self.union
+    }
+
     pub fn overlaps(&self, other: &Self) -> bool {
         let b1 = self
             .union
@@ -176,7 +202,7 @@ impl Display for UnionUserType {
 #[derive(Clone, Eq)]
 pub struct UserType {
     pub name: Sym,
-    pub hier: Arc<UserTypes>,
+    hier: Arc<UserTypes>,
 }
 impl UserType {
     fn new(name: Sym, hier: Arc<UserTypes>) -> Self {
@@ -187,6 +213,7 @@ impl UserType {
     }
 
     pub fn is_subtype_of(&self, other: &UserType) -> bool {
+        debug_assert!(self.hier == other.hier);
         self.hier.is_subtype_of(&self.name, &other.name)
     }
 }
@@ -232,12 +259,13 @@ impl Default for UserTypes {
 }
 
 impl UserTypes {
-    pub fn new() -> Self {
-        Self::with_top_type("★object★")
-    }
+    /// The stars are just there to avoid conflicts if a user-defined type called `top-type` was to be added.
+    pub const TOP_TYPE_NAME: &str = "★top-type★";
+    /// Name used for the "object" type, for example in PDDL.
+    pub const OBJECT_TYPE_NAME: &str = "object";
 
-    pub fn with_top_type(top_type: impl Into<Sym>) -> Self {
-        let tt = top_type.into();
+    pub fn new() -> Self {
+        let tt: Sym = Self::TOP_TYPE_NAME.into();
         let mut types = Self {
             top_type: tt.clone(),
             types: Default::default(),
@@ -264,18 +292,26 @@ impl UserTypes {
     }
 
     /// Records a new type with the given parent.
-    /// If the parent is not recorded yet, it is created (asuming no parents)
-    /// If the type already exists, a new parent is added (multiple inheritence)
-    pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) {
+    /// If the parent is not recorded yet, it is created (asuming no parents).
+    /// If the type already exists, a new parent is added (multiple inheritence).
+    pub fn add_type<T: Into<Sym>>(&mut self, tpe: T, parent: Option<T>) -> Result<(), UserTypeDeclarationError> {
         let tpe = tpe.into();
         let parent = parent.map(|p| p.into()).filter(|parent| parent != &tpe); // TODO: ugly work around for doamins that declare object as subtype of itself
         let parent = parent.unwrap_or(self.top_type.clone());
         if !self.types.contains_key(&parent) {
             self.types.insert(parent.clone(), Vec::new());
         }
-        self.types.entry(tpe.clone()).or_default().push(parent.clone());
-        self.subtypes.entry(tpe.clone()).or_default();
-        self.subtypes.entry(parent).or_default().push(tpe);
+        let parents = self.types.entry(tpe.clone()).or_default();
+        if !parents.contains(&parent) {
+            parents.push(parent.clone());
+        }
+        let subtypes = self.subtypes.entry(parent).or_default();
+        if !subtypes.contains(&tpe) {
+            subtypes.push(tpe.clone());
+        }
+        self.subtypes.entry(tpe).or_default();
+
+        Ok(())
     }
 }
 
@@ -384,7 +420,7 @@ impl Type {
             (Bool, Bool) => true,
             (Real, Real) => true,
             (Int(_), Real) | (Real, Int(_)) => true,
-            (Int(bounds1), Int(bounds2)) => bounds1.0 >= bounds2.1 || bounds2.0 >= bounds1.1,
+            (Int(bounds1), Int(bounds2)) => !(bounds1.0 <= bounds2.1 || bounds2.0 <= bounds1.1),
             (User(left), User(right)) => left.overlaps(right),
             _ => false,
         }

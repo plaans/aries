@@ -22,7 +22,7 @@ impl ToEnvMessage for FluentError {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Copy, Hash)]
 pub struct FluentId(pub(crate) u32);
 
 impl<'a> Env<'a, FluentId> {
@@ -97,6 +97,21 @@ impl Fluents {
         }
     }
 
+    /// Removes fluents (assumed to be known) for which `func` returns true.
+    /// As a result, the internal storage of fluents could end up having "holes"
+    /// (which won't be filled / reused by the current implementation of `add_fluent`).
+    pub(crate) fn remove(&mut self, func: impl Fn(FluentId, &Fluent) -> bool) {
+        let mut acc = vec![];
+        for (fid, f) in self.fluents.iter() {
+            if func(fid, f) {
+                acc.push(fid);
+            }
+        }
+        for fid in acc {
+            self.fluents.remove(fid).expect("unknown fluent id");
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &Fluent> + '_ {
         self.fluents.iter().map(|(_k, v)| v)
     }
@@ -129,7 +144,7 @@ impl Fluent {
             return Err(Box::new(TypeError::UnexpectedArgument(args[self.parameters.len()])));
         }
         for (i, arg) in args.iter().enumerate() {
-            self.parameters[i].tpe.accepts(*arg, env)?;
+            self.parameters[i].tpe().accepts(*arg, env)?;
         }
         Ok(self.return_type.clone())
     }

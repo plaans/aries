@@ -142,14 +142,14 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
                     optimum as u32, expected,
                     "The makespan found ({optimum}) is not the expected one ({expected})"
                 );
-            }
+            };
             println!("XX\t{}\t{}\t{}", instance, optimum, start_time.elapsed().as_secs_f64());
-            aries_bench_data::SolveStatus::Solved
+            aries_bench_data::SolveStatus::SolvedOpt
         }
         Ok(None) => {
             println!("> UNSATISFIABLE");
             assert!(opt.expected_makespan.is_none(), "Expected a valid solution");
-            aries_bench_data::SolveStatus::Solved
+            aries_bench_data::SolveStatus::SolvedUnsat
         }
         Err(Exit::Interrupted) => match best.as_ref() {
             Some(sol) => {

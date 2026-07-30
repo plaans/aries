@@ -44,7 +44,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
         }
 
-        let solver = if crate::ext::lprelax::ARIES_LPRELAX_USE.get() {
+        let mut solver = if crate::ext::lprelax::ARIES_LPRELAX_USE.get() {
             let c = std::sync::Arc::new(crate::ext::lprelax::LpRelaxEncodingConstraint);
             tracing::debug!("Adding constraint: {c:?}");
 
@@ -56,10 +56,18 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             Solver::new(encoding.store)
         };
 
+        // enable stronger propagation than default in difference logic solver.
+        // this is useful in planning models where bounds are not sufficient to reason on precedence between tasks
+        solver.reasoners.diff().config.theory_propagation = aries_solver::reasoners::stn::TheoryPropagationLevel::Full;
+
         Self {
             solver,
             enablers: assumptions_map,
         }
+    }
+
+    pub fn get(&self) -> &Solver<crate::Sym> {
+        &self.solver
     }
 
     /// Check if the model is satifiable with all assumptions, and returns a solution if it is.

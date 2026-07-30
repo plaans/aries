@@ -4,11 +4,14 @@ use aries_plan_engine::{
     encode::{encoding::Encoding, tags::Tag},
     plans::lifted_plan::LiftedPlan,
 };
-use aries_solver::{core::state::Evaluable, prelude::*};
+use aries_solver::{core::state::Evaluable, prelude::*, solver::stats::Stats};
 use planx::{Model, Res};
 use timelines::{Sched, explain::ExplainableSolver};
 
-use crate::optimize_plan::{self, Objective};
+use crate::{
+    export,
+    optimize_plan::{self, Objective},
+};
 
 pub type RelaxableConstraint = Tag;
 
@@ -31,10 +34,25 @@ pub struct Options {
 
     /// If provided, the final plan will be written to this file.
     #[arg(short = 'w', long = "write-plan")]
-    plan_file: Option<PathBuf>,
+    pub plan_file: Option<PathBuf>,
+
+    /// If provided, the benchmark report will be written to a file in this directory.
+    #[arg(short = 'r', long = "write-report")]
+    pub report_dir: Option<PathBuf>,
 }
 
-pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()> {
+pub struct PlanGenerationResult {
+    #[allow(unused)]
+    pub encoding: Encoding,
+    #[allow(unused)]
+    pub solution: Option<Solution>,
+    pub objective_value: Option<IntCst>,
+    pub status: export::SolveStatus,
+    pub runtime: std::time::Duration,
+    pub solver_stats: Stats,
+}
+
+pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<PlanGenerationResult> {
     // create a dummy plan with the appropriate number of actions
     // this is temporary a workaround to reuse the existing `optimize_plan` facilities
     let plan = LiftedPlan::default();
@@ -58,14 +76,36 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<()
         println!("{}\n", encoding.plan(sol));
     };
 
-    if let Some(solution) = solver.find_optimal(solver_objective, &print, []) {
+    let solution = solver.find_optimal(solver_objective, &print, []);
+
+    if let Some(solution) = solution.as_ref() {
         println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
-        print(&solution);
-        encoding.plan(&solution).write_to_file(options.plan_file.as_ref())?;
+        print(solution);
+        encoding.plan(solution).write_to_file(options.plan_file.as_ref())?;
     } else {
         println!("No solution !!!!");
     }
-    Ok(())
+
+    let objective_value = solution.as_ref().and_then(|sol| objective.evaluate(sol));
+
+    let res = PlanGenerationResult {
+        objective_value,
+        runtime: start.elapsed(),
+        status: if solution.is_some() {
+            if options.optimize {
+                export::SolveStatus::SolvedOpt
+            } else {
+                export::SolveStatus::SolvedSat
+            }
+        } else {
+            export::SolveStatus::SolvedUnsat
+        },
+        solution,
+        encoding,
+        solver_stats: solver.get().stats.clone(),
+    };
+
+    Ok(res)
 }
 
 fn encode_finite_planning_problem(

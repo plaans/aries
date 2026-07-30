@@ -428,10 +428,7 @@ pub fn consume_typed_symbols(input: &mut ListIter) -> std::result::Result<Vec<Ty
     // no type given, everything is an object
     untyped
         .drain(..)
-        .map(|name| TypedSymbol {
-            symbol: name,
-            tpe: smallvec![],
-        })
+        .map(|name| TypedSymbol::new(name, crate::UserTypes::OBJECT_TYPE_NAME))
         .for_each(|a| args.push(a));
     Result::Ok(args)
 }

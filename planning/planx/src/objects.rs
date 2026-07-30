@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::{errors::ToEnvMessage, *};
 
-#[derive(Clone, Display, Debug)]
+#[derive(Clone, Display, Debug, Eq, PartialEq)]
 #[display("{}", name)]
 pub struct Object {
     name: Sym,

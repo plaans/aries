@@ -42,7 +42,7 @@ impl<'a> ModelWrapper for LpRelaxSchedEncoder<'a> {
     type Lbl = Sym;
 
     fn get_model(&self) -> &aries_solver::model::Model<Self::Lbl> {
-        &self.main.get_model()
+        self.main.get_model()
     }
 
     fn get_model_mut(&mut self) -> &mut aries_solver::model::Model<Self::Lbl> {
@@ -218,9 +218,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                         .get_args()
                         .iter()
                         .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| {
-                            term1.is_cst() && term2.is_cst() && term1.constant != term2.constant
-                        })
+                        .any(|(term1, term2)| term1.is_cst() && term2.is_cst() && term1.constant != term2.constant)
                     {
                         None
                     } else {
@@ -235,11 +233,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
         // Supports from default effects (ignored as non-necessary in the main encoding but required for the LP relaxation)
         let supports_from_default_effects = self.iter_default_effects().flat_map(move |(eff1_id, _)| {
             let (tr1_id, _) = self.get_transition_of_effect(eff1_id).unwrap();
-            debug_assert!(
-                self.get_transition_ref(tr1_id)
-                    .iter_terms()
-                    .all(|term| term.is_cst())
-            );
+            debug_assert!(self.get_transition_ref(tr1_id).iter_terms().all(|term| term.is_cst()));
 
             let to_conditions = self.iter_conditions().filter_map(move |(cond_id, _)| {
                 let (tr2_id, _) = self.get_transition_of_condition(cond_id).unwrap();
@@ -252,9 +246,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                         .get_args()
                         .iter()
                         .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| {
-                            term1.is_cst() && term2.is_cst() && term1.constant != term2.constant
-                        })
+                        .any(|(term1, term2)| term1.is_cst() && term2.is_cst() && term1.constant != term2.constant)
                     {
                         return None;
                     }
@@ -287,9 +279,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                         .get_args()
                         .iter()
                         .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| {
-                            term1.is_cst() && term2.is_cst() && term1.constant != term2.constant
-                        })
+                        .any(|(term1, term2)| term1.is_cst() && term2.is_cst() && term1.constant != term2.constant)
                     {
                         return None;
                     }

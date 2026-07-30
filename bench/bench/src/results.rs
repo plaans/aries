@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{Problem, SolveResult, SolveStatus, SolverID, comp::RunWithRef, metric::Metric};
+use crate::{Problem, SolveResult, SolverID, comp::RunWithRef, metric::Metric};
 
 #[derive(Clone, Default, Debug)]
 pub struct ResultCollection {
@@ -37,7 +37,7 @@ impl ResultCollection {
     pub fn easy(self) -> Self {
         let mut x = self.with_data_for_all_solvers();
         x.results
-            .retain(|_, runs| runs.results.values().all(|r| r.status == SolveStatus::Solved));
+            .retain(|_, runs| runs.results.values().all(|r| r.status.is_solved()));
         x
     }
 
@@ -45,7 +45,7 @@ impl ResultCollection {
     pub fn hard(self) -> Self {
         let mut x = self.with_data_for_all_solvers();
         x.results
-            .retain(|_, runs| runs.results.values().any(|r| r.status != SolveStatus::Solved));
+            .retain(|_, runs| runs.results.values().any(|r| !r.status.is_solved()));
         x
     }
 
