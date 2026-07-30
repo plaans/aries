@@ -1,6 +1,6 @@
 mod grounder;
 
-pub use grounder::{SimpleDatalogGrounder, SimpleDatalogGrounderProgramView};
+pub use grounder::Grounder as SourcesGrounderSimple;
 
 use aries_solver::prelude::IntCst;
 

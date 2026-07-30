@@ -12,7 +12,7 @@ use crate::encoder::{CondId, SchedEncoder};
 use crate::ext::ground::{SourceGrounding, SourceGroundingFlatId};
 use crate::ext::lprelax::ground::{TransitionGrounding, TransitionGroundingFlatId};
 use crate::ext::lprelax::transition::*;
-use crate::ext::{Source, collect_ambiguous_conditions_and_effects_to_relax};
+use crate::ext::{Source, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::{Effect, EffectId, IntTerm, StateVar, Sym, Task, TaskId};
 
 pub(crate) struct LpRelaxSchedEncoder<'a> {
@@ -109,14 +109,14 @@ impl<'a> LpRelaxSchedEncoder<'a> {
             .sched
             .global_args
             .iter()
-            .map(|(t, _)| sched_encoder.bounds(t))
+            .map(|t| sched_encoder.bounds(t))
             .collect();
 
         let concrete_sources_terms_ranges = sched_encoder
             .sched
             .tasks
             .iter()
-            .map(|task| task.args.iter().map(|(t, _)| sched_encoder.bounds(t)).collect())
+            .map(|task| task.args.iter().map(|t| sched_encoder.bounds(t)).collect())
             .collect();
 
         Self {
@@ -315,7 +315,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     pub fn get_source(&self, source: &Source) -> Option<&Task> {
         source.map(|task_id| &self.main.sched.tasks[task_id])
     }
-    pub fn get_source_terms(&self, source: &Source) -> &[(IntTerm, Sym)] {
+    pub fn get_source_terms(&self, source: &Source) -> &[IntTerm] {
         source
             .map(|task_id| &self.main.sched.tasks[task_id].args)
             .unwrap_or(&self.main.sched.global_args)
@@ -396,7 +396,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                 source,
                 self.get_source_terms(&source)
                     .iter()
-                    .map(|(t, _)| self.main.bounds(t).0..=self.main.bounds(t).1)
+                    .map(|t| self.main.bounds(t).0..=self.main.bounds(t).1)
                     .multi_cartesian_product()
                     .map(SourceGrounding::from)
                     .collect(),
@@ -406,7 +406,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     }
     // TODO: complete / incomplete grounder ?
     pub fn run_new_simple_datalog_grounder(&self) -> HashMap<Option<TaskId>, Vec<SourceGrounding>> {
-        crate::ext::ground::SimpleDatalogGrounder::from(self.main, false).run()
+        crate::ext::ground::SourcesGrounderSimple::from(self.main).run()
     }
 
     pub fn get_transition_groundings(&self, transition_id: TransitionId) -> Vec<TransitionGrounding> {
@@ -481,13 +481,10 @@ pub(crate) struct Transitions {
 }
 
 impl Transitions {
-    /// Collects transitions from "unambiguous" conditions and effects
-    /// (i.e. those whose terms are constants or arguments of their source (task), meaning,
-    /// for example that a condition using a reified variable as a term will be ignored).
-    ///
+    /// Collects transitions from "unambiguous" conditions and effects (i.e. filtering out "nonsimple" ones)
     pub fn new_unambiguous(ctx: &mut SchedEncoder) -> Self {
-        // Collects ambiguous / unsupported transitions to ignore / relax.
-        let (conditions_to_ignore, effects_to_ignore) = collect_ambiguous_conditions_and_effects_to_relax(ctx);
+        // Collects nonsimple transitions to ignore / relax.
+        let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
 
         // Group conditions and effects by sources
 
@@ -682,7 +679,7 @@ impl Transitions {
         // For each transition, collect its terms' (args and values) indices in the list of its source's args.
         //
         // Note that currently, transitions whose terms contain auxiliary or reification variables
-        // that do not appearing in the the source's args are ignored anyway (filtered out as ambiguous)
+        // that do not appearing in the the source's args are ignored anyway (filtered out as "nonsimple")
 
         let mut transition_terms_indices_in_source = Vec::with_capacity(store.len());
 
@@ -705,7 +702,7 @@ impl Transitions {
                         .chain(&[c.value])
                         .map(|&term| {
                             (!term.is_cst())
-                                .then(|| src_terms.iter().position(|&(t, _)| t == term))
+                                .then(|| src_terms.iter().position(|&t| t == term))
                                 .flatten()
                         })
                         .collect()
@@ -728,7 +725,7 @@ impl Transitions {
                         })
                         .map(|&term| {
                             (!term.is_cst())
-                                .then(|| src_terms.iter().position(|&(t, _)| t == term))
+                                .then(|| src_terms.iter().position(|&t| t == term))
                                 .flatten()
                         })
                         .collect()
@@ -754,7 +751,7 @@ impl Transitions {
                         })
                         .map(|&term| {
                             (!term.is_cst())
-                                .then(|| src_terms.iter().position(|&(t, _)| t == term))
+                                .then(|| src_terms.iter().position(|&t| t == term))
                                 .flatten()
                         })
                         .collect()

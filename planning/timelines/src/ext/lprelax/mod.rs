@@ -810,7 +810,7 @@ impl LpRelaxEncodingRelations {
             self.presences_ground_sources_empty.push(source_grounding_id);
         }
 
-        for (&(term, _), &v) in ctx.get_source_terms(&source).iter().zip(source_grounding.inner()) {
+        for (&term, &v) in ctx.get_source_terms(&source).iter().zip(source_grounding.inner()) {
             if term.is_cst() {
                 continue;
             }
