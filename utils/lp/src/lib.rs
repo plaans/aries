@@ -645,6 +645,30 @@ impl FeasibilityChecker {
         Ok(old_val_solver)
     }
 
+    /// Add a new constraint to our lp
+    /// The variables involved must be already declared
+    ///
+    /// [`Problem::add_constraint`]: struct.Problem.html#method.add_constraint
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem becomes infeasible with the additional constraint.
+    pub fn add_constraint(&mut self, expr: impl Into<LinearExpr>, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
+        let expr = expr.into();
+        self.solver
+            .add_constraint(CsVec::new(self.solver.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)?;
+        Ok(())
+    }
+
+    /// Add a new variable
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the variable has inconsistent bounds
+    pub fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
+        self.solver.add_variable(obj_coeff, min, max)
+    }
+
     /// Try to restore the feasibility of our problem
     ///
     ///  # Errors

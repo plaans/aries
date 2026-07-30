@@ -48,9 +48,29 @@ impl Solver {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.opt_feas_checker = None;
+    }
+
     /// Create a new solver variable both for Problem and the mirror of our problem
     pub fn create_variable(&mut self, lb: IntCst, ub: IntCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
+
+        // If the minilp instance is already created, we need to update it as well
+        if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
+            let idx_var = feas_checker.add_variable(0.0, lb as f64, ub as f64).unwrap();
+
+            assert_eq!(idx_var, var.idx());
+        }
+
+        const TRESHOLD_WARNING: i128 = 2_i128.pow(40); // Experimentally computed
+
+        if lb.abs() as i128 > TRESHOLD_WARNING || ub.abs() as i128 > TRESHOLD_WARNING {
+            tracing::warn!(
+                "Variable {} in the LP has important bounds, LP stability isn't expected",
+                var.idx()
+            );
+        }
 
         stats.num_variables += 1;
 
@@ -164,7 +184,11 @@ impl Solver {
     pub fn add_constraint(&mut self, lin_sum: Vec<(Variable, IntCst)>) {
         let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|&(var, coef)| (var, coef as f64)).collect();
 
-        self.problem.add_constraint(float_lin_sum, ComparisonOp::Eq, 0.0);
+        if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
+            feas_checker.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
+        }
+
+        self.problem.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
 
         self.constraints.push(IntegerConstraint { lin_sum });
     }

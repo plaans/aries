@@ -11,9 +11,10 @@ use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
     collections::ref_store::RefMap,
     core::{
-        IntCst, Lit, Var,
+        INT_CST_MAX, INT_CST_MIN, IntCst, Lit, Var,
         literals::Watches,
         state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
+        views::VarView,
     },
     lang::linear::{LinSum, ScaledVar},
     reasoners::{Contradiction, ReasonerId, Theory},
@@ -159,14 +160,22 @@ impl Lp {
             return *self.memory_x.get(linear_sum[0].var).unwrap();
         }
 
-        let s = self.solver.create_variable(IntCst::MIN, IntCst::MAX, &mut self.stats);
+        let mut constraint = vec![];
 
-        let mut constraint = vec![(s, -1)];
+        let mut lb = 0;
+        let mut ub = 0;
 
         for &svar in linear_sum {
+            ub += svar.upper_bound(doms);
+            lb += svar.lower_bound(doms);
+
             let var = *self.memory_x.get(svar.var).unwrap();
             constraint.push((var, svar.factor));
         }
+
+        let s = self.solver.create_variable(lb, ub, &mut self.stats);
+
+        constraint.push((s, -1));
 
         // We force s to be equal to our linear sum
         self.solver.add_constraint(constraint);
@@ -332,7 +341,7 @@ impl Theory for Lp {
     }
 
     fn print_stats(&self) {
-        if self.active {
+        if self.enable {
             println!("# propagations: {}", self.stats.num_propagate);
             println!(
                 "# contradictions: {}",
@@ -376,7 +385,10 @@ mod tests {
         seq::{IteratorRandom, SliceRandom},
     };
 
-    use crate::{core::state::Cause, reasoners::cp::testing::pick_decisions};
+    use crate::{
+        core::{INT_CST_MAX, INT_CST_MIN, state::Cause},
+        reasoners::cp::testing::pick_decisions,
+    };
 
     use super::*;
 
@@ -530,11 +542,16 @@ mod tests {
     #[ignore]
     #[test]
     fn compile_stats_certificate_multiple() {
-        for max in [10, 1000, i32::MAX] {
+        for max in [10, 1000, INT_CST_MAX] {
             for nb_var in [30, 50, 100, 150] {
                 for nb_const in [50, 100, 200, 400] {
                     print!("nb_var:{nb_var}, nb_const: {nb_const}, max: {max}, ");
-                    compile_stats_certificate(nb_var, nb_const, if max == i32::MAX { i32::MIN } else { -max }, max);
+                    compile_stats_certificate(
+                        nb_var,
+                        nb_const,
+                        if max == INT_CST_MAX { INT_CST_MIN } else { -max },
+                        max,
+                    );
                 }
             }
         }

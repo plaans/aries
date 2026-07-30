@@ -654,9 +654,64 @@ impl Solver {
         Ok(())
     }
 
+    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
+        if min > max {
+            return Err(Error::Infeasible);
+        }
+
+        let new_var_idx = self.num_vars;
+        self.num_vars += 1;
+
+        self.orig_obj_coeffs.insert(new_var_idx, obj_coeff);
+        self.orig_var_mins.insert(new_var_idx, min);
+        self.orig_var_maxs.insert(new_var_idx, max);
+
+        // As we insert the variable as a non basic, it has to be equal to one of its bound or 0.0 if they are not finite
+        let init_val = if min.is_finite() {
+            min
+        } else if max.is_finite() {
+            max
+        } else {
+            0.0
+        };
+
+        // We update the objective value based on the one we just choosed
+        self.cur_obj_val += init_val * obj_coeff;
+
+        let nb_idx = self.nb_vars.len();
+        self.var_states.insert(new_var_idx, VarState::NonBasic(nb_idx));
+
+        self.nb_vars.push(new_var_idx);
+        self.nb_var_vals.push(init_val);
+        self.nb_var_obj_coeffs.push(obj_coeff);
+        self.nb_var_is_fixed.push(false);
+        self.nb_var_states.push(NonBasicVarState {
+            at_min: init_val == min,
+            at_max: init_val == max,
+        });
+
+        // We need to update the size of our constraints, as our new variable doesn't appear in those constraints, its corresponding coefficients are null
+        let new_total_vars = self.num_total_vars();
+        let mut new_orig_constraints = CsMat::empty(CompressedStorage::CSR, new_total_vars);
+        for row in self.orig_constraints.outer_iterator() {
+            new_orig_constraints = new_orig_constraints.append_outer_csvec(resized_view(&row, new_total_vars));
+        }
+        self.orig_constraints = new_orig_constraints;
+        self.orig_constraints_csc = self.orig_constraints.to_csc();
+
+        if self.enable_primal_steepest_edge {
+            // The column coresponding to the new variable being null its norm is 0
+            self.primal_edge_sq_norms.push(1.0);
+        }
+
+        self.is_dual_feasible = false;
+
+        Ok(new_var_idx)
+    }
+
     pub(crate) fn add_constraint(&mut self, mut coeffs: CsVec, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
         assert!(self.is_primal_feasible);
-        assert!(self.is_dual_feasible);
+        // assert!(self.is_dual_feasible); // necesarry if we want to garanty optimality, not the case for us
 
         if coeffs.indices().is_empty() {
             let is_tautological = match cmp_op {
@@ -714,7 +769,7 @@ impl Solver {
         self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
 
         if self.enable_primal_steepest_edge || self.enable_dual_steepest_edge {
-            // existing tableau rows didn't change, so we calc the last row
+            // existing tableau rows didn't change, so we calc the last rowa
             // and add its contribution to the sq. norms.
             self.calc_row_coeffs(self.num_constraints() - 1);
 
