@@ -15,9 +15,26 @@ use crate::{Effect, EffectId, HasValueAt, Task, TaskId};
 
 use std::collections::{HashMap, HashSet};
 
-// TODO: Consider individual action instances (taskid) only when not yet seen constant arguments assignments.
-//       For the rest, just use the one corresponding to the fully lifted instance (if there's any, of course)
-
+/// Given a bounded planning task (i.e. timelines model, i.e. optional scheduling model),
+/// computes overestimated (relaxed) groundings of its sources (i.e. tasks / actions)
+/// that they could take in a solution.
+///
+/// Like most grounders, it is similar to the one by Helmert (2009): it constructs a Datalog program
+/// based on a relaxation of the planning problem and extracts the groundings from the facts derived by that program.
+/// However, our representation does not explicitly represent lists of "delete-" and "add-" effects,
+/// so the canonical delete-free relaxation most grounders rely on does not apply to our case directly.
+/// In particular, a negative effect (e.g. "(not (at r l))") is not necessarily equivalent to a STRIPS delete-effect removing "(at r l)".
+/// As such, it would be a mistake to filter out negative effects, as they are not the same as delete-effects.
+///
+/// The temporal aspect is relaxed: every "global" (initial, including timed initial) effect
+/// is considered to hold from the time origin, and every goal (or "global condition") is considered required at the horizon.
+/// The temporal structure of inside (durative) actions is ignored.
+/// If an initial effect contains non-constant terms (e.g. a variable as their value),
+/// it is further relaxed by asserting a fact for each of those non-constant terms' possible values.
+/// Finally, conditions and effects deemed "nonsimple" (see [`collect_nonsimple_conditions_and_effects_to_relax`]) are dropped altogether.
+///
+/// TODO: Consider individual action instances (taskid) only when not yet seen constant arguments assignments.
+///       For the rest, just use the one corresponding to the fully lifted instance (if there's any, of course)
 pub struct Grounder {
     program: GrounderProgram,
     global_args_groundings: Vec<SourceGrounding>,
