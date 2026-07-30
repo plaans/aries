@@ -656,8 +656,7 @@ impl FeasibilityChecker {
     pub fn add_constraint(&mut self, expr: impl Into<LinearExpr>, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
         let expr = expr.into();
         self.solver
-            .add_constraint(CsVec::new(self.solver.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)?;
-        Ok(())
+            .add_constraint(CsVec::new(self.solver.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)
     }
 
     /// Add a new variable
@@ -840,6 +839,55 @@ mod tests {
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 3.0);
         }
+    }
+
+    #[test]
+    fn add_variable() {
+        let mut problem = Problem::new(OptimizationDirection::Minimize);
+        let v1 = problem.add_var(2.0, (0.0, f64::INFINITY));
+        let v2 = problem.add_var(1.0, (0.0, f64::INFINITY));
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
+
+        let mut feas_check = problem.create_feasibility_checker().unwrap();
+
+        let res = feas_check.check_feasibility();
+        assert!(res.is_ok());
+
+        let res = feas_check.add_variable(2.0, f64::NEG_INFINITY, f64::INFINITY);
+        assert!(res.is_ok());
+        let v3 = Variable(res.unwrap());
+        assert_eq!(v3, problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY)));
+
+        let res = feas_check.add_variable(-3.0, -10.0, f64::INFINITY);
+        assert!(res.is_ok());
+        let v4 = Variable(res.unwrap());
+        assert_eq!(v4, problem.add_var(-3.0, (-10.0, f64::INFINITY)));
+
+        let res = feas_check.add_variable(1.0, f64::NEG_INFINITY, 10.0);
+        assert!(res.is_ok());
+        let v5 = Variable(res.unwrap());
+        assert_eq!(v5, problem.add_var(1.0, (f64::NEG_INFINITY, 10.0)));
+
+        let res = feas_check.add_variable(0.0, 2.0, 0.0);
+        assert!(res.is_err());
+
+        let res = feas_check.add_variable(0.0, -10.0, 10.0);
+        assert!(res.is_ok());
+        let v6 = Variable(res.unwrap());
+        assert_eq!(v6, problem.add_var(0.0, (-10.0, 10.0)));
+
+        // Adding constraint with the new variables
+        let res = feas_check.add_constraint([(v3, 1.0), (v4, 1.0)], ComparisonOp::Le, 4.0);
+        assert!(res.is_ok());
+
+        let res = feas_check.add_constraint([(v1, 1.0), (v6, 1.0)], ComparisonOp::Ge, 10.0);
+        assert!(res.is_ok());
+
+        let res = feas_check.set_bound(v6, &Bound::Upper, 5.0);
+        let res_check = feas_check.check_feasibility();
+
+        assert!(res.is_err() || res_check.is_err());
     }
 
     #[test]

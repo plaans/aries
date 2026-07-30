@@ -48,17 +48,17 @@ impl Solver {
         }
     }
 
-    pub fn reset(&mut self) {
-        self.opt_feas_checker = None;
-    }
-
     /// Create a new solver variable both for Problem and the mirror of our problem
     pub fn create_variable(&mut self, lb: IntCst, ub: IntCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
 
-        // If the minilp instance is already created, we need to update it as well
+        // If the minilp instance is already created, we need to update it
         if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
-            let idx_var = feas_checker.add_variable(0.0, lb as f64, ub as f64).unwrap();
+            let res = feas_checker.add_variable(0.0, lb as f64, ub as f64);
+            // Adding a variable should not generate an error as it would mean that we are trying to add a variable with inconsistent bounds
+            assert!(res.is_ok());
+
+            let idx_var = res.unwrap();
 
             assert_eq!(idx_var, var.idx());
         }
@@ -185,7 +185,9 @@ impl Solver {
         let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|&(var, coef)| (var, coef as f64)).collect();
 
         if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
-            feas_checker.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
+            let res = feas_checker.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
+            // Adding a constraint that is not active yet should no generate an error
+            assert!(res.is_ok())
         }
 
         self.problem.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
