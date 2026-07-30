@@ -170,7 +170,7 @@ impl Lp {
 
         for &svar in linear_sum {
             ub = ub.saturating_add(svar.upper_bound_long(doms));
-            lb = ub.saturating_add(svar.lower_bound_long(doms));
+            lb = lb.saturating_add(svar.lower_bound_long(doms));
 
             let var = *self.memory_x.get(svar.var).unwrap();
             constraint.push((var, svar.factor));
