@@ -45,6 +45,9 @@ struct Stats {
 
     num_constraints: usize,
     num_variables: usize,
+
+    num_certif: usize,
+    num_val_certif: usize,
 }
 
 impl Stats {
@@ -55,6 +58,9 @@ impl Stats {
 
             num_constraints: 0,
             num_variables: 0,
+
+            num_certif: 0,
+            num_val_certif: 0,
         }
     }
 }
@@ -242,15 +248,19 @@ impl Lp {
     }
 
     /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
-    fn explain_set_bound(&self, res: Result<(), Error>, var: Variable) -> Result<(), Contradiction> {
+    fn explain_set_bound(&mut self, res: Result<(), Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
-            Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
-                Some(explanation) => {
-                    // println!("{:?}", explanation);
-                    Err(Contradiction::Explanation(explanation))
+            Err(Error::InfeasibleWithCertificate(cert)) => {
+                self.stats.num_certif += 1;
+                match self.solver.check_certificate(&cert) {
+                    Some(explanation) => {
+                        // println!("{:?}", explanation);
+                        self.stats.num_val_certif += 1;
+                        Err(Contradiction::Explanation(explanation))
+                    }
+                    None => Ok(()),
                 }
-                None => Ok(()),
-            },
+            }
 
             Err(Error::Infeasible) => {
                 let explanation = self.solver.explain_infeasible_var(var);
@@ -261,12 +271,18 @@ impl Lp {
     }
 
     /// Takes the result of a call to solver.check_feasibility and returns either Ok or a Contradiction if infeasibilty was detected
-    fn explain_check_feas(&self, res: Result<(), Error>) -> Result<(), Contradiction> {
+    fn explain_check_feas(&mut self, res: Result<(), Error>) -> Result<(), Contradiction> {
         match res {
-            Err(Error::InfeasibleWithCertificate(cert)) => match self.solver.check_certificate(&cert) {
-                Some(explanation) => Err(Contradiction::Explanation(explanation)),
-                None => Ok(()),
-            },
+            Err(Error::InfeasibleWithCertificate(cert)) => {
+                self.stats.num_certif += 1;
+                match self.solver.check_certificate(&cert) {
+                    Some(explanation) => {
+                        self.stats.num_val_certif += 1;
+                        Err(Contradiction::Explanation(explanation))
+                    }
+                    None => Ok(()),
+                }
+            }
             _ => Ok(()),
         }
     }
@@ -291,7 +307,8 @@ impl Theory for Lp {
             // println!("Lit: {:?}", lit);
 
             // We first set the bounds associated with the active lit triggered by the newly inferred lit
-            for watcher in self.watches.watches_on(lit) {
+            let watchers: Vec<usize> = self.watches.watches_on(lit).collect();
+            for watcher in watchers {
                 let (bound_cons, active_lit) = self.bound_cons_lit_vec[watcher];
 
                 let res = self.solver.set_bound_restrict(
@@ -352,6 +369,10 @@ impl Theory for Lp {
             );
             println!("# constraints: {}", self.stats.num_constraints);
             println!("# variables: {}", self.stats.num_variables);
+            println!(
+                "# certificates: {}, valid: {}",
+                self.stats.num_certif, self.stats.num_val_certif
+            );
         } else {
             println!("DISABLED");
         }
