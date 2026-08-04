@@ -1,0 +1,11 @@
+[package]
+name = "aries-solver-lprelax"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aries-solver = { path = ".." }
+aries-env-param = { path = "../../utils/env_param" }
+highs = { git = "https://github.com/nrealus/highs.git" }
+itertools = { workspace = true }
+smallvec = { workspace = true }
