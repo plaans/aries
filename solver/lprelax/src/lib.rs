@@ -175,7 +175,8 @@ impl LpRelaxState {
         };
         assert!(lb <= ub);
 
-        self.lpmodel.change_column_bounds(col, lb..ub);
+        self.lpmodel
+            .change_column_bounds(col, int_cst_as_float(lb)..=int_cst_as_float(ub));
         res
     }
     fn change_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) {
@@ -192,7 +193,8 @@ impl LpRelaxState {
         };
         assert!(lb <= ub);
 
-        self.lpmodel.change_column_bounds(col, lb..ub);
+        self.lpmodel
+            .change_column_bounds(col, int_cst_as_float(lb)..=int_cst_as_float(ub));
     }
     fn add_row(
         &mut self,
@@ -261,9 +263,10 @@ impl LpRelaxState {
     }
 
     fn get_objective_current_bound(&self) -> Option<IntCst> {
+        let obj_col = self.get_objective_column().unwrap();
         self.get_objective_sense().map(|sense| match sense {
-            LpObjectiveSense::Maximise => self.get_column_upper_bound(self.get_objective_column().unwrap()),
-            LpObjectiveSense::Minimise => self.get_column_lower_bound(self.get_objective_column().unwrap()),
+            LpObjectiveSense::Maximise => self.get_column_upper_bound(obj_col),
+            LpObjectiveSense::Minimise => self.get_column_lower_bound(obj_col),
         })
     }
     fn get_objective_column(&self) -> Option<LpCol> {
@@ -292,10 +295,14 @@ impl LpRelaxState {
                 LpLitType::LEQ => LpLit::leq(lplit.col, self.get_column_upper_bound(lplit.col)),
             };
             let bounds = match lplit.tpe {
-                LpLitType::GEQ => lplit.val..self.get_column_upper_bound(lplit.col),
-                LpLitType::LEQ => self.get_column_lower_bound(lplit.col)..lplit.val,
+                LpLitType::GEQ => {
+                    int_cst_as_float(lplit.val)..=int_cst_as_float(self.get_column_upper_bound(lplit.col))
+                }
+                LpLitType::LEQ => {
+                    int_cst_as_float(self.get_column_lower_bound(lplit.col))..=int_cst_as_float(lplit.val)
+                }
             };
-            if lplit.strictly_entails(prev_lplit) && bounds.start <= bounds.end {
+            if lplit.strictly_entails(prev_lplit) && bounds.start() <= bounds.end() {
                 self.lpmodel.change_column_bounds(lplit.col, bounds);
 
                 let cause_is_main_model = matches!(cause, LpEventCause::MainModel(_));
@@ -329,10 +336,10 @@ impl LpRelaxState {
         self.trail.restore_last_with(|ev| {
             let bounds = match ev.new_lplit.tpe {
                 LpLitType::GEQ => {
-                    ev.prev_lplit.val..float_as_exact_int_cst(self.lpmodel.get_column_bounds(ev.new_lplit.col).1)
+                    int_cst_as_float(ev.prev_lplit.val)..=self.lpmodel.get_column_bounds(ev.new_lplit.col).1
                 }
                 LpLitType::LEQ => {
-                    float_as_exact_int_cst(self.lpmodel.get_column_bounds(ev.new_lplit.col).0)..ev.prev_lplit.val
+                    self.lpmodel.get_column_bounds(ev.new_lplit.col).0..=int_cst_as_float(ev.prev_lplit.val)
                 }
             };
             self.lpmodel.change_column_bounds(ev.new_lplit.col, bounds);
@@ -536,7 +543,7 @@ impl LpRelax {
 
         // Skip if the optimal objective computed above is too close to the incumbent (previous best known objective value).
         let obj_incumbent_bound = self.state.get_objective_current_bound().unwrap();
-        let obj_diff = FloatCst::from(obj_incumbent_bound) - optim_obj_val;
+        let obj_diff = int_cst_as_float(obj_incumbent_bound) - optim_obj_val;
         if self.config.use_propagation_skips && (obj_diff).abs() < 1. {
             return Ok(());
         }
