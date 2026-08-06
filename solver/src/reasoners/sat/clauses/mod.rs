@@ -44,6 +44,11 @@ impl Display for ClauseId {
         write!(f, "{}", usize::from(*self))
     }
 }
+impl std::fmt::Debug for ClauseId {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        write!(f, "{}", usize::from(*self))
+    }
+}
 
 #[derive(Clone)]
 pub struct ClauseDb {
