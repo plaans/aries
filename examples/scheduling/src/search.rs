@@ -82,7 +82,7 @@ pub fn get_solver(mut base_solver: Solver, strategy: &SearchStrategy, pb: &Encod
                 "focused" => mode = Mode::Focused,
                 x if x.starts_with("+lbd") => {
                     let lvl = x.strip_prefix("+lbd").unwrap().parse().unwrap();
-                    base_solver.reasoners.sat.clauses.params.locked_lbd_level = lvl;
+                    base_solver.reasoners.sat().clauses.params.locked_lbd_level = lvl;
                 }
                 "" => {} // ignore
                 _ => panic!("Unsupported option: {opt}"),
