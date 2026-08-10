@@ -24,6 +24,30 @@ class VirtualMemoryLimitExceeded(subprocess.CalledProcessError):
         super().__init__(returncode, cmd, output, stderr)
         self.memory_limit_mb = memory_limit_mb
 
+def _vms_bytes_recursive(proc) -> int:
+    total = proc.memory_info().vms
+    for child in proc.children(recursive=True):
+        try:
+            total += child.memory_info().vms
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return total
+
+def _kill_proc_tree(proc) -> None:
+    try:
+        children = proc.children(recursive=True)
+    except psutil.NoSuchProcess:
+        children = []
+    for child in children:
+        try:
+            child.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    try:
+        proc.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+
 
 @dataclass
 class ApeResult:
@@ -223,7 +247,7 @@ class ApeRunner:
 
     @staticmethod
     def _monitor_memory(
-        proc_pid: int, limit_mb: int, exceeded: threading.Event, poll_interval: float = 0.1
+        proc_pid: int, limit_mb: int, exceeded: threading.Event, poll_interval: float = 0.01
     ) -> None:
         limit_bytes = limit_mb * 1024 * 1024
         try:
@@ -232,11 +256,11 @@ class ApeRunner:
             return
         while True:
             try:
-                vms = proc.memory_info().vms
+                vms = _vms_bytes_recursive(proc)
                 if vms > limit_bytes:
                     print(f"\nMemory limit exceeded ({limit_mb} MB, VMS={vms // 1024 // 1024} MB)")
                     exceeded.set()
-                    proc.kill()
+                    _kill_proc_tree(proc)
                     return
                 time.sleep(poll_interval)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
