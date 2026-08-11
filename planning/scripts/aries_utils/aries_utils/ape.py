@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 
-class VirtualMemoryLimitExceeded(subprocess.CalledProcessError):
-    """Raised when a subprocess exceeds its (virtual) memory limit."""
+class RSSMemoryLimitExceeded(subprocess.CalledProcessError):
+    """Raised when a subprocess exceeds its (resident) memory limit."""
 
     def __init__(
         self,
@@ -24,11 +24,11 @@ class VirtualMemoryLimitExceeded(subprocess.CalledProcessError):
         super().__init__(returncode, cmd, output, stderr)
         self.memory_limit_mb = memory_limit_mb
 
-def _vms_bytes_recursive(proc) -> int:
-    total = proc.memory_info().vms
+def _rss_bytes_recursive(proc) -> int:
+    total = proc.memory_info().rss
     for child in proc.children(recursive=True):
         try:
-            total += child.memory_info().vms
+            total += child.memory_info().rss
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
     return total
@@ -152,7 +152,7 @@ class ApeRunner:
         Args:
             *args: Arguments to pass to APE (e.g., "validate", "plan.txt")
             timeout: Optional timeout in seconds
-            memory_limit_mb: Optional memory limit in MB (virtual, monitored via psutil)
+            memory_limit_mb: Optional memory limit in MB (resident, monitored via psutil)
             check: If True, raise exception on non-zero exit code
             capture_output: If True, capture stdout/stderr (default: True)
 
@@ -162,7 +162,7 @@ class ApeRunner:
         Raises:
             subprocess.CalledProcessError: If check=True and command fails
             subprocess.TimeoutExpired: If command times out
-            VirtualMemoryLimitExceeded: If command exceeds the memory limit
+            RSSMemoryLimitExceeded: If command exceeds the memory limit
 
         Example:
             >>> ape = ApeRunner()
@@ -235,7 +235,7 @@ class ApeRunner:
 
         if exceeded.is_set():
             self._report_memory_limit(completed, memory_limit_mb)
-            raise VirtualMemoryLimitExceeded(
+            raise RSSMemoryLimitExceeded(
                 completed.returncode,
                 cmd,
                 completed.stdout,
@@ -256,9 +256,9 @@ class ApeRunner:
             return
         while True:
             try:
-                vms = _vms_bytes_recursive(proc)
-                if vms > limit_bytes:
-                    print(f"\nMemory limit exceeded ({limit_mb} MB, VMS={vms // 1024 // 1024} MB)")
+                rss = _rss_bytes_recursive(proc)
+                if rss > limit_bytes:
+                    print(f"\nMemory limit exceeded ({limit_mb} MB, RSS={rss // 1024 // 1024} MB)")
                     exceeded.set()
                     _kill_proc_tree(proc)
                     return
@@ -278,7 +278,7 @@ class ApeRunner:
         #print(result.stderr if result.stderr else "(empty)")
         print(f"\nSignal: {-result.returncode}")
         print("\nTo reproduce:")
-        print(f"  ulimit -v {limit_mb * 1024}; {' '.join(result.args)}")
+        print(f"  systemd-run --user --scope -p MemoryMax=$(({limit_mb} * 1024 * 1024)) -- {' '.join(result.args)}")
 
     @staticmethod
     def _report_timeout(cmd: list[str], timeout: Optional[int]) -> None:
@@ -353,7 +353,7 @@ class ApeRunner:
                 timeout=timeout,
             )
             return True
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, VirtualMemoryLimitExceeded):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RSSMemoryLimitExceeded):
             return False
 
     def optimize_plan(
@@ -419,7 +419,7 @@ class ApeRunner:
 
                 return True
 
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, VirtualMemoryLimitExceeded):
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RSSMemoryLimitExceeded):
                 return False
             finally:
                 # Clean up temporary file
@@ -430,5 +430,5 @@ class ApeRunner:
             try:
                 self.run(*args, timeout=timeout)
                 return True
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, VirtualMemoryLimitExceeded):
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RSSMemoryLimitExceeded):
                 return False
