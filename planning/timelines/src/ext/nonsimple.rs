@@ -19,8 +19,8 @@ use crate::{
 /// These conditions and effects may have to be relaxed / ignored in some usages,
 /// e.g. grounding or the LP relaxation, due to their handling being unclear there.
 pub fn collect_nonsimple_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondId>, HashSet<EffectId>) {
-    let nonsimple_effects = collect_nonsimple_effects(ctx);
-    let nonsimple_conditions = collect_nonsimple_conditions(&nonsimple_effects, ctx);
+    let mut nonsimple_effects = collect_nonsimple_effects(ctx);
+    let nonsimple_conditions = collect_nonsimple_conditions(&mut nonsimple_effects, ctx);
     (nonsimple_conditions, nonsimple_effects)
 }
 
@@ -46,11 +46,12 @@ fn collect_nonsimple_effects(ctx: &SchedEncoder) -> HashSet<EffectId> {
     res
 }
 
-fn collect_nonsimple_conditions(nonsimple_effects: &HashSet<EffectId>, ctx: &SchedEncoder) -> HashSet<CondId> {
+fn collect_nonsimple_conditions(nonsimple_effects: &mut HashSet<EffectId>, ctx: &SchedEncoder) -> HashSet<CondId> {
     let mut res = HashSet::new();
 
     for cl in ctx.causal_links.get_links() {
         if res.contains(&cl.cond_id) {
+            nonsimple_effects.insert(cl.eff_id);
             continue;
         }
         let cond = &ctx.causal_links.conditions[cl.cond_id];
@@ -62,6 +63,7 @@ fn collect_nonsimple_conditions(nonsimple_effects: &HashSet<EffectId>, ctx: &Sch
                 ctx,
             )
         {
+            nonsimple_effects.insert(cl.eff_id);
             res.insert(cl.cond_id);
         }
     }
