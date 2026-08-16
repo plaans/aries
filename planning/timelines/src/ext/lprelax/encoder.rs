@@ -173,14 +173,26 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     /// the "active" literal is None (as this doesn't correspond to a causal link in the main CSP model).
     pub fn iter_supports(&self) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
         // Supporting stemming from the original causal links in the main encoding.
-        let supports_from_original_causal_links = self.main.causal_links.get_links().map(|cl| {
-            let (tr1_id, _) = self.get_transition_of_effect(cl.eff_id).unwrap();
-            let (tr2_id, _) = self.get_transition_of_condition(cl.cond_id).unwrap();
-            debug_assert_eq!(
-                self.get_transition_ref(tr1_id).get_state_var().fluent,
-                self.get_transition_ref(tr2_id).get_state_var().fluent,
+        let supports_from_original_causal_links = self.main.causal_links.get_links().filter_map(|cl| {
+            println!(
+                "{:?} {:?}",
+                (cl.eff_id, self.main.sched.effects.get(cl.eff_id)),
+                (cl.cond_id, self.main.causal_links.conditions.get(cl.cond_id))
             );
-            ((tr1_id, tr2_id), Some(cl.active))
+            if let Some((tr1_id, _)) = self.get_transition_of_effect(cl.eff_id) {
+                let (tr2_id, _) = self
+                    .get_transition_of_condition(cl.cond_id)
+                    .expect("condition ignored => possible supporting effect ignored too");
+
+                debug_assert_eq!(
+                    self.get_transition_ref(tr1_id).get_state_var().fluent,
+                    self.get_transition_ref(tr2_id).get_state_var().fluent,
+                );
+                Some(((tr1_id, tr2_id), Some(cl.active)))
+            } else {
+                debug_assert!(self.get_transition_of_condition(cl.cond_id).is_none());
+                None
+            }
         });
 
         // Supports from original (nondefault) effects to other original (nondefault) effects
