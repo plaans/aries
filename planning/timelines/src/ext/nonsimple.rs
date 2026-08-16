@@ -21,7 +21,7 @@ use crate::{
 pub fn collect_nonsimple_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondId>, HashSet<EffectId>) {
     let nonsimple_effects = collect_nonsimple_effects(ctx);
     let nonsimple_conditions = collect_nonsimple_conditions(&nonsimple_effects, ctx);
-    (nonsimple_effects, nonsimple_conditions)
+    (nonsimple_conditions, nonsimple_effects)
 }
 
 fn collect_nonsimple_effects(ctx: &SchedEncoder) -> HashSet<EffectId> {
