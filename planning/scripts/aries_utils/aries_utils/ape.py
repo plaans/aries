@@ -145,6 +145,7 @@ class ApeRunner:
         memory_limit_mb: Optional[int] = None,
         check: bool = True,
         capture_output: bool = True,
+        env: Optional[dict[str, str]] = None,
     ) -> ApeResult:
         """
         Run an APE command with the given arguments.
@@ -155,6 +156,9 @@ class ApeRunner:
             memory_limit_mb: Optional memory limit in MB (resident, monitored via psutil)
             check: If True, raise exception on non-zero exit code
             capture_output: If True, capture stdout/stderr (default: True)
+            env: If not None, specifies the environment variables with which to run APE.
+                 If None, inherits the current process' environment.
+                 To use the specified environment on top of the inherited one, `env` will need to be built on top of the `os.environ.copy()` dict.
 
         Returns:
             ApeResult with command output and status
@@ -174,7 +178,7 @@ class ApeRunner:
 
         try:
             if memory_limit_mb is not None:
-                completed = self._run_with_memory_limit(cmd, timeout, memory_limit_mb)
+                completed = self._run_with_memory_limit(cmd, timeout, memory_limit_mb, env=env)
             else:
                 completed = subprocess.run(
                     cmd,
@@ -182,6 +186,7 @@ class ApeRunner:
                     text=True,
                     timeout=timeout,
                     check=False,
+                    env=env,
                 )
 
             ape_result = ApeResult(
@@ -204,7 +209,11 @@ class ApeRunner:
             raise e
 
     def _run_with_memory_limit(
-        self, cmd: list[str], timeout: Optional[int], memory_limit_mb: int
+        self,
+        cmd: list[str],
+        timeout: Optional[int],
+        memory_limit_mb: int,
+        env: Optional[dict[str, str]] = None,
     ) -> subprocess.CompletedProcess:
         exceeded = threading.Event()
 
@@ -213,6 +222,7 @@ class ApeRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env=env
         )
 
         monitor = threading.Thread(
