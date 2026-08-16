@@ -142,10 +142,11 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     }
     pub fn iter_nondefault_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
         // self.main.sched.effects.iter().enumerate()
+        let n = self.transitions.of_effect.len() - self.transitions.default_initial_effects.len();
         self.transitions
             .of_effect
             .iter()
-            .take(self.transitions.first_default_initial_effect_id)
+            .take(n)
             .map(|(eff_id, _)| (eff_id, self.main.sched.effects.get(eff_id)))
     }
     pub fn iter_default_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
@@ -625,9 +626,24 @@ impl Transitions {
         // (among the "explicit" known initial effects accessible from `ctx`).
 
         let mut default_initial_effects = vec![];
-        let first_default_initial_effect_id = 1 + of_effect.iter().max_by_key(|&(eff_id, _)| eff_id).unwrap().0;
+        let first_default_initial_effect_id = ctx.sched.effects.iter().count();
+
+        let fluents_to_ignore = HashSet::<Sym>::from_iter(
+            effects_to_ignore
+                .iter()
+                .map(|&e_id| ctx.sched.effects.get(e_id).state_var.fluent.clone())
+                .chain(
+                    conditions_to_ignore
+                        .iter()
+                        .map(|&c_id| ctx.causal_links.conditions.get(c_id).state_var.fluent.clone()),
+                ),
+        );
 
         for (sym, params, _) in ctx.sched.fluents.iter() {
+            if fluents_to_ignore.contains(sym) {
+                continue;
+            }
+
             let t = crate::Time::from(-2);
             let args = crate::boxes::BBox::new(params.iter().map(|p| p.range).collect::<Vec<_>>());
             let mut grs = args.as_ref().points();
