@@ -79,28 +79,9 @@ impl<'a> LpRelaxSchedEncoder<'a> {
             .store
             .iter()
             .map(|&tr| {
-                let tr_ref = get_transition_ref(tr);
-                // tr_ref.iter_terms().map(|t| sched_encoder.bounds(t)).collect()
-                let n = if tr_ref.get_valfrom().is_some() && tr_ref.get_valto().is_some() {
-                    2
-                } else {
-                    1
-                };
-                sched_encoder
-                    .sched
-                    .fluents
-                    .get_params(&tr_ref.get_state_var().fluent)
-                    .unwrap()
-                    .iter()
-                    .chain(vec![
-                        sched_encoder
-                            .sched
-                            .fluents
-                            .get_return(&tr_ref.get_state_var().fluent)
-                            .unwrap();
-                        n
-                    ])
-                    .map(|param| (param.range.first, param.range.last))
+                get_transition_ref(tr)
+                    .iter_terms()
+                    .map(|t| sched_encoder.bounds(t))
                     .collect()
             })
             .collect();
