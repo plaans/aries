@@ -34,4 +34,28 @@ impl<'a> Parser<'a> {
         let read: T = self.pop();
         assert!(read == expected);
     }
+
+    /// Remove words until the given value is found
+    pub fn ignore_until<T: FromStr + Eq>(&mut self, expected: T) {
+        let mut read: T = self.pop();
+        while read != expected {
+            read = self.pop();
+        }
+    }
+
+    /// Remove words until the given value plus the following double dot (with or without a whitespace in between)
+    pub fn ignore_until_double_dot(&mut self, expected: String) {
+        let expected_dot = format!("{expected}:");
+        let mut read: String = self.pop();
+        loop {
+            if read == expected {
+                self.ignore_expected(String::from(":"));
+                break;
+            } else if read == expected_dot {
+                break;
+            }
+
+            read = self.pop();
+        }
+    }
 }
