@@ -2,6 +2,7 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use aries_solver::prelude::*;
 use clap::Parser;
+use more_asserts as ma;
 use serde::{Deserialize, Serialize};
 
 /// Command line arguments.
@@ -78,7 +79,7 @@ impl From<TaskJson> for Task {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TransitionLabel {
     pub duration: Option<IntCst>,
     pub energy: Option<IntCst>,
@@ -253,44 +254,42 @@ impl From<TransitionVar> for ((usize, usize), TransitionVar) {
 }
 
 pub struct EosspModel {
-    pub model: Model,
     pub task_vars: Vec<TaskVar>,
     pub transition_vars: HashMap<(usize, usize), TransitionVar>,
     pub objective: Var,
 }
 
 impl EosspModel {
-    pub fn new(instance: Instance) -> Self {
-        let mut model = Model::new();
-
+    pub fn new(mut model: &mut Model, instance: &Instance) -> Self {
         let num_tasks: IntCst = instance.num_tasks().try_into().expect("overflow on num_tasks");
         let objective = model.new_ivar(0, num_tasks, "objective");
 
         let task_vars: Vec<TaskVar> = instance
             .tasks
-            .into_iter()
+            .iter()
             .map(|task| TaskVar::new(&mut model, &task, instance.energy_max))
             .collect();
 
         let transition_vars = instance
             .transitions
-            .into_iter()
-            .map(|((i, j), t)| TransitionVar::new(&mut model, ((i, j), t).into(), &task_vars[i], &task_vars[j]).into())
+            .iter()
+            .map(|((i, j), t)| {
+                TransitionVar::new(&mut model, ((*i, *j), *t).into(), &task_vars[*i], &task_vars[*j]).into()
+            })
             .collect();
 
-        let mut model = Self {
-            model,
+        let mut eossp_model = Self {
             task_vars,
             transition_vars,
             objective,
         };
 
-        model.post_disjunctions();
-        model.post_objective();
-        model
+        eossp_model.post_disjunctions(model);
+        eossp_model.post_objective(model);
+        eossp_model
     }
 
-    fn post_disjunctions(&mut self) {
+    fn post_disjunctions(&mut self, model: &mut Model) {
         for ((i, j), transition_ij) in self.transition_vars.iter() {
             let task_i = &self.task_vars[*i];
             let task_j = &self.task_vars[*j];
@@ -304,11 +303,11 @@ impl EosspModel {
                 disjunction.push(transition_ji.before);
             }
 
-            self.model.enforce(or(disjunction));
+            model.enforce(or(disjunction));
         }
     }
 
-    fn post_objective(&mut self) {
+    fn post_objective(&mut self, model: &mut Model) {
         let mut sum = LinSum::zero();
         for task in self.task_vars.iter() {
             if task.presence == Lit::TRUE {
@@ -317,8 +316,99 @@ impl EosspModel {
                 sum += task.presence.variable();
             }
         }
-        self.model.enforce(sum.clone().geq(self.objective));
-        self.model.enforce(sum.leq(self.objective));
+        model.enforce(sum.clone().geq(self.objective));
+        model.enforce(sum.leq(self.objective));
+    }
+}
+
+#[derive(Debug)]
+struct TaskSol {
+    pub id: usize,
+    pub start: IntCst,
+    pub duration: IntCst,
+    pub energy_at_start: IntCst,
+    pub energy_at_end: IntCst,
+}
+
+impl TaskSol {
+    pub fn new(solution: &Solution, task_var: &TaskVar) -> Self {
+        Self {
+            id: task_var.id,
+            start: solution.lb(task_var.start),
+            duration: task_var.duration,
+            energy_at_start: solution.ub(task_var.energy_at_start),
+            energy_at_end: solution.ub(task_var.energy_at_end),
+        }
+    }
+
+    pub fn end(&self) -> IntCst {
+        self.start + self.duration
+    }
+
+    pub fn energy(&self) -> IntCst {
+        self.energy_at_end - self.energy_at_start
+    }
+}
+
+#[derive(Debug)]
+struct EosspSolution {
+    pub task_sols: Vec<TaskSol>,
+}
+
+impl EosspSolution {
+    pub fn new(solution: &Solution, model: &EosspModel) -> Self {
+        let mut present_task_vars: Vec<&TaskVar> = model
+            .task_vars
+            .iter()
+            .filter(|task_var| solution.entails(task_var.presence))
+            .collect();
+
+        present_task_vars.sort_by_key(|task_var| solution.lb(task_var.start));
+
+        Self {
+            task_sols: present_task_vars
+                .iter()
+                .map(|task_var| TaskSol::new(solution, task_var))
+                .collect(),
+        }
+    }
+}
+
+fn check(solution: &EosspSolution, instance: &Instance) {
+    for task_sol in &solution.task_sols {
+        let task = &instance.tasks[task_sol.id];
+
+        ma::assert_ge!(task_sol.start, task.release);
+        ma::assert_le!(task_sol.end(), task.deadline);
+
+        ma::assert_ge!(task_sol.energy_at_start, 0);
+        ma::assert_le!(task_sol.energy_at_start, instance.energy_max);
+
+        ma::assert_ge!(task_sol.energy_at_end, 0);
+        ma::assert_le!(task_sol.energy_at_end, instance.energy_max);
+
+        assert_eq!(task_sol.duration, task.duration);
+        ma::assert_le!(task_sol.energy(), task.energy);
+    }
+
+    // Check transitions
+    for (task_sol_i, task_sol_j) in solution.task_sols.iter().zip(solution.task_sols.iter().skip(1)) {
+        let i = task_sol_i.id;
+        let j = task_sol_j.id;
+
+        let duration_sol = task_sol_j.start - task_sol_i.end();
+        let energy_sol = task_sol_j.start - task_sol_i.end();
+
+        if let Some(transition) = instance.transitions.get(&(i, j)) {
+            assert!(transition.duration.is_some() || transition.energy.is_some());
+
+            if let Some(duration) = transition.duration {
+                ma::assert_ge!(duration_sol, duration);
+            }
+            if let Some(energy) = transition.energy {
+                ma::assert_ge!(energy_sol, energy);
+            }
+        }
     }
 }
 
@@ -330,23 +420,25 @@ fn main() -> anyhow::Result<()> {
     println!("{:?}", instance);
     println!("----------");
 
-    let model = EosspModel::new(instance);
+    let mut aries_model = Model::new();
 
-    let mut solver = Solver::new(model.model);
+    let model = EosspModel::new(&mut aries_model, &instance);
+
+    let mut solver = Solver::new(aries_model);
     let result = solver.maximize(model.objective, SearchLimit::None);
 
-    let (objective, domains) = result.expect("error while solving").expect("unsat");
+    let (objective, solution) = result.expect("error while solving").expect("unsat");
 
     for task_var in model.task_vars.iter() {
-        let present = domains.entails(task_var.presence);
+        let present = solution.entails(task_var.presence);
         if present {
-            let start = domains.lb(task_var.start);
+            let start = solution.lb(task_var.start);
             let end = start + task_var.duration;
 
-            // Domains already set all variables to lower bound
+            // Solution already set all variables to lower bound
             // TODO: find a way to use upper bound
-            let energy_at_start = domains.ub(task_var.energy_at_start);
-            let energy_at_end = domains.ub(task_var.energy_at_end);
+            let energy_at_start = solution.ub(task_var.energy_at_start);
+            let energy_at_end = solution.ub(task_var.energy_at_end);
 
             println!(
                 "T{} [{} - {}] ({} - {})",
@@ -358,21 +450,15 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("----------");
+    
+    let solution = EosspSolution::new(&solution, &model);
+    
+    println!("{:?}", solution);
     println!("Objective: {objective}");
+    println!("----------");
 
-    let mut task_var_sequence: Vec<&TaskVar> = model
-        .task_vars
-        .iter()
-        .filter(|task_var| domains.entails(task_var.presence))
-        .collect();
 
-    task_var_sequence.sort_by_key(|task_var| domains.lb(task_var.start));
-
-    let id_sequence: Vec<usize> = task_var_sequence.iter().map(|task_var| task_var.id).collect();
-
-    let json_sequence = serde_json::to_string(&id_sequence).unwrap();
-
-    println!("{json_sequence}");
+    check(&solution, &instance);
 
     Ok(())
 }
