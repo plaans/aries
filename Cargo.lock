@@ -219,6 +219,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries_eossp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aries-solver",
+ "clap 4.6.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aries_fzn"
 version = "0.1.0"
 dependencies = [
