@@ -1,11 +1,33 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
+use aries_bench_data::{IntermediateResult, SolveResult};
 use aries_solver::prelude::*;
 
 #[path = "../utils/mod.rs"]
 mod utils;
 
-pub struct DirectedSegmentMap<T> {
+use structopt::StructOpt;
+use walkdir::WalkDir;
+
+#[derive(Debug, StructOpt)]
+#[structopt(name = "aries-tsp")]
+struct Opt {
+    /// File containing the instance to solve.
+    files: Vec<PathBuf>,
+    /// maximum runtime, in seconds.
+    #[structopt(long = "timeout", short = "t")]
+    timeout: Option<u32>,
+    /// If set, a summary of the run will be saved in the indicated directory.
+    /// This option is intended to ease the collection of benchmark results with `aries-bench`
+    #[structopt(long = "report", short = "r")]
+    report: Option<String>,
+}
+
+struct DirectedSegmentMap<T> {
     n: usize,
     data: Vec<T>,
 }
@@ -122,6 +144,8 @@ impl GeoPoint {
 
 #[derive(Debug)]
 struct TspProblem {
+    // Name of the instance
+    name: String,
     /// Number of nodes
     n: usize,
     /// Set of weight between nodes
@@ -142,7 +166,11 @@ const SCALE_FACTOR: f64 = 1000.0;
 /// Solves a tsp problem and returns a TspSolution.
 ///
 /// It bases one the One Commodity Flow explain in the following paper: https://matmod.ch/lpl/PDF/tsp-2.pdf
-fn solve_tsp(pb: &TspProblem, deadline: impl Into<f64>) -> Option<TspSolution> {
+fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
+    let start_time = std::time::Instant::now();
+
+    let mut solution_history: Vec<IntermediateResult> = Default::default();
+
     let mut model = Model::new();
 
     let trav_edg = DirectedSegmentMap::new_with(pb.n, || model.new_variable(0, 1));
@@ -201,17 +229,29 @@ fn solve_tsp(pb: &TspProblem, deadline: impl Into<f64>) -> Option<TspSolution> {
 
     println!("Solving...");
 
+    let limit = if let Some(timeout) = opt.timeout {
+        SearchLimit::duration_secs(timeout)
+    } else {
+        SearchLimit::None
+    };
+
+    let mut status = aries_bench_data::SolveStatus::Solved;
+
+    let mut best_cost: Option<i64> = None;
+
     // create the solver and solve to optimal (with 180s timeout)
     let mut solver = Solver::new(model);
-    match solver.minimize_with_callback(
+    let solution_opt = match solver.minimize_with_callback(
         total_cost_var,
-        |_, sol| {
-            println!(
-                "New solution with cost: {}",
-                sol.eval(total_cost_var).unwrap() as f64 / SCALE_FACTOR
-            )
+        |obj, _| {
+            best_cost = Some((obj as f64 / SCALE_FACTOR) as i64);
+            println!("New solution with cost: {}", best_cost.unwrap());
+            solution_history.push(IntermediateResult {
+                timestamp: start_time.elapsed(),
+                objective: best_cost.unwrap(),
+            });
         },
-        SearchLimit::duration_secs(deadline),
+        limit,
     ) {
         Ok(Some((_, sol))) => {
             println!("== Optimal solution found ==");
@@ -240,8 +280,6 @@ fn solve_tsp(pb: &TspProblem, deadline: impl Into<f64>) -> Option<TspSolution> {
                 panic!("No following node found, the solution contains an error");
             }
 
-            solver.print_stats();
-
             Some(TspSolution { cost, tour_order })
         }
         Ok(None) => {
@@ -250,9 +288,57 @@ fn solve_tsp(pb: &TspProblem, deadline: impl Into<f64>) -> Option<TspSolution> {
         }
         Err(_) => {
             println!("timeout");
+            status = aries_bench_data::SolveStatus::Timeout;
             None
         }
+    };
+
+    solver.print_stats();
+
+    if let Some(report_dir) = opt.report.as_ref() {
+        let problem = aries_bench_data::Problem {
+            name: pb.name.clone(),
+            timeout: opt
+                .timeout
+                .map(|t| Duration::from_secs(t as u64))
+                .unwrap_or(Duration::MAX),
+            flags: Default::default(),
+        };
+
+        // If we have an optimal solution, we take the exact cost, otherwise we take the best cost so far
+        let objective_value = if let Some(solution) = solution_opt.as_ref() {
+            Some(solution.cost as i64)
+        } else {
+            best_cost
+        };
+
+        let result = aries_bench_data::SolveResult {
+            problem,
+            status,
+            runtime: start_time.elapsed(),
+            objective_value,
+            metrics: Default::default(),
+            objective_history: solution_history,
+        }
+        .with_metric(
+            aries_bench_data::SolverMetric::NumConflicts,
+            solver.stats.num_conflicts as f64,
+        )
+        .with_metric(
+            aries_bench_data::SolverMetric::NumDecisions,
+            solver.stats.num_decisions as f64,
+        )
+        .with_metric(
+            aries_bench_data::SolverMetric::NumDomUpdates,
+            solver.stats.num_dom_updates as f64,
+        );
+
+        let _ = result.save_to_dir(report_dir); // TO DO: handle this error correctly
     }
+
+    println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
+
+    solution_opt
 }
 
 fn parse(input: &str) -> TspProblem {
@@ -260,8 +346,8 @@ fn parse(input: &str) -> TspProblem {
 
     words.ignore_until_double_dot(String::from("NAME"));
 
-    let name_instance: String = words.pop();
-    println!("Parsing {}", name_instance);
+    let name: String = words.pop();
+    println!("Parsing {}", name);
 
     words.ignore_until_double_dot(String::from("TYPE"));
     words.ignore_expected(String::from("TSP"));
@@ -399,10 +485,10 @@ fn parse(input: &str) -> TspProblem {
 
     println!("End parsing");
 
-    TspProblem { n, weights }
+    TspProblem { name, n, weights }
 }
 
-fn solve_tsp_from_file<P>(path: P, deadline: impl Into<f64>) -> Option<TspSolution>
+fn solve_tsp_from_file<P>(path: P, opt: &Opt) -> Option<TspSolution>
 where
     P: AsRef<Path>,
 {
@@ -412,7 +498,7 @@ where
 
     // println!("Problem: {:?}", pb);
 
-    let solution = solve_tsp(&pb, deadline);
+    let solution = solve_tsp(&pb, opt);
 
     println!("Solution: {:?}", solution);
 
@@ -422,13 +508,36 @@ where
 const PATH_INSTANCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/tsp/instances");
 
 fn main() {
-    for entry in fs::read_dir(PATH_INSTANCES).expect("Error while reading directory") {
-        let entry = entry.expect("Error while reading file");
-        let path = entry.path();
+    let opt = Opt::from_args();
 
-        if path.is_file() {
-            solve_tsp_from_file(path, 30);
-        }
+    // if no instance was provided, run with default folder
+    let input_paths = if opt.files.is_empty() {
+        fs::read_dir(PATH_INSTANCES)
+            .expect("Cannot read instances directory")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .collect()
+    } else {
+        opt.files.clone()
+    };
+
+    let files = input_paths
+        .into_iter()
+        .flat_map(|path| {
+            if path.is_dir() {
+                WalkDir::new(path)
+                    .follow_links(true)
+                    .into_iter()
+                    .filter_map(|entry| entry.ok().map(|entry| entry.into_path()))
+                    .collect::<Vec<_>>()
+            } else {
+                vec![path]
+            }
+        })
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "tsp"));
+
+    for file in files {
+        // println!("{:?}", file);
+        solve_tsp_from_file(file, &opt);
     }
 }
 
@@ -438,9 +547,15 @@ mod test {
 
     #[test]
     fn test_burma14() {
-        let opt_solution = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/burma14.tsp", 300);
+        let opt = Opt {
+            files: Vec::new(),
+            timeout: Some(300),
+            report: None,
+        };
 
-        if let Some(solution) = opt_solution {
+        let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/burma14.tsp", &opt);
+
+        if let Some(solution) = solution_opt {
             assert_eq!(solution.cost, 3323.0, "Optimal cost differs from the expected");
 
             let expected_tour_order1 = vec![1, 2, 14, 3, 4, 5, 6, 12, 7, 13, 8, 11, 9, 10];
@@ -457,9 +572,15 @@ mod test {
 
     #[test]
     fn test_ulysses16() {
-        let opt_solution = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/ulysses16.tsp", 300);
+        let opt = Opt {
+            files: Vec::new(),
+            timeout: Some(300),
+            report: None,
+        };
 
-        if let Some(solution) = opt_solution {
+        let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/ulysses16.tsp", &opt);
+
+        if let Some(solution) = solution_opt {
             assert_eq!(solution.cost, 6859.0, "Optimal cost differs from the expected");
 
             let expected_tour_order1 = vec![1, 14, 13, 12, 7, 6, 15, 5, 11, 9, 10, 16, 3, 2, 4, 8];
@@ -477,11 +598,17 @@ mod test {
     #[ignore = "Too long to run by default"]
     #[test]
     fn test_gr17() {
+        let opt = Opt {
+            files: Vec::new(),
+            timeout: Some(300),
+            report: None,
+        };
+
         println!("{}", PATH_INSTANCES.to_owned() + "/gr17.tsp");
 
-        let opt_solution = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/gr17.tsp", 300);
+        let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/gr17.tsp", &opt);
 
-        if let Some(solution) = opt_solution {
+        if let Some(solution) = solution_opt {
             assert_eq!(solution.cost, 2085.0, "Optimal cost differs from the expected");
         } else {
             println!("Timeout reached, solution can't be tested");

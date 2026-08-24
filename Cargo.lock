@@ -173,6 +173,7 @@ dependencies = [
 name = "aries-solver"
 version = "0.6.0"
 dependencies = [
+ "aries-bench-data",
  "aries-env-param",
  "bumpalo",
  "crossbeam-channel",
@@ -184,7 +185,9 @@ dependencies = [
  "numfmt",
  "rand 0.9.4",
  "smallvec",
+ "structopt",
  "tracing",
+ "walkdir",
 ]
 
 [[package]]

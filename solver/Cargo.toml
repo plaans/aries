@@ -43,6 +43,12 @@ rand = { workspace = true }
 hashbrown = { workspace = true }
 minilp = { version = "0.2.2", path = "../utils/lp" }
 
+[dev-dependencies]
+
+structopt.workspace = true
+aries-bench-data = { version = "0.1.0", path = "../bench/data" }
+walkdir.workspace = true
+
 
 [[example]]
 name = "knapsack"
