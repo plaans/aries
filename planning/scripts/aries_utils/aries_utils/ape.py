@@ -178,9 +178,9 @@ class ApeRunner:
 
         try:
             if memory_limit_mb is not None:
-                completed = self._run_with_memory_limit(cmd, timeout, memory_limit_mb, env=env)
+                result = self._run_with_memory_limit(cmd, timeout, memory_limit_mb, env=env)
             else:
-                completed = subprocess.run(
+                result = subprocess.run(
                     cmd,
                     capture_output=capture_output,
                     text=True,
@@ -190,16 +190,16 @@ class ApeRunner:
                 )
 
             ape_result = ApeResult(
-                returncode=completed.returncode,
-                stdout=completed.stdout if capture_output else "",
-                stderr=completed.stderr if capture_output else "",
+                returncode=result.returncode,
+                stdout=result.stdout if capture_output else "",
+                stderr=result.stderr if capture_output else "",
                 command=cmd,
             )
 
-            if check and completed.returncode != 0:
+            if check and result.returncode != 0:
                 self._report_error(ape_result)
                 raise subprocess.CalledProcessError(
-                    completed.returncode, cmd, completed.stdout, completed.stderr
+                    result.returncode, cmd, result.stdout, result.stderr
                 )
 
             return ape_result
@@ -241,19 +241,19 @@ class ApeRunner:
         finally:
             monitor.join(timeout=2)
 
-        completed = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        result = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
         if exceeded.is_set():
-            self._report_memory_limit(completed, memory_limit_mb)
+            self._report_memory_limit(result, memory_limit_mb)
             raise RSSMemoryLimitExceeded(
-                completed.returncode,
+                result.returncode,
                 cmd,
-                completed.stdout,
-                completed.stderr,
+                result.stdout,
+                result.stderr,
                 memory_limit_mb,
             )
 
-        return completed
+        return result
 
     @staticmethod
     def _monitor_memory(
@@ -282,10 +282,10 @@ class ApeRunner:
         print(f"APE COMMAND MEMORY LIMIT EXCEEDED ({limit_mb} MB)")
         print(f"{'=' * 60}")
         print(f"\nCommand: {' '.join(result.args)}")
-        #print("\nStdout:")
-        #print(result.stdout if result.stdout else "(empty)")
-        #print("\nStderr:")
-        #print(result.stderr if result.stderr else "(empty)")
+        print("\nStdout:")
+        print(result.stdout if result.stdout else "(empty)")
+        print("\nStderr:")
+        print(result.stderr if result.stderr else "(empty)")
         print(f"\nSignal: {-result.returncode}")
         print("\nTo reproduce:")
         print(f"  systemd-run --user --scope -p MemoryMax=$(({limit_mb} * 1024 * 1024)) -- {' '.join(result.args)}")
