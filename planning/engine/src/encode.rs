@@ -484,14 +484,46 @@ pub fn reify_expression(
             Ok(sum)
         }
         planx::Expr::App(Fun::Mul, args) if args.len() == 2 => {
-            let a1 = reify_expression(args[0], time, model, sched, binding, encoding)?;
-            let a2 = reify_expression(args[1], time, model, sched, binding, encoding)?;
-            let expr = if let Ok(cst) = IntCst::try_from(a1.clone()) {
-                a2 * cst
-            } else if let Ok(cst) = IntCst::try_from(a2.clone()) {
-                a1 * cst
+            // arg1 * arg2
+            let arg1 = reify_expression(args[0], time, model, sched, binding, encoding)?;
+            let arg2 = reify_expression(args[1], time, model, sched, binding, encoding)?;
+            // first lets check if one of the terms is a constant, in which case we can just multipy the current sum expression
+            let expr = if let Ok(cst) = IntCst::try_from(arg1.clone()) {
+                arg2 * cst
+            } else if let Ok(cst) = IntCst::try_from(arg2.clone()) {
+                arg1 * cst
             } else {
-                return e.todo("non linear expression is not supported").failed();
+                // We have two terms with variables, meaning this is not a linear expression and we will need the multiplication constraint.
+                //
+                // At this point, the two arguments are arbitrary linear sums, each potentially containing several variables
+                // Lets transform them into linear terms (with a single variable) and split them into their constituing parts.
+                // arg1 -> (a1 * x1 + b1)
+                let arg1 = flatten_expression(arg1, sched, binding);
+                let a1 = arg1.scaled_var.factor;
+                let x1 = arg1.scaled_var.var;
+                let b1 = arg1.constant;
+                // same for arg2
+                let arg2 = flatten_expression(arg2, sched, binding);
+                let a2 = arg2.scaled_var.factor;
+                let x2 = arg2.scaled_var.var;
+                let b2 = arg2.constant;
+                // the mul (arg1 * arg2) is now equivalent to:
+                // (a1 * x1 + b1) * (a2 * x2 + b2)
+                // We will expand it to the following linear sum:
+                // (a1 * a2 * x1 * x2) + (a1 * x1 * b2) + (a2 * x2 * b1) + (b1 * b2)
+                //
+                // For this to be a valid linear sum we need a new variable x1x2 enforced to be equal to (x1 * x2)
+                let x1x2 = sched
+                    .model
+                    .new_optional_variable(INT_CST_MIN, INT_CST_MAX, binding.presence);
+                sched.model.enforce_scoped(eq_mul(x1x2, x1, x2), [binding.presence]);
+                // now lets add all components of our sum:
+                let mut sum = LinSum::zero();
+                sum += x1x2 * a1 * a2;
+                sum += x1 * a1 * b2;
+                sum += x2 * a2 * b1;
+                sum += b1 * b2;
+                sum
             };
             Ok(expr)
         }
