@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use aries_bench_data::{IntermediateResult, SolveResult};
+use aries_bench_data::{IntermediateResult, Problem, SolveResult, SolveStatus, SolverMetric};
 use aries_solver::prelude::*;
 
 #[path = "../utils/mod.rs"]
@@ -32,6 +32,7 @@ struct DirectedSegmentMap<T> {
     data: Vec<T>,
 }
 
+#[allow(dead_code)]
 impl<T> DirectedSegmentMap<T> {
     pub fn new(n: usize, default_val: T) -> Self
     where
@@ -235,7 +236,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
         SearchLimit::None
     };
 
-    let mut status = aries_bench_data::SolveStatus::Solved;
+    let mut status = SolveStatus::Solved;
 
     let mut best_cost: Option<i64> = None;
 
@@ -288,7 +289,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
         }
         Err(_) => {
             println!("timeout");
-            status = aries_bench_data::SolveStatus::Timeout;
+            status = SolveStatus::Timeout;
             None
         }
     };
@@ -296,7 +297,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
     solver.print_stats();
 
     if let Some(report_dir) = opt.report.as_ref() {
-        let problem = aries_bench_data::Problem {
+        let problem = Problem {
             name: pb.name.clone(),
             timeout: opt
                 .timeout
@@ -312,7 +313,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
             best_cost
         };
 
-        let result = aries_bench_data::SolveResult {
+        let result = SolveResult {
             problem,
             status,
             runtime: start_time.elapsed(),
@@ -320,20 +321,11 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
             metrics: Default::default(),
             objective_history: solution_history,
         }
-        .with_metric(
-            aries_bench_data::SolverMetric::NumConflicts,
-            solver.stats.num_conflicts as f64,
-        )
-        .with_metric(
-            aries_bench_data::SolverMetric::NumDecisions,
-            solver.stats.num_decisions as f64,
-        )
-        .with_metric(
-            aries_bench_data::SolverMetric::NumDomUpdates,
-            solver.stats.num_dom_updates as f64,
-        );
+        .with_metric(SolverMetric::NumConflicts, solver.stats.num_conflicts as f64)
+        .with_metric(SolverMetric::NumDecisions, solver.stats.num_decisions as f64)
+        .with_metric(SolverMetric::NumDomUpdates, solver.stats.num_dom_updates as f64);
 
-        let _ = result.save_to_dir(report_dir); // TO DO: handle this error correctly
+        let _ = result.save_to_dir(report_dir); // TODO: handle this error correctly
     }
 
     println!("TOTAL RUNTIME: {:.6}", start_time.elapsed().as_secs_f64());
@@ -498,11 +490,18 @@ where
 
     // println!("Problem: {:?}", pb);
 
-    let solution = solve_tsp(&pb, opt);
+    let solution_opt = solve_tsp(&pb, opt);
 
-    println!("Solution: {:?}", solution);
+    if let Some(solution) = solution_opt.as_ref() {
+        println!(
+            "Optimal solution found with cost {}: {:?}",
+            solution.cost, solution.tour_order
+        );
+    } else {
+        println!("Timeout before reaching an optimal solution");
+    }
 
-    solution
+    solution_opt
 }
 
 const PATH_INSTANCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/tsp/instances");
