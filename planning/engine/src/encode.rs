@@ -120,6 +120,21 @@ pub fn condition_to_constraint(
             let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
             ConditionExpression::LeqZero(lhs - rhs).scoped(bindings.presence)
         }
+        planx::Expr::App(planx::Fun::Lt, exprs) if exprs.len() == 2 => {
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            ConditionExpression::LeqZero(lhs - rhs + 1).scoped(bindings.presence)
+        }
+        planx::Expr::App(planx::Fun::Geq, exprs) if exprs.len() == 2 => {
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            ConditionExpression::LeqZero(rhs - lhs).scoped(bindings.presence)
+        }
+        planx::Expr::App(planx::Fun::Gt, exprs) if exprs.len() == 2 => {
+            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
+            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
+            ConditionExpression::LeqZero(rhs - lhs + 1).scoped(bindings.presence)
+        }
         planx::Expr::App(planx::Fun::Or, exprs) => {
             let mut disjuncts = Vec::with_capacity(exprs.len());
             for &expr in exprs {
@@ -143,11 +158,6 @@ pub fn condition_to_constraint(
                 conjuncts.push(c);
             }
             ConditionExpression::And(conjuncts).scoped(bindings.presence)
-        }
-        planx::Expr::App(planx::Fun::Geq, exprs) if exprs.len() == 2 => {
-            let lhs = reify_expression(exprs[0], Some(timepoint), model, sched, bindings, encoding)?;
-            let rhs = reify_expression(exprs[1], Some(timepoint), model, sched, bindings, encoding)?;
-            ConditionExpression::LeqZero(rhs - lhs).scoped(bindings.presence)
         }
         _ => return Err(expr.todo("not supported")),
     };
