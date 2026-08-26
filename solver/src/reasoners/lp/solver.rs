@@ -1,13 +1,17 @@
+use std::fmt;
+
 use crate::{
     backtrack::Trail,
     core::{IntCst, Lit, LongCst, state::Explanation},
     reasoners::lp::{LpEvent, Stats},
 };
 
+#[allow(unused_imports)]
+use itertools::Itertools;
 use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
 /// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub(super) struct IntBounds {
     lower: LongCst,
     lower_lit: Lit,
@@ -15,9 +19,15 @@ pub(super) struct IntBounds {
     upper_lit: Lit,
 }
 
+impl fmt::Debug for IntBounds {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[{},{}]", self.lower, self.upper)
+    }
+}
+
 // No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
 #[derive(Debug, Clone, PartialEq)]
-struct IntegerConstraint {
+pub struct IntegerConstraint {
     lin_sum: Vec<(Variable, IntCst)>,
 }
 
@@ -27,7 +37,7 @@ pub struct Solver {
 
     // Used to store an exact version of our original problem with integers
     pub(super) bounds: Vec<IntBounds>,
-    constraints: Vec<IntegerConstraint>,
+    pub(super) constraints: Vec<IntegerConstraint>,
 
     opt_feas_checker: Option<FeasibilityChecker>,
 }
@@ -239,20 +249,22 @@ impl Solver {
 
     /// Convert a certificate with f64 coefficients in an a equivalent i128 certificate
     fn convert_certificate_i128(cert: &[f64]) -> Vec<i128> {
-        let coef = 2.0_f64.powi(52);
+        let coef = 2.0_f64.powi(52); // 52
 
-        cert.iter().map(|x| (x * coef) as i128).collect()
+        cert.iter().map(|x| (x * coef).trunc() as i128).collect()
     }
 
     /// Verify the certificate of unsatisfiability
     ///
     /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
-    pub fn check_certificate(&self, cert: &[f64]) -> Option<Explanation> {
+    pub fn check_certificate(&self, cert: &[f64], stats: &mut Stats) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
 
         let cert_i128 = Solver::convert_certificate_i128(cert);
+
+        stats.num_overflow += 1;
 
         // We build the constraint that should be infeasible based on the certificate, it's only a linear sum as our constraints are equalities
         for (const_i, &coef_cert) in cert_i128.iter().enumerate() {
@@ -269,7 +281,7 @@ impl Solver {
         let min_lin_sum = self.min_lin_sum(&lin_sum)?;
         let max_lin_sum = self.max_lin_sum(&lin_sum)?;
 
-        // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
+        stats.num_overflow -= 1;
 
         // To detect the infeasibility, we check if 0 is in the range [min, max] as our linear sum should be equal to 0
         if max_lin_sum < 0 {
@@ -309,6 +321,18 @@ impl Solver {
 
             return Some(explanation);
         }
+
+        // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
+        // let min_coeff = lin_sum.iter().filter(|v| **v != 0).map(|v| v.abs()).min().unwrap();
+        // println!(
+        //     "Resulting constraint: {:?}",
+        //     lin_sum
+        //         .iter()
+        //         .enumerate()
+        //         .filter(|(_, v)| **v != 0)
+        //         .map(|(i, v)| (i, *v as f64 / min_coeff as f64, &self.bounds[i]))
+        //         .collect_vec()
+        // );
 
         None
     }

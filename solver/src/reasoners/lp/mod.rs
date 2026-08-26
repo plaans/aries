@@ -3,6 +3,8 @@ mod solver;
 use std::collections::HashMap;
 
 use aries_env_param::EnvParam;
+#[allow(unused_imports)]
+use itertools::Itertools;
 use solver::Solver;
 
 use minilp::{Bound, Error, Variable};
@@ -48,9 +50,16 @@ struct Stats {
 
     num_certif: usize,
     num_val_certif: usize,
+    num_val_certif_float: usize,
+    num_overflow: usize,
+
+    history_certif: Vec<f32>,
+    last_num_val_certif: usize,
 }
 
 impl Stats {
+    const NUM_CERT_PROPORTION: usize = 100;
+
     fn new() -> Self {
         Self {
             num_ok_propagate: 0,
@@ -61,6 +70,20 @@ impl Stats {
 
             num_certif: 0,
             num_val_certif: 0,
+            num_val_certif_float: 0,
+            num_overflow: 0,
+
+            history_certif: Vec::new(),
+            last_num_val_certif: 0,
+        }
+    }
+
+    fn update_history_certif(&mut self) {
+        if self.num_certif.is_multiple_of(Stats::NUM_CERT_PROPORTION) {
+            let proportion =
+                (self.num_val_certif - self.last_num_val_certif) as f32 / Stats::NUM_CERT_PROPORTION as f32;
+            self.last_num_val_certif = self.num_val_certif;
+            self.history_certif.push(proportion);
         }
     }
 }
@@ -252,13 +275,27 @@ impl Lp {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
-                match self.solver.check_certificate(&cert) {
+                self.stats.update_history_certif();
+                if self.solver.problem.is_certificate_valid(&cert) {
+                    self.stats.num_val_certif_float += 1;
+                }
+
+                match self.solver.check_certificate(&cert, &mut self.stats) {
                     Some(explanation) => {
                         // println!("{:?}", explanation);
                         self.stats.num_val_certif += 1;
                         Err(Contradiction::Explanation(explanation))
                     }
-                    None => Ok(()),
+                    None => {
+                        // println!("SET BOUND on {:?}", var);
+                        // let filtered_cert = cert.iter().enumerate().filter(|(_, v)| **v != 0.0).collect_vec();
+                        // println!("Invalid certificate: {:?}", filtered_cert);
+                        // // if filtered_cert.len() == 1 {
+                        // //     println!("Constraint: {:?}", self.solver.constraints[filtered_cert[0].0]);
+                        // // }
+                        // println!();
+                        Ok(())
+                    }
                 }
             }
 
@@ -275,12 +312,25 @@ impl Lp {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
-                match self.solver.check_certificate(&cert) {
+                self.stats.update_history_certif();
+                if self.solver.problem.is_certificate_valid(&cert) {
+                    self.stats.num_val_certif_float += 1;
+                }
+                match self.solver.check_certificate(&cert, &mut self.stats) {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
                         Err(Contradiction::Explanation(explanation))
                     }
-                    None => Ok(()),
+                    None => {
+                        // println!("CHECK FEAS");
+                        // let filtered_cert = cert.iter().enumerate().filter(|(_, v)| **v != 0.0).collect_vec();
+                        // println!("Invalid certificate: {:?}", filtered_cert);
+                        // // if filtered_cert.len() == 1 {
+                        // //     println!("Constraint: {:?}", self.solver.constraints[filtered_cert[0].0]);
+                        // // }
+                        // println!();
+                        Ok(())
+                    }
                 }
             }
             _ => Ok(()),
@@ -370,9 +420,11 @@ impl Theory for Lp {
             println!("# constraints: {}", self.stats.num_constraints);
             println!("# variables: {}", self.stats.num_variables);
             println!(
-                "# certificates: {}, valid: {}",
-                self.stats.num_certif, self.stats.num_val_certif
+                "# certificates: {}, valid: {}, overflow: {}",
+                self.stats.num_certif, self.stats.num_val_certif, self.stats.num_overflow
             );
+            println!("# valid float certificates: {}", self.stats.num_val_certif_float);
+            // println!("History proportion valid cert: {:?}", self.stats.history_certif);
         } else {
             println!("DISABLED");
         }
@@ -461,7 +513,7 @@ mod tests {
                         // println!("Cert: {:?}", cert);
 
                         let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.check_certificate(cert).is_some();
+                        let is_certif_valid_int = self.solver.check_certificate(cert, &mut self.stats).is_some();
                         return Some((is_certif_valid_int, is_certif_valid_float));
                     }
 
@@ -469,7 +521,7 @@ mod tests {
                         // println!("Cert: {:?}", cert);
 
                         let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.check_certificate(cert).is_some();
+                        let is_certif_valid_int = self.solver.check_certificate(cert, &mut self.stats).is_some();
                         return Some((is_certif_valid_int, is_certif_valid_float));
                     }
 

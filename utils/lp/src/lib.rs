@@ -401,14 +401,14 @@ impl Problem {
             }
         }
 
-        match cmp_op {
+        let res = match cmp_op {
             ComparisonOp::Ge => {
                 let max_expr = self.calculate_max_expr(&expr);
-                max_expr < bound
+                max_expr < bound //+ Self::TOL
             }
             ComparisonOp::Le => {
                 let min_expr = self.calculate_min_expr(&expr);
-                min_expr > bound
+                min_expr > bound //- Self::TOL
             }
             ComparisonOp::Eq => {
                 let min_expr = self.calculate_min_expr(&expr);
@@ -416,9 +416,11 @@ impl Problem {
 
                 // println!("max: {max_expr}, min: {min_expr}, bound: {bound}");
 
-                max_expr < bound || min_expr > bound
+                max_expr < bound /*+ Self::TOL*/ || min_expr > bound //- Self::TOL
             }
-        }
+        };
+        // assert!(res);
+        res
     }
 }
 
