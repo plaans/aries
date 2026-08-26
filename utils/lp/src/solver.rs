@@ -680,6 +680,11 @@ impl Solver {
 
         let nb_idx = self.nb_vars.len();
         self.var_states.insert(new_var_idx, VarState::NonBasic(nb_idx));
+        for var in &mut self.basic_vars {
+            if *var >= new_var_idx {
+                *var += 1;
+            }
+        }
 
         self.nb_vars.push(new_var_idx);
         self.nb_var_vals.push(init_val);
@@ -694,7 +699,15 @@ impl Solver {
         let new_total_vars = self.num_total_vars();
         let mut new_orig_constraints = CsMat::empty(CompressedStorage::CSR, new_total_vars);
         for row in self.orig_constraints.outer_iterator() {
-            new_orig_constraints = new_orig_constraints.append_outer_csvec(resized_view(&row, new_total_vars));
+            let (indices, data): (Vec<_>, Vec<_>) = row
+                .iter()
+                .map(|(var, &coeff)| {
+                    let shifted_var = if var >= new_var_idx { var + 1 } else { var };
+                    (shifted_var, coeff)
+                })
+                .unzip();
+            new_orig_constraints =
+                new_orig_constraints.append_outer_csvec(CsVec::new(new_total_vars, indices, data).view());
         }
         self.orig_constraints = new_orig_constraints;
         self.orig_constraints_csc = self.orig_constraints.to_csc();
@@ -1156,10 +1169,12 @@ impl Solver {
                 }),
             })
         } else {
+            const TRESHOLD_ZERO: f64 = 1e-12;
+
             let mut certificate = vec![0.0; self.num_constraints()];
             for (r, &coeff) in self.inv_basis_row_coeffs.iter() {
                 if r < self.num_constraints() {
-                    certificate[r] = coeff;
+                    certificate[r] = if coeff.abs() < TRESHOLD_ZERO { 0.0 } else { coeff };
                 }
             }
 
@@ -1245,7 +1260,9 @@ impl Solver {
             self.basis_solver
                 .push_eta_matrix(&self.col_coeffs, pivot_elem.row, pivot_coeff);
         } else {
-            self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+            // self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+            self.recalc_basic_var_vals()?;
+            self.recalc_obj_coeffs()?;
         }
 
         Ok(())
