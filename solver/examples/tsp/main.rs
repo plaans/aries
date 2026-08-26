@@ -569,6 +569,7 @@ mod test {
         }
     }
 
+    #[ignore = "Too long to run by default"]
     #[test]
     fn test_ulysses16() {
         let opt = Opt {

@@ -7,6 +7,7 @@ pub struct Parser<'a> {
     words: VecDeque<&'a str>,
 }
 
+#[allow(unused)]
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
