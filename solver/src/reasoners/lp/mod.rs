@@ -1,3 +1,4 @@
+mod log;
 mod solver;
 
 use std::collections::HashMap;
@@ -115,6 +116,10 @@ pub struct Lp {
     ///
     /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
     enable: bool,
+    /// Used to log the initial problem
+    ///
+    /// It supposes that no additonal constraint is added after the first propagation
+    is_first_propagate: bool,
 }
 
 impl Default for Lp {
@@ -142,6 +147,7 @@ impl Lp {
 
             enable: LP_ENABLE.get(),
             active: true,
+            is_first_propagate: true,
         }
     }
     /// Activate propagation of the LP
@@ -211,6 +217,7 @@ impl Lp {
 
         // We force s to be equal to our linear sum
         self.solver.add_constraint(constraint);
+        self.stats.num_constraints += 1;
 
         self.memory_s.insert(linear_sum.to_vec(), s);
 
@@ -226,8 +233,6 @@ impl Lp {
 
         // Check that the given constraint is always present (not optionnal)
         assert!(doms.presence(active) == Lit::TRUE);
-
-        self.stats.num_constraints += 1;
 
         let bound_val = cst_int_to_long(-sum.constant());
 
@@ -245,7 +250,7 @@ impl Lp {
                 val: bound_val,
             };
         } else if self.memory_s.contains_key(&opp_lin_sum) {
-            // If an s variable already exists for the opposite of our linear sum, we can use the same be inverting our constraint
+            // If an s variable already exists for the opposite of our linear sum, we can use the same by inverting our constraint
 
             let &s = self.memory_s.get(&opp_lin_sum).unwrap();
             bound_cons = BoundConstraint {
@@ -346,6 +351,12 @@ impl Theory for Lp {
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
         if !self.active || !self.enable {
             return Ok(());
+        }
+
+        // TODO: conditonal logging with a feature
+        if self.is_first_propagate {
+            self.is_first_propagate = false;
+            self.solver.logger.set_problem(self.solver.problem.clone()); // We save the initial state of our problem
         }
 
         self.stats.num_propagate += 1;

@@ -11,8 +11,9 @@ keywords = ["linear-programming", "optimization"]
 categories = ["mathematics", "science"]
 
 [dependencies]
-sprs = { version = "0.9.4", default-features = false }
+sprs = { version = "0.9.4", default-features = false, features=["serde"]}
 log = "0.4.32"
+serde.workspace = true
 
 [dev-dependencies]
 #ndarray = "0.17.2"

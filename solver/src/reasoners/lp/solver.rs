@@ -3,12 +3,18 @@ use std::fmt;
 use crate::{
     backtrack::Trail,
     core::{IntCst, Lit, LongCst, state::Explanation},
-    reasoners::lp::{LpEvent, Stats},
+    reasoners::lp::{LpEvent, Stats, log::Logger},
 };
 
+use aries_env_param::EnvParam;
 #[allow(unused_imports)]
 use itertools::Itertools;
 use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
+
+const LOG_FOLDER: &str = "/home/mseraud/Documents/log/";
+
+pub static LP_LOG_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_LOG_ENABLE", "false");
+pub static LP_LOG_NAME: EnvParam<String> = EnvParam::new("ARIES_LP_LOG_NAME", "default.log");
 
 /// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
 #[derive(Clone, PartialEq)]
@@ -40,6 +46,9 @@ pub struct Solver {
     pub(super) constraints: Vec<IntegerConstraint>,
 
     opt_feas_checker: Option<FeasibilityChecker>,
+
+    pub(super) logger: Logger,
+    is_first_invalid_cert: bool,
 }
 
 impl PartialEq for Solver {
@@ -55,6 +64,8 @@ impl Solver {
             bounds: Vec::new(),
             constraints: Vec::new(),
             opt_feas_checker: None,
+            logger: Logger::new(),
+            is_first_invalid_cert: true,
         }
     }
 
@@ -112,6 +123,9 @@ impl Solver {
         let feas_checker = self.opt_feas_checker.as_mut().unwrap();
 
         debug_assert!(var.idx() < self.bounds.len());
+
+        // TODO: conditonal logging with a feature
+        self.logger.stack_event.push_event(var, bound, val);
 
         match bound {
             Bound::Lower => {
@@ -257,7 +271,7 @@ impl Solver {
     /// Verify the certificate of unsatisfiability
     ///
     /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
-    pub fn check_certificate(&self, cert: &[f64], stats: &mut Stats) -> Option<Explanation> {
+    pub fn check_certificate(&mut self, cert: &[f64], stats: &mut Stats) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
@@ -333,6 +347,13 @@ impl Solver {
         //         .map(|(i, v)| (i, *v as f64 / min_coeff as f64, &self.bounds[i]))
         //         .collect_vec()
         // );
+
+        if LP_LOG_ENABLE.get() && self.is_first_invalid_cert {
+            self.is_first_invalid_cert = false;
+            self.logger
+                .save_to(format!("{LOG_FOLDER}{}", LP_LOG_NAME.get_ref()).as_str())
+                .expect("Error while logging");
+        }
 
         None
     }
