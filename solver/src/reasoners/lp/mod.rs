@@ -372,6 +372,7 @@ impl Theory for Lp {
             for watcher in watchers {
                 let (bound_cons, active_lit) = self.bound_cons_lit_vec[watcher];
 
+                self.solver.reload();
                 let res = self.solver.set_bound_restrict(
                     bound_cons.var,
                     bound_cons.bound,
@@ -387,6 +388,7 @@ impl Theory for Lp {
 
             // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
             if let Some(&x_var) = self.memory_x.get(var) {
+                self.solver.reload();
                 let res =
                     // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
@@ -400,6 +402,8 @@ impl Theory for Lp {
                 self.explain_set_bound(res, x_var)?;
             }
         }
+
+        self.solver.reload();
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
         let res = self.solver.check_feasibility();

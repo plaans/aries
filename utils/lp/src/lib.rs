@@ -423,6 +423,31 @@ impl Problem {
         // assert!(res);
         res
     }
+
+    /// Returns the optimization direction
+    pub fn get_direction(&self) -> OptimizationDirection {
+        self.direction
+    }
+
+    /// Returns a reference to the list of objective coefficients
+    pub fn get_obj_coeffs(&self) -> &[f64] {
+        &self.obj_coeffs
+    }
+
+    /// Returns a reference to the list of lower bounds
+    pub fn get_var_mins(&self) -> &[f64] {
+        &self.var_mins
+    }
+
+    /// Returns a reference to the list of upper bounds
+    pub fn get_var_maxs(&self) -> &[f64] {
+        &self.var_maxs
+    }
+
+    /// Returns a reference to the list of constraints
+    pub fn get_constraints(&self) -> &[(CsVec, ComparisonOp, f64)] {
+        &self.constraints
+    }
 }
 
 /// A solution of a problem: optimal objective function value and variable values.

@@ -69,6 +69,11 @@ impl Solver {
         }
     }
 
+    /// Reload the minilp solver based on the current problem state
+    pub fn reload(&mut self) {
+        self.opt_feas_checker = None;
+    }
+
     /// Create a new solver variable both for Problem and the mirror of our problem
     pub fn create_variable(&mut self, lb: LongCst, ub: LongCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
