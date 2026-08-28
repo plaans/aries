@@ -3,14 +3,13 @@ use std::io::BufWriter;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::LongCst;
 use minilp::{Bound, Problem, Variable};
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct BoundSetEvent {
     var: Variable,
     bound: Bound,
-    val: LongCst,
+    val: f64,
 }
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
@@ -23,7 +22,7 @@ impl StackEvent {
         StackEvent { stack: Vec::new() }
     }
 
-    pub fn push_event(&mut self, var: Variable, bound: Bound, val: LongCst) {
+    pub fn push_event(&mut self, var: Variable, bound: Bound, val: f64) {
         self.stack.push(BoundSetEvent { var, bound, val });
     }
 
@@ -69,12 +68,59 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
-    use crate::reasoners::lp::log::Logger;
+
+    use minilp::Error;
+
+    use super::*;
+
+    fn test_execution(path: &str) {
+        let mut logger = Logger::load_from(path).expect("No such file");
+
+        let mut feas_checker = logger
+            .problem
+            .create_feasibility_checker()
+            .expect("Error while creating the feasability checker");
+
+        feas_checker
+            .check_feasibility()
+            .expect("With no constraint active, the problem should be feasible");
+
+        println!("Number events: {}", logger.stack_event.stack.len());
+
+        for (i, &BoundSetEvent { var, bound, val }) in logger.stack_event.iter().enumerate() {
+            logger.problem.set_bound(var, &bound, val);
+            let res_set_bound = feas_checker.set_bound(var, &bound, val);
+            let res_check_feas = feas_checker.check_feasibility();
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = res_set_bound
+                && !logger.problem.is_certificate_valid(&cert)
+            {
+                println!("Incremental: unvalid certificate at iteration: {i}");
+            }
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = res_check_feas
+                && !logger.problem.is_certificate_valid(&cert)
+            {
+                println!("Incremental: unvalid certificate at iteration: {i}");
+            }
+
+            let res_solve = logger.problem.solve();
+
+            if let Err(Error::InfeasibleWithCertificate(cert)) = res_solve
+                && !logger.problem.is_certificate_valid(&cert)
+            {
+                println!("Full reload: unvalid certificate at iteration: {i}");
+            }
+        }
+    }
 
     #[test]
-    fn load_default() {
-        let logger = Logger::load_from("/home/mseraud/Documents/log/default.log").expect("No default file");
+    fn load_burma14() {
+        test_execution("/home/mseraud/Documents/log/burma14.log");
+    }
 
-        println!("Problem: {:?}", logger.problem);
+    #[test]
+    fn load_ulysses16() {
+        test_execution("/home/mseraud/Documents/log/ulysses16.log");
     }
 }

@@ -125,7 +125,7 @@ impl Solver {
         debug_assert!(var.idx() < self.bounds.len());
 
         // TODO: conditonal logging with a feature
-        self.logger.stack_event.push_event(var, bound, val);
+        self.logger.stack_event.push_event(var, bound, val as f64);
 
         match bound {
             Bound::Lower => {
@@ -348,7 +348,7 @@ impl Solver {
         //         .collect_vec()
         // );
 
-        if LP_LOG_ENABLE.get() && self.is_first_invalid_cert {
+        if LP_LOG_ENABLE.get() && self.is_first_invalid_cert && !self.problem.is_certificate_valid(cert) {
             self.is_first_invalid_cert = false;
             self.logger
                 .save_to(format!("{LOG_FOLDER}{}", LP_LOG_NAME.get_ref()).as_str())
