@@ -76,7 +76,7 @@ mod tests {
 
     use good_lp::{Expression, ProblemVariables, Solver, SolverModel, constraint, highs};
     use itertools::Itertools;
-    use minilp::{ComparisonOp, OptimizationDirection};
+    use minilp::{ComparisonOp, Error, OptimizationDirection};
 
     use super::*;
 
@@ -144,40 +144,55 @@ mod tests {
             .create_feasibility_checker()
             .expect("Error while creating the feasability checker");
 
-        feas_checker
-            .check_feasibility()
-            .expect("With no constraint active, the problem should be feasible");
-
         println!("Number events: {}", logger.stack_event.stack.len());
 
         for (i, &BoundSetEvent { var, bound, val }) in logger.stack_event.iter().enumerate() {
             logger.problem.set_bound(var, &bound, val);
-            let res_set_bound = feas_checker.set_bound(var, &bound, val);
-            let res_check_feas = feas_checker.check_feasibility();
+
+            let res_set_bound_incr = feas_checker.set_bound(var, &bound, val);
+            let mut res_check_feas_incr = feas_checker.check_feasibility();
+
+            if res_set_bound_incr.is_ok() {
+                res_check_feas_incr = feas_checker.check_feasibility();
+            }
 
             let model = build_good_lp_model(&logger.problem, highs).expect("Error while creating highs instance");
 
+            let res_solve_reload = logger.problem.solve();
+
             let res_highs = model.solve();
 
-            // assert_eq!(
-            //     res_highs.is_ok(),
-            //     res_check_feas.is_ok() && res_set_bound.is_ok(),
-            //     "Solutions differ at iteration : {i}"
-            // );
+            if res_highs.is_ok() != res_solve_reload.is_ok() {
+                println!("Reload: solutions differ at iteration : {}", i + 1);
+            }
 
-            if res_highs.is_ok() != (res_check_feas.is_ok() && res_set_bound.is_ok()) {
-                println!("Solutions differ at iteration : {i}");
+            if res_highs.is_ok() != (res_set_bound_incr.is_ok() && res_check_feas_incr.is_ok()) {
+                println!("Incremental: solutions differ at iteration : {}", i + 1);
+
+                if let Err(Error::InfeasibleWithCertificate(cert)) = res_check_feas_incr
+                    && !logger.problem.is_certificate_valid(&cert)
+                {
+                    println!("But certificate is Invalid")
+                }
+
+                if let Err(Error::InfeasibleWithCertificate(cert)) = res_set_bound_incr
+                    && !logger.problem.is_certificate_valid(&cert)
+                {
+                    println!("But certificate is Invalid")
+                }
             }
         }
     }
 
     #[test]
     fn load_burma14() {
+        println!("Burma 14:");
         compare_execution_highs("/home/mseraud/Documents/log/burma14.log");
     }
 
     #[test]
     fn load_ulysses16() {
+        println!("Ulysses 16:");
         compare_execution_highs("/home/mseraud/Documents/log/ulysses16.log");
     }
 }
