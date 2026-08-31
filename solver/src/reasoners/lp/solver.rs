@@ -151,6 +151,7 @@ impl Solver {
     }
 
     /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bound
+    /// Returns true/false whether if the bound was effectively modified or not
     ///
     /// # Errors
     ///
@@ -162,7 +163,7 @@ impl Solver {
         val: LongCst,
         lit: Lit,
         trail: &mut Trail<LpEvent>,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
         match bound {
             Bound::Lower => {
                 let old_val = self.bounds[var.idx()].lower;
@@ -175,6 +176,8 @@ impl Solver {
                         old_lit,
                     });
                     self.set_bound(var, bound, val, lit)?;
+
+                    return Ok(true);
                 }
             }
             Bound::Upper => {
@@ -189,11 +192,13 @@ impl Solver {
                         old_lit,
                     });
                     self.set_bound(var, bound, val, lit)?;
+
+                    return Ok(true);
                 }
             }
         }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Restore the feasibilty of the lp solver

@@ -276,16 +276,16 @@ impl Lp {
     }
 
     /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
-    fn explain_set_bound(&mut self, res: Result<(), Error>, var: Variable) -> Result<(), Contradiction> {
+    fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
                 self.stats.update_history_certif();
-                if self.solver.problem.is_certificate_valid(&cert) {
+                if self.solver.problem.is_certificate_valid(cert) {
                     self.stats.num_val_certif_float += 1;
                 }
 
-                match self.solver.check_certificate(&cert, &mut self.stats) {
+                match self.solver.check_certificate(cert, &mut self.stats) {
                     Some(explanation) => {
                         // println!("{:?}", explanation);
                         self.stats.num_val_certif += 1;
@@ -372,7 +372,6 @@ impl Theory for Lp {
             for watcher in watchers {
                 let (bound_cons, active_lit) = self.bound_cons_lit_vec[watcher];
 
-                self.solver.reload();
                 let res = self.solver.set_bound_restrict(
                     bound_cons.var,
                     bound_cons.bound,
@@ -381,14 +380,13 @@ impl Theory for Lp {
                     &mut self.trail,
                 );
 
-                self.explain_set_bound(res, bound_cons.var)?;
+                self.explain_set_bound(&res, bound_cons.var)?;
             }
 
             let var = event.affected_bound.variable();
 
             // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
             if let Some(&x_var) = self.memory_x.get(var) {
-                self.solver.reload();
                 let res =
                     // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
@@ -399,11 +397,9 @@ impl Theory for Lp {
                             .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), lit, &mut self.trail)
                     };
 
-                self.explain_set_bound(res, x_var)?;
+                self.explain_set_bound(&res, x_var)?;
             }
         }
-
-        self.solver.reload();
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
         let res = self.solver.check_feasibility();

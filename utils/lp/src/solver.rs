@@ -371,114 +371,101 @@ impl Solver {
         }
     }
 
+    /// Set a new upper bound for a var, optimality an feasability aren't restored automatically:
+    /// A call to solve_feasibility or initial_solve is necessary
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the new bound is trivially infeasible (ub < lb)
     pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
         if val < self.orig_var_mins[var] {
             return Err(Error::Infeasible);
         }
 
         let old_val = self.orig_var_maxs[var];
-
-        // We set the new upper bound
         self.orig_var_maxs[var] = val;
 
-        let col = match self.var_states[var] {
+        match self.var_states[var] {
             VarState::Basic(row) => {
                 self.basic_var_maxs[row] = val;
-
-                if self.basic_var_vals[row] <= val {
+                if self.basic_var_vals[row] > val {
+                    self.is_primal_feasible = false;
+                }
+                if self.basic_var_vals[row] < val {
                     self.is_dual_feasible = false;
-                    return Ok(old_val);
-                } else {
-                    self.calc_row_coeffs(row);
-                    let pivot_info = self.choose_entering_col_dual(row, val)?;
-                    self.calc_col_coeffs(pivot_info.col);
-                    self.pivot(&pivot_info)?;
-                    pivot_info.col
                 }
             }
             VarState::NonBasic(col) => {
-                if self.nb_var_vals[col] <= val {
-                    self.is_dual_feasible = false;
-
-                    // We need to check whether if we are now equal to the new upper bound
-                    let cur_val = self.nb_var_vals[col];
-                    self.nb_var_states[col].at_max = cur_val == self.orig_var_maxs[var];
-
-                    return Ok(old_val);
-                } else {
+                let cur_val = self.nb_var_vals[col];
+                if cur_val > val {
+                    // The variable currently sits above its new upper bound: clamp it
+                    // down to `val` and propagate the change to the basic variables,
+                    // exactly like `fix_var` does when moving a non-basic variable.
                     self.calc_col_coeffs(col);
-
-                    let diff = val - self.nb_var_vals[col];
+                    let diff = val - cur_val;
                     for (r, coeff) in self.col_coeffs.iter() {
                         self.basic_var_vals[r] -= diff * coeff;
                     }
                     self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
                     self.nb_var_vals[col] = val;
-
-                    col
+                    // Moving it can push some basic variables out of their own bounds;
+                    // let restore_feasibility() sort that out.
+                    self.is_primal_feasible = false;
+                } else if cur_val < val {
+                    self.is_dual_feasible = false;
                 }
+                self.nb_var_states[col].at_max = self.nb_var_vals[col] == val;
             }
-        };
-
-        self.nb_var_states[col].at_max = true;
-
-        self.is_primal_feasible = false;
+        }
 
         Ok(old_val)
     }
 
+    /// Set a new lower bound for a var, optimality an feasability aren't restored automatically:
+    /// A call to solve_feasibility or initial_solve is necessary
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the new bound is trivially infeasible (lb > ub)
     pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
         if val > self.orig_var_maxs[var] {
             return Err(Error::Infeasible);
         }
 
         let old_val = self.orig_var_mins[var];
-
-        // We set the new lower bound
         self.orig_var_mins[var] = val;
 
-        let col = match self.var_states[var] {
+        match self.var_states[var] {
             VarState::Basic(row) => {
                 self.basic_var_mins[row] = val;
-
-                if self.basic_var_vals[row] >= val {
-                    self.is_dual_feasible = false;
-                    return Ok(old_val);
+                if self.basic_var_vals[row] < val {
+                    self.is_primal_feasible = false;
                 } else {
-                    self.calc_row_coeffs(row);
-                    let pivot_info = self.choose_entering_col_dual(row, val)?;
-                    self.calc_col_coeffs(pivot_info.col);
-                    self.pivot(&pivot_info)?;
-                    pivot_info.col
+                    self.is_dual_feasible = false;
                 }
             }
             VarState::NonBasic(col) => {
-                if self.nb_var_vals[col] >= val {
-                    self.is_dual_feasible = false;
-
-                    // We need to check whether if we are now equal to the new lower bound
-                    let cur_val = self.nb_var_vals[col];
-                    self.nb_var_states[col].at_min = cur_val == self.orig_var_mins[var];
-
-                    return Ok(old_val);
-                } else {
+                let cur_val = self.nb_var_vals[col];
+                if cur_val < val {
+                    // The variable currently sits below its new lower bound: clamp it
+                    // up to `val` and propagate the change to the basic variables,
+                    // exactly like `fix_var` does when moving a non-basic variable.
                     self.calc_col_coeffs(col);
-
-                    let diff = val - self.nb_var_vals[col];
+                    let diff = val - cur_val;
                     for (r, coeff) in self.col_coeffs.iter() {
                         self.basic_var_vals[r] -= diff * coeff;
                     }
                     self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
                     self.nb_var_vals[col] = val;
-
-                    col
+                    // Moving it can push some basic variables out of their own bounds;
+                    // let restore_feasibility() sort that out.
+                    self.is_primal_feasible = false;
+                } else {
+                    self.is_dual_feasible = false;
                 }
+                self.nb_var_states[col].at_min = self.nb_var_vals[col] == val;
             }
-        };
-
-        self.nb_var_states[col].at_min = true;
-
-        self.is_primal_feasible = false;
+        }
 
         Ok(old_val)
     }
@@ -492,7 +479,7 @@ impl Solver {
             VarState::Basic(row) => {
                 // if var was basic, remove it.
                 self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, val)?;
+                let pivot_info = self.choose_entering_col_dual(row, val, true)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
                 pivot_info.col
@@ -636,7 +623,7 @@ impl Solver {
 
             if let Some((row, leaving_new_val)) = self.choose_pivot_row_dual() {
                 self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
+                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val, true)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
             } else {
@@ -666,7 +653,20 @@ impl Solver {
         self.orig_var_mins.insert(new_var_idx, min);
         self.orig_var_maxs.insert(new_var_idx, max);
 
-        // As we insert the variable as a non basic, it has to be equal to one of its bound or 0.0 if they are not finite
+        // Slack variables have a bigger index than num_vars, therefore, we need to shift their index
+        for v in &mut self.basic_vars {
+            if *v >= new_var_idx {
+                *v += 1;
+            }
+        }
+        for v in &mut self.nb_vars {
+            if *v >= new_var_idx {
+                *v += 1;
+            }
+        }
+
+        // We add our new var as non basic as it doesn't appear in any constraint, therefore it needs to be equal to one of its bound
+        // (or 0.0 if they are not finite)
         let init_val = if min.is_finite() {
             min
         } else if max.is_finite() {
@@ -675,7 +675,6 @@ impl Solver {
             0.0
         };
 
-        // We update the objective value based on the one we just choosed
         self.cur_obj_val += init_val * obj_coeff;
 
         let nb_idx = self.nb_vars.len();
@@ -690,18 +689,28 @@ impl Solver {
             at_max: init_val == max,
         });
 
-        // We need to update the size of our constraints, as our new variable doesn't appear in those constraints, its corresponding coefficients are null
         let new_total_vars = self.num_total_vars();
         let mut new_orig_constraints = CsMat::empty(CompressedStorage::CSR, new_total_vars);
+
+        // We also need to shift the index of slack variables in the constraints
         for row in self.orig_constraints.outer_iterator() {
-            new_orig_constraints = new_orig_constraints.append_outer_csvec(resized_view(&row, new_total_vars));
+            let new_indices: Vec<usize> = row
+                .indices()
+                .iter()
+                .map(|&c| if c >= new_var_idx { c + 1 } else { c })
+                .collect();
+            let new_data = row.data().to_vec();
+            let new_row = CsVec::new(new_total_vars, new_indices, new_data);
+            new_orig_constraints = new_orig_constraints.append_outer_csvec(new_row.view());
         }
         self.orig_constraints = new_orig_constraints;
         self.orig_constraints_csc = self.orig_constraints.to_csc();
 
+        self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+
         if self.enable_primal_steepest_edge {
-            // The column coresponding to the new variable being null its norm is 0
             self.primal_edge_sq_norms.push(1.0);
+            self.sq_norms_update_helper.push(0.0);
         }
 
         self.is_dual_feasible = false;
@@ -1060,7 +1069,12 @@ impl Solver {
         })
     }
 
-    fn choose_entering_col_dual(&self, row: usize, leaving_new_val: f64) -> Result<PivotInfo, Error> {
+    fn choose_entering_col_dual(
+        &mut self,
+        row: usize,
+        leaving_new_val: f64,
+        is_first_call: bool,
+    ) -> Result<PivotInfo, Error> {
         // True if the new obj. coeff. must be nonnegative in a dual-feasible configuration.
         let leaving_diff_sign = leaving_new_val > self.basic_var_vals[row];
 
@@ -1156,16 +1170,22 @@ impl Solver {
                 }),
             })
         } else {
-            const TRESHOLD_ZERO: f64 = 1e-12;
+            if is_first_call {
+                self.recalc_basic_var_vals()?;
+                self.recalc_obj_coeffs()?;
+                self.choose_entering_col_dual(row, leaving_new_val, false)
+            } else {
+                const TRESHOLD_ZERO: f64 = 1e-12;
 
-            let mut certificate = vec![0.0; self.num_constraints()];
-            for (r, &coeff) in self.inv_basis_row_coeffs.iter() {
-                if r < self.num_constraints() {
-                    certificate[r] = if coeff.abs() < TRESHOLD_ZERO { 0.0 } else { coeff };
+                let mut certificate = vec![0.0; self.num_constraints()];
+                for (r, &coeff) in self.inv_basis_row_coeffs.iter() {
+                    if r < self.num_constraints() {
+                        certificate[r] = if coeff.abs() < TRESHOLD_ZERO { 0.0 } else { coeff };
+                    }
                 }
-            }
 
-            Err(Error::InfeasibleWithCertificate(certificate))
+                Err(Error::InfeasibleWithCertificate(certificate))
+            }
         }
     }
 
@@ -1248,6 +1268,8 @@ impl Solver {
                 .push_eta_matrix(&self.col_coeffs, pivot_elem.row, pivot_coeff);
         } else {
             // self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+
+            // Recalculating the basic var exactly costs more but helps for stability
             self.recalc_basic_var_vals()?;
             self.recalc_obj_coeffs()?;
         }
