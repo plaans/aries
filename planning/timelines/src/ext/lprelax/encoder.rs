@@ -1,11 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use aries_solver::prelude::*;
 use aries_solver::{core::views::Dom, lang::ModelWrapper};
 use idmap::{DirectIdMap, intid::IntegerId};
 use itertools::Itertools;
 use smallvec::SmallVec;
-use streaming_iterator::StreamingIterator;
 
 use crate::constraints::HasValueAt;
 use crate::encoder::{CondId, SchedEncoder};
@@ -13,7 +12,7 @@ use crate::ext::ground::{SourceGrounding, SourceGroundingFlatId};
 use crate::ext::lprelax::ground::{TransitionGrounding, TransitionGroundingFlatId};
 use crate::ext::lprelax::transition::*;
 use crate::ext::{Source, collect_nonsimple_conditions_and_effects_to_relax};
-use crate::{Effect, EffectId, IntTerm, StateVar, Sym, Task, TaskId};
+use crate::{Effect, EffectId, IntTerm, Sym, Task, TaskId};
 
 pub(crate) struct LpRelaxSchedEncoder<'a> {
     pub main: &'a mut SchedEncoder,
@@ -56,21 +55,10 @@ impl<'a> LpRelaxSchedEncoder<'a> {
 
         let get_transition_ref = |tr: Transition| match tr {
             Transition::Cond(c_id) => TransitionRef::Cond(sched_encoder.causal_links.conditions.get(c_id)),
-            Transition::Eff(e_id) => {
-                let e = if e_id < transitions.first_default_initial_effect_id {
-                    sched_encoder.sched.effects.get(e_id)
-                } else {
-                    &transitions.default_initial_effects[e_id - transitions.first_default_initial_effect_id]
-                };
-                TransitionRef::Eff(e)
-            }
+            Transition::Eff(e_id) => TransitionRef::Eff(sched_encoder.sched.effects.get(e_id)),
             Transition::CondEff(c_id, e_id) => {
                 let c = sched_encoder.causal_links.conditions.get(c_id);
-                let e = if e_id < transitions.first_default_initial_effect_id {
-                    sched_encoder.sched.effects.get(e_id)
-                } else {
-                    &transitions.default_initial_effects[e_id - transitions.first_default_initial_effect_id]
-                };
+                let e = sched_encoder.sched.effects.get(e_id);
                 TransitionRef::CondEff(c, e)
             }
         };
@@ -121,33 +109,22 @@ impl<'a> LpRelaxSchedEncoder<'a> {
                 .map(|(task_id, _)| Some(TaskId::from_int(u32::try_from(task_id).unwrap()))),
         )
     }
-    pub fn iter_nondefault_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
-        // self.main.sched.effects.iter().enumerate()
-        let n = self.transitions.of_effect.len() - self.transitions.default_initial_effects.len();
+    pub fn iter_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
         self.transitions
             .of_effect
             .iter()
-            .take(n)
             .map(|(eff_id, _)| (eff_id, self.main.sched.effects.get(eff_id)))
-    }
-    pub fn iter_default_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
-        self.transitions
-            .default_initial_effects
-            .iter()
-            .enumerate()
-            .inspect(|(_, e)| debug_assert!(matches!(e.operation, crate::EffectOp::Assign(_))))
-            .map(|(i, e)| (i + self.transitions.first_default_initial_effect_id, e))
     }
     // pub fn iter_effects(&self) -> impl Iterator<Item = (EffectId, &Effect)> {
     //     self.iter_nondefault_effects().chain(self.iter_default_effects())
     // }
-    pub fn iter_conditions(&self) -> impl Iterator<Item = (CondId, &HasValueAt)> {
-        // self.main.causal_links.conditions.iter().enumerate()
-        self.transitions
-            .of_condition
-            .iter()
-            .map(|(cond_id, _)| (cond_id, self.main.causal_links.conditions.get(cond_id)))
-    }
+    // pub fn iter_conditions(&self) -> impl Iterator<Item = (CondId, &HasValueAt)> {
+    //     // self.main.causal_links.conditions.iter().enumerate()
+    //     self.transitions
+    //         .of_condition
+    //         .iter()
+    //         .map(|(cond_id, _)| (cond_id, self.main.causal_links.conditions.get(cond_id)))
+    // }
     pub fn iter_transitions(&self) -> impl Iterator<Item = (TransitionId, (Transition, Source))> {
         std::iter::chain(
             self.transitions
@@ -172,8 +149,8 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     /// In this specific case where the support is between two effects,
     /// the "active" literal is None (as this doesn't correspond to a causal link in the main CSP model).
     pub fn iter_supports(&self) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
-        // Supporting stemming from the original causal links in the main encoding.
-        let supports_from_original_causal_links = self.main.causal_links.get_links().filter_map(|cl| {
+        // Supporting stemming from the causal links in the main encoding.
+        let supports_causal_links = self.main.causal_links.get_links().filter_map(|cl| {
             println!(
                 "{:?} {:?}",
                 (cl.eff_id, self.main.sched.effects.get(cl.eff_id)),
@@ -195,11 +172,11 @@ impl<'a> LpRelaxSchedEncoder<'a> {
             }
         });
 
-        // Supports from original (nondefault) effects to other original (nondefault) effects
-        let supports_from_original_effects_to_others = self.iter_nondefault_effects().flat_map(move |(eff1_id, _)| {
+        // Supports from effects to other effects
+        let supports_from_effects_to_others = self.iter_effects().flat_map(move |(eff1_id, _)| {
             let (tr1_id, _) = self.get_transition_of_effect(eff1_id).unwrap();
 
-            self.iter_nondefault_effects().flat_map(move |(eff2_id, _)| {
+            self.iter_effects().flat_map(move |(eff2_id, _)| {
                 let (tr2_id, tr2) = self.get_transition_of_effect(eff2_id).unwrap();
                 if tr1_id == tr2_id || matches!(tr2, Transition::CondEff(_, _)) {
                     return None;
@@ -224,86 +201,15 @@ impl<'a> LpRelaxSchedEncoder<'a> {
             })
         });
 
-        // Supports from default effects (ignored as non-necessary in the main encoding but required for the LP relaxation)
-        let supports_from_default_effects = self.iter_default_effects().flat_map(move |(eff1_id, _)| {
-            let (tr1_id, _) = self.get_transition_of_effect(eff1_id).unwrap();
-            debug_assert!(self.get_transition_ref(tr1_id).iter_terms().all(|term| term.is_cst()));
-
-            let to_conditions = self.iter_conditions().filter_map(move |(cond_id, _)| {
-                let (tr2_id, _) = self.get_transition_of_condition(cond_id).unwrap();
-                debug_assert!(tr1_id != tr2_id);
-
-                let (tr1_ref, tr2_ref) = (self.get_transition_ref(tr1_id), self.get_transition_ref(tr2_id));
-
-                if tr1_ref.get_state_var().fluent == tr2_ref.get_state_var().fluent {
-                    if tr1_ref
-                        .get_args()
-                        .iter()
-                        .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| term1.is_cst() && term2.is_cst() && term1.constant != term2.constant)
-                    {
-                        return None;
-                    }
-                    if tr1_ref.get_valto().unwrap().is_cst()
-                        && tr2_ref
-                            .get_valfrom()
-                            .map(|term| {
-                                term.is_cst()
-                                    && self.get_transition_ref(tr1_id).get_valto().unwrap().constant != term.constant
-                            })
-                            .unwrap_or_default()
-                    {
-                        return None;
-                    }
-                    Some(((tr1_id, tr2_id), None))
-                } else {
-                    None
-                }
-            });
-            let to_original_effects = self.iter_nondefault_effects().flat_map(move |(eff2_id, _)| {
-                let (tr2_id, tr2) = self.get_transition_of_effect(eff2_id).unwrap();
-                if tr1_id == tr2_id || matches!(tr2, Transition::CondEff(_, _)) {
-                    return None;
-                }
-                debug_assert!(matches!(tr2, Transition::Eff(_)));
-                let (tr1_ref, tr2_ref) = (self.get_transition_ref(tr1_id), self.get_transition_ref(tr2_id));
-
-                if tr2_ref.get_source().is_some() && tr1_ref.get_state_var().fluent == tr2_ref.get_state_var().fluent {
-                    if tr1_ref
-                        .get_args()
-                        .iter()
-                        .zip(tr2_ref.get_args().iter())
-                        .any(|(term1, term2)| term1.is_cst() && term2.is_cst() && term1.constant != term2.constant)
-                    {
-                        return None;
-                    }
-                    Some(((tr1_id, tr2_id), None))
-                } else {
-                    None
-                }
-            });
-            std::iter::chain(to_conditions, to_original_effects)
-        });
-
-        {
-            supports_from_original_causal_links
-                .chain(supports_from_original_effects_to_others)
-                .chain(supports_from_default_effects)
-        }
-        .filter(|&((tr1_id, tr2_id), _)| tr1_id != tr2_id)
-        .inspect(|&((tr1_id, tr2_id), _)| {
-            //debug_assert!( // WARNING: seems to not work anymore with lifted predicates, since merge of master...
-            //    tr1_id != tr2_id,
-            //    "{:?} --- {:?}",
-            //    self.get_transition_ref(tr1_id),
-            //    self.get_transition_ref(tr2_id)
-            //);
-            debug_assert!(!matches!(self.get_transition(tr1_id), Transition::Cond(_)));
-            debug_assert!(
-                !matches!(self.get_transition(tr2_id), Transition::Eff(_))
-                    || self.get_transition_ref(tr2_id).get_source().is_some()
-            );
-        })
+        (supports_causal_links.chain(supports_from_effects_to_others))
+            .filter(|&((tr1_id, tr2_id), _)| tr1_id != tr2_id)
+            .inspect(|&((tr1_id, tr2_id), _)| {
+                debug_assert!(!matches!(self.get_transition(tr1_id), Transition::Cond(_)));
+                debug_assert!(
+                    !matches!(self.get_transition(tr2_id), Transition::Eff(_))
+                        || self.get_transition_ref(tr2_id).get_source().is_some()
+                );
+            })
     }
 
     pub fn get_source(&self, source: &Source) -> Option<&Task> {
@@ -316,11 +222,7 @@ impl<'a> LpRelaxSchedEncoder<'a> {
     }
 
     pub fn get_effect(&self, eff_id: EffectId) -> &Effect {
-        if eff_id < self.transitions.first_default_initial_effect_id {
-            self.main.sched.effects.get(eff_id)
-        } else {
-            &self.transitions.default_initial_effects[eff_id - self.transitions.first_default_initial_effect_id]
-        }
+        self.main.sched.effects.get(eff_id)
     }
     pub fn get_condition(&self, cond_id: CondId) -> &HasValueAt {
         self.main.causal_links.conditions.get(cond_id)
@@ -469,9 +371,6 @@ pub(crate) struct Transitions {
     pub of_effect: DirectIdMap<EffectId, TransitionId>,
     pub of_empty_source: Vec<TransitionId>,
     pub of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>>,
-
-    pub default_initial_effects: Vec<Effect>,
-    pub first_default_initial_effect_id: EffectId,
 }
 
 impl Transitions {
@@ -519,9 +418,6 @@ impl Transitions {
         // When a compatible condition and effect are found, a corresponding CondEff transition is introduced,
         // modifying the previously inserted Cond transition.
         // If no compatible condition is found, a Eff transition is introduced.
-        //
-        // If a ground initial (empty source) Eff transition is introduced, remember that grounding.
-        // This is needed to avoid overriding it later when introducing the default (negative) ground initial effects.
 
         let mut store = vec![];
 
@@ -529,8 +425,6 @@ impl Transitions {
         let mut of_effect = DirectIdMap::default();
         let mut of_empty_source = vec![];
         let mut of_concrete_source = DirectIdMap::default();
-
-        let mut default_effects_ground_args = HashMap::<Sym, HashSet<Vec<IntCst>>>::new();
 
         let source_conds_iter = std::iter::chain(
             [(None, &empty_source_conditions)],
@@ -601,89 +495,8 @@ impl Transitions {
                     }
                     store.push(Transition::Eff(eff_id));
                 }
-
-                // Remember the args groundings of ground initial effects
-                if src.is_none() && e.state_var.args.iter().all(|term| term.is_cst()) {
-                    let ground_args = e.state_var.args.iter().map(|term| term.constant).collect();
-                    default_effects_ground_args
-                        .entry(e.state_var.fluent.to_string())
-                        .or_default()
-                        .insert(ground_args);
-                }
             }
         }
-
-        // Loop over fluents and their parameter types' ground values.
-        // For each such grounding, introduce an initial effect (with default value (0)),
-        // if there wasn't already an effect with the same ground parameters encountered earlier
-        // (among the "explicit" known initial effects accessible from `ctx`).
-
-        let mut default_initial_effects = vec![];
-        let first_default_initial_effect_id = ctx.sched.effects.iter().count();
-
-        let fluents_to_ignore = HashSet::<Sym>::from_iter(
-            effects_to_ignore
-                .iter()
-                .map(|&e_id| ctx.sched.effects.get(e_id).state_var.fluent.clone())
-                .chain(
-                    conditions_to_ignore
-                        .iter()
-                        .map(|&c_id| ctx.causal_links.conditions.get(c_id).state_var.fluent.clone()),
-                ),
-        );
-
-        for (sym, params, _) in ctx.sched.fluents.iter() {
-            if fluents_to_ignore.contains(sym) {
-                continue;
-            }
-
-            let t = crate::Time::from(-2);
-            let args = crate::boxes::BBox::new(params.iter().map(|p| p.range).collect::<Vec<_>>());
-            let mut grs = args.as_ref().points();
-            while let Some(gr) = grs.next() {
-                let args_ground = Vec::from_iter(gr.iter().copied());
-
-                // Ignore if this there already is an initial effect with these ground args.
-                if default_effects_ground_args
-                    .get(sym)
-                    .is_some_and(|known_grs| known_grs.contains(&args_ground))
-                {
-                    continue;
-                }
-                let args_ground = args_ground.into_iter().map(IntTerm::int_cst).collect();
-
-                default_initial_effects.push(Effect {
-                    transition_start: t,
-                    transition_end: t,
-                    mutex_end: ctx.store.new_ivar(-2, INT_CST_MAX, "_").into(),
-                    state_var: StateVar {
-                        fluent: sym.to_string(),
-                        args: args_ground,
-                    },
-                    operation: crate::EffectOp::Assign(IntTerm::int_cst(
-                        ctx.sched.fluents.get_return(sym).unwrap().range.first,
-                    )),
-                    prez: Lit::TRUE,
-                    source: None,
-                });
-
-                let eff_id = first_default_initial_effect_id + default_initial_effects.len() - 1;
-                let tr_id = store.len();
-                of_effect.insert(eff_id, tr_id);
-                of_empty_source.push(tr_id);
-                store.push(Transition::Eff(eff_id));
-            }
-        }
-        debug_assert!(default_initial_effects.iter().all(|e| {
-            e.state_var
-                .args
-                .iter()
-                .chain(match &e.operation {
-                    crate::EffectOp::Assign(term) => [term],
-                    crate::EffectOp::Step(_term) => todo!(),
-                })
-                .all(|term| term.is_cst())
-        }));
 
         // For each transition, collect its terms' (args and values) indices in the list of its source's args.
         //
@@ -717,13 +530,7 @@ impl Transitions {
                         .collect()
                 }
                 Transition::Eff(e_id) => {
-                    let e = if e_id < first_default_initial_effect_id {
-                        ctx.sched.effects.get(e_id)
-                    } else {
-                        default_initial_effects
-                            .get(e_id - first_default_initial_effect_id)
-                            .unwrap()
-                    };
+                    let e = ctx.sched.effects.get(e_id);
                     let src_terms = get_source_terms(e.source);
                     e.state_var
                         .args
@@ -741,13 +548,7 @@ impl Transitions {
                 }
                 Transition::CondEff(c_id, e_id) => {
                     let c = ctx.causal_links.conditions.get(c_id);
-                    let e = if e_id < first_default_initial_effect_id {
-                        ctx.sched.effects.get(e_id)
-                    } else {
-                        default_initial_effects
-                            .get(e_id - first_default_initial_effect_id)
-                            .unwrap()
-                    };
+                    let e = ctx.sched.effects.get(e_id);
                     debug_assert!(e.source == c.source);
                     let src_terms = get_source_terms(c.source);
                     c.state_var
@@ -776,8 +577,6 @@ impl Transitions {
             of_effect,
             of_empty_source,
             of_concrete_source,
-            default_initial_effects,
-            first_default_initial_effect_id,
         }
     }
 }

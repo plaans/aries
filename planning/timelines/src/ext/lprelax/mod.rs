@@ -678,6 +678,9 @@ impl LpRelaxEncodingRelations {
 
         // - A transition is present iff it is supported by another one
         //   NOTE: recall that effect transitions are allowed to be supported too by transitions with the same state fluent and any value
+        //         also, only the "<-" the implication can be enforced, unless we represent all default initial effects.
+        //         indeed, without all default initial effects, some (non-initial) effects could have a missing "source of flow" that should have "entered" it,
+        //         preventing the "->" implication from being consistent.
 
         for (transition2_id, transition1_ids) in &self.supports_lifted_inflow {
             let rhs: Vec<_> = transition1_ids
@@ -685,11 +688,16 @@ impl LpRelaxEncodingRelations {
                 .map(|&transition1_id| ColTag::Support(transition1_id, transition2_id))
                 .collect();
             if !rhs.is_empty() {
-                row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition2_id)], rhs));
+                if matches!(ctx.get_transition(transition2_id), Transition::Eff(_)) {
+                    row_exprs.push(RowExpr::Geq(vec![ColTag::PresenceTransition(transition2_id)], rhs));
+                } else {
+                    row_exprs.push(RowExpr::Eq(vec![ColTag::PresenceTransition(transition2_id)], rhs));
+                }
             }
         }
 
         // - A ground transition is present iff it is support by another (compatible) one.
+        //   NOTE: same remark as above on the case of effect transitions.
 
         for (&(transition2_id, transition2_grounding_id), transition1_ids) in &self.supports_ground_inflow {
             let rhs: Vec<_> = transition1_ids
@@ -704,13 +712,23 @@ impl LpRelaxEncodingRelations {
                 })
                 .collect();
             if !rhs.is_empty() {
-                row_exprs.push(RowExpr::Eq(
-                    vec![ColTag::PresenceTransitionGround(
-                        transition2_id,
-                        transition2_grounding_id,
-                    )],
-                    rhs,
-                ));
+                if matches!(ctx.get_transition(transition2_id), Transition::Eff(_)) {
+                    row_exprs.push(RowExpr::Geq(
+                        vec![ColTag::PresenceTransitionGround(
+                            transition2_id,
+                            transition2_grounding_id,
+                        )],
+                        rhs,
+                    ));
+                } else {
+                    row_exprs.push(RowExpr::Eq(
+                        vec![ColTag::PresenceTransitionGround(
+                            transition2_id,
+                            transition2_grounding_id,
+                        )],
+                        rhs,
+                    ));
+                }
             }
         }
 
@@ -752,10 +770,6 @@ impl LpRelaxEncodingRelations {
         }
 
         // - Two transitions cannot mutually support each other (i.e. forbid trivial cycles)
-        // NOTE: This wouldn't work (would be *incorrect*) without *all* initial effects
-        //       (including those filtered out in the main encoding due to being detected as useless).
-        //       Without them, the inflow constraint ("transition present iff support by another one") could be impossible to satisfy.
-        //       Recall that we add these initial effects outside the main encoding, when computing transitions. (see `Transitions`)
 
         let mut seen = HashSet::new();
         for (transition2_id, transition1_ids) in &self.supports_lifted_inflow {
