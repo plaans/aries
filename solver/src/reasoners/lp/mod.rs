@@ -1,5 +1,7 @@
-mod log;
 mod solver;
+
+#[cfg(feature = "lp_log")]
+mod log;
 
 use std::collections::HashMap;
 
@@ -119,6 +121,7 @@ pub struct Lp {
     /// Used to log the initial problem
     ///
     /// It supposes that no additonal constraint is added after the first propagation
+    #[cfg(feature = "lp_log")]
     is_first_propagate: bool,
 }
 
@@ -147,6 +150,7 @@ impl Lp {
 
             enable: LP_ENABLE.get(),
             active: true,
+            #[cfg(feature = "lp_log")]
             is_first_propagate: true,
         }
     }
@@ -330,10 +334,12 @@ impl Theory for Lp {
             return Ok(());
         }
 
-        // TODO: conditonal logging with a feature
-        if self.is_first_propagate {
-            self.is_first_propagate = false;
-            self.solver.logger.set_problem(self.solver.problem.clone()); // We save the initial state of our problem
+        #[cfg(feature = "lp_log")]
+        {
+            if self.is_first_propagate {
+                self.is_first_propagate = false;
+                self.solver.logger.set_problem(self.solver.problem.clone()); // We save the initial state of our problem
+            }
         }
 
         self.stats.num_propagate += 1;

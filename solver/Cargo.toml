@@ -28,6 +28,9 @@ i64 = []
 # If enabled, use i128 for integer constants and long constants.
 i128 = []
 
+# If enable, allow logging of the lp reasonner for comparing with highs solver
+lp_log = ["minilp/serde", "dep:serde", "dep:good_lp", "dep:postcard"]
+
 
 [dependencies]
 bumpalo = { workspace = true }
@@ -41,10 +44,10 @@ num-integer = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 hashbrown = { workspace = true }
-minilp = { version = "0.2.2", path = "../utils/lp", features = ["serde"]}
-postcard = { version = "1.0", features = ["use-std"] }
-serde = { version = "1.0", features = ["derive"] }
-good_lp = { version = "1.15.3", default-features = false, features = ["highs"] }
+minilp = { version = "0.2.2", path = "../utils/lp"}
+postcard = { version = "1.0", optional = true, features = ["use-std"]}
+serde = { version = "1.0", optional = true, features = ["derive"] }
+good_lp = { version = "1.15.3", default-features = false, optional = true, features = ["highs"] }
 
 [dev-dependencies]
 

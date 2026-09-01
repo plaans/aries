@@ -3,18 +3,25 @@ use std::fmt;
 use crate::{
     backtrack::Trail,
     core::{IntCst, Lit, LongCst, state::Explanation},
-    reasoners::lp::{LpEvent, Stats, log::Logger},
+    reasoners::lp::{LpEvent, Stats},
 };
 
+#[cfg(feature = "lp_log")]
+use crate::reasoners::lp::log::Logger;
+
+#[cfg(feature = "lp_log")]
 use aries_env_param::EnvParam;
 #[allow(unused_imports)]
 use itertools::Itertools;
 use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
+#[cfg(feature = "lp_log")]
 // Folder used to store the logs
 const LOG_FOLDER: &str = "/home/mseraud/Documents/log/";
+#[cfg(feature = "lp_log")]
 // Used to enable/disable logging of tthe lp execution
 pub static LP_LOG_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_LOG_ENABLE", "false");
+#[cfg(feature = "lp_log")]
 // Used to specify the name of the log file
 pub static LP_LOG_NAME: EnvParam<String> = EnvParam::new("ARIES_LP_LOG_NAME", "default.log");
 
@@ -52,7 +59,9 @@ pub struct Solver {
 
     opt_feas_checker: Option<FeasibilityChecker>,
 
+    #[cfg(feature = "lp_log")]
     pub(super) logger: Logger,
+    #[cfg(feature = "lp_log")]
     is_first_invalid_cert: bool,
 }
 
@@ -69,7 +78,9 @@ impl Solver {
             bounds: Vec::new(),
             constraints: Vec::new(),
             opt_feas_checker: None,
+            #[cfg(feature = "lp_log")]
             logger: Logger::new(),
+            #[cfg(feature = "lp_log")]
             is_first_invalid_cert: true,
         }
     }
@@ -129,7 +140,7 @@ impl Solver {
 
         debug_assert!(var.idx() < self.bounds.len());
 
-        // TODO: conditonal logging with a feature
+        #[cfg(feature = "lp_log")]
         self.logger.stack_event.push_event(var, bound, val as f64);
 
         match bound {
@@ -358,12 +369,15 @@ impl Solver {
         //         .collect_vec()
         // );
 
-        // Log the execution when the first invalid certificate is detected (both float and integer invalidity)
-        if LP_LOG_ENABLE.get() && self.is_first_invalid_cert && !self.problem.is_certificate_valid(cert) {
-            self.is_first_invalid_cert = false;
-            self.logger
-                .save_to(format!("{LOG_FOLDER}{}", LP_LOG_NAME.get_ref()).as_str())
-                .expect("Error while logging");
+        #[cfg(feature = "lp_log")]
+        {
+            // Log the execution when the first invalid certificate is detected (both float and integer invalidity)
+            if LP_LOG_ENABLE.get() && self.is_first_invalid_cert {
+                self.is_first_invalid_cert = false;
+                self.logger
+                    .save_to(format!("{LOG_FOLDER}{}", LP_LOG_NAME.get_ref()).as_str())
+                    .expect("Error while logging");
+            }
         }
 
         None
