@@ -27,15 +27,11 @@ impl StackEvent {
     pub fn push_event(&mut self, var: Variable, bound: Bound, val: f64) {
         self.stack.push(BoundSetEvent { var, bound, val });
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = &BoundSetEvent> {
-        self.stack.iter()
-    }
 }
 
 /// Wrap the original problem with no constraint activated with its execution stack
 ///
-/// Used to store all the necessary information for re-execution at once in a file
+/// Used to store all the necessary information at once for re-execution
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct Logger {
     pub(super) problem: Problem,
@@ -54,20 +50,13 @@ impl Logger {
         self.problem = problem;
     }
 
+    /// Saves the Logger into the file located at path
     pub fn save_to(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
 
         postcard::to_io(self, writer)?;
         Ok(())
-    }
-
-    pub fn load_from(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let bytes = std::fs::read(path)?;
-
-        let logger: Logger = postcard::from_bytes(&bytes)?;
-
-        Ok(logger)
     }
 }
 
@@ -79,6 +68,24 @@ mod tests {
     use minilp::{ComparisonOp, Error, OptimizationDirection};
 
     use super::*;
+
+    impl StackEvent {
+        /// Returns an iterator over the BoundSetEvents contained in the stack
+        pub fn iter(&self) -> impl Iterator<Item = &BoundSetEvent> {
+            self.stack.iter()
+        }
+    }
+
+    /// Load a Logger from a file
+    impl Logger {
+        pub fn load_from(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+            let bytes = std::fs::read(path)?;
+
+            let logger: Logger = postcard::from_bytes(&bytes)?;
+
+            Ok(logger)
+        }
+    }
 
     pub fn build_good_lp_model<S: Solver>(
         problem: &Problem,
@@ -136,6 +143,7 @@ mod tests {
         Ok(model)
     }
 
+    /// Load a Logger from the given path and solve is using minilp, minilp incremental and highs to compare their results
     fn compare_execution_highs(path: &str) {
         let mut logger = Logger::load_from(path).expect("No such file");
 
@@ -172,13 +180,13 @@ mod tests {
                 if let Err(Error::InfeasibleWithCertificate(cert)) = res_check_feas_incr
                     && !logger.problem.is_certificate_valid(&cert)
                 {
-                    println!("But certificate is Invalid")
+                    println!("But certificate is invalid")
                 }
 
                 if let Err(Error::InfeasibleWithCertificate(cert)) = res_set_bound_incr
                     && !logger.problem.is_certificate_valid(&cert)
                 {
-                    println!("But certificate is Invalid")
+                    println!("But certificate is invalid")
                 }
             }
         }
@@ -190,6 +198,7 @@ mod tests {
         compare_execution_highs("/home/mseraud/Documents/log/burma14.log");
     }
 
+    #[ignore]
     #[test]
     fn load_ulysses16() {
         println!("Ulysses 16:");

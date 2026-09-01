@@ -11,9 +11,11 @@ use aries_env_param::EnvParam;
 use itertools::Itertools;
 use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
+// Folder used to store the logs
 const LOG_FOLDER: &str = "/home/mseraud/Documents/log/";
-
+// Used to enable/disable logging of tthe lp execution
 pub static LP_LOG_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_LOG_ENABLE", "false");
+// Used to specify the name of the log file
 pub static LP_LOG_NAME: EnvParam<String> = EnvParam::new("ARIES_LP_LOG_NAME", "default.log");
 
 /// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
@@ -31,12 +33,15 @@ impl fmt::Debug for IntBounds {
     }
 }
 
-// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
+/// Stores a constraint of our lp with integer coeficients, necesary to verify the certificate
+///
+/// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntegerConstraint {
     lin_sum: Vec<(Variable, IntCst)>,
 }
 
+/// Interface with the minilp solver, also used to verify its certificates
 #[derive(Clone)]
 pub struct Solver {
     pub(super) problem: Problem,
@@ -67,11 +72,6 @@ impl Solver {
             logger: Logger::new(),
             is_first_invalid_cert: true,
         }
-    }
-
-    /// Reload the minilp solver based on the current problem state
-    pub fn reload(&mut self) {
-        self.opt_feas_checker = None;
     }
 
     /// Create a new solver variable both for Problem and the mirror of our problem
@@ -358,6 +358,7 @@ impl Solver {
         //         .collect_vec()
         // );
 
+        // Log the execution when the first invalid certificate is detected (both float and integer invalidity)
         if LP_LOG_ENABLE.get() && self.is_first_invalid_cert && !self.problem.is_certificate_valid(cert) {
             self.is_first_invalid_cert = false;
             self.logger

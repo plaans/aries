@@ -278,35 +278,12 @@ impl Lp {
     /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
     fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
-            Err(Error::InfeasibleWithCertificate(cert)) => {
-                self.stats.num_certif += 1;
-                self.stats.update_history_certif();
-                if self.solver.problem.is_certificate_valid(cert) {
-                    self.stats.num_val_certif_float += 1;
-                }
-
-                match self.solver.check_certificate(cert, &mut self.stats) {
-                    Some(explanation) => {
-                        // println!("{:?}", explanation);
-                        self.stats.num_val_certif += 1;
-                        Err(Contradiction::Explanation(explanation))
-                    }
-                    None => {
-                        // println!("SET BOUND on {:?}", var);
-                        // let filtered_cert = cert.iter().enumerate().filter(|(_, v)| **v != 0.0).collect_vec();
-                        // println!("Invalid certificate: {:?}", filtered_cert);
-                        // // if filtered_cert.len() == 1 {
-                        // //     println!("Constraint: {:?}", self.solver.constraints[filtered_cert[0].0]);
-                        // // }
-                        // println!();
-                        Ok(())
-                    }
-                }
-            }
-
             Err(Error::Infeasible) => {
                 let explanation = self.solver.explain_infeasible_var(var);
                 Err(Contradiction::Explanation(explanation))
+            }
+            Err(Error::InfeasibleWithCertificate(_)) => {
+                unreachable!("Setting a bound should not generate a certificate")
             }
             _ => Ok(()),
         }
@@ -388,7 +365,7 @@ impl Theory for Lp {
             // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
             if let Some(&x_var) = self.memory_x.get(var) {
                 let res =
-                    // if we have is plus, the constraint is of the form x <= b therefore it's an upper bound
+                    // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
                             .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), lit, &mut self.trail)
