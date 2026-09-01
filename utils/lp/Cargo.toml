@@ -11,12 +11,16 @@ keywords = ["linear-programming", "optimization"]
 categories = ["mathematics", "science"]
 
 [dependencies]
-sprs = { version = "0.9.4", default-features = false, features=["serde"]}
+sprs = { version = "0.9.4", default-features = false}
 log = "0.4.32"
-serde.workspace = true
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 #ndarray = "0.17.2"
 rand = { version = "0.7", features = ["small_rng"] }
 rand_pcg = "0.2.1"
 env_logger = "0.11.10"
+
+[features]
+default = []
+serde = ["dep:serde", "sprs/serde"]

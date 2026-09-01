@@ -58,11 +58,15 @@ mod ordering;
 mod solver;
 mod sparse;
 
+#[allow(unused_imports)]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
 use solver::Solver;
 
 /// An enum indicating whether to minimize or maximize objective function.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OptimizationDirection {
     /// Minimize the objective function.
     Minimize,
@@ -71,7 +75,8 @@ pub enum OptimizationDirection {
 }
 
 /// A reference to a variable in a linear programming problem.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Variable(pub(crate) usize);
 
 impl Variable {
@@ -161,7 +166,8 @@ impl std::iter::Extend<(Variable, f64)> for LinearExpr {
 }
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ComparisonOp {
     /// The == operator (equal to)
     Eq,
@@ -199,7 +205,8 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// A specification of a linear programming problem.
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Problem {
     direction: OptimizationDirection,
     obj_coeffs: Vec<f64>,
@@ -635,7 +642,8 @@ impl<'a> IntoIterator for &'a Solution {
 pub use mps::MpsFile;
 
 /// Used to select the bound we want to modify when using set_bound
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Bound {
     /// Lower bound
     Lower,
