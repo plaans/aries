@@ -18,12 +18,19 @@ pub struct Args {
     pub instance: PathBuf,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub struct EnergyDelta {
+    pub delta: Option<IntCst>,
+    pub min: Option<IntCst>,
+    pub max: Option<IntCst>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TaskJson {
     pub release: IntCst,
     pub deadline: IntCst,
     pub duration: IntCst,
-    pub energy: IntCst,
+    pub energy: EnergyDelta,
     pub optional: bool,
 }
 
@@ -32,7 +39,7 @@ pub struct TransitionJson {
     pub source: usize,
     pub destination: usize,
     pub duration: Option<IntCst>,
-    pub energy: Option<IntCst>,
+    pub energy: Option<EnergyDelta>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -55,7 +62,7 @@ pub struct Task {
     pub release: IntCst,
     pub deadline: IntCst,
     pub duration: IntCst,
-    pub energy: IntCst,
+    pub energy: EnergyDelta,
     pub optional: bool,
 }
 
@@ -82,7 +89,7 @@ impl From<TaskJson> for Task {
 #[derive(Debug, Clone, Copy)]
 pub struct TransitionLabel {
     pub duration: Option<IntCst>,
-    pub energy: Option<IntCst>,
+    pub energy: Option<EnergyDelta>,
 }
 
 impl From<&TransitionJson> for (usize, usize) {
@@ -191,7 +198,21 @@ impl TaskVar {
 
         let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_start_{}", task.id));
         let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_end_{}", task.id));
-        model.enforce_scoped(geq(energy_at_start + task.energy, energy_at_end), [presence]);
+
+        // presence => energy_at_start + delta >= energy_at_end
+        if let Some(delta) = task.energy.delta {
+            model.enforce_scoped(geq(energy_at_start + delta, energy_at_end), [presence]);
+        }
+
+        // presence => energy_at_start >= delta_min
+        if let Some(delta_min) = task.energy.min {
+            model.enforce_scoped(geq(energy_at_start, delta_min), [presence]);
+        }
+
+        // presence => energy_at_end <= enrgy_max - delta_max
+        if let Some(delta_max) = task.energy.max {
+            model.enforce_scoped(leq(energy_at_end, energy_max - delta_max), [presence]);
+        }
 
         Self {
             id: task.id,
@@ -214,7 +235,13 @@ pub struct TransitionVar {
 }
 
 impl TransitionVar {
-    pub fn new(model: &mut Model, transition: Transition, task_var_i: &TaskVar, task_var_j: &TaskVar) -> Self {
+    pub fn new(
+        model: &mut Model,
+        transition: Transition,
+        task_var_i: &TaskVar,
+        task_var_j: &TaskVar,
+        energy_max: IntCst,
+    ) -> Self {
         // Both duration and energy are none: i and j are incompatible
         if transition.label.duration.is_none() && transition.label.energy.is_none() {
             let before = Lit::FALSE;
@@ -232,12 +259,24 @@ impl TransitionVar {
             model.enforce_if(before, leq(task_var_i.end() + duration, task_var_j.start));
         }
 
-        // before_ij => energy_at_end_i + energy_ij >= energy_at_start_j
         if let Some(energy) = transition.label.energy {
-            model.enforce_if(
-                before,
-                geq(task_var_i.energy_at_end + energy, task_var_j.energy_at_start),
-            );
+            // before_ij -> energy_at_end_i + delta_ij >= energy_at_start_j
+            if let Some(delta) = energy.delta {
+                model.enforce_if(
+                    before,
+                    geq(task_var_i.energy_at_end + delta, task_var_j.energy_at_start),
+                );
+            }
+
+            // before_ij -> energy_at_end_i >= delta_min_ij
+            if let Some(delta_min) = energy.delta {
+                model.enforce_if(before, geq(task_var_i.energy_at_end, delta_min));
+            }
+
+            // before_ij -> energy_at_start_j <= energy_max - delta_max_ij
+            if let Some(delta_max) = energy.delta {
+                model.enforce_if(before, leq(task_var_j.energy_at_start, energy_max - delta_max));
+            }
         }
 
         Self { transition, before }
@@ -260,21 +299,28 @@ pub struct EosspModel {
 }
 
 impl EosspModel {
-    pub fn new(mut model: &mut Model, instance: &Instance) -> Self {
+    pub fn new(model: &mut Model, instance: &Instance) -> Self {
         let num_tasks: IntCst = instance.num_tasks().try_into().expect("overflow on num_tasks");
         let objective = model.new_ivar(0, num_tasks, "objective");
 
         let task_vars: Vec<TaskVar> = instance
             .tasks
             .iter()
-            .map(|task| TaskVar::new(&mut model, &task, instance.energy_max))
+            .map(|task| TaskVar::new(model, task, instance.energy_max))
             .collect();
 
         let transition_vars = instance
             .transitions
             .iter()
             .map(|((i, j), t)| {
-                TransitionVar::new(&mut model, ((*i, *j), *t).into(), &task_vars[*i], &task_vars[*j]).into()
+                TransitionVar::new(
+                    model,
+                    ((*i, *j), *t).into(),
+                    &task_vars[*i],
+                    &task_vars[*j],
+                    instance.energy_max,
+                )
+                .into()
             })
             .collect();
 
@@ -388,7 +434,15 @@ fn check(solution: &EosspSolution, instance: &Instance) {
         ma::assert_le!(task_sol.energy_at_end, instance.energy_max);
 
         assert_eq!(task_sol.duration, task.duration);
-        ma::assert_le!(task_sol.energy(), task.energy);
+        if let Some(delta) = task.energy.delta {
+            ma::assert_le!(task_sol.energy(), delta);
+        }
+        if let Some(delta_min) = task.energy.min {
+            ma::assert_ge!(task_sol.energy_at_start, delta_min);
+        }
+        if let Some(delta_max) = task.energy.max {
+            ma::assert_le!(task_sol.energy_at_end, instance.energy_max - delta_max);
+        }
     }
 
     // Check transitions
@@ -396,17 +450,23 @@ fn check(solution: &EosspSolution, instance: &Instance) {
         let i = task_sol_i.id;
         let j = task_sol_j.id;
 
-        let duration_sol = task_sol_j.start - task_sol_i.end();
-        let energy_sol = task_sol_j.start - task_sol_i.end();
-
         if let Some(transition) = instance.transitions.get(&(i, j)) {
             assert!(transition.duration.is_some() || transition.energy.is_some());
 
             if let Some(duration) = transition.duration {
-                ma::assert_ge!(duration_sol, duration);
+                ma::assert_le!(task_sol_i.end() + duration, task_sol_j.start);
             }
+
             if let Some(energy) = transition.energy {
-                ma::assert_ge!(energy_sol, energy);
+                if let Some(delta) = energy.delta {
+                    ma::assert_ge!(task_sol_i.energy_at_end + delta, task_sol_j.energy_at_start,);
+                }
+                if let Some(delta_min) = energy.min {
+                    ma::assert_ge!(task_sol_i.energy_at_end, delta_min);
+                }
+                if let Some(delta_max) = energy.max {
+                    ma::assert_le!(task_sol_j.energy_at_start, instance.energy_max - delta_max);
+                }
             }
         }
     }
@@ -450,13 +510,12 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("----------");
-    
+
     let solution = EosspSolution::new(&solution, &model);
-    
+
     println!("{:?}", solution);
     println!("Objective: {objective}");
     println!("----------");
-
 
     check(&solution, &instance);
 
