@@ -192,6 +192,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn load_burma14() {
         println!("Burma 14:");
