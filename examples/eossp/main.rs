@@ -114,36 +114,36 @@ pub struct Resource {
 }
 
 impl Resource {
-    /// For now it assume objective is maximize and saturate is true
+    /// For now it assume saturate is true
     pub fn enforce_scoped(
         &self,
         model: &mut Model,
         resource_at_start: Var,
         resource_at_end: Var,
-        literal: Lit,
+        scope: impl IntoIterator<Item = Lit> + Clone,
         delta: &ResourceDelta,
     ) {
-        if self.objective != Objective::Maximize || !self.saturate {
+        if !self.saturate {
             todo!();
         };
 
         // presence -> resource_at_start + delta >= resource_at_end
         if let Some(delta) = delta.delta {
-            model.enforce_scoped(geq(resource_at_start + delta, resource_at_end), [literal]);
+            model.enforce_scoped(geq(resource_at_start + delta, resource_at_end), scope.clone());
         }
-        
+
         // presence -> resource_at_start >= resource_min + delta_min
         if let Some(delta_min) = delta.min {
-            model.enforce_scoped(geq(resource_at_start, self.bounds.min() + delta_min), [literal]);
+            model.enforce_scoped(geq(resource_at_start, self.bounds.min() + delta_min), scope.clone());
         }
-        
+
         // presence -> resource_at_end <= resource_max - delta_max
         if let Some(delta_max) = delta.max {
-            model.enforce_scoped(leq(resource_at_end, self.bounds.max() - delta_max), [literal]);
+            model.enforce_scoped(leq(resource_at_end, self.bounds.max() - delta_max), scope);
         }
     }
 
-    /// For now it assume objective is maximize and saturate is true
+    /// For now it assume saturate is true
     pub fn enforce_if(
         &self,
         model: &mut Model,
@@ -152,7 +152,7 @@ impl Resource {
         literal: Lit,
         delta: &ResourceDelta,
     ) {
-        if self.objective != Objective::Maximize || !self.saturate {
+        if !self.saturate {
             todo!();
         };
 
@@ -160,12 +160,12 @@ impl Resource {
         if let Some(delta) = delta.delta {
             model.enforce_if(literal, geq(resource_at_start + delta, resource_at_end));
         }
-        
+
         // presence -> resource_at_start >= resource_min + delta_min
         if let Some(delta_min) = delta.min {
             model.enforce_if(literal, geq(resource_at_start, self.bounds.min() + delta_min));
         }
-        
+
         // presence -> resource_at_end <= resource_max - delta_max
         if let Some(delta_max) = delta.max {
             model.enforce_if(literal, leq(resource_at_end, self.bounds.max() - delta_max));
@@ -309,7 +309,7 @@ impl TaskVar {
                 format!("{}_at_start_{}", resource.name, task.id),
             );
 
-            resource.enforce_scoped(model, resource_at_start, resource_at_end, presence, resource_delta);
+            resource.enforce_scoped(model, resource_at_start, resource_at_end, [presence], resource_delta);
             (resource_at_start, resource_at_end)
         };
 
@@ -469,7 +469,7 @@ fn main() -> anyhow::Result<()> {
     println!("----------");
 
     let mut aries_model = Model::new();
-    
+
     let eossp_model = EosspModel::new(&mut aries_model, &instance);
     println!("----------");
 
