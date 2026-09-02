@@ -5,6 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use minilp::{Bound, Problem, Variable};
 
+use aries_env_param::EnvParam;
+
+// Folder used to store the logs
+pub const LOG_FOLDER: &str = "/home/mseraud/Documents/log/";
+// Used to enable/disable logging of the lp execution
+pub static LP_LOG_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_LOG_ENABLE", "false");
+// Used to specify the name of the log file
+pub static LP_LOG_NAME: EnvParam<String> = EnvParam::new("ARIES_LP_LOG_NAME", "default.log");
+
 /// Store all the information relative to a set bound in minilp
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct BoundSetEvent {

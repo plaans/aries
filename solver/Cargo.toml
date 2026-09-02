@@ -28,7 +28,7 @@ i64 = []
 # If enabled, use i128 for integer constants and long constants.
 i128 = []
 
-# If enable, allow logging of the lp reasonner for comparing with highs solver
+# If enabled, allow logging of the lp reasonner for comparing with highs solver
 lp_log = ["minilp/serde", "dep:serde", "dep:good_lp", "dep:postcard"]
 
 
