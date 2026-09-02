@@ -1,0 +1,31 @@
+{
+  "resources": [],
+  "tasks": [
+    {
+      "window": [0, 10],
+      "label": {
+        "duration": 1,
+        "resources": []
+      },
+      "optional": true
+    },
+    {
+      "window": [10, 20],
+      "label": {
+        "duration": 1,
+        "resources": []
+      },
+      "optional": true
+    }
+  ],
+  "transitions": [
+    {
+      "source": 0,
+      "destination": 1,
+      "label": {
+        "duration": 15,
+        "resources": []
+      }
+    }
+  ]
+}
