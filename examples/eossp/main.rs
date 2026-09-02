@@ -127,19 +127,39 @@ impl Resource {
             todo!();
         };
 
-        // presence -> resource_at_start + delta >= resource_at_end
-        if let Some(delta) = delta.delta {
-            model.enforce_scoped(geq(resource_at_start + delta, resource_at_end), scope.clone());
-        }
-
-        // presence -> resource_at_start >= resource_min + delta_min
-        if let Some(delta_min) = delta.min {
-            model.enforce_scoped(geq(resource_at_start, self.bounds.min() + delta_min), scope.clone());
-        }
-
-        // presence -> resource_at_end <= resource_max - delta_max
-        if let Some(delta_max) = delta.max {
-            model.enforce_scoped(leq(resource_at_end, self.bounds.max() - delta_max), scope);
+        match self.objective {
+            Objective::Minimize => {
+                // presence -> resource_at_start + delta <= resource_at_end
+                if let Some(delta) = delta.delta {
+                    model.enforce_scoped(leq(resource_at_start + delta, resource_at_end), scope.clone());
+                }
+        
+                // presence -> resource_at_start <= resource_max - delta_max
+                if let Some(delta_max) = delta.max {
+                    model.enforce_scoped(leq(resource_at_start, self.bounds.max() - delta_max), scope.clone());
+                }
+        
+                // presence -> resource_at_end >= resource_min + delta_min
+                if let Some(delta_min) = delta.min {
+                    model.enforce_scoped(geq(resource_at_end, self.bounds.min() + delta_min), scope.clone());
+                }
+            },
+            Objective::Maximize => {
+                // presence -> resource_at_start + delta >= resource_at_end
+                if let Some(delta) = delta.delta {
+                    model.enforce_scoped(geq(resource_at_start + delta, resource_at_end), scope.clone());
+                }
+        
+                // presence -> resource_at_start >= resource_min + delta_min
+                if let Some(delta_min) = delta.min {
+                    model.enforce_scoped(geq(resource_at_start, self.bounds.min() + delta_min), scope.clone());
+                }
+        
+                // presence -> resource_at_end <= resource_max - delta_max
+                if let Some(delta_max) = delta.max {
+                    model.enforce_scoped(leq(resource_at_end, self.bounds.max() - delta_max), scope.clone());
+                }
+            },
         }
     }
 
@@ -156,19 +176,39 @@ impl Resource {
             todo!();
         };
 
-        // presence -> resource_at_start + delta >= resource_at_end
-        if let Some(delta) = delta.delta {
-            model.enforce_if(literal, geq(resource_at_start + delta, resource_at_end));
-        }
-
-        // presence -> resource_at_start >= resource_min + delta_min
-        if let Some(delta_min) = delta.min {
-            model.enforce_if(literal, geq(resource_at_start, self.bounds.min() + delta_min));
-        }
-
-        // presence -> resource_at_end <= resource_max - delta_max
-        if let Some(delta_max) = delta.max {
-            model.enforce_if(literal, leq(resource_at_end, self.bounds.max() - delta_max));
+        match self.objective {
+            Objective::Minimize => {
+                // presence -> resource_at_start + delta <= resource_at_end
+                if let Some(delta) = delta.delta {
+                    model.enforce_if(literal, leq(resource_at_start + delta, resource_at_end));
+                }
+        
+                // presence -> resource_at_start <= resource_max - delta_max
+                if let Some(delta_max) = delta.max {
+                    model.enforce_if(literal, leq(resource_at_start, self.bounds.max() - delta_max));
+                }
+        
+                // presence -> resource_at_end >= resource_min + delta_min
+                if let Some(delta_min) = delta.min {
+                    model.enforce_if(literal, geq(resource_at_end, self.bounds.min() + delta_min));
+                }
+            },
+            Objective::Maximize => {
+                // presence -> resource_at_start + delta >= resource_at_end
+                if let Some(delta) = delta.delta {
+                    model.enforce_if(literal, geq(resource_at_start + delta, resource_at_end));
+                }
+        
+                // presence -> resource_at_start >= resource_min + delta_min
+                if let Some(delta_min) = delta.min {
+                    model.enforce_if(literal, geq(resource_at_start, self.bounds.min() + delta_min));
+                }
+        
+                // presence -> resource_at_end <= resource_max - delta_max
+                if let Some(delta_max) = delta.max {
+                    model.enforce_if(literal, leq(resource_at_end, self.bounds.max() - delta_max));
+                }
+            },
         }
     }
 }

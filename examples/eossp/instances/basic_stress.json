@@ -1,0 +1,56 @@
+{
+  "resources": [
+    {
+      "name": "stress",
+      "objective": "minimize",
+      "bounds": [0, 100],
+      "saturate": true
+    }
+  ],
+  "tasks": [
+    {
+      "window": [0, 10],
+      "label": {
+        "duration": 1,
+        "resources": [
+          {
+            "delta": 70,
+            "min": null,
+            "max": null
+          }
+        ]
+      },
+      "optional": true
+    },
+    {
+      "window": [10, 20],
+      "label": {
+        "duration": 1,
+        "resources": [
+          {
+            "delta": 50,
+            "min": null,
+            "max": null
+          }
+        ]
+      },
+      "optional": true
+    }
+  ],
+  "transitions": [
+    {
+      "source": 0,
+      "destination": 1,
+      "label": {
+        "duration": 15,
+        "resources": [
+          {
+            "delta": -30,
+            "min": null,
+            "max": 10
+          }
+        ]
+      }
+    }
+  ]
+}
