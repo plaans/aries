@@ -68,10 +68,10 @@ jobs:
           path: aries
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Install Python 3.10
+      - name: Install Python 3.12
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.12"
       - name: Install Minizinc
         run: |
           sudo snap install minizinc --classic --revision 1222
@@ -177,6 +177,8 @@ jobs:
         run: ./planning/ext/init.sh
       - name: PDDL Parsing all IPC problems
         run: just ci-pddl-parse-all
+      - name: PDDL Parsing all IPC problems (with predicate lifting)
+        run: just ci-pddl-parse-all true
       - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: APE validator and plan optimizer
@@ -228,9 +230,9 @@ jobs:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - name: Setup python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
+          python-version: "3.12"
       - name: Set Environment Variables
         run: |
           if [ "${{ matrix.os }}" == "ubuntu-latest" ] && [ "${{ matrix.target }}" == "amd64" ]; then
@@ -325,7 +327,7 @@ jobs:
           git describe --tags --match v[0-9]*
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
+          python-version: "3.12"
       - name: Install build tools
         run: pip install build
       - uses: actions/download-artifact@v4

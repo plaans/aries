@@ -24,6 +24,12 @@ pub struct ObjectEncoding {
 }
 
 impl ObjectEncoding {
+    pub fn empty() -> Self {
+        Self {
+            types: Default::default(),
+            objects: Default::default(),
+        }
+    }
     pub fn domain_of_type<Q>(&self, key: &Q) -> Option<Range>
     where
         Sym: Borrow<Q> + Ord,

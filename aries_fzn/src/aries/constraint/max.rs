@@ -1,7 +1,7 @@
 use aries_solver::lang::Var;
-use aries_solver::lang::max::EqMax;
 use aries_solver::model::Label;
 use aries_solver::model::Model;
+use aries_solver::prelude::eq_max;
 
 use crate::aries::Post;
 
@@ -31,8 +31,7 @@ impl Max {
 
 impl<Lbl: Label> Post<Lbl> for Max {
     fn post(&self, model: &mut Model<Lbl>) {
-        let eq_max = EqMax::new(self.var, self.items.clone());
-        model.enforce(eq_max);
+        model.enforce(eq_max(self.var, self.items.clone()));
     }
 }
 

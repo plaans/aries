@@ -164,15 +164,9 @@ impl JoinRule {
                 })
             });
         }
-        assert_eq!(
-            head.args.pattern,
-            (0..(head.args.pattern.len()))
-                .map(|i| Pattern::from_var(i as u32))
-                .collect_vec()
-        );
 
         Self {
-            join: Join::new(head.args.pattern.len(), body1.args, body2.args),
+            join: Join::new(head.args, body1.args, body2.args),
             table1: body1.predicate,
             table2: body2.predicate,
             out_table: head.predicate,
@@ -181,14 +175,14 @@ impl JoinRule {
 }
 
 pub(crate) struct Join {
-    output_arity: usize,
+    output: Pattern,
     num_vars: usize,
     pattern1: Pattern,
     pattern2: Pattern,
 }
 
 impl Join {
-    pub(crate) fn new(output_arity: usize, pattern1: Pattern, pattern2: Pattern) -> Self {
+    pub(crate) fn new(output: Pattern, pattern1: Pattern, pattern2: Pattern) -> Self {
         let vars = pattern1
             .pattern
             .iter()
@@ -199,9 +193,8 @@ impl Join {
             .collect_vec();
         let num_vars = vars.len();
         assert_eq!(vars, (0..num_vars).collect_vec());
-        assert!(output_arity <= num_vars);
         Self {
-            output_arity,
+            output,
             num_vars,
             pattern1,
             pattern2,
@@ -219,9 +212,24 @@ impl Join {
 
             let full_bindings = pattern2.all_bindings(table2, partial_binding);
             for row in full_bindings.rows() {
-                assert!(row.iter().all(|i| *i != Sym::MAX), "some unbound variables");
-                let output_variables = &row[..self.output_arity];
-                out.push(output_variables);
+                debug_assert!(row.iter().all(|i| *i != Sym::MAX), "some unbound variables");
+
+                // the row gives the value of all variables
+                // for each element of the output pattern (variable or constant),
+                // we retrieve the value it has and add it to the output
+                for &out_elem in &self.output.pattern {
+                    let value = if let Some(var) = Pattern::as_var(out_elem) {
+                        row[var as usize]
+                    } else {
+                        out_elem as Sym
+                    };
+                    out.push_single(value);
+                }
+                if self.output.pattern.is_empty() {
+                    // if the output table has a 0-arity, no single element will be added but we still need to
+                    // notify it that we have a match so we add an empty row
+                    out.push(&[]);
+                }
             }
         }
     }
@@ -246,7 +254,7 @@ pub enum Arg {
 ///
 /// in which it would only match the second row `[a, c, b]` (which `?x=a` and `?y=b`).
 ///
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Pattern {
     /// Encoding of the pattern, where constant are represented with positive values and variables with negative values.
     ///
@@ -257,15 +265,15 @@ pub struct Pattern {
     /// For instance, a pattern, `[a, ?x, ?y ?x, ?x, ?y]` will have equalities: `[1, 3]`, `[3, 4]` and `[2, 5]`
     /// Note that the pair `[1, 4]` is not present checking would be redundant.
     ///
-    /// THis inforamtion is redundant with the pattern itself but allows for more efficient matches as the
+    /// This information is redundant with the pattern itself but allows for more efficient matches as the
     /// elements which must be equal are precomputed.
     equalities: Vec<[usize; 2]>,
 }
 impl Pattern {
     /// Creates a new pattern.
     ///
-    /// FOr instance the following would create a pattern of the form `[?x, c, ?y]` where `c` is a symbol
-    /// encode with the value 3.
+    /// For instance the following would create a pattern of the form `[?x, c, ?y]` where `c` is a symbol
+    /// encoded with the value 3.
     /// ```
     /// use aries_datalog::*;
     /// Pattern::new([Arg::Var(0), Arg::Sym(3), Arg::Var(1)]);
@@ -398,10 +406,56 @@ impl Pattern {
     ///
     fn all_bindings<'a>(&'a self, table: &'a Table, out: &'a [u32]) -> TableBuff<u32> {
         match self.pattern.len() {
+            0 => {
+                debug_assert_eq!(table.num_columns(), 0);
+                let mut buff = TableBuff::new(out.len());
+                if !table.is_empty() {
+                    // table contains a single element (the unit row, with no columns)
+                    // since the row is unit, it
+                    // 1) necessarily matches the pattern (no data to filter anything)
+                    // 2) will not bind any variable (no data to bind anything)
+                    buff.push(out);
+                }
+                buff
+            }
             1 => self.compiled::<1>().all_bindings(table.rows_sized(), out),
             2 => self.compiled::<2>().all_bindings(table.rows_sized(), out),
             3 => self.compiled::<3>().all_bindings(table.rows_sized(), out),
-            _ => unimplemented!(),
+            4 => self.compiled::<4>().all_bindings(table.rows_sized(), out),
+            5 => self.compiled::<5>().all_bindings(table.rows_sized(), out),
+            _ => {
+                let mut bindings = TableBuff::new(out.len());
+                let mut out_row = Vec::from(out);
+                for row in table.rows() {
+                    if self.matches(row) {
+                        self.bind(row, &mut out_row);
+                        bindings.push(&out_row);
+                    }
+                }
+                bindings
+            }
+        }
+    }
+
+    fn matches(&self, data: &[Sym]) -> bool {
+        debug_assert_eq!(self.pattern.len(), data.len());
+        for &[id1, id2] in &self.equalities {
+            if data[id1] != data[id2] {
+                return false;
+            }
+        }
+        self.pattern
+            .iter()
+            .copied()
+            .zip(data.iter().copied())
+            .all(|(pat, sym)| pat < 0 || (pat as u32) == sym)
+    }
+    fn bind(&self, row: &[Sym], out: &mut [u32]) {
+        debug_assert!(self.matches(row));
+        for (i, pat) in self.pattern.iter().copied().enumerate() {
+            if let Some(var) = Self::as_var(pat) {
+                out[var as usize] = row[i];
+            }
         }
     }
 }
@@ -473,7 +527,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_pattern() {
+    fn test_pattern_spec() {
         let mut table = [
             [1, 2, 1],
             [1, 2, 2],
@@ -496,8 +550,6 @@ mod test {
         ];
         table.sort();
 
-        use Arg::*;
-
         let check_matches = |pattern: [Arg; 3], expected: &[Fact<3>]| {
             let pattern = Pattern::new(pattern.as_slice());
             let pattern = pattern.compiled();
@@ -505,6 +557,8 @@ mod test {
             let expected = expected.iter().cloned().sorted().collect_vec();
             assert_eq!(matches, expected)
         };
+
+        use Arg::*;
 
         check_matches([Var(0), Var(1), Sym(3)], &[[1, 2, 3], [2, 2, 3], [1, 3, 3]]);
 
@@ -518,10 +572,54 @@ mod test {
     }
 
     #[test]
+    fn test_pattern_generic() {
+        let table = Table::new_from_flat(
+            6,
+            vec![
+                1, 2, 3, 10, 5, 20, 2, 2, 3, 11, 5, 21, 1, 3, 3, 12, 5, 22, 2, 2, 3, 30, 5, 30, 4, 4, 3, 40, 5, 40, 1,
+                5, 1, 50, 5, 50, 2, 6, 2, 60, 5, 60, 1, 3, 6, 70, 5, 70,
+            ],
+        );
+
+        let check_matches = |pattern: &[Arg], expected: &[&[_]]| {
+            let pattern = Pattern::new(pattern);
+            let num_vars = pattern.vars().unique().count();
+            let empty_bindings = vec![super::Sym::MAX; num_vars];
+            let bindings = pattern.all_bindings(&table, &empty_bindings);
+            let mut results: Vec<Vec<_>> = bindings.rows().map(|r| r.to_vec()).collect();
+            results.sort();
+            let mut expected: Vec<Vec<_>> = expected.iter().map(|e| e.to_vec()).collect();
+            expected.sort();
+            assert_eq!(results, expected)
+        };
+
+        use Arg::*;
+
+        check_matches(
+            &[Var(0), Var(1), Sym(3), Var(2), Sym(5), Var(3)],
+            &[
+                &[1, 2, 10, 20],
+                &[2, 2, 11, 21],
+                &[1, 3, 12, 22],
+                &[2, 2, 30, 30],
+                &[4, 4, 40, 40],
+            ],
+        );
+
+        check_matches(&[Var(0), Var(0), Sym(3), Var(1), Sym(5), Var(1)], &[&[2, 30], &[4, 40]]);
+        check_matches(
+            &[Var(0), Var(1), Var(0), Var(2), Sym(5), Var(2)],
+            &[&[1, 5, 50], &[2, 6, 60]],
+        );
+        check_matches(&[Sym(1), Sym(3), Sym(6), Var(0), Sym(5), Var(0)], &[&[70]]);
+        check_matches(&[Sym(1), Sym(3), Sym(0), Var(0), Sym(5), Var(0)], &[]);
+    }
+
+    #[test]
     fn test_join() {
         // path(x, y) :- edge(x, z), path(z, y)
         let join = Join::new(
-            2, // only select the first two variables
+            Pattern::new([Arg::Var(0), Arg::Var(1)]), // only select the first two variables
             Pattern::new([Arg::Var(0), Arg::Var(2)]),
             Pattern::new([Arg::Var(2), Arg::Var(1)]),
         );

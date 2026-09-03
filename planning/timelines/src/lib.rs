@@ -31,7 +31,7 @@ pub use crate::tasks::*;
 pub type Sym = String;
 
 /// Type of timepoints
-pub type Time = IAtom;
+pub type Time = VarCst;
 
 /// Type of simple int expressions (composed of at most one variable)
 pub type IntTerm = aries_solver::prelude::LinTerm;
@@ -168,14 +168,19 @@ impl Sched {
             println!("{}: {}", t.name, sol.eval(t.start).unwrap())
         }
         println!("==== Effects ====");
+        let mut formatted_effects: Vec<String> = vec![];
         for e in self.effects.iter().sorted_by_key(|e| &e.state_var.fluent) {
             if !sol.entails(e.prez) {
-                println!("{:?}", e);
                 continue;
             }
-            println!(
-                "{}: [{},{}] {} ...[{}]",
+            formatted_effects.push(format!(
+                "{}({}): [{},{}] {} ...[{}]",
                 e.state_var.fluent,
+                e.state_var
+                    .args
+                    .iter()
+                    .map(|arg| arg.evaluate(sol).unwrap())
+                    .format(", "),
                 e.transition_start.evaluate(sol).unwrap(),
                 e.transition_end.evaluate(sol).unwrap(),
                 match e.operation {
@@ -183,18 +188,32 @@ impl Sched {
                     EffectOp::Step(v) => format!("+= {}", v.evaluate(sol).unwrap()),
                 },
                 e.mutex_end.evaluate(sol).unwrap(),
-            );
+            ));
         }
+        formatted_effects.sort();
+        println!("{}", formatted_effects.iter().format("\n"));
         println!("Horizon: {}", self.horizon.evaluate(sol).unwrap())
     }
 }
 
 impl Dom for Sched {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        self.model.upper_bound(svar)
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.model._upper_bound(svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
-        self.model.presence(var)
+    fn _presence(&self, var: Var) -> Lit {
+        self.model._presence(var)
+    }
+}
+
+impl ModelWrapper for Sched {
+    type Lbl = Sym;
+
+    fn get_model(&self) -> &aries_solver::model::Model<Self::Lbl> {
+        &self.model
+    }
+
+    fn get_model_mut(&mut self) -> &mut aries_solver::model::Model<Self::Lbl> {
+        &mut self.model
     }
 }

@@ -236,7 +236,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
         SearchLimit::None
     };
 
-    let mut status = SolveStatus::Solved;
+    let mut status = SolveStatus::SolvedOpt;
 
     let mut best_cost: Option<i64> = None;
 
@@ -284,6 +284,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
             Some(TspSolution { cost, tour_order })
         }
         Ok(None) => {
+            status = SolveStatus::SolvedUnsat;
             println!("No solution");
             None
         }

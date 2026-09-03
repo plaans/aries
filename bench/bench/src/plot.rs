@@ -1,6 +1,6 @@
 use derive_builder::Builder;
 use itertools::Itertools;
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{collections::BTreeMap, path::Path};
 
 use crate::time_series::TimeSerie;
 
@@ -19,9 +19,6 @@ pub struct PlotOptions {
     pub min_x: Option<f64>,
     #[builder(default = "false")]
     pub log_x: bool,
-    #[builder(default = "PlotOptions::default().fmt_line")]
-    #[allow(clippy::type_complexity)]
-    pub fmt_line: Arc<dyn Fn(&str) -> (&str, usize, usize)>,
     #[builder(default = "\"/tmp/plots\".to_string()")]
     pub out_dir: String,
     #[builder(setter(strip_option))]
@@ -37,18 +34,6 @@ impl Default for PlotOptions {
             title: None,
             min_x: None,
             log_x: false,
-            //fmt_line: Box::new(|id| id.to_string()),
-            fmt_line: Arc::new(|id| match id {
-                // TODO: remove
-                "aries" | "aries-fast" => ("Aries", 0, 0),
-                "optal" => ("OptalCP", 1, 0),
-                "optal-lns" => ("OptalCP_{LNS}", 1, 2),
-                "optal-fds" => ("OptalCP_{FDS}", 1, 1),
-                "cpsat1" => ("OrTools (1w)", 2, 0),
-                "cpsat6" => ("OrTools (6w)", 2, 1),
-                "cpo" => ("CPOptimizer", 3, 0),
-                _ => ("??????", 3, 0),
-            }),
             x_label: None,
             y_label: None,
             out_dir: String::new(),
@@ -79,10 +64,18 @@ pub fn plot_cactus(series: &BTreeMap<impl AsRef<str>, TimeSerie>, options: &Plot
     let styles = [LineStyle(Solid), LineStyle(Dash), LineStyle(Dot)];
     use gnuplot::*;
 
+    // combination of a group (color) and line style
+    let confs = [(0, 0), (1, 1), (2, 2), (0, 1), (1, 2), (2, 0), (0, 2), (1, 0), (2, 1)];
+
     let mut fg = Figure::new();
     let ax = fg.axes2d();
-    for (name, serie) in series.iter().sorted_by_key(|(name, _)| name.as_ref().to_string()) {
-        let (name, group, place) = (options.fmt_line)(name.as_ref());
+    for (i, (name, serie)) in series
+        .iter()
+        .sorted_by_key(|(name, _)| name.as_ref().to_string())
+        .enumerate()
+    {
+        let name = name.as_ref();
+        let (group, place) = confs[i];
         let color = colors[group].clone();
         let style = styles[place].clone();
         let (xs, ys) = serie.line();

@@ -5,7 +5,7 @@ use aries_solver::prelude::*;
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Atom {
     Bool(Lit),
-    Int(IAtom),
+    Int(VarCst),
     Fixed(FAtom),
     Sym(SAtom),
 }
@@ -37,7 +37,7 @@ impl Atom {
 
     /// Attempts to provide an int view of this Atom.
     /// This might fail in the case of a negated boolean or of a complex boolean expression.
-    pub fn int_view(self) -> Option<IAtom> {
+    pub fn int_view(self) -> Option<VarCst> {
         match self {
             Atom::Bool(Lit::TRUE) => Some(1.into()),
             Atom::Bool(Lit::FALSE) => Some(0.into()),
@@ -75,8 +75,8 @@ impl From<Lit> for Atom {
     }
 }
 
-impl From<IAtom> for Atom {
-    fn from(d: IAtom) -> Self {
+impl From<VarCst> for Atom {
+    fn from(d: VarCst) -> Self {
         Atom::Int(d)
     }
 }
@@ -133,7 +133,7 @@ impl From<bool> for Atom {
     }
 }
 
-impl TryFrom<Atom> for IAtom {
+impl TryFrom<Atom> for VarCst {
     type Error = ConversionError;
 
     fn try_from(value: Atom) -> Result<Self, Self::Error> {
@@ -224,8 +224,8 @@ use std::{
     fmt::Debug,
 };
 
-transitive_conversions!(Atom, IAtom, Var);
-transitive_conversions!(Atom, IAtom, IntCst);
+transitive_conversions!(Atom, VarCst, Var);
+transitive_conversions!(Atom, VarCst, IntCst);
 transitive_conversions!(Atom, SAtom, SVar);
 transitive_conversions!(Atom, SAtom, TypedSym);
 transitive_conversions!(Atom, FAtom, Rational);

@@ -3,8 +3,6 @@ use aries_solver::prelude::*;
 use aries_solver::backtrack::Backtrack;
 use aries_solver::core::state::OptDomain;
 use aries_solver::core::views::Term;
-use aries_solver::lang::alternative::Alternative;
-use aries_solver::lang::max::{EqMax, EqMin};
 use aries_solver::solver::SearchLimit;
 use itertools::Itertools;
 
@@ -342,14 +340,14 @@ fn test_reification_optionals() {
     let b = model.new_optional_ivar(0, 10, pb, "b");
 
     let a_leq_b = model.reify(leq(a, b));
-    let pab = model.presence_literal(a_leq_b.variable());
+    let pab = model.presence(a_leq_b.variable());
     assert_ne!(pab, Lit::TRUE);
     assert!(model.state.implies(pab, pa));
     assert!(model.state.implies(pab, pb));
 
     // defined if (!pa | pab) <=> (!pa | (pa & pb)) <=> pb
     let or = model.reify(or([!pa, a_leq_b]));
-    let p_or = model.presence_literal(or.variable());
+    let p_or = model.presence(or.variable());
     assert!(model.state.implies(p_or, pb));
     assert!(!model.state.implies(p_or, pa));
 }
@@ -464,7 +462,7 @@ fn test_opt_leq_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    let v = model.presence_literal(l.variable());
+    let v = model.presence(l.variable());
 
     let tests = vec![
         Test::new(&[v, l, a.geq(4)], &[b.geq(4)]),
@@ -492,7 +490,7 @@ fn test_opt_leq_eager_propagation() {
     let b = model.new_optional_ivar(0, 100, pb, "b");
     // the two test below should only work in the presence of bounds theory propagation (on by default)
     let l = model.reify(leq(a, b));
-    let v = model.presence_literal(l.variable());
+    let v = model.presence(l.variable());
     debug_assert_eq!(v, pb);
     // model.shape.labels.insert(v.variable(), "v".to_string());
 
@@ -524,8 +522,7 @@ fn test_alternative_ints() {
         })
         .collect_vec();
 
-    let alt = Alternative::new(a, ais.clone());
-    model.enforce(alt);
+    model.enforce(alternative(a, ais.clone()));
 
     let tests = vec![
         Test::new(&[a.leq(3)], &[ais[0].leq(3), ais[1].leq(3)]),
@@ -560,8 +557,8 @@ fn test_max() {
     let max = model.new_ivar(0, 100, "max");
     let min = model.new_ivar(0, 100, "min");
 
-    model.enforce(EqMax::new(max, ais.clone()));
-    model.enforce(EqMin::new(min, ais));
+    model.enforce(eq_max(max, ais.clone()));
+    model.enforce(eq_min(min, ais));
 
     let tests = vec![
         Test::new(&[], &[min.geq(1), max.leq(9)]),

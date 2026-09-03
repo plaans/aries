@@ -47,6 +47,20 @@ impl<'a> TExpr<'a> {
             Err(Message::error("expected boolean value").snippet(self.error("not a boolean")))
         }
     }
+    pub fn is_cst(&self) -> bool {
+        match &self.get().expr {
+            crate::Expr::Bool(_) | crate::Expr::Real(_) | crate::Expr::Object(_) => true,
+            Expr::Param(_)
+            | Expr::App(_, _)
+            | Expr::StateVariable(_, _)
+            | Expr::Exists(_, _)
+            | Expr::Forall(_, _)
+            | Expr::Instant(_)
+            | Expr::Duration
+            | Expr::Makespan
+            | Expr::ViolationCount(_) => false,
+        }
+    }
     pub fn state_variable(&self) -> Result<(FluentId, &'a [ExprId]), Message> {
         if let Expr::StateVariable(fun, args) = &self.get().expr {
             Ok((*fun, args.as_slice()))

@@ -5,9 +5,8 @@ use aries_env_param::EnvParam;
 use aries_planning::chronicles::analysis::Metadata;
 use aries_planning::chronicles::{ChronicleOrigin, FiniteProblem};
 use aries_planning::legacy::f_leq;
-use aries_solver::core::Lit;
 use aries_solver::lang::expr::{and, implies, or};
-use aries_solver::model::extensions::DomainsExt;
+use aries_solver::prelude::{Dom, Lit};
 use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 
@@ -167,7 +166,7 @@ fn add_plan_space_symmetry_breaking(pb: &FiniteProblem, model: &mut Model, encod
             continue; // remove non-primary supports
         }
         // non-optional literal that is true iff the causal link is active
-        let link_active = model.reify(and([v, model.presence_literal(v.variable())]));
+        let link_active = model.reify(and([v, model.presence(v.variable())]));
         // list of outgoing causal links of the supporting action
         let link = Link { active: link_active };
         cls.insert(CausalLinkId { eff, cond }, link);

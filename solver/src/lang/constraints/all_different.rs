@@ -1,5 +1,5 @@
 use crate::{
-    lang::{BoolExpr, Store},
+    lang::{BoolExpr, ModelView},
     prelude::*,
 };
 
@@ -12,6 +12,7 @@ use crate::{
 /// Scope: always defined (absent variables are ignored).
 ///
 /// The constraint is decomposed into pair-wise difference constraints between all pairs of terms.
+#[derive(Debug, Clone)]
 pub struct AllDifferent {
     vars: Vec<LinSum>,
 }
@@ -24,7 +25,7 @@ impl AllDifferent {
     }
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for AllDifferent {
+impl<Ctx: ModelView> BoolExpr<Ctx> for AllDifferent {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
         for (i, x) in self.vars.iter().enumerate() {
             for y in &self.vars[i + 1..] {

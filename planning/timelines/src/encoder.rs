@@ -16,12 +16,12 @@ pub struct SchedEncoder {
 }
 
 impl Dom for SchedEncoder {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        self.store.upper_bound(svar)
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.store._upper_bound(svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
-        self.store.presence(var)
+    fn _presence(&self, var: Var) -> Lit {
+        self.store._presence(var)
     }
 }
 impl ModelWrapper for SchedEncoder {

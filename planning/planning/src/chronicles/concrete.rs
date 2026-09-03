@@ -89,8 +89,8 @@ pub trait Substitution {
         }
     }
 
-    fn isub(&self, i: IAtom) -> IAtom {
-        IAtom::new(self.sub_ivar(i.var), i.shift)
+    fn isub(&self, i: VarCst) -> VarCst {
+        VarCst::new(self.sub_ivar(i.var), i.shift)
     }
 
     fn fsub(&self, r: FAtom) -> FAtom {
@@ -175,9 +175,9 @@ impl Sub {
             ))
         }
     }
-    pub fn add_int_expr_unification(&mut self, param: IAtom, instance: IAtom) -> Result<(), InvalidSubstitution> {
+    pub fn add_int_expr_unification(&mut self, param: VarCst, instance: VarCst) -> Result<(), InvalidSubstitution> {
         match (param, instance) {
-            (IAtom { var: x, shift: dx }, IAtom { var: y, shift: dy }) if dx == dy => {
+            (VarCst { var: x, shift: dx }, VarCst { var: y, shift: dy }) if dx == dy => {
                 if x == y {
                     Ok(())
                 } else {

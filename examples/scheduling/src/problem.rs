@@ -1,8 +1,8 @@
 use crate::search::{Model, VarLbl};
 use aries_solver::core::{IntCst, Lit, u32_to_cst};
 use aries_solver::lang::expr::{alternative, eq, leq, or};
-use aries_solver::lang::{IAtom, Var};
-use aries_solver::reasoners::cp::no_overlap::{self, NoOverlap, Task};
+use aries_solver::lang::{Var, VarCst};
+use aries_solver::reasoners::cp::no_overlap::{self, NoOverlapPropagator, Task};
 use itertools::Itertools;
 use std::fmt::{Debug, Formatter};
 
@@ -182,8 +182,8 @@ impl Problem {
 pub struct Operation {
     pub job: u32,
     pub op: u32,
-    start: IAtom,
-    end: IAtom,
+    start: VarCst,
+    end: VarCst,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -217,11 +217,11 @@ pub struct OperationAlternative {
 }
 
 impl OperationAlternative {
-    pub fn start(&self) -> IAtom {
+    pub fn start(&self) -> VarCst {
         self.start.into()
     }
 
-    pub fn end(&self) -> IAtom {
+    pub fn end(&self) -> VarCst {
         self.start + self.duration
     }
 }
@@ -412,8 +412,9 @@ pub(crate) fn encode(
         if use_constraints {
             let tasks_on_machine = alts
                 .iter()
-                .map(|op| Task::<IAtom>::new(op.start, op.duration, op.end(), op.presence));
-            let no_overlap: NoOverlap<IAtom> = NoOverlap::new(tasks_on_machine).with_kind(no_overlap);
+                .map(|op| Task::<VarCst>::new(op.start, op.duration, op.end(), op.presence));
+            let no_overlap: NoOverlapPropagator<VarCst> =
+                NoOverlapPropagator::new(tasks_on_machine).with_kind(no_overlap);
             m.enforce_user_propagator(no_overlap);
         }
     }

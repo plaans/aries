@@ -78,7 +78,7 @@ pub struct Ctx {
     horizon: FAtom,
     makespan_ub: FAtom,
     /// A reification of the final value of a state variable to optimize, if any.
-    metric_final_value: Option<IAtom>,
+    metric_final_value: Option<VarCst>,
     pub symbols: Arc<SymbolTable>,
 }
 
@@ -86,7 +86,7 @@ impl Ctx {
     pub fn new(symbols: Arc<SymbolTable>, fluents: Vec<Fluent>) -> Self {
         let mut model = Model::new();
 
-        let origin = FAtom::new(IAtom::ZERO, TIME_SCALE.get());
+        let origin = FAtom::new(VarCst::ZERO, TIME_SCALE.get());
         let horizon = model.new_ivar(0, INT_CST_MAX, Container::Base / VarType::Horizon);
         let horizon = FVar::new(horizon, TIME_SCALE.get()).into();
         let makespan_ub = model.new_ivar(0, INT_CST_MAX, Container::Base / VarType::Makespan);
@@ -148,10 +148,10 @@ impl Ctx {
         self.makespan_ub
     }
 
-    pub fn metric_final_value(&self) -> Option<IAtom> {
+    pub fn metric_final_value(&self) -> Option<VarCst> {
         self.metric_final_value
     }
-    pub fn set_metric_final_value(&mut self, value: IAtom) {
+    pub fn set_metric_final_value(&mut self, value: VarCst) {
         debug_assert!(
             self.metric_final_value.is_none(),
             "Metric final value should only be set once"

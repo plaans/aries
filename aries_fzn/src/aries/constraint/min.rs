@@ -1,7 +1,7 @@
 use aries_solver::lang::Var;
-use aries_solver::lang::max::EqMin;
 use aries_solver::model::Label;
 use aries_solver::model::Model;
+use aries_solver::prelude::eq_min;
 
 use crate::aries::Post;
 
@@ -31,8 +31,7 @@ impl Min {
 
 impl<Lbl: Label> Post<Lbl> for Min {
     fn post(&self, model: &mut Model<Lbl>) {
-        let eq_max = EqMin::new(self.var, self.items.clone());
-        model.enforce(eq_max);
+        model.enforce(eq_min(self.var, self.items.clone()));
     }
 }
 

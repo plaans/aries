@@ -634,7 +634,7 @@ impl SatSolver {
     }
 
     pub fn explain(&mut self, explained: Lit, cause: u32, model: &DomainsSnapshot, explanation: &mut Explanation) {
-        let explained_presence = model.presence_literal(explained);
+        let explained_presence = model.presence(explained);
         let clause = ClauseId::from(cause);
 
         // bump the activity of any clause used in an explanation
@@ -755,7 +755,6 @@ mod tests {
     use super::*;
     use crate::backtrack::Backtrack;
     use crate::core::state::{Cause, Explainer, InferenceCause};
-    use crate::model::extensions::DomainsExt;
 
     type Model = crate::model::Model<&'static str>;
 

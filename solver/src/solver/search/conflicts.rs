@@ -4,7 +4,6 @@ use crate::collections::ref_store::{RefMap, RefVec};
 use crate::core::literals::{LitSet, Watches};
 use crate::core::state::{Conflict, Domains, Event, Explainer, IntDomain, Origin};
 use crate::model::Model;
-use crate::model::extensions::DomainsExt;
 use crate::prelude::*;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
@@ -234,7 +233,7 @@ impl ConflictBasedBrancher {
     fn import_vars<Var>(&mut self, model: &Model<Var>) {
         while let Some(var) = self.unprocessed_vars.pop() {
             debug_assert!(!self.heap.is_declared(var));
-            let prez = model.presence_literal(var);
+            let prez = model.presence(var);
             self.heap.declare_variable(var, None);
             // remember that, when `prez` becomes true we must enqueue the variable
             self.presences.add_watch(var, prez);
@@ -693,7 +692,7 @@ impl<Var> SearchControl<Var> for ConflictBasedBrancher {
                         // Note that after a few explanations, the guard may be indirect (i.e. a literal that implies the presence)
                         // so we cannot explicitly check that it is the presence of another literal in the clause.
                         // We only check that the non-entailed literal may be a presence literal (i.e. always present).
-                        debug_assert!(model.entails(r) || model.presence_literal(r.variable()) == Lit::TRUE);
+                        debug_assert!(model.entails(r) || model.presence(r.variable()) == Lit::TRUE);
                         culprits.insert(r);
                     }
                 }

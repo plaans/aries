@@ -46,7 +46,7 @@ impl Element {
     }
 }
 
-impl<Ctx: Store> IntExpr<Ctx> for Element {
+impl<Ctx: ModelView> IntExpr<Ctx> for Element {
     fn enforce_eq_if(&self, implicant: Lit, value: LinTerm, ctx: &mut Ctx) {
         let constraint = EqElement {
             variable: value,
@@ -83,12 +83,12 @@ pub struct EqElement {
     element: Element,
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
+impl<Ctx: ModelView> BoolExpr<Ctx> for EqElement {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let _span = tracing::debug_span!("EqElement");
         let _span = _span.enter();
         // make sure that the implicant's scope is large enough
-        ctx.add_assertion(implies(ctx.presence_literal(l), ctx.presence_literal(self.variable)));
+        ctx.add_assertion(implies(ctx.presence(l), ctx.presence(self.variable)));
 
         // at least one esatablisher must hold
         Disjunction::from_iter(self.element.options.iter().map(|a| a.selector)).enforce_if(l, ctx);
@@ -100,11 +100,11 @@ impl<Ctx: Store> BoolExpr<Ctx> for EqElement {
             implies(o.selector, eq(o.value, self.variable).implicant(ctx)).enforce_if(l, ctx);
             // TODO: we could do a stronger propagation by ensuring that at least each value in the lhs domain is supported by value in the rhs domains
 
-            ctx.add_assertion(implies(o.selector, ctx.presence_literal(o.value)));
+            ctx.add_assertion(implies(o.selector, ctx.presence(o.value)));
         }
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
-        [ctx.presence_literal(self.variable)].into()
+        [ctx.presence(self.variable)].into()
     }
 }

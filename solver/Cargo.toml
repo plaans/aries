@@ -1,10 +1,14 @@
 [package]
 name = "aries-solver"
+description = "The Aries constraint programming solver for discrete optimization."
 version = "0.6.0"
 authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/plaans/aries"
+categories = ["algorithms", "science"]
+keywords = ["constraints", "optimization", "cp", "solver"]
+
 
 [features]
 # If enabled, will instruct the the solver to count cpu cycles at various point of its execution.
@@ -39,7 +43,7 @@ smallvec = { workspace = true }
 lru = { workspace = true }
 numfmt = { workspace = true }
 itertools = { workspace = true }
-aries-env-param = { path = "../utils/env_param" }
+aries-env-param = { version = "0.1.0", path = "../utils/env_param" }
 num-integer = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }

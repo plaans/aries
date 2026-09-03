@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
 
+use crate::prelude::*;
+
 use crate::backtrack::{Backtrack, DecLvl, DecisionLevelTracker};
-use crate::core::Var;
 use crate::model::Model;
-use crate::model::extensions::DomainsExt;
 use crate::solver::search::{Decision, SearchControl};
 use crate::solver::stats::Stats;
 

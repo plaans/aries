@@ -2,15 +2,12 @@ pub mod symmetry;
 
 use aries_solver::prelude::*;
 
+use aries_solver::core::{
+    literals::{ConjunctionBuilder, DisjunctionBuilder},
+    views::Dom,
+};
 use aries_solver::lang::constraints::Element;
 use aries_solver::lang::exclusive_choice::exclu_choice;
-use aries_solver::{
-    core::{
-        literals::{ConjunctionBuilder, DisjunctionBuilder},
-        views::Dom,
-    },
-    lang::max::EqMax,
-};
 
 use crate::{boxes::Segment, effects::EffectOp, *};
 
@@ -26,8 +23,8 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
         let _span = tracing::debug_span!("MakespanIsMaxTaskEnd");
         let _span = _span.enter();
         let mut ends = ctx.sched.tasks.iter().map(|t| t.end).collect_vec();
-        ends.push(IAtom::ZERO); // default value when no task is present
-        EqMax::new(ctx.sched.makespan, ends).enforce_if(l, ctx);
+        ends.push(VarCst::ZERO); // default value when no task is present
+        eq_max(ctx.sched.makespan, ends).enforce_if(l, ctx);
 
         // enforce the horizon to be after the end of all actions
         leq(ctx.sched.makespan, ctx.sched.horizon).enforce_if(l, ctx);
@@ -211,7 +208,7 @@ struct StepContributor {
 
 impl BoolExpr<SchedEncoder> for HasValueAt {
     fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
-        ctx.add_assertion(implies(ctx.presence_literal(l), self.prez));
+        ctx.add_assertion(implies(ctx.presence(l), self.prez));
         let _span = tracing::debug_span!("HasValueAt");
         let _span = _span.enter();
         tracing::debug!("{l:?} => {self:?}");
@@ -288,7 +285,7 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             if !conjuncts.absurd() {
                 let conjuncts = conjuncts.build();
                 let establishes = conjuncts.implicant(ctx); // presence should be the same as self.presence?
-                ctx.add_assertion(or([!self.prez, ctx.presence_literal(establishes), !establishes]));
+                ctx.add_assertion(or([!self.prez, ctx.presence(establishes), !establishes]));
                 establishers.add_option(establishes, assignment);
                 supports.push((eff_id, establishes));
             }
@@ -383,7 +380,7 @@ struct Exclusive<'a> {
     a: &'a IntervalOnStateVariable<'a>,
     b: &'a IntervalOnStateVariable<'a>,
 }
-impl<'a, Ctx: Store + Dom> BoolExpr<Ctx> for Exclusive<'a> {
+impl<'a, Ctx: ModelView + Dom> BoolExpr<Ctx> for Exclusive<'a> {
     fn enforce_if(&self, l: Lit, ctx: &mut Ctx) {
         let a = &self.a;
         let b = &self.b;

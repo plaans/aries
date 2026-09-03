@@ -1,4 +1,4 @@
-use aries_solver::lang::Store;
+use aries_solver::lang::ModelView;
 use aries_solver::lang::expr::{implies, leq};
 use aries_solver::prelude::*;
 use aries_solver::{core::literals::DisjunctionBuilder, lang::BoolExpr};
@@ -81,7 +81,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                         crate::EffectOp::Step(_) => false,
                     };
                     // create a new mandatory literal to capture whether the link is active (requiring also the condition to be present)
-                    let supports = Conjunction::from_slice([cl.active, ctx.presence_literal(cl.active)]).reified(ctx);
+                    let supports = Conjunction::from_slice([cl.active, ctx.presence(cl.active)]).reified(ctx);
                     links_per_action
                         .entry(task_of_effect)
                         .or_default()
@@ -151,14 +151,14 @@ struct LexItem {
     exclusive: bool,
 }
 impl LexItem {
-    pub fn lt<Ctx: Store>(&self, ctx: &mut Ctx) -> Lit {
+    pub fn lt<Ctx: ModelView>(&self, ctx: &mut Ctx) -> Lit {
         if self.exclusive {
             self.b
         } else {
             Conjunction::from([!self.a, self.b]).reified(ctx)
         }
     }
-    pub fn le<Ctx: Store>(&self, ctx: &mut Ctx) -> Lit {
+    pub fn le<Ctx: ModelView>(&self, ctx: &mut Ctx) -> Lit {
         if self.exclusive {
             !self.a
         } else {
@@ -178,7 +178,7 @@ struct LexLeq {
     items: Vec<LexItem>,
 }
 
-impl<Ctx: Store> BoolExpr<Ctx> for LexLeq {
+impl<Ctx: ModelView> BoolExpr<Ctx> for LexLeq {
     fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
         for i in 0..self.items.len() {
             let clause = DisjunctionBuilder::from_iter(self.items[..i].iter().map(|item| item.lt(ctx)))

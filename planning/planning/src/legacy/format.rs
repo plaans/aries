@@ -3,7 +3,7 @@ use crate::legacy::input::Sym;
 use crate::legacy::utils::Fmt;
 use crate::legacy::*;
 use aries_solver::core::*;
-use aries_solver::lang::IAtom;
+use aries_solver::lang::VarCst;
 use aries_solver::model::Label;
 use aries_solver::model::ModelShape;
 
@@ -91,7 +91,7 @@ fn format_impl_bool<Lbl: Label>(ctx: &impl Shaped<Lbl>, b: Lit, f: &mut std::fmt
 }
 
 #[allow(clippy::comparison_chain)]
-fn format_impl_int<Lbl: Label>(ctx: &impl Shaped<Lbl>, i: IAtom, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+fn format_impl_int<Lbl: Label>(ctx: &impl Shaped<Lbl>, i: VarCst, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match i.var {
         Var::ZERO => write!(f, "{}", i.shift),
         v => {

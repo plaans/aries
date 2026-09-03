@@ -3,7 +3,6 @@ use crate::core::Lit;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
-use crate::reasoners::eq::SplitEqTheory;
 use crate::reasoners::lp::Lp;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::StnTheory;
@@ -11,7 +10,6 @@ use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 
 pub mod cp;
-pub mod eq;
 pub mod lp;
 pub mod sat;
 pub mod stn;
@@ -24,7 +22,6 @@ pub enum ReasonerId {
     Sat,
     Diff,
     Cp,
-    Eq(u16),
     Tautologies,
     Lp,
 }
@@ -44,7 +41,6 @@ impl Display for ReasonerId {
             match self {
                 Sat => "SAT",
                 Diff => "DiffLog",
-                Eq(_) => "Equality",
                 Cp => "CP",
                 Tautologies => "Optim",
                 Lp => "LP",
@@ -91,11 +87,10 @@ impl From<Explanation> for Contradiction {
 ///
 /// SAT should always be first because we should not allow anything to happen between
 /// the moment a clause is learned and the moment it is is propagated.
-pub(crate) const REASONERS: [ReasonerId; 6] = [
+pub(crate) const REASONERS: [ReasonerId; 5] = [
     ReasonerId::Sat,
     ReasonerId::Tautologies,
     ReasonerId::Diff,
-    ReasonerId::Eq(0),
     ReasonerId::Cp,
     ReasonerId::Lp,
 ];
@@ -105,7 +100,6 @@ pub(crate) const REASONERS: [ReasonerId; 6] = [
 pub struct Reasoners {
     pub sat: SatSolver,
     pub diff: StnTheory,
-    pub(crate) eq: SplitEqTheory,
     pub(crate) cp: Cp,
     pub(crate) tautologies: Tautologies,
     pub(crate) lp: Lp,
@@ -115,7 +109,6 @@ impl Reasoners {
         Reasoners {
             sat: SatSolver::new(ReasonerId::Sat),
             diff: StnTheory::new(Default::default()),
-            eq: Default::default(),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
             lp: Lp::new(),
@@ -126,7 +119,6 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &self.sat,
             ReasonerId::Diff => &self.diff,
-            ReasonerId::Eq(_) => &self.eq,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
             ReasonerId::Lp => &self.lp,
@@ -137,7 +129,6 @@ impl Reasoners {
         match id {
             ReasonerId::Sat => &mut self.sat,
             ReasonerId::Diff => &mut self.diff,
-            ReasonerId::Eq(_) => &mut self.eq,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
             ReasonerId::Lp => &mut self.lp,

@@ -6,8 +6,8 @@ use crate::{
 /// An [`IAtom`] or its negation. Used internally for the NoOverlap constraint to post the reverse view.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum PMIAtom {
-    Plus(IAtom),
-    Minus(IAtom),
+    Plus(VarCst),
+    Minus(VarCst),
 }
 
 impl VarView for PMIAtom {

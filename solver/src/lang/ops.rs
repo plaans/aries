@@ -8,7 +8,7 @@ use std::ops::Neg;
 use crate::core::IntoIntCst;
 use crate::core::{IntCst, SignedVar, Var};
 use crate::lang::ConversionError;
-use crate::lang::int::IAtom;
+use crate::lang::int::VarCst;
 use crate::lang::linear::{LinSum, LinTerm, ScaledVar};
 use crate::{transitive_conversion, transitive_conversions};
 
@@ -16,13 +16,13 @@ use crate::{transitive_conversion, transitive_conversions};
 /*                              IAtom Operations                               */
 /* ========================================================================== */
 
-impl From<Var> for IAtom {
+impl From<Var> for VarCst {
     fn from(v: Var) -> Self {
-        IAtom::new(v, 0)
+        VarCst::new(v, 0)
     }
 }
 
-impl Neg for IAtom {
+impl Neg for VarCst {
     type Output = LinTerm;
 
     fn neg(self) -> Self::Output {
@@ -30,16 +30,16 @@ impl Neg for IAtom {
     }
 }
 
-impl<T: IntoIntCst> From<T> for IAtom {
+impl<T: IntoIntCst> From<T> for VarCst {
     fn from(i: T) -> Self {
-        IAtom::new(Var::ZERO, i.into_int_cst())
+        VarCst::new(Var::ZERO, i.into_int_cst())
     }
 }
 
-impl TryFrom<IAtom> for Var {
+impl TryFrom<VarCst> for Var {
     type Error = ConversionError;
 
-    fn try_from(value: IAtom) -> Result<Self, Self::Error> {
+    fn try_from(value: VarCst) -> Result<Self, Self::Error> {
         if value.shift == 0 {
             Ok(value.var)
         } else {
@@ -48,10 +48,10 @@ impl TryFrom<IAtom> for Var {
     }
 }
 
-impl TryFrom<IAtom> for IntCst {
+impl TryFrom<VarCst> for IntCst {
     type Error = ConversionError;
 
-    fn try_from(value: IAtom) -> Result<Self, Self::Error> {
+    fn try_from(value: VarCst) -> Result<Self, Self::Error> {
         match value.var {
             Var::ZERO => Ok(value.shift),
             _ => Err(ConversionError::NotConstant),
@@ -59,40 +59,40 @@ impl TryFrom<IAtom> for IntCst {
     }
 }
 
-impl<T: IntoIntCst> std::ops::Add<T> for IAtom {
-    type Output = IAtom;
+impl<T: IntoIntCst> std::ops::Add<T> for VarCst {
+    type Output = VarCst;
 
     fn add(self, rhs: T) -> Self::Output {
-        IAtom::new(self.var, self.shift + rhs.into_int_cst())
+        VarCst::new(self.var, self.shift + rhs.into_int_cst())
     }
 }
 
 impl<T: IntoIntCst> std::ops::Add<T> for Var {
-    type Output = IAtom;
+    type Output = VarCst;
 
     fn add(self, rhs: T) -> Self::Output {
-        IAtom::new(self, rhs.into_int_cst())
+        VarCst::new(self, rhs.into_int_cst())
     }
 }
 
-impl<T: IntoIntCst> std::ops::Sub<T> for IAtom {
-    type Output = IAtom;
+impl<T: IntoIntCst> std::ops::Sub<T> for VarCst {
+    type Output = VarCst;
 
     fn sub(self, rhs: T) -> Self::Output {
-        IAtom::new(self.var, self.shift - rhs.into_int_cst())
+        VarCst::new(self.var, self.shift - rhs.into_int_cst())
     }
 }
 
 impl<T: IntoIntCst> std::ops::Sub<T> for Var {
-    type Output = IAtom;
+    type Output = VarCst;
 
     fn sub(self, rhs: T) -> Self::Output {
-        IAtom::new(self, -rhs.into_int_cst())
+        VarCst::new(self, -rhs.into_int_cst())
     }
 }
 
 // IAtom * constant -> LinTerm (since IAtom = Var + c1, and (Var + c1) * c2 = c2*Var + c2*c1 = LinTerm)
-impl<T: IntoIntCst> std::ops::Mul<T> for IAtom {
+impl<T: IntoIntCst> std::ops::Mul<T> for VarCst {
     type Output = LinTerm;
 
     fn mul(self, rhs: T) -> Self::Output {
@@ -102,10 +102,10 @@ impl<T: IntoIntCst> std::ops::Mul<T> for IAtom {
 }
 
 // Reverse: IntCst * IAtom
-impl std::ops::Mul<IAtom> for IntCst {
+impl std::ops::Mul<VarCst> for IntCst {
     type Output = LinTerm;
 
-    fn mul(self, rhs: IAtom) -> Self::Output {
+    fn mul(self, rhs: VarCst) -> Self::Output {
         rhs * self
     }
 }
@@ -257,8 +257,8 @@ impl<T: IntoIntCst> From<T> for LinTerm {
     }
 }
 
-impl From<IAtom> for LinTerm {
-    fn from(value: IAtom) -> Self {
+impl From<VarCst> for LinTerm {
+    fn from(value: VarCst) -> Self {
         Self {
             scaled_var: ScaledVar::new(value.var, 1),
             constant: value.shift,
@@ -434,10 +434,10 @@ impl std::ops::Mul<LinSum> for IntCst {
 
 // Var -> ScaledVar -> LinTerm -> LinSum
 transitive_conversion!(LinTerm, ScaledVar, SignedVar);
-transitive_conversion!(LinTerm, IAtom, Var);
+transitive_conversion!(LinTerm, VarCst, Var);
 transitive_conversion!(LinSum, LinTerm, Var);
 transitive_conversion!(LinSum, LinTerm, SignedVar);
-transitive_conversion!(LinSum, LinTerm, IAtom);
+transitive_conversion!(LinSum, LinTerm, VarCst);
 transitive_conversions!(LinSum, LinTerm, IntCst);
 transitive_conversions!(LinSum, LinTerm, ScaledVar);
 
@@ -451,7 +451,7 @@ transitive_conversions!(LinSum, LinTerm, ScaledVar);
 
 // Reverse operations for IntCst + Var
 impl std::ops::Add<Var> for IntCst {
-    type Output = IAtom;
+    type Output = VarCst;
 
     fn add(self, rhs: Var) -> Self::Output {
         rhs + self
@@ -468,19 +468,19 @@ impl std::ops::Sub<Var> for IntCst {
 }
 
 // Reverse operations for IntCst + IAtom
-impl std::ops::Add<IAtom> for IntCst {
-    type Output = IAtom;
+impl std::ops::Add<VarCst> for IntCst {
+    type Output = VarCst;
 
-    fn add(self, rhs: IAtom) -> Self::Output {
+    fn add(self, rhs: VarCst) -> Self::Output {
         rhs + self
     }
 }
 
 // Reverse operations for IntCst - IAtom
-impl std::ops::Sub<IAtom> for IntCst {
+impl std::ops::Sub<VarCst> for IntCst {
     type Output = LinSum;
 
-    fn sub(self, rhs: IAtom) -> Self::Output {
+    fn sub(self, rhs: VarCst) -> Self::Output {
         (-rhs) + self
     }
 }
@@ -546,24 +546,24 @@ mod tests {
 
         // Test IntCst operations
         let _: IntCst = 5;
-        let _: IAtom = 10.into();
+        let _: VarCst = 10.into();
         let _: ScaledVar = 15.into();
         let _: LinTerm = 20.into();
         let _: LinSum = 25.into();
 
         // Test Var operations
-        let _: IAtom = x.into();
+        let _: VarCst = x.into();
         let _: ScaledVar = x.into();
         let _: LinTerm = x.into();
         let _: LinSum = x.into();
 
         // Test IAtom operations
-        let a: IAtom = x.into();
-        let _: IAtom = a + 5;
-        let _: IAtom = a - 3;
-        let _: IAtom = 7 + x;
+        let a: VarCst = x.into();
+        let _: VarCst = a + 5;
+        let _: VarCst = a - 3;
+        let _: VarCst = 7 + x;
         let _: LinTerm = 10 - x;
-        let _: IAtom = 5 + a;
+        let _: VarCst = 5 + a;
         let _: LinSum = 10 - a; // TODO: this could be al LinTerm
         let _: LinTerm = a * 3; // IAtom * IntCst -> LinTerm
         let _: LinTerm = 3 * a; // IntCst * IAtom -> LinTerm
@@ -632,9 +632,9 @@ mod tests {
         // Test reverse operations
         let _: ScaledVar = x * 5;
         let _: ScaledVar = 5 * x;
-        let _: IAtom = x + 5;
-        let _: IAtom = 5 + x;
-        let _: IAtom = x - 5;
+        let _: VarCst = x + 5;
+        let _: VarCst = 5 + x;
+        let _: VarCst = x - 5;
 
         // Test TryFrom conversions
         let _: Result<Var, _> = TryFrom::try_from(a);
@@ -646,7 +646,7 @@ mod tests {
         // Test with different integer types (usize, i32, etc.)
         // Note: We can't do 10usize + x directly because usize doesn't implement Add<Var>
         // But we can use IntoIntCst types in operations where the local type is on the left
-        let _: IAtom = x + 10usize; // Var + usize works because Var implements Add<T: IntoIntCst>
+        let _: VarCst = x + 10usize; // Var + usize works because Var implements Add<T: IntoIntCst>
         let _: ScaledVar = x * 10usize; // Var * usize works because Var implements Mul<T: IntoIntCst>
         let _: LinTerm = sv + 10usize; // ScaledVar + usize works
         let _: LinSum = ls.clone() * 10usize; // LinSum * usize works

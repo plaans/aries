@@ -31,7 +31,7 @@ pub mod utils;
 pub use aries_solver::lang::ConversionError;
 use aries_solver::model::Model;
 
-use aries_solver::prelude::DomainsExt;
+use aries_solver::prelude::Dom;
 
 pub fn unifiable<L>(model: &Model<L>, a: impl Into<Atom>, b: impl Into<Atom>) -> bool {
     let a = a.into();

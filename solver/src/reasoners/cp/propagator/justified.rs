@@ -174,12 +174,12 @@ pub struct DomainsAndJustifications<'a, Justification> {
 }
 
 impl<'a, J> Dom for DomainsAndJustifications<'a, J> {
-    fn upper_bound(&self, svar: SignedVar) -> IntCst {
-        self.domains.upper_bound(svar)
+    fn _upper_bound(&self, svar: SignedVar) -> IntCst {
+        self.domains._upper_bound(svar)
     }
 
-    fn presence(&self, var: Var) -> Lit {
-        self.domains.presence(var)
+    fn _presence(&self, var: Var) -> Lit {
+        self.domains._presence(var)
     }
 }
 

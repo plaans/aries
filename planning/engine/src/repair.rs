@@ -11,8 +11,7 @@ use aries_plan_engine::{
     encode::{encoding::Encoding, *},
     plans::lifted_plan::{self, LiftedPlan},
 };
-use aries_solver::lang::Store;
-use aries_solver::model::extensions::DomainsExt;
+use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
 use derive_more::derive::Display;
 use itertools::Itertools;
@@ -199,7 +198,7 @@ fn encode_dom_repair(model: &Model, plan: &LiftedPlan) -> Res<ExplainableSolver<
                 .union(&seg);
 
             // add argument to the bindings
-            args.insert(&param.name, arg);
+            args.insert(param.name(), arg);
         }
         // start time is the index of the action in the plan
         let start = Time::from(op.start);

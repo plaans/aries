@@ -19,9 +19,10 @@ use crate::{
 pub struct Effect {
     /// Time at which the transition to the new value will start
     pub transition_start: Time,
-    /// Time at which the transition will end
+    /// Time at which the transition will end and the value is established.
     pub transition_end: Time,
-    /// If specified, the assign effect is required to persist at least until all of these timepoints.
+    /// Time until which the effect may persist.
+    /// In most cases, it should be be left as a free variable with the same scope as the effect.
     pub mutex_end: Time,
     /// State variable affected by the effect
     pub state_var: StateVar,

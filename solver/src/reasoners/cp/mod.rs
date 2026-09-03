@@ -11,7 +11,8 @@ use crate::backtrack::{Backtrack, DecLvl, ObsTrailCursor};
 use crate::collections::ref_store::{RefMap, RefVec};
 use crate::collections::*;
 use crate::core::state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause};
-use crate::core::{Lit, SignedVar, Var};
+use crate::core::views::Term;
+use crate::core::{Lit, SignedVar};
 use crate::prelude::LinSum;
 use crate::reasoners::cp::linear::{LinearSumLeq, SumElem};
 use crate::reasoners::{Contradiction, ReasonerId, Theory};
@@ -25,7 +26,8 @@ pub struct Watches {
 
 impl Watches {
     /// Request a trigger of `propagator_id` on every bound change (lower or upper bound) of the `watched` variable.
-    pub fn add_watch(&mut self, watched: Var, propagator_id: PropagatorId) {
+    pub fn add_watch(&mut self, watched: impl Term, propagator_id: PropagatorId) {
+        let watched = watched.variable();
         self.add_ub_watch(watched, propagator_id);
         self.add_lb_watch(watched, propagator_id);
     }

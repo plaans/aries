@@ -12,7 +12,7 @@
 //! | **[`Var`]** | `X` | Single variable | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`SignedVar`] | `±X` | Signed variable | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`ScaledVar`] | `n·X` | Variable multiplied by constant | [`VarView`], [`Term`], [`Boundable`], |
-//! | [`IAtom`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
+//! | [`VarCst`] | `X + c` | Variable plus constant offset | [`VarView`], [`Term`], [`Boundable`], |
 //! | [`LinTerm`] | `n·X + c` | Scaled variable plus constant | [`VarView`], [`Term`], [`Boundable`] |
 //! | **[`LinSum`]** | `Σ(nᵢ·Xᵢ) + c` | Sum of scaled variables plus constant | [`IntExpr`] |
 //! | `dyn` [`IntExpr`] | `unknown` | Arbitrary int expression |  |
@@ -35,7 +35,7 @@
 //! ```text
 //!        Var → SignedVar → ScaledVar → LinTerm → LinSum
 //!          ↓                                  ↑
-//! IntCst  →└────────────→ IAtom ──────────────┘
+//! IntCst  →└────────────→ VarCst ─────────────┘
 //! ```
 //!
 //! All conversions upward in the hierarchy are provided through `From` implementations,
@@ -62,29 +62,30 @@ use crate::prelude::*;
 #[cfg(doc)]
 use linear::*;
 
-pub mod alternative;
 mod bool_expr;
 mod boolean;
 pub mod constraints;
+mod core_expr;
 pub mod exclusive_choice;
 pub mod expr;
 mod int;
 mod int_expr;
 pub mod linear;
-pub mod max;
+mod model_view;
 pub mod mul;
 mod ops;
 pub(crate) mod reification; // TODO: this should probably move to `crate::model`
-mod store;
 mod validity_scope;
 
 pub use crate::core::Lit;
 pub use crate::core::Var;
 pub use bool_expr::BoolExpr;
 pub use boolean::BVar;
-pub use int::IAtom;
+pub use core_expr::CoreExpr;
+pub use core_expr::Reifiable; // TODO: undesirable but kept around as the planning crate requires it for now
+pub use int::VarCst;
 pub use int_expr::IntExpr;
-pub use store::{ModelWrapper, Store};
+pub use model_view::{ModelView, ModelWrapper};
 pub use validity_scope::*;
 
 use crate::core::{INT_CST_MAX, INT_CST_MIN, IntCst};

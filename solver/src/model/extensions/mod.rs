@@ -8,7 +8,5 @@
 use crate::prelude::*;
 
 mod disjunction;
-mod domains_ext;
 
 pub use disjunction::*;
-pub use domains_ext::*;

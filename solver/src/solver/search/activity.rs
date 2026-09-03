@@ -3,7 +3,6 @@ use crate::collections::heap::IdxHeap;
 use crate::collections::ref_store::RefMap;
 use crate::core::literals::Watches;
 use crate::core::state::{Conflict, Event, Explainer, IntDomain};
-use crate::model::extensions::DomainsExt;
 use crate::model::{Label, Model};
 use crate::prelude::*;
 use crate::solver::search::{Decision, SearchControl};
@@ -116,7 +115,7 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
             let unprocessed_vars = (self.num_processed_var..model.state.num_variables()).map(Var::from);
             for var in unprocessed_vars {
                 debug_assert!(!self.heap.is_declared(var));
-                let prez = model.presence_literal(var);
+                let prez = model.presence(var);
                 self.heap.declare_variable(var, self.priority(var, model), None);
                 // remember that, when `prez` becomes true we must enqueue the variable
                 self.presences.add_watch(var, prez);

@@ -1,7 +1,7 @@
 use crate::chronicles::analysis::ProblemClass;
 use crate::chronicles::{Chronicle, Problem};
 use crate::legacy::*;
-use aries_solver::model::extensions::DomainsExt;
+use aries_solver::prelude::Dom;
 
 pub fn class_of(pb: &Problem) -> ProblemClass {
     // TODO: this is an approximation as a hierarchical problem where no subtasks appears would be considered flat
