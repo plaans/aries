@@ -1,7 +1,5 @@
 # aries-lp
 
-**TO BE CHANGED**
-
 [![Crates.io](https://img.shields.io/crates/v/aries-lp.svg)](https://crates.io/crates/aries-lp)
 [![Documentation](https://docs.rs/aries-lp/badge.svg)](https://docs.rs/aries-lp/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)

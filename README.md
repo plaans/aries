@@ -55,6 +55,7 @@ The repository in split into multiple components as crates in cargo workspace:
 |[`up-aries`](https://github.com/plaans/aries/tree/master/planning/unified/plugin) | [![pypi.org](https://img.shields.io/pypi/v/up-aries)](https://pypi.org/project/up-aries/) | Integration of `aries-plan` as a backend solver for the [`unified-planning`](https://github.com/aiplan4eu/unified-planning) python library.|
 | **-- Utils --** | | |
 |[`aries-env-param`](https://github.com/plaans/aries/tree/master/utils/env_param) | [![crates.io](https://img.shields.io/crates/v/aries-env-param.svg)](https://crates.io/crates/aries-env-param) | Utility to allow overriding a solver's internal parameter with environment variables. |
+|[`aries-lp`](https://github.com/plaans/aries/tree/master/utils/lp) | - | Linear programming solver library that extends the crate [minilp](https://www.google.com/url?sa=E&source=gmail&q=https://github.com/ztlpn/minilp) for incremental solving. |
 |[`aries-datalog`](https://github.com/plaans/aries/tree/master/utils/datalog) | - | Minimal datalog engine designed for grounding plannning problems. |
 |[`aries-bench`](https://github.com/plaans/aries/tree/master/bench/bench) | - | CLI util for processing benchmark results. |
 |[`aries-bench-data`](https://github.com/plaans/aries/tree/master/bench/data) | - | Minimal library allowing solvers to export benchmark results in a standard format. |
@@ -69,6 +70,7 @@ The repository in split into multiple components as crates in cargo workspace:
 - Roland Godet (@Shi-Raida): support for numeric state-variables in automated planner, plan validator
 - Nika Beriachvili (@nrealus): assumptions and incremental solving API, explanations
 - Titouan Seraud (@titorau): minizinc interface (flatzinc solver)
+- Mael Seraud (@seraudm): aries-lp and lp reasonner
 
 Above is the list of persons with recurring contributions, that have contributed significant parts of the libraries. A comprehensive list of all contributors (often for isolated bugfixes or features) is available in the [contributors section](https://github.com/plaans/aries/graphs/contributors?all=1).
 

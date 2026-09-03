@@ -1,3 +1,22 @@
+/*!
+This reasoner relies on the crate [`mod@aries_lp`].
+
+The LP solver is used to check feasibility, as it works on a continuous relaxation
+of the integer problem. In parallel, an exact integer version of the problem is maintained in [`Solver`]
+to allow the exact validation of unsat certificates ([`Solver::check_certificate()`]), thereby guaranteeing soundness whenever
+infeasibility is detected.
+
+
+Its entry point is the function [`Lp::add_linear_leq_constraint()`], which is used to post
+[`crate::lang::CoreExpr::LinearLeq`] constraints to the reasoner.
+It is the responsibility of the caller to linearize other types of constraints before posting
+them to the LP.
+
+> **Important:** This reasoner is **disabled by default**.
+> To enable it, set the environment variable **`ARIES_LP_ENABLE=true`**.
+
+*/
+
 mod solver;
 
 #[cfg(feature = "lp_log")]
@@ -91,6 +110,12 @@ impl Stats {
     }
 }
 
+/// Struct that implements the [`Theory`] trait (reasoner).
+///
+/// It encapsulates all the necessary information to run the lp solver on the posted constraints.
+///
+/// The propagation can be dynamically activated / deactivated through the following methods: [`Lp::activate()`] and [`Lp::deactivate()`].
+/// This can be useful to avoid an overhead of the lp reasonner over the others if its not relevant.
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
@@ -159,7 +184,7 @@ impl Lp {
         self.active = true;
     }
 
-    /// Deactivate propagation of the LP
+    /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
     pub fn deactivate(&mut self) {
         self.active = false;
     }
@@ -228,8 +253,14 @@ impl Lp {
         s
     }
 
-    /// Adds a linear inequality constraint that `sum <= 0`.
-    /// We assume that the active literal is always present
+    /// Post a LinearLeq constraint of the form `sum <= 0`.
+    /// The constant term is included in the sum.
+    ///
+    /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true`
+    /// We assume that the active literal is always present, it is the responsability of the caller to ensure it:
+    /// ```
+    /// doms.presence(active) == Lit::TRUE
+    /// ```
     pub fn add_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         if !self.enable {
             return;

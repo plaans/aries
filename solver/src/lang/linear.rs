@@ -116,12 +116,12 @@ impl Boundable for ScaledVarImpl {
 impl ScaledVarImpl {
     fn upper_bound_long(&self, dom: impl Dom) -> LongCst {
         debug_assert!(self.factor > 0);
-        cst_int_to_long(dom._upper_bound(self.var)).saturating_mul(cst_int_to_long(self.factor))
+        cst_int_to_long(dom.ub(self.var)).saturating_mul(cst_int_to_long(self.factor))
     }
 
     fn lower_bound_long(&self, dom: impl Dom) -> LongCst {
         debug_assert!(self.factor > 0);
-        cst_int_to_long(dom._lower_bound(self.var)).saturating_mul(cst_int_to_long(self.factor))
+        cst_int_to_long(dom.lb(self.var)).saturating_mul(cst_int_to_long(self.factor))
     }
 }
 
