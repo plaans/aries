@@ -1,0 +1,39 @@
+{
+  "energy_max": 100,
+  "tasks": [
+    {
+      "release": 0,
+      "deadline": 10,
+      "duration": 1,
+      "energy": {
+        "delta": -70,
+        "min": null,
+        "max": null
+      },
+      "optional": true
+    },
+    {
+      "release": 10,
+      "deadline": 20,
+      "duration": 1,
+      "energy": {
+        "delta": -20,
+        "min": null,
+        "max": null
+      },
+      "optional": true
+    }
+  ],
+  "transitions": [
+    {
+      "source": 0,
+      "destination": 1,
+      "duration": 15,
+      "energy": {
+        "delta": 40,
+        "min": 30,
+        "max": 10
+      }
+    }
+  ]
+}

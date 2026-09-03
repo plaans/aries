@@ -2,7 +2,6 @@ use std::{collections::HashMap, fs, path::PathBuf};
 
 use aries_solver::prelude::*;
 use clap::Parser;
-use more_asserts as ma;
 use serde::{Deserialize, Serialize};
 
 /// Command line arguments.
@@ -269,12 +268,12 @@ impl TransitionVar {
             }
 
             // before_ij -> energy_at_end_i >= delta_min_ij
-            if let Some(delta_min) = energy.delta {
+            if let Some(delta_min) = energy.min {
                 model.enforce_if(before, geq(task_var_i.energy_at_end, delta_min));
             }
 
             // before_ij -> energy_at_start_j <= energy_max - delta_max_ij
-            if let Some(delta_max) = energy.delta {
+            if let Some(delta_max) = energy.max {
                 model.enforce_if(before, leq(task_var_j.energy_at_start, energy_max - delta_max));
             }
         }
@@ -367,112 +366,10 @@ impl EosspModel {
     }
 }
 
-#[derive(Debug)]
-struct TaskSol {
-    pub id: usize,
-    pub start: IntCst,
-    pub duration: IntCst,
-    pub energy_at_start: IntCst,
-    pub energy_at_end: IntCst,
-}
-
-impl TaskSol {
-    pub fn new(solution: &Solution, task_var: &TaskVar) -> Self {
-        Self {
-            id: task_var.id,
-            start: solution.lb(task_var.start),
-            duration: task_var.duration,
-            energy_at_start: solution.ub(task_var.energy_at_start),
-            energy_at_end: solution.ub(task_var.energy_at_end),
-        }
-    }
-
-    pub fn end(&self) -> IntCst {
-        self.start + self.duration
-    }
-
-    pub fn energy(&self) -> IntCst {
-        self.energy_at_end - self.energy_at_start
-    }
-}
-
-#[derive(Debug)]
-struct EosspSolution {
-    pub task_sols: Vec<TaskSol>,
-}
-
-impl EosspSolution {
-    pub fn new(solution: &Solution, model: &EosspModel) -> Self {
-        let mut present_task_vars: Vec<&TaskVar> = model
-            .task_vars
-            .iter()
-            .filter(|task_var| solution.entails(task_var.presence))
-            .collect();
-
-        present_task_vars.sort_by_key(|task_var| solution.lb(task_var.start));
-
-        Self {
-            task_sols: present_task_vars
-                .iter()
-                .map(|task_var| TaskSol::new(solution, task_var))
-                .collect(),
-        }
-    }
-}
-
-fn check(solution: &EosspSolution, instance: &Instance) {
-    for task_sol in &solution.task_sols {
-        let task = &instance.tasks[task_sol.id];
-
-        ma::assert_ge!(task_sol.start, task.release);
-        ma::assert_le!(task_sol.end(), task.deadline);
-
-        ma::assert_ge!(task_sol.energy_at_start, 0);
-        ma::assert_le!(task_sol.energy_at_start, instance.energy_max);
-
-        ma::assert_ge!(task_sol.energy_at_end, 0);
-        ma::assert_le!(task_sol.energy_at_end, instance.energy_max);
-
-        assert_eq!(task_sol.duration, task.duration);
-        if let Some(delta) = task.energy.delta {
-            ma::assert_le!(task_sol.energy(), delta);
-        }
-        if let Some(delta_min) = task.energy.min {
-            ma::assert_ge!(task_sol.energy_at_start, delta_min);
-        }
-        if let Some(delta_max) = task.energy.max {
-            ma::assert_le!(task_sol.energy_at_end, instance.energy_max - delta_max);
-        }
-    }
-
-    // Check transitions
-    for (task_sol_i, task_sol_j) in solution.task_sols.iter().zip(solution.task_sols.iter().skip(1)) {
-        let i = task_sol_i.id;
-        let j = task_sol_j.id;
-
-        if let Some(transition) = instance.transitions.get(&(i, j)) {
-            assert!(transition.duration.is_some() || transition.energy.is_some());
-
-            if let Some(duration) = transition.duration {
-                ma::assert_le!(task_sol_i.end() + duration, task_sol_j.start);
-            }
-
-            if let Some(energy) = transition.energy {
-                if let Some(delta) = energy.delta {
-                    ma::assert_ge!(task_sol_i.energy_at_end + delta, task_sol_j.energy_at_start,);
-                }
-                if let Some(delta_min) = energy.min {
-                    ma::assert_ge!(task_sol_i.energy_at_end, delta_min);
-                }
-                if let Some(delta_max) = energy.max {
-                    ma::assert_le!(task_sol_j.energy_at_start, instance.energy_max - delta_max);
-                }
-            }
-        }
-    }
-}
 
 fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
+
     let args = Args::parse();
 
     let instance = Instance::read(&args.instance);
@@ -510,14 +407,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     println!("----------");
-
-    let solution = EosspSolution::new(&solution, &model);
-
-    println!("{:?}", solution);
     println!("Objective: {objective}");
-    println!("----------");
 
-    check(&solution, &instance);
 
     Ok(())
 }
