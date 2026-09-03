@@ -132,7 +132,7 @@ impl Solver {
             let min = orig_var_mins[v];
             let max = orig_var_maxs[v];
             if min > max {
-                return Err(Error::Infeasible);
+                return Err(Error::InfeasibleTrivial);
             }
 
             // initially all user-created variables are non-basic
@@ -204,7 +204,7 @@ impl Solver {
                 if is_tautological {
                     continue;
                 } else {
-                    return Err(Error::Infeasible);
+                    return Err(Error::InfeasibleTrivial);
                 }
             }
 
@@ -352,7 +352,7 @@ impl Solver {
             row_coeffs: ScatteredVec::empty(num_total_vars - num_constraints),
         };
 
-        debug!(
+        log::debug!(
             "initialized solver: vars: {}, constraints: {}, primal feasible: {}, dual feasible: {}, nnz: {}",
             res.num_vars,
             res.orig_constraints.rows(),
@@ -379,7 +379,7 @@ impl Solver {
     /// Will return an error if the new bound is trivially infeasible (ub < lb)
     pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
         if val < self.orig_var_mins[var] {
-            return Err(Error::Infeasible);
+            return Err(Error::InfeasibleTrivial);
         }
 
         let old_val = self.orig_var_maxs[var];
@@ -429,7 +429,7 @@ impl Solver {
     /// Will return an error if the new bound is trivially infeasible (lb > ub)
     pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
         if val > self.orig_var_maxs[var] {
-            return Err(Error::Infeasible);
+            return Err(Error::InfeasibleTrivial);
         }
 
         let old_val = self.orig_var_mins[var];
@@ -470,16 +470,22 @@ impl Solver {
         Ok(old_val)
     }
 
+    /// Fix the value of a variable and immediatly restore feasibility
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the given value isn't within the bounds of the var
+    /// or if feasibility couldn't be restored
     pub(crate) fn fix_var(&mut self, var: usize, val: f64) -> Result<(), Error> {
         if val < self.orig_var_mins[var] || val > self.orig_var_maxs[var] {
-            return Err(Error::Infeasible);
+            return Err(Error::InfeasibleTrivial);
         }
 
         let col = match self.var_states[var] {
             VarState::Basic(row) => {
                 // if var was basic, remove it.
                 self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, val, true)?;
+                let pivot_info = self.choose_entering_col_dual(row, val)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
                 pivot_info.col
@@ -587,16 +593,19 @@ impl Solver {
         for iter in 0.. {
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_dual_infeasibility();
-                debug!(
+                log::debug!(
                     "optimize iter {}: obj.: {}, non-optimal coeffs: {} ({})",
-                    iter, self.cur_obj_val, num_vars, infeasibility,
+                    iter,
+                    self.cur_obj_val,
+                    num_vars,
+                    infeasibility,
                 );
             }
 
             if let Some(pivot_info) = self.choose_pivot()? {
                 self.pivot(&pivot_info)?;
             } else {
-                debug!("found optimum in {} iterations, obj.: {}", iter + 1, self.cur_obj_val,);
+                log::debug!("found optimum in {} iterations, obj.: {}", iter + 1, self.cur_obj_val,);
                 break;
             }
         }
@@ -615,19 +624,23 @@ impl Solver {
         for iter in 0.. {
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_primal_infeasibility();
-                debug!(
+                log::debug!(
                     "restore feasibility iter {}: {}: {}, infeas. vars: {} ({})",
-                    iter, obj_str, self.cur_obj_val, num_vars, infeasibility,
+                    iter,
+                    obj_str,
+                    self.cur_obj_val,
+                    num_vars,
+                    infeasibility,
                 );
             }
 
             if let Some((row, leaving_new_val)) = self.choose_pivot_row_dual() {
                 self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val, true)?;
+                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
             } else {
-                debug!(
+                log::debug!(
                     "restored feasibility in {} iterations, {}: {}",
                     iter + 1,
                     obj_str,
@@ -641,9 +654,14 @@ impl Solver {
         Ok(())
     }
 
+    /// Add a new variable to the solver, can typically be used with add_constraint to add it on the fly
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the given bounds are inconsistent (min > max)
     pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
         if min > max {
-            return Err(Error::Infeasible);
+            return Err(Error::InfeasibleTrivial);
         }
 
         let new_var_idx = self.num_vars;
@@ -732,7 +750,7 @@ impl Solver {
             if is_tautological {
                 return Ok(());
             } else {
-                return Err(Error::Infeasible);
+                return Err(Error::InfeasibleTrivial);
             }
         }
 
@@ -1069,12 +1087,7 @@ impl Solver {
         })
     }
 
-    fn choose_entering_col_dual(
-        &mut self,
-        row: usize,
-        leaving_new_val: f64,
-        is_first_call: bool,
-    ) -> Result<PivotInfo, Error> {
+    fn choose_entering_col_dual(&mut self, row: usize, leaving_new_val: f64) -> Result<PivotInfo, Error> {
         // True if the new obj. coeff. must be nonnegative in a dual-feasible configuration.
         let leaving_diff_sign = leaving_new_val > self.basic_var_vals[row];
 
@@ -1170,22 +1183,16 @@ impl Solver {
                 }),
             })
         } else {
-            if is_first_call {
-                self.recalc_basic_var_vals()?;
-                self.recalc_obj_coeffs()?;
-                self.choose_entering_col_dual(row, leaving_new_val, false)
-            } else {
-                const TRESHOLD_ZERO: f64 = 1e-12;
+            const TRESHOLD_ZERO: f64 = 1e-12;
 
-                let mut certificate = vec![0.0; self.num_constraints()];
-                for (r, &coeff) in self.inv_basis_row_coeffs.iter() {
-                    if r < self.num_constraints() {
-                        certificate[r] = if coeff.abs() < TRESHOLD_ZERO { 0.0 } else { coeff };
-                    }
+            let mut certificate = vec![0.0; self.num_constraints()];
+            for (r, &coeff) in self.inv_basis_row_coeffs.iter() {
+                if r < self.num_constraints() {
+                    certificate[r] = if coeff.abs() < TRESHOLD_ZERO { 0.0 } else { coeff };
                 }
-
-                Err(Error::InfeasibleWithCertificate(certificate))
             }
+
+            Err(Error::InfeasibleWithCertificate(certificate))
         }
     }
 
@@ -1271,7 +1278,6 @@ impl Solver {
 
             // Recalculating the basic var exactly costs more but helps for stability
             self.recalc_basic_var_vals()?;
-            self.recalc_obj_coeffs()?;
         }
 
         Ok(())

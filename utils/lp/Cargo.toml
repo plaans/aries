@@ -1,11 +1,11 @@
 [package]
-name = "minilp"
-version = "0.2.2"
-authors = ["Alexey Zatelepin <alex.zatelepin@gmail.com>"]
+name = "aries-lp"
+version = "0.1.0"
+authors = ["Alexey Zatelepin <alex.zatelepin@gmail.com>", "Mael Seraud <mael.seraud@gmail.com>"]
 edition = "2024"
 license = "Apache-2.0"
 description = "A fast linear programming solver library."
-repository = "https://github.com/ztlpn/minilp/"
+repository = "https://github.com/plaans/aries"
 readme = "README.md"
 keywords = ["linear-programming", "optimization"]
 categories = ["mathematics", "science"]

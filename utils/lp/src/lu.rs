@@ -130,7 +130,7 @@ pub fn lu_factorize<'a>(
     // https://ecommons.cornell.edu/bitstream/handle/1813/6623/86-783.pdf
 
     let mat_nnz = (0..size).map(|c| get_col(c).0.len()).sum::<usize>();
-    trace!(
+    log::trace!(
         "lu_factorize: starting, matrix size: {}, nnz: {} (excess: {})",
         size,
         mat_nnz,
@@ -275,7 +275,7 @@ pub fn lu_factorize<'a>(
 
     let lower_nnz = lower.nnz();
     let upper_nnz = upper.nnz();
-    trace!(
+    log::trace!(
         "lu_factorize: done, lower nnz: {} (excess: {}), upper nnz: {} (excess: {}), additional fill-in: {}",
         lower_nnz + size,
         lower_nnz,

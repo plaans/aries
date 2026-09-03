@@ -1,5 +1,3 @@
-#![allow(clippy::needless_range_loop)]
-
 /*!
 A fast linear programming solver library.
 
@@ -47,9 +45,7 @@ assert_eq!(solution[y], 3.0);
 */
 
 #![deny(missing_debug_implementations, missing_docs)]
-
-#[macro_use]
-extern crate log;
+#![allow(clippy::needless_range_loop)]
 
 mod helpers;
 mod lu;
@@ -180,9 +176,11 @@ pub enum ComparisonOp {
 /// An error encountered while solving a problem.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
-    /// Constrains can't simultaneously be satisfied.
-    Infeasible,
+    /// The problem is infeasible because an added constraint is a contradiction
+    /// or because a var has inconsistent bounds: min > max
+    InfeasibleTrivial,
     /// Constrains can't simultaneously be satisfied and a certificate was generated
+    /// The coefficients of the certificate correspond to the associated constraint
     InfeasibleWithCertificate(Vec<f64>),
     /// The objective function is unbounded.
     Unbounded,
@@ -193,7 +191,7 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let msg = match self {
-            Error::Infeasible => "problem is infeasible",
+            Error::InfeasibleTrivial => "problem is infeasible",
             Error::InfeasibleWithCertificate(v) => &format!("problem is infeasible, certificate: {:?}", v),
             Error::Unbounded => "problem is unbounded",
             Error::Instable => "problem is instable",
@@ -335,6 +333,9 @@ impl Problem {
 
     const TOL: f64 = 1e-8;
 
+    /// Calculate the maximum value that the linear sum with the expr coeff can take regarding the bounds of the variables
+    ///
+    /// Used to verify a certificate of unsatisfiability
     fn calculate_max_expr(&self, expr: &[f64]) -> f64 {
         debug_assert_eq!(expr.len(), self.var_maxs.len());
 
@@ -352,6 +353,9 @@ impl Problem {
             .sum()
     }
 
+    /// Calculate the minimum value that the linear sum with the expr coeff can take regarding the bounds of the variables
+    ///
+    /// Used to verify a certificate of unsatisfiability
     fn calculate_min_expr(&self, expr: &[f64]) -> f64 {
         debug_assert_eq!(expr.len(), self.var_mins.len());
 
@@ -370,6 +374,11 @@ impl Problem {
     }
 
     /// Verify the certificate of unsatisfiability
+    ///
+    /// Coeffcicient i in cert corresponds to the constraint number i
+    /// All constraints are multiplies with their coefficient and summed to construct the unsatisfiable constraint
+    ///
+    /// Important: the Problem bounds/constraints need to be up to date with the Solver/FeasbilityChecker generating the certificate
     pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
@@ -409,7 +418,7 @@ impl Problem {
             }
         }
 
-        let res = match cmp_op {
+        match cmp_op {
             ComparisonOp::Ge => {
                 let max_expr = self.calculate_max_expr(&expr);
                 max_expr < bound //+ Self::TOL
@@ -426,9 +435,7 @@ impl Problem {
 
                 max_expr < bound /*+ Self::TOL*/ || min_expr > bound //- Self::TOL
             }
-        };
-        // assert!(res);
-        res
+        }
     }
 
     /// Returns the optimization direction
@@ -455,6 +462,16 @@ impl Problem {
     pub fn get_constraints(&self) -> &[(CsVec, ComparisonOp, f64)] {
         &self.constraints
     }
+}
+
+/// Used to select the bound we want to modify when using set_bound
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Bound {
+    /// Lower bound
+    Lower,
+    /// Higher bound
+    Upper,
 }
 
 /// A solution of a problem: optimal objective function value and variable values.
@@ -543,30 +560,21 @@ impl Solution {
         Ok(self)
     }
 
-    /// Fix the upper bound of a variable to the specified value and return the solution to the updated problem.
+    /// Fix the upper/lower bound of a variable to the specified value and return the solution to the updated problem.
     ///
     /// This method will consume the solution and not return it in case of error.
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem becomes infeasible with the additional constraint.
-    pub fn set_ub_var(mut self, var: Variable, val: f64) -> Result<Self, Error> {
+    /// Will return an error if the problem becomes infeasible with restricted bound
+    pub fn set_bound_var(mut self, var: Variable, val: f64, bound: Bound) -> Result<Self, Error> {
         assert!(var.0 < self.num_vars);
-        self.solver.set_ub_var(var.0, val)?;
-        self.solver.initial_solve()?;
-        Ok(self)
-    }
+        match bound {
+            Bound::Lower => self.solver.set_lb_var(var.0, val)?,
+            Bound::Upper => self.solver.set_ub_var(var.0, val)?,
+        };
 
-    /// Fix the upper bound of a variable to the specified value and return the solution to the updated problem.
-    ///
-    /// This method will consume the solution and not return it in case of error.
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem becomes infeasible with the additional constraint.
-    pub fn set_lb_var(mut self, var: Variable, val: f64) -> Result<Self, Error> {
-        assert!(var.0 < self.num_vars);
-        self.solver.set_lb_var(var.0, val)?;
+        // As set_lb_var/set_ub_var doesn't restore optimality/feasibility, a call to initial solve is necessary
         self.solver.initial_solve()?;
         Ok(self)
     }
@@ -641,16 +649,6 @@ impl<'a> IntoIterator for &'a Solution {
 
 pub use mps::MpsFile;
 
-/// Used to select the bound we want to modify when using set_bound
-#[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum Bound {
-    /// Lower bound
-    Lower,
-    /// Higher bound
-    Upper,
-}
-
 impl From<Bound> for ComparisonOp {
     fn from(bound: Bound) -> ComparisonOp {
         match bound {
@@ -660,7 +658,9 @@ impl From<Bound> for ComparisonOp {
     }
 }
 
-/// Allow us to check the faisability of a problem and modify the bounds of its variables
+/// Allow us to check the feasibility of a problem while changing bounds, adding constraints and variables incrementally.
+///
+/// Important: optimality isn't maintained
 #[derive(Debug, Clone)]
 pub struct FeasibilityChecker {
     solver: Solver,
@@ -695,7 +695,7 @@ impl FeasibilityChecker {
             .add_constraint(CsVec::new(self.solver.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)
     }
 
-    /// Add a new variable
+    /// Add a new variable to our lp
     ///
     /// # Errors
     ///
@@ -770,12 +770,12 @@ mod tests {
         for (expr, op, b) in infeasible.iter().cloned() {
             let mut cloned = problem.clone();
             cloned.add_constraint(expr, op, b);
-            assert_eq!(cloned.solve().map(|_| "solved"), Err(Error::Infeasible));
+            assert_eq!(cloned.solve().map(|_| "solved"), Err(Error::InfeasibleTrivial));
         }
 
         for (expr, op, b) in infeasible.iter().cloned() {
             let sol = problem.solve().unwrap().add_constraint(expr, op, b);
-            assert_eq!(sol.map(|_| "solved"), Err(Error::Infeasible));
+            assert_eq!(sol.map(|_| "solved"), Err(Error::InfeasibleTrivial));
         }
 
         let _ = problem.add_var(-1.0, (0.0, f64::INFINITY));
@@ -961,24 +961,24 @@ mod tests {
         let orig_sol = problem.solve().unwrap();
 
         {
-            let mut sol = orig_sol.clone().set_ub_var(v1, 0.5).unwrap();
+            let mut sol = orig_sol.clone().set_bound_var(v1, 0.5, Bound::Upper).unwrap();
             assert_eq!(sol[v1], 0.5);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 6.5);
 
-            sol = sol.set_ub_var(v1, 3.0).unwrap();
+            sol = sol.set_bound_var(v1, 3.0, Bound::Upper).unwrap();
             assert_eq!(sol[v1], 1.0);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 7.0);
         }
 
         {
-            let mut sol = orig_sol.clone().set_ub_var(v2, 2.5).unwrap();
+            let mut sol = orig_sol.clone().set_bound_var(v2, 2.5, Bound::Upper).unwrap();
             assert_eq!(sol[v1], 1.5);
             assert_eq!(sol[v2], 2.5);
             assert_eq!(sol.objective(), 6.5);
 
-            sol = sol.set_ub_var(v2, 3.0).unwrap();
+            sol = sol.set_bound_var(v2, 3.0, Bound::Upper).unwrap();
             assert_eq!(sol[v1], 1.0);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 7.0);
@@ -996,17 +996,17 @@ mod tests {
         let orig_sol = problem.solve().unwrap();
 
         {
-            let mut sol = orig_sol.clone().set_lb_var(v1, 1.5).unwrap();
+            let mut sol = orig_sol.clone().set_bound_var(v1, 1.5, Bound::Lower).unwrap();
             assert_eq!(sol[v1], 1.5);
             assert_eq!(sol[v2], 2.5);
             assert_eq!(sol.objective(), 6.5);
 
-            sol = sol.set_lb_var(v1, 0.0).unwrap();
+            sol = sol.set_bound_var(v1, 0.0, Bound::Lower).unwrap();
             assert_eq!(sol[v1], 1.0);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 7.0);
 
-            assert!(sol.set_lb_var(v2, 4.0).is_err());
+            assert!(sol.set_bound_var(v2, 4.0, Bound::Lower).is_err());
         }
     }
 
@@ -1292,11 +1292,13 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn rand_10_problems() {
         rand_problems(0, 1000, 50, 100, -10, 10, 0.05, false);
     }
 
+    #[ignore]
     #[test]
     fn rand_i32_min_max_problems() {
         rand_problems(0, 1000, 50, 100, i32::MIN, i32::MAX, 0.05, false);

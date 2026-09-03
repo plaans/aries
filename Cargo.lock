@@ -153,6 +153,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-lp"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "rand 0.7.3",
+ "rand_pcg",
+ "serde",
+ "sprs",
+]
+
+[[package]]
 name = "aries-plan-engine"
 version = "0.1.0"
 dependencies = [
@@ -175,13 +187,13 @@ version = "0.6.0"
 dependencies = [
  "aries-bench-data",
  "aries-env-param",
+ "aries-lp",
  "bumpalo",
  "crossbeam-channel",
  "good_lp",
  "hashbrown 0.16.1",
  "itertools 0.14.0",
  "lru",
- "minilp",
  "num-integer",
  "numfmt",
  "postcard",
@@ -1697,18 +1709,6 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
-
-[[package]]
-name = "minilp"
-version = "0.2.2"
-dependencies = [
- "env_logger",
- "log",
- "rand 0.7.3",
- "rand_pcg",
- "serde",
- "sprs",
-]
 
 [[package]]
 name = "minimal-lexical"

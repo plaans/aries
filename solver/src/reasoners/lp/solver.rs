@@ -9,9 +9,9 @@ use crate::{
 #[cfg(feature = "lp_log")]
 use crate::reasoners::lp::log::{LOG_FOLDER, LP_LOG_ENABLE, LP_LOG_NAME, Logger};
 
+use aries_lp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 #[allow(unused_imports)]
 use itertools::Itertools;
-use minilp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 
 /// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
 #[derive(Clone, PartialEq)]

@@ -10,7 +10,7 @@ use aries_env_param::EnvParam;
 use itertools::Itertools;
 use solver::Solver;
 
-use minilp::{Bound, Error, Variable};
+use aries_lp::{Bound, Error, Variable};
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -282,7 +282,7 @@ impl Lp {
     /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
     fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
-            Err(Error::Infeasible) => {
+            Err(Error::InfeasibleTrivial) => {
                 let explanation = self.solver.explain_infeasible_var(var);
                 Err(Contradiction::Explanation(explanation))
             }

@@ -367,7 +367,7 @@ pub fn order_colamd<'a>(size: usize, get_col: impl Fn(usize) -> &'a [usize]) -> 
         orig2new[orig] = new;
     }
 
-    trace!(
+    log::trace!(
         "COLAMD: ordered {} cols, singletons: {} (cheap: {}), dense_rows: {}, dense_cols: {}, cols_only_dense_rows: {}, mass_eliminated: {}",
         size,
         num_singletons,
