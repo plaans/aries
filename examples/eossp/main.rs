@@ -24,6 +24,56 @@ pub struct EnergyDelta {
     pub max: Option<IntCst>,
 }
 
+impl EnergyDelta {
+    pub fn enforce_if(
+        &self,
+        model: &mut Model,
+        enabler: Lit,
+        energy_at_start: Var,
+        energy_at_end: Var,
+        energy_max: IntCst,
+    ) {
+        // enabler -> energy_at_start + delta >= energy_at_start_j
+        if let Some(delta) = self.delta {
+            model.enforce_if(enabler, geq(energy_at_start + delta, energy_at_end));
+        }
+
+        // enabler -> energy_at_start >= delta_min
+        if let Some(delta_min) = self.min {
+            model.enforce_if(enabler, geq(energy_at_start, delta_min));
+        }
+
+        // enabler -> energy_at_start <= delta_max
+        if let Some(delta_max) = self.max {
+            model.enforce_if(enabler, leq(energy_at_end, energy_max - delta_max));
+        }
+    }
+
+    pub fn enforce_scoped(
+        &self,
+        model: &mut Model,
+        scope: impl IntoIterator<Item = Lit> + Clone,
+        energy_at_start: Var,
+        energy_at_end: Var,
+        energy_max: IntCst,
+    ) {
+        // enabler -> energy_at_start + delta >= energy_at_start_j
+        if let Some(delta) = self.delta {
+            model.enforce_scoped(geq(energy_at_start + delta, energy_at_end), scope.clone());
+        }
+
+        // enabler -> energy_at_start >= delta_min
+        if let Some(delta_min) = self.min {
+            model.enforce_scoped(geq(energy_at_start, delta_min), scope.clone());
+        }
+
+        // enabler -> energy_at_start <= delta_max
+        if let Some(delta_max) = self.max {
+            model.enforce_scoped(leq(energy_at_end, energy_max - delta_max), scope);
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TaskJson {
     pub release: IntCst,
@@ -198,20 +248,8 @@ impl TaskVar {
         let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_start_{}", task.id));
         let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_end_{}", task.id));
 
-        // presence => energy_at_start + delta >= energy_at_end
-        if let Some(delta) = task.energy.delta {
-            model.enforce_scoped(geq(energy_at_start + delta, energy_at_end), [presence]);
-        }
-
-        // presence => energy_at_start >= delta_min
-        if let Some(delta_min) = task.energy.min {
-            model.enforce_scoped(geq(energy_at_start, delta_min), [presence]);
-        }
-
-        // presence => energy_at_end <= enrgy_max - delta_max
-        if let Some(delta_max) = task.energy.max {
-            model.enforce_scoped(leq(energy_at_end, energy_max - delta_max), [presence]);
-        }
+        task.energy
+            .enforce_scoped(model, [presence], energy_at_start, energy_at_end, energy_max);
 
         Self {
             id: task.id,
@@ -259,23 +297,13 @@ impl TransitionVar {
         }
 
         if let Some(energy) = transition.label.energy {
-            // before_ij -> energy_at_end_i + delta_ij >= energy_at_start_j
-            if let Some(delta) = energy.delta {
-                model.enforce_if(
-                    before,
-                    geq(task_var_i.energy_at_end + delta, task_var_j.energy_at_start),
-                );
-            }
-
-            // before_ij -> energy_at_end_i >= delta_min_ij
-            if let Some(delta_min) = energy.min {
-                model.enforce_if(before, geq(task_var_i.energy_at_end, delta_min));
-            }
-
-            // before_ij -> energy_at_start_j <= energy_max - delta_max_ij
-            if let Some(delta_max) = energy.max {
-                model.enforce_if(before, leq(task_var_j.energy_at_start, energy_max - delta_max));
-            }
+            energy.enforce_if(
+                model,
+                before,
+                task_var_i.energy_at_end,
+                task_var_j.energy_at_start,
+                energy_max,
+            );
         }
 
         Self { transition, before }
@@ -366,7 +394,6 @@ impl EosspModel {
     }
 }
 
-
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 
@@ -380,6 +407,7 @@ fn main() -> anyhow::Result<()> {
     let mut aries_model = Model::new();
 
     let model = EosspModel::new(&mut aries_model, &instance);
+    println!("----------");
 
     let mut solver = Solver::new(aries_model);
     let result = solver.maximize(model.objective, SearchLimit::None);
@@ -408,7 +436,6 @@ fn main() -> anyhow::Result<()> {
 
     println!("----------");
     println!("Objective: {objective}");
-
 
     Ok(())
 }
