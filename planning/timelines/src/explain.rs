@@ -8,6 +8,7 @@ use aries_solver::{
 };
 use itertools::Itertools;
 
+use crate::ext::lprelax::wrapper::{LpRelaxReasonerWrapper, LpRelaxReasonerWrapperTrait};
 use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
@@ -44,15 +45,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
         }
 
-        let mut solver = if crate::ext::lprelax::ARIES_LPRELAX_USE.get() {
-            let c = std::sync::Arc::new(crate::ext::lprelax::LpRelaxEncodingConstraint);
-            tracing::debug!("Adding constraint: {c:?}");
-
-            let mut encoding = crate::ext::lprelax::LpRelaxSchedEncoder::new(&mut encoding);
-            c.enforce(&mut encoding);
-
-            Solver::with_extra_reasoners(encoding.main.store.clone(), vec![Box::new(encoding.lprelax.unwrap())])
-        } else {
+        let mut solver = {
             Solver::new(encoding.store)
         };
 
@@ -105,7 +98,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 on_new_solution,
             )
             .unwrap();
-        // self.solver.print_stats();
+        self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res.ok()
     }
