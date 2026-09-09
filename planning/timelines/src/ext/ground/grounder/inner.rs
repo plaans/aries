@@ -2,12 +2,12 @@ use aries_datalog::{
     Arg as DatalogArg, Program as DatalogProgram, Rule as DatalogRule, Sym as DatalogSym, VarTable as DatalogPredicate,
 };
 
-use aries_solver::core::IntCst;
+use aries_solver::core::{IntCst, views::Term};
 use idmap::DirectIdMap;
 
 use std::collections::HashMap;
 
-use crate::{TaskId, ext::ground::SourceGrounding};
+use crate::{TaskId, ext::SourceGrounding};
 
 use super::types::*;
 
@@ -27,7 +27,7 @@ impl GrounderProgramInnerResult {
         self.var_tables[predicate_index]
             .extract()
             .rows()
-            .map(|row| SourceGrounding::from(row.iter().map(|&u| self.cst_of_datalog_sym[u]).collect()))
+            .map(|row| SourceGrounding(row.iter().map(|&u| self.cst_of_datalog_sym[u]).collect()))
             .collect()
     }
 }
@@ -95,7 +95,13 @@ impl GrounderProgramInner {
             .terms
             .iter()
             .map(|t| match t {
-                GrounderTerm::Var(v) => DatalogArg::Var(v.to_u32()),
+                GrounderTerm::Var(v) => {
+                    debug_assert!(
+                        v.scaled_var.factor == 1 && v.constant == 0,
+                        "[for now ?] only terms corresponding to unscaled and unoffset variables are supported"
+                    );
+                    DatalogArg::Var(v.variable().to_u32())
+                }
                 GrounderTerm::Cst(c) => DatalogArg::Sym(self.get_or_intern_datalog_sym_of_cst(*c)),
             })
             .collect::<Vec<_>>();
@@ -110,7 +116,13 @@ impl GrounderProgramInner {
                     .terms
                     .iter()
                     .map(|t| match t {
-                        GrounderTerm::Var(v) => DatalogArg::Var(v.to_u32()),
+                        GrounderTerm::Var(v) => {
+                            debug_assert!(
+                                v.scaled_var.factor == 1 && v.constant == 0,
+                                "[for now ?] only terms corresponding to unscaled and unoffset variables are supported"
+                            );
+                            DatalogArg::Var(v.variable().to_u32())
+                        }
                         GrounderTerm::Cst(c) => DatalogArg::Sym(self.get_or_intern_datalog_sym_of_cst(*c)),
                     })
                     .collect::<Vec<_>>();

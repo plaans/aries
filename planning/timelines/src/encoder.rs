@@ -6,6 +6,7 @@ use crate::*;
 
 /// Structure that provide all the context for encoding the scheduling problem
 /// into a CSP.
+#[derive(Clone)]
 pub struct SchedEncoder {
     /// Scheduling problem that is being encoded
     pub sched: Arc<Sched>,
