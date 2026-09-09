@@ -649,6 +649,14 @@ impl<Lbl: Label> Solver<Lbl> {
                 }
                 SearchLimit::None => {}
             }
+
+            // now that search has started, notify the state that the all assumptions have been posted.
+            // (only used for optimization purposes)
+            if self.model.state.assumptions_sealed_at().is_none() {
+                debug_assert!(self.last_assumption_level == self.current_decision_level());
+                self.model.state.seal_assumptions();
+            }
+
             // first propagate everything to make sure we are in a clean, consistent state
             // note that this method call will have the search backtrack when encountering an inconsistent state
             if let Err(conflict) = self.propagate_and_backtrack_to_consistent() {

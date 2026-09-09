@@ -45,6 +45,10 @@ pub struct Domains {
     implications: ImplicationGraph,
     /// A queue used internally when building explanations. Only useful to avoid repeated allocations.
     queue: ExplanationQueue,
+    /// The level of the last assumption if it was confirmed they were all posted, `None` otherwise.
+    /// If `Some`, no more assumptions are allowed to be made.
+    /// Only made available for optimization purposes.
+    assumptions_sealed_at: Option<DecLvl>,
 }
 
 impl Domains {
@@ -54,6 +58,7 @@ impl Domains {
             presence: Default::default(),
             implications: Default::default(),
             queue: Default::default(),
+            assumptions_sealed_at: None,
         };
         for _ in domains.doms.variables() {
             domains.presence.push(Lit::TRUE);
@@ -242,6 +247,7 @@ impl Domains {
     }
 
     pub fn assume(&mut self, lit: Lit) -> Result<bool, InvalidUpdate> {
+        self.unseal_assumptions();
         self.set(lit, Cause::Assumption)
     }
 
@@ -791,6 +797,36 @@ impl Domains {
     pub fn extract_solution(&self) -> Solution {
         Solution::new(self.doms.bounds.clone(), self.presence.clone())
     }
+
+    // =============== Helpers / Misc ==============
+
+    /// The level of the last assumption if it was confirmed they were all posted, `None` otherwise.
+    /// If `Some`, no more assumptions are allowed to be made.
+    /// Only made available for optimization purposes.
+    pub fn assumptions_sealed_at(&self) -> Option<DecLvl> {
+        debug_assert!(
+            self.assumptions_sealed_at.is_none_or(|lvl| lvl == DecLvl::ROOT
+                || self
+                    .trail()
+                    .last_event_matching(
+                        |ev| ev.cause == Origin::Direct(DirectOrigin::Assumption),
+                        |dl, _| dl > DecLvl::ROOT,
+                    )
+                    .is_some_and(|ev| ev.loc.decision_level == lvl)),
+            "{:?}",
+            self.assumptions_sealed_at
+        );
+        self.assumptions_sealed_at
+    }
+
+    pub fn seal_assumptions(&mut self) {
+        debug_assert!(self.assumptions_sealed_at().is_none());
+        self.assumptions_sealed_at = Some(self.current_decision_level());
+    }
+
+    fn unseal_assumptions(&mut self) {
+        self.assumptions_sealed_at = None;
+    }
 }
 
 impl Default for Domains {
@@ -809,7 +845,13 @@ impl Backtrack for Domains {
     }
 
     fn restore_last(&mut self) {
-        self.doms.restore_last()
+        self.doms.restore_last();
+        if self
+            .assumptions_sealed_at
+            .is_some_and(|lvl| self.current_decision_level() < lvl)
+        {
+            self.unseal_assumptions();
+        }
     }
 }
 

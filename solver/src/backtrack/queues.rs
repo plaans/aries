@@ -340,9 +340,9 @@ impl<V> ObsTrail<V> {
             }
 
             if decision_level > DecLvl::ROOT && self.backtrack_points[decision_level] == event_index {
-                println!("  before: {decision_level:?}");
+                //println!("  before: {decision_level:?}");
                 decision_level -= 1;
-                println!("  after: {decision_level:?}");
+                //println!("  after: {decision_level:?}");
             }
         }
         None
