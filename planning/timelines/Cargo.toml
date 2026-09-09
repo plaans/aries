@@ -17,3 +17,4 @@ idmap = { workspace = true }
 smallvec = { workspace = true }
 num-rational = { workspace = true }
 streaming-iterator = { workspace = true }
+hashbrown = { workspace = true }
