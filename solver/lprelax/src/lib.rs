@@ -368,10 +368,8 @@ pub struct LpRelax {
     state: LpRelaxState,
     bindings: LpRelaxBindings,
 
-    //prev_propagation_attempt_trail_info: (DecLvl, u32, bool),
     stats: LpRelaxStats,
     config: LpRelaxConfig,
-    // num_propagation_call: usize,
 }
 unsafe impl Send for LpRelax {}
 unsafe impl Sync for LpRelax {}
@@ -382,10 +380,8 @@ impl Default for LpRelax {
             id: ReasonerId::Extra(0),
             state: LpRelaxState::default(),
             bindings: LpRelaxBindings::default(),
-            //prev_propagation_attempt_trail_info: (DecLvl::ROOT, 0, false),
             stats: LpRelaxStats::default(),
             config: LpRelaxConfig::default(),
-            // num_propagation_call: 0,
         }
     }
 }
@@ -675,45 +671,29 @@ impl Theory for LpRelax {
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         let model_updates_to_process = self.state.model_events.num_pending(model.trail());
+        self.process_model_events(model)?;
 
-        if model_updates_to_process > 0 {
-            self.process_model_events(model)?;
-        }
-
-        // BROKEN // NOTE: This is a *hack* to prevent solving the LP on the "initial" propagation performed before search.
-        // BROKEN //       Indeed, in very simple problems, the LP relaxation (and its solving overhead) might not
-        // BROKEN //       even be needed to detect unsatisfiability on the first propagation loop.
-        // BROKEN self.num_propagation_call += 1;
-        // BROKEN if self.config.use_propagation_skips && self.num_propagation_call <= 2 {
-        // BROKEN     return Ok(());
-        // BROKEN }
-        //
-        // TODO: Need to find a way to avoid solving the LP when unsatisfiability
-        //       can be proven on the first propagation loop without needing it.
-
-        if model_updates_to_process == 0 || !self.config.use_propagation_skips {
+        if !self.config.use_propagation_skips || model_updates_to_process == 0 {
             if self.config.use_propagation_skips
                 && (self.num_columns() == 0 || (self.num_rows() == 0 && self.state.lpobjective.is_none()))
             {
                 return Ok(());
             }
 
-            /*if !self.config.no_propagation_skips
-                && self.state.trail.saved_states.len() > 1
-                && self.state.trail.saved_states[self.state.trail.num_saved() as usize - 1] == self.state.trail.trail.len()
-            {
-                return Ok(());
-            }*/
-
-            // TODO: allow propagation after a backtrack.
-            if self.config.use_propagation_skips && self.current_decision_level() > DecLvl::new(0) {
+            // FIXME TODO: allow propagation after a backtrack (if it was relatively long ?)
+            if self.stats.lpruns > 0 {
                 return Ok(());
             }
 
-            if self.state.lpobjective.is_some() {
-                return self.propagate_reduced_costs_strengthtening(model);
-            } else {
-                return self.check_feasibility();
+            if !self.config.use_propagation_skips
+                // || self.current_decision_level() == DecLvl::ROOT
+                || model.assumptions_sealed_at().is_some_and(|lvl| lvl == self.current_decision_level())
+            {
+                if self.state.lpobjective.is_some() {
+                    return self.propagate_reduced_costs_strengthtening(model);
+                } else {
+                    return self.check_feasibility();
+                }
             }
         }
         Ok(())

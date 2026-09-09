@@ -102,7 +102,7 @@ pub struct CausalLink {
 /// Accumulates the set of all [`CausalLink`]s in an encoding problem.
 ///
 /// These are accumulated when encoding [`HasValueAt`] constraints.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct CausalLinks {
     /// Debug util: this is used to make sure all causal links have been added before any read.
     /// If a new causal link is added *after* a read access, the corresponding method will panic.
