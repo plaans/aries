@@ -13,6 +13,9 @@ pub struct MpsFile {
     pub variables: HashMap<String, Variable>,
     /// A parsed problem.
     pub problem: Problem,
+    /// Offset on the objective
+    /// Handled externally it can't be included  in a [`Problem`]
+    pub obj_offset: f64,
 }
 
 impl std::fmt::Debug for MpsFile {
@@ -40,6 +43,8 @@ impl MpsFile {
         // Format descriptions:
         // Introduction: http://lpsolve.sourceforge.net/5.5/mps-format.htm
         // More in-depth: http://cgm.cs.mcgill.ca/~avis/courses/567/cplex/reffileformatscplex.pdf
+
+        let mut obj_offset = 0.0;
 
         let mut lines = Lines {
             input,
@@ -185,18 +190,26 @@ impl MpsFile {
                 }
 
                 let mut tokens = Tokens::new(&lines);
-                let vec_name = tokens.next()?;
+                let token_count = tokens.iter.clone().count();
 
-                if cur_vec_name.is_none() {
-                    cur_vec_name = Some(vec_name.to_owned());
-                } else if cur_vec_name.as_deref() != Some(vec_name) {
-                    // use only the first RHS vector
+                if token_count == 0 {
                     continue;
+                }
+
+                let vec_name_present = !token_count.is_multiple_of(2);
+
+                if vec_name_present {
+                    let vec_name = tokens.next()?;
+                    if cur_vec_name.is_none() {
+                        cur_vec_name = Some(vec_name.to_owned());
+                    } else if cur_vec_name.as_deref() != Some(vec_name) {
+                        continue;
+                    }
                 }
 
                 for (key, val) in KVPairs::parse(&mut tokens)?.iter() {
                     if key == obj_func_name {
-                        return Err(lines.err("setting objective in RHS section is not supported"));
+                        obj_offset = -val;
                     } else if let Some(idx) = constr_name2idx.get(key) {
                         constraints[*idx].rhs = val;
                     } else {
@@ -243,15 +256,28 @@ impl MpsFile {
                 }
 
                 let mut tokens = Tokens::new(&lines);
+                let token_count = tokens.iter.clone().count();
+
+                if token_count == 0 {
+                    continue;
+                }
 
                 let bound_type = tokens.next()?;
 
-                let vec_name = tokens.next()?;
-                if cur_vec_name.is_none() {
-                    cur_vec_name = Some(vec_name.to_owned());
-                } else if cur_vec_name.as_deref() != Some(vec_name) {
-                    // use only the first BOUNDS vector
-                    continue;
+                let has_vec_name = if bound_type == "FR" {
+                    token_count >= 3
+                } else {
+                    token_count >= 4
+                };
+
+                if has_vec_name {
+                    let vec_name = tokens.next()?;
+                    if cur_vec_name.is_none() {
+                        cur_vec_name = Some(vec_name.to_owned());
+                    } else if cur_vec_name.as_deref() != Some(vec_name) {
+                        // Conserver uniquement le premier vecteur BOUNDS
+                        continue;
+                    }
                 }
 
                 let var_name = tokens.next()?;
@@ -319,6 +345,7 @@ impl MpsFile {
             problem_name,
             variables: var_name2idx,
             problem,
+            obj_offset,
         })
     }
 }

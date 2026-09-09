@@ -1,4 +1,4 @@
-use aries_lp::MpsFile;
+use aries_lp::{Error, MpsFile};
 use std::io;
 
 const USAGE: &str = "\
@@ -38,6 +38,11 @@ fn main() {
         MpsFile::parse(input, direction).unwrap()
     };
 
-    let solution = file.problem.solve().unwrap();
-    println!("objective value: {}", solution.objective());
+    let res_solve = file.problem.solve();
+    match res_solve {
+        Ok(solution) => println!("status: OPTIMAL objective: {}", solution.objective() + file.obj_offset),
+        Err(Error::InfeasibleTrivial) | Err(Error::InfeasibleWithCertificate(_)) => println!("status: INFEASIBLE"),
+        Err(Error::Unbounded) => println!("status: UNBOUNDED"),
+        Err(Error::Instable) => println!("status: INSTABLE"),
+    }
 }
