@@ -43,7 +43,7 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
-pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "true");
+pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false");
 
 #[derive(Debug, Clone, Copy)]
 struct BoundConstraint {
@@ -258,9 +258,7 @@ impl Lp {
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true`
     /// We assume that the active literal is always present, it is the responsability of the caller to ensure it:
-    /// ```
     /// doms.presence(active) == Lit::TRUE
-    /// ```
     pub fn add_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         if !self.enable {
             return;
