@@ -15,6 +15,8 @@ use crate::ext::lprelax::transitions::TransitionGroundingId;
 use crate::ext::{Source, SourceGroundingId};
 
 pub static ARIES_LPRELAX_USE: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_USE", "false");
+pub static ARIES_LPRELAX_RECOVER_MIES: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_RECOVER_MIES", "true");
+pub static ARIES_LPRELAX_GROUND_2CYCLES: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_GROUND_2CYCLES", "false");
 // static ARIES_LPRELAX_GROUNDER: EnvParam<String> = EnvParam::new("ARIES_LPRELAX_GROUNDER", "simple");
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]

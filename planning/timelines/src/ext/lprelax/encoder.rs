@@ -18,8 +18,8 @@ pub(crate) struct LpRelaxEncoder {
 }
 
 impl LpRelaxEncoder {
-    pub fn new(ctx: &SchedEncoder) -> Self {
-        let transitions = Transitions::new_unambiguous(ctx);
+    pub fn new(ctx: &mut SchedEncoder) -> Self {
+        let transitions = Transitions::new_unambiguous(ctx, super::ARIES_LPRELAX_RECOVER_MIES.get());
 
         Self { transitions }
     }
@@ -40,6 +40,7 @@ impl LpRelaxEncoder {
     //     ctx.causal_links.conditions.get(cond_id)
     // }
 
+    #[allow(dead_code)]
     pub fn get_transition(&self, transition_id: TransitionId) -> Transition {
         self.transitions.get(transition_id)
     }
@@ -64,7 +65,7 @@ impl LpRelaxEncoder {
     pub fn iter_transitions(&self) -> impl Iterator<Item = (TransitionId, Transition)> {
         self.transitions.iter()
     }
-    pub fn iter_effects<'a>(&self, ctx: &'a SchedEncoder) -> impl Iterator<Item = (EffectId, &'a Effect)> {
+    pub fn iter_effects<'a>(&'a self, ctx: &'a SchedEncoder) -> impl Iterator<Item = (EffectId, &'a Effect)> {
         self.transitions
             .iter_of_effects()
             .map(|(_, transition_id)| self.transitions.get_effect(transition_id, ctx).unwrap())
@@ -85,9 +86,9 @@ impl LpRelaxEncoder {
     /// which is not the case for causal links in the main encoding.
     /// In this specific case where the support is between two effects,
     /// the "active" literal is None (as this doesn't correspond to a causal link in the main CSP model).
-    pub fn iter_supports(
-        &self,
-        ctx: &SchedEncoder,
+    pub fn iter_supports<'a>(
+        &'a self,
+        ctx: &'a SchedEncoder,
     ) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
         // Supporting stemming from the causal links in the main encoding.
         let supports_causal_links = ctx.causal_links.get_links().map(|cl| {
@@ -96,8 +97,8 @@ impl LpRelaxEncoder {
             //     (cl.eff_id, ctx.sched.effects.get(cl.eff_id)),
             //     (cl.cond_id, ctx.causal_links.conditions.get(cl.cond_id))
             // );
-            let out_transition_id = self.transitions.of_effect(cl.eff_id);
-            let in_transition_id = self.transitions.of_condition(cl.cond_id);
+            let out_transition_id = self.transitions.of_effect(cl.eff_id).unwrap();
+            let in_transition_id = self.transitions.of_condition(cl.cond_id).unwrap();
 
             debug_assert_eq!(
                 self.transitions.get_state_var(out_transition_id, ctx).fluent,
@@ -106,29 +107,38 @@ impl LpRelaxEncoder {
             ((out_transition_id, in_transition_id), Some(cl.active))
         });
 
-        // Supports from effects to other effects
-        let supports_from_effects_to_others = self.iter_effects(ctx).flat_map(move |(in_eff_id, _)| {
-            let in_transition_id = self.transitions.of_effect(in_eff_id);
+        // Supports from effects (including "missing" ones) to other effects (non-initial) effects
+        let supports_from_effects_to_others = self.iter_effects(ctx).flat_map(move |(out_eff_id, _)| {
+            let out_transition_id = self.transitions.of_effect(out_eff_id).unwrap();
 
-            self.iter_effects(ctx).flat_map(move |(out_eff_id, _)| {
-                let out_transition_id = self.transitions.of_effect(out_eff_id);
-                if in_transition_id == out_transition_id || self.transitions.is_condeff(out_transition_id) {
+            self.iter_effects(ctx).flat_map(move |(in_eff_id, _)| {
+                let in_transition_id = self.transitions.of_effect(in_eff_id).unwrap();
+
+                if out_transition_id == in_transition_id
+                    || self.transitions.is_condeff(in_transition_id)
+                    || self.transitions.get_source(in_transition_id, ctx).is_none()
+                {
                     return None;
                 }
-                debug_assert!(self.transitions.is_eff(out_transition_id));
 
-                if self.transitions.get_source(out_transition_id, ctx).is_some()
-                    && self.transitions.get_state_var(in_transition_id, ctx).fluent
-                        == self.transitions.get_state_var(out_transition_id, ctx).fluent
+                debug_assert!(
+                    out_transition_id != in_transition_id
+                        && self.transitions.is_pure_eff(in_transition_id)
+                        && self.transitions.get_source(in_transition_id, ctx).is_some()
+                );
+
+                if self.transitions.get_state_var(out_transition_id, ctx).fluent
+                    == self.transitions.get_state_var(in_transition_id, ctx).fluent
                 {
-                    let TransitionTermsView { args: out_args, .. } = self.get_transition_terms(out_transition_id, ctx);
-                    let TransitionTermsView { args: in_args, .. } = self.get_transition_terms(in_transition_id, ctx);
+                    let out_args = self.get_transition_terms(out_transition_id, ctx).args;
+                    let in_args = self.get_transition_terms(in_transition_id, ctx).args;
+
                     if out_args.iter().zip(in_args).any(|(out_term, in_term)| {
                         out_term.is_cst() && in_term.is_cst() && out_term.constant != in_term.constant
                     }) {
                         None
                     } else {
-                        Some(((in_transition_id, out_transition_id), None))
+                        Some(((out_transition_id, in_transition_id), None))
                     }
                 } else {
                     None
@@ -136,12 +146,16 @@ impl LpRelaxEncoder {
             })
         });
 
+        // Supports from "missing" initial effects to anything other than an effect is not needed
+        // (they otherwise wouldn't have been ignored in the main encoding).
+        // As such, WARNING: This assumes that the main encoding soundly omits initial effects that may not support the conditions.
+
         (supports_causal_links.chain(supports_from_effects_to_others))
             .filter(|&((out_transition_id, in_transition_id), _)| out_transition_id != in_transition_id)
             .inspect(|&((out_transition_id, in_transition_id), _)| {
-                debug_assert!(!self.transitions.is_cond(out_transition_id));
+                debug_assert!(!self.transitions.is_pure_cond(out_transition_id));
                 debug_assert!(
-                    !matches!(self.get_transition(in_transition_id), Transition::Eff(_))
+                    !self.transitions.is_pure_eff(in_transition_id)
                         || self.transitions.get_source(in_transition_id, ctx).is_some()
                 );
             })
@@ -209,6 +223,13 @@ impl LpRelaxEncoder {
         );
 
         let problem = encoding.build(self, ctx);
+
+        println!(
+            "|- LPrelax problem stats: {} columns, {} rows",
+            problem.cols().len(),
+            problem.rows().len(),
+        );
+
         (encoding, problem)
     }
 }

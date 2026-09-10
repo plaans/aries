@@ -180,7 +180,7 @@ fn encode_problem_lifted(
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
             debug_assert!(!rhs.is_empty());
 
-            let expr = if !encoder.transitions.includes_all_mies() && is_transition_eff(in_transition_id) {
+            let expr = if !encoder.transitions.includes_recovered_mies() && is_transition_eff(in_transition_id) {
                 RowExpr::Geq(vec![ColTag::PresenceTransition(in_transition_id)], rhs)
             } else {
                 RowExpr::Eq(vec![ColTag::PresenceTransition(in_transition_id)], rhs)
@@ -400,7 +400,9 @@ fn encode_problem_ground(
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
 
-            let expr = if !encoder.transitions.includes_all_mies() && is_transition_eff(in_transition_id) {
+            let expr = if !encoder.transitions.includes_recovered_mies() && is_transition_eff(in_transition_id) {
+                // In the case where we do not recover and use "missing" initial effects,
+                // the inflow constraints for (all) effects are slightly weaker.
                 let expr = RowExpr::Geq(
                     vec![ColTag::PresenceTransitionGround(
                         in_transition_id,
@@ -430,12 +432,11 @@ fn encode_problem_ground(
             problem.push_row(expr);
         }
 
-        if !encoder.transitions.includes_all_mies() {
-            // Special additional constraint for effects, which,
-            // when "missing" initial effects are not represented (i.e. not explicitly recreated in `transitions`),
-            // have slightly weaker inflow constraints (see above):
-            //
-            // Sum of inflows into same (ground) state variable effects is bounded by 1
+        if !encoder.transitions.includes_recovered_mies() {
+            // In the case where we do not recover and use "missing" initial effects,
+            // the inflow constraints for (all) effects are slightly weaker (see above).
+            // This is (partially? FIXME[proof?]) compensated by the following constraints,
+            // which state that the *sum* of inflows into the same (ground) effect is upper bounded by 1.
             for lhs in lhses {
                 if !lhs.is_empty() {
                     let expr = RowExpr::Leq1(lhs);
@@ -485,11 +486,10 @@ fn encode_problem_ground(
     }
 
     // [Ground] Forbid one (ground) transitions from mutually supporting each other
-    // TODO: ? is this actually needed ? -> (this may not necessarily be useful / enough for cases of eff-eff supports, as any value could be usef (or eff-condeff))
-    if super::ARIES_LPRELAX_GND_2CYCLES.get() {
-        let mut seen = vec![];
-
+    //          TODO: ? is this actually needed ? -> (this may not necessarily be useful / enough for cases of eff-eff supports, as any value could be usef (or eff-condeff))
+    if super::ARIES_LPRELAX_GROUND_2CYCLES.get() {
         let ground_supports_iter_sorted_fully = groundings.supports().iter_all().sorted();
+        let mut seen = vec![];
 
         for &(out_transition_id, in_transition_id, transitions_groundings_ids) in ground_supports_iter_sorted_fully {
             let Some((out_transition_grounding_id, in_transition_grounding_id)) = transitions_groundings_ids else {

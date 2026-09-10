@@ -140,6 +140,7 @@ fn build_lp(
 
     let (mut rows_coefs, mut lbs_ubs) = (vec![], vec![]);
     for row_expr in rows {
+        // println!("{row_expr:?}");
         let (row_coefs, lb, ub) = match row_expr {
             RowExpr::Eq(lhs, rhs) => (
                 lhs.iter()

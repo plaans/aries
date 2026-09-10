@@ -1,6 +1,8 @@
 mod ground;
+mod missing_initial_effects;
 
 pub use ground::*;
+use missing_initial_effects::RecoveredMissingInitialEffects;
 
 use aries_solver::lang::Lit;
 
@@ -45,6 +47,8 @@ pub(crate) struct Transitions {
     of_effect: DirectIdMap<EffectId, TransitionId>,
     of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>>,
     of_empty_source: Vec<TransitionId>,
+
+    recovered_mies: Option<RecoveredMissingInitialEffects>,
 }
 
 impl std::ops::Index<TransitionId> for Transitions {
@@ -69,11 +73,11 @@ impl Transitions {
     pub fn get(&self, transition_id: TransitionId) -> Transition {
         self.store[transition_id]
     }
-    pub fn of_condition(&self, cond_id: CondId) -> TransitionId {
-        self.of_condition[cond_id]
+    pub fn of_condition(&self, cond_id: CondId) -> Option<TransitionId> {
+        self.of_condition.get(cond_id).copied()
     }
-    pub fn of_effect(&self, eff_id: EffectId) -> TransitionId {
-        self.of_effect[eff_id]
+    pub fn of_effect(&self, eff_id: EffectId) -> Option<TransitionId> {
+        self.of_effect.get(eff_id).copied()
     }
     pub fn of_source(&self, source: Source) -> &[TransitionId] {
         if let Some(task_id) = source {
@@ -161,12 +165,30 @@ impl Transitions {
             Transition::Eff(_) => None,
         }
     }
-    pub fn get_effect<'a>(&self, transition_id: TransitionId, ctx: &'a SchedEncoder) -> Option<(EffectId, &'a Effect)> {
+    pub fn get_effect<'a>(
+        &'a self,
+        transition_id: TransitionId,
+        ctx: &'a SchedEncoder,
+    ) -> Option<(EffectId, &'a Effect)> {
         match self.get(transition_id) {
-            Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => Some((eff_id, ctx.sched.effects.get(eff_id))),
+            Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => {
+                let eff = if let Some(recovered_mies) = &self.recovered_mies
+                    && recovered_mies.contains(eff_id)
+                {
+                    recovered_mies.get(eff_id)
+                } else {
+                    ctx.sched.effects.get(eff_id)
+                };
+                Some((eff_id, eff))
+            }
             Transition::Cond(_) => None,
         }
     }
+    // pub fn is_effect_non_missing_initial(&self, eff_id: EffectId) -> bool {
+    //     self.recovered_mies
+    //         .as_ref()
+    //         .is_some_and(|recovered_mies| recovered_mies.contains(eff_id))
+    // }
     pub fn get_prez(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Lit {
         match self.get(transition_id) {
             Transition::Cond(_) => self.get_condition(transition_id, ctx).unwrap().1.prez,
@@ -189,7 +211,7 @@ impl Transitions {
             }
         }
     }
-    pub fn get_state_var<'a>(&self, transition_id: TransitionId, ctx: &'a SchedEncoder) -> &'a StateVar {
+    pub fn get_state_var<'a>(&'a self, transition_id: TransitionId, ctx: &'a SchedEncoder) -> &'a StateVar {
         match self.get(transition_id) {
             Transition::Cond(_) => &self.get_condition(transition_id, ctx).unwrap().1.state_var,
             Transition::Eff(_) => &self.get_effect(transition_id, ctx).unwrap().1.state_var,
@@ -254,8 +276,15 @@ impl Transitions {
         TransitionGrounding { args, valfrom, valto }
     }
 
+    /// Whether (all) "missing" initial effects are used / included
+    pub fn includes_recovered_mies(&self) -> bool {
+        self.recovered_mies.is_some()
+    }
+
     /// Collects transitions from "unambiguous" conditions and effects (i.e. filtering out "nonsimple" ones)
-    pub fn new_unambiguous(ctx: &SchedEncoder) -> Self {
+    ///
+    /// The context borrow is mutable to create new 'mutex end' variables for the recovered missing initial effects.
+    pub fn new_unambiguous(ctx: &mut SchedEncoder, recover_missing_initial_effects: bool) -> Self {
         // Collects nonsimple transitions to ignore / relax.
         let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
 
@@ -298,6 +327,9 @@ impl Transitions {
         // When a compatible condition and effect are found, a corresponding CondEff transition is introduced,
         // modifying the previously inserted Cond transition.
         // If no compatible condition is found, a Eff transition is introduced.
+        //
+        // If a ground initial (empty source) Eff transition is introduced, remember that grounding.
+        // This is needed to avoid overriding it later when introducing the default (negative) ground initial effects.
 
         let mut store = vec![];
 
@@ -305,6 +337,9 @@ impl Transitions {
         let mut of_effect = DirectIdMap::default();
         let mut of_empty_source = vec![];
         let mut of_concrete_source = DirectIdMap::default();
+
+        let mut initial_effects_ground_args =
+            std::collections::HashMap::<crate::Sym, Vec<Vec<aries_solver::core::IntCst>>>::new();
 
         let source_conds_iter = std::iter::chain(
             [(None, &empty_source_conditions)],
@@ -375,8 +410,72 @@ impl Transitions {
                     }
                     store.push(Transition::Eff(eff_id));
                 }
+
+                // Remember the args groundings of ground initial effects
+                if recover_missing_initial_effects
+                    && source.is_none()
+                    && e.state_var.args.iter().all(|term| term.is_cst())
+                {
+                    let ground_args = e.state_var.args.iter().map(|term| term.constant).collect();
+                    initial_effects_ground_args
+                        .entry(e.state_var.fluent.to_string())
+                        .or_default()
+                        .push(ground_args);
+                    debug_assert!({
+                        use itertools::Itertools;
+                        initial_effects_ground_args
+                            .get(&e.state_var.fluent)
+                            .unwrap()
+                            .iter()
+                            .all_unique()
+                    });
+                }
             }
         }
+
+        // Loop over fluents and their parameter types' ground values.
+        // For each such grounding, introduce an initial effect (with default value),
+        // if there wasn't already an effect with the same ground parameters encountered earlier
+        // (among the "explicit" known initial effects accessible from `ctx`).
+
+        let recovered_mies = if !recover_missing_initial_effects {
+            RecoveredMissingInitialEffects::default()
+        } else {
+            let mut recovered_mies = RecoveredMissingInitialEffects::new(
+                ctx,
+                effects_to_ignore,
+                conditions_to_ignore,
+                initial_effects_ground_args,
+            );
+
+            for (sym, params, _) in ctx.sched.fluents.iter() {
+                if recovered_mies.ignored_fluents.contains(sym) {
+                    continue;
+                }
+
+                let args = crate::boxes::BBox::new(params.iter().map(|p| p.range).collect::<Vec<_>>());
+                let mut grs = args.as_ref().points();
+                while let Some(gr) = streaming_iterator::StreamingIterator::next(&mut grs) {
+                    let args_ground = Vec::from_iter(gr.iter().copied());
+
+                    if let Ok(eff_id) = recovered_mies.add(
+                        sym.to_string(),
+                        args_ground,
+                        ctx.sched.fluents.get_return(sym).unwrap().range.first,
+                        &mut ctx.store,
+                    ) {
+                        let tr_id = store.len();
+                        of_effect.insert(eff_id, tr_id);
+                        of_empty_source.push(tr_id);
+                        store.push(Transition::Eff(eff_id));
+                    } else {
+                        // Ignored (not added) as there already in an initial effect with these ground args.
+                    };
+                }
+            }
+
+            recovered_mies
+        };
 
         // For each transition, collect its terms' (args and values) indices in the list of its source's args.
         //
@@ -392,12 +491,20 @@ impl Transitions {
                 &ctx.sched.global_args
             }
         };
+        let get_effect = |eff_id| {
+            if recovered_mies.contains(eff_id) {
+                recovered_mies.get(eff_id)
+            } else {
+                ctx.sched.effects.get(eff_id)
+            }
+        };
         let get_source = |transition| match transition {
             Transition::Cond(cond_id) => ctx.causal_links.conditions.get(cond_id).source,
-            Transition::Eff(eff_id) => ctx.sched.effects.get(eff_id).source,
+            Transition::Eff(eff_id) => get_effect(eff_id).source,
             Transition::CondEff(cond_id, eff_id) => {
                 let res = ctx.causal_links.conditions.get(cond_id).source;
-                debug_assert!(res == ctx.sched.effects.get(eff_id).source);
+                debug_assert!(res == get_effect(eff_id).source);
+                debug_assert!(!recovered_mies.contains(eff_id));
                 res
             }
         };
@@ -408,21 +515,24 @@ impl Transitions {
                 None,
             ),
             Transition::Eff(eff_id) => (
-                &ctx.sched.effects.get(eff_id).state_var.args,
+                &get_effect(eff_id).state_var.args,
                 None,
-                Some(match ctx.sched.effects.get(eff_id).operation {
+                Some(match get_effect(eff_id).operation {
                     crate::EffectOp::Assign(term) => term,
                     crate::EffectOp::Step(_) => todo!(),
                 }),
             ),
-            Transition::CondEff(cond_id, eff_id) => (
-                &ctx.sched.effects.get(eff_id).state_var.args,
-                Some(ctx.causal_links.conditions.get(cond_id).value),
-                Some(match ctx.sched.effects.get(eff_id).operation {
-                    crate::EffectOp::Assign(term) => term,
-                    crate::EffectOp::Step(_) => todo!(),
-                }),
-            ),
+            Transition::CondEff(cond_id, eff_id) => {
+                debug_assert!(!recovered_mies.contains(eff_id));
+                (
+                    &get_effect(eff_id).state_var.args,
+                    Some(ctx.causal_links.conditions.get(cond_id).value),
+                    Some(match get_effect(eff_id).operation {
+                        crate::EffectOp::Assign(term) => term,
+                        crate::EffectOp::Step(_) => todo!(),
+                    }),
+                )
+            }
         };
 
         for transition in store.iter() {
@@ -459,6 +569,7 @@ impl Transitions {
             of_effect,
             of_empty_source,
             of_concrete_source,
+            recovered_mies: recover_missing_initial_effects.then_some(recovered_mies),
         }
     }
 }

@@ -49,7 +49,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             let model = encoding.store.clone();
 
             let reasoner = LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(
-                crate::ext::lprelax::LpRelaxEncoder::new(&encoding),
+                crate::ext::lprelax::LpRelaxEncoder::new(&mut encoding),
                 encoding,
             );
 
