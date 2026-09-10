@@ -381,14 +381,12 @@ impl TermsGroundingsInfo {
 
     fn debug_check_valid_for_transitions(&self) -> bool {
         debug_assert!(self.entries_pending_transitions.is_empty());
-        debug_assert!(self.entries_merged_transitions.is_sorted());
-        debug_assert!(self.entries_merged_transitions.iter().all_unique());
+        debug_assert!(is_sorted_and_no_dupes(self.entries_merged_transitions.iter()));
         true
     }
     fn debug_check_valid_for_sources(&self) -> bool {
         debug_assert!(self.entries_pending_sources.is_empty());
-        debug_assert!(self.entries_merged_sources.is_sorted());
-        debug_assert!(self.entries_merged_sources.iter().all_unique());
+        debug_assert!(is_sorted_and_no_dupes(self.entries_merged_sources.iter()));
         true
     }
 
@@ -464,18 +462,8 @@ impl TransitionsGroundingsInfo {
     }
 
     fn debug_check_valid(&self) -> bool {
-        debug_assert!(self.entries_sourced_empty_source.is_sorted());
-        debug_assert!(self.entries_sourced_empty_source.iter().all_unique());
-        debug_assert!(
-            self.entries_sourced_concrete_sources
-                .iter()
-                .all(|(_, entries)| entries.is_sorted())
-        );
-        debug_assert!(
-            self.entries_sourced_concrete_sources
-                .iter()
-                .all(|(_, entries)| entries.iter().all_unique())
-        );
+        debug_assert!(is_sorted_and_no_dupes(self.entries_sourced_empty_source.iter()));
+        debug_assert!(is_sorted_and_no_dupes(self.entries_sourced_concrete_sources.iter()));
         true
     }
 
@@ -663,14 +651,14 @@ impl SupportsGroundingsInfo {
                     .map(|&(_, transition_grounding_id, _)| transition_grounding_id)
                     .dedup()
                     .collect_vec();
-                debug_assert!(out_direct.is_sorted_by(|a, b| a < b));
+                debug_assert!(is_sorted_and_no_dupes(out_direct.iter()));
 
                 let in_direct: Vec<TransitionGroundingId> = in_slice
                     .iter()
                     .map(|&(_, transition_grounding_id, _)| transition_grounding_id)
                     .dedup()
                     .collect_vec();
-                debug_assert!(in_direct.is_sorted_by(|a, b| a < b));
+                debug_assert!(is_sorted_and_no_dupes(in_direct.iter()));
 
                 // Case: in-transition ("consumer" of support) is an pure-effect (i.e. valfrom is None for all its groundings).
                 // Any other (non-pure-cond) ground transition (with the same state var grounding) can support it, whatever its valto
@@ -710,7 +698,7 @@ impl SupportsGroundingsInfo {
                         )
                     })
                     .collect_vec();
-                debug_assert!(in_direct.is_sorted_by(|a, b| a < b));
+                debug_assert!(is_sorted_and_no_dupes(in_direct.iter()));
 
                 let out_inverted: Vec<(StateVarGroundingId, Option<IntCst>, Option<IntCst>)> = out_direct
                     .into_iter()
@@ -723,7 +711,7 @@ impl SupportsGroundingsInfo {
                     })
                     .sorted_unstable()
                     .collect_vec();
-                debug_assert!(out_inverted.is_sorted_by(|a, b| a < b));
+                debug_assert!(is_sorted_and_no_dupes(out_inverted.iter()));
 
                 for (out_inv_chunk_same_sv, in_chunk_same_sv) in
                     merge_join_chunks_by_key(&out_inverted, &in_direct, |&(state_var_grounding_id, _, _)| {
@@ -783,11 +771,12 @@ impl SupportsGroundingsInfo {
         );
         debug_assert!(entries.iter().all_unique());
 
-        out.sort_unstable();
         debug_assert!(out.iter().all_unique());
+        out.sort_unstable();
 
-        in_.sort_unstable();
         debug_assert!(in_.iter().all_unique());
+        in_.sort_unstable();
+
         // Remove pre-seeded (in_transition_id, in_transition_grounding_id, None) entries (see beginning)
         // if (in_transition_id, in_transition_grounding_id, Some(..)) entries were found / added during the search.
         in_.dedup_by(|next, prev| {
@@ -799,6 +788,7 @@ impl SupportsGroundingsInfo {
             }
         });
         debug_assert!(
+            // an entry with `None` exists iff there are no entries with Some (for the same (in_transition_id, in_transition_grounding_id) pair)
             in_.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1))
                 .all(|chunk| chunk.len() == 1 || chunk.iter().all(|e| e.2.is_some()))
         );
@@ -839,6 +829,10 @@ impl SupportsGroundingsInfo {
     > {
         self.in_.iter()
     }
+}
+
+fn is_sorted_and_no_dupes<T: Ord>(iter: impl Iterator<Item = T>) -> bool {
+    iter.is_sorted_by(|a, b| a < b)
 }
 
 #[cfg(test)]
