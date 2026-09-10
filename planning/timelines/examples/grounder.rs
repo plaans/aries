@@ -1,10 +1,8 @@
-use std::collections::HashMap;
-
 use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
 use aries_timelines::boxes::Segment;
 use aries_timelines::constraints::HasValueAt;
-use aries_timelines::ext::ground::SourceGrounding;
+use aries_timelines::ext::SourceGrounding;
 use aries_timelines::symbols::ObjectEncoding;
 use aries_timelines::*;
 use idmap::intid::IntegerId;
@@ -312,7 +310,7 @@ fn init_val(sched: &mut Sched, fluent: &str, args: &[IntCst], value: IntCst) {
     });
 }
 
-fn print_groundings(groundings: &HashMap<Option<TaskId>, Vec<SourceGrounding>>, sched: &Sched) {
+fn print_groundings(groundings: &[(Option<TaskId>, Vec<SourceGrounding>)], sched: &Sched) {
     let decoder = sched.objects.decoder();
     for (source, gs) in groundings {
         match source {
@@ -322,7 +320,7 @@ fn print_groundings(groundings: &HashMap<Option<TaskId>, Vec<SourceGrounding>>, 
                 println!("  [{}] {} grounding(s)", task.name, gs.len());
                 for g in gs {
                     let decoded: Vec<String> = g
-                        .inner()
+                        .get()
                         .iter()
                         .map(|v| decoder.decode(*v).cloned().unwrap_or_else(|| format!("{}", v)))
                         .collect();
@@ -333,8 +331,8 @@ fn print_groundings(groundings: &HashMap<Option<TaskId>, Vec<SourceGrounding>>, 
     }
 }
 
-fn naive_groundings(sched: &Sched) -> HashMap<Option<TaskId>, Vec<SourceGrounding>> {
-    let mut result = HashMap::new();
+fn naive_groundings(sched: &Sched) -> Vec<(Option<TaskId>, Vec<SourceGrounding>)> {
+    let mut result = vec![];
 
     for (idx, task) in sched.tasks.iter().enumerate() {
         let task_id = TaskId::from_int(idx as u32);
@@ -357,9 +355,9 @@ fn naive_groundings(sched: &Sched) -> HashMap<Option<TaskId>, Vec<SourceGroundin
             .multi_cartesian_product()
             .map(SourceGrounding::from)
             .collect();
-        result.insert(Some(task_id), gs);
+        result.push((Some(task_id), gs));
     }
 
-    result.insert(None, vec![SourceGrounding::from(vec![])]);
+    result.push((None, vec![SourceGrounding::from(vec![])]));
     result
 }

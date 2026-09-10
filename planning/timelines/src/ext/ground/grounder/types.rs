@@ -3,7 +3,7 @@ use aries_solver::prelude::*;
 
 use idmap::intid::IntegerId;
 
-use crate::{Sym, TaskId};
+use crate::{IntTerm, Sym, TaskId};
 
 /// TODO: anticipate union types and have multiple intervals ?
 pub(super) type VarDom = (IntCst, IntCst);
@@ -32,7 +32,7 @@ impl std::fmt::Display for GrounderPredicateId {
 
 #[derive(Debug, Clone)]
 pub(super) enum GrounderTerm {
-    Var(Var),
+    Var(IntTerm),
     Cst(IntCst),
 }
 impl std::fmt::Display for GrounderTerm {

@@ -4,16 +4,16 @@ mod types;
 use streaming_iterator::StreamingIterator;
 use types::*;
 
-use aries_solver::{core::views::Term, prelude::*};
+use aries_solver::prelude::*;
 
 use idmap::{DirectIdMap, intid::IntegerId};
 use itertools::Itertools;
 
 use crate::encoder::{CondId, SchedEncoder};
-use crate::ext::{Source, collect_nonsimple_conditions_and_effects_to_relax, ground::SourceGrounding};
+use crate::ext::{Source, SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::{Effect, EffectId, HasValueAt, Task, TaskId};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Given a bounded planning task (i.e. timelines model, i.e. optional scheduling model),
 /// computes overestimated (relaxed) groundings of its sources (i.e. tasks / actions)
@@ -54,7 +54,7 @@ impl Grounder {
             .iter()
             .map(|t| ctx.sched.bounds(t).0..=ctx.sched.bounds(t).1)
             .multi_cartesian_product()
-            .map(SourceGrounding::from)
+            .map(SourceGrounding)
             .collect();
 
         // all concrete sources by default
@@ -90,7 +90,7 @@ impl Grounder {
         }
     }
 
-    pub fn run(&self) -> HashMap<Source, Vec<SourceGrounding>> {
+    pub fn run(&self) -> Vec<(Source, Vec<SourceGrounding>)> {
         // Build inner datalog program
         let mut inner = inner::GrounderProgramInner::new_empty();
         for fact in &self.program.facts {
@@ -104,18 +104,17 @@ impl Grounder {
         let inner_result = inner.run_and_consume();
 
         // Retrieve groundings
-        let mut groundings = HashMap::default();
-
+        let mut res = vec![];
         for &task_id in &self.concrete_sources {
-            groundings.insert(
+            res.push((
                 Some(task_id),
                 inner_result.extract_groundings_of_concrete_source(task_id),
-            );
+            ));
         }
         // (add groundings "global args")
-        groundings.insert(None, self.global_args_groundings.clone());
+        res.push((None, self.global_args_groundings.clone()));
 
-        groundings
+        res
     }
 
     pub fn print_datalog_program(&self) {
@@ -311,13 +310,7 @@ impl Grounder {
             &task
                 .args
                 .iter()
-                .filter_map(|t| {
-                    if t.is_cst() {
-                        None
-                    } else {
-                        Some(GrounderTerm::Var(t.variable()))
-                    }
-                })
+                .filter_map(|t| if t.is_cst() { None } else { Some(GrounderTerm::Var(*t)) })
                 .collect::<Vec<_>>(),
         );
 
@@ -330,7 +323,7 @@ impl Grounder {
                     if t.is_cst() {
                         None
                     } else {
-                        Some((GrounderTerm::Var(t.variable()), ctx.sched.bounds(t)))
+                        Some((GrounderTerm::Var(*t), ctx.sched.bounds(t)))
                     }
                 })
                 .map(|(t, vardom)| {
@@ -379,7 +372,7 @@ fn collect_condition_datalog_terms(cond: &HasValueAt) -> Result<Vec<GrounderTerm
         if term.is_cst() {
             GrounderTerm::Cst(term.constant)
         } else {
-            GrounderTerm::Var(term.variable())
+            GrounderTerm::Var(term)
         }
     })))
 }
@@ -394,7 +387,7 @@ fn collect_effect_datalog_terms(eff: &Effect) -> Result<Vec<GrounderTerm>, ()> {
         if term.is_cst() {
             GrounderTerm::Cst(term.constant)
         } else {
-            GrounderTerm::Var(term.variable())
+            GrounderTerm::Var(term)
         }
     })))
 }
