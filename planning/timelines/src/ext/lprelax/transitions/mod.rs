@@ -5,14 +5,12 @@ pub use ground::*;
 use aries_solver::lang::Lit;
 
 use idmap::DirectIdMap;
-use smallvec::SmallVec;
 
-use crate::ext::{SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
+use crate::ext::{Source, SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::{
     Effect, EffectId, IntTerm, StateVar, TaskId,
     constraints::HasValueAt,
     encoder::{CondId, SchedEncoder},
-    ext::Source,
 };
 
 pub type TransitionId = usize;
@@ -33,7 +31,7 @@ pub(crate) struct TransitionTermsView<'a> {
 
 #[derive(Clone)]
 struct TransitionTermsIndicesInSource {
-    pub args: SmallVec<[Option<usize>; 4]>,
+    pub args: smallvec::SmallVec<[Option<usize>; 4]>,
     pub valfrom: Option<Option<usize>>,
     pub valto: Option<Option<usize>>,
 }
@@ -58,10 +56,10 @@ impl std::ops::Index<TransitionId> for Transitions {
 }
 
 impl Transitions {
-    pub fn is_cond(&self, transition_id: TransitionId) -> bool {
+    pub fn is_pure_cond(&self, transition_id: TransitionId) -> bool {
         matches!(self.store[transition_id], Transition::Cond(_))
     }
-    pub fn is_eff(&self, transition_id: TransitionId) -> bool {
+    pub fn is_pure_eff(&self, transition_id: TransitionId) -> bool {
         matches!(self.store[transition_id], Transition::Eff(_))
     }
     pub fn is_condeff(&self, transition_id: TransitionId) -> bool {

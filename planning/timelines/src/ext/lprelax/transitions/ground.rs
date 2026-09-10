@@ -13,3 +13,16 @@ pub struct TransitionGroundingId {
     pub valfrom: Option<IntCst>,
     pub valto: Option<IntCst>,
 }
+impl TransitionGroundingId {
+    #[allow(dead_code)]
+    pub fn is_pure_cond(&self) -> bool {
+        self.valfrom.is_some() && self.valto.is_none()
+    }
+    pub fn is_pure_eff(&self) -> bool {
+        self.valfrom.is_none() && self.valto.is_some()
+    }
+    #[allow(dead_code)]
+    pub fn is_condeff(&self) -> bool {
+        self.valfrom.is_some() && self.valto.is_some()
+    }
+}
