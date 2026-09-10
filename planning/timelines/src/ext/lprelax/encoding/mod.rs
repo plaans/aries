@@ -146,22 +146,23 @@ fn encode_problem_lifted(
 
     // [Lifted] Forbid two transitions from mutually supporting each other ("trivial cycles")
     {
-        let mut seen = HashSet::new();
+        let mut seen = vec![];
 
         for &(out_transition_id, in_transition_id) in lifted_supports_sorted.out() {
-            seen.insert((out_transition_id, in_transition_id));
+            seen.push((out_transition_id, in_transition_id));
 
-            if seen.contains(&(in_transition_id, out_transition_id)) {
+            if seen.binary_search(&(in_transition_id, out_transition_id)).is_ok() {
                 problem.push_row(RowExpr::Leq1(vec![
                     ColTag::Support(out_transition_id, in_transition_id),
                     ColTag::Support(in_transition_id, out_transition_id),
                 ]));
             }
         }
+        debug_assert!(seen.is_sorted());
     }
 
-    let is_transition_eff = |transition_id| encoder.transitions.is_eff(transition_id);
-    let is_transition_cond = |transition_id| encoder.transitions.is_cond(transition_id);
+    let is_transition_eff = |transition_id| encoder.transitions.is_pure_eff(transition_id);
+    let is_transition_cond = |transition_id| encoder.transitions.is_pure_cond(transition_id);
 
     // [Lifted] "Inflow" constraints: [TODO]
     {
@@ -484,27 +485,33 @@ fn encode_problem_ground(
     }
 
     // [Ground] Forbid one (ground) transitions from mutually supporting each other
-    // TODO WARNING: ? is this actually needed ?
-    //      -> (this may not necessarily be useful / enough for cases of eff-eff supports, as any value could be usef (or eff-condeff))
-    {
-        /*let mut seen = HashSet::new();
+    // TODO: ? is this actually needed ? -> (this may not necessarily be useful / enough for cases of eff-eff supports, as any value could be usef (or eff-condeff))
+    if super::ARIES_LPRELAX_GND_2CYCLES.get() {
+        let mut seen = vec![];
 
-        for &(out_transition_id, in_transition_id, out_transition_grounding_id, in_transition_grounding_id) in
-            groundings.supports().iter_all()
-        {
-            seen.insert((
+        let ground_supports_iter_sorted_fully = groundings.supports().iter_all().sorted();
+
+        for &(out_transition_id, in_transition_id, transitions_groundings_ids) in ground_supports_iter_sorted_fully {
+            let Some((out_transition_grounding_id, in_transition_grounding_id)) = transitions_groundings_ids else {
+                continue;
+            };
+
+            seen.push((
                 out_transition_id,
                 in_transition_id,
                 out_transition_grounding_id,
                 in_transition_grounding_id,
             ));
 
-            if seen.contains(&(
-                in_transition_id,
-                out_transition_id,
-                in_transition_grounding_id,
-                out_transition_grounding_id,
-            )) {
+            if seen
+                .binary_search(&(
+                    in_transition_id,
+                    out_transition_id,
+                    in_transition_grounding_id,
+                    out_transition_grounding_id,
+                ))
+                .is_ok()
+            {
                 let expr = RowExpr::Leq1(vec![
                     ColTag::SupportGround(
                         out_transition_id,
@@ -521,7 +528,8 @@ fn encode_problem_ground(
                 ]);
                 problem.push_row(expr);
             }
-        }*/
+        }
+        debug_assert!(seen.is_sorted());
     }
 
     groundings.terms_sort();
