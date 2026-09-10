@@ -91,20 +91,20 @@ impl LpRelaxEncoder {
         ctx: &'a SchedEncoder,
     ) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
         // Supporting stemming from the causal links in the main encoding.
-        let supports_causal_links = ctx.causal_links.get_links().map(|cl| {
+        let supports_causal_links = ctx.causal_links.get_links().filter_map(|cl| {
             // println!(
             //     "{:?} {:?}",
             //     (cl.eff_id, ctx.sched.effects.get(cl.eff_id)),
             //     (cl.cond_id, ctx.causal_links.conditions.get(cl.cond_id))
             // );
-            let out_transition_id = self.transitions.of_effect(cl.eff_id).unwrap();
-            let in_transition_id = self.transitions.of_condition(cl.cond_id).unwrap();
+            let out_transition_id = self.transitions.of_effect(cl.eff_id)?;
+            let in_transition_id = self.transitions.of_condition(cl.cond_id)?;
 
             debug_assert_eq!(
                 self.transitions.get_state_var(out_transition_id, ctx).fluent,
                 self.transitions.get_state_var(in_transition_id, ctx).fluent,
             );
-            ((out_transition_id, in_transition_id), Some(cl.active))
+            Some(((out_transition_id, in_transition_id), Some(cl.active)))
         });
 
         // Supports from effects (including "missing" ones) to other effects (non-initial) effects
