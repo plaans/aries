@@ -309,6 +309,36 @@ impl Problem {
         })
     }
 
+    /// USED FOR BENCHMARK
+    /// Solve the problem, finding the optimal objective function value and variable values by adding bounds one by one.
+    ///
+    /// # Errors
+    ///
+    /// Will return an error, if the problem is infeasible (constraints can't be satisfied)
+    /// or if the objective value is unbounded.
+    pub fn solve_incremental(&self) -> Result<Solution, Error> {
+        let num_vars = self.obj_coeffs.len();
+
+        // We do not use infinity as it would result in unbounded state immediatly
+        let init_var_mins = vec![f64::NEG_INFINITY; num_vars];
+        let init_var_maxs = vec![f64::INFINITY; num_vars];
+        let mut solver = Solver::try_new(&self.obj_coeffs, &init_var_mins, &init_var_maxs, &self.constraints)?;
+
+        for var in 0..num_vars {
+            solver.set_lb_var(var, self.var_mins[var])?;
+
+            solver.set_ub_var(var, self.var_maxs[var])?;
+
+            solver.solve_feasibility()?;
+        }
+        solver.initial_solve()?;
+        Ok(Solution {
+            num_vars,
+            direction: self.direction,
+            solver,
+        })
+    }
+
     /// Create a solver for the problem and wrap it in a FeasbilityChecker
     ///
     /// # Errors
@@ -566,7 +596,7 @@ impl Solution {
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem becomes infeasible with restricted bound
+    /// Will return an error if the problem becomes infeasible/unbounded with the new bound
     pub fn set_bound_var(mut self, var: Variable, val: f64, bound: Bound) -> Result<Self, Error> {
         assert!(var.0 < self.num_vars);
         match bound {

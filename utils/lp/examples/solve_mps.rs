@@ -7,6 +7,7 @@ Read a problem in the MPS format and solve it.
 USAGE:
     solve_mps --help
     solve_mps INPUT_FILE
+    solve_mps INPUT_FILE --incremental
 
 INPUT_FILE is a file in the M format. You can download some sample
 problems from http://www.netlib.org/lp/data/. Use - for stdin.
@@ -20,13 +21,18 @@ fn main() {
     env_logger::init();
 
     let args = std::env::args().collect::<Vec<_>>();
-    if args.len() != 2 {
+    if args.len() != 2 && args.len() != 3 {
         print!("{}", USAGE);
         std::process::exit(1);
     } else if args[1] == "--help" {
         print!("{}", USAGE);
         return;
+    } else if args.len() == 3 && args[2] != "--incremental" {
+        print!("{}", USAGE);
+        std::process::exit(1);
     }
+
+    let is_incremental = args.len() == 3;
 
     let filename = &args[1];
     let direction = aries_lp::OptimizationDirection::Minimize;
@@ -38,7 +44,14 @@ fn main() {
         MpsFile::parse(input, direction).unwrap()
     };
 
-    let res_solve = file.problem.solve();
+    let res_solve = if is_incremental {
+        println!("Incremental");
+        file.problem.solve_incremental()
+    } else {
+        println!("normal");
+        file.problem.solve()
+    };
+
     match res_solve {
         Ok(solution) => println!("status: OPTIMAL objective: {}", solution.objective() + file.obj_offset),
         Err(Error::InfeasibleTrivial) | Err(Error::InfeasibleWithCertificate(_)) => println!("status: INFEASIBLE"),
