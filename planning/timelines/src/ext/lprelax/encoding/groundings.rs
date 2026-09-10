@@ -62,8 +62,6 @@ impl LpRelaxEncodingGroundingsInfo {
         // marking each of them as being appearing in the source grounding.
         // Also mark each of the variable assignments as appearing in the corresponding transition groundings.
         {
-            let mut seen_term = vec![];
-
             for &transition_id in encoder.transitions.of_source(source) {
                 let transition_grounding =
                     encoder.get_transition_terms_terms_eval_in_ground_source(transition_id, &source_grounding, ctx);
@@ -80,17 +78,12 @@ impl LpRelaxEncodingGroundingsInfo {
                     let transition_terms = encoder.get_transition_terms(transition_id, ctx);
 
                     for (&term, &value) in transition_terms.args.iter().zip(&transition_grounding.args) {
-                        if !term.is_cst() && !seen_term.contains(&term) {
-                            seen_term.push(term);
+                        if !term.is_cst() {
                             self.terms
                                 .post_for_ground_transition(term, value, transition_id, transition_grounding_id);
                         }
                     }
-                    if transition_terms
-                        .valfrom
-                        .is_some_and(|term| !term.is_cst() && !seen_term.contains(&term))
-                    {
-                        seen_term.push(transition_terms.valfrom.unwrap());
+                    if transition_terms.valfrom.is_some_and(|term| !term.is_cst()) {
                         self.terms.post_for_ground_transition(
                             transition_terms.valfrom.unwrap(),
                             transition_grounding.valfrom.unwrap(),
@@ -98,11 +91,7 @@ impl LpRelaxEncodingGroundingsInfo {
                             transition_grounding_id,
                         );
                     }
-                    if transition_terms
-                        .valto
-                        .is_some_and(|term| !term.is_cst() && !seen_term.contains(&term))
-                    {
-                        seen_term.push(transition_terms.valto.unwrap());
+                    if transition_terms.valto.is_some_and(|term| !term.is_cst()) {
                         self.terms.post_for_ground_transition(
                             transition_terms.valto.unwrap(),
                             transition_grounding.valto.unwrap(),
