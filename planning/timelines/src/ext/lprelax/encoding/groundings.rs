@@ -496,6 +496,10 @@ impl TransitionsGroundingsInfo {
         }
     }
 
+    fn source_of(&self, transition_id: TransitionId) -> Source {
+        self.sources_of[transition_id]
+    }
+
     pub fn iter_all_sourced(
         &self,
     ) -> impl Iterator<
@@ -556,14 +560,28 @@ impl TransitionsGroundingsInfo {
 #[derive(Clone, Default)]
 pub(super) struct SupportsGroundingsInfo {
     /// Sorted flat storage of ground supports: "outgoing view":
-    /// (out_transition_id, out_transition_grounding_id, in_transition_id, in_transition_grounding_id).
-    out: Vec<(TransitionId, TransitionGroundingId, TransitionId, TransitionGroundingId)>,
+    /// (out_transition_id, out_transition_grounding_id, (in_transition_id, in_transition_grounding_id)).
+    out: Vec<(
+        TransitionId,
+        TransitionGroundingId,
+        (TransitionId, TransitionGroundingId),
+    )>,
     /// Sorted flat storage of ground supports: "incoming view":
-    /// (in_transition_id, in_transition_grounding_id, out_transition_id, out_transition_grounding_id).
-    in_: Vec<(TransitionId, TransitionGroundingId, TransitionId, TransitionGroundingId)>,
-    /// Sorted flat storage of ground supports: "neutral view":
-    /// (out_transition_id, in_transition_id, out_transition_grounding_id, in_transition_grounding_id).
-    entries: Vec<(TransitionId, TransitionId, TransitionGroundingId, TransitionGroundingId)>,
+    /// (in_transition_id, in_transition_grounding_id, (out_transition_id, out_transition_grounding_id)).
+    #[allow(clippy::type_complexity)]
+    in_: Vec<(
+        TransitionId,
+        TransitionGroundingId,
+        Option<(TransitionId, TransitionGroundingId)>,
+    )>,
+    /// Sorted (over the first 2 element) flat storage of ground supports: "neutral view".
+    /// (out_transition_id, in_transition_id, (out_transition_grounding_id, in_transition_grounding_id)).
+    #[allow(clippy::type_complexity)]
+    entries: Vec<(
+        TransitionId,
+        TransitionId,
+        Option<(TransitionGroundingId, TransitionGroundingId)>,
+    )>,
 }
 
 impl SupportsGroundingsInfo {
@@ -577,193 +595,248 @@ impl SupportsGroundingsInfo {
         let mut in_ = vec![];
         let mut entries = vec![];
 
+        // (Pre-seeding) Acknowledge that an in-transition and a grounding of it exist.
+        // Later, after (in_transition_id, in_transition_grounding_id, Some(..)) entries are added,
+        // the pre-seeded entry (in_transition_id, in_transition_grounding_id, None) will be removed.
+        // If no (in_transition_id, in_transition_grounding_id, Some(..)) entries are added,
+        // then the (in_transition_id, in_transition_grounding_id, None) is kept and signifies
+        // that although the in-transition and the grounding exist, there exist no compatible out-transitions to support it.
+        in_.extend(transitions_groundings.iter_all_unsourced().filter_map(
+            |(transition_id, transition_grounding_id)| {
+                let transition_is_non_initial_eff =
+                    transitions_groundings.source_of(transition_id).is_some() || !transition_grounding_id.is_pure_eff();
+                transition_is_non_initial_eff.then_some((transition_id, transition_grounding_id, None))
+            },
+        ));
+
+        // Main loop
         for &(out_transition_id, in_transition_id) in lifted_supports.out() {
             let out_slice = transitions_groundings.get_index_and_slice(out_transition_id);
             let in_slice = transitions_groundings.get_index_and_slice(in_transition_id);
 
-            debug_assert!(
-                out_slice
-                    .iter()
-                    .all(|&(transition_id, _, _)| transition_id == out_transition_id),
-            );
-            debug_assert!(
-                in_slice
-                    .iter()
-                    .all(|&(transition_id, _, _)| transition_id == in_transition_id)
-            );
-
-            debug_assert!(
-                out_slice
-                    .iter()
-                    .all(|(_, out_transition_grounding_id, _)| out_transition_grounding_id.valto.is_some()),
-                "out transition mustn't be a condition"
-            );
-
-            if out_slice.is_empty() || in_slice.is_empty() {
-                continue;
-            }
+            let entries_len_before_search = entries.len();
 
             let mut push_supports =
                 |out_transition_grounding_id: TransitionGroundingId,
                  in_transition_grounding_id: TransitionGroundingId| {
-                    entries.push((
-                        out_transition_id,
-                        in_transition_id,
-                        out_transition_grounding_id,
-                        in_transition_grounding_id,
-                    ));
                     out.push((
                         out_transition_id,
                         out_transition_grounding_id,
-                        in_transition_id,
-                        in_transition_grounding_id,
+                        (in_transition_id, in_transition_grounding_id),
                     ));
                     in_.push((
                         in_transition_id,
                         in_transition_grounding_id,
+                        Some((out_transition_id, out_transition_grounding_id)),
+                    ));
+                    entries.push((
                         out_transition_id,
-                        out_transition_grounding_id,
+                        in_transition_id,
+                        Some((out_transition_grounding_id, in_transition_grounding_id)),
                     ));
                 };
 
-            let in_transition_is_eff = in_slice
-                .first()
-                .is_some_and(|(_, in_transition_grounding_id, _)| in_transition_grounding_id.valfrom.is_none());
+            // debug_assert!(
+            //     out_slice
+            //         .iter()
+            //         .all(|(_, out_transition_grounding_id, _)| out_transition_grounding_id.valto.is_some()),
+            //     "out transition mustn't be a condition"
+            // );
+            // debug_assert!(
+            //     out_slice
+            //         .iter()
+            //         .all(|&(transition_id, _, _)| transition_id == out_transition_id),
+            // );
+            // debug_assert!(
+            //     in_slice
+            //         .iter()
+            //         .all(|&(transition_id, _, _)| transition_id == in_transition_id)
+            // );
 
-            let out_direct = out_slice
-                .iter()
-                .map(|&(_, transition_grounding_id, _)| transition_grounding_id)
-                .dedup()
-                .collect_vec();
-            debug_assert!(out_direct.is_sorted());
-            debug_assert!(out_direct.iter().all_unique());
+            'search: {
+                let in_transition_is_eff = in_slice
+                    .first()
+                    .is_some_and(|(_, in_transition_grounding_id, _)| in_transition_grounding_id.is_pure_eff());
 
-            let in_direct = in_slice
-                .iter()
-                .map(|&(_, transition_grounding_id, _)| transition_grounding_id)
-                .dedup()
-                .collect_vec();
-            debug_assert!(in_direct.is_sorted());
-            debug_assert!(in_direct.iter().all_unique());
+                let out_direct: Vec<TransitionGroundingId> = out_slice
+                    .iter()
+                    .map(|&(_, transition_grounding_id, _)| transition_grounding_id)
+                    .dedup()
+                    .collect_vec();
+                debug_assert!(out_direct.is_sorted_by(|a, b| a < b));
 
-            // Case: in-transition ("consumer" of support) is an pure-effect (i.e. valfrom is None for all its groundings).
-            // Any other (non-pure-cond) ground transition (with the same state var grounding) can support it, whatever its valto
+                let in_direct: Vec<TransitionGroundingId> = in_slice
+                    .iter()
+                    .map(|&(_, transition_grounding_id, _)| transition_grounding_id)
+                    .dedup()
+                    .collect_vec();
+                debug_assert!(in_direct.is_sorted_by(|a, b| a < b));
 
-            if in_transition_is_eff {
-                for (out_chunk_same_sv, in_chunk_same_sv) in
-                    merge_join_chunks_by_key(&out_direct, &in_direct, |transition_grounding_id| {
-                        transition_grounding_id.state_var_grounding_id
+                // Case: in-transition ("consumer" of support) is an pure-effect (i.e. valfrom is None for all its groundings).
+                // Any other (non-pure-cond) ground transition (with the same state var grounding) can support it, whatever its valto
+
+                if in_transition_is_eff {
+                    for (out_chunk_same_sv, in_chunk_same_sv) in
+                        merge_join_chunks_by_key(&out_direct, &in_direct, |transition_grounding_id| {
+                            transition_grounding_id.state_var_grounding_id
+                        })
+                    {
+                        for (&out_transition_grounding_id, &in_transition_grounding_id) in
+                            out_chunk_same_sv.iter().cartesian_product(in_chunk_same_sv.iter())
+                        {
+                            push_supports(out_transition_grounding_id, in_transition_grounding_id);
+                        }
+                    }
+                    break 'search;
+                }
+
+                // Case: in-transition ("consumer" of support) is *not* a pure-effect (i.e. valfrom is not None for all its groundings).
+                // it can be support by other (non-pure-cond) ground transitions (with the same state var grounding) and out_valto = in_valfrom
+
+                debug_assert!(!in_transition_is_eff);
+                // debug_assert!(
+                //     in_direct
+                //         .iter()
+                //         .all(|transition_grounding_id| transition_grounding_id.valfrom.is_some())
+                // );
+
+                let in_direct: Vec<(StateVarGroundingId, Option<IntCst>, Option<IntCst>)> = in_direct
+                    .into_iter()
+                    .map(|transition_grounding_id| {
+                        (
+                            transition_grounding_id.state_var_grounding_id,
+                            transition_grounding_id.valfrom,
+                            transition_grounding_id.valto,
+                        )
+                    })
+                    .collect_vec();
+                debug_assert!(in_direct.is_sorted_by(|a, b| a < b));
+
+                let out_inverted: Vec<(StateVarGroundingId, Option<IntCst>, Option<IntCst>)> = out_direct
+                    .into_iter()
+                    .map(|transition_grounding_id| {
+                        (
+                            transition_grounding_id.state_var_grounding_id,
+                            transition_grounding_id.valto,
+                            transition_grounding_id.valfrom,
+                        )
+                    })
+                    .sorted_unstable()
+                    .collect_vec();
+                debug_assert!(out_inverted.is_sorted_by(|a, b| a < b));
+
+                for (out_inv_chunk_same_sv, in_chunk_same_sv) in
+                    merge_join_chunks_by_key(&out_inverted, &in_direct, |&(state_var_grounding_id, _, _)| {
+                        state_var_grounding_id
                     })
                 {
-                    for (&out_transition_grounding_id, &in_transition_grounding_id) in
-                        out_chunk_same_sv.iter().cartesian_product(in_chunk_same_sv.iter())
-                    {
-                        push_supports(out_transition_grounding_id, in_transition_grounding_id);
+                    // Within a same-state-var chunk, `out_inverted` is sorted by valto and `in_direct` by
+                    // valfrom, so the same join applies to the values.
+                    for (out_inv_chunk_matching, in_chunk_matching) in merge_join_chunks_by_key(
+                        out_inv_chunk_same_sv,
+                        in_chunk_same_sv,
+                        |&(_, value, _)| {
+                            value.expect(
+                                "'out' side: `value` is 'out_valto' (never None as an out transition is never a pure condition).
+                                'in' side: `value` is 'in_valfrom' (never None as the pure-effect case was already handled above)."
+                            )
+                        },
+                    ) {
+                        for (&out_inverted_transition_grounding_id, &in_transition_grounding_id) in
+                            out_inv_chunk_matching
+                                .iter()
+                                .cartesian_product(in_chunk_matching.iter())
+                        {
+                            let in_transition_grounding_id = TransitionGroundingId {
+                                state_var_grounding_id: in_transition_grounding_id.0,
+                                valfrom: in_transition_grounding_id.1,
+                                valto: in_transition_grounding_id.2,
+                            };
+                            // un-invert: (sv, valto, valfrom) -> (sv, valfrom, valto)
+                            let out_transition_grounding_id = TransitionGroundingId {
+                                state_var_grounding_id: out_inverted_transition_grounding_id.0,
+                                valfrom: out_inverted_transition_grounding_id.2,
+                                valto: out_inverted_transition_grounding_id.1,
+                            };
+
+                            push_supports(out_transition_grounding_id, in_transition_grounding_id);
+                        }
                     }
                 }
-                continue;
             }
 
-            // Case: in-transition ("consumer" of support) is *not* a pure-effect (i.e. valfrom is not None for all its groundings).
-            // it can be support by other (non-pure-cond) ground transitions (with the same state var grounding) and out_valto = in_valfrom
-
-            debug_assert!(!in_transition_is_eff);
-            debug_assert!(
-                in_direct
-                    .iter()
-                    .all(|transition_grounding_id| transition_grounding_id.valfrom.is_some())
-            );
-
-            let in_direct = in_direct
-                .into_iter()
-                .map(|transition_grounding_id| {
-                    (
-                        transition_grounding_id.state_var_grounding_id,
-                        transition_grounding_id.valfrom,
-                        transition_grounding_id.valto,
-                    )
-                })
-                .collect_vec();
-
-            let out_inverted = out_direct
-                .into_iter()
-                .map(|transition_grounding_id| {
-                    (
-                        transition_grounding_id.state_var_grounding_id,
-                        transition_grounding_id.valto,
-                        transition_grounding_id.valfrom,
-                    )
-                })
-                .sorted_unstable()
-                .collect_vec();
-            debug_assert!(out_inverted.is_sorted());
-            debug_assert!(out_inverted.iter().all_unique());
-
-            for (out_inv_chunk_same_sv, in_chunk_same_sv) in
-                merge_join_chunks_by_key(&out_inverted, &in_direct, |&(state_var_grounding_id, _, _)| {
-                    state_var_grounding_id
-                })
-            {
-                // Within a same-state-var chunk, `out_inverted` is sorted by valto and `in_direct` by
-                // valfrom, so the same join applies to the values.
-                for (out_inv_chunk_matching, in_chunk_matching) in merge_join_chunks_by_key(
-                    out_inv_chunk_same_sv,
-                    in_chunk_same_sv,
-                    |&(_, value, _)| {
-                        value.expect(
-                            "'out' side: `value` is 'out_valto' (never None as an out transition is never a pure condition).\
-                            'in' side: `value` is 'in_valfrom' (never None as the pure-effect case was already handled above)"
-                        )
-                    },
-                ) {
-                    for (&out_inverted_transition_grounding_id, &in_transition_grounding_id) in out_inv_chunk_matching
-                        .iter()
-                        .cartesian_product(in_chunk_matching.iter())
-                    {
-                        let in_transition_grounding_id = TransitionGroundingId {
-                            state_var_grounding_id: in_transition_grounding_id.0,
-                            valfrom: in_transition_grounding_id.1,
-                            valto: in_transition_grounding_id.2,
-                        };
-                        // un-invert: (sv, valto, valfrom) -> (sv, valfrom, valto)
-                        let out_transition_grounding_id = TransitionGroundingId {
-                            state_var_grounding_id: out_inverted_transition_grounding_id.0,
-                            valfrom: out_inverted_transition_grounding_id.2,
-                            valto: out_inverted_transition_grounding_id.1,
-                        };
-
-                        push_supports(out_transition_grounding_id, in_transition_grounding_id);
-                    }
-                }
+            if entries.len() == entries_len_before_search {
+                // Nothing was added: it means there no compatible groundings were found
+                entries.push((out_transition_id, in_transition_id, None));
             }
         }
 
+        debug_assert!(
+            entries
+                .is_sorted_by_key(|(out_transition_id, in_transition_id, _)| { (out_transition_id, in_transition_id) })
+        );
+        debug_assert!(
+            // an entry with `None` exists iff there are no entries with Some (for the same (out_transition_id, in_transition_id) pair)
+            entries
+                .chunk_by(|a, b| (a.0, a.1) == (b.0, b.1))
+                .all(|chunk| chunk.len() == 1 || chunk.iter().all(|e| e.2.is_some()))
+        );
         debug_assert!(entries.iter().all_unique());
-        debug_assert!(entries.is_sorted());
-        //entries.sort_unstable();
 
-        debug_assert!(out.iter().all_unique());
         out.sort_unstable();
+        debug_assert!(out.iter().all_unique());
 
-        debug_assert!(in_.iter().all_unique());
         in_.sort_unstable();
+        debug_assert!(in_.iter().all_unique());
+        // Remove pre-seeded (in_transition_id, in_transition_grounding_id, None) entries (see beginning)
+        // if (in_transition_id, in_transition_grounding_id, Some(..)) entries were found / added during the search.
+        in_.dedup_by(|next, prev| {
+            if prev.2.is_none() && (prev.0, prev.1) == (next.0, next.1) {
+                *prev = *next; // overwrite the sentinel with the support, then drop the duplicate
+                true
+            } else {
+                false
+            }
+        });
+        debug_assert!(
+            in_.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1))
+                .all(|chunk| chunk.len() == 1 || chunk.iter().all(|e| e.2.is_some()))
+        );
 
         Self { entries, out, in_ }
     }
 
     pub fn iter_all(
         &self,
-    ) -> impl Iterator<Item = &(TransitionId, TransitionId, TransitionGroundingId, TransitionGroundingId)> {
+    ) -> impl Iterator<
+        Item = &(
+            TransitionId,
+            TransitionId,
+            Option<(TransitionGroundingId, TransitionGroundingId)>,
+        ),
+    > {
         self.entries.iter()
     }
     pub fn iter_out_all(
         &self,
-    ) -> impl Iterator<Item = &(TransitionId, TransitionGroundingId, TransitionId, TransitionGroundingId)> {
+    ) -> impl Iterator<
+        Item = &(
+            TransitionId,
+            TransitionGroundingId,
+            (TransitionId, TransitionGroundingId),
+        ),
+    > {
         self.out.iter()
     }
     pub fn iter_in_all(
         &self,
-    ) -> impl Iterator<Item = &(TransitionId, TransitionGroundingId, TransitionId, TransitionGroundingId)> {
+    ) -> impl Iterator<
+        Item = &(
+            TransitionId,
+            TransitionGroundingId,
+            Option<(TransitionId, TransitionGroundingId)>,
+        ),
+    > {
         self.in_.iter()
     }
 }

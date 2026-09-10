@@ -177,13 +177,9 @@ fn encode_problem_lifted(
                 .collect::<Vec<_>>();
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
+            debug_assert!(!rhs.is_empty());
 
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
-            let expr = if is_transition_eff(in_transition_id) {
-                // ? WARNING ? : only if not "non-required" initial effects are not used
+            let expr = if !encoder.transitions.includes_all_mies() && is_transition_eff(in_transition_id) {
                 RowExpr::Geq(vec![ColTag::PresenceTransition(in_transition_id)], rhs)
             } else {
                 RowExpr::Eq(vec![ColTag::PresenceTransition(in_transition_id)], rhs)
@@ -208,12 +204,10 @@ fn encode_problem_lifted(
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
 
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
+            if !rhs.is_empty() {
+                let expr = RowExpr::Geq(vec![ColTag::PresenceTransition(out_transition_id)], rhs);
+                problem.push_row(expr);
             }
-            let expr = RowExpr::Geq(vec![ColTag::PresenceTransition(out_transition_id)], rhs);
-            problem.push_row(expr);
         }
     }
 }
@@ -239,7 +233,7 @@ fn encode_problem_ground(
                 problem.insert_col(col_tag.clone());
             }
             if rhs.is_empty() {
-                // ? WARNING ?
+                // ? WARNING ? related to incomplete / partial groundings. [TODO]
                 continue;
             }
             let expr = RowExpr::Eq(vec![ColTag::PresenceSource(source)], rhs.clone());
@@ -267,10 +261,8 @@ fn encode_problem_ground(
             for col_tag in &rhs {
                 problem.insert_col(col_tag.clone());
             }
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
+            debug_assert!(!rhs.is_empty());
+
             let expr = RowExpr::Eq(vec![ColTag::PresenceTransition(transition_id)], rhs);
             problem.push_row(expr);
         }
@@ -289,11 +281,8 @@ fn encode_problem_ground(
                     .collect::<Vec<_>>();
 
                 debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
+                debug_assert!(!rhs.is_empty());
 
-                if rhs.is_empty() {
-                    // ? WARNING ?
-                    continue;
-                }
                 let expr = RowExpr::Eq(
                     vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
                     rhs,
@@ -303,8 +292,8 @@ fn encode_problem_ground(
         }
     }
 
-    let is_transition_eff = |transition_id| encoder.transitions.is_eff(transition_id);
-    let is_transition_cond = |transition_id| encoder.transitions.is_cond(transition_id);
+    let is_transition_eff = |transition_id| encoder.transitions.is_pure_eff(transition_id);
+    let is_transition_cond = |transition_id| encoder.transitions.is_pure_cond(transition_id);
 
     let time = std::time::Instant::now();
     println!("|--- Ground part encoding construction: support building started");
@@ -320,9 +309,11 @@ fn encode_problem_ground(
     // NOTE: There's no need to enforce theses constraints for all cases, as the (ground) inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for "pure-condition" in-transitions, as this case is not implied by (ground) outflow constraints.
     {
-        for &(out_transition_id, in_transition_id, out_transition_grounding_id, in_transition_grounding_id) in
-            groundings.supports().iter_all()
-        {
+        for &(out_transition_id, in_transition_id, transition_groundings_ids) in groundings.supports().iter_all() {
+            let Some((out_transition_grounding_id, in_transition_grounding_id)) = transition_groundings_ids else {
+                continue;
+            };
+
             problem.insert_col(ColTag::SupportGround(
                 out_transition_id,
                 in_transition_id,
@@ -352,28 +343,27 @@ fn encode_problem_ground(
         let chunkby = groundings
             .supports()
             .iter_all()
-            .chunk_by(|(out_transition_id, in_transition_id, _, _)| (out_transition_id, in_transition_id));
+            .chunk_by(|(out_transition_id, in_transition_id, _)| (out_transition_id, in_transition_id));
 
         for ((&out_transition_id, &in_transition_id), transitions_groundings_ids) in chunkby.into_iter() {
             let rhs = transitions_groundings_ids
                 .into_iter()
-                .map(|&(_, _, out_transition_grounding_id, in_transition_grounding_id)| {
-                    ColTag::SupportGround(
-                        out_transition_id,
-                        in_transition_id,
-                        out_transition_grounding_id,
-                        in_transition_grounding_id,
-                    )
+                .filter_map(|&(_, _, transitions_groundings_ids)| {
+                    transitions_groundings_ids.map(|(out_transition_grounding_id, in_transition_grounding_id)| {
+                        ColTag::SupportGround(
+                            out_transition_id,
+                            in_transition_id,
+                            out_transition_grounding_id,
+                            in_transition_grounding_id,
+                        )
+                    })
                 })
                 .collect::<Vec<_>>();
 
             for col_tag in &rhs {
                 problem.insert_col(col_tag.clone());
             }
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
+
             let expr = RowExpr::Eq(vec![ColTag::Support(out_transition_id, in_transition_id)], rhs);
             problem.push_row(expr);
         }
@@ -385,7 +375,7 @@ fn encode_problem_ground(
             groundings
                 .supports()
                 .iter_in_all()
-                .chunk_by(|(in_transition_id, in_transition_grounding_id, _, _)| {
+                .chunk_by(|(in_transition_id, in_transition_grounding_id, _)| {
                     (in_transition_id, in_transition_grounding_id)
                 });
 
@@ -395,31 +385,38 @@ fn encode_problem_ground(
         for ((&in_transition_id, &in_transition_grounding_id), out_transitions_groundings_ids) in chunkby.into_iter() {
             let rhs = out_transitions_groundings_ids
                 .into_iter()
-                .map(|&(_, _, out_transition_id, out_transition_grounding_id)| {
-                    ColTag::SupportGround(
-                        out_transition_id,
-                        in_transition_id,
-                        out_transition_grounding_id,
-                        in_transition_grounding_id,
-                    )
+                .filter_map(|&(_, _, x)| {
+                    x.map(|(out_transition_id, out_transition_grounding_id)| {
+                        ColTag::SupportGround(
+                            out_transition_id,
+                            in_transition_id,
+                            out_transition_grounding_id,
+                            in_transition_grounding_id,
+                        )
+                    })
                 })
                 .collect::<Vec<_>>();
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
 
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
-            let expr = if is_transition_eff(in_transition_id) {
-                // ? WARNING ? : only if not "non-required" initial effects are not used
-                RowExpr::Geq(
+            let expr = if !encoder.transitions.includes_all_mies() && is_transition_eff(in_transition_id) {
+                let expr = RowExpr::Geq(
                     vec![ColTag::PresenceTransitionGround(
                         in_transition_id,
                         in_transition_grounding_id,
                     )],
                     rhs.clone(),
-                )
+                );
+                if is_transition_eff(in_transition_id) {
+                    if prev_in_transition_id
+                        .is_none_or(|prev_in_transition_id| prev_in_transition_id != in_transition_id)
+                    {
+                        prev_in_transition_id = Some(in_transition_id);
+                        lhses.push(vec![]);
+                    }
+                    lhses.last_mut().unwrap().extend(rhs);
+                }
+                expr
             } else {
                 RowExpr::Eq(
                     vec![ColTag::PresenceTransitionGround(
@@ -430,23 +427,19 @@ fn encode_problem_ground(
                 )
             };
             problem.push_row(expr);
-
-            if prev_in_transition_id.is_none_or(|prev_in_transition_id| prev_in_transition_id != in_transition_id) {
-                prev_in_transition_id = Some(in_transition_id);
-                lhses.push(vec![]);
-            }
-            lhses.last_mut().unwrap().extend(rhs);
         }
 
-        // Special additional constraint for effects, which,
-        // when "non-required" initial effects are not represented,
-        // have slightly weaker inflow constraints (see above):
-        //
-        // Sum of inflows into same (ground) state variable effects is bounded by 1
-        for lhs in lhses {
-            if !lhs.is_empty() {
-                let expr = RowExpr::Leq1(lhs);
-                problem.push_row(expr);
+        if !encoder.transitions.includes_all_mies() {
+            // Special additional constraint for effects, which,
+            // when "missing" initial effects are not represented (i.e. not explicitly recreated in `transitions`),
+            // have slightly weaker inflow constraints (see above):
+            //
+            // Sum of inflows into same (ground) state variable effects is bounded by 1
+            for lhs in lhses {
+                if !lhs.is_empty() {
+                    let expr = RowExpr::Leq1(lhs);
+                    problem.push_row(expr);
+                }
             }
         }
     }
@@ -457,15 +450,15 @@ fn encode_problem_ground(
             groundings
                 .supports()
                 .iter_out_all()
-                .chunk_by(|(out_transition_id, out_transition_grounding_id, _, _)| {
+                .chunk_by(|(out_transition_id, out_transition_grounding_id, _)| {
                     (out_transition_id, out_transition_grounding_id)
                 });
 
         for ((&out_transition_id, &out_transition_grounding_id), in_transitions_groundings_ids) in chunkby.into_iter() {
             let rhs = in_transitions_groundings_ids
                 .into_iter()
-                .filter(|&&(_, _, in_transition_id, _)| !is_transition_cond(in_transition_id))
-                .map(|&(_, _, in_transition_id, in_transition_grounding_id)| {
+                .filter(|&&(_, _, (in_transition_id, _))| !is_transition_cond(in_transition_id))
+                .map(|&(_, _, (in_transition_id, in_transition_grounding_id))| {
                     ColTag::SupportGround(
                         out_transition_id,
                         in_transition_id,
@@ -477,18 +470,16 @@ fn encode_problem_ground(
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
 
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
+            if !rhs.is_empty() {
+                let expr = RowExpr::Geq(
+                    vec![ColTag::PresenceTransitionGround(
+                        out_transition_id,
+                        out_transition_grounding_id,
+                    )],
+                    rhs.clone(),
+                );
+                problem.push_row(expr);
             }
-            let expr = RowExpr::Geq(
-                vec![ColTag::PresenceTransitionGround(
-                    out_transition_id,
-                    out_transition_grounding_id,
-                )],
-                rhs.clone(),
-            );
-            problem.push_row(expr);
         }
     }
 
@@ -551,10 +542,8 @@ fn encode_problem_ground(
             for col_tag in &lhs {
                 problem.insert_col(col_tag.clone());
             }
-            if lhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
+            debug_assert!(!lhs.is_empty());
+
             let expr = RowExpr::Leq1(lhs);
             problem.push_row(expr);
         }
@@ -578,11 +567,8 @@ fn encode_problem_ground(
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
             debug_assert!(problem.contains_col(&ColTag::TermGround(term, value)));
+            debug_assert!(!rhs.is_empty());
 
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
             let expr = RowExpr::Eq(vec![ColTag::TermGround(term, value)], rhs);
             problem.push_row(expr);
         }
@@ -599,11 +585,8 @@ fn encode_problem_ground(
                 .collect::<Vec<_>>();
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
+            debug_assert!(!rhs.is_empty());
 
-            if rhs.is_empty() {
-                // ? WARNING ?
-                continue;
-            }
             let expr = RowExpr::Eq(vec![ColTag::TermGround(term, value)], rhs);
             problem.push_row(expr);
         }
