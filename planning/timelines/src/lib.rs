@@ -3,28 +3,33 @@ pub mod constraints;
 mod effects;
 pub mod encoder;
 pub mod explain;
+pub mod ext;
 pub mod symbols;
-pub mod tasks;
+mod tasks;
 
 use aries_solver::core::state::Evaluable;
 use aries_solver::core::views::Dom;
+use aries_solver::lang::ModelWrapper;
 use constraints::*;
 use core::fmt::Debug;
 use core::hash::Hash;
+use smallvec::SmallVec;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use aries_solver::core::INT_CST_MAX;
 pub use aries_solver::core::IntCst;
-use aries_solver::lang::*;
 use aries_solver::prelude::*;
 use aries_solver::solver::Solver;
 use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries_solver::model::Model<Sym>;
+use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
+use crate::ext::ground::SourcesGrounderSimple;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
@@ -41,7 +46,49 @@ pub type IntExp = aries_solver::prelude::LinSum;
 
 pub type SymAtom = IntTerm;
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Debug)]
+pub struct FluentParam {
+    pub range: Segment,
+}
+
+#[derive(Clone, Debug)]
+pub struct FluentsEncoding {
+    store: HashMap<Sym, usize>,
+    params: Vec<SmallVec<[FluentParam; 6]>>,
+    returns: Vec<FluentParam>,
+}
+impl FluentsEncoding {
+    pub fn empty() -> Self {
+        Self {
+            store: Default::default(),
+            params: Default::default(),
+            returns: Default::default(),
+        }
+    }
+    pub fn add(&mut self, name: Sym, params: &[FluentParam], r#return: FluentParam) -> bool {
+        if self.store.contains_key(&name) {
+            return false;
+        }
+        let n = self.params.len();
+        self.store.insert(name, n);
+        self.params.push(params.into());
+        self.returns.push(r#return);
+        true
+    }
+    pub fn get_params(&self, name: &Sym) -> Option<&[FluentParam]> {
+        self.store.get(name).map(|&i| self.params[i].as_slice())
+    }
+    pub fn get_return(&self, name: &Sym) -> Option<&FluentParam> {
+        self.store.get(name).map(|&i| &self.returns[i])
+    }
+    pub fn iter(&self) -> impl Iterator<Item = (&Sym, &[FluentParam], &FluentParam)> {
+        self.store
+            .iter()
+            .map(|(sym, &i)| (sym, self.params[i].as_slice(), &self.returns[i]))
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct StateVar {
     pub fluent: Sym,
     pub args: Vec<SymAtom>,
@@ -73,11 +120,13 @@ pub type ConstraintID = usize;
 pub struct Sched {
     pub model: Model,
     pub objects: ObjectEncoding,
+    pub fluents: FluentsEncoding,
     pub time_scale: IntCst,
     /// temporal separation between events `(1/time_scale)`
     pub epsilon: IntCst,
     pub origin: Time,
     pub horizon: Time,
+    pub(crate) global_args: Vec<IntTerm>, // TODO: PLACEHOLDER
     pub makespan: Time,
     pub tasks: Tasks,
     pub effects: Effects,
@@ -85,7 +134,7 @@ pub struct Sched {
 }
 
 impl Sched {
-    pub fn new(time_scale: IntCst, objects: ObjectEncoding) -> Self {
+    pub fn new(time_scale: IntCst, objects: ObjectEncoding, fluents: FluentsEncoding) -> Self {
         assert_eq!(time_scale, 1, "Non-integer time is not supported yet");
         let mut model = Model::new();
         let origin = Time::ZERO;
@@ -94,10 +143,12 @@ impl Sched {
         Sched {
             model,
             objects,
+            fluents,
             time_scale,
             epsilon: 1,
             origin,
             horizon,
+            global_args: Default::default(),
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
@@ -119,6 +170,7 @@ impl Sched {
     pub fn new_opt_timepoint(&mut self, scope: Lit) -> Time {
         self.model.new_optional_ivar(0, INT_CST_MAX, scope, "_").into()
     }
+
     pub fn add_constraint<C: SchedConstraint + 'static>(&mut self, c: C) -> ConstraintID {
         self.add_boxed_constraint(Arc::new(c))
     }
@@ -155,6 +207,14 @@ impl Sched {
         project: impl Fn(ConstraintID) -> Option<T>,
     ) -> ExplainableSolver<T> {
         ExplainableSolver::new(self, project)
+    }
+
+    pub fn sources_simple_grounder(&self) -> SourcesGrounderSimple {
+        let mut encoder: SchedEncoder = self.clone().encoder();
+        for c in &self.constraints {
+            c.enforce(&mut encoder);
+        }
+        SourcesGrounderSimple::from(&encoder)
     }
 
     pub fn print(&self, sol: &Solution) {
