@@ -152,20 +152,22 @@ fn encode_problem_lifted(
         }
     }
 
+    let is_transition_eff = |transition_id| encoder.transitions.is_pure_eff(transition_id);
+    let is_transition_cond = |transition_id| encoder.transitions.is_pure_cond(transition_id);
+
     // [Lifted] Support between two transitions implies presence of both of them
+    // NOTE: There's no need to enforce theses constraints for all cases, as the inflow and outflow constraints are stronger (see below).
+    //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by outflow constraints.
     {
         for &(out_transition_id, in_transition_id) in lifted_supports_sorted.out() {
             problem.insert_col(ColTag::Support(out_transition_id, in_transition_id));
 
-            problem.push_row(RowExpr::Leq(
-                vec![ColTag::Support(out_transition_id, in_transition_id)],
-                vec![ColTag::PresenceTransition(out_transition_id)],
-            ));
-
-            problem.push_row(RowExpr::Leq(
-                vec![ColTag::Support(out_transition_id, in_transition_id)],
-                vec![ColTag::PresenceTransition(in_transition_id)],
-            ));
+            if is_transition_cond(in_transition_id) {
+                problem.push_row(RowExpr::Leq(
+                    vec![ColTag::Support(out_transition_id, in_transition_id)],
+                    vec![ColTag::PresenceTransition(out_transition_id)],
+                ));
+            }
         }
     }
 
@@ -185,9 +187,6 @@ fn encode_problem_lifted(
         }
         debug_assert!(seen.is_sorted());
     }
-
-    let is_transition_eff = |transition_id| encoder.transitions.is_pure_eff(transition_id);
-    let is_transition_cond = |transition_id| encoder.transitions.is_pure_cond(transition_id);
 
     // [Lifted] "Inflow" constraints: [TODO]
     {
@@ -358,7 +357,7 @@ fn encode_problem_ground(
 
     // [Ground] Support between two (ground) transitions implies presence of both of them
     // NOTE: There's no need to enforce theses constraints for all cases, as the (ground) inflow and outflow constraints are stronger (see below).
-    //       They're only actually needed for "pure-condition" in-transitions, as this case is not implied by (ground) outflow constraints.
+    //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by (ground) outflow constraints.
     {
         for &(out_transition_id, in_transition_id, transition_groundings_ids) in groundings.supports().iter_all() {
             let Some((out_transition_grounding_id, in_transition_grounding_id)) = transition_groundings_ids else {
