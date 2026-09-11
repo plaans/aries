@@ -20,6 +20,7 @@ Compared to standard `minilp`, this crate introduces:
 * **Dynamic Variable Addition**: Add new variables to existing problem structures or feasibility checkers on the fly (`FeasibilityChecker::add_variable`).
 * **Dedicated Feasibility Checker**: A specialized `FeasibilityChecker` wrapper to rapidly verify feasibility under incremental bound modifications and additions without requiring full re-optimization.
 * **Infeasibility Certificates**: Generate and validate mathematical certificates of unsatisfiability (`Error::InfeasibleWithCertificate` & `Problem::is_certificate_valid`).
+* **Benchmark**: Compare results and execution time between ORTools and aries-lp
 
 ---
 
@@ -154,6 +155,12 @@ match problem.solve() {
 }
 
 ```
+
+### 4. Benchmark
+
+To launch the benchmark, you first need to run the script *load_mps_files.sh* to get all the instances.
+
+Then run the python file *bench.py*, the results will both be printed in the terminal and written in *results.txt*.
 
 ---
 
