@@ -584,12 +584,12 @@ fn encode_problem_ground(
         let chunkby = groundings
             .terms()
             .iter_sorted_all_for_sources()
-            .chunk_by(|&(term, value, _, _)| (term, value));
+            .chunk_by(|&(term, value, source, _)| (term, value, source));
 
-        for ((&term, &value), sources_groundings_ids) in chunkby.into_iter() {
+        for ((&term, &value, &source), sources_groundings_ids) in chunkby.into_iter() {
             let rhs = sources_groundings_ids
                 .into_iter()
-                .map(|&(_, _, source, source_grounding_id)| ColTag::PresenceSourceGround(source, source_grounding_id))
+                .map(|&(_, _, _, source_grounding_id)| ColTag::PresenceSourceGround(source, source_grounding_id))
                 .collect::<Vec<_>>();
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
