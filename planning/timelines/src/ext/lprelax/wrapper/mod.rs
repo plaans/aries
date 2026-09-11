@@ -15,7 +15,8 @@ use aries_solver::{
     reasoners::Contradiction,
 };
 
-use aries_solver_lprelax::LpCol;
+use aries_solver_lprelax::{LpCol, int_cst_as_float};
+use itertools::Either;
 use traits::LpRelaxReasonerWrapperTraitInner;
 pub(crate) use traits::{LpRelaxReasonerWrapped, LpRelaxReasonerWrapperTrait};
 
@@ -82,8 +83,8 @@ impl LpRelaxReasonerWrapperTraitInner for LpRelaxReasonerWrapper<aries_solver_lp
             //     println!("{row:?}");
             // }
 
-            let columns = build_lp(&lp_problem, theory);
-            bind_lp(&columns, &encoding, &self.encoder, &self.ctx, theory);
+            let columns = build_lp(&lp_problem, &self.encoder, &self.ctx, model, theory);
+            bind_lp(&columns, &encoding, &self.encoder, &self.ctx, model, theory);
 
             /*let t0 = std::time::Instant::now();
 
@@ -119,21 +120,102 @@ impl LpRelaxReasonerWrapperTraitInner for LpRelaxReasonerWrapper<aries_solver_lp
 
 fn build_lp(
     problem: &LpRelaxProblem,
-    /*dom: impl aries_solver::core::views::Dom,*/ theory: &mut aries_solver_lprelax::LpRelax,
+    encoder: &LpRelaxEncoder,
+    ctx: &SchedEncoder,
+    model: &Domains,
+    theory: &mut aries_solver_lprelax::LpRelax,
 ) -> HashMap<super::ColTag, LpCol> {
     use super::ColTag;
     use crate::ext::lprelax::RowExpr;
+    use aries_solver::core::{IntCst, Lit};
     use aries_solver_lprelax::LpCol;
     use itertools::Itertools;
 
     // Add all columns to the LP problem.
 
-    let cols: HashMap<ColTag, LpCol> = theory
-        .add_columns(&vec![(Some(0.), Some(1.)); problem.cols().len()])
-        .into_iter()
-        .zip(problem.cols())
-        .map(|(col, col_tag)| (col_tag.clone(), col))
-        .collect();
+    let propagated_cols = {
+        let mut res = HashMap::<ColTag, IntCst>::from_iter(problem.cols().iter().filter_map(|col_tag| match col_tag {
+            c @ ColTag::PresenceSource(source) => {
+                let source_prez = encoder.get_source(*source, ctx).map_or(Lit::TRUE, |task| task.presence);
+                match model.value(source_prez) {
+                    Some(true) => {
+                        if model.entails(model.presence(source_prez)) {
+                            Some((c.clone(), 1))
+                        } else {
+                            None
+                        }
+                    }
+                    Some(false) => Some((c.clone(), 0)),
+                    _ => None,
+                }
+            }
+            c @ ColTag::PresenceTransition(transition_id) => {
+                let transition_prez = encoder.transitions.get_prez(*transition_id, ctx);
+                match model.value(transition_prez) {
+                    Some(true) => {
+                        if model.entails(model.presence(transition_prez)) {
+                            Some((c.clone(), 1))
+                        } else {
+                            None
+                        }
+                    }
+                    Some(false) => Some((c.clone(), 0)),
+                    _ => None,
+                }
+            }
+            c @ ColTag::TermGround(term, value) => match model.value_of(*term) {
+                Some(v) => {
+                    if v == *value {
+                        if model.entails(model.presence(*term)) {
+                            Some((c.clone(), 1))
+                        } else {
+                            None
+                        }
+                    } else {
+                        Some((c.clone(), 0))
+                    }
+                }
+                None => None,
+            },
+            _ => None,
+        }));
+        for ((out_transition_id, in_transition_id), active) in encoder.iter_supports(ctx) {
+            if let Some(s) = active
+                && let Some((col_tag, v)) = match model.value(s) {
+                    Some(true) => {
+                        if model.entails(model.presence(s)) {
+                            Some((ColTag::Support(out_transition_id, in_transition_id), 1))
+                        } else {
+                            None
+                        }
+                    }
+                    Some(false) => Some((ColTag::Support(out_transition_id, in_transition_id), 0)),
+                    None => None,
+                }
+            {
+                res.insert(col_tag, v);
+            }
+        }
+        res
+    };
+    let cols = {
+        let cols = theory.add_columns(&vec![
+            (Some(0.), Some(1.));
+            problem.cols().len() - propagated_cols.len()
+        ]);
+        let mut i = 0;
+        let mut res = HashMap::<ColTag, Either<LpCol, IntCst>>::new();
+        for col_tag in problem.cols() {
+            if let Some(v) = propagated_cols.get(col_tag) {
+                res.insert(col_tag.clone(), Either::Right(*v));
+            } else {
+                res.insert(col_tag.clone(), Either::Left(cols[i]));
+                i += 1;
+            }
+        }
+        res
+    };
+
     let rows = problem.rows();
 
     // Add all rows to the LP problem.
@@ -142,37 +224,68 @@ fn build_lp(
     for row_expr in rows {
         // println!("{row_expr:?}");
         let (row_coefs, lb, ub) = match row_expr {
-            RowExpr::Eq(lhs, rhs) => (
-                lhs.iter()
-                    .map(|col_tag| (*cols.get(col_tag).unwrap(), 1.))
-                    .chain(rhs.iter().map(|col_tag| (*cols.get(col_tag).unwrap(), -1.)))
-                    .collect_vec(),
-                Some(0.),
-                Some(0.),
-            ),
-            RowExpr::Geq(lhs, rhs) => (
-                lhs.iter()
-                    .map(|col_tag| (*cols.get(col_tag).unwrap(), 1.))
-                    .chain(rhs.iter().map(|col_tag| (*cols.get(col_tag).unwrap(), -1.)))
-                    .collect_vec(),
-                Some(0.),
-                None,
-            ),
-            RowExpr::Leq(lhs, rhs) => (
-                lhs.iter()
-                    .map(|col_tag| (*cols.get(col_tag).unwrap(), 1.))
-                    .chain(rhs.iter().map(|col_tag| (*cols.get(col_tag).unwrap(), -1.)))
-                    .collect_vec(),
-                None,
-                Some(0.),
-            ),
-            RowExpr::Leq1(lhs) => (
-                lhs.iter()
-                    .map(|col_tag| (*cols.get(col_tag).unwrap(), 1.))
-                    .collect_vec(),
-                None,
-                Some(1.),
-            ),
+            RowExpr::Eq(lhs, rhs) => {
+                let mut b = 0.;
+                let mut row_coefs = Vec::with_capacity(lhs.len() + rhs.len());
+                for col_tag in lhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, 1.)),
+                        Either::Right(v) => b += -int_cst_as_float(*v),
+                    }
+                }
+                for col_tag in rhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, -1.)),
+                        Either::Right(v) => b += int_cst_as_float(*v),
+                    }
+                }
+                (row_coefs, Some(b), Some(b))
+            }
+            RowExpr::Geq(lhs, rhs) => {
+                let mut b = 0.;
+                let mut row_coefs = Vec::with_capacity(lhs.len() + rhs.len());
+                for col_tag in lhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, 1.)),
+                        Either::Right(v) => b += -int_cst_as_float(*v),
+                    }
+                }
+                for col_tag in rhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, -1.)),
+                        Either::Right(v) => b += int_cst_as_float(*v),
+                    }
+                }
+                (row_coefs, Some(b), None)
+            }
+            RowExpr::Leq(lhs, rhs) => {
+                let mut b = 0.;
+                let mut row_coefs = Vec::with_capacity(lhs.len() + rhs.len());
+                for col_tag in lhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, 1.)),
+                        Either::Right(v) => b += -int_cst_as_float(*v),
+                    }
+                }
+                for col_tag in rhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, -1.)),
+                        Either::Right(v) => b += int_cst_as_float(*v),
+                    }
+                }
+                (row_coefs, None, Some(b))
+            }
+            RowExpr::Leq1(lhs) => {
+                let mut b = 0.;
+                let mut row_coefs = Vec::with_capacity(lhs.len());
+                for col_tag in lhs {
+                    match cols.get(col_tag).unwrap() {
+                        Either::Left(col) => row_coefs.push((*col, 1.)),
+                        Either::Right(v) => b += -int_cst_as_float(*v),
+                    }
+                }
+                (row_coefs, None, Some(1. + b))
+            }
         };
         debug_assert!(
             row_coefs.iter().duplicates_by(|&(col_tag, _)| col_tag).next().is_none(),
@@ -180,13 +293,28 @@ fn build_lp(
             rows_coefs.len(),
             row_expr
         );
-
-        rows_coefs.push(row_coefs);
-        lbs_ubs.push((lb, ub));
+        // if row_coefs.is_empty() || lb.is_some_and(|l| l > 0.) || ub.is_some_and(|u| u < 0.) {
+        //     println!("trivially infeasible row after substitution !")    
+        // }
+        if !row_coefs.is_empty() || lb.is_some_and(|l| l > 0.) || ub.is_some_and(|u| u < 0.) {
+            rows_coefs.push(row_coefs);
+            lbs_ubs.push((lb, ub));
+        }
     }
     theory.add_rows(&rows_coefs, &lbs_ubs);
 
-    cols
+    println!(
+        "|- LPrelax problem after propagation: {} columns and {} rows remaining",
+        problem.cols().len() - propagated_cols.len(),
+        rows.len() - rows_coefs.len(),
+    );
+
+    cols.into_iter()
+        .filter_map(|(col_tag, x)| match x {
+            Either::Left(col) => Some((col_tag, col)),
+            Either::Right(_) => None,
+        })
+        .collect()
 }
 
 fn bind_lp(
@@ -194,6 +322,7 @@ fn bind_lp(
     encoding: &LpRelaxEncoding,
     encoder: &LpRelaxEncoder,
     ctx: &SchedEncoder,
+    model: &Domains,
     theory: &mut aries_solver_lprelax::LpRelax,
 ) {
     use crate::ext::lprelax::ColTag;
@@ -205,16 +334,18 @@ fn bind_lp(
         let mut res = HashMap::<Lit, Vec<LpCol>>::new();
 
         for source in encoder.iter_sources(ctx) {
+            let Some(&col) = columns.get(&ColTag::PresenceSource(source)) else {
+                continue;
+            };
             let source_prez = encoder.get_source(source, ctx).map_or(Lit::TRUE, |task| task.presence);
-            res.entry(source_prez)
-                .or_default()
-                .push(*columns.get(&ColTag::PresenceSource(source)).unwrap());
+            res.entry(source_prez).or_default().push(col);
         }
         for (transition_id, _) in encoder.iter_transitions() {
+            let Some(&col) = columns.get(&ColTag::PresenceTransition(transition_id)) else {
+                continue;
+            };
             let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
-            res.entry(transition_prez)
-                .or_default()
-                .push(*columns.get(&ColTag::PresenceTransition(transition_id)).unwrap());
+            res.entry(transition_prez).or_default().push(col);
         }
         res
     };
@@ -283,7 +414,9 @@ fn bind_lp(
 
         let mut bindings: Vec<(LpCol, IntCst)> = Vec::with_capacity(values.len());
         for &(_, v) in &values {
-            let col = *columns.get(&ColTag::TermGround(term, v)).unwrap();
+            let Some(&col) = columns.get(&ColTag::TermGround(term, v)) else {
+                continue;
+            };
             if let Some(var_value) = var_value_of(v) {
                 bindings.push((col, var_value));
             } else {
@@ -328,9 +461,9 @@ fn bind_lp(
             let s = s.variable();
             debug_assert!(s != Var::ZERO);
 
-            let col = *columns
-                .get(&ColTag::Support(out_transition_id, in_transition_id))
-                .unwrap();
+            let Some(&col) = columns.get(&ColTag::Support(out_transition_id, in_transition_id)) else {
+                continue;
+            };
 
             theory.add_col_half_binding_default(col, s);
             // The causal link's `active`` literal (whose variable is `s`) is optional and scoped to the in-transition's presence.
@@ -342,7 +475,7 @@ fn bind_lp(
             // Ideally, a reification literal for the conjunction (active /\ prez(active)) should be bound to the column, but we cannot do that here.
             // We could also add a constraint in the model to force `active` to be 0 when `prez(active)` is.
             // This would prevent eager propagation of `active` in the main model but thus could have consequences on its performance.
-            let scope_is_fixed = ctx.presence(s).tautological();
+            let scope_is_fixed = model.entails(model.presence(s));
             theory.add_var_half_binding(
                 s,
                 std::sync::Arc::new(move |lit: Lit| {
