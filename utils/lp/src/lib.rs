@@ -309,8 +309,11 @@ impl Problem {
         })
     }
 
-    /// USED FOR BENCHMARK
     /// Solve the problem, finding the optimal objective function value and variable values by adding bounds one by one.
+    ///
+    /// # Used for benchmark
+    ///
+    /// If it's not for testing the incremental aspect, it is recommended to use [`Problem::solve`] instead
     ///
     /// # Errors
     ///
@@ -319,7 +322,6 @@ impl Problem {
     pub fn solve_incremental(&self) -> Result<Solution, Error> {
         let num_vars = self.obj_coeffs.len();
 
-        // We do not use infinity as it would result in unbounded state immediatly
         let init_var_mins = vec![f64::NEG_INFINITY; num_vars];
         let init_var_maxs = vec![f64::INFINITY; num_vars];
         let mut solver = Solver::try_new(&self.obj_coeffs, &init_var_mins, &init_var_maxs, &self.constraints)?;
