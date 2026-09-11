@@ -332,8 +332,29 @@ fn bind_lp(
                 .get(&ColTag::Support(out_transition_id, in_transition_id))
                 .unwrap();
 
-            theory.add_var_half_binding_default(s, col);
             theory.add_col_half_binding_default(col, s);
+            // The causal link's `active`` literal (whose variable is `s`) is optional and scoped to the in-transition's presence.
+            // So it could happen that although `s` is true, it doesn't carry any meaning because it is considered absent (the presence literal is false).
+            // As such, in our binding, we can only force the corresponding column to be true when the variable also is AND when the
+            // presence is known to be true (statically here, because we cannot access its value dynamically to use in the binding closure).
+            // But because in the LP the transitions' presences are not implied by the support column's value being 0,
+            // we can always safely derive the column to be 0 when the variable is.
+            // Ideally, a reification literal for the conjunction (active /\ prez(active)) should be bound to the column, but we cannot do that here.
+            // We could also add a constraint in the model to force `active` to be 0 when `prez(active)` is.
+            // This would prevent eager propagation of `active` in the main model but thus could have consequences on its performance.
+            let scope_is_fixed = ctx.presence(s).tautological();
+            theory.add_var_half_binding(
+                s,
+                std::sync::Arc::new(move |lit: Lit| {
+                    assert_eq!(lit.variable(), s);
+                    let lplit = LpLit::from_model_lit(col, lit);
+                    if scope_is_fixed || lplit.tpe == LpLitType::LEQ {
+                        smallvec::smallvec![lplit]
+                    } else {
+                        Default::default()
+                    }
+                }),
+            );
         }
     }
 }
