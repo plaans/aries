@@ -11,7 +11,7 @@ use crate::{
 };
 use aries_solver::{
     backtrack::{Backtrack, DecLvl},
-    core::state::Domains,
+    core::{state::Domains, views::Dom},
     reasoners::Contradiction,
 };
 
@@ -205,14 +205,14 @@ fn bind_lp(
         let mut res = HashMap::<Lit, Vec<LpCol>>::new();
 
         for source in encoder.iter_sources(ctx) {
-            let lit = encoder.get_source(source, ctx).map_or(Lit::TRUE, |task| task.presence);
-            res.entry(lit)
+            let source_prez = encoder.get_source(source, ctx).map_or(Lit::TRUE, |task| task.presence);
+            res.entry(source_prez)
                 .or_default()
                 .push(*columns.get(&ColTag::PresenceSource(source)).unwrap());
         }
         for (transition_id, _) in encoder.iter_transitions() {
-            let lit = encoder.transitions.get_prez(transition_id, ctx);
-            res.entry(lit)
+            let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
+            res.entry(transition_prez)
                 .or_default()
                 .push(*columns.get(&ColTag::PresenceTransition(transition_id)).unwrap());
         }
@@ -232,12 +232,11 @@ fn bind_lp(
             }
         } else {
             let p = lit.variable();
-            assert!(p != Var::ZERO);
+            debug_assert!(p != Var::ZERO && lit == p.geq(1));
 
             for &col in &cols {
                 theory.add_col_half_binding_default(LpCol::from(col), p);
             }
-
             theory.add_var_half_binding(
                 p,
                 std::sync::Arc::new(move |lit_: Lit| {

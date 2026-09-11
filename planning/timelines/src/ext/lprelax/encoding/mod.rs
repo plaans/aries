@@ -3,6 +3,7 @@ mod lifted;
 
 use std::collections::HashSet;
 
+use aries_solver::core::views::Dom;
 use itertools::Itertools;
 
 use crate::encoder::SchedEncoder;
@@ -112,18 +113,41 @@ fn encode_problem_lifted(
 ) {
     *lifted_supports_sorted = LpRelaxEncodingLiftedSupportsSorted::from(encoder, ctx);
 
-    // [Lifted] A source is present iff all its transitions are
+    // [Lifted] A source is present if(f) its transitions are
     {
         for source in encoder.iter_sources(ctx) {
             problem.insert_col(ColTag::PresenceSource(source));
 
+            let source_prez = encoder
+                .get_source(source, ctx)
+                .map_or(aries_solver::core::Lit::TRUE, |t| t.presence);
+
             for &transition_id in encoder.transitions.of_source(source) {
                 problem.insert_col(ColTag::PresenceTransition(transition_id));
 
-                problem.push_row(RowExpr::Eq(
-                    vec![ColTag::PresenceTransition(transition_id)],
-                    vec![ColTag::PresenceSource(source)],
-                ));
+                let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
+
+                // It is possible that sometimes the presence literal of the transition differs from that of the source
+                // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
+                // However, the latter must always imply the former.
+
+                debug_assert!(ctx.store.state.implies(transition_prez, source_prez));
+                let presences_equivalent = ctx.store.state.implies(source_prez, transition_prez);
+
+                // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
+                let expr = if presences_equivalent {
+                    RowExpr::Eq(
+                        vec![ColTag::PresenceTransition(transition_id)],
+                        vec![ColTag::PresenceSource(source)],
+                    )
+                } else {
+                    RowExpr::Leq(
+                        vec![ColTag::PresenceTransition(transition_id)],
+                        vec![ColTag::PresenceSource(source)],
+                    )
+                };
+
+                problem.push_row(expr);
             }
         }
     }
@@ -137,6 +161,7 @@ fn encode_problem_lifted(
                 vec![ColTag::Support(out_transition_id, in_transition_id)],
                 vec![ColTag::PresenceTransition(out_transition_id)],
             ));
+
             problem.push_row(RowExpr::Leq(
                 vec![ColTag::Support(out_transition_id, in_transition_id)],
                 vec![ColTag::PresenceTransition(in_transition_id)],
@@ -185,6 +210,7 @@ fn encode_problem_lifted(
             } else {
                 RowExpr::Eq(vec![ColTag::PresenceTransition(in_transition_id)], rhs)
             };
+
             problem.push_row(expr);
         }
     }
@@ -237,6 +263,7 @@ fn encode_problem_ground(
                 // ? WARNING ? related to incomplete / partial groundings. [TODO]
                 continue;
             }
+
             let expr = RowExpr::Eq(vec![ColTag::PresenceSource(source)], rhs.clone());
             problem.push_row(expr);
         }
@@ -275,6 +302,10 @@ fn encode_problem_ground(
             let chunkby =
                 iter.chunk_by(|(transition_id, transition_grounding_id, _)| (transition_id, transition_grounding_id));
 
+            let source_prez = encoder
+                .get_source(source, ctx)
+                .map_or(aries_solver::core::Lit::TRUE, |t| t.presence);
+
             for ((&transition_id, &transition_grounding_id), source_groundings_ids) in chunkby.into_iter() {
                 let rhs = source_groundings_ids
                     .into_iter()
@@ -284,10 +315,29 @@ fn encode_problem_ground(
                 debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
                 debug_assert!(!rhs.is_empty());
 
-                let expr = RowExpr::Eq(
-                    vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
-                    rhs,
-                );
+                let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
+
+                // Same as for the lifted case:
+                // It is possible that sometimes the presence literal of the transition differs from that of the source
+                // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
+                // However, the latter must always imply the former.
+
+                debug_assert!(ctx.store.state.implies(transition_prez, source_prez));
+                let presences_equivalent = ctx.store.state.implies(source_prez, transition_prez);
+
+                // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
+                let expr = if presences_equivalent {
+                    RowExpr::Eq(
+                        vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
+                        rhs,
+                    )
+                } else {
+                    RowExpr::Leq(
+                        vec![ColTag::PresenceTransitionGround(transition_id, transition_grounding_id)],
+                        rhs,
+                    )
+                };
+
                 problem.push_row(expr);
             }
         }
@@ -429,6 +479,7 @@ fn encode_problem_ground(
                     rhs.clone(),
                 )
             };
+
             problem.push_row(expr);
         }
 
@@ -577,7 +628,16 @@ fn encode_problem_ground(
             debug_assert!(problem.contains_col(&ColTag::TermGround(term, value)));
             debug_assert!(!rhs.is_empty());
 
-            let expr = RowExpr::Eq(vec![ColTag::TermGround(term, value)], rhs);
+            let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
+
+            debug_assert!(ctx.store.state.implies(transition_prez, ctx.store.presence(term)));
+            let presences_equivalent = ctx.store.state.implies(ctx.store.presence(term), transition_prez);
+
+            let expr = if presences_equivalent {
+                RowExpr::Eq(vec![ColTag::TermGround(term, value)], rhs)
+            } else {
+                RowExpr::Geq(vec![ColTag::TermGround(term, value)], rhs)
+            };
             problem.push_row(expr);
         }
 
@@ -594,6 +654,15 @@ fn encode_problem_ground(
 
             debug_assert!(rhs.iter().all(|col_tag| problem.contains_col(col_tag)));
             debug_assert!(!rhs.is_empty());
+
+            let source_prez = encoder
+                .get_source(source, ctx)
+                .map_or(aries_solver::core::Lit::TRUE, |t| t.presence);
+
+            debug_assert!(
+                ctx.store.state.implies(source_prez, ctx.store.presence(term))
+                    && ctx.store.state.implies(ctx.store.presence(term), source_prez)
+            );
 
             let expr = RowExpr::Eq(vec![ColTag::TermGround(term, value)], rhs);
             problem.push_row(expr);
