@@ -185,6 +185,8 @@ jobs:
         run: just ci-ape-val-opt
       - name: APE solver
         run: just ci-ape-solve 15 # increase the timeout to avoid flaky tests
+      - name: APE solver (with LPrelax-highs)
+        run: ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_MIES=true ARIES_LPRELAX_GROUND_2CYCLES=true just ci-ape-solve 90
 
   tests:
     # Meta-job that only requires all test-jobs to pass

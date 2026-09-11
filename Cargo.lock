@@ -206,6 +206,7 @@ dependencies = [
  "aries-env-param",
  "aries-solver",
  "aries-solver-lprelax",
+ "hashbrown 0.16.1",
  "idmap",
  "itertools 0.14.0",
  "num-rational",

@@ -294,7 +294,7 @@ fn build_lp(
             row_expr
         );
         // if row_coefs.is_empty() || lb.is_some_and(|l| l > 0.) || ub.is_some_and(|u| u < 0.) {
-        //     println!("trivially infeasible row after substitution !")    
+        //     println!("trivially infeasible row after substitution !")
         // }
         if !row_coefs.is_empty() || lb.is_some_and(|l| l > 0.) || ub.is_some_and(|u| u < 0.) {
             rows_coefs.push(row_coefs);
