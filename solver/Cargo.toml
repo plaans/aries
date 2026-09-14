@@ -55,7 +55,7 @@ good_lp = { version = "1.15.3", default-features = false, optional = true, featu
 
 [dev-dependencies]
 
-structopt.workspace = true
+clap.workspace = true
 aries-bench-data = { version = "0.1.0", path = "../bench/data" }
 walkdir.workspace = true
 

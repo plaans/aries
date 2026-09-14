@@ -102,7 +102,7 @@ pub struct Reasoners {
     pub diff: StnTheory,
     pub(crate) cp: Cp,
     pub(crate) tautologies: Tautologies,
-    pub(crate) lp: Lp,
+    pub lp: Lp,
 }
 impl Reasoners {
     pub fn new() -> Self {

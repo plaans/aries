@@ -138,7 +138,7 @@ pub struct Lp {
     /// Used to activate/deactivate the propagation of the reasonner
     ///
     /// It can be controlled with activate and deactivate methods
-    active: bool,
+    propagation_active: bool,
     /// Used to enable/disable the reasonner
     ///
     /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
@@ -174,19 +174,28 @@ impl Lp {
             stats: Stats::new(),
 
             enable: LP_ENABLE.get(),
-            active: true,
+            propagation_active: true,
             #[cfg(feature = "lp_log")]
             is_first_propagate: true,
         }
     }
-    /// Activate propagation of the LP
+    /// Activate propagation and constraints registration of the LP
+    ///
+    /// All constraints registered before the activation of the LP will be ignored
     pub fn activate(&mut self) {
-        self.active = true;
+        self.propagation_active = true;
+        self.enable = true;
+    }
+
+    /// Deactivate propagation and constraints registration of the LP
+    pub fn deactivate(&mut self) {
+        self.propagation_active = false;
+        self.enable = false;
     }
 
     /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
-    pub fn deactivate(&mut self) {
-        self.active = false;
+    pub fn deactivate_propagation(&mut self) {
+        self.propagation_active = false;
     }
 
     /// Return a linear sum wich is the opposite in terms of coefficient that the one given
@@ -359,7 +368,7 @@ impl Theory for Lp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.active || !self.enable {
+        if !self.propagation_active || !self.enable {
             return Ok(());
         }
 
