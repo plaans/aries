@@ -428,6 +428,15 @@ impl std::ops::Mul<LinSum> for IntCst {
     }
 }
 
+impl<T> std::iter::Sum<T> for LinSum
+where
+    T: Into<LinSum>,
+{
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(LinSum::zero(), |a, b| a + b.into())
+    }
+}
+
 /* ========================================================================== */
 /*                            Transitive Conversions                           */
 /* ========================================================================== */
@@ -542,7 +551,7 @@ mod tests {
     fn test_arithmetic_operations_compile() {
         // Create some test variables
         let x: Var = Var::from_u32(1);
-        let _y: Var = Var::from_u32(2);
+        let y: Var = Var::from_u32(2);
 
         // Test IntCst operations
         let _: IntCst = 5;
@@ -628,6 +637,14 @@ mod tests {
         let _: LinSum = a.into();
         let _: LinSum = lt.into();
         let _: LinSum = ls.clone();
+
+        // Test Sum operation
+        let _: LinSum = [x, y].into_iter().sum();
+        let _: LinSum = [a, a].into_iter().sum();
+        let _: LinSum = [sv, sv].into_iter().sum();
+        let _: LinSum = [sv2, sv2].into_iter().sum();
+        let _: LinSum = [lt, lt].into_iter().sum();
+        let _: LinSum = [ls.clone(), ls.clone()].into_iter().sum();
 
         // Test reverse operations
         let _: ScaledVar = x * 5;
