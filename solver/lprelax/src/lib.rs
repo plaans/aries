@@ -689,6 +689,11 @@ impl Theory for LpRelax {
                 // || self.current_decision_level() == DecLvl::ROOT
                 || model.assumptions_sealed_at().is_some_and(|lvl| lvl == self.current_decision_level())
             {
+                println!(
+                    "|- Solving LP at decision level {:?} (num events: {:?})",
+                    model.current_decision_level(),
+                    model.num_events()
+                );
                 if self.state.lpobjective.is_some() {
                     return self.propagate_reduced_costs_strengthtening(model);
                 } else {

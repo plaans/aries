@@ -233,3 +233,96 @@ impl LpRelaxEncoder {
         (encoding, problem)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+
+    use crate::{
+        encoder::CausalLink,
+        ext::lprelax::{
+            LpRelaxEncoder,
+            examples::visitall::*,
+            transitions::{Transition, Transitions},
+        },
+    };
+
+    #[test]
+    fn test_supports() {
+        let mut encoder = build_and_encode_visitall_line(
+            &VisitAllLine {
+                num_locs: 5,
+                num_moves: 4,
+            },
+            false,
+        );
+
+        let lprelax_encoder = LpRelaxEncoder {
+            transitions: Transitions::new_unambiguous(&mut encoder, true),
+        };
+
+        for ((out_transition_id, in_transition_id), active) in lprelax_encoder.iter_supports(&encoder) {
+            if let Some(active) = active {
+                assert!(
+                    lprelax_encoder.transitions.is_pure_cond(in_transition_id)
+                        || lprelax_encoder.transitions.is_condeff(in_transition_id)
+                );
+
+                assert!({
+                    let (eff_id, cond_id) = match (
+                        lprelax_encoder.get_transition(out_transition_id),
+                        lprelax_encoder.get_transition(in_transition_id),
+                    ) {
+                        (
+                            Transition::Eff(eff_id) | Transition::CondEff(_, eff_id),
+                            Transition::Cond(cond_id) | Transition::CondEff(cond_id, _),
+                        ) => (eff_id, cond_id),
+                        _ => unreachable!(),
+                    };
+                    encoder.causal_links.get_links().contains(&CausalLink {
+                        eff_id,
+                        cond_id,
+                        active,
+                    })
+                });
+            } else {
+                assert!(lprelax_encoder.transitions.is_pure_eff(in_transition_id));
+                assert!(
+                    lprelax_encoder
+                        .transitions
+                        .get_source(in_transition_id, &encoder)
+                        .is_some()
+                );
+
+                let (out_eff_id, in_eff_id) = match (
+                    lprelax_encoder.get_transition(out_transition_id),
+                    lprelax_encoder.get_transition(in_transition_id),
+                ) {
+                    (Transition::Eff(out_eff_id) | Transition::CondEff(_, out_eff_id), Transition::Eff(in_eff_id)) => {
+                        (out_eff_id, in_eff_id)
+                    }
+                    _ => unreachable!(),
+                };
+
+                assert!(
+                    !lprelax_encoder
+                        .transitions
+                        .is_effect_recovered_missing_initial(in_eff_id)
+                );
+
+                if lprelax_encoder
+                    .transitions
+                    .is_effect_recovered_missing_initial(out_eff_id)
+                {
+                    assert!(lprelax_encoder.transitions.is_pure_eff(out_transition_id));
+                    assert!(
+                        lprelax_encoder
+                            .transitions
+                            .get_source(out_transition_id, &encoder)
+                            .is_none()
+                    );
+                }
+            }
+        }
+    }
+}

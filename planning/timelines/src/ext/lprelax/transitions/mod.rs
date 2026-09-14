@@ -24,7 +24,20 @@ pub enum Transition {
     /// A condition and effect sharing the same source, presence literal, and state variable.
     CondEff(CondId, EffectId),
 }
-
+impl Transition {
+    #[allow(dead_code)]
+    pub fn is_pure_cond(&self) -> bool {
+        matches!(self, Transition::Cond(_))
+    }
+    #[allow(dead_code)]
+    pub fn is_pure_eff(&self) -> bool {
+        matches!(self, Transition::Eff(_))
+    }
+    #[allow(dead_code)]
+    pub fn is_condeff(&self) -> bool {
+        matches!(self, Transition::CondEff(_, _))
+    }
+}
 pub(crate) struct TransitionTermsView<'a> {
     pub args: &'a [IntTerm],
     pub valfrom: Option<IntTerm>,
@@ -184,11 +197,12 @@ impl Transitions {
             Transition::Cond(_) => None,
         }
     }
-    // pub fn is_effect_non_missing_initial(&self, eff_id: EffectId) -> bool {
-    //     self.recovered_mies
-    //         .as_ref()
-    //         .is_some_and(|recovered_mies| recovered_mies.contains(eff_id))
-    // }
+    #[allow(dead_code)]
+    pub fn is_effect_recovered_missing_initial(&self, eff_id: EffectId) -> bool {
+        self.recovered_mies
+            .as_ref()
+            .is_some_and(|recovered_mies| recovered_mies.contains(eff_id))
+    }
     pub fn get_prez(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Lit {
         match self.get(transition_id) {
             Transition::Cond(_) => self.get_condition(transition_id, ctx).unwrap().1.prez,
@@ -571,5 +585,45 @@ impl Transitions {
             of_concrete_source,
             recovered_mies: recover_missing_initial_effects.then_some(recovered_mies),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ext::{
+        collect_nonsimple_conditions_and_effects_to_relax,
+        lprelax::examples::visitall::{VisitAllLine, build_and_encode_visitall_line},
+        lprelax::transitions::Transitions,
+    };
+
+    #[test]
+    fn test_transitions_visitall_line() {
+        let mut encoder = build_and_encode_visitall_line(
+            &VisitAllLine {
+                num_locs: 5,
+                num_moves: 4,
+            },
+            false,
+        );
+
+        let transitions = Transitions::new_unambiguous(&mut encoder, true);
+
+        assert!({
+            let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(&encoder);
+            conditions_to_ignore.is_empty() && effects_to_ignore.is_empty()
+        });
+
+        assert_eq!(transitions.iter().count(), 56);
+        assert_eq!(transitions.iter().filter(|(_, tr)| tr.is_pure_cond()).count(), 9);
+        assert_eq!(transitions.iter().filter(|(_, tr)| tr.is_pure_eff()).count(), 43);
+        assert_eq!(transitions.iter().filter(|(_, tr)| tr.is_condeff()).count(), 4);
+
+        assert_eq!(
+            transitions
+                .iter_of_effects()
+                .filter(|&(eff_id, _)| transitions.is_effect_recovered_missing_initial(eff_id))
+                .count(),
+            25
+        );
     }
 }

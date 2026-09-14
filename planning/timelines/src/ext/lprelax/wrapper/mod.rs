@@ -75,7 +75,12 @@ impl LpRelaxReasonerWrapperTraitInner for LpRelaxReasonerWrapper<aries_solver_lp
         self.num_events = model.trail().num_events();
 
         if !self.built && old_num_events == self.num_events && model.current_decision_level() == DecLvl::ROOT {
-            println!("|- Building lp after {} propagation calls", self.propagation_calls);
+            println!(
+                "|- Building lp after {} propagation calls (decision level {:?}, num events: {:?})",
+                self.propagation_calls,
+                model.current_decision_level(),
+                model.num_events()
+            );
 
             let (encoding, lp_problem) = self.encoder.encode(&self.ctx);
 
