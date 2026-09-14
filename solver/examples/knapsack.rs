@@ -1,4 +1,8 @@
-use aries_solver::prelude::*;
+mod utils;
+
+use aries_solver::{prelude::*, reasoners::lp::LP_ENABLE};
+use clap::Parser;
+use std::path::PathBuf;
 
 fn solve(items: &[(IntCst, IntCst)], capacity: IntCst) -> Option<IntCst> {
     let mut model = Model::new();
@@ -38,10 +42,41 @@ fn solve(items: &[(IntCst, IntCst)], capacity: IntCst) -> Option<IntCst> {
     }
 }
 
+/// A simple 0-1 knapsack solver.
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Path to the instance
+    file: PathBuf,
+    /// If set, the solver will crash if it does not find the given optimum value.
+    #[arg(long)]
+    expected_value: Option<IntCst>,
+}
+
 fn main() {
-    // (weight, value) for each item
-    let items = vec![(4, 5), (2, 7), (7, 10), (1, 1)];
-    assert_eq!(solve(&items, 7), Some(13));
+    // LP relaxation is critical for decent performance on these problems.
+    LP_ENABLE.set(true);
+    let args = Args::parse();
+
+    let Ok(file_content) = std::fs::read_to_string(&args.file) else {
+        panic!("Unable to read input file: {:?}", &args.file)
+    };
+
+    let mut parser = crate::utils::Parser::new(&file_content);
+    let num_items: usize = parser.pop();
+    let capacity: IntCst = parser.pop();
+    let mut items = Vec::with_capacity(num_items);
+    for _ in 0..num_items {
+        // (weight, value) for each item
+        let value = parser.pop();
+        let weight = parser.pop();
+        items.push((weight, value));
+    }
+
+    let result = solve(&items, capacity);
+    if let Some(optimal) = args.expected_value {
+        assert_eq!(result, Some(optimal));
+    }
 }
 
 #[cfg(test)]
