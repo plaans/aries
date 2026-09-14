@@ -10,21 +10,31 @@ use aries_solver::prelude::*;
 #[path = "../utils/mod.rs"]
 mod utils;
 
-use structopt::StructOpt;
+use clap::Parser;
 use walkdir::WalkDir;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "aries-tsp")]
+/// This example provide a TSP solver following the .tsp format as described here: https://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/
+///
+/// IMPORTANT: due to linear aspect of the problem, runtimes without the LP reasonner tends to be very important
+/// therefore, the LP is enabled by default regardless the value of env var ARIES_LP_ENABLE
+#[derive(Debug, Parser)]
+#[command(name = "aries-tsp")]
 struct Opt {
-    /// File containing the instance to solve.
+    /// File containing the instance to solve, a list of files or a directory can also be used.
+    /// If a directory is specified, all .tsp instances inside it will be solved
+    ///
+    /// If no arguments are given, the default folder will be used: /examples/tsp/instances
     files: Vec<PathBuf>,
     /// maximum runtime, in seconds.
-    #[structopt(long = "timeout", short = "t")]
+    #[arg(long = "timeout")]
     timeout: Option<u32>,
     /// If set, a summary of the run will be saved in the indicated directory.
     /// This option is intended to ease the collection of benchmark results with `aries-bench`
-    #[structopt(long = "report", short = "r")]
+    #[arg(long = "report")]
     report: Option<String>,
+    /// If set, disable the lp reasonner inside aries
+    #[arg(long = "no-lp")]
+    no_lp: bool,
 }
 
 struct DirectedSegmentMap<T> {
@@ -242,6 +252,13 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
 
     // create the solver and solve to optimal (with 180s timeout)
     let mut solver = Solver::new(model);
+
+    if opt.no_lp {
+        solver.reasoners.lp.deactivate();
+    } else {
+        solver.reasoners.lp.activate();
+    }
+
     let solution_opt = match solver.minimize_with_callback(
         total_cost_var,
         |obj, _| {
@@ -508,7 +525,7 @@ where
 const PATH_INSTANCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/tsp/instances");
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
     // if no instance was provided, run with default folder
     let input_paths = if opt.files.is_empty() {
@@ -551,6 +568,7 @@ mod test {
             files: Vec::new(),
             timeout: Some(300),
             report: None,
+            no_lp: false,
         };
 
         let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/burma14.tsp", &opt);
@@ -577,6 +595,7 @@ mod test {
             files: Vec::new(),
             timeout: Some(300),
             report: None,
+            no_lp: false,
         };
 
         let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/ulysses16.tsp", &opt);
@@ -603,6 +622,7 @@ mod test {
             files: Vec::new(),
             timeout: Some(300),
             report: None,
+            no_lp: false,
         };
 
         println!("{}", PATH_INSTANCES.to_owned() + "/gr17.tsp");

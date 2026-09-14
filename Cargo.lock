@@ -190,6 +190,7 @@ dependencies = [
  "aries-env-param",
  "aries-lp",
  "bumpalo",
+ "clap 4.6.1",
  "crossbeam-channel",
  "good_lp",
  "hashbrown 0.16.1",
@@ -201,7 +202,6 @@ dependencies = [
  "rand 0.9.4",
  "serde",
  "smallvec",
- "structopt",
  "tracing",
  "walkdir",
 ]
