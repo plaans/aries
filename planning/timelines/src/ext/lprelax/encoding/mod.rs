@@ -551,52 +551,52 @@ fn encode_problem_ground(
         }
     }
 
-    // [Ground] Forbid one (ground) transitions from mutually supporting each other
-    //          TODO: ? is this actually needed ? -> (this may not necessarily be useful / enough for cases of eff-eff supports, as any value could be usef (or eff-condeff))
-    if super::ARIES_LPRELAX_GROUND_2CYCLES.get() {
-        let ground_supports_iter_sorted_fully = groundings.supports().iter_all().sorted();
-        let mut seen = vec![];
-
-        for &(out_transition_id, in_transition_id, transitions_groundings_ids) in ground_supports_iter_sorted_fully {
-            let Some((out_transition_grounding_id, in_transition_grounding_id)) = transitions_groundings_ids else {
-                continue;
-            };
-
-            seen.push((
-                out_transition_id,
-                in_transition_id,
-                out_transition_grounding_id,
-                in_transition_grounding_id,
-            ));
-
-            if seen
-                .binary_search(&(
-                    in_transition_id,
-                    out_transition_id,
-                    in_transition_grounding_id,
-                    out_transition_grounding_id,
-                ))
-                .is_ok()
-            {
-                let expr = RowExpr::Leq1(vec![
-                    ColTag::SupportGround(
-                        out_transition_id,
-                        in_transition_id,
-                        out_transition_grounding_id,
-                        in_transition_grounding_id,
-                    ),
-                    ColTag::SupportGround(
-                        in_transition_id,
-                        out_transition_id,
-                        in_transition_grounding_id,
-                        out_transition_grounding_id,
-                    ),
-                ]);
-                problem.push_row(expr);
-            }
-        }
-        debug_assert!(seen.is_sorted());
-    }
+    // // [Ground] Forbid one (ground) transitions from mutually supporting each other
+    // //          TODO: ? is this actually needed ? -> (this may not necessarily be useful / enough for cases of eff-eff supports, as any value could be usef (or eff-condeff))
+    // if super::ARIES_LPRELAX_GROUND_2CYCLES.get() {
+    //     let ground_supports_iter_sorted_fully = groundings.supports().iter_all().sorted();
+    //     let mut seen = vec![];
+    //
+    //     for &(out_transition_id, in_transition_id, transitions_groundings_ids) in ground_supports_iter_sorted_fully {
+    //         let Some((out_transition_grounding_id, in_transition_grounding_id)) = transitions_groundings_ids else {
+    //             continue;
+    //         };
+    //
+    //         seen.push((
+    //             out_transition_id,
+    //             in_transition_id,
+    //             out_transition_grounding_id,
+    //             in_transition_grounding_id,
+    //         ));
+    //
+    //         if seen
+    //             .binary_search(&(
+    //                 in_transition_id,
+    //                 out_transition_id,
+    //                 in_transition_grounding_id,
+    //                 out_transition_grounding_id,
+    //             ))
+    //             .is_ok()
+    //         {
+    //             let expr = RowExpr::Leq1(vec![
+    //                 ColTag::SupportGround(
+    //                     out_transition_id,
+    //                     in_transition_id,
+    //                     out_transition_grounding_id,
+    //                     in_transition_grounding_id,
+    //                 ),
+    //                 ColTag::SupportGround(
+    //                     in_transition_id,
+    //                     out_transition_id,
+    //                     in_transition_grounding_id,
+    //                     out_transition_grounding_id,
+    //                 ),
+    //             ]);
+    //             problem.push_row(expr);
+    //         }
+    //     }
+    //     debug_assert!(seen.is_sorted());
+    // }
 
     groundings.terms_sort();
 
