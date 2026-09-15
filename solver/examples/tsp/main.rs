@@ -10,8 +10,11 @@ use aries_solver::prelude::*;
 #[path = "../utils/mod.rs"]
 mod utils;
 
+mod parser_tsp;
+
 use clap::Parser;
-use walkdir::WalkDir;
+
+use crate::parser_tsp::parse_tsp;
 
 /// This example provide a TSP solver following the .tsp format as described here: https://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/
 ///
@@ -20,8 +23,8 @@ use walkdir::WalkDir;
 #[derive(Debug, Parser)]
 #[command(name = "aries-tsp")]
 struct Opt {
-    /// File containing the instance to solve, a list of files or a directory can also be used.
-    /// If a directory is specified, all .tsp instances inside it will be solved
+    /// File containing the instance to solve, a list of files can also be used.
+    /// Use regex to specify directory: DIRECTORY/*.tsp
     ///
     /// If no arguments are given, the default folder will be used: /examples/tsp/instances
     files: Vec<PathBuf>,
@@ -37,26 +40,16 @@ struct Opt {
     no_lp: bool,
 }
 
+/// Represents a square matrix with an empty diagonal
+///
+/// Used to store edges variables between nodes
 struct DirectedSegmentMap<T> {
     n: usize,
     data: Vec<T>,
 }
 
-#[allow(dead_code)]
 impl<T> DirectedSegmentMap<T> {
-    pub fn new(n: usize, default_val: T) -> Self
-    where
-        T: Clone,
-    {
-        assert!(n > 1, "At least 2 nodes are necessary");
-        let len = n * (n - 1);
-        Self {
-            n,
-            data: vec![default_val; len],
-        }
-    }
-
-    pub fn new_with<F>(n: usize, mut init: F) -> Self
+    pub fn new<F>(n: usize, mut init: F) -> Self
     where
         F: FnMut() -> T,
     {
@@ -88,69 +81,6 @@ impl<T> DirectedSegmentMap<T> {
     pub fn get(&self, i: usize, j: usize) -> &T {
         &self.data[self.index(i, j)]
     }
-
-    pub fn get_mut(&mut self, i: usize, j: usize) -> &mut T {
-        let idx = self.index(i, j);
-        &mut self.data[idx]
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.data.iter()
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct EucPoint {
-    x: f64,
-    y: f64,
-}
-
-impl EucPoint {
-    /// Euclidean distance between two points
-    fn dist(&self, other: EucPoint) -> f64 {
-        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct GeoPoint {
-    // Both are in rad
-    latitude: f64,
-    longitude: f64,
-}
-
-impl GeoPoint {
-    fn new_from_deg(lat_deg: f64, long_deg: f64) -> Self {
-        let latitude: f64;
-        let longitude: f64;
-
-        {
-            let deg = lat_deg.trunc();
-            let min = lat_deg - deg;
-
-            latitude = std::f64::consts::PI * (deg + 5.0 * min / 3.0) / 180.0;
-        }
-
-        {
-            let deg = long_deg.trunc();
-            let min = long_deg - deg;
-
-            longitude = std::f64::consts::PI * (deg + 5.0 * min / 3.0) / 180.0;
-        }
-
-        GeoPoint { latitude, longitude }
-    }
-
-    /// Compute the distance between 2 GeoPoint
-    fn dist(&self, other: GeoPoint) -> f64 {
-        const EARTH_RADIUS: f64 = 6378.388;
-
-        let q1 = f64::cos(self.longitude - other.longitude);
-        let q2 = f64::cos(self.latitude - other.latitude);
-        let q3 = f64::cos(self.latitude + other.latitude);
-
-        (EARTH_RADIUS * f64::acos(0.5 * ((1.0 + q1) * q2 - (1.0 - q1) * q3)) + 1.0).floor()
-    }
 }
 
 #[derive(Debug)]
@@ -176,17 +106,22 @@ const SCALE_FACTOR: f64 = 1000.0;
 
 /// Solves a tsp problem and returns a TspSolution.
 ///
-/// It bases one the One Commodity Flow explain in the following paper: https://matmod.ch/lpl/PDF/tsp-2.pdf
+/// It is based on the [One Commodity Flow][ref-doc] representation that uses linear constraint exclusively
+/// Constraints are named as in the paper
+///
+/// [ref-doc]: https://matmod.ch/lpl/PDF/tsp-2.pdf
 fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
+    // Used for report using benchmark
     let start_time = std::time::Instant::now();
-
     let mut solution_history: Vec<IntermediateResult> = Default::default();
 
     let mut model = Model::new();
 
-    let trav_edg = DirectedSegmentMap::new_with(pb.n, || model.new_variable(0, 1));
+    // Boolean variables expressing wether if an edge should be traversed or not
+    let trav_edg = DirectedSegmentMap::new(pb.n, || model.new_variable(0, 1));
 
-    let flow_edg = DirectedSegmentMap::new_with(pb.n, || model.new_variable(0, pb.n as IntCst - 1));
+    // Integer variables to express the flow within the edges, check https://matmod.ch/lpl/PDF/tsp-2.pdf for more details
+    let flow_edg = DirectedSegmentMap::new(pb.n, || model.new_variable(0, pb.n as IntCst - 1));
 
     let mut total_cost = LinSum::zero();
 
@@ -206,9 +141,11 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
             sum_lin_trav_edg += *trav_edg.get(i, j);
             sum_col_trav_edg += *trav_edg.get(j, i);
 
+            // Force the flow of an edge to be 0 if it isn't traversed
             model.enforce(leq(*flow_edg.get(i, j), (pb.n as IntCst - 1) * *trav_edg.get(i, j))); // D3
 
             if i != 0 && j != 0 {
+                // Force the flow to be less than n-2 for nodes that are not adjacent in the tour from the initial node
                 model.enforce(leq(*flow_edg.get(i, j), (pb.n as IntCst - 2) * *trav_edg.get(i, j))); // G
             }
 
@@ -219,17 +156,20 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
             }
 
             if j > i {
+                // Force to have at most one edge active between 2 nodes
                 model.enforce(leq(LinSum::zero() + *trav_edg.get(i, j) + *trav_edg.get(j, i), 1)); // S
             }
         }
 
-        // We force our nodes to be visited exactly once
+        // Force the nodes to be visited exactly once
         model.enforce(eq(sum_lin_trav_edg, 1)); // A
         model.enforce(eq(sum_col_trav_edg, 1)); // B
 
         if i == 0 {
+            // Force the flow to be equal to n-1 from the initial node
             model.enforce(eq(sum_lin_flow_edg, pb.n as IntCst - 1)); // D2
         } else {
+            // Force the outgoing flow of a node to be one higher that its ingoing flow (except for the initial node)
             model.enforce(eq(sum_lin_flow_edg - sum_col_flow_edg, 1)); // D1
         }
     }
@@ -314,6 +254,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
 
     solver.print_stats();
 
+    // Allow us to use aries-bench
     if let Some(report_dir) = opt.report.as_ref() {
         let problem = Problem {
             name: pb.name.clone(),
@@ -351,160 +292,13 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
     solution_opt
 }
 
-fn parse(input: &str) -> TspProblem {
-    let words = &mut utils::Parser::new(input);
-
-    words.ignore_until_double_dot(String::from("NAME"));
-
-    let name: String = words.pop();
-    println!("Parsing {}", name);
-
-    words.ignore_until_double_dot(String::from("TYPE"));
-    words.ignore_expected(String::from("TSP"));
-
-    words.ignore_until_double_dot(String::from("DIMENSION"));
-    let n = words.pop();
-
-    words.ignore_until_double_dot(String::from("EDGE_WEIGHT_TYPE"));
-
-    let weight_type: String = words.pop();
-
-    let mut weights = vec![vec![0.0; n]; n];
-
-    match weight_type.as_str() {
-        "EUC_2D" => {
-            words.ignore_until(String::from("NODE_COORD_SECTION"));
-
-            let mut points = Vec::new();
-
-            for i in 1..=n {
-                words.ignore_expected(i);
-
-                let point = EucPoint {
-                    x: words.pop(),
-                    y: words.pop(),
-                };
-
-                points.push(point);
-            }
-
-            for i in 0..n {
-                for j in i + 1..n {
-                    let weight = points[i].dist(points[j]);
-                    weights[i][j] = weight;
-                    weights[j][i] = weight;
-                }
-            }
-        }
-
-        "GEO" => {
-            words.ignore_until(String::from("NODE_COORD_SECTION"));
-
-            let mut points = Vec::new();
-
-            for i in 1..=n {
-                words.ignore_expected(i);
-
-                let lat = words.pop();
-                let long = words.pop();
-
-                let point = GeoPoint::new_from_deg(lat, long);
-
-                points.push(point);
-            }
-
-            for i in 0..n {
-                for j in i + 1..n {
-                    let weight = points[i].dist(points[j]);
-                    weights[i][j] = weight;
-                    weights[j][i] = weight;
-                }
-            }
-        }
-
-        "EXPLICIT" => {
-            words.ignore_until_double_dot(String::from("EDGE_WEIGHT_FORMAT"));
-            let weight_format: String = words.pop();
-
-            words.ignore_until(String::from("EDGE_WEIGHT_SECTION"));
-
-            match weight_format.as_str() {
-                "FULL_MATRIX" => {
-                    for row in weights.iter_mut().take(n) {
-                        for cell in row.iter_mut().take(n) {
-                            *cell = words.pop();
-                        }
-                    }
-                }
-
-                "UPPER_ROW" =>
-                {
-                    #[allow(clippy::needless_range_loop)]
-                    for i in 0..n {
-                        for j in i + 1..n {
-                            let weight = words.pop();
-                            weights[i][j] = weight;
-                            weights[j][i] = weight;
-                        }
-                    }
-                }
-
-                "LOWER_ROW" =>
-                {
-                    #[allow(clippy::needless_range_loop)]
-                    for i in 0..n {
-                        for j in 0..i {
-                            let weight = words.pop();
-                            weights[i][j] = weight;
-                            weights[j][i] = weight;
-                        }
-                    }
-                }
-
-                "UPPER_DIAG_ROW" =>
-                {
-                    #[allow(clippy::needless_range_loop)]
-                    for i in 0..n {
-                        for j in i..n {
-                            let weight = words.pop();
-                            weights[i][j] = weight;
-                            weights[j][i] = weight;
-                        }
-                    }
-                }
-
-                "LOWER_DIAG_ROW" =>
-                {
-                    #[allow(clippy::needless_range_loop)]
-                    for i in 0..n {
-                        for j in 0..=i {
-                            let weight = words.pop();
-                            weights[i][j] = weight;
-                            weights[j][i] = weight;
-                        }
-                    }
-                }
-
-                _ => panic!("Unvalid weight_format {weight_format}"),
-            }
-        }
-        _ => panic!("Unvalid weight_type {weight_type}"),
-    }
-
-    // println!("Weights:\n {:?}", weights);
-
-    println!("End parsing");
-
-    TspProblem { name, n, weights }
-}
-
 fn solve_tsp_from_file<P>(path: P, opt: &Opt) -> Option<TspSolution>
 where
     P: AsRef<Path>,
 {
     let problem_str = fs::read_to_string(path).expect("No such file");
 
-    let pb = parse(&problem_str);
+    let pb = parse_tsp(&problem_str);
 
     // println!("Problem: {:?}", pb);
 
@@ -522,37 +316,10 @@ where
     solution_opt
 }
 
-const PATH_INSTANCES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/tsp/instances");
-
 fn main() {
     let opt = Opt::parse();
 
-    // if no instance was provided, run with default folder
-    let input_paths = if opt.files.is_empty() {
-        fs::read_dir(PATH_INSTANCES)
-            .expect("Cannot read instances directory")
-            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-            .collect()
-    } else {
-        opt.files.clone()
-    };
-
-    let files = input_paths
-        .into_iter()
-        .flat_map(|path| {
-            if path.is_dir() {
-                WalkDir::new(path)
-                    .follow_links(true)
-                    .into_iter()
-                    .filter_map(|entry| entry.ok().map(|entry| entry.into_path()))
-                    .collect::<Vec<_>>()
-            } else {
-                vec![path]
-            }
-        })
-        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "tsp"));
-
-    for file in files {
+    for file in opt.files.clone() {
         // println!("{:?}", file);
         solve_tsp_from_file(file, &opt);
     }
