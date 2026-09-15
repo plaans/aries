@@ -227,7 +227,7 @@ impl SourcesGroundingsInfo {
 
 type FluentId = usize;
 type StateVarGrounding = Vec<IntCst>;
-type StateVarGroundingId = usize;
+pub type StateVarGroundingId = usize;
 
 struct StateVarGroundingLookup<'a> {
     fluent_id: FluentId,

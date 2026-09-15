@@ -129,9 +129,8 @@ fn build_lp(
     ctx: &SchedEncoder,
     model: &Domains,
     theory: &mut aries_solver_lprelax::LpRelax,
-) -> HashMap<super::ColTag, LpCol> {
-    use super::ColTag;
-    use crate::ext::lprelax::RowExpr;
+) -> HashMap<crate::ext::lprelax::encoding::ColTag, LpCol> {
+    use crate::ext::lprelax::encoding::ColTag;
     use aries_solver::core::{IntCst, Lit};
     use aries_solver_lprelax::LpCol;
     use itertools::Itertools;
@@ -140,7 +139,7 @@ fn build_lp(
 
     let propagated_cols = {
         let mut res = HashMap::<ColTag, IntCst>::from_iter(problem.cols().iter().filter_map(|col_tag| match col_tag {
-            c @ ColTag::PresenceSource(source) => {
+            c @ ColTag::PresenceSource(source, None) => {
                 let source_prez = encoder.get_source(*source, ctx).map_or(Lit::TRUE, |task| task.presence);
                 match model.value(source_prez) {
                     Some(true) => {
@@ -154,7 +153,7 @@ fn build_lp(
                     _ => None,
                 }
             }
-            c @ ColTag::PresenceTransition(transition_id) => {
+            c @ ColTag::PresenceTransition(transition_id, None) => {
                 let transition_prez = encoder.transitions.get_prez(*transition_id, ctx);
                 match model.value(transition_prez) {
                     Some(true) => {
@@ -189,12 +188,12 @@ fn build_lp(
                 && let Some((col_tag, v)) = match model.value(s) {
                     Some(true) => {
                         if model.entails(model.presence(s)) {
-                            Some((ColTag::Support(out_transition_id, in_transition_id), 1))
+                            Some((ColTag::Support(out_transition_id, in_transition_id, None), 1))
                         } else {
                             None
                         }
                     }
-                    Some(false) => Some((ColTag::Support(out_transition_id, in_transition_id), 0)),
+                    Some(false) => Some((ColTag::Support(out_transition_id, in_transition_id, None), 0)),
                     None => None,
                 }
             {
@@ -228,69 +227,56 @@ fn build_lp(
     let (mut rows_coefs, mut lbs_ubs) = (vec![], vec![]);
     for row_expr in rows {
         // println!("{row_expr:?}");
-        let (row_coefs, lb, ub) = match row_expr {
-            RowExpr::Eq(lhs, rhs) => {
-                let mut b = 0.;
-                let mut row_coefs = Vec::with_capacity(lhs.len() + rhs.len());
-                for col_tag in lhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, 1.)),
-                        Either::Right(v) => b += -int_cst_as_float(*v),
-                    }
+        let (row_coefs, lb, ub) = {
+            let mut row_coefs = Vec::with_capacity(row_expr.lhs().len() + row_expr.rhs().len());
+            let (mut lb, mut ub) = match row_expr.tpe {
+                crate::ext::lprelax::encoding::RowExprType::Eq => (Some(0.), Some(0.)),
+                crate::ext::lprelax::encoding::RowExprType::Leq => (None, Some(0.)),
+                crate::ext::lprelax::encoding::RowExprType::Geq => (Some(0.), None),
+            };
+            for col_tag in row_expr.lhs() {
+                match cols.get(col_tag).unwrap() {
+                    Either::Left(col) => row_coefs.push((*col, 1.)),
+                    Either::Right(v) => match row_expr.tpe {
+                        crate::ext::lprelax::encoding::RowExprType::Eq => {
+                            *lb.as_mut().unwrap() += -int_cst_as_float(*v);
+                            *ub.as_mut().unwrap() += -int_cst_as_float(*v);
+                        }
+                        crate::ext::lprelax::encoding::RowExprType::Leq => {
+                            *ub.as_mut().unwrap() += -int_cst_as_float(*v)
+                        }
+                        crate::ext::lprelax::encoding::RowExprType::Geq => {
+                            *lb.as_mut().unwrap() += -int_cst_as_float(*v)
+                        }
+                    },
                 }
-                for col_tag in rhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, -1.)),
-                        Either::Right(v) => b += int_cst_as_float(*v),
-                    }
-                }
-                (row_coefs, Some(b), Some(b))
             }
-            RowExpr::Geq(lhs, rhs) => {
-                let mut b = 0.;
-                let mut row_coefs = Vec::with_capacity(lhs.len() + rhs.len());
-                for col_tag in lhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, 1.)),
-                        Either::Right(v) => b += -int_cst_as_float(*v),
-                    }
+            for col_tag in row_expr.rhs() {
+                match cols.get(col_tag).unwrap() {
+                    Either::Left(col) => row_coefs.push((*col, -1.)),
+                    Either::Right(v) => match row_expr.tpe {
+                        crate::ext::lprelax::encoding::RowExprType::Eq => {
+                            *lb.as_mut().unwrap() += int_cst_as_float(*v);
+                            *ub.as_mut().unwrap() += int_cst_as_float(*v);
+                        }
+                        crate::ext::lprelax::encoding::RowExprType::Leq => {
+                            *ub.as_mut().unwrap() += int_cst_as_float(*v)
+                        }
+                        crate::ext::lprelax::encoding::RowExprType::Geq => {
+                            *lb.as_mut().unwrap() += int_cst_as_float(*v)
+                        }
+                    },
                 }
-                for col_tag in rhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, -1.)),
-                        Either::Right(v) => b += int_cst_as_float(*v),
-                    }
-                }
-                (row_coefs, Some(b), None)
             }
-            RowExpr::Leq(lhs, rhs) => {
-                let mut b = 0.;
-                let mut row_coefs = Vec::with_capacity(lhs.len() + rhs.len());
-                for col_tag in lhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, 1.)),
-                        Either::Right(v) => b += -int_cst_as_float(*v),
-                    }
-                }
-                for col_tag in rhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, -1.)),
-                        Either::Right(v) => b += int_cst_as_float(*v),
-                    }
-                }
-                (row_coefs, None, Some(b))
+            if let Some(ub) = ub.as_mut() {
+                *ub += int_cst_as_float(row_expr.cst());
             }
-            RowExpr::Leq1(lhs) => {
-                let mut b = 0.;
-                let mut row_coefs = Vec::with_capacity(lhs.len());
-                for col_tag in lhs {
-                    match cols.get(col_tag).unwrap() {
-                        Either::Left(col) => row_coefs.push((*col, 1.)),
-                        Either::Right(v) => b += -int_cst_as_float(*v),
-                    }
-                }
-                (row_coefs, None, Some(1. + b))
-            }
+            debug_assert!(lb.is_some() || ub.is_some());
+            debug_assert!(
+                row_expr.tpe != crate::ext::lprelax::encoding::RowExprType::Eq || lb == ub,
+                "{row_expr:?}"
+            );
+            (row_coefs, lb, ub)
         };
         debug_assert!(
             row_coefs.iter().duplicates_by(|&(col_tag, _)| col_tag).next().is_none(),
@@ -311,7 +297,7 @@ fn build_lp(
     println!(
         "|- LPrelax problem after propagation: {} columns and {} rows remaining",
         problem.cols().len() - propagated_cols.len(),
-        rows.len() - rows_coefs.len(),
+        rows_coefs.len(),
     );
 
     cols.into_iter()
@@ -323,14 +309,14 @@ fn build_lp(
 }
 
 fn bind_lp(
-    columns: &HashMap<super::ColTag, LpCol>,
+    columns: &HashMap<crate::ext::lprelax::encoding::ColTag, LpCol>,
     encoding: &LpRelaxEncoding,
     encoder: &LpRelaxEncoder,
     ctx: &SchedEncoder,
     model: &Domains,
     theory: &mut aries_solver_lprelax::LpRelax,
 ) {
-    use crate::ext::lprelax::ColTag;
+    use crate::ext::lprelax::encoding::ColTag;
     use aries_solver::core::{IntCst, Lit, Var, views::Term};
     use aries_solver_lprelax::*;
     use itertools::Itertools;
@@ -339,14 +325,14 @@ fn bind_lp(
         let mut res = HashMap::<Lit, Vec<LpCol>>::new();
 
         for source in encoder.iter_sources(ctx) {
-            let Some(&col) = columns.get(&ColTag::PresenceSource(source)) else {
+            let Some(&col) = columns.get(&ColTag::PresenceSource(source, None)) else {
                 continue;
             };
             let source_prez = encoder.get_source(source, ctx).map_or(Lit::TRUE, |task| task.presence);
             res.entry(source_prez).or_default().push(col);
         }
         for (transition_id, _) in encoder.iter_transitions() {
-            let Some(&col) = columns.get(&ColTag::PresenceTransition(transition_id)) else {
+            let Some(&col) = columns.get(&ColTag::PresenceTransition(transition_id, None)) else {
                 continue;
             };
             let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
@@ -466,7 +452,7 @@ fn bind_lp(
             let s = s.variable();
             debug_assert!(s != Var::ZERO);
 
-            let Some(&col) = columns.get(&ColTag::Support(out_transition_id, in_transition_id)) else {
+            let Some(&col) = columns.get(&ColTag::Support(out_transition_id, in_transition_id, None)) else {
                 continue;
             };
 
