@@ -1,48 +1,32 @@
 use aries_lp::{Error, MpsFile};
-use std::io;
+use clap::Parser;
+use std::{io, path::PathBuf};
 
-const USAGE: &str = "\
-Read a problem in the MPS format and solve it.
-
-USAGE:
-    solve_mps --help
-    solve_mps INPUT_FILE
-    solve_mps INPUT_FILE --incremental
-
-INPUT_FILE is a file in the M format. You can download some sample
-problems from http://www.netlib.org/lp/data/. Use - for stdin.
-
-Output is a single line containing the minimal objective value.
-
-Set RUST_LOG environment variable (e.g. to info) to enable logging to stderr.
-";
+/// Read a problem in the MPS format and solve it.
+///
+/// Set RUST_LOG environment variable (e.g. to info) to enable logging to stderr.
+#[derive(Parser)]
+struct Args {
+    /// Path to a file in the MPS format. You can download some sample
+    /// problems from http://www.netlib.org/lp/data/.
+    file: PathBuf,
+    /// If set, the solver will panic if it does not find the indicated optimal value.
+    #[arg(long)]
+    expected_value: Option<f64>,
+    /// If set, the solver will build the LP incrementally (intended for testing purposes).
+    #[arg(long)]
+    incremental: bool,
+}
 
 fn main() {
-    env_logger::init();
+    let args = Args::parse();
 
-    let args = std::env::args().collect::<Vec<_>>();
-    if args.len() != 2 && args.len() != 3 {
-        print!("{}", USAGE);
-        std::process::exit(1);
-    } else if args[1] == "--help" {
-        print!("{}", USAGE);
-        return;
-    } else if args.len() == 3 && args[2] != "--incremental" {
-        print!("{}", USAGE);
-        std::process::exit(1);
-    }
+    let is_incremental = args.incremental;
 
-    let is_incremental = args.len() == 3;
-
-    let filename = &args[1];
     let direction = aries_lp::OptimizationDirection::Minimize;
-    let file = if filename == "-" {
-        MpsFile::parse(std::io::stdin().lock(), direction).unwrap()
-    } else {
-        let file = std::fs::File::open(filename).unwrap();
-        let input = io::BufReader::new(file);
-        MpsFile::parse(input, direction).unwrap()
-    };
+    let file = std::fs::File::open(args.file).unwrap();
+    let input = io::BufReader::new(file);
+    let file = MpsFile::parse(input, direction).unwrap();
 
     let res_solve = if is_incremental {
         println!("Incremental");
@@ -53,9 +37,28 @@ fn main() {
     };
 
     match res_solve {
-        Ok(solution) => println!("status: OPTIMAL objective: {}", solution.objective() + file.obj_offset),
-        Err(Error::InfeasibleTrivial) | Err(Error::InfeasibleWithCertificate(_)) => println!("status: INFEASIBLE"),
-        Err(Error::Unbounded) => println!("status: UNBOUNDED"),
-        Err(Error::Instable) => println!("status: INSTABLE"),
-    }
+        Ok(solution) => {
+            let optimum = solution.objective() + file.obj_offset;
+            println!("status: OPTIMAL objective: {}", solution.objective() + file.obj_offset);
+            if let Some(expected) = args.expected_value {
+                assert!((optimum - expected).abs() < 1e-3)
+            }
+        }
+        Err(Error::InfeasibleTrivial) | Err(Error::InfeasibleWithCertificate(_)) => {
+            println!("status: INFEASIBLE");
+            if let Some(expected) = args.expected_value {
+                assert!(expected.is_nan());
+            }
+        }
+        Err(Error::Unbounded) => {
+            println!("status: UNBOUNDED");
+            if let Some(expected) = args.expected_value {
+                assert!(expected.is_infinite());
+            }
+        }
+        Err(Error::Unstable) => {
+            println!("status: UNSTABLE");
+            std::process::exit(1)
+        }
+    };
 }
