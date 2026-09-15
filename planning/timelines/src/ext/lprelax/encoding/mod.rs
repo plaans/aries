@@ -429,9 +429,6 @@ fn encode_problem_ground(
                     (in_transition_id, in_transition_grounding_id)
                 });
 
-        let mut lhses = vec![];
-        let mut prev_in_transition_id = None;
-
         for ((&in_transition_id, &in_transition_grounding_id), out_transitions_groundings_ids) in chunkby.into_iter() {
             let rhs = out_transitions_groundings_ids
                 .into_iter()
@@ -452,23 +449,14 @@ fn encode_problem_ground(
             let expr = if !encoder.transitions.includes_recovered_mies() && is_transition_eff(in_transition_id) {
                 // In the case where we do not recover and use "missing" initial effects,
                 // the inflow constraints for (all) effects are slightly weaker.
-                let expr = RowExpr::Geq(
+
+                RowExpr::Geq(
                     vec![ColTag::PresenceTransitionGround(
                         in_transition_id,
                         in_transition_grounding_id,
                     )],
                     rhs.clone(),
-                );
-                if is_transition_eff(in_transition_id) {
-                    if prev_in_transition_id
-                        .is_none_or(|prev_in_transition_id| prev_in_transition_id != in_transition_id)
-                    {
-                        prev_in_transition_id = Some(in_transition_id);
-                        lhses.push(vec![]);
-                    }
-                    lhses.last_mut().unwrap().extend(rhs);
-                }
-                expr
+                )
             } else {
                 RowExpr::Eq(
                     vec![ColTag::PresenceTransitionGround(
@@ -486,8 +474,36 @@ fn encode_problem_ground(
             // In the case where we do not recover and use "missing" initial effects,
             // the inflow constraints for (all) effects are slightly weaker (see above).
             // This is (partially? FIXME[proof?]) compensated by the following constraints,
-            // which state that the *sum* of inflows into the same (ground) effect is upper bounded by 1.
-            for lhs in lhses {
+            // which state that the *sum* of inflows into (ground effects) with the *same state variable* (so, independent of their value) is upper bounded by 1.
+
+            let chunkby = groundings
+                .supports()
+                .iter_in_all()
+                .map(
+                    |(in_transition_id, in_transition_grounding_id, out_transitions_groundings)| {
+                        (in_transition_grounding_id, in_transition_id, out_transitions_groundings)
+                    },
+                )
+                .sorted_unstable_by_key(|&(in_transition_grounding_id, _, _)| *in_transition_grounding_id)
+                .chunk_by(|&(in_transition_grounding_id, _, _)| in_transition_grounding_id.state_var_grounding_id);
+
+            for (_, x) in chunkby.into_iter() {
+                let lhs = x
+                    .into_iter()
+                    .filter_map(
+                        |(&in_transition_grounding_id, &in_transition_id, out_transition_grounding)| {
+                            out_transition_grounding.map(|(out_transition_id, out_transition_grounding_id)| {
+                                ColTag::SupportGround(
+                                    out_transition_id,
+                                    in_transition_id,
+                                    out_transition_grounding_id,
+                                    in_transition_grounding_id,
+                                )
+                            })
+                        },
+                    )
+                    .collect::<Vec<_>>();
+
                 if !lhs.is_empty() {
                     let expr = RowExpr::Leq1(lhs);
                     problem.push_row(expr);
