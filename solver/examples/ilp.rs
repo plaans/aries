@@ -42,7 +42,7 @@ fn solve_ilp(obj_fun: &[IntCst], constraints: &[Vec<IntCst>]) -> Option<(Vec<Int
         .iter()
         .enumerate()
         .map(|(i, &factor)| factor * variables[i])
-        .fold(LinSum::zero(), |acc, term| acc + term);
+        .sum();
 
     // We force our objective variable to correponds to the objective function
     model.enforce(eq(obj_value_var, lin_sum_obj));

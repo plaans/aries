@@ -432,6 +432,12 @@ impl std::fmt::Display for LinSum {
                 write!(f, "1")?;
             }
         }
+        if self.constant > 0 {
+            write!(f, " + {}", self.constant.abs())?;
+        }
+        if self.constant < 0 {
+            write!(f, " - {}", self.constant.abs())?;
+        }
         Ok(())
     }
 }
