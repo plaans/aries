@@ -1,0 +1,27 @@
+[package]
+name = "aries-lp"
+version = "0.1.0"
+authors = ["Alexey Zatelepin <alex.zatelepin@gmail.com>", "Mael Seraud <mael.seraud@gmail.com>"]
+edition = "2024"
+license = "Apache-2.0"
+description = "A fast linear programming solver library."
+repository = "https://github.com/plaans/aries"
+readme = "README.md"
+keywords = ["linear-programming", "optimization"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+sprs = { version = "0.9.4", default-features = false}
+log = "0.4.32"
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+#ndarray = "0.17.2"
+rand = { version = "0.7", features = ["small_rng"] }
+rand_pcg = "0.2.1"
+env_logger = "0.11.10"
+clap = { workspace = true }
+
+[features]
+default = []
+serde = ["dep:serde", "sprs/serde"]

@@ -32,6 +32,9 @@ i64 = []
 # If enabled, use i128 for integer constants and long constants.
 i128 = []
 
+# If enabled, allow logging of the lp reasonner for comparing with highs solver
+lp_log = ["aries-lp/serde", "dep:serde", "dep:good_lp", "dep:postcard"]
+
 
 [dependencies]
 bumpalo = { workspace = true }
@@ -45,3 +48,22 @@ num-integer = { workspace = true }
 tracing = { workspace = true }
 rand = { workspace = true }
 hashbrown = { workspace = true }
+aries-lp = { version = "0.1.0", path = "../utils/lp"}
+postcard = { version = "1.0", optional = true, features = ["use-std"]}
+serde = { version = "1.0", optional = true, features = ["derive"] }
+good_lp = { version = "1.15.3", default-features = false, optional = true, features = ["highs"] }
+
+[dev-dependencies]
+
+clap.workspace = true
+aries-bench-data = { version = "0.1.0", path = "../bench/data" }
+walkdir.workspace = true
+
+
+[[example]]
+name = "knapsack"
+path = "examples/knapsack.rs"
+
+[[example]]
+name = "nqueens"
+path = "examples/nqueens.rs"
