@@ -1481,7 +1481,7 @@ impl BasisSolver {
         if let Ok(lu_factors) = res_lu_factorize {
             self.lu_factors = lu_factors;
         } else {
-            return Err(Error::Instable);
+            return Err(Error::Unstable);
         }
         self.lu_factors_transp = self.lu_factors.transpose();
 

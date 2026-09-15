@@ -184,8 +184,8 @@ pub enum Error {
     InfeasibleWithCertificate(Vec<f64>),
     /// The objective function is unbounded.
     Unbounded,
-    /// Floating point operations caused instability
-    Instable,
+    /// Floating point operations caused unstability
+    Unstable,
 }
 
 impl std::fmt::Display for Error {
@@ -194,7 +194,7 @@ impl std::fmt::Display for Error {
             Error::InfeasibleTrivial => "problem is infeasible",
             Error::InfeasibleWithCertificate(v) => &format!("problem is infeasible, certificate: {:?}", v),
             Error::Unbounded => "problem is unbounded",
-            Error::Instable => "problem is instable",
+            Error::Unstable => "problem is instable",
         };
         msg.fmt(f)
     }

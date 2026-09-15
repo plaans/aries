@@ -197,7 +197,7 @@ impl Lp {
         self.propagation_active = false;
     }
 
-    /// Return a linear sum wich is the opposite in terms of coefficient that the one given
+    /// Returns a linear sum which is the opposite in terms of coefficient that the one given
     ///
     /// We use it to detect that 2 constraints could use the same s variable in minilp
     fn get_opposite_linear_sum(linear_sum: &[ScaledVar]) -> Vec<ScaledVar> {
@@ -226,7 +226,7 @@ impl Lp {
 
     /// Add an s variable, it corresponds to a linear constraint in aries solver
     ///
-    /// They are artificals variables used to be able to activate/deactivate linear constraints just by setting a bound to it.
+    /// They are artificial variables used to be able to activate/deactivate linear constraints just by setting a bound to it.
     /// Check the reference paper for more details: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc]
     fn add_s_var(&mut self, linear_sum: &[ScaledVar], doms: &Domains) -> Variable {
         for &svar in linear_sum {
@@ -321,7 +321,7 @@ impl Lp {
         self.bound_cons_lit_vec.push((bound_cons, active));
     }
 
-    /// Takes the result of a call to solver.set_bound_result and returns either Ok or a Contradiction if infeasibilty was detected
+    /// Takes the result of a call to [Solver::set_bound_restrict] and returns either `Ok` or a `Contradiction` if infeasibility was detected
     fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleTrivial) => {
@@ -335,7 +335,7 @@ impl Lp {
         }
     }
 
-    /// Takes the result of a call to solver.check_feasibility and returns either Ok or a Contradiction if infeasibilty was detected
+    /// Takes the result of a call to [Solver::check_feasibility] and returns either `Ok` or a `Contradiction` if infeasibility was detected
     fn explain_check_feas(&mut self, res: Result<(), Error>) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
