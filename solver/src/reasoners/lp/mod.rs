@@ -1,9 +1,9 @@
 /*!
-This reasoner relies on the crate [`mod@aries_lp`].
+This reasoner relies on the crate [`mod@aries_lp`] and the following paper: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc].
 
 The LP solver is used to check feasibility, as it works on a continuous relaxation
-of the integer problem. In parallel, an exact integer version of the problem is maintained in [`Solver`]
-to allow the exact validation of unsat certificates ([`Solver::check_certificate()`]), thereby guaranteeing soundness whenever
+of the integer problem. In parallel, an exact integer version of the problem is maintained in `Solver`
+to allow the exact validation of unsat certificates (`Solver::check_certificate()`), thereby guaranteeing soundness whenever
 infeasibility is detected.
 
 
@@ -13,8 +13,9 @@ It is the responsibility of the caller to linearize other types of constraints b
 them to the LP.
 
 > **Important:** This reasoner is **disabled by default**.
-> To enable it, set the environment variable **`ARIES_LP_ENABLE=true`**.
+> To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
 
+[ref-doc]: https://link.springer.com/chapter/10.1007/11817963_11
 */
 
 mod solver;
@@ -43,6 +44,10 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
+/// Used to enable/disable the lp reasonner
+///
+/// Can be set either from the env variable **`ARIES_LP_ENABLE`**
+/// or within the code with: `LP_ENABLE.set(true/false)`
 pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false");
 
 #[derive(Debug, Clone, Copy)]
@@ -52,36 +57,42 @@ struct BoundConstraint {
     val: LongCst,
 }
 
-// Store all the necessary information for backtracking after modifying a bound
+/// Store all the necessary information for backtracking after modifying a bound
+///
+/// Only the old value and activation literals are necessary as they will overwrite the current value
 #[derive(Clone)]
 struct LpEvent {
+    /// variable affected by the bound change
     var: Variable,
+    /// bound modified
     bound: Bound,
+    /// Old value for the bound that needs to overwrite the new one when backtracking
     old_val: LongCst,
+    /// Activation literal associated with this bound and value
     old_lit: Lit,
 }
 
 #[derive(Clone)]
 struct Stats {
-    // Number of propagations where no contradaction was detected
+    /// Number of propagations where no contradaction was detected, used to determine the number of contradiction generated
     num_ok_propagate: usize,
+    /// Number of propagations
     num_propagate: usize,
-
+    /// Number of constraints within the LP relaxation
     num_constraints: usize,
+    /// Number of variables within the LP relaxation
     num_variables: usize,
-
+    /// Number of certificates generated
     num_certif: usize,
+    /// Number of valid certificates generated
     num_val_certif: usize,
+    /// Number of valid certificates generated using float calculations for verification
     num_val_certif_float: usize,
+    /// Number of overflows detected during the certificate verification
     num_overflow: usize,
-
-    history_certif: Vec<f32>,
-    last_num_val_certif: usize,
 }
 
 impl Stats {
-    const NUM_CERT_PROPORTION: usize = 100;
-
     fn new() -> Self {
         Self {
             num_ok_propagate: 0,
@@ -94,18 +105,6 @@ impl Stats {
             num_val_certif: 0,
             num_val_certif_float: 0,
             num_overflow: 0,
-
-            history_certif: Vec::new(),
-            last_num_val_certif: 0,
-        }
-    }
-
-    fn update_history_certif(&mut self) {
-        if self.num_certif.is_multiple_of(Stats::NUM_CERT_PROPORTION) {
-            let proportion =
-                (self.num_val_certif - self.last_num_val_certif) as f32 / Stats::NUM_CERT_PROPORTION as f32;
-            self.last_num_val_certif = self.num_val_certif;
-            self.history_certif.push(proportion);
         }
     }
 }
@@ -213,6 +212,8 @@ impl Lp {
     }
 
     /// Add an x variable which is a variable directly mapped with a var in aries solver
+    ///
+    /// Check the reference paper for more details: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc]
     fn add_x_var(&mut self, x: Var, doms: &Domains) {
         let var = self.solver.create_variable(
             cst_int_to_long(doms.lb(x)),
@@ -224,6 +225,9 @@ impl Lp {
     }
 
     /// Add an s variable, it corresponds to a linear constraint in aries solver
+    ///
+    /// They are artificals variables used to be able to activate/deactivate linear constraints just by setting a bound to it.
+    /// Check the reference paper for more details: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc]
     fn add_s_var(&mut self, linear_sum: &[ScaledVar], doms: &Domains) -> Variable {
         for &svar in linear_sum {
             if !self.memory_x.contains(svar.var) {
@@ -267,7 +271,7 @@ impl Lp {
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true`
     /// We assume that the active literal is always present, it is the responsability of the caller to ensure it:
-    /// doms.presence(active) == Lit::TRUE
+    /// `doms.presence(active) == Lit::TRUE`
     pub fn add_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         if !self.enable {
             return;
@@ -336,7 +340,6 @@ impl Lp {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
-                self.stats.update_history_certif();
                 if self.solver.problem.is_certificate_valid(&cert) {
                     self.stats.num_val_certif_float += 1;
                 }
@@ -456,7 +459,6 @@ impl Theory for Lp {
                 self.stats.num_certif, self.stats.num_val_certif, self.stats.num_overflow
             );
             println!("# valid float certificates: {}", self.stats.num_val_certif_float);
-            // println!("History proportion valid cert: {:?}", self.stats.history_certif);
         } else {
             println!("DISABLED");
         }
