@@ -304,8 +304,14 @@ impl Grounder {
             &task
                 .args
                 .iter()
-                .filter_map(|t| if t.is_cst() { None } else { Some(GrounderTerm::Var(*t)) })
-                .collect::<Vec<_>>(),
+                .map(|t| {
+                    if t.is_cst() {
+                        GrounderTerm::Cst(t.constant)
+                    } else {
+                        GrounderTerm::Var(*t)
+                    }
+                })
+                .collect_vec(),
         );
 
         let mut applicability_rule_body = vec![];
