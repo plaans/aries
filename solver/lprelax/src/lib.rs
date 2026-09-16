@@ -205,7 +205,15 @@ impl LpRelaxState {
         assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         let lb = lb.unwrap_or(FloatCst::MIN);
-        let ub: f64 = ub.unwrap_or(FloatCst::MAX);
+        let ub = ub.unwrap_or(FloatCst::MAX);
+        debug_assert!(lb <= ub, "row with inconsistent bounds [{lb}, {ub}]");
+
+        if lb > ub {
+            // HiGHS segfaults in its IIS routine on a row with `lb > ub` (see `add_rows`).
+            // An empty row with a positive lower bound states the same unconditional infeasibility and is handled safely.
+            return self.lpmodel.add_row(1.0..FloatCst::MAX, std::iter::empty()).unwrap();
+        }
+
         let num_columns = self.num_columns();
         self.lpmodel
             .add_row(
@@ -219,17 +227,37 @@ impl LpRelaxState {
         rows_coefs: &[Vec<(LpCol, FloatCst)>],
         lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)],
     ) -> Vec<LpRow> {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        debug_assert_eq!(rows_coefs.len(), lbs_ubs.len());
         debug_assert!(
             rows_coefs
                 .iter()
                 .all(|row_coefs| row_coefs.iter().all(|(col, _)| col.index() < self.num_columns()))
         );
 
-        let lbs_ubs: Vec<_> = lbs_ubs
+        let lbs_ubs: Vec<(FloatCst, FloatCst)> = lbs_ubs
             .iter()
             .map(|(lb, ub)| (lb.unwrap_or(FloatCst::MIN), ub.unwrap_or(FloatCst::MAX)))
             .collect();
+
+        // HiGHS crashes on a row with `lb > ub`: it reports infeasibility from the bound check before
+        // making the matrix column-wise, and its IIS routine then reads out of bounds while building
+        // the 0-column IIS. An empty row with a positive lower bound is the same statement
+        // ("infeasible regardless of any column") in a shape HiGHS survives.
+        debug_assert!(lbs_ubs.iter().all(|&(lb, ub)| lb <= ub), "row with inconsistent bounds");
+        if lbs_ubs.iter().any(|&(lb, ub)| lb > ub) {
+            let mut coefs: Vec<&[(LpCol, FloatCst)]> = Vec::with_capacity(rows_coefs.len());
+            let mut bounds: Vec<(FloatCst, FloatCst)> = Vec::with_capacity(lbs_ubs.len());
+            for (row_coefs, &(lb, ub)) in rows_coefs.iter().zip(&lbs_ubs) {
+                if lb > ub {
+                    coefs.push(&[]);
+                    bounds.push((1., FloatCst::MAX));
+                } else {
+                    coefs.push(row_coefs.as_slice());
+                    bounds.push((lb, ub));
+                }
+            }
+            return self.lpmodel.add_rows(&bounds, &coefs).unwrap();
+        }
 
         self.lpmodel.add_rows(&lbs_ubs, rows_coefs).unwrap()
     }
