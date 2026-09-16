@@ -48,11 +48,8 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let mut solver = if crate::ext::lprelax::ARIES_LPRELAX_USE.get() {
             let model = encoding.store.clone();
 
-            let reasoner = LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(
-                crate::ext::lprelax::LpRelaxEncoder::new(&mut encoding),
-                encoding,
-            );
-
+            let reasoner =
+                LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(encoding, assumptions_map.len());
             Solver::with_extra_reasoners(model, vec![Box::new(reasoner)])
         } else {
             Solver::new(encoding.store)

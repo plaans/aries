@@ -6,10 +6,11 @@ use idmap::intid::IntegerId;
 use itertools::Itertools;
 
 use crate::encoder::SchedEncoder;
-use crate::ext::lprelax::encoding::{LpRelaxEncoding, LpRelaxProblem};
-use crate::ext::lprelax::transitions::*;
-use crate::ext::{Source, SourceGrounding};
-use crate::{Effect, EffectId, IntTerm, Task, TaskId};
+use crate::ext::lprelax::encoding::LpRelaxEncoding;
+use crate::{
+    EffectId, IntTerm, StateVar, Task, TaskId,
+    ext::{Source, SourceGrounding, lprelax::transitions::*},
+};
 
 #[derive(Clone)]
 pub(crate) struct LpRelaxEncoder {
@@ -18,7 +19,7 @@ pub(crate) struct LpRelaxEncoder {
 }
 
 impl LpRelaxEncoder {
-    pub fn new(ctx: &mut SchedEncoder) -> Self {
+    pub fn from(ctx: &SchedEncoder) -> Self {
         let transitions = Transitions::new_unambiguous(ctx, super::ARIES_LPRELAX_RECOVER_MIES.get());
 
         Self { transitions }
@@ -26,6 +27,9 @@ impl LpRelaxEncoder {
 
     pub fn get_source<'a>(&self, source: Source, ctx: &'a SchedEncoder) -> Option<&'a Task> {
         source.map(|task_id| &ctx.sched.tasks[task_id])
+    }
+    pub fn get_source_prez(&self, source: Source, ctx: &SchedEncoder) -> Lit {
+        self.get_source(source, ctx).map_or(Lit::TRUE, |task| task.presence)
     }
     pub fn get_source_terms<'a>(&self, source: Source, ctx: &'a SchedEncoder) -> &'a [IntTerm] {
         source
@@ -65,10 +69,13 @@ impl LpRelaxEncoder {
     pub fn iter_transitions(&self) -> impl Iterator<Item = (TransitionId, Transition)> {
         self.transitions.iter()
     }
-    pub fn iter_effects<'a>(&'a self, ctx: &'a SchedEncoder) -> impl Iterator<Item = (EffectId, &'a Effect)> {
+    fn iter_effects<'a>(
+        &'a self,
+        ctx: &'a SchedEncoder,
+    ) -> impl Iterator<Item = (EffectId, (Lit, Source, &'a StateVar, &'a crate::EffectOp))> {
         self.transitions
             .iter_of_effects()
-            .map(|(_, transition_id)| self.transitions.get_effect(transition_id, ctx).unwrap())
+            .map(|(_, transition_id)| self.transitions.get_effect_info(transition_id, ctx).unwrap())
     }
     pub fn iter_sources(&self, ctx: &SchedEncoder) -> impl Iterator<Item = Source> {
         std::iter::chain(
@@ -179,6 +186,7 @@ impl LpRelaxEncoder {
         res
     }
     // TODO: complete / incomplete grounder ?
+    // TODO: currently, only uses the model state in `ctx`, which could be outdated (not propagated).
     fn run_new_simple_datalog_grounder(&self, ctx: &SchedEncoder) -> Vec<(Source, Vec<SourceGrounding>)> {
         let time = std::time::Instant::now();
         println!("|- Datalog grounder started");
@@ -204,33 +212,26 @@ impl LpRelaxEncoder {
         res
     }
 
-    pub fn encode(&self, ctx: &SchedEncoder) -> (LpRelaxEncoding, LpRelaxProblem) {
-        let mut encoding = LpRelaxEncoding::default();
-
+    pub fn encode(self, ctx: &SchedEncoder, doms: Option<&crate::Domains>) -> LpRelaxEncoding {
         let sources_groundings = self.run_new_simple_datalog_grounder(ctx);
+
+        let mut encoding = LpRelaxEncoding::new(self);
 
         let time = std::time::Instant::now();
         println!("|- Source groundings interning started");
 
         for (source, source_groundings) in sources_groundings {
             for source_grounding in source_groundings {
-                encoding.post_ground_source(source, source_grounding, self, ctx);
+                encoding.post_ground_source(source, source_grounding, ctx, doms);
             }
         }
+
         println!(
             "|- Source groundings interning ended (run time: {})",
             time.elapsed().as_secs_f64()
         );
 
-        let problem = encoding.build(self, ctx);
-
-        println!(
-            "|- LPrelax problem stats: {} columns, {} rows",
-            problem.cols().len(),
-            problem.rows().len(),
-        );
-
-        (encoding, problem)
+        encoding
     }
 }
 
@@ -249,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_supports() {
-        let mut encoder = build_and_encode_visitall_line(
+        let encoder = build_and_encode_visitall_line(
             &VisitAllLine {
                 num_locs: 5,
                 num_moves: 4,
@@ -258,7 +259,7 @@ mod tests {
         );
 
         let lprelax_encoder = LpRelaxEncoder {
-            transitions: Transitions::new_unambiguous(&mut encoder, true),
+            transitions: Transitions::new_unambiguous(&encoder, true),
         };
 
         for ((out_transition_id, in_transition_id), active) in lprelax_encoder.iter_supports(&encoder) {

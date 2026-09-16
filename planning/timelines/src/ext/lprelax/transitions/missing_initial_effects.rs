@@ -2,10 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use aries_solver::prelude::*;
 
-use crate::{
-    Effect, EffectId, EffectOp, IntTerm, Model, StateVar,
-    encoder::{CondId, SchedEncoder},
-};
+use crate::SchedEncoder;
+use crate::{EffectId, EffectOp, IntTerm, StateVar, encoder::CondId, ext::lprelax::transitions::EffectView};
 
 /// Closed-world default (ground) initial effects in place of those omitted in the main encoding (or "missing" from it)
 /// due to being deemed non-required to support any condition (`add_closed_world_negative_effects`)
@@ -22,7 +20,7 @@ use crate::{
 #[derive(Clone, Default)]
 pub(super) struct RecoveredMissingInitialEffects {
     first_id: EffectId,
-    store: Vec<Effect>,
+    store: Vec<EffectView>,
     pub ignored_fluents: HashSet<crate::Sym>,
     initial_effects_ground_args: HashMap<crate::Sym, Vec<Vec<IntCst>>>,
 }
@@ -60,16 +58,10 @@ impl RecoveredMissingInitialEffects {
     pub fn contains(&self, eff_id: EffectId) -> bool {
         eff_id >= self.first_id && eff_id < self.first_id + self.store.len()
     }
-    pub fn get(&self, offset_eff_id: EffectId) -> &Effect {
+    pub fn get(&self, offset_eff_id: EffectId) -> &EffectView {
         &self.store[offset_eff_id - self.first_id]
     }
-    pub fn add(
-        &mut self,
-        fluent: crate::Sym,
-        args: Vec<IntCst>,
-        value: IntCst,
-        model: &mut Model,
-    ) -> Result<EffectId, ()> {
+    pub fn add(&mut self, fluent: crate::Sym, args: Vec<IntCst>, value: IntCst) -> Result<EffectId, ()> {
         // Ignore if there already is a (non-ignored) initial effect with these ground args.
         if self
             .initial_effects_ground_args
@@ -79,10 +71,7 @@ impl RecoveredMissingInitialEffects {
             return Err(());
         }
 
-        let eff = Effect {
-            transition_start: crate::Time::from(-2),
-            transition_end: crate::Time::from(-2),
-            mutex_end: model.new_ivar(-2, INT_CST_MAX, "_").into(),
+        let eff_view = EffectView {
             state_var: StateVar {
                 fluent,
                 args: args.into_iter().map(IntTerm::int_cst).collect(),
@@ -93,17 +82,18 @@ impl RecoveredMissingInitialEffects {
         };
 
         debug_assert!(
-            eff.state_var
+            eff_view
+                .state_var
                 .args
                 .iter()
-                .chain(match &eff.operation {
+                .chain(match &eff_view.operation {
                     crate::EffectOp::Assign(term) => [term],
                     crate::EffectOp::Step(_term) => todo!(),
                 })
                 .all(|term| term.is_cst())
         );
 
-        self.store.push(eff);
+        self.store.push(eff_view);
         Ok(self.first_id + self.store.len() - 1)
     }
 }

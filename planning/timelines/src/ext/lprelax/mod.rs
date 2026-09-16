@@ -15,9 +15,8 @@ pub static ARIES_LPRELAX_RECOVER_MIES: EnvParam<bool> = EnvParam::new("ARIES_LPR
 
 #[cfg(test)]
 mod tests {
-    use crate::ext::lprelax::LpRelaxEncoder;
     use crate::ext::lprelax::examples::visitall::{VisitAllLine, build_and_encode_visitall_line};
-    use crate::ext::lprelax::wrapper::{LpRelaxReasonerWrapper, LpRelaxReasonerWrapperTrait};
+    use crate::ext::lprelax::wrapper::*;
 
     #[test]
     fn test_visitall_line() {
@@ -25,16 +24,13 @@ mod tests {
             num_locs: 4,
             num_moves: 3,
         };
-        let mut encoder = build_and_encode_visitall_line(sat_pb, false);
+        let encoder = build_and_encode_visitall_line(sat_pb, false);
         let model = encoder.sched.clone().encode();
 
         {
             println!("Sat instance with lprelax (lprelax mustn't deem it unsat)");
 
-            let reasoner = LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(
-                LpRelaxEncoder::new(&mut encoder),
-                encoder,
-            );
+            let reasoner = LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(encoder, 0);
             let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
             assert!(
@@ -48,7 +44,7 @@ mod tests {
             num_locs: 5,
             num_moves: 3,
         };
-        let mut encoder = build_and_encode_visitall_line(unsat_pb, false);
+        let encoder = build_and_encode_visitall_line(unsat_pb, false);
         let model = encoder.sched.clone().encode();
 
         {
@@ -63,10 +59,7 @@ mod tests {
             );
             assert!(solver.stats.num_decisions > 0);
 
-            let reasoner = LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(
-                LpRelaxEncoder::new(&mut encoder),
-                encoder,
-            );
+            let reasoner = LpRelaxReasonerWrapper::<aries_solver_lprelax::LpRelax>::new_wrapped(encoder, 0);
 
             println!("Unsat instance with lprelax (num decisions must be = 0, thanks to lprelax)");
 

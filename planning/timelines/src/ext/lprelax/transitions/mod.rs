@@ -8,12 +8,10 @@ use aries_solver::lang::Lit;
 
 use idmap::DirectIdMap;
 
+use crate::EffectOp;
+use crate::SchedEncoder;
 use crate::ext::{Source, SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
-use crate::{
-    Effect, EffectId, IntTerm, StateVar, TaskId,
-    constraints::HasValueAt,
-    encoder::{CondId, SchedEncoder},
-};
+use crate::{EffectId, IntTerm, StateVar, TaskId, constraints::HasValueAt, encoder::CondId};
 
 pub type TransitionId = usize;
 
@@ -50,6 +48,15 @@ struct TransitionTermsIndicesInSource {
     pub valfrom: Option<Option<usize>>,
     pub valto: Option<Option<usize>>,
 }
+
+#[derive(Clone)]
+struct EffectView {
+    pub source: Source,
+    pub prez: Lit,
+    pub state_var: StateVar,
+    pub operation: EffectOp,
+}
+type EffectInfo<'a> = (Lit, Source, &'a StateVar, &'a EffectOp);
 
 #[derive(Clone)]
 pub(crate) struct Transitions {
@@ -178,21 +185,23 @@ impl Transitions {
             Transition::Eff(_) => None,
         }
     }
-    pub fn get_effect<'a>(
+    pub fn get_effect_info<'a>(
         &'a self,
         transition_id: TransitionId,
         ctx: &'a SchedEncoder,
-    ) -> Option<(EffectId, &'a Effect)> {
+    ) -> Option<(EffectId, EffectInfo<'a>)> {
         match self.get(transition_id) {
             Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => {
-                let eff = if let Some(recovered_mies) = &self.recovered_mies
+                let info = if let Some(recovered_mies) = &self.recovered_mies
                     && recovered_mies.contains(eff_id)
                 {
-                    recovered_mies.get(eff_id)
+                    let eff_view = recovered_mies.get(eff_id);
+                    (eff_view.prez, eff_view.source, &eff_view.state_var, &eff_view.operation)
                 } else {
-                    ctx.sched.effects.get(eff_id)
+                    let eff = ctx.sched.effects.get(eff_id);
+                    (eff.prez, eff.source, &eff.state_var, &eff.operation)
                 };
-                Some((eff_id, eff))
+                Some((eff_id, info))
             }
             Transition::Cond(_) => None,
         }
@@ -206,9 +215,9 @@ impl Transitions {
     pub fn get_prez(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Lit {
         match self.get(transition_id) {
             Transition::Cond(_) => self.get_condition(transition_id, ctx).unwrap().1.prez,
-            Transition::Eff(_) => self.get_effect(transition_id, ctx).unwrap().1.prez,
+            Transition::Eff(_) => self.get_effect_info(transition_id, ctx).unwrap().1.0,
             Transition::CondEff(_, _) => {
-                let res = self.get_effect(transition_id, ctx).unwrap().1.prez;
+                let res = self.get_effect_info(transition_id, ctx).unwrap().1.0;
                 debug_assert!(res == self.get_condition(transition_id, ctx).unwrap().1.prez);
                 res
             }
@@ -217,9 +226,9 @@ impl Transitions {
     pub fn get_source(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Source {
         match self.get(transition_id) {
             Transition::Cond(_) => self.get_condition(transition_id, ctx).unwrap().1.source,
-            Transition::Eff(_) => self.get_effect(transition_id, ctx).unwrap().1.source,
+            Transition::Eff(_) => self.get_effect_info(transition_id, ctx).unwrap().1.1,
             Transition::CondEff(_, _) => {
-                let res = self.get_effect(transition_id, ctx).unwrap().1.source;
+                let res = self.get_effect_info(transition_id, ctx).unwrap().1.1;
                 debug_assert!(res == self.get_condition(transition_id, ctx).unwrap().1.source);
                 res
             }
@@ -228,9 +237,9 @@ impl Transitions {
     pub fn get_state_var<'a>(&'a self, transition_id: TransitionId, ctx: &'a SchedEncoder) -> &'a StateVar {
         match self.get(transition_id) {
             Transition::Cond(_) => &self.get_condition(transition_id, ctx).unwrap().1.state_var,
-            Transition::Eff(_) => &self.get_effect(transition_id, ctx).unwrap().1.state_var,
+            Transition::Eff(_) => self.get_effect_info(transition_id, ctx).unwrap().1.2,
             Transition::CondEff(_, _) => {
-                let res = &self.get_effect(transition_id, ctx).unwrap().1.state_var;
+                let res = self.get_effect_info(transition_id, ctx).unwrap().1.2;
                 debug_assert!(*res == self.get_condition(transition_id, ctx).unwrap().1.state_var);
                 res
             }
@@ -247,9 +256,9 @@ impl Transitions {
     pub fn get_valto(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Option<IntTerm> {
         match self.get(transition_id) {
             Transition::Eff(_) | Transition::CondEff(_, _) => {
-                match self.get_effect(transition_id, ctx).unwrap().1.operation {
-                    crate::EffectOp::Assign(term) => Some(term),
-                    crate::EffectOp::Step(_) => todo!(),
+                match *self.get_effect_info(transition_id, ctx).unwrap().1.3 {
+                    EffectOp::Assign(term) => Some(term),
+                    EffectOp::Step(_) => todo!(),
                 }
             }
             Transition::Cond(_) => None,
@@ -298,7 +307,7 @@ impl Transitions {
     /// Collects transitions from "unambiguous" conditions and effects (i.e. filtering out "nonsimple" ones)
     ///
     /// The context borrow is mutable to create new 'mutex end' variables for the recovered missing initial effects.
-    pub fn new_unambiguous(ctx: &mut SchedEncoder, recover_missing_initial_effects: bool) -> Self {
+    pub fn new_unambiguous(ctx: &SchedEncoder, recover_missing_initial_effects: bool) -> Self {
         // Collects nonsimple transitions to ignore / relax.
         let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
 
@@ -476,7 +485,6 @@ impl Transitions {
                         sym.to_string(),
                         args_ground,
                         ctx.sched.fluents.get_return(sym).unwrap().range.first,
-                        &mut ctx.store,
                     ) {
                         let tr_id = store.len();
                         of_effect.insert(eff_id, tr_id);
@@ -505,19 +513,21 @@ impl Transitions {
                 &ctx.sched.global_args
             }
         };
-        let get_effect = |eff_id| {
+        let get_effect_info = |eff_id| {
             if recovered_mies.contains(eff_id) {
-                recovered_mies.get(eff_id)
+                let eff_view = recovered_mies.get(eff_id);
+                (eff_view.prez, eff_view.source, &eff_view.state_var, &eff_view.operation)
             } else {
-                ctx.sched.effects.get(eff_id)
+                let eff = ctx.sched.effects.get(eff_id);
+                (eff.prez, eff.source, &eff.state_var, &eff.operation)
             }
         };
         let get_source = |transition| match transition {
             Transition::Cond(cond_id) => ctx.causal_links.conditions.get(cond_id).source,
-            Transition::Eff(eff_id) => get_effect(eff_id).source,
+            Transition::Eff(eff_id) => get_effect_info(eff_id).1,
             Transition::CondEff(cond_id, eff_id) => {
                 let res = ctx.causal_links.conditions.get(cond_id).source;
-                debug_assert!(res == get_effect(eff_id).source);
+                debug_assert!(res == get_effect_info(eff_id).1);
                 debug_assert!(!recovered_mies.contains(eff_id));
                 res
             }
@@ -529,21 +539,21 @@ impl Transitions {
                 None,
             ),
             Transition::Eff(eff_id) => (
-                &get_effect(eff_id).state_var.args,
+                &get_effect_info(eff_id).2.args,
                 None,
-                Some(match get_effect(eff_id).operation {
-                    crate::EffectOp::Assign(term) => term,
-                    crate::EffectOp::Step(_) => todo!(),
+                Some(match *get_effect_info(eff_id).3 {
+                    EffectOp::Assign(term) => term,
+                    EffectOp::Step(_) => todo!(),
                 }),
             ),
             Transition::CondEff(cond_id, eff_id) => {
                 debug_assert!(!recovered_mies.contains(eff_id));
                 (
-                    &get_effect(eff_id).state_var.args,
+                    &get_effect_info(eff_id).2.args,
                     Some(ctx.causal_links.conditions.get(cond_id).value),
-                    Some(match get_effect(eff_id).operation {
-                        crate::EffectOp::Assign(term) => term,
-                        crate::EffectOp::Step(_) => todo!(),
+                    Some(match *get_effect_info(eff_id).3 {
+                        EffectOp::Assign(term) => term,
+                        EffectOp::Step(_) => todo!(),
                     }),
                 )
             }
@@ -592,13 +602,15 @@ impl Transitions {
 mod tests {
     use crate::ext::{
         collect_nonsimple_conditions_and_effects_to_relax,
-        lprelax::examples::visitall::{VisitAllLine, build_and_encode_visitall_line},
-        lprelax::transitions::Transitions,
+        lprelax::{
+            examples::visitall::{VisitAllLine, build_and_encode_visitall_line},
+            transitions::Transitions,
+        },
     };
 
     #[test]
     fn test_transitions_visitall_line() {
-        let mut encoder = build_and_encode_visitall_line(
+        let encoder = build_and_encode_visitall_line(
             &VisitAllLine {
                 num_locs: 5,
                 num_moves: 4,
@@ -606,7 +618,7 @@ mod tests {
             false,
         );
 
-        let transitions = Transitions::new_unambiguous(&mut encoder, true);
+        let transitions = Transitions::new_unambiguous(&encoder, true);
 
         assert!({
             let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(&encoder);

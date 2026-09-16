@@ -38,6 +38,7 @@ impl LpRelaxEncodingGroundingsInfo {
         source_grounding: SourceGrounding,
         encoder: &LpRelaxEncoder,
         ctx: &SchedEncoder,
+        doms: Option<&crate::Domains>,
     ) {
         self.ready = false;
 
@@ -598,7 +599,7 @@ impl SupportsGroundingsInfo {
         ));
 
         // Main loop
-        for &(out_transition_id, in_transition_id) in lifted_supports.out() {
+        for &((out_transition_id, in_transition_id), _) in lifted_supports.out() {
             let out_slice = transitions_groundings.get_index_and_slice(out_transition_id);
             let in_slice = transitions_groundings.get_index_and_slice(in_transition_id);
 

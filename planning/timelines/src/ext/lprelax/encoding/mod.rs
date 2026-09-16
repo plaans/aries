@@ -1,158 +1,60 @@
 mod groundings;
 mod lifted;
+mod problem;
 
-use std::collections::HashSet;
+use aries_solver::lang::Lit;
+pub(crate) use problem::*;
 
-use aries_solver::core::IntCst;
 use aries_solver::core::views::Dom;
 use itertools::Itertools;
 
-use crate::IntTerm;
 use crate::encoder::SchedEncoder;
 use crate::ext::lprelax::LpRelaxEncoder;
-use crate::ext::lprelax::encoding::groundings::{LpRelaxEncodingGroundingsInfo, StateVarGroundingId};
+use crate::ext::lprelax::encoding::groundings::LpRelaxEncodingGroundingsInfo;
 use crate::ext::lprelax::encoding::lifted::LpRelaxEncodingLiftedSupportsSorted;
-use crate::ext::lprelax::transitions::{TransitionGroundingId, TransitionId};
-use crate::ext::{Source, SourceGrounding, SourceGroundingId};
+use crate::ext::lprelax::transitions::TransitionId;
+use crate::ext::{Source, SourceGrounding};
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
-pub(crate) enum ColTag {
-    PresenceSource(Source, Option<SourceGroundingId>),
-    PresenceTransition(TransitionId, Option<TransitionGroundingId>),
-    Support(
-        TransitionId,
-        TransitionId,
-        Option<(TransitionGroundingId, TransitionGroundingId)>,
-    ),
-    SupportInitialGroundClosedWorld(StateVarGroundingId, TransitionId, IntCst),
-    TermGround(IntTerm, IntCst),
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) enum RowExprType {
-    Eq,
-    Leq,
-    Geq,
-}
-
-/// lhs cmp rhs + cst
-/// where cmp can be =, <=, or >=, and terms in lhs and rhs have unit coefficients (1).
-#[derive(Debug, Clone)]
-pub(crate) struct RowExpr {
-    pub tpe: RowExprType,
-    lhs_rhs_limit: usize,
-    terms: Vec<ColTag>,
-    cst: IntCst,
-}
-impl RowExpr {
-    pub fn lhs(&self) -> &[ColTag] {
-        self.terms.get(..self.lhs_rhs_limit).unwrap_or(&[])
-    }
-    pub fn rhs(&self) -> &[ColTag] {
-        self.terms.get(self.lhs_rhs_limit..).unwrap_or(&[])
-    }
-    pub fn cst(&self) -> IntCst {
-        self.cst
-    }
-    #[allow(dead_code)]
-    pub fn new(tpe: RowExprType, terms: Vec<ColTag>, lhs_rhs_limit: usize, cst: IntCst) -> Self {
-        Self {
-            tpe,
-            lhs_rhs_limit,
-            terms,
-            cst,
-        }
-    }
-    pub fn new_eq_single_lhs(terms: Vec<ColTag>) -> Self {
-        Self {
-            tpe: RowExprType::Eq,
-            lhs_rhs_limit: 1,
-            terms,
-            cst: 0,
-        }
-    }
-    pub fn new_leq_single_lhs(terms: Vec<ColTag>) -> Self {
-        Self {
-            tpe: RowExprType::Leq,
-            lhs_rhs_limit: 1,
-            terms,
-            cst: 0,
-        }
-    }
-    pub fn new_geq_single_lhs(terms: Vec<ColTag>) -> Self {
-        Self {
-            tpe: RowExprType::Geq,
-            lhs_rhs_limit: 1,
-            terms,
-            cst: 0,
-        }
-    }
-    pub fn new_leq_1(terms: Vec<ColTag>) -> Self {
-        Self {
-            tpe: RowExprType::Leq,
-            lhs_rhs_limit: terms.len(),
-            terms,
-            cst: 1,
-        }
-    }
-}
-
-#[derive(Clone, Default)]
-pub(crate) struct LpRelaxProblem {
-    cols_set: HashSet<ColTag>,
-    cols_vec: Vec<ColTag>,
-    rows: Vec<RowExpr>,
-}
-impl LpRelaxProblem {
-    pub fn insert_col(&mut self, col: ColTag) {
-        if !self.cols_set.contains(&col) {
-            self.cols_set.insert(col.clone());
-            self.cols_vec.push(col);
-        }
-    }
-    pub fn contains_col(&self, col: &ColTag) -> bool {
-        self.cols_set.contains(col)
-    }
-    pub fn cols(&self) -> &[ColTag] {
-        &self.cols_vec
-    }
-    pub fn push_row(&mut self, row: RowExpr) {
-        self.rows.push(row);
-    }
-    pub fn rows(&self) -> &[RowExpr] {
-        &self.rows
-    }
-}
-
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct LpRelaxEncoding {
-    ready: bool,
+    encoder: LpRelaxEncoder,
     groundings: LpRelaxEncodingGroundingsInfo,
     lifted_supports_sorted: LpRelaxEncodingLiftedSupportsSorted,
+    ready: bool,
 }
 impl LpRelaxEncoding {
+    pub fn new(encoder: LpRelaxEncoder) -> Self {
+        Self {
+            encoder,
+            ready: false,
+            groundings: Default::default(),
+            lifted_supports_sorted: Default::default(),
+        }
+    }
+
     // Interns a grounding of a source.
     // WARNING: adding duplicate groundings (for the same source) will result in a panic (in debug mode).
     pub fn post_ground_source(
         &mut self,
         source: Source,
         source_grounding: SourceGrounding,
-        encoder: &LpRelaxEncoder,
         ctx: &SchedEncoder,
+        doms: Option<&crate::Domains>,
     ) {
         self.ready = false;
         self.groundings
-            .post_ground_source(source, source_grounding, encoder, ctx);
+            .post_ground_source(source, source_grounding, &self.encoder, ctx, doms);
     }
 
-    pub fn build(&mut self, encoder: &LpRelaxEncoder, ctx: &SchedEncoder) -> LpRelaxProblem {
+    pub fn build(&mut self, ctx: &SchedEncoder, doms: Option<&crate::Domains>) -> LpRelaxProblem {
         let time = std::time::Instant::now();
         println!("|- Lifted part encoding construction started");
 
         let mut problem = LpRelaxProblem::default();
 
-        encode_problem_lifted(encoder, ctx, &mut self.lifted_supports_sorted, &mut problem);
+        self.lifted_supports_sorted = LpRelaxEncodingLiftedSupportsSorted::from(&self.encoder, ctx, doms);
 
+        encode_problem_lifted(self, ctx, &self.lifted_supports_sorted, &mut problem);
         println!(
             "|- Lifted part encoding construction ended (run time: {})",
             time.elapsed().as_secs_f64()
@@ -161,14 +63,23 @@ impl LpRelaxEncoding {
         let time = std::time::Instant::now();
         println!("|- Ground part encoding construction started");
 
-        encode_problem_ground(
-            encoder,
-            ctx,
-            &mut self.groundings,
-            &mut self.lifted_supports_sorted,
-            &mut problem,
-        );
+        {
+            self.groundings.transitions_sort();
 
+            let time = std::time::Instant::now();
+            println!("|--- Ground part encoding construction: support building started");
+
+            self.groundings.supports_build(&self.lifted_supports_sorted);
+
+            println!(
+                "|--- Ground part encoding construction: support building ended (run time {})",
+                time.elapsed().as_secs_f64()
+            );
+
+            self.groundings.terms_sort();
+        }
+
+        encode_problem_ground(self, ctx, &self.groundings, &mut problem);
         println!(
             "|- Ground part encoding construction ended (run time: {})",
             time.elapsed().as_secs_f64()
@@ -185,40 +96,64 @@ impl LpRelaxEncoding {
         self.ready
     }
 
+    pub fn includes_recovered_mies(&self) -> bool {
+        self.encoder.transitions.includes_recovered_mies()
+    }
+
     pub fn iter_terms_assignments(&self) -> impl Iterator<Item = (crate::IntTerm, aries_solver::core::IntCst)> {
         self.groundings.terms().iter_sorted_all_only_assignments()
+    }
+
+    pub fn iter_sources(&self, ctx: &SchedEncoder) -> impl Iterator<Item = Source> {
+        self.encoder.iter_sources(ctx)
+    }
+    pub fn iter_transitions_of_source(&self, source: Source) -> impl Iterator<Item = TransitionId> {
+        self.encoder.transitions.of_source(source).iter().copied()
+    }
+    pub fn get_source_prez(&self, source: Source, ctx: &SchedEncoder) -> Lit {
+        self.encoder.get_source_prez(source, ctx)
+    }
+    pub fn get_transition_prez(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Lit {
+        self.encoder.transitions.get_prez(transition_id, ctx)
+    }
+    pub fn iter_supports(&self) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
+        self.lifted_supports_sorted.out().iter().copied()
     }
 }
 
 fn encode_problem_lifted(
-    encoder: &LpRelaxEncoder,
+    encoding: &LpRelaxEncoding,
     ctx: &SchedEncoder,
-    lifted_supports_sorted: &mut LpRelaxEncodingLiftedSupportsSorted,
+    lifted_supports_sorted: &LpRelaxEncodingLiftedSupportsSorted,
     problem: &mut LpRelaxProblem,
 ) {
-    *lifted_supports_sorted = LpRelaxEncodingLiftedSupportsSorted::from(encoder, ctx);
+    let is_transition_eff = |transition_id| encoding.encoder.transitions.is_pure_eff(transition_id);
+    let is_transition_cond = |transition_id| encoding.encoder.transitions.is_pure_cond(transition_id);
 
     // [Lifted] A source is present if(f) its transitions are
     // TODO: optimize iterations ? (flattened ?)
     {
-        for source in encoder.iter_sources(ctx) {
-            problem.insert_col(ColTag::PresenceSource(source, None));
+        problem.push_row(RowExpr::new(
+            RowExprType::Eq,
+            vec![ColTag::PresenceSource(None, None)],
+            1,
+            1,
+        ));
 
-            let source_prez = encoder
-                .get_source(source, ctx)
-                .map_or(aries_solver::core::Lit::TRUE, |t| t.presence);
-
-            for &transition_id in encoder.transitions.of_source(source) {
-                problem.insert_col(ColTag::PresenceTransition(transition_id, None));
-
-                let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
-
+        for source in encoding.iter_sources(ctx) {
+            for transition_id in encoding.iter_transitions_of_source(source) {
                 // It is possible that sometimes the presence literal of the transition differs from that of the source
                 // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
                 // However, the latter must always imply the former.
 
-                debug_assert!(ctx.store.state.implies(transition_prez, source_prez));
-                let presences_equivalent = ctx.store.state.implies(source_prez, transition_prez);
+                debug_assert!(ctx.store.state.implies(
+                    encoding.get_transition_prez(transition_id, ctx),
+                    encoding.get_source_prez(source, ctx)
+                ));
+                let presences_equivalent = ctx.store.state.implies(
+                    encoding.get_source_prez(source, ctx),
+                    encoding.get_transition_prez(transition_id, ctx),
+                );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
                 let expr = if presences_equivalent {
@@ -238,16 +173,11 @@ fn encode_problem_lifted(
         }
     }
 
-    let is_transition_eff = |transition_id| encoder.transitions.is_pure_eff(transition_id);
-    let is_transition_cond = |transition_id| encoder.transitions.is_pure_cond(transition_id);
-
     // [Lifted] Support between two transitions implies presence of both of them
     // NOTE: There's no need to enforce theses constraints for all cases, as the inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by outflow constraints.
     {
-        for &(out_transition_id, in_transition_id) in lifted_supports_sorted.out() {
-            problem.insert_col(ColTag::Support(out_transition_id, in_transition_id, None));
-
+        for &((out_transition_id, in_transition_id), _) in lifted_supports_sorted.out() {
             if is_transition_cond(in_transition_id) {
                 problem.push_row(RowExpr::new_leq_single_lhs(vec![
                     ColTag::Support(out_transition_id, in_transition_id, None),
@@ -261,7 +191,7 @@ fn encode_problem_lifted(
     {
         let mut seen = vec![];
 
-        for &(out_transition_id, in_transition_id) in lifted_supports_sorted.out() {
+        for &((out_transition_id, in_transition_id), _) in lifted_supports_sorted.out() {
             seen.push((out_transition_id, in_transition_id));
 
             if seen.binary_search(&(in_transition_id, out_transition_id)).is_ok() {
@@ -292,10 +222,9 @@ fn encode_problem_lifted(
                 );
                 res
             };
-            debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
             debug_assert!(terms.len() >= 2);
 
-            let expr = if !encoder.transitions.includes_recovered_mies() && is_transition_eff(in_transition_id) {
+            let expr = if !encoding.includes_recovered_mies() && is_transition_eff(in_transition_id) {
                 RowExpr::new_geq_single_lhs(terms)
             } else {
                 RowExpr::new_eq_single_lhs(terms)
@@ -310,7 +239,7 @@ fn encode_problem_lifted(
         let chunkby = lifted_supports_sorted
             .out()
             .iter()
-            .chunk_by(|&(out_transition_id, _)| out_transition_id);
+            .chunk_by(|&((out_transition_id, _), _)| out_transition_id);
 
         for (&out_transition_id, in_transitions_ids) in chunkby.into_iter() {
             let terms = {
@@ -318,13 +247,12 @@ fn encode_problem_lifted(
                 res.append(
                     &mut in_transitions_ids
                         .into_iter()
-                        .filter(|&&(_, in_transition_id)| !is_transition_cond(in_transition_id))
-                        .map(|&(_, in_transition_id)| ColTag::Support(out_transition_id, in_transition_id, None))
+                        .filter(|&&((_, in_transition_id), _)| !is_transition_cond(in_transition_id))
+                        .map(|&((_, in_transition_id), _)| ColTag::Support(out_transition_id, in_transition_id, None))
                         .collect(),
                 );
                 res
             };
-            debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
 
             if terms.len() >= 2 {
                 let expr = RowExpr::new_geq_single_lhs(terms);
@@ -335,15 +263,17 @@ fn encode_problem_lifted(
 }
 
 fn encode_problem_ground(
-    encoder: &LpRelaxEncoder,
+    encoding: &LpRelaxEncoding,
     ctx: &SchedEncoder,
-    groundings: &mut LpRelaxEncodingGroundingsInfo,
-    lifted_supports_sorted: &mut LpRelaxEncodingLiftedSupportsSorted,
+    groundings: &LpRelaxEncodingGroundingsInfo,
     problem: &mut LpRelaxProblem,
 ) {
+    let is_transition_eff = |transition_id| encoding.encoder.transitions.is_pure_eff(transition_id);
+    let is_transition_cond = |transition_id| encoding.encoder.transitions.is_pure_cond(transition_id);
+
     // [Lifted-Ground] Source ground decomposition (a source is present iff one its groundings is)
     {
-        for source in encoder.iter_sources(ctx) {
+        for source in encoding.iter_sources(ctx) {
             let terms = {
                 let mut res = vec![ColTag::PresenceSource(source, None)];
                 res.append(
@@ -356,9 +286,6 @@ fn encode_problem_ground(
                 );
                 res
             };
-            for col_tag in &terms {
-                problem.insert_col(col_tag.clone());
-            }
             if terms.len() >= 2 {
                 let expr = RowExpr::new_eq_single_lhs(terms);
                 problem.push_row(expr);
@@ -368,8 +295,6 @@ fn encode_problem_ground(
             }
         }
     }
-
-    groundings.transitions_sort();
 
     // [Lifted-Ground] Transition ground decomposition
     {
@@ -391,9 +316,6 @@ fn encode_problem_ground(
                 );
                 res
             };
-            for col_tag in &terms {
-                problem.insert_col(col_tag.clone());
-            }
             debug_assert!(terms.len() >= 2);
 
             let expr = RowExpr::new_eq_single_lhs(terms);
@@ -406,10 +328,6 @@ fn encode_problem_ground(
         for (source, iter) in groundings.transitions().iter_all_sourced() {
             let chunkby =
                 iter.chunk_by(|(transition_id, transition_grounding_id, _)| (transition_id, transition_grounding_id));
-
-            let source_prez = encoder
-                .get_source(source, ctx)
-                .map_or(aries_solver::core::Lit::TRUE, |t| t.presence);
 
             for ((&transition_id, &transition_grounding_id), source_groundings_ids) in chunkby.into_iter() {
                 let terms = {
@@ -424,18 +342,21 @@ fn encode_problem_ground(
                     );
                     res
                 };
-                debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
                 debug_assert!(terms.len() >= 2);
-
-                let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
 
                 // Same as for the lifted case:
                 // It is possible that sometimes the presence literal of the transition differs from that of the source
                 // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
                 // However, the latter must always imply the former.
 
-                debug_assert!(ctx.store.state.implies(transition_prez, source_prez));
-                let presences_equivalent = ctx.store.state.implies(source_prez, transition_prez);
+                debug_assert!(ctx.store.state.implies(
+                    encoding.get_transition_prez(transition_id, ctx),
+                    encoding.get_source_prez(source, ctx)
+                ));
+                let presences_equivalent = ctx.store.state.implies(
+                    encoding.get_source_prez(source, ctx),
+                    encoding.get_transition_prez(transition_id, ctx),
+                );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
                 let expr = if presences_equivalent {
@@ -449,19 +370,6 @@ fn encode_problem_ground(
         }
     }
 
-    let is_transition_eff = |transition_id| encoder.transitions.is_pure_eff(transition_id);
-    let is_transition_cond = |transition_id| encoder.transitions.is_pure_cond(transition_id);
-
-    let time = std::time::Instant::now();
-    println!("|--- Ground part encoding construction: support building started");
-
-    groundings.supports_build(lifted_supports_sorted /*is_transition_eff*/);
-
-    println!(
-        "|--- Ground part encoding construction: support building ended (run time {})",
-        time.elapsed().as_secs_f64()
-    );
-
     // [Ground] Support between two (ground) transitions implies presence of both of them
     // NOTE: There's no need to enforce theses constraints for all cases, as the (ground) inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by (ground) outflow constraints.
@@ -470,12 +378,6 @@ fn encode_problem_ground(
             let Some((out_transition_grounding_id, in_transition_grounding_id)) = transition_groundings_ids else {
                 continue;
             };
-
-            problem.insert_col(ColTag::Support(
-                out_transition_id,
-                in_transition_id,
-                Some((out_transition_grounding_id, in_transition_grounding_id)),
-            ));
 
             if is_transition_cond(in_transition_id) {
                 problem.push_row(RowExpr::new_leq_single_lhs(vec![
@@ -518,9 +420,6 @@ fn encode_problem_ground(
                 );
                 res
             };
-            for col_tag in &terms {
-                problem.insert_col(col_tag.clone());
-            }
 
             let expr = RowExpr::new_eq_single_lhs(terms);
             problem.push_row(expr);
@@ -559,9 +458,8 @@ fn encode_problem_ground(
                 );
                 res
             };
-            debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
 
-            let expr = if !encoder.transitions.includes_recovered_mies() && is_transition_eff(in_transition_id) {
+            let expr = if !encoding.includes_recovered_mies() && is_transition_eff(in_transition_id) {
                 // In the case where we do not recover and use "missing" initial effects,
                 // the inflow constraints for (all) effects are slightly weaker.
                 RowExpr::new_geq_single_lhs(terms)
@@ -572,7 +470,7 @@ fn encode_problem_ground(
             problem.push_row(expr);
         }
 
-        if !encoder.transitions.includes_recovered_mies() {
+        if !encoding.includes_recovered_mies() {
             // In the case where we do not recover and use "missing" initial effects,
             // the inflow constraints for (all) effects are slightly weaker (see above).
             // This is (partially? FIXME[proof?]) compensated by the following constraints,
@@ -644,7 +542,6 @@ fn encode_problem_ground(
                 );
                 res
             };
-            debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
 
             if terms.len() >= 2 {
                 let expr = RowExpr::new_geq_single_lhs(terms);
@@ -700,8 +597,6 @@ fn encode_problem_ground(
     //     debug_assert!(seen.is_sorted());
     // }
 
-    groundings.terms_sort();
-
     // [Ground] At most one of a term's groundings can be active
     {
         let chunkby = groundings
@@ -715,9 +610,6 @@ fn encode_problem_ground(
                 .map(|(_, value)| ColTag::TermGround(term, value))
                 .collect::<Vec<_>>();
 
-            for col_tag in &terms {
-                problem.insert_col(col_tag.clone());
-            }
             debug_assert!(!terms.is_empty());
 
             let expr = RowExpr::new_leq_1(terms);
@@ -746,14 +638,16 @@ fn encode_problem_ground(
                 );
                 res
             };
-            debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
-            debug_assert!(problem.contains_col(&ColTag::TermGround(term, value)));
             debug_assert!(terms.len() >= 2);
 
-            let transition_prez = encoder.transitions.get_prez(transition_id, ctx);
-
-            debug_assert!(ctx.store.state.implies(transition_prez, ctx.store.presence(term)));
-            let presences_equivalent = ctx.store.state.implies(ctx.store.presence(term), transition_prez);
+            debug_assert!(ctx.store.state.implies(
+                encoding.get_transition_prez(transition_id, ctx),
+                ctx.store.presence(term)
+            ));
+            let presences_equivalent = ctx.store.state.implies(
+                ctx.store.presence(term),
+                encoding.get_transition_prez(transition_id, ctx),
+            );
 
             let expr = if presences_equivalent {
                 RowExpr::new_eq_single_lhs(terms)
@@ -781,16 +675,16 @@ fn encode_problem_ground(
                 );
                 res
             };
-            debug_assert!(terms.iter().all(|col_tag| problem.contains_col(col_tag)));
             debug_assert!(terms.len() >= 2);
 
-            let source_prez = encoder
-                .get_source(source, ctx)
-                .map_or(aries_solver::core::Lit::TRUE, |t| t.presence);
-
             debug_assert!(
-                ctx.store.state.implies(source_prez, ctx.store.presence(term))
-                    && ctx.store.state.implies(ctx.store.presence(term), source_prez)
+                ctx.store
+                    .state
+                    .implies(encoding.get_source_prez(source, ctx), ctx.store.presence(term))
+                    && ctx
+                        .store
+                        .state
+                        .implies(ctx.store.presence(term), encoding.get_source_prez(source, ctx))
             );
 
             let expr = RowExpr::new_eq_single_lhs(terms);

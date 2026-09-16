@@ -133,7 +133,7 @@ impl LpRelaxState {
         float_as_exact_int_cst(self.lpmodel.get_column_bounds(col).1)
     }
     fn add_column(&mut self, lb: Option<FloatCst>, ub: Option<FloatCst>) -> LpCol {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         let lb = lb.unwrap_or(FloatCst::MIN);
         let ub = ub.unwrap_or(FloatCst::MAX);
@@ -142,7 +142,7 @@ impl LpRelaxState {
         self.lpmodel.add_column(0., lb..ub, []).unwrap()
     }
     fn add_columns(&mut self, lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)]) -> Vec<LpCol> {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         let lbs_ubs = Vec::from_iter(
             lbs_ubs
@@ -152,7 +152,7 @@ impl LpRelaxState {
         self.lpmodel.add_columns(&lbs_ubs).unwrap()
     }
     fn tighten_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) -> bool {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
         let mut res = false;
 
         let old_lb = self.get_column_lower_bound(col);
@@ -180,7 +180,7 @@ impl LpRelaxState {
         res
     }
     fn change_column(&mut self, col: LpCol, lb: Option<FloatCst>, ub: Option<FloatCst>) {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
         let lb = if let Some(lb) = lb {
             float_as_exact_int_cst(lb)
         } else {
@@ -202,7 +202,7 @@ impl LpRelaxState {
         lb: Option<FloatCst>,
         ub: Option<FloatCst>,
     ) -> LpRow {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
 
         let lb = lb.unwrap_or(FloatCst::MIN);
         let ub = ub.unwrap_or(FloatCst::MAX);
@@ -227,6 +227,7 @@ impl LpRelaxState {
         rows_coefs: &[Vec<(LpCol, FloatCst)>],
         lbs_ubs: &[(Option<FloatCst>, Option<FloatCst>)],
     ) -> Vec<LpRow> {
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
         debug_assert_eq!(rows_coefs.len(), lbs_ubs.len());
         debug_assert!(
             rows_coefs
@@ -268,7 +269,7 @@ impl LpRelaxState {
         coefs: impl Iterator<Item = (LpCol, FloatCst)>,
         sense: LpObjectiveSense,
     ) -> LpCol {
-        assert!(self.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.trail.current_decision_level() == DecLvl::ROOT);
         assert!(self.lpobjective.is_none());
 
         self.lpobjective = Some(LpRelaxObjective {
@@ -489,19 +490,19 @@ impl LpRelax {
     }
 
     pub fn add_var_half_binding(&mut self, var: Var, func: std::sync::Arc<LitToLpLitsBindingFn>) {
-        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lit_to_lplits_binding(var, func);
     }
     pub fn add_col_half_binding(&mut self, col: LpCol, func: std::sync::Arc<LpLitToLitsBindingFn>) {
-        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lplit_to_lits_binding(col, func);
     }
     pub fn add_var_half_binding_default(&mut self, var: Var, col: LpCol) {
-        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lit_to_lplits_binding_default(var, col);
     }
     pub fn add_col_half_binding_default(&mut self, col: LpCol, var: Var) {
-        assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
+        // assert!(self.state.trail.current_decision_level() == DecLvl::ROOT);
         self.bindings.add_lplit_to_lits_binding_default(var, col);
     }
 
@@ -714,8 +715,9 @@ impl Theory for LpRelax {
             }
 
             if !self.config.use_propagation_skips
-                // || self.current_decision_level() == DecLvl::ROOT
-                || model.assumptions_sealed_at().is_some_and(|lvl| lvl == self.current_decision_level())
+                || model
+                    .assumptions_sealed_at()
+                    .is_some_and(|lvl| lvl >= self.current_decision_level())
             {
                 println!(
                     "|- Solving LP at decision level {:?} (num events: {:?})",

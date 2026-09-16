@@ -4,10 +4,9 @@ use aries_solver::prelude::{Domains, Lit};
 use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
 use crate::encoder::SchedEncoder;
-use crate::ext::lprelax::LpRelaxEncoder;
 
 pub trait LpRelaxReasonerWrapperTrait: LpRelaxReasonerWrapperTraitInner {
-    fn new_wrapped(encoder: LpRelaxEncoder, ctx: SchedEncoder) -> LpRelaxReasonerWrapped<Self>;
+    fn new_wrapped(ctx: SchedEncoder, num_assumptions: usize) -> LpRelaxReasonerWrapped<Self>;
 }
 
 pub trait LpRelaxReasonerWrapperTraitInner: Clone + Send + 'static {
