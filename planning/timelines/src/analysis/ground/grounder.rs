@@ -58,13 +58,7 @@ impl Grounder {
             .collect();
 
         // all concrete sources by default
-        let concrete_sources = ctx
-            .sched
-            .tasks
-            .iter()
-            .enumerate()
-            .map(|(task_id, _)| TaskId::from_int(task_id as u32))
-            .collect::<Vec<_>>();
+        let concrete_sources = ctx.sched.tasks.task_ids().collect::<Vec<_>>();
 
         let mut program = GrounderProgram::new_empty();
 

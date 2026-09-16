@@ -49,6 +49,11 @@ impl Tasks {
     pub fn iter(&self) -> impl Iterator<Item = &Task> {
         self.tasks.iter().map(|(_k, v)| v)
     }
+
+    /// Returns an iterator over all task IDs.
+    pub fn task_ids(&self) -> impl Iterator<Item = TaskId> {
+        self.tasks.iter().map(|(k, _v)| k)
+    }
 }
 
 impl Index<TaskId> for Tasks {
