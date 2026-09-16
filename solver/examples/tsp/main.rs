@@ -39,7 +39,11 @@ struct Opt {
     #[arg(long)]
     no_lp: bool,
     /// If set, print some statistics and evolution of the cost
+<<<<<<< HEAD
     #[arg(short, long)]
+=======
+    #[arg(long = "verbose")]
+>>>>>>> 6f6f8aa3510d6069d28641597c522e0f72a27b68
     verbose: bool,
     /// If set, the solver will crash if it does not find the given optimum value.
     #[arg(long)]
