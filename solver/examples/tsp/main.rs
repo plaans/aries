@@ -38,6 +38,9 @@ struct Opt {
     /// If set, disable the lp reasonner inside aries
     #[arg(long = "no-lp")]
     no_lp: bool,
+    /// If set, the solver will crash if it does not find the given optimum value.
+    #[arg(long)]
+    expected_value: Option<f64>,
 }
 
 /// Represents a square matrix with an empty diagonal
@@ -110,7 +113,7 @@ const SCALE_FACTOR: f64 = 1000.0;
 /// Constraints are named as in the paper
 ///
 /// [ref-doc]: https://matmod.ch/lpl/PDF/tsp-2.pdf
-fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
+fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
     // Used for report using benchmark
     let start_time = std::time::Instant::now();
     let mut solution_history: Vec<IntermediateResult> = Default::default();
@@ -180,7 +183,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
 
     println!("Solving...");
 
-    let limit = if let Some(timeout) = opt.timeout {
+    let limit = if let Some(timeout) = args.timeout {
         SearchLimit::duration_secs(timeout)
     } else {
         SearchLimit::None
@@ -193,7 +196,7 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
     // create the solver and solve to optimal (with 180s timeout)
     let mut solver = Solver::new(model);
 
-    if opt.no_lp {
+    if args.no_lp {
         solver.reasoners.lp.deactivate();
     } else {
         solver.reasoners.lp.activate();
@@ -255,10 +258,10 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
     solver.print_stats();
 
     // Allow us to use aries-bench
-    if let Some(report_dir) = opt.report.as_ref() {
+    if let Some(report_dir) = args.report.as_ref() {
         let problem = Problem {
             name: pb.name.clone(),
-            timeout: opt
+            timeout: args
                 .timeout
                 .map(|t| Duration::from_secs(t as u64))
                 .unwrap_or(Duration::MAX),
@@ -292,7 +295,9 @@ fn solve_tsp(pb: &TspProblem, opt: &Opt) -> Option<TspSolution> {
     solution_opt
 }
 
-fn solve_tsp_from_file<P>(path: P, opt: &Opt) -> Option<TspSolution>
+const TOLERANCE: f64 = 1e-3;
+
+fn solve_tsp_from_file<P>(path: P, args: &Opt) -> Option<TspSolution>
 where
     P: AsRef<Path>,
 {
@@ -302,13 +307,20 @@ where
 
     // println!("Problem: {:?}", pb);
 
-    let solution_opt = solve_tsp(&pb, opt);
+    let solution_opt = solve_tsp(&pb, args);
 
     if let Some(solution) = solution_opt.as_ref() {
         println!(
             "Optimal solution found with cost {}: {:?}",
             solution.cost, solution.tour_order
         );
+
+        if let Some(optimal) = args.expected_value {
+            assert!(
+                (optimal - solution.cost).abs() < TOLERANCE,
+                "Optimal cost differs from the expected"
+            )
+        }
     } else {
         println!("Timeout before reaching an optimal solution");
     }
@@ -317,11 +329,11 @@ where
 }
 
 fn main() {
-    let opt = Opt::parse();
+    let args = Opt::parse();
 
-    for file in opt.files.clone() {
+    for file in args.files.clone() {
         // println!("{:?}", file);
-        solve_tsp_from_file(file, &opt);
+        solve_tsp_from_file(file, &args);
     }
 }
 
@@ -330,76 +342,96 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_burma14() {
-        let opt = Opt {
+    fn test_tsp_example() {
+        let args = Opt {
             files: Vec::new(),
-            timeout: Some(300),
+            timeout: None,
             report: None,
             no_lp: false,
+            expected_value: None,
         };
 
-        let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/burma14.tsp", &opt);
+        {
+            let problem = TspProblem {
+                name: String::from("example 1"),
+                n: 3,
+                weights: vec![vec![0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0], vec![1.0, 1.0, 0.0]],
+            };
 
-        if let Some(solution) = solution_opt {
-            assert_eq!(solution.cost, 3323.0, "Optimal cost differs from the expected");
+            let expected_value = 3.0;
 
-            let expected_tour_order1 = vec![1, 2, 14, 3, 4, 5, 6, 12, 7, 13, 8, 11, 9, 10];
-            let expected_tour_order2 = vec![1, 10, 9, 11, 8, 13, 7, 12, 6, 5, 4, 3, 14, 2];
+            let expected_tour_order_1 = vec![1, 2, 3];
+            let expected_tour_order_2 = vec![1, 3, 2];
 
-            assert!(
-                solution.tour_order == expected_tour_order1 || solution.tour_order == expected_tour_order2,
-                "Unvalid tour order"
-            )
-        } else {
-            println!("Timeout reached, solution can't be tested");
+            if let Some(solution) = solve_tsp(&problem, &args) {
+                assert_eq!(solution.cost, expected_value, "Optimal cost differs from the expected");
+
+                assert!(
+                    solution.tour_order == expected_tour_order_1 || solution.tour_order == expected_tour_order_2,
+                    "Unvalid tour order"
+                )
+            } else {
+                panic!("A solution for {} should have been found", problem.name);
+            }
         }
-    }
 
-    #[ignore = "Too long to run by default"]
-    #[test]
-    fn test_ulysses16() {
-        let opt = Opt {
-            files: Vec::new(),
-            timeout: Some(300),
-            report: None,
-            no_lp: false,
-        };
+        {
+            let problem = TspProblem {
+                name: String::from("example 2"),
+                n: 4,
+                weights: vec![
+                    vec![0.0, 1.0, 2.0, 1.0],
+                    vec![1.0, 0.0, 1.0, 2.0],
+                    vec![2.0, 1.0, 0.0, 1.0],
+                    vec![1.0, 2.0, 1.0, 0.0],
+                ],
+            };
 
-        let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/ulysses16.tsp", &opt);
+            let expected_value = 4.0;
 
-        if let Some(solution) = solution_opt {
-            assert_eq!(solution.cost, 6859.0, "Optimal cost differs from the expected");
+            let expected_tour_order_1 = vec![1, 2, 3, 4];
+            let expected_tour_order_2 = vec![1, 4, 3, 2];
 
-            let expected_tour_order1 = vec![1, 14, 13, 12, 7, 6, 15, 5, 11, 9, 10, 16, 3, 2, 4, 8];
-            let expected_tour_order2 = vec![1, 8, 4, 2, 3, 16, 10, 9, 11, 5, 15, 6, 7, 12, 13, 14];
+            if let Some(solution) = solve_tsp(&problem, &args) {
+                assert_eq!(solution.cost, expected_value, "Optimal cost differs from the expected");
 
-            assert!(
-                solution.tour_order == expected_tour_order1 || solution.tour_order == expected_tour_order2,
-                "Unvalid tour order"
-            )
-        } else {
-            println!("Timeout reached, solution can't be tested");
+                assert!(
+                    solution.tour_order == expected_tour_order_1 || solution.tour_order == expected_tour_order_2,
+                    "Unvalid tour order"
+                )
+            } else {
+                panic!("A solution for {} should have been found", problem.name);
+            }
         }
-    }
 
-    #[ignore = "Too long to run by default"]
-    #[test]
-    fn test_gr17() {
-        let opt = Opt {
-            files: Vec::new(),
-            timeout: Some(300),
-            report: None,
-            no_lp: false,
-        };
+        {
+            let problem = TspProblem {
+                name: String::from("example 3"),
+                n: 5,
+                weights: vec![
+                    vec![0.0, 2.5, 9.1, 4.0, 1.5],
+                    vec![2.5, 0.0, 3.2, 8.0, 6.0],
+                    vec![9.1, 3.2, 0.0, 2.1, 7.3],
+                    vec![4.0, 8.0, 2.1, 0.0, 3.5],
+                    vec![1.5, 6.0, 7.3, 3.5, 0.0],
+                ],
+            };
 
-        println!("{}", PATH_INSTANCES.to_owned() + "/gr17.tsp");
+            let expected_value = 12.8;
 
-        let solution_opt = solve_tsp_from_file(PATH_INSTANCES.to_owned() + "/gr17.tsp", &opt);
+            let expected_tour_order_1 = vec![1, 5, 4, 3, 2];
+            let expected_tour_order_2 = vec![1, 2, 3, 4, 5];
 
-        if let Some(solution) = solution_opt {
-            assert_eq!(solution.cost, 2085.0, "Optimal cost differs from the expected");
-        } else {
-            println!("Timeout reached, solution can't be tested");
+            if let Some(solution) = solve_tsp(&problem, &args) {
+                assert_eq!(solution.cost, expected_value, "Optimal cost differs from the expected");
+
+                assert!(
+                    solution.tour_order == expected_tour_order_1 || solution.tour_order == expected_tour_order_2,
+                    "Invalid tour order"
+                );
+            } else {
+                panic!("A solution for {} should have been found", problem.name);
+            }
         }
     }
 }
