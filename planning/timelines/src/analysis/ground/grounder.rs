@@ -9,8 +9,8 @@ use aries_solver::prelude::*;
 use idmap::{DirectIdMap, intid::IntegerId};
 use itertools::Itertools;
 
+use crate::analysis::{Source, SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::encoder::{CondId, SchedEncoder};
-use crate::ext::{Source, SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::{Effect, EffectId, HasValueAt, Task, TaskId};
 
 use std::collections::HashSet;

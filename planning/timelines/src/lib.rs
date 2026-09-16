@@ -1,9 +1,9 @@
+pub mod analysis;
 pub mod boxes;
 pub mod constraints;
 mod effects;
 pub mod encoder;
 pub mod explain;
-pub mod ext;
 pub mod symbols;
 mod tasks;
 
@@ -25,11 +25,11 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries_solver::model::Model<Sym>;
+use crate::analysis::ground::SourcesGrounderSimple;
 use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
-use crate::ext::ground::SourcesGrounderSimple;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 

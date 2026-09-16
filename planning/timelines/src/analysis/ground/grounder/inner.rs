@@ -7,7 +7,7 @@ use idmap::DirectIdMap;
 
 use std::collections::HashMap;
 
-use crate::{TaskId, ext::SourceGrounding};
+use crate::{TaskId, analysis::SourceGrounding};
 
 use super::types::*;
 

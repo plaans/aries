@@ -1,8 +1,8 @@
 use aries_solver::lang::ModelView;
 use aries_solver::prelude::*;
+use aries_timelines::analysis::SourceGrounding;
 use aries_timelines::boxes::Segment;
 use aries_timelines::constraints::HasValueAt;
-use aries_timelines::ext::SourceGrounding;
 use aries_timelines::symbols::ObjectEncoding;
 use aries_timelines::*;
 use idmap::intid::IntegerId;

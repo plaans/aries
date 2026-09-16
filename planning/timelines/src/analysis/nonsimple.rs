@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use crate::{
     EffectId, IntTerm,
+    analysis::Source,
     encoder::{CondId, SchedEncoder},
-    ext::Source,
 };
 
 /// An effect is considered "nonsimple" when one of the following holds:
