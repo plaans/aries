@@ -215,13 +215,20 @@ class ApeRunner:
             True if validation succeeds, False otherwise
         """
         try:
-            self.run(
-                "validate",
-                str(plan_file),
-                "--expected-objective",
-                expected_objective,
-                timeout=timeout,
-            )
+            if "." not in expected_objective:
+                self.run(
+                    "validate",
+                    str(plan_file),
+                    "--expected-objective",
+                    expected_objective,
+                    timeout=timeout,
+                )
+            else:  # expected objective is of the form 123.4 (which we do not support yet)
+                self.run(
+                    "validate",
+                    str(plan_file),
+                    timeout=timeout,
+                )
             return True
         except subprocess.CalledProcessError, subprocess.TimeoutExpired:
             return False

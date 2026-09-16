@@ -160,6 +160,9 @@ pub fn encode_plan_optimization_problem(
     free_actions: BTreeMap<ActionRef, u32>,
     options: &Options,
 ) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
+    let model = planx::preprocessing::convert_reals_to_int(model)?;
+    let model = &model;
+
     let mut encoding = Encoding::new();
 
     // build encoding of all objects: associates each object to a int value and each type to a range of values

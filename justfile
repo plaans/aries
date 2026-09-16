@@ -80,6 +80,7 @@ ci-pddl-parse-all lift="false" filter="d":
         | grep -v temporal-machine-shop \
         | grep -v cyber-security-sequential-satisficing-strips \
         | grep -v organic-synthesis-split-sequential-satisficing \
+        # | grep -v crew-planning-net-benefit \
     `; do
         echo $f
         target/ci/pddl-parser $LIFT $f > /dev/null

@@ -86,12 +86,12 @@ impl VarView for ScaledVarImpl {
 
     fn upper_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom._upper_bound(self.var) * self.factor
+        cst_long_to_int_clamped(dom._upper_bound(self.var) as LongCst * self.factor as LongCst)
     }
 
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom._lower_bound(self.var) * self.factor
+        cst_long_to_int_clamped(dom._lower_bound(self.var) as LongCst * self.factor as LongCst)
     }
 }
 
@@ -114,7 +114,7 @@ impl Boundable for ScaledVarImpl {
 }
 
 impl VarView for ScaledVar {
-    type Value = IntCst; // TODO: this should be LongCst to avoid possible overflows
+    type Value = IntCst;
 
     fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
         ScaledVarImpl::from(*self).upper_bound(dom)

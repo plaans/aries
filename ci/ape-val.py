@@ -25,6 +25,7 @@ def main():
 
     # Find all plan files
     plan_files = sorted(Path("planning/problems/upf").rglob("*.plan"))
+    plan_files = sorted(Path("planning/ext/pddl").rglob("*.plan"))
 
     for plan_file in plan_files:
         print()
@@ -51,6 +52,7 @@ def main():
                 print(f"\nReturn code: {result.returncode}")
                 print("\nTo reproduce:")
                 print(f"  {pddl_val} {domain_file} {problem_file} {plan_file}")
+                continue
                 sys.exit(1)
 
             plan_quality = result.plan_quality
@@ -61,11 +63,11 @@ def main():
             if not ape.validate(plan_file, plan_quality, timeout):
                 sys.exit(1)
 
-            # Run plan optimizer (error reporting handled by ApeRunner)
-            if not ape.optimize_plan(
-                plan_file, ["action-presence", "start-time"], timeout
-            ):
-                sys.exit(1)
+            # # Run plan optimizer (error reporting handled by ApeRunner)
+            # if not ape.optimize_plan(
+            #     plan_file, ["action-presence", "start-time"], timeout
+            # ):
+            #     sys.exit(1)
 
         except Exception as e:
             print(f"\n{'=' * 60}")

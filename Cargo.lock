@@ -1629,6 +1629,7 @@ dependencies = [
  "hashbrown 0.16.1",
  "idmap",
  "itertools 0.14.0",
+ "num-integer",
  "num-rational",
  "regex",
  "smallvec",

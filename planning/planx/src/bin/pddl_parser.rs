@@ -54,5 +54,7 @@ fn main() -> Res<()> {
 
     println!("{model}");
 
+    planx::preprocessing::convert_reals_to_int(&model)?;
+
     Ok(())
 }
