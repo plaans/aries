@@ -123,6 +123,12 @@ impl GrounderProgram {
         head: (&GrounderPredicateId, impl AsRef<[GrounderTerm]>),
         body: &[(&GrounderPredicateId, impl AsRef<[GrounderTerm]>)],
     ) {
+        if body.is_empty() {
+            // a fact is a special case of a rule with an empty body (always applicable)
+            self.add_fact(head);
+            return;
+        }
+
         let head = GrounderAtom {
             grounder_predicate_id: head.0.clone(),
             terms: head.1.as_ref().to_vec(),

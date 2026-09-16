@@ -213,15 +213,11 @@ impl Grounder {
             goal_rule_body.push((GrounderPredicateId::Fluent(goal.state_var.fluent.clone()), terms));
         }
 
-        if !goal_rule_body.is_empty() {
-            let goal_rule_body = goal_rule_body
-                .iter()
-                .map(|(datalog_predicate_id, terms)| (datalog_predicate_id, terms.as_slice()))
-                .collect::<Vec<_>>();
-            program.add_rule((&GrounderPredicateId::Goal, &[]), &goal_rule_body);
-        } else {
-            program.add_fact((&GrounderPredicateId::Goal, &[]));
-        }
+        let goal_rule_body = goal_rule_body
+            .iter()
+            .map(|(datalog_predicate_id, terms)| (datalog_predicate_id, terms.as_slice()))
+            .collect::<Vec<_>>();
+        program.add_rule((&GrounderPredicateId::Goal, &[]), &goal_rule_body);
     }
 
     fn add_all_actions_applicability_and_effects_rules(
@@ -344,15 +340,11 @@ impl Grounder {
                 }),
         );
 
-        if !applicability_rule_body.is_empty() {
-            let applicability_rule_body = applicability_rule_body
-                .iter()
-                .map(|(datalog_predicate_id, terms)| (datalog_predicate_id, terms.as_slice()))
-                .collect::<Vec<_>>();
-            program.add_rule(applicability_rule_head, &applicability_rule_body);
-        } else {
-            program.add_fact(applicability_rule_head);
-        }
+        let applicability_rule_body = applicability_rule_body
+            .iter()
+            .map(|(datalog_predicate_id, terms)| (datalog_predicate_id, terms.as_slice()))
+            .collect::<Vec<_>>();
+        program.add_rule(applicability_rule_head, &applicability_rule_body);
 
         // for each effect that a rule that enables the fact when the action is applicable
         for (_, eff) in effects.iter().filter(|(eff_id, _)| !effects_to_ignore.contains(eff_id)) {
