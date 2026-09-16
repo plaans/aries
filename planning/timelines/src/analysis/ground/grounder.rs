@@ -43,7 +43,7 @@ pub struct Grounder {
 
 impl Grounder {
     /// WARNING: Assumes the causal links in the encoder to be already populated.
-    ///          Indeed, the goals of the problem are otherwise inacessible and won't participate in the goal rule
+    ///          Indeed, the goals of the problem are otherwise inaccessible and won't participate in the goal rule
     ///          (which will thus be a fact and result in even trivially inconsistent groundings to be computed).
     pub fn from(ctx: &SchedEncoder) -> Self {
         let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
