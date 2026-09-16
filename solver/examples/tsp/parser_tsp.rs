@@ -54,13 +54,15 @@ impl GeoPoint {
     }
 }
 
-pub(crate) fn parse_tsp(input: &str) -> TspProblem {
+pub(crate) fn parse_tsp(input: &str, verbose: bool) -> TspProblem {
     let words = &mut utils::Parser::new(input);
 
     words.ignore_until_double_dot(String::from("NAME"));
 
     let name: String = words.pop();
-    println!("Parsing {}", name);
+    if verbose {
+        println!("Parsing {}", name);
+    }
 
     words.ignore_until_double_dot(String::from("TYPE"));
     words.ignore_expected(String::from("TSP"));
@@ -196,7 +198,9 @@ pub(crate) fn parse_tsp(input: &str) -> TspProblem {
 
     // println!("Weights:\n {:?}", weights);
 
-    println!("End parsing");
+    if verbose {
+        println!("End parsing");
+    }
 
     TspProblem { name, n, weights }
 }

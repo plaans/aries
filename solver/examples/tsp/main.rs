@@ -29,15 +29,18 @@ struct Opt {
     /// If no arguments are given, the default folder will be used: /examples/tsp/instances
     files: Vec<PathBuf>,
     /// maximum runtime, in seconds.
-    #[arg(long = "timeout")]
+    #[arg(long)]
     timeout: Option<u32>,
     /// If set, a summary of the run will be saved in the indicated directory.
     /// This option is intended to ease the collection of benchmark results with `aries-bench`
-    #[arg(long = "report")]
+    #[arg(long)]
     report: Option<String>,
     /// If set, disable the lp reasonner inside aries
-    #[arg(long = "no-lp")]
+    #[arg(long)]
     no_lp: bool,
+    /// If set, print some statistics and evolution of the cost
+    #[arg(short, long)]
+    verbose: bool,
     /// If set, the solver will crash if it does not find the given optimum value.
     #[arg(long)]
     expected_value: Option<f64>,
@@ -181,7 +184,9 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
 
     model.enforce(eq(total_cost, total_cost_var));
 
-    println!("Solving...");
+    if args.verbose {
+        println!("Solving...");
+    }
 
     let limit = if let Some(timeout) = args.timeout {
         SearchLimit::duration_secs(timeout)
@@ -206,7 +211,9 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
         total_cost_var,
         |obj, _| {
             best_cost = Some((obj as f64 / SCALE_FACTOR) as i64);
-            println!("New solution with cost: {}", best_cost.unwrap());
+            if args.verbose {
+                println!("New solution with cost: {}", best_cost.unwrap());
+            }
             solution_history.push(IntermediateResult {
                 timestamp: start_time.elapsed(),
                 objective: best_cost.unwrap(),
@@ -215,7 +222,9 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
         limit,
     ) {
         Ok(Some((_, sol))) => {
-            println!("== Optimal solution found ==");
+            if args.verbose {
+                println!("== Optimal solution found ==");
+            }
 
             let mut cost = 0.0;
 
@@ -249,13 +258,15 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
             None
         }
         Err(_) => {
-            println!("timeout");
+            println!("Timeout");
             status = SolveStatus::Timeout;
             None
         }
     };
 
-    solver.print_stats();
+    if args.verbose {
+        solver.print_stats();
+    }
 
     // Allow us to use aries-bench
     if let Some(report_dir) = args.report.as_ref() {
@@ -303,7 +314,7 @@ where
 {
     let problem_str = fs::read_to_string(path).expect("No such file");
 
-    let pb = parse_tsp(&problem_str);
+    let pb = parse_tsp(&problem_str, args.verbose);
 
     // println!("Problem: {:?}", pb);
 
@@ -349,6 +360,7 @@ mod test {
             report: None,
             no_lp: false,
             expected_value: None,
+            verbose: true,
         };
 
         {
