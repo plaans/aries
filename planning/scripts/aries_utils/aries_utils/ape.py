@@ -4,7 +4,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -99,7 +98,7 @@ class ApeRunner:
     def run(
         self,
         *args: str,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
         check: bool = True,
         capture_output: bool = True,
     ) -> ApeResult:
