@@ -30,7 +30,7 @@ impl std::fmt::Display for GrounderPredicateId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum GrounderTerm {
     Var(IntTerm),
     Cst(IntCst),

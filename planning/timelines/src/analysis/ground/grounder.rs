@@ -58,7 +58,7 @@ impl Grounder {
             .collect();
 
         // all concrete sources by default
-        let concrete_sources = ctx.sched.tasks.task_ids().collect::<Vec<_>>();
+        let concrete_sources = ctx.sched.tasks.task_ids().collect_vec();
 
         let mut program = GrounderProgram::new_empty();
 
@@ -299,6 +299,12 @@ impl Grounder {
         let (task_id, task) = task;
         let (conditions_to_ignore, effects_to_ignore) = conditions_and_effects_to_ignore;
 
+        // collection of terms that, if all true, implies that the task is applicable
+        let mut applicability_rule_body = vec![];
+
+        // datalog term representing whether a task is applicable
+        // it consists of a unique predicate name for the task that takes one parameter for each of the task's arguments
+        // Here we construct the rule head, and add application condition that each of its variable parameters is within its domain.
         let applicability_rule_head = (
             &GrounderPredicateId::ActionApplicable(task_id),
             &task
@@ -308,30 +314,24 @@ impl Grounder {
                     if t.is_cst() {
                         GrounderTerm::Cst(t.constant)
                     } else {
-                        GrounderTerm::Var(*t)
+                        let var = GrounderTerm::Var(*t);
+                        // `var` is a variable representing this parameter.
+                        // Since it is a variable, we also add to the applicability body, a predicate stating
+                        // that it must be within its bounds.
+                        // This captures type information on the action parameters (which is encoded in the domain of the variable).
+                        let dom = ctx.sched.bounds(*t);
+                        // record that we need a predicate for encoding this particular domain.
+                        Self::add_domain_fact_for_vardom(program, dom, cache_seen_doms);
+                        // add term in body to enforce the bounds of the variable.
+                        applicability_rule_body.push((GrounderPredicateId::Domain(dom), vec![var]));
+                        var
                     }
                 })
                 .collect_vec(),
         );
 
-        let mut applicability_rule_body = vec![];
-
-        applicability_rule_body.extend(
-            task.args
-                .iter()
-                .filter_map(|t| {
-                    if t.is_cst() {
-                        None
-                    } else {
-                        Some((GrounderTerm::Var(*t), ctx.sched.bounds(t)))
-                    }
-                })
-                .map(|(t, vardom)| {
-                    Self::add_domain_fact_for_vardom(program, vardom, cache_seen_doms);
-
-                    (GrounderPredicateId::Domain(vardom), vec![t])
-                }),
-        );
+        // translates all conditions to datalog terms and add them to the applicability conditions
+        // this ignores conditions that were previously flagged as non-translatable
         applicability_rule_body.extend(
             conditions
                 .iter()
@@ -354,6 +354,7 @@ impl Grounder {
             program.add_fact(applicability_rule_head);
         }
 
+        // for each effect that a rule that enables the fact when the action is applicable
         for (_, eff) in effects.iter().filter(|(eff_id, _)| !effects_to_ignore.contains(eff_id)) {
             let effect_rule_head = {
                 let terms = collect_effect_datalog_terms(eff).unwrap();
