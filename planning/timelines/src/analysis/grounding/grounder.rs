@@ -54,7 +54,7 @@ impl Grounder {
             .iter()
             .map(|t| ctx.sched.bounds(t).0..=ctx.sched.bounds(t).1)
             .multi_cartesian_product()
-            .map(ParametersAssignment)
+            .map(ParametersAssignment::from)
             .collect();
 
         // all concrete sources by default

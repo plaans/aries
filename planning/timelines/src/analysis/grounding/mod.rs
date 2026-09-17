@@ -1,6 +1,7 @@
 mod grounder;
 
 use aries_solver::prelude::IntCst;
+use smallvec::SmallVec;
 use std::{collections::BTreeMap, sync::Arc};
 
 use crate::{TaskId, encoder::SchedEncoder};
@@ -9,11 +10,11 @@ use crate::{TaskId, encoder::SchedEncoder};
 ///
 /// Given the `n` (ordered) parameters of a task, it provides the `n` constant values that the parameters will take (typically in a particular grounding).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ParametersAssignment(Vec<IntCst>);
+pub struct ParametersAssignment(SmallVec<[IntCst; 4]>);
 
-impl From<Vec<IntCst>> for ParametersAssignment {
-    fn from(value: Vec<IntCst>) -> Self {
-        Self(value)
+impl<T: Into<SmallVec<[IntCst; 4]>>> From<T> for ParametersAssignment {
+    fn from(value: T) -> Self {
+        Self(value.into())
     }
 }
 impl ParametersAssignment {
