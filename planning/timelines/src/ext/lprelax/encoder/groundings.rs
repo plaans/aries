@@ -12,151 +12,14 @@ use crate::IntTerm;
 use crate::encoder::SchedEncoder;
 use crate::ext::Source;
 use crate::ext::lprelax::LpRelaxEncoder;
-use crate::ext::lprelax::encoding::groundings::utils::merge_join_chunks_by_key;
-use crate::ext::lprelax::encoding::lifted::LpRelaxEncodingLiftedSupportsSorted;
-use crate::ext::lprelax::transitions::{TransitionGroundingId, TransitionId};
+use crate::ext::lprelax::encoder::supports::Supports;
+use crate::ext::lprelax::transitions::{TransitionId};
+use crate::ext::lprelax::transitions::ground::*;
 use crate::ext::{SourceGrounding, SourceGroundingId};
+use utils::merge_join_chunks_by_key;
 
 #[derive(Clone, Default)]
-pub(super) struct LpRelaxEncodingGroundingsInfo {
-    pub(super) ready: bool,
-    sources: SourcesGroundingsInfo,
-    state_vars: StateVarsGroundingsInfo,
-    transitions: TransitionsGroundingsInfo,
-    terms: TermsGroundingsInfo,
-    supports: SupportsGroundingsInfo,
-}
-
-impl LpRelaxEncodingGroundingsInfo {
-    // Interns a grounding of a source.
-    // WARNING: adding duplicate groundings (for the same source) will result in a panic (in debug mode).
-    //
-    // Does not do anything relating to ground supports.
-    pub fn post_ground_source(
-        &mut self,
-        source: Source,
-        source_grounding: SourceGrounding,
-        encoder: &LpRelaxEncoder,
-        ctx: &SchedEncoder,
-        doms: Option<&crate::Domains>,
-    ) {
-        self.ready = false;
-
-        // Will panic (in debug mode) if the source and the grounding have already been interned.
-        let source_grounding_id = self.sources.post_ground_source(source, source_grounding.clone());
-
-        // Intern each of the variable assignments in the source grounding,
-        // marking each of them as appearing in it.
-        {
-            let source_terms = encoder.get_source_terms(source, ctx);
-
-            for (i, &term) in source_terms.iter().enumerate() {
-                let value = source_grounding[i];
-                if !term.is_cst() {
-                    self.terms
-                        .post_for_ground_source(term, value, source, source_grounding_id);
-                }
-            }
-        }
-
-        // For each transition of the source, intern the corresponding grounding,
-        // marking each of them as being appearing in the source grounding.
-        // Also mark each of the variable assignments as appearing in the corresponding transition groundings.
-        {
-            for &transition_id in encoder.transitions.of_source(source) {
-                let transition_grounding =
-                    encoder.get_transition_terms_terms_eval_in_ground_source(transition_id, &source_grounding, ctx);
-                let transition_grounding_id = TransitionGroundingId {
-                    state_var_grounding_id: self.state_vars.post_ground_state_var(
-                        &encoder.transitions.get_state_var(transition_id, ctx).fluent,
-                        &transition_grounding.args,
-                    ),
-                    valfrom: transition_grounding.valfrom,
-                    valto: transition_grounding.valto,
-                };
-
-                {
-                    let transition_terms = encoder.get_transition_terms(transition_id, ctx);
-
-                    for (&term, &value) in transition_terms.args.iter().zip(&transition_grounding.args) {
-                        if !term.is_cst() {
-                            self.terms
-                                .post_for_ground_transition(term, value, transition_id, transition_grounding_id);
-                        }
-                    }
-                    if transition_terms.valfrom.is_some_and(|term| !term.is_cst()) {
-                        self.terms.post_for_ground_transition(
-                            transition_terms.valfrom.unwrap(),
-                            transition_grounding.valfrom.unwrap(),
-                            transition_id,
-                            transition_grounding_id,
-                        );
-                    }
-                    if transition_terms.valto.is_some_and(|term| !term.is_cst()) {
-                        self.terms.post_for_ground_transition(
-                            transition_terms.valto.unwrap(),
-                            transition_grounding.valto.unwrap(),
-                            transition_id,
-                            transition_grounding_id,
-                        );
-                    }
-                }
-
-                self.transitions.post_ground_transition(
-                    transition_id,
-                    transition_grounding_id,
-                    source,
-                    source_grounding_id,
-                );
-            }
-        }
-    }
-
-    pub(super) fn transitions_sort(&mut self) {
-        self.transitions.sort_for_all();
-    }
-    pub(super) fn terms_sort(&mut self) {
-        self.terms.sort_and_merge_pending_sources();
-        self.terms.sort_and_merge_pending_transitions();
-    }
-    // #[allow(dead_code)]
-    // pub fn sort_all(&mut self) {
-    //     self.terms.sort_and_merge_pending_sources();
-    //     self.terms.sort_and_merge_pending_transitions();
-    //
-    //     self.transitions.sort_for_all();
-    // }
-    pub(super) fn supports_build(&mut self, lifted_supports_sorted: &LpRelaxEncodingLiftedSupportsSorted) {
-        self.supports = SupportsGroundingsInfo::from(lifted_supports_sorted, &self.transitions);
-    }
-
-    pub(super) fn mark_ready(&mut self) {
-        self.ready = true;
-    }
-    // pub(super) fn mark_unready(&mut self) {
-    //     self.ready = false;
-    // }
-    #[allow(dead_code)]
-    pub fn is_ready(&self) -> bool {
-        self.ready
-    }
-
-    pub fn sources(&self) -> &SourcesGroundingsInfo {
-        &self.sources
-    }
-    pub fn transitions(&self) -> &TransitionsGroundingsInfo {
-        &self.transitions
-    }
-    pub fn terms(&self) -> &TermsGroundingsInfo {
-        &self.terms
-    }
-    pub fn supports(&self) -> &SupportsGroundingsInfo {
-        &self.supports
-    }
-}
-
-#[derive(Clone, Default)]
-pub(super) struct SourcesGroundingsInfo {
+pub(crate) struct SourcesGroundingsInfo {
     /// First element: list of (unique) groundings of the "empty source" (i.e. groundings corresponding to the "initial/final" action)
     /// Second element: list of (unique) groundings of a "concrete source" (action/task)
     entries: (
@@ -174,7 +37,7 @@ impl SourcesGroundingsInfo {
     /// WARNING: adding duplicate groundings (for the same source) will result in a panic (in debug mode).
     ///
     /// Does not do anything relating to ground supports.
-    fn post_ground_source(&mut self, source: Source, source_grounding: SourceGrounding) -> SourceGroundingId {
+    pub fn post_ground_source(&mut self, source: Source, source_grounding: SourceGrounding) -> SourceGroundingId {
         #[cfg(debug_assertions)]
         debug_assert!(!self.groundings.contains_key(&(source, source_grounding.clone())));
 
@@ -246,7 +109,7 @@ impl<'a> std::hash::Hash for StateVarGroundingLookup<'a> {
     }
 }
 #[derive(Clone, Default)]
-pub(super) struct StateVarsGroundingsInfo {
+pub(crate) struct StateVarsGroundingsInfo {
     fluents_ids: HashMap<crate::Sym, FluentId>,
     /// Stores ids of state variable groundings (they are used in transition grounding ids as the first element of the triple)
     entries: hashbrown::HashMap<(FluentId, StateVarGrounding), StateVarGroundingId>,
@@ -258,7 +121,11 @@ pub(super) struct StateVarsGroundingsInfo {
 impl StateVarsGroundingsInfo {
     /// NOTE: will *not* panic if an already known grounding is given (unlike when interning source groundings).
     /// To the contrary, this is used to retrieve the id of the given state variable grounding, if it was interned.
-    fn post_ground_state_var(&mut self, fluent: &crate::Sym, state_var_grounding: &[IntCst]) -> StateVarGroundingId {
+    pub fn post_ground_state_var(
+        &mut self,
+        fluent: &crate::Sym,
+        state_var_grounding: &[IntCst],
+    ) -> StateVarGroundingId {
         let fluent_id = if self.fluents_ids.contains_key(fluent) {
             *self.fluents_ids.get(fluent).unwrap()
         } else {
@@ -289,7 +156,7 @@ impl StateVarsGroundingsInfo {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct TermsGroundingsInfo {
+pub(crate) struct TermsGroundingsInfo {
     /// Flat storage of term assignments with the ground transitions in which they appear.
     entries_merged_transitions: Vec<(IntTerm, IntCst, TransitionId, TransitionGroundingId)>,
     /// Same as for transitions, but for ground sources.
@@ -308,7 +175,7 @@ impl TermsGroundingsInfo {
     // WARNING: adding duplicate entries will result in a panic (in debug mode).
     //
     // Does not do anything relating to ground supports.
-    fn post_for_ground_transition(
+    pub fn post_for_ground_transition(
         &mut self,
         term: IntTerm,
         value: IntCst,
@@ -326,7 +193,7 @@ impl TermsGroundingsInfo {
         self.entries_pending_transitions
             .push((term, value, transition_id, transition_grounding_id));
     }
-    fn post_for_ground_source(
+    pub fn post_for_ground_source(
         &mut self,
         term: IntTerm,
         value: IntCst,
@@ -355,6 +222,11 @@ impl TermsGroundingsInfo {
         y: &(IntTerm, IntCst, Source, SourceGroundingId),
     ) -> std::cmp::Ordering {
         x.cmp(y)
+    }
+
+    pub fn sort(&mut self) {
+        self.sort_and_merge_pending_transitions();
+        self.sort_and_merge_pending_sources();
     }
 
     fn sort_and_merge_pending_transitions(&mut self) {
@@ -414,7 +286,7 @@ impl TermsGroundingsInfo {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct TransitionsGroundingsInfo {
+pub(crate) struct TransitionsGroundingsInfo {
     sources_of: DirectIdMap<TransitionId, Source>,
 
     /// Sorted
@@ -424,7 +296,7 @@ pub(super) struct TransitionsGroundingsInfo {
         DirectIdMap<crate::TaskId, Vec<(TransitionId, TransitionGroundingId, SourceGroundingId)>>,
 }
 impl TransitionsGroundingsInfo {
-    fn post_ground_transition(
+    pub fn post_ground_transition(
         &mut self,
         transition_id: TransitionId,
         transition_grounding_id: TransitionGroundingId,
@@ -547,7 +419,7 @@ impl TransitionsGroundingsInfo {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct SupportsGroundingsInfo {
+pub(crate) struct SupportsGroundingsInfo {
     /// Sorted flat storage of ground supports: "outgoing view":
     /// (out_transition_id, out_transition_grounding_id, (in_transition_id, in_transition_grounding_id)).
     out: Vec<(
@@ -574,10 +446,7 @@ pub(super) struct SupportsGroundingsInfo {
 }
 
 impl SupportsGroundingsInfo {
-    pub fn from(
-        lifted_supports: &LpRelaxEncodingLiftedSupportsSorted,
-        transitions_groundings: &TransitionsGroundingsInfo,
-    ) -> Self {
+    pub fn from(lifted_supports: &Supports, transitions_groundings: &TransitionsGroundingsInfo) -> Self {
         debug_assert!(transitions_groundings.debug_check_valid());
 
         let mut out = vec![];
@@ -599,7 +468,7 @@ impl SupportsGroundingsInfo {
         ));
 
         // Main loop
-        for &((out_transition_id, in_transition_id), _) in lifted_supports.out() {
+        for &((out_transition_id, in_transition_id), _) in lifted_supports.sorted_out() {
             let out_slice = transitions_groundings.get_index_and_slice(out_transition_id);
             let in_slice = transitions_groundings.get_index_and_slice(in_transition_id);
 

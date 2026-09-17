@@ -6,7 +6,7 @@ use crate::SchedEncoder;
 use crate::{EffectId, EffectOp, IntTerm, StateVar, encoder::CondId, ext::lprelax::transitions::EffectView};
 
 /// Closed-world default (ground) initial effects in place of those omitted in the main encoding (or "missing" from it)
-/// due to being deemed non-required to support any condition (`add_closed_world_negative_effects`)
+/// due to being deemed non-required to support any condition [`add_closed_world_negative_effects`]
 ///
 /// The LP relaxation needs them to be a bit stronger (equality rather than upper bound in the inflow constraint on effects,
 /// as for the equality to hold we must ensure that flow conservation has a source of flow (one of these "missing" default initial effects)
@@ -18,13 +18,13 @@ use crate::{EffectId, EffectOp, IntTerm, StateVar, encoder::CondId, ext::lprelax
 ///
 /// Effect ids below `first_id` correspond to the "original" effects of the encoding.
 #[derive(Clone, Default)]
-pub(super) struct RecoveredMissingInitialEffects {
+pub(super) struct ClosedWorldDefaultEffects {
     first_id: EffectId,
     store: Vec<EffectView>,
     pub ignored_fluents: HashSet<crate::Sym>,
     initial_effects_ground_args: HashMap<crate::Sym, Vec<Vec<IntCst>>>,
 }
-impl RecoveredMissingInitialEffects {
+impl ClosedWorldDefaultEffects {
     pub fn new(
         ctx: &SchedEncoder,
         effects_to_ignore: impl IntoIterator<Item = EffectId>,

@@ -1,135 +1,16 @@
-mod groundings;
-mod lifted;
-mod problem;
-
 use aries_solver::lang::Lit;
-pub(crate) use problem::*;
 
 use aries_solver::core::views::Dom;
 use itertools::Itertools;
 
 use crate::encoder::SchedEncoder;
 use crate::ext::lprelax::LpRelaxEncoder;
-use crate::ext::lprelax::encoding::groundings::LpRelaxEncodingGroundingsInfo;
-use crate::ext::lprelax::encoding::lifted::LpRelaxEncodingLiftedSupportsSorted;
+use crate::ext::lprelax::encoder::supports::Supports;
+use crate::ext::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
 use crate::ext::lprelax::transitions::TransitionId;
 use crate::ext::{Source, SourceGrounding};
 
-#[derive(Clone)]
-pub(crate) struct LpRelaxEncoding {
-    encoder: LpRelaxEncoder,
-    groundings: LpRelaxEncodingGroundingsInfo,
-    lifted_supports_sorted: LpRelaxEncodingLiftedSupportsSorted,
-    ready: bool,
-}
-impl LpRelaxEncoding {
-    pub fn new(encoder: LpRelaxEncoder) -> Self {
-        Self {
-            encoder,
-            ready: false,
-            groundings: Default::default(),
-            lifted_supports_sorted: Default::default(),
-        }
-    }
-
-    // Interns a grounding of a source.
-    // WARNING: adding duplicate groundings (for the same source) will result in a panic (in debug mode).
-    pub fn post_ground_source(
-        &mut self,
-        source: Source,
-        source_grounding: SourceGrounding,
-        ctx: &SchedEncoder,
-        doms: Option<&crate::Domains>,
-    ) {
-        self.ready = false;
-        self.groundings
-            .post_ground_source(source, source_grounding, &self.encoder, ctx, doms);
-    }
-
-    pub fn build(&mut self, ctx: &SchedEncoder, doms: Option<&crate::Domains>) -> LpRelaxProblem {
-        let time = std::time::Instant::now();
-        println!("|- Lifted part encoding construction started");
-
-        let mut problem = LpRelaxProblem::default();
-
-        self.lifted_supports_sorted = LpRelaxEncodingLiftedSupportsSorted::from(&self.encoder, ctx, doms);
-
-        encode_problem_lifted(self, ctx, &self.lifted_supports_sorted, &mut problem);
-        println!(
-            "|- Lifted part encoding construction ended (run time: {})",
-            time.elapsed().as_secs_f64()
-        );
-
-        let time = std::time::Instant::now();
-        println!("|- Ground part encoding construction started");
-
-        {
-            self.groundings.transitions_sort();
-
-            let time = std::time::Instant::now();
-            println!("|--- Ground part encoding construction: support building started");
-
-            self.groundings.supports_build(&self.lifted_supports_sorted);
-
-            println!(
-                "|--- Ground part encoding construction: support building ended (run time {})",
-                time.elapsed().as_secs_f64()
-            );
-
-            self.groundings.terms_sort();
-        }
-
-        encode_problem_ground(self, ctx, &self.groundings, &mut problem);
-        println!(
-            "|- Ground part encoding construction ended (run time: {})",
-            time.elapsed().as_secs_f64()
-        );
-
-        self.groundings.mark_ready();
-        self.ready = true;
-
-        problem
-    }
-
-    #[allow(dead_code)]
-    pub fn is_ready(&self) -> bool {
-        self.ready
-    }
-
-    pub fn includes_recovered_mies(&self) -> bool {
-        self.encoder.transitions.includes_recovered_mies()
-    }
-
-    pub fn iter_terms_assignments(&self) -> impl Iterator<Item = (crate::IntTerm, aries_solver::core::IntCst)> {
-        self.groundings.terms().iter_sorted_all_only_assignments()
-    }
-
-    pub fn iter_sources(&self, ctx: &SchedEncoder) -> impl Iterator<Item = Source> {
-        self.encoder.iter_sources(ctx)
-    }
-    pub fn iter_transitions_of_source(&self, source: Source) -> impl Iterator<Item = TransitionId> {
-        self.encoder.transitions.of_source(source).iter().copied()
-    }
-    pub fn get_source_prez(&self, source: Source, ctx: &SchedEncoder) -> Lit {
-        self.encoder.get_source_prez(source, ctx)
-    }
-    pub fn get_transition_prez(&self, transition_id: TransitionId, ctx: &SchedEncoder) -> Lit {
-        self.encoder.transitions.get_prez(transition_id, ctx)
-    }
-    pub fn iter_supports(&self) -> impl Iterator<Item = ((TransitionId, TransitionId), Option<Lit>)> {
-        self.lifted_supports_sorted.out().iter().copied()
-    }
-}
-
-fn encode_problem_lifted(
-    encoding: &LpRelaxEncoding,
-    ctx: &SchedEncoder,
-    lifted_supports_sorted: &LpRelaxEncodingLiftedSupportsSorted,
-    problem: &mut LpRelaxProblem,
-) {
-    let is_transition_eff = |transition_id| encoding.encoder.transitions.is_pure_eff(transition_id);
-    let is_transition_cond = |transition_id| encoding.encoder.transitions.is_pure_cond(transition_id);
-
+pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     // [Lifted] A source is present if(f) its transitions are
     // TODO: optimize iterations ? (flattened ?)
     {
@@ -140,19 +21,19 @@ fn encode_problem_lifted(
             1,
         ));
 
-        for source in encoding.iter_sources(ctx) {
-            for transition_id in encoding.iter_transitions_of_source(source) {
+        for (source, transitions_ids) in encoder.iter_sources() {
+            for &transition_id in transitions_ids {
                 // It is possible that sometimes the presence literal of the transition differs from that of the source
                 // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
                 // However, the latter must always imply the former.
 
                 debug_assert!(ctx.store.state.implies(
-                    encoding.get_transition_prez(transition_id, ctx),
-                    encoding.get_source_prez(source, ctx)
+                    encoder.transitions.get_prez(transition_id, ctx),
+                    encoder.get_source_prez(source, ctx)
                 ));
                 let presences_equivalent = ctx.store.state.implies(
-                    encoding.get_source_prez(source, ctx),
-                    encoding.get_transition_prez(transition_id, ctx),
+                    encoder.get_source_prez(source, ctx),
+                    encoder.transitions.get_prez(transition_id, ctx),
                 );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
@@ -177,8 +58,8 @@ fn encode_problem_lifted(
     // NOTE: There's no need to enforce theses constraints for all cases, as the inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by outflow constraints.
     {
-        for &((out_transition_id, in_transition_id), _) in lifted_supports_sorted.out() {
-            if is_transition_cond(in_transition_id) {
+        for &((out_transition_id, in_transition_id), _) in encoder.supports.unsorted_out() {
+            if encoder.transitions.is_pure_cond(in_transition_id) {
                 problem.push_row(RowExpr::new_leq_single_lhs(vec![
                     ColTag::Support(out_transition_id, in_transition_id, None),
                     ColTag::PresenceTransition(out_transition_id, None),
@@ -191,7 +72,7 @@ fn encode_problem_lifted(
     {
         let mut seen = vec![];
 
-        for &((out_transition_id, in_transition_id), _) in lifted_supports_sorted.out() {
+        for &((out_transition_id, in_transition_id), _) in encoder.supports.sorted_out() {
             seen.push((out_transition_id, in_transition_id));
 
             if seen.binary_search(&(in_transition_id, out_transition_id)).is_ok() {
@@ -206,8 +87,9 @@ fn encode_problem_lifted(
 
     // [Lifted] "Inflow" constraints: [TODO]
     {
-        let chunkby = lifted_supports_sorted
-            .in_()
+        let chunkby = encoder
+            .supports
+            .sorted_in()
             .iter()
             .chunk_by(|(in_transition_id, _)| in_transition_id);
 
@@ -224,7 +106,9 @@ fn encode_problem_lifted(
             };
             debug_assert!(terms.len() >= 2);
 
-            let expr = if !encoding.includes_recovered_mies() && is_transition_eff(in_transition_id) {
+            let expr = if !encoder.transitions.includes_recovered_mies()
+                && encoder.transitions.is_pure_eff(in_transition_id)
+            {
                 RowExpr::new_geq_single_lhs(terms)
             } else {
                 RowExpr::new_eq_single_lhs(terms)
@@ -236,8 +120,9 @@ fn encode_problem_lifted(
 
     // [Lifted] "Outflow" constraints: [TODO]
     {
-        let chunkby = lifted_supports_sorted
-            .out()
+        let chunkby = encoder
+            .supports
+            .sorted_out()
             .iter()
             .chunk_by(|&((out_transition_id, _), _)| out_transition_id);
 
@@ -247,7 +132,7 @@ fn encode_problem_lifted(
                 res.append(
                     &mut in_transitions_ids
                         .into_iter()
-                        .filter(|&&((_, in_transition_id), _)| !is_transition_cond(in_transition_id))
+                        .filter(|&&((_, in_transition_id), _)| !encoder.transitions.is_pure_cond(in_transition_id))
                         .map(|&((_, in_transition_id), _)| ColTag::Support(out_transition_id, in_transition_id, None))
                         .collect(),
                 );
@@ -262,23 +147,15 @@ fn encode_problem_lifted(
     }
 }
 
-fn encode_problem_ground(
-    encoding: &LpRelaxEncoding,
-    ctx: &SchedEncoder,
-    groundings: &LpRelaxEncodingGroundingsInfo,
-    problem: &mut LpRelaxProblem,
-) {
-    let is_transition_eff = |transition_id| encoding.encoder.transitions.is_pure_eff(transition_id);
-    let is_transition_cond = |transition_id| encoding.encoder.transitions.is_pure_cond(transition_id);
-
+pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     // [Lifted-Ground] Source ground decomposition (a source is present iff one its groundings is)
     {
-        for source in encoding.iter_sources(ctx) {
+        for (source, _) in encoder.iter_sources() {
             let terms = {
                 let mut res = vec![ColTag::PresenceSource(source, None)];
                 res.append(
-                    &mut groundings
-                        .sources()
+                    &mut encoder
+                        .sources_ground
                         .get(source)
                         .iter()
                         .map(|&source_grounding_id| ColTag::PresenceSource(source, Some(source_grounding_id)))
@@ -298,8 +175,8 @@ fn encode_problem_ground(
 
     // [Lifted-Ground] Transition ground decomposition
     {
-        let chunkby = groundings
-            .transitions()
+        let chunkby = encoder
+            .transitions_ground
             .iter_all_unsourced()
             .chunk_by(|&(transition_id, _)| transition_id);
 
@@ -325,7 +202,7 @@ fn encode_problem_ground(
 
     // [Lifted-Ground] Ground transition is only active if(f) a compatible grounding of its source is active
     {
-        for (source, iter) in groundings.transitions().iter_all_sourced() {
+        for (source, iter) in encoder.transitions_ground.iter_all_sourced() {
             let chunkby =
                 iter.chunk_by(|(transition_id, transition_grounding_id, _)| (transition_id, transition_grounding_id));
 
@@ -350,12 +227,12 @@ fn encode_problem_ground(
                 // However, the latter must always imply the former.
 
                 debug_assert!(ctx.store.state.implies(
-                    encoding.get_transition_prez(transition_id, ctx),
-                    encoding.get_source_prez(source, ctx)
+                    encoder.transitions.get_prez(transition_id, ctx),
+                    encoder.get_source_prez(source, ctx)
                 ));
                 let presences_equivalent = ctx.store.state.implies(
-                    encoding.get_source_prez(source, ctx),
-                    encoding.get_transition_prez(transition_id, ctx),
+                    encoder.get_source_prez(source, ctx),
+                    encoder.transitions.get_prez(transition_id, ctx),
                 );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
@@ -374,12 +251,12 @@ fn encode_problem_ground(
     // NOTE: There's no need to enforce theses constraints for all cases, as the (ground) inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by (ground) outflow constraints.
     {
-        for &(out_transition_id, in_transition_id, transition_groundings_ids) in groundings.supports().iter_all() {
+        for &(out_transition_id, in_transition_id, transition_groundings_ids) in encoder.supports_ground.iter_all() {
             let Some((out_transition_grounding_id, in_transition_grounding_id)) = transition_groundings_ids else {
                 continue;
             };
 
-            if is_transition_cond(in_transition_id) {
+            if encoder.transitions.is_pure_cond(in_transition_id) {
                 problem.push_row(RowExpr::new_leq_single_lhs(vec![
                     ColTag::Support(
                         out_transition_id,
@@ -394,8 +271,8 @@ fn encode_problem_ground(
 
     // [Lifted-Ground] Supports ground decomposition
     {
-        let chunkby = groundings
-            .supports()
+        let chunkby = encoder
+            .supports_ground
             .iter_all()
             .chunk_by(|(out_transition_id, in_transition_id, _)| (out_transition_id, in_transition_id));
 
@@ -429,8 +306,8 @@ fn encode_problem_ground(
     // [Ground] "Inflow" constraints: [TODO]
     {
         let chunkby =
-            groundings
-                .supports()
+            encoder
+                .supports_ground
                 .iter_in_all()
                 .chunk_by(|(in_transition_id, in_transition_grounding_id, _)| {
                     (in_transition_id, in_transition_grounding_id)
@@ -459,7 +336,9 @@ fn encode_problem_ground(
                 res
             };
 
-            let expr = if !encoding.includes_recovered_mies() && is_transition_eff(in_transition_id) {
+            let expr = if !encoder.transitions.includes_recovered_mies()
+                && encoder.transitions.is_pure_eff(in_transition_id)
+            {
                 // In the case where we do not recover and use "missing" initial effects,
                 // the inflow constraints for (all) effects are slightly weaker.
                 RowExpr::new_geq_single_lhs(terms)
@@ -470,14 +349,14 @@ fn encode_problem_ground(
             problem.push_row(expr);
         }
 
-        if !encoding.includes_recovered_mies() {
+        if !encoder.transitions.includes_recovered_mies() {
             // In the case where we do not recover and use "missing" initial effects,
             // the inflow constraints for (all) effects are slightly weaker (see above).
             // This is (partially? FIXME[proof?]) compensated by the following constraints,
             // which state that the *sum* of inflows into (ground effects) with the *same state variable* (so, independent of their value) is upper bounded by 1.
 
-            let chunkby = groundings
-                .supports()
+            let chunkby = encoder
+                .supports_ground
                 .iter_in_all()
                 .map(
                     |(in_transition_id, in_transition_grounding_id, out_transitions_groundings)| {
@@ -514,8 +393,8 @@ fn encode_problem_ground(
     // [Ground] "Outflow" constraints: [TODO]
     {
         let chunkby =
-            groundings
-                .supports()
+            encoder
+                .supports_ground
                 .iter_out_all()
                 .chunk_by(|(out_transition_id, out_transition_grounding_id, _)| {
                     (out_transition_id, out_transition_grounding_id)
@@ -530,7 +409,7 @@ fn encode_problem_ground(
                 res.append(
                     &mut in_transitions_groundings_ids
                         .into_iter()
-                        .filter(|&&(_, _, (in_transition_id, _))| !is_transition_cond(in_transition_id))
+                        .filter(|&&(_, _, (in_transition_id, _))| !encoder.transitions.is_pure_cond(in_transition_id))
                         .map(|&(_, _, (in_transition_id, in_transition_grounding_id))| {
                             ColTag::Support(
                                 out_transition_id,
@@ -599,8 +478,8 @@ fn encode_problem_ground(
 
     // [Ground] At most one of a term's groundings can be active
     {
-        let chunkby = groundings
-            .terms()
+        let chunkby = encoder
+            .terms_ground
             .iter_sorted_all_only_assignments()
             .chunk_by(|&(term, _)| term);
 
@@ -620,8 +499,8 @@ fn encode_problem_ground(
     // [Ground] A grounding of a term is active iff a ground transition using it is active
     // [Ground] ---------------------------------------------- source --------------------
     {
-        let chunkby = groundings
-            .terms()
+        let chunkby = encoder
+            .terms_ground
             .iter_sorted_all_for_transitions()
             .chunk_by(|&(term, value, transition_id, _)| (term, value, transition_id));
 
@@ -641,12 +520,12 @@ fn encode_problem_ground(
             debug_assert!(terms.len() >= 2);
 
             debug_assert!(ctx.store.state.implies(
-                encoding.get_transition_prez(transition_id, ctx),
+                encoder.transitions.get_prez(transition_id, ctx),
                 ctx.store.presence(term)
             ));
             let presences_equivalent = ctx.store.state.implies(
                 ctx.store.presence(term),
-                encoding.get_transition_prez(transition_id, ctx),
+                encoder.transitions.get_prez(transition_id, ctx),
             );
 
             let expr = if presences_equivalent {
@@ -657,8 +536,8 @@ fn encode_problem_ground(
             problem.push_row(expr);
         }
 
-        let chunkby = groundings
-            .terms()
+        let chunkby = encoder
+            .terms_ground
             .iter_sorted_all_for_sources()
             .chunk_by(|&(term, value, source, _)| (term, value, source));
 
@@ -680,11 +559,11 @@ fn encode_problem_ground(
             debug_assert!(
                 ctx.store
                     .state
-                    .implies(encoding.get_source_prez(source, ctx), ctx.store.presence(term))
+                    .implies(encoder.get_source_prez(source, ctx), ctx.store.presence(term))
                     && ctx
                         .store
                         .state
-                        .implies(ctx.store.presence(term), encoding.get_source_prez(source, ctx))
+                        .implies(ctx.store.presence(term), encoder.get_source_prez(source, ctx))
             );
 
             let expr = RowExpr::new_eq_single_lhs(terms);

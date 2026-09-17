@@ -122,9 +122,7 @@ pub fn merge_dedup_into<T: PartialEq>(a: &mut Vec<T>, b: &mut Vec<T>, cmp: impl 
 
 #[cfg(test)]
 mod tests {
-    use crate::ext::lprelax::encoding::groundings::utils::{
-        binary_search_range_by, merge_dedup_into, merge_join_chunks_by_key,
-    };
+    use super::{binary_search_range_by, merge_dedup_into, merge_join_chunks_by_key};
 
     #[test]
     fn test_binary_search_range_by() {

@@ -1,7 +1,8 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 use crate::encoder::SchedEncoder;
-use crate::ext::lprelax::encoding::{ColTag, LpRelaxEncoding, LpRelaxProblem};
+use crate::ext::lprelax::LpRelaxEncoder;
+use crate::ext::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
 use crate::ext::lprelax::wrapper::{
     LpRelaxReasonerWrapped, LpRelaxReasonerWrapper, LpRelaxReasonerWrapperTrait, LpRelaxReasonerWrapperTraitInner,
 };
@@ -20,7 +21,7 @@ impl LpRelaxReasonerWrapperTrait for LpRelaxReasonerWrapper<LpRelax> {
 
         let wrapper = Self {
             _phantom: PhantomData,
-            lprelax_encoder: None,
+            lprelax_encoder_cached: None,
             ctx,
             num_assumptions,
             encoding_built: false,
@@ -48,7 +49,7 @@ impl LpRelaxReasonerWrapperTraitInner for LpRelaxReasonerWrapper<LpRelax> {
         // - the encoder hasn't been built
         // - we're still at the root level (before any assumptions)
         // then build the encoder.
-        if self.lprelax_encoder.is_none() && model.current_decision_level() == DecLvl::ROOT {
+        if self.lprelax_encoder_cached.is_none() && model.current_decision_level() == DecLvl::ROOT {
             self.build_encoder(model);
         }
 
@@ -57,7 +58,7 @@ impl LpRelaxReasonerWrapperTraitInner for LpRelaxReasonerWrapper<LpRelax> {
         // - the encoding hasn't
         // - we are the (presumed last) assumption level
         // then build the encoding / lp.
-        if self.lprelax_encoder.is_some()
+        if self.lprelax_encoder_cached.is_some()
             && !self.encoding_built
             && theory.current_decision_level().to_int() as usize >= self.num_assumptions
         {
@@ -76,9 +77,9 @@ impl LpRelaxReasonerWrapperTraitInner for LpRelaxReasonerWrapper<LpRelax> {
 impl LpRelaxReasonerWrapper<LpRelax> {
     fn build_encoding(&mut self, theory: &mut LpRelax, doms: &Domains) {
         debug_assert!(!self.encoding_built);
-        debug_assert!(self.lprelax_encoder.is_some());
+        debug_assert!(self.lprelax_encoder_cached.is_some());
 
-        let Some((encoder, pre_assumption_doms)) = self.lprelax_encoder.take() else {
+        let Some((encoder, pre_assumption_doms)) = self.lprelax_encoder_cached.as_mut() else {
             unreachable!()
         };
 
@@ -90,11 +91,10 @@ impl LpRelaxReasonerWrapper<LpRelax> {
             pre_assumption_doms.current_decision_level(),
         );
 
-        let mut encoding = encoder.encode(&self.ctx, Some(&pre_assumption_doms));
-        let mut lp_problem = encoding.build(&self.ctx, Some(&pre_assumption_doms));
+        let mut lp_problem = encoder.encode(&self.ctx, Some(&pre_assumption_doms));
 
         let pre_simplify_rows_len = lp_problem.rows().len();
-        lp_problem.simplify(&encoding, &self.ctx, &pre_assumption_doms);
+        lp_problem.simplify(&encoder, &self.ctx, &pre_assumption_doms);
 
         println!(
             "|- LPrelax problem simplification: {} rows removed",
@@ -102,19 +102,19 @@ impl LpRelaxReasonerWrapper<LpRelax> {
         );
         // TODO build_and_bind_lp(&lp_problem, encoder, &self.ctx, Some(pre_assumption_doms), theory);
 
-        build_and_bind_lp(&lp_problem, &encoding, &self.ctx, &pre_assumption_doms, theory);
+        build_and_bind_lp(&lp_problem, &encoder, &self.ctx, &pre_assumption_doms, theory);
     }
 }
 
 fn build_and_bind_lp(
     lp_problem: &LpRelaxProblem,
-    encoding: &LpRelaxEncoding,
+    encoder: &LpRelaxEncoder,
     ctx: &SchedEncoder,
     doms: &Domains,
     theory: &mut LpRelax,
 ) {
     let lp_columns = build_lp(lp_problem, theory);
-    bind_lp(&lp_columns, encoding, ctx, doms, theory);
+    bind_lp(&lp_columns, encoder, ctx, doms, theory);
 }
 
 fn build_lp(problem: &LpRelaxProblem, theory: &mut LpRelax) -> HashMap<ColTag, LpCol> {
@@ -149,12 +149,12 @@ fn build_lp(problem: &LpRelaxProblem, theory: &mut LpRelax) -> HashMap<ColTag, L
                 .chain(row_expr.rhs().iter().map(|col_tag| (*cols.get(col_tag).unwrap(), -1.)))
                 .collect::<Vec<_>>();
             let (lb, ub) = match row_expr.tpe {
-                crate::ext::lprelax::encoding::RowExprType::Eq => (
+                RowExprType::Eq => (
                     Some(int_cst_as_float(row_expr.cst())),
                     Some(int_cst_as_float(row_expr.cst())),
                 ),
-                crate::ext::lprelax::encoding::RowExprType::Leq => (None, Some(int_cst_as_float(row_expr.cst()))),
-                crate::ext::lprelax::encoding::RowExprType::Geq => (Some(int_cst_as_float(row_expr.cst())), None),
+                RowExprType::Leq => (None, Some(int_cst_as_float(row_expr.cst()))),
+                RowExprType::Geq => (Some(int_cst_as_float(row_expr.cst())), None),
             };
             debug_assert!(lb.is_some() || ub.is_some());
             (row_coefs, lb, ub)
@@ -183,12 +183,11 @@ fn build_lp(problem: &LpRelaxProblem, theory: &mut LpRelax) -> HashMap<ColTag, L
 
 fn bind_lp(
     columns: &HashMap<ColTag, LpCol>,
-    encoding: &LpRelaxEncoding,
+    encoder: &LpRelaxEncoder,
     ctx: &SchedEncoder,
     doms: &Domains,
     theory: &mut LpRelax,
 ) {
-    use crate::ext::lprelax::encoding::ColTag;
     use aries_solver::core::{IntCst, Lit, Var, views::Term};
     use aries_solver_lprelax::*;
     use itertools::Itertools;
@@ -196,19 +195,19 @@ fn bind_lp(
     let presence_lits_and_cols = {
         let mut res = HashMap::<Lit, Vec<LpCol>>::new();
 
-        for source in encoding.iter_sources(ctx) {
-            for transition_id in encoding.iter_transitions_of_source(source) {
+        for (source, transitions) in encoder.iter_sources() {
+            for &transition_id in transitions {
                 let Some(&col) = columns.get(&ColTag::PresenceTransition(transition_id, None)) else {
                     continue;
                 };
-                res.entry(encoding.get_transition_prez(transition_id, ctx))
+                res.entry(encoder.transitions.get_prez(transition_id, ctx))
                     .or_default()
                     .push(col);
             }
             let Some(&col) = columns.get(&ColTag::PresenceSource(source, None)) else {
                 continue;
             };
-            res.entry(encoding.get_source_prez(source, ctx)).or_default().push(col);
+            res.entry(encoder.get_source_prez(source, ctx)).or_default().push(col);
         }
         res
     };
@@ -245,8 +244,9 @@ fn bind_lp(
 
     // Bind term grounding columns of the LP with corresponding literals in the main CSP.
 
-    for (term, values) in encoding
-        .iter_terms_assignments()
+    for (term, values) in encoder
+        .terms_ground
+        .iter_sorted_all_only_assignments()
         .chunk_by(|&(term, _)| term)
         .into_iter()
     {
@@ -319,7 +319,7 @@ fn bind_lp(
 
     // Bind lifted support columns of the LP with corresponding literals in the main CSP.
 
-    for ((out_transition_id, in_transition_id), active) in encoding.iter_supports() {
+    for &((out_transition_id, in_transition_id), active) in encoder.supports.unsorted_out() {
         if let Some(s) = active {
             let s = s.variable();
             debug_assert!(s != Var::ZERO);

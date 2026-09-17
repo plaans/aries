@@ -1,5 +1,4 @@
 mod encoder;
-mod encoding;
 mod examples;
 mod transitions;
 pub(crate) mod wrapper;

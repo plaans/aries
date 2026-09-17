@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use aries_solver::core::IntCst;
 use itertools::Itertools;
 
-use crate::ext::lprelax::encoding::LpRelaxEncoding;
-use crate::ext::lprelax::transitions::{TransitionGroundingId, TransitionId};
+use crate::ext::lprelax::LpRelaxEncoder;
+use crate::ext::lprelax::transitions::ground::*;
+use crate::ext::lprelax::transitions::{TransitionId};
 use crate::ext::{Source, SourceGroundingId};
 use crate::{Domains, IntTerm, encoder::SchedEncoder};
 
@@ -126,7 +127,7 @@ impl LpRelaxProblem {
     /// Remove (some) consistent single-term equality rows.
     ///
     /// If an inconsistent empty or single-term equality row is detected, make the problem empty with a single column and a single trivially infeasible row.
-    pub fn simplify(&mut self, encoding: &LpRelaxEncoding, ctx: &SchedEncoder, doms: &Domains) {
+    pub fn simplify(&mut self, encoder: &LpRelaxEncoder, ctx: &SchedEncoder, doms: &Domains) {
         let make_inconsistent = |cols_vec: &mut Option<Vec<_>>, rows: &mut Vec<_>| {
             *cols_vec = Some(vec![ColTag::PresenceSource(None, None)]);
             *rows = vec![RowExpr::new(
@@ -141,18 +142,19 @@ impl LpRelaxProblem {
         // lifted presence columns, as well as (all potential) lifted (original causal link) supports columns.
 
         let mut propagated_cols_map = {
-            let starting_candidate_cols = encoding
-                .encoder
-                .iter_sources(ctx)
-                .map(|source| {
+            let starting_candidate_cols = encoder
+                .iter_sources()
+                .flat_map(|(source, transitions_ids)| {
                     let col_tag = ColTag::PresenceSource(source, None);
-                    (col_tag, encoding.get_source_prez(source, ctx))
+                    std::iter::chain(
+                        [(col_tag, encoder.get_source_prez(source, ctx))],
+                        transitions_ids.iter().map(|&transition_id| {
+                            let col_tag = ColTag::PresenceTransition(transition_id, None);
+                            (col_tag, encoder.transitions.get_prez(transition_id, ctx))
+                        }),
+                    )
                 })
-                .chain(encoding.encoder.iter_transitions().map(|(transition_id, _)| {
-                    let col_tag = ColTag::PresenceTransition(transition_id, None);
-                    (col_tag, encoding.get_transition_prez(transition_id, ctx))
-                }))
-                .chain(encoding.lifted_supports_sorted.out().iter().filter_map(
+                .chain(encoder.supports.sorted_out().iter().filter_map(
                     |&((out_transition_id, in_transition_id), active)| {
                         active.map(|active| {
                             let col_tag = ColTag::Support(out_transition_id, in_transition_id, None);

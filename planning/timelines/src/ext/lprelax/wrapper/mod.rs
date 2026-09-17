@@ -9,7 +9,7 @@ pub(crate) use traits::{LpRelaxReasonerWrapped, LpRelaxReasonerWrapperTrait};
 pub struct LpRelaxReasonerWrapper<T: aries_solver::reasoners::Theory> {
     _phantom: std::marker::PhantomData<fn() -> T>,
 
-    lprelax_encoder: Option<(crate::ext::lprelax::LpRelaxEncoder, crate::Domains)>,
+    lprelax_encoder_cached: Option<(crate::ext::lprelax::LpRelaxEncoder, crate::Domains)>,
     ctx: crate::encoder::SchedEncoder,
 
     num_assumptions: usize,
@@ -22,7 +22,7 @@ pub struct LpRelaxReasonerWrapper<T: aries_solver::reasoners::Theory> {
 impl<T: aries_solver::reasoners::Theory> LpRelaxReasonerWrapper<T> {
     fn build_encoder(&mut self, doms: &crate::Domains) {
         debug_assert!(!self.encoding_built);
-        debug_assert!(self.lprelax_encoder.is_none());
+        debug_assert!(self.lprelax_encoder_cached.is_none());
 
         println!(
             "|- Building Lp *encoder* after {} propagation calls (decision level {:?}, num events: {:?})",
@@ -31,9 +31,9 @@ impl<T: aries_solver::reasoners::Theory> LpRelaxReasonerWrapper<T> {
             doms.num_events()
         );
 
-        let encoder = crate::ext::lprelax::LpRelaxEncoder::from(&self.ctx);
+        let encoder = crate::ext::lprelax::LpRelaxEncoder::with_transitions_from(&self.ctx);
         let pre_assumption_doms = doms.clone();
 
-        self.lprelax_encoder = Some((encoder, pre_assumption_doms));
+        self.lprelax_encoder_cached = Some((encoder, pre_assumption_doms));
     }
 }

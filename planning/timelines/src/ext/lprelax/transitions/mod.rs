@@ -1,8 +1,9 @@
-mod ground;
-mod missing_initial_effects;
+mod closed_world_default;
+pub mod ground;
+pub mod supports;
 
-pub use ground::*;
-use missing_initial_effects::RecoveredMissingInitialEffects;
+use closed_world_default::ClosedWorldDefaultEffects;
+use ground::*;
 
 use aries_solver::lang::Lit;
 
@@ -36,6 +37,7 @@ impl Transition {
         matches!(self, Transition::CondEff(_, _))
     }
 }
+
 pub(crate) struct TransitionTermsView<'a> {
     pub args: &'a [IntTerm],
     pub valfrom: Option<IntTerm>,
@@ -60,15 +62,19 @@ type EffectInfo<'a> = (Lit, Source, &'a StateVar, &'a EffectOp);
 
 #[derive(Clone)]
 pub(crate) struct Transitions {
+    /// Stores "unambiguous" transitions (i.e. not "nonsimple" ones, see [`collect_nonsimple_conditions_and_effects_to_relax`]).
     store: Vec<Transition>,
+    /// For each transition, stores the indices of its terms in its source's terms.
+    /// This is needed to evaluate a transition's grounding given a grounding of its source.
+    /// (Reminder: one of the requirements of an "unambiguous" transition is that its terms all appear in its source's terms / arguments)
     transition_terms_indices_in_source: Vec<TransitionTermsIndicesInSource>,
+
+    closed_world_default_effects: Option<ClosedWorldDefaultEffects>,
 
     of_condition: DirectIdMap<CondId, TransitionId>,
     of_effect: DirectIdMap<EffectId, TransitionId>,
     of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>>,
     of_empty_source: Vec<TransitionId>,
-
-    recovered_mies: Option<RecoveredMissingInitialEffects>,
 }
 
 impl std::ops::Index<TransitionId> for Transitions {
@@ -110,44 +116,29 @@ impl Transitions {
         }
     }
 
+    #[allow(dead_code)]
     pub fn iter(&self) -> impl Iterator<Item = (TransitionId, Transition)> {
         self.store.iter().copied().enumerate()
     }
-    // pub fn iter_of_conditions(&self) -> impl Iterator<Item = (CondId, TransitionId)> {
-    //     self.of_condition
-    //         .iter()
-    //         .map(|(cond_id, &transition_id)| (cond_id, transition_id))
-    // }
+    #[allow(dead_code)]
+    pub fn iter_of_conditions(&self) -> impl Iterator<Item = (CondId, TransitionId)> {
+        self.of_condition
+            .iter()
+            .map(|(cond_id, &transition_id)| (cond_id, transition_id))
+    }
     pub fn iter_of_effects(&self) -> impl Iterator<Item = (EffectId, TransitionId)> {
         self.of_effect
             .iter()
             .map(|(eff_id, &transition_id)| (eff_id, transition_id))
     }
-    // pub fn iter_of_sources(&self) -> impl Iterator<Item = (Source, &Vec<TransitionId>)> {
-    //     std::iter::chain(
-    //         [(None, &self.of_empty_source)],
-    //         self.of_concrete_source
-    //             .iter()
-    //             .map(|(task_id, entries)| (Some(task_id), entries)),
-    //     )
-    // }
-    /*pub fn iter_sources(&self) -> impl Iterator<Item = Source> {
+    pub fn iter_of_sources(&self) -> impl Iterator<Item = (Source, &Vec<TransitionId>)> {
         std::iter::chain(
-            [None],
-            self.of_concrete_source.iter().map(|(task_id, _)| Some(task_id))
+            [(None, &self.of_empty_source)],
+            self.of_concrete_source
+                .iter()
+                .map(|(task_id, entries)| (Some(task_id), entries)),
         )
     }
-    pub fn iter_transitions_of_sources(&self) -> impl Iterator<Item = (Source, &Vec<TransitionId>)> {
-        self.iter_sources()
-            .map(|source| {
-                let res = if let Some(task_id) = source {
-                    &self.of_concrete_source[task_id]
-                } else {
-                    &self.of_empty_source
-                };
-                (source, res)
-            })
-    }*/
 
     /*pub fn get_state_var_args_with_source_indices<'a>(
         &'a self,
@@ -192,7 +183,7 @@ impl Transitions {
     ) -> Option<(EffectId, EffectInfo<'a>)> {
         match self.get(transition_id) {
             Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => {
-                let info = if let Some(recovered_mies) = &self.recovered_mies
+                let info = if let Some(recovered_mies) = &self.closed_world_default_effects
                     && recovered_mies.contains(eff_id)
                 {
                     let eff_view = recovered_mies.get(eff_id);
@@ -208,7 +199,7 @@ impl Transitions {
     }
     #[allow(dead_code)]
     pub fn is_effect_recovered_missing_initial(&self, eff_id: EffectId) -> bool {
-        self.recovered_mies
+        self.closed_world_default_effects
             .as_ref()
             .is_some_and(|recovered_mies| recovered_mies.contains(eff_id))
     }
@@ -301,7 +292,7 @@ impl Transitions {
 
     /// Whether (all) "missing" initial effects are used / included
     pub fn includes_recovered_mies(&self) -> bool {
-        self.recovered_mies.is_some()
+        self.closed_world_default_effects.is_some()
     }
 
     /// Collects transitions from "unambiguous" conditions and effects (i.e. filtering out "nonsimple" ones)
@@ -377,14 +368,16 @@ impl Transitions {
                 .map(|(task_id, effs)| (Some(task_id), effs)),
         );
 
-        for (src, cs) in source_conds_iter {
+        for (source, cs) in source_conds_iter {
+            if let Some(task_id) = source
+                && !of_concrete_source.contains_key(task_id)
+            {
+                of_concrete_source.insert(task_id, vec![]);
+            }
             for &(cond_id, _) in cs {
                 let transition_id = store.len();
                 of_condition.insert(cond_id, transition_id);
-                if let Some(task_id) = src {
-                    if !of_concrete_source.contains_key(task_id) {
-                        of_concrete_source.insert(task_id, vec![]);
-                    }
+                if let Some(task_id) = source {
                     of_concrete_source.get_mut(task_id).unwrap().push(transition_id);
                 } else {
                     of_empty_source.push(transition_id);
@@ -393,6 +386,11 @@ impl Transitions {
             }
         }
         for (source, es) in source_effs_iter {
+            if let Some(task_id) = source
+                && !of_concrete_source.contains_key(task_id)
+            {
+                of_concrete_source.insert(task_id, vec![]);
+            }
             for &(eff_id, e) in es {
                 let mut compatible_conds_found = 0;
 
@@ -424,9 +422,6 @@ impl Transitions {
                     let transition_id = store.len();
                     of_effect.insert(eff_id, transition_id);
                     if let Some(task_id) = source {
-                        if !of_concrete_source.contains_key(task_id) {
-                            of_concrete_source.insert(task_id, vec![]);
-                        }
                         of_concrete_source.get_mut(task_id).unwrap().push(transition_id);
                     } else {
                         of_empty_source.push(transition_id);
@@ -462,9 +457,9 @@ impl Transitions {
         // (among the "explicit" known initial effects accessible from `ctx`).
 
         let recovered_mies = if !recover_missing_initial_effects {
-            RecoveredMissingInitialEffects::default()
+            ClosedWorldDefaultEffects::default()
         } else {
-            let mut recovered_mies = RecoveredMissingInitialEffects::new(
+            let mut recovered_mies = ClosedWorldDefaultEffects::new(
                 ctx,
                 effects_to_ignore,
                 conditions_to_ignore,
@@ -593,7 +588,7 @@ impl Transitions {
             of_effect,
             of_empty_source,
             of_concrete_source,
-            recovered_mies: recover_missing_initial_effects.then_some(recovered_mies),
+            closed_world_default_effects: recover_missing_initial_effects.then_some(recovered_mies),
         }
     }
 }
