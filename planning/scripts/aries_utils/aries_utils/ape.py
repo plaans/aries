@@ -1,10 +1,52 @@
 """APE command runner with error reporting."""
 
+import psutil
 import subprocess
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+
+class RSSMemoryLimitExceeded(subprocess.CalledProcessError):
+    """Raised when a subprocess exceeds its (resident) memory limit."""
+
+    def __init__(
+        self,
+        returncode: int,
+        cmd: list[str],
+        output: Optional[str] = None,
+        stderr: Optional[str] = None,
+        memory_limit_mb: Optional[int] = None,
+    ):
+        super().__init__(returncode, cmd, output, stderr)
+        self.memory_limit_mb = memory_limit_mb
+
+def _rss_bytes_recursive(proc) -> int:
+    total = proc.memory_info().rss
+    for child in proc.children(recursive=True):
+        try:
+            total += child.memory_info().rss
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return total
+
+def _kill_proc_tree(proc) -> None:
+    try:
+        children = proc.children(recursive=True)
+    except psutil.NoSuchProcess:
+        children = []
+    for child in children:
+        try:
+            child.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    try:
+        proc.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
 
 
 @dataclass
@@ -100,8 +142,10 @@ class ApeRunner:
         self,
         *args: str,
         timeout: Optional[int] = None,
+        memory_limit_mb: Optional[int] = None,
         check: bool = True,
         capture_output: bool = True,
+        env: Optional[dict[str, str]] = None,
     ) -> ApeResult:
         """
         Run an APE command with the given arguments.
@@ -109,8 +153,12 @@ class ApeRunner:
         Args:
             *args: Arguments to pass to APE (e.g., "validate", "plan.txt")
             timeout: Optional timeout in seconds
+            memory_limit_mb: Optional memory limit in MB (resident, monitored via psutil)
             check: If True, raise exception on non-zero exit code
             capture_output: If True, capture stdout/stderr (default: True)
+            env: If not None, specifies the environment variables with which to run APE.
+                 If None, inherits the current process' environment.
+                 To use the specified environment on top of the inherited one, `env` will need to be built on top of the `os.environ.copy()` dict.
 
         Returns:
             ApeResult with command output and status
@@ -118,6 +166,7 @@ class ApeRunner:
         Raises:
             subprocess.CalledProcessError: If check=True and command fails
             subprocess.TimeoutExpired: If command times out
+            RSSMemoryLimitExceeded: If command exceeds the memory limit
 
         Example:
             >>> ape = ApeRunner()
@@ -128,13 +177,17 @@ class ApeRunner:
         cmd = [self.ape_path] + list(args)
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=capture_output,
-                text=True,
-                timeout=timeout,
-                check=False,  # We'll handle errors ourselves
-            )
+            if memory_limit_mb is not None:
+                result = self._run_with_memory_limit(cmd, timeout, memory_limit_mb, env=env)
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=capture_output,
+                    text=True,
+                    timeout=timeout,
+                    check=False,
+                    env=env,
+                )
 
             ape_result = ApeResult(
                 returncode=result.returncode,
@@ -151,16 +204,103 @@ class ApeRunner:
 
             return ape_result
 
-        except subprocess.TimeoutExpired as _:
-            print(f"\n{'=' * 60}")
-            print(f"APE COMMAND TIMEOUT after {timeout}s")
-            print(f"{'=' * 60}")
-            print(f"\nCommand: {' '.join(cmd)}")
-            print("\nTo reproduce:")
-            print(f"  timeout {timeout}s {' '.join(cmd)}")
-            raise
+        except subprocess.TimeoutExpired as e:
+            self._report_timeout(cmd, timeout)
+            raise e
 
-    def _report_error(self, result: ApeResult):
+    def _run_with_memory_limit(
+        self,
+        cmd: list[str],
+        timeout: Optional[int],
+        memory_limit_mb: int,
+        env: Optional[dict[str, str]] = None,
+    ) -> subprocess.CompletedProcess:
+        exceeded = threading.Event()
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env
+        )
+
+        monitor = threading.Thread(
+            target=self._monitor_memory,
+            args=(proc.pid, memory_limit_mb, exceeded),
+            daemon=True,
+        )
+        monitor.start()
+
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise
+        finally:
+            monitor.join(timeout=2)
+
+        result = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+        if exceeded.is_set():
+            self._report_memory_limit(result, memory_limit_mb)
+            raise RSSMemoryLimitExceeded(
+                result.returncode,
+                cmd,
+                result.stdout,
+                result.stderr,
+                memory_limit_mb,
+            )
+
+        return result
+
+    @staticmethod
+    def _monitor_memory(
+        proc_pid: int, limit_mb: int, exceeded: threading.Event, poll_interval: float = 0.01
+    ) -> None:
+        limit_bytes = limit_mb * 1024 * 1024
+        try:
+            proc = psutil.Process(proc_pid)
+        except psutil.NoSuchProcess:
+            return
+        while True:
+            try:
+                rss = _rss_bytes_recursive(proc)
+                if rss > limit_bytes:
+                    print(f"\nMemory limit exceeded ({limit_mb} MB, RSS={rss // 1024 // 1024} MB)")
+                    exceeded.set()
+                    _kill_proc_tree(proc)
+                    return
+                time.sleep(poll_interval)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return
+
+    @staticmethod
+    def _report_memory_limit(result: subprocess.CompletedProcess, limit_mb: int) -> None:
+        print(f"\n{'=' * 60}")
+        print(f"APE COMMAND MEMORY LIMIT EXCEEDED ({limit_mb} MB)")
+        print(f"{'=' * 60}")
+        print(f"\nCommand: {' '.join(result.args)}")
+        print("\nStdout:")
+        print(result.stdout if result.stdout else "(empty)")
+        print("\nStderr:")
+        print(result.stderr if result.stderr else "(empty)")
+        print(f"\nSignal: {-result.returncode}")
+        print("\nTo reproduce:")
+        print(f"  systemd-run --user --scope -p MemoryMax=$(({limit_mb} * 1024 * 1024)) -- {' '.join(result.args)}")
+
+    @staticmethod
+    def _report_timeout(cmd: list[str], timeout: Optional[int]) -> None:
+        print(f"\n{'=' * 60}")
+        print(f"APE COMMAND TIMEOUT after {timeout}s")
+        print(f"{'=' * 60}")
+        print(f"\nCommand: {' '.join(cmd)}")
+        print("\nTo reproduce:")
+        print(f"  timeout {timeout}s {' '.join(cmd)}")
+
+    @staticmethod
+    def _report_error(result: ApeResult):
         """Report detailed error information."""
         print(f"\n{'=' * 60}")
         print("APE COMMAND FAILED")
@@ -223,7 +363,7 @@ class ApeRunner:
                 timeout=timeout,
             )
             return True
-        except subprocess.CalledProcessError, subprocess.TimeoutExpired:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RSSMemoryLimitExceeded):
             return False
 
     def optimize_plan(
@@ -289,7 +429,7 @@ class ApeRunner:
 
                 return True
 
-            except subprocess.CalledProcessError, subprocess.TimeoutExpired:
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RSSMemoryLimitExceeded):
                 return False
             finally:
                 # Clean up temporary file
@@ -300,5 +440,5 @@ class ApeRunner:
             try:
                 self.run(*args, timeout=timeout)
                 return True
-            except subprocess.CalledProcessError, subprocess.TimeoutExpired:
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RSSMemoryLimitExceeded):
                 return False
