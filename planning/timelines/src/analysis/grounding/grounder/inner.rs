@@ -7,7 +7,7 @@ use idmap::DirectIdMap;
 
 use std::collections::HashMap;
 
-use crate::{TaskId, analysis::SourceGrounding};
+use crate::{TaskId, analysis::grounding::ParametersAssignment};
 
 use super::types::*;
 
@@ -19,7 +19,7 @@ pub(super) struct GrounderProgramInnerResult {
 }
 
 impl GrounderProgramInnerResult {
-    pub fn extract_groundings_of_concrete_source(&self, task_id: TaskId) -> Vec<SourceGrounding> {
+    pub fn extract_groundings_of_concrete_source(&self, task_id: TaskId) -> Vec<ParametersAssignment> {
         let predicate_index = *self
             .predicate_id_to_table_map
             .get(&GrounderPredicateId::ActionApplicable(task_id))
@@ -27,7 +27,7 @@ impl GrounderProgramInnerResult {
         self.var_tables[predicate_index]
             .extract()
             .rows()
-            .map(|row| SourceGrounding(row.iter().map(|&u| self.cst_of_datalog_sym[u]).collect()))
+            .map(|row| ParametersAssignment(row.iter().map(|&u| self.cst_of_datalog_sym[u]).collect()))
             .collect()
     }
 }

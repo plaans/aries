@@ -9,7 +9,7 @@ use aries_solver::prelude::*;
 use idmap::{DirectIdMap, intid::IntegerId};
 use itertools::Itertools;
 
-use crate::analysis::{Source, SourceGrounding, collect_nonsimple_conditions_and_effects_to_relax};
+use crate::analysis::{Source, collect_nonsimple_conditions_and_effects_to_relax, grounding::ParametersAssignment};
 use crate::encoder::{CondId, SchedEncoder};
 use crate::{Effect, EffectId, HasValueAt, Task, TaskId};
 
@@ -37,7 +37,7 @@ use std::collections::HashSet;
 ///       For the rest, just use the one corresponding to the fully lifted instance (if there's any, of course)
 pub struct Grounder {
     program: GrounderProgram,
-    global_args_groundings: Vec<SourceGrounding>,
+    global_args_groundings: Vec<ParametersAssignment>,
     concrete_sources: Vec<TaskId>,
 }
 
@@ -54,7 +54,7 @@ impl Grounder {
             .iter()
             .map(|t| ctx.sched.bounds(t).0..=ctx.sched.bounds(t).1)
             .multi_cartesian_product()
-            .map(SourceGrounding)
+            .map(ParametersAssignment)
             .collect();
 
         // all concrete sources by default
@@ -84,7 +84,7 @@ impl Grounder {
         }
     }
 
-    pub fn run(&self) -> Vec<(Source, Vec<SourceGrounding>)> {
+    pub fn run(&self) -> Vec<(Source, Vec<ParametersAssignment>)> {
         // Build inner datalog program
         let mut inner = inner::GrounderProgramInner::new_empty();
         for fact in &self.program.facts {
