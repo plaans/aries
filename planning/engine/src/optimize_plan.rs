@@ -452,6 +452,7 @@ pub fn encode_plan_optimization_problem(
         timelines::constraints::symmetry::SymmetryBreakingKind::default(),
         equiv,
     ));
+    sched.add_constraint(timelines::constraints::grounding::TasksUnifyWithGrounding::new());
 
     Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
 }
