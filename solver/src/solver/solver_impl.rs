@@ -335,6 +335,14 @@ impl<Lbl: Label> Solver<Lbl> {
                     self.reasoners
                         .cp()
                         .add_half_reif_linear_leq_constraint(lin, enabler, &self.model.state);
+
+                    // We check that enabler lit is always present as the lp reasonner can't handle optionnality
+                    if self.model.state.presence(enabler) == Lit::TRUE {
+                        self.reasoners
+                            .lp()
+                            .add_linear_leq_constraint(lin, enabler, &self.model.state);
+                    }
+
                     Ok(())
                 }
             }

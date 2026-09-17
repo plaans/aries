@@ -67,7 +67,7 @@ def main():
             ):
                 sys.exit(1)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"\n{'=' * 60}")
             print("ERROR: Command failed")
             print(f"{'=' * 60}")

@@ -5,12 +5,14 @@ use crate::core::Lit;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
+use crate::reasoners::lp::Lp;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 
 pub mod cp;
+pub mod lp;
 pub mod sat;
 pub mod stn;
 pub mod tautologies;
@@ -23,6 +25,7 @@ pub enum ReasonerId {
     Diff,
     Cp,
     Tautologies,
+    Lp,
     Extra(u8),
 }
 
@@ -44,6 +47,7 @@ impl Display for ReasonerId {
                 Diff => "DiffLog",
                 Cp => "CP",
                 Tautologies => "Optim",
+                Lp => "LP",
                 Extra(i) => {
                     _extra_str = format!("Extra({i})");
                     &_extra_str
@@ -91,18 +95,20 @@ impl From<Explanation> for Contradiction {
 ///
 /// SAT should always be first because we should not allow anything to happen between
 /// the moment a clause is learned and the moment it is is propagated.
-pub(crate) const REASONERS: [ReasonerId; 4] = [
+pub(crate) const REASONERS: [ReasonerId; 5] = [
     ReasonerId::Sat,
     ReasonerId::Tautologies,
     ReasonerId::Diff,
     ReasonerId::Cp,
+    ReasonerId::Lp,
 ];
 
 pub(crate) struct ReasonersTheories {
     pub sat: SatSolver,
     pub diff: StnTheory,
-    pub cp: Cp,
-    pub tautologies: Tautologies,
+    pub(crate) cp: Cp,
+    pub(crate) tautologies: Tautologies,
+    pub lp: Lp,
     pub extra: Vec<Option<Box<dyn Theory>>>,
 }
 impl Clone for ReasonersTheories {
@@ -112,6 +118,7 @@ impl Clone for ReasonersTheories {
             diff: self.diff.clone(),
             cp: self.cp.clone(),
             tautologies: self.tautologies.clone(),
+            lp: self.lp.clone(),
             extra: self
                 .extra
                 .iter()
@@ -127,6 +134,7 @@ impl ReasonersTheories {
             diff: StnTheory::new(Default::default()),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
+            lp: Lp::new(),
             extra: vec![],
         }
     }
@@ -159,6 +167,7 @@ impl ReasonersTheories {
             diff: StnTheory::new(Default::default()),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
+            lp: Lp::default(),
             extra,
         }
     }
@@ -168,6 +177,7 @@ impl ReasonersTheories {
             ReasonerId::Diff => &self.diff,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
+            ReasonerId::Lp => &self.lp,
             ReasonerId::Extra(id) => self.extra.get(id as usize).unwrap().as_ref().unwrap().as_ref(),
         }
     }
@@ -177,6 +187,7 @@ impl ReasonersTheories {
             ReasonerId::Diff => &mut self.diff,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
+            ReasonerId::Lp => &mut self.lp,
             ReasonerId::Extra(id) => self.extra.get_mut(id as usize).unwrap().as_mut().unwrap().as_mut(),
         }
     }
@@ -244,6 +255,9 @@ impl Reasoners {
     }
     pub fn tautologies(&mut self) -> &mut Tautologies {
         &mut self.theories.tautologies
+    }
+    pub fn lp(&mut self) -> &mut Lp {
+        &mut self.theories.lp
     }
     pub fn extra(&mut self) -> impl Iterator<Item = &mut Box<dyn Theory>> + '_ {
         self.theories.extra.iter_mut().filter_map(|th| th.as_mut())

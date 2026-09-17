@@ -58,6 +58,25 @@ jobs:
       - name: PDDL Solving (PDDL & HDDL)
         run: ./ci/pddl.sh
 
+  benchmark-tests:
+    name: Benchmarks tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GNU parallel
+        run: sudo apt-get update && sudo apt-get install parallel
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Install just
+        uses: extractions/setup-just@v4
+      - name: checkout benchmark instances
+        run: git clone --depth 1 https://github.com/plaans/aries-benchmarks benchmarks
+      - name: Run tests from benchmark repo
+        run: cd benchmarks && just run_tests
+
   minizinc-tests:
     name: Minizinc tests
     runs-on: ubuntu-24.04
@@ -201,6 +220,7 @@ jobs:
         ipc-tests,
         warm-up-tests,
         pddl-tests,
+        benchmark-tests,
       ]
     runs-on: ubuntu-latest
     steps:

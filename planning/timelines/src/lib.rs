@@ -1,9 +1,9 @@
+pub mod analysis;
 pub mod boxes;
 pub mod constraints;
 mod effects;
 pub mod encoder;
 pub mod explain;
-pub mod ext;
 pub mod symbols;
 mod tasks;
 
@@ -29,7 +29,6 @@ use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
-use crate::ext::ground::SourcesGrounderSimple;
 use crate::symbols::ObjectEncoding;
 pub use crate::tasks::*;
 
@@ -207,14 +206,6 @@ impl Sched {
         project: impl Fn(ConstraintID) -> Option<T>,
     ) -> ExplainableSolver<T> {
         ExplainableSolver::new(self, project)
-    }
-
-    pub fn sources_simple_grounder(&self) -> SourcesGrounderSimple {
-        let mut encoder: SchedEncoder = self.clone().encoder();
-        for c in &self.constraints {
-            c.enforce(&mut encoder);
-        }
-        SourcesGrounderSimple::from(&encoder)
     }
 
     pub fn print(&self, sol: &Solution) {

@@ -8,7 +8,7 @@ use aries_solver::{
 };
 use itertools::Itertools;
 
-use crate::ext::lprelax::wrapper::{LpRelaxReasonerWrapper, LpRelaxReasonerWrapperTrait};
+use crate::constraints::lprelax::wrapper::{LpRelaxReasonerWrapper, LpRelaxReasonerWrapperTrait};
 use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
@@ -45,7 +45,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
         }
 
-        let mut solver = if crate::ext::lprelax::ARIES_LPRELAX_USE.get() {
+        let mut solver = if crate::constraints::lprelax::ARIES_LPRELAX_USE.get() {
             let model = encoding.store.clone();
 
             let reasoner =

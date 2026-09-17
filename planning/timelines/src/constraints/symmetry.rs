@@ -60,7 +60,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
             SymmetryBreakingKind::CausalGraph => {
                 // This implements the symmetry breaking of (ECAI 25), though the implementation is at this point partial.
                 // It works by breaking symmetries on the causal graph, in essence giving higher priority for the the first actions to support conditions
-                // (in some arbirary order for action and conditions).
+                // (in some arbitrary order for action and conditions).
                 // The implementation is partial, with 2 TODO items in the implementation that may provide some improvement
                 // ECAI 25 ref: Towards Canonical and Minimal Solutions in a Constraint-based Plan-Space Planner
 
