@@ -45,6 +45,36 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
+#[derive(Debug, Clone, Copy)]
+pub struct LpOptions {
+    /// Used to activate/deactivate the propagation of the reasonner
+    ///
+    /// It can be controlled with activate and deactivate methods
+    propagation_active: bool,
+    /// Used to enable/disable the reasonner
+    ///
+    /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
+    enable: bool,
+    /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
+    is_explanation_refined: bool,
+}
+
+impl LpOptions {
+    fn new(propagation_active: bool, enable: bool, is_explanation_refined: bool) -> Self {
+        LpOptions {
+            propagation_active,
+            enable,
+            is_explanation_refined,
+        }
+    }
+}
+
+impl Default for LpOptions {
+    fn default() -> Self {
+        LpOptions::new(true, LP_ENABLE.get(), true)
+    }
+}
+
 /// Used to enable/disable the lp reasonner
 ///
 /// Can be set either from the env variable **`ARIES_LP_ENABLE`**
@@ -135,14 +165,10 @@ pub struct Lp {
     /// History of changes made to the LP with all information necessary to undo them.
     trail: Trail<LpEvent>,
     stats: Stats,
-    /// Used to activate/deactivate the propagation of the reasonner
+    /// Contains all the customizable options for the reasonner
     ///
-    /// It can be controlled with activate and deactivate methods
-    propagation_active: bool,
-    /// Used to enable/disable the reasonner
-    ///
-    /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
-    enable: bool,
+    /// Check [`LpOptions`] for more details
+    options: LpOptions,
     /// Used to log the initial problem
     ///
     /// It supposes that no additonal constraint is added after the first propagation
@@ -152,15 +178,15 @@ pub struct Lp {
 
 impl Default for Lp {
     fn default() -> Self {
-        Self::new()
+        Self::new(LpOptions::default())
     }
 }
 
 impl Lp {
-    pub fn new() -> Self {
+    pub fn new(options: LpOptions) -> Self {
         Self {
             id: ReasonerId::Cp,
-            solver: Solver::new(),
+            solver: Solver::new(options.is_explanation_refined),
 
             bound_cons_lit_vec: Vec::new(),
 
@@ -173,8 +199,7 @@ impl Lp {
 
             stats: Stats::new(),
 
-            enable: LP_ENABLE.get(),
-            propagation_active: true,
+            options,
             #[cfg(feature = "lp_log")]
             is_first_propagate: true,
         }
@@ -183,19 +208,33 @@ impl Lp {
     ///
     /// All constraints registered before the activation of the LP will be ignored
     pub fn activate(&mut self) {
-        self.propagation_active = true;
-        self.enable = true;
+        self.options.propagation_active = true;
+        self.options.enable = true;
     }
 
     /// Deactivate propagation and constraints registration of the LP
     pub fn deactivate(&mut self) {
-        self.propagation_active = false;
-        self.enable = false;
+        self.options.propagation_active = false;
+        self.options.enable = false;
     }
 
     /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
     pub fn deactivate_propagation(&mut self) {
-        self.propagation_active = false;
+        self.options.propagation_active = false;
+    }
+
+    /// Activate refined explanation using minimization based on [`crate::reasoners::cp::linear`]
+    ///
+    /// Explanations will be smaller in general therefore more useful but take more time to compute
+    pub fn activate_refined_explanation(&mut self) {
+        self.options.is_explanation_refined = true;
+        self.solver.is_explanation_refined = true;
+    }
+
+    /// Deactivate refined explanation
+    pub fn deactivate_refined_explanation(&mut self) {
+        self.options.is_explanation_refined = true;
+        self.solver.is_explanation_refined = true;
     }
 
     /// Returns a linear sum which is the opposite in terms of coefficient that the one given
@@ -275,7 +314,7 @@ impl Lp {
     /// We assume that the active literal is always present, it is the responsability of the caller to ensure it:
     /// `doms.presence(active) == Lit::TRUE`
     pub fn add_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
-        if !self.enable {
+        if !self.options.enable {
             return;
         }
 
@@ -373,7 +412,7 @@ impl Theory for Lp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.propagation_active || !self.enable {
+        if !self.options.propagation_active || !self.options.enable {
             return Ok(());
         }
 
@@ -448,7 +487,7 @@ impl Theory for Lp {
     }
 
     fn print_stats(&self) {
-        if self.enable {
+        if self.options.enable {
             println!("# propagations: {}", self.stats.num_propagate);
             println!(
                 "# contradictions: {}",
@@ -549,7 +588,7 @@ mod tests {
         sparse_proportion: f32,
         seed: u64,
     ) -> (Lp, Domains) {
-        let mut lp_reasonner = Lp::new();
+        let mut lp_reasonner = Lp::default();
 
         let mut d = Domains::new();
 

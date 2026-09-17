@@ -52,6 +52,9 @@ pub struct Solver {
     pub(super) bounds: Vec<IntBounds>,
     pub(super) constraints: Vec<IntegerConstraint>,
 
+    /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
+    pub(super) is_explanation_refined: bool,
+
     /// Maps minilp [`Variable`] with their corresponding [`Var`] in aries solver (therefore slack variables do not appear)
     ///
     /// Variable can't be used directly as the key, therefore we use their associated index: [`Variable::idx()`]
@@ -72,11 +75,12 @@ impl PartialEq for Solver {
 }
 
 impl Solver {
-    pub fn new() -> Self {
+    pub fn new(is_explanation_refined: bool) -> Self {
         Solver {
             problem: Problem::new(OptimizationDirection::Maximize),
             bounds: Vec::new(),
             constraints: Vec::new(),
+            is_explanation_refined,
             map_lp_to_aries: RefMap::default(),
             opt_feas_checker: None,
             #[cfg(feature = "lp_log")]
@@ -321,11 +325,19 @@ impl Solver {
 
         // To detect the infeasibility, we check if 0 is in the range [min, max] as our linear sum should be equal to 0
         if max_lin_sum < 0 {
-            return Some(self.explain_geq_constraint(&lin_sum, domains));
+            if self.is_explanation_refined {
+                return Some(self.explain_geq(&lin_sum, domains));
+            } else {
+                return Some(self.explain_geq_basic(&lin_sum));
+            }
         }
 
         if min_lin_sum > 0 {
-            return Some(self.explain_leq_constraint(&lin_sum, domains));
+            if self.is_explanation_refined {
+                return Some(self.explain_leq(&lin_sum, domains));
+            } else {
+                return Some(self.explain_leq_basic(&lin_sum));
+            }
         }
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
@@ -355,7 +367,7 @@ impl Solver {
     }
 
     /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint lin_sum <= 0
-    pub fn explain_leq_constraint(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
+    fn explain_leq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let mut explanation = Explanation::new();
 
         let mut ub = 0;
@@ -466,10 +478,37 @@ impl Solver {
     }
 
     /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint lin_sum => 0
-    pub fn explain_geq_constraint(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
+    fn explain_geq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 
-        self.explain_leq_constraint(opp_constraint, domains)
+        self.explain_leq(opp_constraint, domains)
+    }
+
+    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint lin_sum => 0
+    fn explain_leq_basic(&self, lin_sum: &[i128]) -> Explanation {
+        let mut explanation = Explanation::new();
+
+        explanation.lits = lin_sum
+            .iter()
+            .enumerate()
+            .filter(|&(_, &coeff)| coeff != 0)
+            .map(|(i, &coeff)| {
+                if coeff < 0 {
+                    self.bounds[i].upper_lit
+                } else {
+                    self.bounds[i].lower_lit
+                }
+            })
+            .collect();
+
+        explanation
+    }
+
+    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint lin_sum <= 0
+    fn explain_geq_basic(&self, lin_sum: &[i128]) -> Explanation {
+        let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
+
+        self.explain_leq_basic(opp_constraint)
     }
 
     /// Return an explanation containing the upper and lower lit associated with a var, used to explain trivial errors (with no certificate)
