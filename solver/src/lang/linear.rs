@@ -187,6 +187,10 @@ impl LinTerm {
     pub fn eq<Rhs: Into<LinSum>>(&self, other: Rhs) -> LinEq {
         LinSum::from(*self).eq(other.into())
     }
+
+    pub fn is_cst(&self) -> bool {
+        self.scaled_var.is_zero()
+    }
 }
 
 impl Debug for LinTerm {

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{ops::Index, sync::Arc};
 
 use aries_solver::lang::ModelWrapper;
 
@@ -40,15 +40,45 @@ impl ModelWrapper for SchedEncoder {
 ///
 /// In general, conditions are to be understood more broadly than in classical planning and may refer
 /// to anything that requires a value at a given point in time. Essentially an [`HasValueAt`] constraint leads to
-/// a `Cond`. This typically includes a normal precondition as in PDDL, but also the result of storing an expression
+/// a condition. This typically includes a normal precondition as in PDDL, but also the result of storing an expression
 /// on a state variable into an intermediate variable.
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Cond {
-    /// Source of the condition, typically a Task in which the condition appears or `None` if it is introduced
-    /// in the global scope (problem).
-    pub source: Option<TaskId>,
-    /// Indicates that this is the `n^th` condition recorded for this task
-    pub cond_id: u32,
+pub type CondId = usize;
+
+#[derive(Debug, Default, Clone)]
+pub struct Conds {
+    /// Debug util: this is used to make sure all conditions have been added before any read.
+    /// If a new condition is added *after* a read access, the corresponding method will panic.
+    /// This is a workaround for the current lack of phased encoding that would statically ensure this.
+    has_been_read: std::cell::Cell<bool>,
+    conds: DirectIdMap<CondId, HasValueAt>,
+    next_id: u32,
+}
+
+impl Conds {
+    fn insert(&mut self, cond: HasValueAt) -> CondId {
+        let id = CondId::from(self.next_id as usize);
+        self.conds.insert(id, cond);
+        self.next_id += 1;
+        id
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &HasValueAt> {
+        self.has_been_read.set(true);
+        self.conds.iter().map(|(_k, v)| v)
+    }
+
+    pub fn get(&self, cond_id: CondId) -> &HasValueAt {
+        self.has_been_read.set(true);
+        &self.conds[cond_id]
+    }
+}
+
+impl Index<CondId> for Conds {
+    type Output = HasValueAt;
+
+    fn index(&self, index: CondId) -> &Self::Output {
+        self.get(index)
+    }
 }
 
 /// A causal link identifies a dependency relationship between an effect and a condition.
@@ -59,9 +89,9 @@ pub struct Cond {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CausalLink {
     /// ID of the effect that may participate
-    pub eff: EffectId,
-    /// Condition that may be affected by the effect
-    pub cond: Cond,
+    pub eff_id: EffectId,
+    /// ID of the condition that may be affected by the effect
+    pub cond_id: CondId,
     /// A literal that is true if the effect participates in defining the value.
     /// Note that the literal is typically optional and only required to be present if the condition is present as well.
     /// It must be false if the effect is absent however.
@@ -77,22 +107,19 @@ pub struct CausalLinks {
     /// If a new causal link is added *after* a read access, the corresponding method will panic.
     /// This is a workaround for the current lack of phased encoding that would statically ensure this.
     has_been_read: std::cell::Cell<bool>,
-    condition_counts: BTreeMap<Option<TaskId>, u32>,
     links: Vec<CausalLink>,
+    pub conditions: Conds,
 }
 
 impl CausalLinks {
     /// Records a new condition with the associated causal links.
-    pub fn add_new_condition_participants(&mut self, source: Option<TaskId>, supports: Vec<(EffectId, Lit)>) {
+    pub fn add_new_condition_participants(&mut self, cond: HasValueAt, supports: Vec<(EffectId, Lit)>) {
         debug_assert!(!self.has_been_read.get());
-        let count_for_task = self.condition_counts.entry(source).or_default();
-        let cond_id = *count_for_task;
-        *count_for_task += 1;
-        let cond = Cond { source, cond_id };
-        for (eff, enforced) in supports {
+        let cond_id = self.conditions.insert(cond);
+        for (eff_id, enforced) in supports {
             self.links.push(CausalLink {
-                eff,
-                cond,
+                eff_id,
+                cond_id,
                 active: enforced,
             });
         }
