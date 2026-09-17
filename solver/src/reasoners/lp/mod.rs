@@ -18,6 +18,7 @@ them to the LP.
 [ref-doc]: https://link.springer.com/chapter/10.1007/11817963_11
 */
 
+mod explanation_lang;
 mod solver;
 
 #[cfg(feature = "lp_log")]
@@ -222,6 +223,7 @@ impl Lp {
         );
 
         self.memory_x.insert(x, var);
+        self.solver.map_lp_to_aries.insert(var.idx(), x);
     }
 
     /// Add an s variable, it corresponds to a linear constraint in aries solver
@@ -336,14 +338,14 @@ impl Lp {
     }
 
     /// Takes the result of a call to [Solver::check_feasibility] and returns either `Ok` or a `Contradiction` if infeasibility was detected
-    fn explain_check_feas(&mut self, res: Result<(), Error>) -> Result<(), Contradiction> {
+    fn explain_check_feas(&mut self, res: Result<(), Error>, domains: &Domains) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
                 if self.solver.problem.is_certificate_valid(&cert) {
                     self.stats.num_val_certif_float += 1;
                 }
-                match self.solver.check_certificate(&cert, &mut self.stats) {
+                match self.solver.check_certificate(&cert, domains, &mut self.stats) {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
                         Err(Contradiction::Explanation(explanation))
@@ -427,7 +429,7 @@ impl Theory for Lp {
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
         let res = self.solver.check_feasibility();
-        self.explain_check_feas(res)?;
+        self.explain_check_feas(res, domains)?;
 
         self.stats.num_ok_propagate += 1;
 
@@ -496,7 +498,7 @@ mod tests {
     };
 
     use crate::{
-        core::{INT_CST_MAX, INT_CST_MIN, IntCst, state::Cause},
+        core::{IntCst, state::Cause},
         reasoners::cp::testing::pick_decisions,
     };
 
@@ -528,42 +530,6 @@ mod tests {
             let lin_sum = vec![];
 
             assert_eq!(Lp::get_opposite_linear_sum(&lin_sum), vec![])
-        }
-    }
-
-    impl Lp {
-        fn get_validity_certificates(&mut self) -> Option<(bool, bool)> {
-            let bound_cons_lit_vec = self.bound_cons_lit_vec.clone();
-
-            for (bound_cons, _) in bound_cons_lit_vec {
-                let res_set_bound = self
-                    .solver
-                    .set_bound(bound_cons.var, bound_cons.bound, bound_cons.val, Lit::TRUE);
-
-                let res_check_feas = self.solver.check_feasibility();
-
-                if res_set_bound.is_err() || res_check_feas.is_err() {
-                    if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
-                        // println!("Cert: {:?}", cert);
-
-                        let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.check_certificate(cert, &mut self.stats).is_some();
-                        return Some((is_certif_valid_int, is_certif_valid_float));
-                    }
-
-                    if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
-                        // println!("Cert: {:?}", cert);
-
-                        let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.check_certificate(cert, &mut self.stats).is_some();
-                        return Some((is_certif_valid_int, is_certif_valid_float));
-                    }
-
-                    break;
-                }
-            }
-
-            None
         }
     }
 
@@ -618,53 +584,6 @@ mod tests {
         }
 
         (lp_reasonner, d)
-    }
-
-    fn compile_stats_certificate(nb_var: usize, nb_const: usize, min: IntCst, max: IntCst) {
-        let n = 1000;
-
-        let mut nb_val_cert_i = 0;
-
-        let mut nb_val_cert_f = 0;
-
-        let mut nb_cert = 0;
-
-        for seed in 0..n {
-            let (mut lp, _) = gen_filled_lp_domain(nb_var, nb_const, min, max, 0.1, seed);
-
-            if let Some((is_val_cert_i, is_val_cert_f)) = lp.get_validity_certificates() {
-                nb_val_cert_i += is_val_cert_i as usize;
-                nb_val_cert_f += is_val_cert_f as usize;
-
-                nb_cert += 1;
-            }
-        }
-
-        println!("float: {nb_val_cert_f}, int: {nb_val_cert_i}, total: {nb_cert}");
-    }
-
-    #[ignore]
-    #[test]
-    fn compile_stats_certificate_single() {
-        compile_stats_certificate(50, 100, -10, 10);
-    }
-
-    #[ignore]
-    #[test]
-    fn compile_stats_certificate_multiple() {
-        for max in [10, 1000, INT_CST_MAX] {
-            for nb_var in [30, 50, 100, 150] {
-                for nb_const in [50, 100, 200, 400] {
-                    print!("nb_var:{nb_var}, nb_const: {nb_const}, max: {max}, ");
-                    compile_stats_certificate(
-                        nb_var,
-                        nb_const,
-                        if max == INT_CST_MAX { INT_CST_MIN } else { -max },
-                        max,
-                    );
-                }
-            }
-        }
     }
 
     /// Adapted from testing.rs in cp reasonner

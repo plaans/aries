@@ -1,9 +1,16 @@
-use std::fmt;
+use std::{collections::BinaryHeap, fmt};
 
 use crate::{
-    backtrack::Trail,
-    core::{IntCst, Lit, LongCst, state::Explanation},
-    reasoners::lp::{LpEvent, Stats},
+    backtrack::{DecLvl, Trail},
+    collections::ref_store::RefMap,
+    core::{
+        IntCst, Lit, LongCst, Var,
+        state::{Domains, DomainsSnapshot, Explanation},
+    },
+    reasoners::lp::{
+        LpEvent, Stats,
+        explanation_lang::{LbBoundEvent, SumElem},
+    },
 };
 
 #[cfg(feature = "lp_log")]
@@ -41,9 +48,14 @@ pub struct IntegerConstraint {
 pub struct Solver {
     pub(super) problem: Problem,
 
-    // Used to store an exact version of our original problem with integers
+    /// Used to store an exact version of our original problem with integers
     pub(super) bounds: Vec<IntBounds>,
     pub(super) constraints: Vec<IntegerConstraint>,
+
+    /// Maps minilp [`Variable`] with their corresponding [`Var`] in aries solver (therefore slack variables do not appear)
+    ///
+    /// Variable can't be used directly as the key, therefore we use their associated index: [`Variable::idx()`]
+    pub(super) map_lp_to_aries: RefMap<usize, Var>,
 
     opt_feas_checker: Option<FeasibilityChecker>,
 
@@ -65,6 +77,7 @@ impl Solver {
             problem: Problem::new(OptimizationDirection::Maximize),
             bounds: Vec::new(),
             constraints: Vec::new(),
+            map_lp_to_aries: RefMap::default(),
             opt_feas_checker: None,
             #[cfg(feature = "lp_log")]
             logger: Logger::new(),
@@ -280,7 +293,7 @@ impl Solver {
     /// Verify the certificate of unsatisfiability
     ///
     /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
-    pub fn check_certificate(&mut self, cert: &[f64], stats: &mut Stats) -> Option<Explanation> {
+    pub fn check_certificate(&mut self, cert: &[f64], domains: &Domains, stats: &mut Stats) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
@@ -308,41 +321,11 @@ impl Solver {
 
         // To detect the infeasibility, we check if 0 is in the range [min, max] as our linear sum should be equal to 0
         if max_lin_sum < 0 {
-            let mut explanation = Explanation::new();
-
-            explanation.lits = lin_sum
-                .iter()
-                .enumerate()
-                .filter(|&(_, &coeff)| coeff != 0)
-                .map(|(i, &coeff)| {
-                    if coeff > 0 {
-                        self.bounds[i].upper_lit
-                    } else {
-                        self.bounds[i].lower_lit
-                    }
-                })
-                .collect();
-
-            return Some(explanation);
+            return Some(self.explain_geq_constraint(&lin_sum, domains));
         }
 
         if min_lin_sum > 0 {
-            let mut explanation = Explanation::new();
-
-            explanation.lits = lin_sum
-                .iter()
-                .enumerate()
-                .filter(|&(_, &coeff)| coeff != 0)
-                .map(|(i, &coeff)| {
-                    if coeff < 0 {
-                        self.bounds[i].upper_lit
-                    } else {
-                        self.bounds[i].lower_lit
-                    }
-                })
-                .collect();
-
-            return Some(explanation);
+            return Some(self.explain_leq_constraint(&lin_sum, domains));
         }
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
@@ -369,6 +352,124 @@ impl Solver {
         }
 
         None
+    }
+
+    /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint lin_sum <= 0
+    pub fn explain_leq_constraint(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
+        let mut explanation = Explanation::new();
+
+        let mut ub = 0;
+
+        let domain_snap = DomainsSnapshot::current(domains);
+
+        let mut culprits = BinaryHeap::new();
+
+        for (idx, &coef) in lin_sum.iter().enumerate() {
+            if coef == 0 {
+                continue;
+            }
+
+            // Check if it's a slack variable or not
+            if let Some(&var) = self.map_lp_to_aries.get(idx) {
+                let sum_elem = SumElem::new(coef, var);
+
+                if let Some(event) = LbBoundEvent::new(sum_elem, &domain_snap) {
+                    // there is a lower bound event on this element, add it to the set of culprits for later processing
+                    culprits.push(event)
+                } else {
+                    // no event associated to the element, which means its value is entailed at the ROOT
+                    // Hence it does need to be present in the explanation, but should cancel its contribution to the UB
+                    let elem_var_lb = domains.lb(sum_elem.var);
+                    debug_assert_eq!(
+                        domains.entailing_level(Lit::geq(sum_elem.var, elem_var_lb as IntCst)),
+                        DecLvl::ROOT
+                    );
+                    let elem_lb = (elem_var_lb as i128).saturating_mul(sum_elem.factor);
+                    ub -= elem_lb;
+                }
+            } else {
+                // We directly add Lit that activates the bound of our slack variable and we cancel its contribution to ub
+                let lit = if coef > 0 {
+                    ub -= coef * self.bounds[idx].lower as i128;
+                    self.bounds[idx].lower_lit
+                } else {
+                    ub -= coef * self.bounds[idx].upper as i128;
+                    self.bounds[idx].upper_lit
+                };
+
+                explanation.push(lit);
+            }
+        }
+
+        let sum_lb = |culps: &BinaryHeap<LbBoundEvent>| -> i128 { culps.iter().map(|e| e.lb()).sum() };
+        #[allow(unused)]
+        let print = |culps: &BinaryHeap<LbBoundEvent>| {
+            println!("QUEUE:");
+            for e in culps.iter() {
+                println!(
+                    " {:?} ({:?}) {:?} {:?}    {:?}",
+                    e.literal(),
+                    e.elem,
+                    e.lb(),
+                    e.previous_lb(),
+                    e.event
+                )
+            }
+        };
+        // print(&culprits);
+
+        let mut culprits_lb = sum_lb(&culprits);
+        // println!("BEFORE LOOP: {culprits_lb}   <= {ub}");
+        while let Some(elem_event) = culprits.pop() {
+            // let e = &elem_event;
+            // println!(
+            //     " {:?} ({:?}) {:?} {:?}    {:?}",
+            //     e.literal(),
+            //     &e.elem,
+            //     e.lb(),
+            //     e.previous_lb(),
+            //     e.event
+            // );
+            let event_idx = elem_event.event;
+            let lb = elem_event.lb();
+            let prev_lb = elem_event.previous_lb();
+            culprits_lb -= lb; // update the
+            debug_assert_eq!(culprits_lb, sum_lb(&culprits));
+
+            debug_assert!(ub <= culprits_lb + lb);
+            if ub <= culprits_lb + prev_lb {
+                // this event is not necessary and considering the previous one would be sufficient for the explanation
+                if let Some(previous) = elem_event.into_previous() {
+                    // add the previous lower bound for later processing
+                    culprits.push(previous);
+                    culprits_lb += prev_lb;
+                    // println!("  > to prev")
+                } else {
+                    // there was no previous event (ie the previous lower bound always holds)
+                    debug_assert_eq!(
+                        domains.entailing_level(domains.get_event(event_idx).previous_literal()),
+                        DecLvl::ROOT
+                    );
+                    // no need to add to the explanation (tautology) but cancel its contribution
+                    ub -= prev_lb;
+                    // println!("  > folded")
+                }
+            } else {
+                // this event is necessary, add it to the explanation
+                explanation.push(elem_event.literal());
+                ub -= lb;
+                // println!("  > select")
+            }
+        }
+
+        explanation
+    }
+
+    /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint lin_sum => 0
+    pub fn explain_geq_constraint(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
+        let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
+
+        self.explain_leq_constraint(opp_constraint, domains)
     }
 
     /// Return an explanation containing the upper and lower lit associated with a var, used to explain trivial errors (with no certificate)
