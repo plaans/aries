@@ -111,6 +111,7 @@ impl Grounder {
         res
     }
 
+    #[allow(dead_code)]
     pub fn print_datalog_program(&self) {
         self.program.print();
     }

@@ -27,6 +27,3 @@ impl std::ops::Index<usize> for SourceGrounding {
         &self.0[index]
     }
 }
-
-#[allow(dead_code)]
-pub(crate) type SourceGroundingId = usize;

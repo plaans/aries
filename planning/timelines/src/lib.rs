@@ -25,7 +25,6 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries_solver::model::Model<Sym>;
-use crate::analysis::ground::SourcesGrounderSimple;
 use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
@@ -207,14 +206,6 @@ impl Sched {
         project: impl Fn(ConstraintID) -> Option<T>,
     ) -> ExplainableSolver<T> {
         ExplainableSolver::new(self, project)
-    }
-
-    pub fn sources_simple_grounder(&self) -> SourcesGrounderSimple {
-        let mut encoder: SchedEncoder = self.clone().encoder();
-        for c in &self.constraints {
-            c.enforce(&mut encoder);
-        }
-        SourcesGrounderSimple::from(&encoder)
     }
 
     pub fn print(&self, sol: &Solution) {
