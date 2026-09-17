@@ -3,12 +3,14 @@ use crate::core::Lit;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
 use crate::reasoners::cp::Cp;
+use crate::reasoners::lp::Lp;
 use crate::reasoners::sat::SatSolver;
 use crate::reasoners::stn::StnTheory;
 use crate::reasoners::tautologies::Tautologies;
 use std::fmt::{Display, Formatter};
 
 pub mod cp;
+pub mod lp;
 pub mod sat;
 pub mod stn;
 pub mod tautologies;
@@ -21,6 +23,7 @@ pub enum ReasonerId {
     Diff,
     Cp,
     Tautologies,
+    Lp,
 }
 
 impl ReasonerId {
@@ -40,6 +43,7 @@ impl Display for ReasonerId {
                 Diff => "DiffLog",
                 Cp => "CP",
                 Tautologies => "Optim",
+                Lp => "LP",
             }
         )
     }
@@ -83,11 +87,12 @@ impl From<Explanation> for Contradiction {
 ///
 /// SAT should always be first because we should not allow anything to happen between
 /// the moment a clause is learned and the moment it is is propagated.
-pub(crate) const REASONERS: [ReasonerId; 4] = [
+pub(crate) const REASONERS: [ReasonerId; 5] = [
     ReasonerId::Sat,
     ReasonerId::Tautologies,
     ReasonerId::Diff,
     ReasonerId::Cp,
+    ReasonerId::Lp,
 ];
 
 /// A set of inference modules for constraint propagation.
@@ -97,6 +102,7 @@ pub struct Reasoners {
     pub diff: StnTheory,
     pub(crate) cp: Cp,
     pub(crate) tautologies: Tautologies,
+    pub lp: Lp,
 }
 impl Reasoners {
     pub fn new() -> Self {
@@ -105,6 +111,7 @@ impl Reasoners {
             diff: StnTheory::new(Default::default()),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
+            lp: Lp::new(),
         }
     }
 
@@ -114,6 +121,7 @@ impl Reasoners {
             ReasonerId::Diff => &self.diff,
             ReasonerId::Cp => &self.cp,
             ReasonerId::Tautologies => &self.tautologies,
+            ReasonerId::Lp => &self.lp,
         }
     }
 
@@ -123,6 +131,7 @@ impl Reasoners {
             ReasonerId::Diff => &mut self.diff,
             ReasonerId::Cp => &mut self.cp,
             ReasonerId::Tautologies => &mut self.tautologies,
+            ReasonerId::Lp => &mut self.lp,
         }
     }
 

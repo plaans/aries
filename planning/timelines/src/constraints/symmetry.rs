@@ -93,8 +93,10 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                     for (&b, &a) in equiv.iter().tuple_windows() {
                         // creates the signature of the task
                         let supports = |tid: TaskId| {
-                            links_per_action[&tid]
-                                .iter()
+                            links_per_action
+                                .get(&tid)
+                                .into_iter()
+                                .flatten()
                                 // ignore the conditions originating from `a` and `b` that require some special handling otherwise.
                                 // This corresponds to (ECAI 25, eq. 3) and slightly weaker than the one propose immediately after.
                                 // TODO: implement the complete form (not much more complex but requires some mechanics to handle swapping links between the two signatures)
