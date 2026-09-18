@@ -4,7 +4,6 @@ use aries_solver::{
     lang::{BoolExpr, Lit, ModelWrapper, constraints::Table},
     prelude::*,
 };
-use itertools::Itertools;
 
 use crate::encoder::SchedEncoder;
 
@@ -27,16 +26,12 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
     fn enforce_if(&self, implicant: aries_solver::prelude::Lit, ctx: &mut SchedEncoder) {
         let groundings = crate::analysis::grounding::ground_all_tasks(ctx);
 
-        println!();
+        // println!();
         for (task, groundings) in groundings.all_task_groundings() {
             // println!("{task:?}, {}", groundings.len());
 
             let task_prez = ctx.sched.tasks[task].presence;
             let task_args = &ctx.sched.tasks[task].args;
-            let task_args = task_args
-                .iter()
-                .map(|arg| VarCst::try_from(*arg).unwrap()) // TODO: proper conversion
-                .collect_vec();
 
             if task_args.is_empty() {
                 continue;
@@ -50,7 +45,7 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
                 table.push_line(grounding.get());
             }
 
-            let has_grounding = in_table(task_args, Arc::new(table));
+            let has_grounding = in_table(task_args.clone(), Arc::new(table));
             let has_grounding = Scoped {
                 constraint: has_grounding,
                 scope: task_prez,
