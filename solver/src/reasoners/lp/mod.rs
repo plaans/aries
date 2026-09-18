@@ -45,17 +45,24 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
+/// Contains all the options available for the Lp reasonner
+///
+/// It can be passed when creating the reasonner or modified through following methods:
+/// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
 #[derive(Debug, Clone, Copy)]
 pub struct LpOptions {
     /// Used to activate/deactivate the propagation of the reasonner
     ///
-    /// It can be controlled with activate and deactivate methods
+    /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
     propagation_active: bool,
     /// Used to enable/disable the reasonner
     ///
     /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
+    /// or after the creation with [`Lp::activate`] and [`Lp::deactivate`]
     enable: bool,
     /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
+    ///
+    ///Can be controlled with the following methods: [`Lp::activate_refined_explanation`], [`Lp::deactivate_refined_explanation`]
     is_explanation_refined: bool,
 }
 
@@ -149,15 +156,15 @@ impl Stats {
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
-    /// Encapsulates both float and integer versions of our constraints and an instance of the minilp solver
+    /// Encapsulates both float and integer versions of our constraints and an instance of the aries-lp solver
     solver: Solver,
     /// Associates each bound constraint with its activation lit
     bound_cons_lit_vec: Vec<(BoundConstraint, Lit)>,
-    /// Associates linear sums with its corresponding variable in the minilp solver
+    /// Associates linear sums with its corresponding variable in the aries-lp solver
     ///
     /// It is used to avoid duplicate variables that should be the same
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
-    /// Maps var from aries solver with their coresponding variable in minilp (if they appear in the post constraints)
+    /// Maps var from aries solver with their coresponding variable in aries-lp (if they appear in the post constraints)
     memory_x: RefMap<Var, Variable>,
     model_events: ObsTrailCursor<Event>,
     /// The watcher corresponds to an index in bound_cons_lit_vec
@@ -233,13 +240,13 @@ impl Lp {
 
     /// Deactivate refined explanation
     pub fn deactivate_refined_explanation(&mut self) {
-        self.options.is_explanation_refined = true;
-        self.solver.is_explanation_refined = true;
+        self.options.is_explanation_refined = false;
+        self.solver.is_explanation_refined = false;
     }
 
     /// Returns a linear sum which is the opposite in terms of coefficient that the one given
     ///
-    /// We use it to detect that 2 constraints could use the same s variable in minilp
+    /// We use it to detect that 2 constraints could use the same s variable in aries-lp
     fn get_opposite_linear_sum(linear_sum: &[ScaledVar]) -> Vec<ScaledVar> {
         let mut opp = Vec::new();
         for &svar in linear_sum {

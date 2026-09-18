@@ -43,7 +43,7 @@ pub struct IntegerConstraint {
     lin_sum: Vec<(Variable, IntCst)>,
 }
 
-/// Interface with the minilp solver, also used to verify its certificates
+/// Interface with the aries-lp solver, also used to verify its certificates
 #[derive(Clone)]
 pub struct Solver {
     pub(super) problem: Problem,
@@ -55,7 +55,7 @@ pub struct Solver {
     /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
     pub(super) is_explanation_refined: bool,
 
-    /// Maps minilp [`Variable`] with their corresponding [`Var`] in aries solver (therefore slack variables do not appear)
+    /// Maps aries-lp [`Variable`] with their corresponding [`Var`] in aries solver (therefore slack variables do not appear)
     ///
     /// Variable can't be used directly as the key, therefore we use their associated index: [`Variable::idx()`]
     pub(super) map_lp_to_aries: RefMap<usize, Var>,
@@ -94,7 +94,7 @@ impl Solver {
     pub fn create_variable(&mut self, lb: LongCst, ub: LongCst, stats: &mut Stats) -> Variable {
         let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
 
-        // If the minilp instance is already created, we need to update it
+        // If the aries-lp instance is already created, we need to update it
         if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
             let res = feas_checker.add_variable(0.0, lb as f64, ub as f64);
             // Adding a variable should not generate an error as it would mean that we are trying to add a variable with inconsistent bounds
