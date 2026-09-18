@@ -366,7 +366,26 @@ impl Solver {
         None
     }
 
-    /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint lin_sum <= 0
+    /// Return a minimal [`Explanation`] inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint `<lin_sum, variables> <= 0`
+    ///
+    /// lin_sum contains the coefficients for every lp [`Variable`] in the constraint (including null coefficients).
+    /// The coefficient at index 0 is associated with the [`Variable`] of [`Variable::idx`] 0 and so on
+    ///
+    /// As some of the aries-lp [`Variable`] are slack variables, they do not appear in the aries solver, therefore
+    /// we start be canceling their contribution to the ub and we update the [`Explanation`] to take into account the activation
+    /// [`Lit`] that are responsible of the bounds of the slack [`Variable`]
+    ///
+    /// For [`Variable`] that are mapped with a [`Var`] in aries solver, we check if their bound is entailed at the root, if yes
+    /// we cancel their contribution to the ub. For the others, we add their last bound event to the culprits list.
+    ///
+    /// The last step consists of eliminating the culprits that are not necessary to explain the infeasibility
+    /// and iterate in the past bound events to have an [`Explanation`] as minimal as possible.
+    ///
+    /// As an example, if the last bound event on x was `x <= 5` but `x <= 8` which was the previous bound event is sufficient for infeasibility,
+    /// we add `x <= 8` to the [`Explanation`]
+    ///
+    /// This minimization takes more time to compute that basic explanations but in most of the cases, the clause learnt is stronger, allowing
+    /// a better backtracking and pruning.
     fn explain_leq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let mut explanation = Explanation::new();
 
@@ -376,6 +395,9 @@ impl Solver {
 
         let mut culprits = BinaryHeap::new();
 
+        // We iterate over the lin_sum to eliminate variables with a null coef
+        // Variables that are really present in the constraint (coef != 0) are then treated separatly
+        // depending if they are mapped to var in aries solver or if they are just slack variables.
         for (idx, &coef) in lin_sum.iter().enumerate() {
             if coef == 0 {
                 continue;
@@ -400,7 +422,7 @@ impl Solver {
                     ub -= elem_lb;
                 }
             } else {
-                // We directly add Lit that activates the bound of our slack variable and we cancel its contribution to ub
+                // We add the activation Lit associted with the bound of our slack variable and we cancel its contribution to the ub
                 let lit = if coef > 0 {
                     ub -= coef * self.bounds[idx].lower as i128;
                     self.bounds[idx].lower_lit
@@ -445,7 +467,7 @@ impl Solver {
             let event_idx = elem_event.event;
             let lb = elem_event.lb();
             let prev_lb = elem_event.previous_lb();
-            culprits_lb -= lb; // update the
+            culprits_lb -= lb; // update the new lb after removing the LbBoundEvent
             debug_assert_eq!(culprits_lb, sum_lb(&culprits));
 
             debug_assert!(ub <= culprits_lb + lb);
@@ -477,14 +499,19 @@ impl Solver {
         explanation
     }
 
-    /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint lin_sum => 0
+    /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint `<lin_sum, variables> => 0`
+    ///
+    /// Check [`Solver::explain_leq`] for more details on how these [`Explanation`] are generated
     fn explain_geq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 
         self.explain_leq(opp_constraint, domains)
     }
 
-    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint lin_sum => 0
+    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> <= 0`
+    ///
+    /// lin_sum contains the coefficients for every lp [`Variable`] in the constraint (including null coefficients).
+    /// The coefficient at index 0 is associated with the [`Variable`] of [`Variable::idx`] 0 and so on
     fn explain_leq_basic(&self, lin_sum: &[i128]) -> Explanation {
         let mut explanation = Explanation::new();
 
@@ -504,7 +531,7 @@ impl Solver {
         explanation
     }
 
-    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint lin_sum <= 0
+    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> => 0`
     fn explain_geq_basic(&self, lin_sum: &[i128]) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 
