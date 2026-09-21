@@ -3,7 +3,7 @@ use aries_solver::core::state::{DomainsSnapshot, Explanation, InferenceCause};
 use aries_solver::prelude::{Domains, Lit};
 use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
-use crate::encoder::SchedEncoder;
+use crate::SchedEncoder;
 
 pub trait LpRelaxReasonerWrapperTrait: LpRelaxReasonerWrapperTraitInner {
     fn new_wrapped(ctx: SchedEncoder, num_assumptions: usize) -> LpRelaxReasonerWrapped<Self>;

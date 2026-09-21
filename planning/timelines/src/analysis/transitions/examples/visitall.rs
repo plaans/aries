@@ -4,9 +4,11 @@ use aries_solver::prelude::*;
 
 use crate::boxes::Segment;
 use crate::constraints::HasValueAt;
-use crate::encoder::SchedEncoder;
 use crate::symbols::ObjectEncoding;
-use crate::{Effect, EffectOp, FluentParam, FluentsEncoding, IntTerm, Sched, Solution, StateVar, Task, TaskId, VarCst};
+use crate::{
+    Effect, EffectOp, FluentParam, FluentsEncoding, IntTerm, Sched, SchedEncoder, Solution, StateVar, Task, TaskId,
+    VarCst,
+};
 
 /// A `visitall` instance: `num_locs` locations *in a line*, every one of which must be visited, with `num_moves` `move` actions available.
 #[derive(Debug)]

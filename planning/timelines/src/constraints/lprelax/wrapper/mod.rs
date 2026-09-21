@@ -10,7 +10,7 @@ pub struct LpRelaxReasonerWrapper<T: aries_solver::reasoners::Theory> {
     _phantom: std::marker::PhantomData<fn() -> T>,
 
     lprelax_encoder_cached: Option<(crate::constraints::lprelax::LpRelaxEncoder, crate::Domains)>,
-    ctx: crate::encoder::SchedEncoder,
+    ctx: crate::SchedEncoder,
 
     num_assumptions: usize,
 

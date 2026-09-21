@@ -1,6 +1,4 @@
 mod encoder;
-mod examples;
-mod transitions;
 pub(crate) mod wrapper;
 
 use aries_env_param::EnvParam;
@@ -8,13 +6,15 @@ use aries_env_param::EnvParam;
 pub(crate) use encoder::LpRelaxEncoder;
 
 pub static ARIES_LPRELAX_USE: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_USE", "false");
-pub static ARIES_LPRELAX_RECOVER_MIES: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_RECOVER_MIES", "true");
-//pub static ARIES_LPRELAX_GROUND_2CYCLES: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_GROUND_2CYCLES", "false");
-// static ARIES_LPRELAX_GROUNDER: EnvParam<String> = EnvParam::new("ARIES_LPRELAX_GROUNDER", "simple");
+pub static ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS", "true");
+pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "false");
 
 #[cfg(test)]
 mod tests {
-    use super::examples::visitall::{VisitAllLine, build_and_encode_visitall_line};
+    use crate::analysis::transitions::examples::visitall::{VisitAllLine, build_and_encode_visitall_line};
+
     use super::wrapper::*;
 
     #[test]
