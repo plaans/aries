@@ -15,10 +15,10 @@ them to the LP.
 > **Important:** This reasoner is **disabled by default**.
 > To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
 
-[ref-doc]: https://link.springer.com/chapter/10.1007/11817963_11
+[ref-doc]: https://doi.org/10.1007/11817963_11
 */
 
-mod explanation_lang;
+mod explanation_utils;
 mod solver;
 
 #[cfg(feature = "lp_log")]
@@ -45,17 +45,17 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
-/// Contains all the options available for the Lp reasonner
+/// Contains all the options available for the Lp reasoner
 ///
-/// It can be passed when creating the reasonner or modified through following methods:
+/// It can be passed when creating the reasoner or modified through following methods:
 /// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
 #[derive(Debug, Clone, Copy)]
 pub struct LpOptions {
-    /// Used to activate/deactivate the propagation of the reasonner
+    /// Used to activate/deactivate the propagation of the reasoner
     ///
     /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
     propagation_active: bool,
-    /// Used to enable/disable the reasonner
+    /// Used to enable/disable the reasoner
     ///
     /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
     /// or after the creation with [`Lp::activate`] and [`Lp::deactivate`]
@@ -82,7 +82,7 @@ impl Default for LpOptions {
     }
 }
 
-/// Used to enable/disable the lp reasonner
+/// Used to enable/disable the lp reasoner
 ///
 /// Can be set either from the env variable **`ARIES_LP_ENABLE`**
 /// or within the code with: `LP_ENABLE.set(true/false)`
@@ -152,7 +152,7 @@ impl Stats {
 /// It encapsulates all the necessary information to run the lp solver on the posted constraints.
 ///
 /// The propagation can be dynamically activated / deactivated through the following methods: [`Lp::activate()`] and [`Lp::deactivate()`].
-/// This can be useful to avoid an overhead of the lp reasonner over the others if its not relevant.
+/// This can be useful to avoid an overhead of the lp reasoner over the others if its not relevant.
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
@@ -172,7 +172,7 @@ pub struct Lp {
     /// History of changes made to the LP with all information necessary to undo them.
     trail: Trail<LpEvent>,
     stats: Stats,
-    /// Contains all the customizable options for the reasonner
+    /// Contains all the customizable options for the reasoner
     ///
     /// Check [`LpOptions`] for more details
     options: LpOptions,
@@ -482,7 +482,7 @@ impl Theory for Lp {
         Ok(())
     }
 
-    // Should not be called as this reasonner never infers new lit, it only gives contradictions
+    // Should not be called as this reasoner never infers new lit, it only gives contradictions
     fn explain(
         &mut self,
         _literal: Lit,
@@ -632,7 +632,7 @@ mod tests {
         (lp_reasonner, d)
     }
 
-    /// Adapted from testing.rs in cp reasonner
+    /// Adapted from testing.rs in cp reasoner
     ///
     /// Test that triggers propagation of random decisions and checks the explanations are correct
     ///
@@ -677,7 +677,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(&mut d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasonner can't infer new lit
+                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
@@ -751,7 +751,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasonner can't infer new lit
+                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {

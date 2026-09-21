@@ -9,7 +9,7 @@ use crate::{
     },
     reasoners::lp::{
         LpEvent, Stats,
-        explanation_lang::{LbBoundEvent, SumElem},
+        explanation_utils::{LbBoundEvent, SumElem},
     },
 };
 
@@ -35,7 +35,7 @@ impl fmt::Debug for IntBounds {
     }
 }
 
-/// Stores a constraint of our lp with integer coeficients, necesary to verify the certificate
+/// Stores a constraint of our lp with integer coefficients, necessary to verify the certificate
 ///
 /// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
 #[derive(Debug, Clone, PartialEq)]
@@ -135,7 +135,7 @@ impl Solver {
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem is immediatly detected as infeasible.
+    /// Will return an error if the problem is immediately detected as infeasible.
     pub fn set_bound(&mut self, var: Variable, bound: Bound, val: LongCst, lit: Lit) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
@@ -217,7 +217,7 @@ impl Solver {
         Ok(false)
     }
 
-    /// Restore the feasibilty of the lp solver
+    /// Restore the feasibility of the lp solver
     ///
     /// # Errors
     ///
@@ -249,7 +249,7 @@ impl Solver {
         self.constraints.push(IntegerConstraint { lin_sum });
     }
 
-    /// Return the maximum value that the given linear sum can take respect to its bounds
+    /// Return the maximum value that the given linear sum can take to respect to its variable bounds
     fn max_lin_sum(&self, lin_sum: &[i128]) -> Option<i128> {
         lin_sum.iter().enumerate().try_fold(0i128, |acc, (i, &coeff)| {
             if coeff == 0 {

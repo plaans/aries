@@ -1,6 +1,4 @@
-/*!
-Adapts the struct [`SumElem`] and [`LbBoundEvent`] from [`crate::reasoners::cp::linear`] to be compatible with LP certificates.
-*/
+//! Adapts the struct [`SumElem`] and [`LbBoundEvent`] from [`crate::reasoners::cp::linear`] to be compatible with LP certificates.
 
 use std::{
     cmp::Ordering,
