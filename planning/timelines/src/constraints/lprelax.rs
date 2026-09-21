@@ -9,7 +9,9 @@ pub static ARIES_LPRELAX_USE: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_USE"
 pub static ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS", "true");
 pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
-    EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "false");
+    EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "true");
+pub static ARIES_LPRELAX_MERGE_EQUAL_COLUMNS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_MERGE_EQUAL_COLUMNS", "true");
 
 #[cfg(test)]
 mod tests {

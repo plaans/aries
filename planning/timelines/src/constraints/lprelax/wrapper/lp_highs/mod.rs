@@ -90,6 +90,7 @@ impl LpRelaxReasonerWrapper<LpRelax> {
             encoder,
             &self.ctx,
             pre_assumption_doms,
+            super::super::ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get(),
         );
 
         build_and_bind_lp(&lp_problem, encoder, &self.ctx, pre_assumption_doms, theory);
