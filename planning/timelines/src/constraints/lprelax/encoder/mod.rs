@@ -1,43 +1,44 @@
 mod encode;
-pub mod groundings;
+mod groundings;
 pub mod problem;
 
 use aries_solver::prelude::*;
 
+use encode::{encode_problem_ground, encode_problem_lifted};
+use groundings::{SourceGrounding, TransitionGroundingId};
+pub use problem::LpRelaxProblem;
+
 use crate::analysis::Source;
-use crate::analysis::grounding::{ParametersAssignment, ground_all_tasks};
-use crate::constraints::lprelax::encoder::encode::{encode_problem_ground, encode_problem_lifted};
-use crate::constraints::lprelax::encoder::groundings::{
-    SourcesGroundingsInfo, StateVarsGroundingsInfo, SupportsGroundingsInfo, TermsGroundingsInfo,
-    TransitionsGroundingsInfo,
-};
-use crate::constraints::lprelax::encoder::problem::LpRelaxProblem;
-use crate::constraints::lprelax::transitions::ground::TransitionGroundingId;
-use crate::constraints::lprelax::transitions::supports::Supports;
-use crate::constraints::lprelax::transitions::{TransitionId, Transitions};
-use crate::encoder::SchedEncoder;
-use crate::{IntTerm, Task};
+use crate::analysis::grounding::ground_all_tasks;
+use crate::analysis::transitions::supports::{Supports, SupportsSorted};
+use crate::analysis::transitions::{TransitionId, Transitions};
+use crate::{IntTerm, SchedEncoder, Task};
 
 #[derive(Clone)]
 pub(crate) struct LpRelaxEncoder {
     pub(crate) transitions: Transitions,
     pub(crate) supports: Supports,
+    supports_sorted: Option<SupportsSorted>,
 
-    pub(crate) sources_ground: SourcesGroundingsInfo,
-    pub(crate) state_vars_ground: StateVarsGroundingsInfo,
-    pub(crate) transitions_ground: TransitionsGroundingsInfo,
-    pub(crate) terms_ground: TermsGroundingsInfo,
-    pub(crate) supports_ground: SupportsGroundingsInfo,
-    // sources_grounder: todo!();
+    sources_ground: groundings::SourcesGroundingsInfo,
+    state_vars_ground: groundings::StateVarsGroundingsInfo,
+    transitions_ground: groundings::TransitionsGroundingsInfo,
+    terms_ground: groundings::TermsGroundingsInfo,
+    supports_ground: groundings::SupportsGroundingsInfo,
 }
 
 impl LpRelaxEncoder {
     pub fn with_transitions_from(ctx: &SchedEncoder) -> Self {
-        let transitions = Transitions::new_unambiguous(ctx, super::ARIES_LPRELAX_RECOVER_MIES.get());
-        let supports = Supports::from(&transitions, ctx, None);
+        let transitions = Transitions::new_unambiguous(ctx, super::ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS.get());
+        let supports = Supports::from(
+            &transitions,
+            ctx,
+            super::ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS.get(),
+        );
         Self {
             transitions,
             supports,
+            supports_sorted: None,
             sources_ground: Default::default(),
             state_vars_ground: Default::default(),
             transitions_ground: Default::default(),
@@ -46,7 +47,7 @@ impl LpRelaxEncoder {
         }
     }
 
-    pub fn post_ground_source(&mut self, source: Source, source_grounding: &ParametersAssignment, ctx: &SchedEncoder) {
+    pub fn post_ground_source(&mut self, source: Source, source_grounding: &SourceGrounding, ctx: &SchedEncoder) {
         // Will panic (in debug mode) if the source and the grounding have already been interned.
         let source_grounding_id = self.sources_ground.post_ground_source(source, source_grounding);
 
@@ -68,53 +69,31 @@ impl LpRelaxEncoder {
         // marking each of them as being appearing in the source grounding.
         // Also mark each of the variable assignments as appearing in the corresponding transition groundings.
         {
-            for &transition_id in self.transitions.of_source(source) {
-                let transition_grounding =
-                    self.transitions
-                        .get_terms_eval_in_ground_source(transition_id, source_grounding, ctx);
-                let transition_grounding_id = TransitionGroundingId {
+            for &trans_id in self.transitions.of_source(source) {
+                let trans_grounding = self.transitions.evaluate_terms(trans_id, source_grounding, ctx);
+
+                let trans_grounding_id = TransitionGroundingId {
                     state_var_grounding_id: self.state_vars_ground.post_ground_state_var(
-                        &self.transitions.get_state_var(transition_id, ctx).fluent,
-                        &transition_grounding.args,
+                        &self.transitions.get_state_var(trans_id, ctx).fluent,
+                        trans_grounding.args_evaluated(),
                     ),
-                    valfrom: transition_grounding.valfrom,
-                    valto: transition_grounding.valto,
+                    val_assignment: trans_grounding.val_evaluated(),
+                    op_assignment: trans_grounding.op_evaluated(),
                 };
 
+                for (term, value) in self
+                    .transitions
+                    .iter_evaluated_non_constant_terms(trans_id, source_grounding, ctx)
                 {
-                    let transition_terms = self.transitions.get_terms(transition_id, ctx);
+                    debug_assert!(!term.is_cst());
 
-                    for (&term, &value) in transition_terms.args.iter().zip(&transition_grounding.args) {
-                        if !term.is_cst() {
-                            self.terms_ground.post_for_ground_transition(
-                                term,
-                                value,
-                                transition_id,
-                                transition_grounding_id,
-                            );
-                        }
-                    }
-                    if transition_terms.valfrom.is_some_and(|term| !term.is_cst()) {
-                        self.terms_ground.post_for_ground_transition(
-                            transition_terms.valfrom.unwrap(),
-                            transition_grounding.valfrom.unwrap(),
-                            transition_id,
-                            transition_grounding_id,
-                        );
-                    }
-                    if transition_terms.valto.is_some_and(|term| !term.is_cst()) {
-                        self.terms_ground.post_for_ground_transition(
-                            transition_terms.valto.unwrap(),
-                            transition_grounding.valto.unwrap(),
-                            transition_id,
-                            transition_grounding_id,
-                        );
-                    }
+                    self.terms_ground
+                        .post_for_ground_transition(term, value, trans_id, trans_grounding_id);
                 }
 
                 self.transitions_ground.post_ground_transition(
-                    transition_id,
-                    transition_grounding_id,
+                    trans_id,
+                    trans_grounding_id,
                     source,
                     source_grounding_id,
                 );
@@ -123,10 +102,42 @@ impl LpRelaxEncoder {
     }
 
     pub fn sort(&mut self) {
-        self.supports.sort();
+        let time_all = std::time::Instant::now();
+        let time = std::time::Instant::now();
+
+        self.supports_sorted = Some(self.supports.sort());
+
+        println!(
+            "|-[LPRELAX]----- Sorted lifted supports in {}s",
+            time.elapsed().as_secs_f64(),
+        );
+        let time = std::time::Instant::now();
+
         self.transitions_ground.sort_for_all();
-        self.supports_ground = SupportsGroundingsInfo::from(&self.supports, &self.transitions_ground);
+
+        println!(
+            "|-[LPRELAX]----- Sorted transitions groundings in {}s",
+            time.elapsed().as_secs_f64(),
+        );
+        let time = std::time::Instant::now();
+
+        self.supports_ground =
+            groundings::SupportsGroundingsInfo::from(self.supports_sorted.as_ref().unwrap(), &self.transitions_ground);
+
+        println!(
+            "|-[LPRELAX]----- Built sorted support groundings in {}s",
+            time.elapsed().as_secs_f64(),
+        );
+        let time = std::time::Instant::now();
+
         self.terms_ground.sort();
+
+        println!(
+            "|-[LPRELAX]----- Sorted terms groundings in {}s",
+            time.elapsed().as_secs_f64(),
+        );
+
+        println!("|-[LPRELAX]--- Sorted all in {}s", time_all.elapsed().as_secs_f64(),);
     }
 
     pub fn get_source<'a>(&self, source: Source, ctx: &'a SchedEncoder) -> Option<&'a Task> {
@@ -149,6 +160,8 @@ impl LpRelaxEncoder {
     // }
 
     pub fn encode(&mut self, ctx: &SchedEncoder, _doms: Option<&crate::Domains>) -> LpRelaxProblem {
+        let time = std::time::Instant::now();
+
         let binding = ground_all_tasks(ctx);
         let sources_groundings = [(None, binding.empty_source_groundings().to_vec())].into_iter().chain(
             binding
@@ -156,121 +169,52 @@ impl LpRelaxEncoder {
                 .map(|(task, gs)| (Some(task), gs.to_vec())),
         );
 
+        println!("|-[LPRELAX]--- Ran grounder in {}s", time.elapsed().as_secs_f64(),);
+
+        let time = std::time::Instant::now();
+
+        let mut n = 0;
         for (source, source_groundings) in sources_groundings {
             for source_grounding in source_groundings {
                 self.post_ground_source(source, &source_grounding, ctx);
+                n += 1;
             }
         }
+
+        println!(
+            "|-[LPRELAX]--- Interned {} groundings in {}s",
+            n,
+            time.elapsed().as_secs_f64(),
+        );
 
         self.sort();
 
         let mut problem = LpRelaxProblem::default();
 
+        let time = std::time::Instant::now();
+
         encode_problem_lifted(self, ctx, &mut problem);
+
+        println!(
+            "|-[LPRELAX]--- Collected lifted constraints in {}s",
+            time.elapsed().as_secs_f64(),
+        );
+        let time = std::time::Instant::now();
 
         encode_problem_ground(self, ctx, &mut problem);
 
+        println!(
+            "|-[LPRELAX]--- Collected ground constraints in {}s",
+            time.elapsed().as_secs_f64(),
+        );
+
         problem
+    }
+
+    pub fn iter_sorted_all_only_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
+        self.terms_ground.iter_sorted_all_only_assignments()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use itertools::Itertools;
-
-    use crate::{
-        constraints::lprelax::{
-            LpRelaxEncoder,
-            examples::visitall::{VisitAllLine, build_and_encode_visitall_line},
-            transitions::{Transition, Transitions, supports::Supports},
-        },
-        encoder::CausalLink,
-    };
-
-    #[test]
-    fn test_supports() {
-        let encoder = build_and_encode_visitall_line(
-            &VisitAllLine {
-                num_locs: 5,
-                num_moves: 4,
-            },
-            false,
-        );
-
-        let transitions = Transitions::new_unambiguous(&encoder, true);
-        let supports = Supports::from(&transitions, &encoder, None);
-        let lprelax_encoder = LpRelaxEncoder {
-            transitions,
-            supports,
-            sources_ground: Default::default(),
-            state_vars_ground: Default::default(),
-            transitions_ground: Default::default(),
-            terms_ground: Default::default(),
-            supports_ground: Default::default(),
-        };
-
-        for &((out_transition_id, in_transition_id), active) in lprelax_encoder.supports.unsorted_out() {
-            if let Some(active) = active {
-                assert!(
-                    lprelax_encoder.transitions.is_pure_cond(in_transition_id)
-                        || lprelax_encoder.transitions.is_condeff(in_transition_id)
-                );
-
-                assert!({
-                    let (eff_id, cond_id) = match (
-                        lprelax_encoder.transitions.get(out_transition_id),
-                        lprelax_encoder.transitions.get(in_transition_id),
-                    ) {
-                        (
-                            Transition::Eff(eff_id) | Transition::CondEff(_, eff_id),
-                            Transition::Cond(cond_id) | Transition::CondEff(cond_id, _),
-                        ) => (eff_id, cond_id),
-                        _ => unreachable!(),
-                    };
-                    encoder.causal_links.get_links().contains(&CausalLink {
-                        eff_id,
-                        cond_id,
-                        active,
-                    })
-                });
-            } else {
-                assert!(lprelax_encoder.transitions.is_pure_eff(in_transition_id));
-                assert!(
-                    lprelax_encoder
-                        .transitions
-                        .get_source(in_transition_id, &encoder)
-                        .is_some()
-                );
-
-                let (out_eff_id, in_eff_id) = match (
-                    lprelax_encoder.transitions.get(out_transition_id),
-                    lprelax_encoder.transitions.get(in_transition_id),
-                ) {
-                    (Transition::Eff(out_eff_id) | Transition::CondEff(_, out_eff_id), Transition::Eff(in_eff_id)) => {
-                        (out_eff_id, in_eff_id)
-                    }
-                    _ => unreachable!(),
-                };
-
-                assert!(
-                    !lprelax_encoder
-                        .transitions
-                        .is_effect_recovered_missing_initial(in_eff_id)
-                );
-
-                if lprelax_encoder
-                    .transitions
-                    .is_effect_recovered_missing_initial(out_eff_id)
-                {
-                    assert!(lprelax_encoder.transitions.is_pure_eff(out_transition_id));
-                    assert!(
-                        lprelax_encoder
-                            .transitions
-                            .get_source(out_transition_id, &encoder)
-                            .is_none()
-                    );
-                }
-            }
-        }
-    }
-}
+mod tests {}

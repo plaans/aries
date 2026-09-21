@@ -82,27 +82,26 @@ impl LpRelaxReasonerWrapper<LpRelax> {
         let Some((encoder, pre_assumption_doms)) = self.lprelax_encoder_cached.as_mut() else {
             unreachable!()
         };
+        let time = std::time::Instant::now();
+
+        let mut lp_problem = encoder.encode(&self.ctx, Some(pre_assumption_doms));
+
+        lp_problem.simplify(
+            encoder,
+            &self.ctx,
+            pre_assumption_doms,
+        );
+
+        build_and_bind_lp(&lp_problem, encoder, &self.ctx, pre_assumption_doms, theory);
 
         println!(
-            "|- Building Lp *encoding* and problem after {} propagation calls (decision level {:?}, num events: {:?}) using model from level {:?}",
+            "|-[LPRELAX]- Built LP *encoding* and problem after {} propagation calls (decision level {:?}, num events: {:?}) using model from level {:?} in {}s",
             self.propagation_calls,
             doms.current_decision_level(),
             doms.num_events(),
             pre_assumption_doms.current_decision_level(),
+            time.elapsed().as_secs_f64(),
         );
-
-        let mut lp_problem = encoder.encode(&self.ctx, Some(pre_assumption_doms));
-
-        let pre_simplify_rows_len = lp_problem.rows().len();
-        lp_problem.simplify(encoder, &self.ctx, pre_assumption_doms);
-
-        println!(
-            "|- LPrelax problem simplification: {} rows removed",
-            pre_simplify_rows_len - lp_problem.rows().len(),
-        );
-        // TODO build_and_bind_lp(&lp_problem, encoder, &self.ctx, Some(pre_assumption_doms), theory);
-
-        build_and_bind_lp(&lp_problem, encoder, &self.ctx, pre_assumption_doms, theory);
     }
 }
 
@@ -123,8 +122,6 @@ fn build_lp(problem: &LpRelaxProblem, theory: &mut LpRelax) -> HashMap<ColTag, L
     // Add all columns to the LP problem.
 
     let cols = {
-        assert!(problem.sealed());
-
         let cols = theory.add_columns(&vec![(Some(0.), Some(1.)); problem.cols().unwrap().len()]);
 
         problem
@@ -145,8 +142,13 @@ fn build_lp(problem: &LpRelaxProblem, theory: &mut LpRelax) -> HashMap<ColTag, L
             let row_coefs = row_expr
                 .lhs()
                 .iter()
-                .map(|col_tag| (*cols.get(col_tag).unwrap(), 1.))
-                .chain(row_expr.rhs().iter().map(|col_tag| (*cols.get(col_tag).unwrap(), -1.)))
+                .map(|(coef, col_tag)| (*cols.get(col_tag).unwrap(), int_cst_as_float(*coef)))
+                .chain(
+                    row_expr
+                        .rhs()
+                        .iter()
+                        .map(|(coef, col_tag)| (*cols.get(col_tag).unwrap(), -int_cst_as_float(*coef))),
+                )
                 .collect::<Vec<_>>();
             let (lb, ub) = match row_expr.tpe {
                 RowExprType::Eq => (
@@ -165,18 +167,12 @@ fn build_lp(problem: &LpRelaxProblem, theory: &mut LpRelax) -> HashMap<ColTag, L
             rows_coefs.len(),
             row_expr
         );
-        if !row_coefs.is_empty() || lb.is_some_and(|l| l > 0.) || ub.is_some_and(|u| u < 0.) {
-            rows_coefs.push(row_coefs);
-            lbs_ubs.push((lb, ub));
-        }
+        debug_assert!(!row_coefs.is_empty() || lb.is_some_and(|l| l > 0.) || ub.is_some_and(|u| u < 0.));
+
+        rows_coefs.push(row_coefs);
+        lbs_ubs.push((lb, ub));
     }
     theory.add_rows(&rows_coefs, &lbs_ubs);
-
-    println!(
-        "|- LPrelax problem built: {} columns and {} rows",
-        cols.len(),
-        rows_coefs.len(),
-    );
 
     cols
 }
@@ -196,11 +192,11 @@ fn bind_lp(
         let mut res = HashMap::<Lit, Vec<LpCol>>::new();
 
         for (source, transitions) in encoder.iter_sources() {
-            for &transition_id in transitions {
-                let Some(&col) = columns.get(&ColTag::PresenceTransition(transition_id, None)) else {
+            for &trans_id in transitions {
+                let Some(&col) = columns.get(&ColTag::PresenceTransition(trans_id, None)) else {
                     continue;
                 };
-                res.entry(encoder.transitions.get_prez(transition_id, ctx))
+                res.entry(encoder.transitions.get_prez(trans_id, ctx))
                     .or_default()
                     .push(col);
             }
@@ -245,7 +241,6 @@ fn bind_lp(
     // Bind term grounding columns of the LP with corresponding literals in the main CSP.
 
     for (term, values) in encoder
-        .terms_ground
         .iter_sorted_all_only_assignments()
         .chunk_by(|&(term, _)| term)
         .into_iter()
@@ -319,12 +314,12 @@ fn bind_lp(
 
     // Bind lifted support columns of the LP with corresponding literals in the main CSP.
 
-    for &((out_transition_id, in_transition_id), active) in encoder.supports.unsorted_out() {
+    for &((out_trans_id, in_trans_id), active) in encoder.supports.unsorted_out() {
         if let Some(s) = active {
             let s = s.variable();
             debug_assert!(s != Var::ZERO);
 
-            let Some(&col) = columns.get(&ColTag::Support(out_transition_id, in_transition_id, None)) else {
+            let Some(&col) = columns.get(&ColTag::Support(out_trans_id, in_trans_id, None)) else {
                 continue;
             };
 

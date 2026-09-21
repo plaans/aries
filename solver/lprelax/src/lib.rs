@@ -720,7 +720,7 @@ impl Theory for LpRelax {
                     .is_some_and(|lvl| lvl >= self.current_decision_level())
             {
                 println!(
-                    "|- Solving LP at decision level {:?} (num events: {:?})",
+                    "|-[LPRELAX]- Solving LP at decision level {:?} (num events: {:?}) with HiGHS",
                     model.current_decision_level(),
                     model.num_events()
                 );

@@ -1,9 +1,10 @@
 use aries_solver::core::views::Dom;
 use itertools::Itertools;
 
+use crate::SchedEncoder;
+use crate::analysis::transitions::TransitionType;
 use crate::constraints::lprelax::LpRelaxEncoder;
 use crate::constraints::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
-use crate::encoder::SchedEncoder;
 
 pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     // [Lifted] A source is present if(f) its transitions are
@@ -11,36 +12,36 @@ pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     {
         problem.push_row(RowExpr::new(
             RowExprType::Eq,
-            vec![ColTag::PresenceSource(None, None)],
+            vec![(1, ColTag::PresenceSource(None, None))],
             1,
             1,
         ));
 
-        for (source, transitions_ids) in encoder.iter_sources() {
-            for &transition_id in transitions_ids {
+        for (source, trans_ids) in encoder.iter_sources() {
+            for &trans_id in trans_ids {
                 // It is possible that sometimes the presence literal of the transition differs from that of the source
                 // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
                 // However, the latter must always imply the former.
 
                 debug_assert!(ctx.store.state.implies(
-                    encoder.transitions.get_prez(transition_id, ctx),
+                    encoder.transitions.get_prez(trans_id, ctx),
                     encoder.get_source_prez(source, ctx)
                 ));
                 let presences_equivalent = ctx.store.state.implies(
                     encoder.get_source_prez(source, ctx),
-                    encoder.transitions.get_prez(transition_id, ctx),
+                    encoder.transitions.get_prez(trans_id, ctx),
                 );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
                 let expr = if presences_equivalent {
                     RowExpr::new_eq_single_lhs(vec![
-                        ColTag::PresenceTransition(transition_id, None),
-                        ColTag::PresenceSource(source, None),
+                        (1, ColTag::PresenceTransition(trans_id, None)),
+                        (1, ColTag::PresenceSource(source, None)),
                     ])
                 } else {
                     RowExpr::new_leq_single_lhs(vec![
-                        ColTag::PresenceTransition(transition_id, None),
-                        ColTag::PresenceSource(source, None),
+                        (1, ColTag::PresenceTransition(trans_id, None)),
+                        (1, ColTag::PresenceSource(source, None)),
                     ])
                 };
 
@@ -53,11 +54,13 @@ pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     // NOTE: There's no need to enforce theses constraints for all cases, as the inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by outflow constraints.
     {
-        for &((out_transition_id, in_transition_id), _) in encoder.supports.unsorted_out() {
-            if encoder.transitions.is_pure_cond(in_transition_id) {
+        for &((out_trans_id, in_trans_id), _) in encoder.supports.unsorted_out() {
+            if !encoder.supports.with_condition_out_transitions
+                && encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond
+            {
                 problem.push_row(RowExpr::new_leq_single_lhs(vec![
-                    ColTag::Support(out_transition_id, in_transition_id, None),
-                    ColTag::PresenceTransition(out_transition_id, None),
+                    (1, ColTag::Support(out_trans_id, in_trans_id, None)),
+                    (1, ColTag::PresenceTransition(out_trans_id, None)),
                 ]));
             }
         }
@@ -67,13 +70,13 @@ pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     {
         let mut seen = vec![];
 
-        for &((out_transition_id, in_transition_id), _) in encoder.supports.sorted_out() {
-            seen.push((out_transition_id, in_transition_id));
+        for &((out_trans_id, in_trans_id), _) in encoder.supports_sorted.as_ref().unwrap().sorted_out() {
+            seen.push((out_trans_id, in_trans_id));
 
-            if seen.binary_search(&(in_transition_id, out_transition_id)).is_ok() {
+            if seen.binary_search(&(in_trans_id, out_trans_id)).is_ok() {
                 problem.push_row(RowExpr::new_leq_1(vec![
-                    ColTag::Support(out_transition_id, in_transition_id, None),
-                    ColTag::Support(in_transition_id, out_transition_id, None),
+                    (1, ColTag::Support(out_trans_id, in_trans_id, None)),
+                    (1, ColTag::Support(in_trans_id, out_trans_id, None)),
                 ]));
             }
         }
@@ -83,26 +86,28 @@ pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     // [Lifted] "Inflow" constraints: [TODO]
     {
         let chunkby = encoder
-            .supports
+            .supports_sorted
+            .as_ref()
+            .unwrap()
             .sorted_in()
             .iter()
-            .chunk_by(|(in_transition_id, _)| in_transition_id);
+            .chunk_by(|(in_trans_id, _)| in_trans_id);
 
-        for (&in_transition_id, out_transitions_ids) in chunkby.into_iter() {
+        for (&in_trans_id, out_trans_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::PresenceTransition(in_transition_id, None)];
+                let mut res = vec![(1, ColTag::PresenceTransition(in_trans_id, None))];
                 res.append(
-                    &mut out_transitions_ids
+                    &mut out_trans_ids
                         .into_iter()
-                        .map(|&(_, out_transition_id)| ColTag::Support(out_transition_id, in_transition_id, None))
+                        .map(|&(_, out_trans_id)| (1, ColTag::Support(out_trans_id, in_trans_id, None)))
                         .collect(),
                 );
                 res
             };
             debug_assert!(terms.len() >= 2);
 
-            let expr = if !encoder.transitions.includes_recovered_mies()
-                && encoder.transitions.is_pure_eff(in_transition_id)
+            let expr = if encoder.transitions.are_recovered_closed_world_default_effects_empty()
+                && encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff
             {
                 RowExpr::new_geq_single_lhs(terms)
             } else {
@@ -116,19 +121,24 @@ pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     // [Lifted] "Outflow" constraints: [TODO]
     {
         let chunkby = encoder
-            .supports
+            .supports_sorted
+            .as_ref()
+            .unwrap()
             .sorted_out()
             .iter()
-            .chunk_by(|&((out_transition_id, _), _)| out_transition_id);
+            .chunk_by(|&((out_trans_id, _), _)| out_trans_id);
 
-        for (&out_transition_id, in_transitions_ids) in chunkby.into_iter() {
+        for (&out_trans_id, in_trans_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::PresenceTransition(out_transition_id, None)];
+                let mut res = vec![(1, ColTag::PresenceTransition(out_trans_id, None))];
                 res.append(
-                    &mut in_transitions_ids
+                    &mut in_trans_ids
                         .into_iter()
-                        .filter(|&&((_, in_transition_id), _)| !encoder.transitions.is_pure_cond(in_transition_id))
-                        .map(|&((_, in_transition_id), _)| ColTag::Support(out_transition_id, in_transition_id, None))
+                        .filter(|&&((_, in_trans_id), _)| {
+                            encoder.supports.with_condition_out_transitions
+                                || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+                        })
+                        .map(|&((_, in_trans_id), _)| (1, ColTag::Support(out_trans_id, in_trans_id, None)))
                         .collect(),
                 );
                 res
@@ -147,13 +157,13 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     {
         for (source, _) in encoder.iter_sources() {
             let terms = {
-                let mut res = vec![ColTag::PresenceSource(source, None)];
+                let mut res = vec![(1, ColTag::PresenceSource(source, None))];
                 res.append(
                     &mut encoder
                         .sources_ground
                         .get(source)
                         .iter()
-                        .map(|&source_grounding_id| ColTag::PresenceSource(source, Some(source_grounding_id)))
+                        .map(|&source_grounding_id| (1, ColTag::PresenceSource(source, Some(source_grounding_id))))
                         .collect(),
                 );
                 res
@@ -173,16 +183,16 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .transitions_ground
             .iter_all_unsourced()
-            .chunk_by(|&(transition_id, _)| transition_id);
+            .chunk_by(|&(trans_id, _)| trans_id);
 
-        for (transition_id, transition_groundings_ids) in chunkby.into_iter() {
+        for (trans_id, trans_groundings_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::PresenceTransition(transition_id, None)];
+                let mut res = vec![(1, ColTag::PresenceTransition(trans_id, None))];
                 res.append(
-                    &mut transition_groundings_ids
+                    &mut trans_groundings_ids
                         .into_iter()
-                        .map(|(_, transition_grounding_id)| {
-                            ColTag::PresenceTransition(transition_id, Some(transition_grounding_id))
+                        .map(|(_, trans_grounding_id)| {
+                            (1, ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)))
                         })
                         .collect(),
                 );
@@ -198,17 +208,16 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     // [Lifted-Ground] Ground transition is only active if(f) a compatible grounding of its source is active
     {
         for (source, iter) in encoder.transitions_ground.iter_all_sourced() {
-            let chunkby =
-                iter.chunk_by(|(transition_id, transition_grounding_id, _)| (transition_id, transition_grounding_id));
+            let chunkby = iter.chunk_by(|(trans_id, trans_grounding_id, _)| (trans_id, trans_grounding_id));
 
-            for ((&transition_id, &transition_grounding_id), source_groundings_ids) in chunkby.into_iter() {
+            for ((&trans_id, &trans_grounding_id), source_groundings_ids) in chunkby.into_iter() {
                 let terms = {
-                    let mut res = vec![ColTag::PresenceTransition(transition_id, Some(transition_grounding_id))];
+                    let mut res = vec![(1, ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)))];
                     res.append(
                         &mut source_groundings_ids
                             .into_iter()
                             .map(|&(_, _, source_grounding_id)| {
-                                ColTag::PresenceSource(source, Some(source_grounding_id))
+                                (1, ColTag::PresenceSource(source, Some(source_grounding_id)))
                             })
                             .collect(),
                     );
@@ -222,12 +231,12 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
                 // However, the latter must always imply the former.
 
                 debug_assert!(ctx.store.state.implies(
-                    encoder.transitions.get_prez(transition_id, ctx),
+                    encoder.transitions.get_prez(trans_id, ctx),
                     encoder.get_source_prez(source, ctx)
                 ));
                 let presences_equivalent = ctx.store.state.implies(
                     encoder.get_source_prez(source, ctx),
-                    encoder.transitions.get_prez(transition_id, ctx),
+                    encoder.transitions.get_prez(trans_id, ctx),
                 );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
@@ -246,19 +255,27 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     // NOTE: There's no need to enforce theses constraints for all cases, as the (ground) inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by (ground) outflow constraints.
     {
-        for &(out_transition_id, in_transition_id, transition_groundings_ids) in encoder.supports_ground.iter_all() {
-            let Some((out_transition_grounding_id, in_transition_grounding_id)) = transition_groundings_ids else {
+        for &(out_trans_id, in_trans_id, trans_groundings_ids) in encoder.supports_ground.iter_all() {
+            let Some((out_trans_grounding_id, in_trans_grounding_id)) = trans_groundings_ids else {
                 continue;
             };
 
-            if encoder.transitions.is_pure_cond(in_transition_id) {
+            if !encoder.supports.with_condition_out_transitions
+                && encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond
+            {
                 problem.push_row(RowExpr::new_leq_single_lhs(vec![
-                    ColTag::Support(
-                        out_transition_id,
-                        in_transition_id,
-                        Some((out_transition_grounding_id, in_transition_grounding_id)),
+                    (
+                        1,
+                        ColTag::Support(
+                            out_trans_id,
+                            in_trans_id,
+                            Some((out_trans_grounding_id, in_trans_grounding_id)),
+                        ),
                     ),
-                    ColTag::PresenceTransition(out_transition_id, Some(out_transition_grounding_id)),
+                    (
+                        1,
+                        ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
+                    ),
                 ]));
             }
         }
@@ -269,24 +286,25 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .supports_ground
             .iter_all()
-            .chunk_by(|(out_transition_id, in_transition_id, _)| (out_transition_id, in_transition_id));
+            .chunk_by(|(out_trans_id, in_trans_id, _)| (out_trans_id, in_trans_id));
 
-        for ((&out_transition_id, &in_transition_id), transitions_groundings_ids) in chunkby.into_iter() {
+        for ((&out_trans_id, &in_trans_id), trans_groundings_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::Support(out_transition_id, in_transition_id, None)];
+                let mut res = vec![(1, ColTag::Support(out_trans_id, in_trans_id, None))];
                 res.append(
-                    &mut transitions_groundings_ids
+                    &mut trans_groundings_ids
                         .into_iter()
-                        .filter_map(|&(_, _, transitions_groundings_ids)| {
-                            transitions_groundings_ids.map(
-                                |(out_transition_grounding_id, in_transition_grounding_id)| {
+                        .filter_map(|&(_, _, trans_groundings_ids)| {
+                            trans_groundings_ids.map(|(out_trans_grounding_id, in_trans_grounding_id)| {
+                                (
+                                    1,
                                     ColTag::Support(
-                                        out_transition_id,
-                                        in_transition_id,
-                                        Some((out_transition_grounding_id, in_transition_grounding_id)),
-                                    )
-                                },
-                            )
+                                        out_trans_id,
+                                        in_trans_id,
+                                        Some((out_trans_grounding_id, in_trans_grounding_id)),
+                                    ),
+                                )
+                            })
                         })
                         .collect(),
                 );
@@ -300,29 +318,26 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
 
     // [Ground] "Inflow" constraints: [TODO]
     {
-        let chunkby =
-            encoder
-                .supports_ground
-                .iter_in_all()
-                .chunk_by(|(in_transition_id, in_transition_grounding_id, _)| {
-                    (in_transition_id, in_transition_grounding_id)
-                });
+        let chunkby = encoder
+            .supports_ground
+            .iter_in_all()
+            .chunk_by(|(in_trans_id, in_trans_grounding_id, _)| (in_trans_id, in_trans_grounding_id));
 
-        for ((&in_transition_id, &in_transition_grounding_id), out_transitions_groundings_ids) in chunkby.into_iter() {
+        for ((&in_trans_id, &in_trans_grounding_id), out_trans_groundings_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::PresenceTransition(
-                    in_transition_id,
-                    Some(in_transition_grounding_id),
-                )];
+                let mut res = vec![(1, ColTag::PresenceTransition(in_trans_id, Some(in_trans_grounding_id)))];
                 res.append(
-                    &mut out_transitions_groundings_ids
+                    &mut out_trans_groundings_ids
                         .into_iter()
                         .filter_map(|&(_, _, x)| {
-                            x.map(|(out_transition_id, out_transition_grounding_id)| {
-                                ColTag::Support(
-                                    out_transition_id,
-                                    in_transition_id,
-                                    Some((out_transition_grounding_id, in_transition_grounding_id)),
+                            x.map(|(out_trans_id, out_trans_grounding_id)| {
+                                (
+                                    1,
+                                    ColTag::Support(
+                                        out_trans_id,
+                                        in_trans_id,
+                                        Some((out_trans_grounding_id, in_trans_grounding_id)),
+                                    ),
                                 )
                             })
                         })
@@ -331,8 +346,8 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
                 res
             };
 
-            let expr = if !encoder.transitions.includes_recovered_mies()
-                && encoder.transitions.is_pure_eff(in_transition_id)
+            let expr = if encoder.transitions.are_recovered_closed_world_default_effects_empty()
+                && encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff
             {
                 // In the case where we do not recover and use "missing" initial effects,
                 // the inflow constraints for (all) effects are slightly weaker.
@@ -344,7 +359,7 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
             problem.push_row(expr);
         }
 
-        if !encoder.transitions.includes_recovered_mies() {
+        if encoder.transitions.are_recovered_closed_world_default_effects_empty() {
             // In the case where we do not recover and use "missing" initial effects,
             // the inflow constraints for (all) effects are slightly weaker (see above).
             // This is (partially? FIXME[proof?]) compensated by the following constraints,
@@ -353,28 +368,28 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
             let chunkby = encoder
                 .supports_ground
                 .iter_in_all()
-                .map(
-                    |(in_transition_id, in_transition_grounding_id, out_transitions_groundings)| {
-                        (in_transition_grounding_id, in_transition_id, out_transitions_groundings)
-                    },
-                )
-                .sorted_unstable_by_key(|&(in_transition_grounding_id, _, _)| *in_transition_grounding_id)
-                .chunk_by(|&(in_transition_grounding_id, _, _)| in_transition_grounding_id.state_var_grounding_id);
+                .filter(|(in_trans_id, _, _)| encoder.transitions.get(*in_trans_id).tpe() == TransitionType::Eff)
+                .map(|(in_trans_id, in_trans_grounding_id, out_trans_groundings)| {
+                    (in_trans_grounding_id, in_trans_id, out_trans_groundings)
+                })
+                .sorted_unstable_by_key(|&(in_trans_grounding_id, _, _)| *in_trans_grounding_id)
+                .chunk_by(|&(in_trans_grounding_id, _, _)| in_trans_grounding_id.state_var_grounding_id);
 
             for (_, x) in chunkby.into_iter() {
                 let terms = x
                     .into_iter()
-                    .filter_map(
-                        |(&in_transition_grounding_id, &in_transition_id, out_transition_grounding)| {
-                            out_transition_grounding.map(|(out_transition_id, out_transition_grounding_id)| {
+                    .filter_map(|(&in_trans_grounding_id, &in_trans_id, out_trans_grounding)| {
+                        out_trans_grounding.map(|(out_trans_id, out_trans_grounding_id)| {
+                            (
+                                1,
                                 ColTag::Support(
-                                    out_transition_id,
-                                    in_transition_id,
-                                    Some((out_transition_grounding_id, in_transition_grounding_id)),
-                                )
-                            })
-                        },
-                    )
+                                    out_trans_id,
+                                    in_trans_id,
+                                    Some((out_trans_grounding_id, in_trans_grounding_id)),
+                                ),
+                            )
+                        })
+                    })
                     .collect::<Vec<_>>();
 
                 if !terms.is_empty() {
@@ -387,29 +402,32 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
 
     // [Ground] "Outflow" constraints: [TODO]
     {
-        let chunkby =
-            encoder
-                .supports_ground
-                .iter_out_all()
-                .chunk_by(|(out_transition_id, out_transition_grounding_id, _)| {
-                    (out_transition_id, out_transition_grounding_id)
-                });
+        let chunkby = encoder
+            .supports_ground
+            .iter_out_all()
+            .chunk_by(|(out_trans_id, out_trans_grounding_id, _)| (out_trans_id, out_trans_grounding_id));
 
-        for ((&out_transition_id, &out_transition_grounding_id), in_transitions_groundings_ids) in chunkby.into_iter() {
+        for ((&out_trans_id, &out_trans_grounding_id), in_trans_groundings_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::PresenceTransition(
-                    out_transition_id,
-                    Some(out_transition_grounding_id),
+                let mut res = vec![(
+                    1,
+                    ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
                 )];
                 res.append(
-                    &mut in_transitions_groundings_ids
+                    &mut in_trans_groundings_ids
                         .into_iter()
-                        .filter(|&&(_, _, (in_transition_id, _))| !encoder.transitions.is_pure_cond(in_transition_id))
-                        .map(|&(_, _, (in_transition_id, in_transition_grounding_id))| {
-                            ColTag::Support(
-                                out_transition_id,
-                                in_transition_id,
-                                Some((out_transition_grounding_id, in_transition_grounding_id)),
+                        .filter(|&&(_, _, (in_trans_id, _))| {
+                            encoder.supports.with_condition_out_transitions
+                                || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+                        })
+                        .map(|&(_, _, (in_trans_id, in_trans_grounding_id))| {
+                            (
+                                1,
+                                ColTag::Support(
+                                    out_trans_id,
+                                    in_trans_id,
+                                    Some((out_trans_grounding_id, in_trans_grounding_id)),
+                                ),
                             )
                         })
                         .collect(),
@@ -430,39 +448,39 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     //     let ground_supports_iter_sorted_fully = groundings.supports().iter_all().sorted();
     //     let mut seen = vec![];
     //
-    //     for &(out_transition_id, in_transition_id, transitions_groundings_ids) in ground_supports_iter_sorted_fully {
-    //         let Some((out_transition_grounding_id, in_transition_grounding_id)) = transitions_groundings_ids else {
+    //     for &(out_trans_id, in_trans_id, trans_groundings_ids) in ground_supports_iter_sorted_fully {
+    //         let Some((out_trans_grounding_id, in_trans_grounding_id)) = trans_groundings_ids else {
     //             continue;
     //         };
     //
     //         seen.push((
-    //             out_transition_id,
-    //             in_transition_id,
-    //             out_transition_grounding_id,
-    //             in_transition_grounding_id,
+    //             out_trans_id,
+    //             in_trans_id,
+    //             out_trans_grounding_id,
+    //             in_trans_grounding_id,
     //         ));
     //
     //         if seen
     //             .binary_search(&(
-    //                 in_transition_id,
-    //                 out_transition_id,
-    //                 in_transition_grounding_id,
-    //                 out_transition_grounding_id,
+    //                 in_trans_id,
+    //                 out_trans_id,
+    //                 in_trans_grounding_id,
+    //                 out_trans_grounding_id,
     //             ))
     //             .is_ok()
     //         {
     //             let expr = RowExpr::Leq1(vec![
     //                 ColTag::SupportGround(
-    //                     out_transition_id,
-    //                     in_transition_id,
-    //                     out_transition_grounding_id,
-    //                     in_transition_grounding_id,
+    //                     out_trans_id,
+    //                     in_trans_id,
+    //                     out_trans_grounding_id,
+    //                     in_trans_grounding_id,
     //                 ),
     //                 ColTag::SupportGround(
-    //                     in_transition_id,
-    //                     out_transition_id,
-    //                     in_transition_grounding_id,
-    //                     out_transition_grounding_id,
+    //                     in_trans_id,
+    //                     out_trans_id,
+    //                     in_trans_grounding_id,
+    //                     out_trans_grounding_id,
     //                 ),
     //             ]);
     //             problem.push_row(expr);
@@ -481,7 +499,7 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         for (term, values) in chunkby.into_iter() {
             let terms = values
                 .into_iter()
-                .map(|(_, value)| ColTag::TermGround(term, value))
+                .map(|(_, value)| (1, ColTag::TermGround(term, value)))
                 .collect::<Vec<_>>();
 
             debug_assert!(!terms.is_empty());
@@ -497,16 +515,16 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .terms_ground
             .iter_sorted_all_for_transitions()
-            .chunk_by(|&(term, value, transition_id, _)| (term, value, transition_id));
+            .chunk_by(|&(term, value, trans_id, _)| (term, value, trans_id));
 
-        for ((&term, &value, &transition_id), transitions_groundings_ids) in chunkby.into_iter() {
+        for ((&term, &value, &trans_id), trans_groundings_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::TermGround(term, value)];
+                let mut res = vec![(1, ColTag::TermGround(term, value))];
                 res.append(
-                    &mut transitions_groundings_ids
+                    &mut trans_groundings_ids
                         .into_iter()
-                        .map(|&(_, _, _, transition_grounding_id)| {
-                            ColTag::PresenceTransition(transition_id, Some(transition_grounding_id))
+                        .map(|&(_, _, _, trans_grounding_id)| {
+                            (1, ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)))
                         })
                         .collect(),
                 );
@@ -514,14 +532,15 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
             };
             debug_assert!(terms.len() >= 2);
 
-            debug_assert!(ctx.store.state.implies(
-                encoder.transitions.get_prez(transition_id, ctx),
-                ctx.store.presence(term)
-            ));
-            let presences_equivalent = ctx.store.state.implies(
-                ctx.store.presence(term),
-                encoder.transitions.get_prez(transition_id, ctx),
+            debug_assert!(
+                ctx.store
+                    .state
+                    .implies(encoder.transitions.get_prez(trans_id, ctx), ctx.store.presence(term))
             );
+            let presences_equivalent = ctx
+                .store
+                .state
+                .implies(ctx.store.presence(term), encoder.transitions.get_prez(trans_id, ctx));
 
             let expr = if presences_equivalent {
                 RowExpr::new_eq_single_lhs(terms)
@@ -538,12 +557,12 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
 
         for ((&term, &value, &source), sources_groundings_ids) in chunkby.into_iter() {
             let terms = {
-                let mut res = vec![ColTag::TermGround(term, value)];
+                let mut res = vec![(1, ColTag::TermGround(term, value))];
                 res.append(
                     &mut sources_groundings_ids
                         .into_iter()
                         .map(|&(_, _, _, source_grounding_id)| {
-                            ColTag::PresenceSource(source, Some(source_grounding_id))
+                            (1, ColTag::PresenceSource(source, Some(source_grounding_id)))
                         })
                         .collect(),
                 );
