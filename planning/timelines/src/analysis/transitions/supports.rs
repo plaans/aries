@@ -158,11 +158,11 @@ impl Supports {
         .inspect(|&((out_trans_id, in_trans_id), _)| {
             debug_assert!(
                 transitions.get(out_trans_id).tpe() != TransitionType::Cond
-                    || transitions.get_source(in_trans_id, ctx).is_some()
+                    || transitions.get_source(out_trans_id, ctx).is_some()
             );
             debug_assert!(
                 transitions.get(out_trans_id).tpe() != TransitionType::CondEff
-                    || transitions.get_source(in_trans_id, ctx).is_some()
+                    || transitions.get_source(out_trans_id, ctx).is_some()
             );
             debug_assert!(
                 transitions.get(in_trans_id).tpe() != TransitionType::Eff
