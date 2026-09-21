@@ -1,6 +1,6 @@
 use crate::{
-    lang::CoreExpr,
     lang::{
+        CoreExpr,
         expr::or,
         linear::{LinEq, LinLeq, LinNeq},
         *,
