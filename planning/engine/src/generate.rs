@@ -130,5 +130,6 @@ fn encode_finite_planning_problem(
             ],
             objectives: vec![options.objective],
         },
+        false,
     )
 }
