@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use aries_solver::prelude::*;
 use aries_solver::{
     backtrack::Backtrack,
-    lang::*,
     solver::{Solver, musmcs::MusMcs},
 };
 use itertools::Itertools;
@@ -19,7 +18,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
     /// Creates a new explainability oriented solver where constraints are partitioned into:
     ///
     ///  - background constraints (strong), for which the projection returns `None`
-    ///  - foreground constraints (soft), enabled by assumptions. Two foregrounds constriants with the
+    ///  - foreground constraints (soft), enabled by assumptions. Two foregrounds constraints with the
     ///    same projection will be enabled together by the same assumption.
     pub fn new(sched: &Sched, project: impl Fn(ConstraintID) -> Option<T>) -> Self {
         let mut encoding = sched.clone().encoder();
@@ -59,7 +58,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         &self.solver
     }
 
-    /// Check if the model is satifiable with all assumptions, and returns a solution if it is.
+    /// Check if the model is satisfiable with all assumptions, and returns a solution if it is.
     pub fn check_satisfiability(&mut self) -> Option<Solution> {
         let assumptions = self.enablers.keys().copied().collect_vec();
         let res = self
@@ -81,7 +80,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         under_assumptions: impl Into<Vec<Lit>>,
     ) -> Option<Solution> {
         let mut assumptions = under_assumptions.into();
-        // add assumptions for detecting unsatifable constraints
+        // add assumptions for detecting unsatisfiable constraints
         for &enabler in self.enablers.keys() {
             assumptions.push(enabler);
         }
@@ -108,7 +107,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .map(move |mm| mm.project(projection))
     }
 
-    /// Returns an iterator over all MUS (Minimal Unsatifiable Subsets) in the model.
+    /// Returns an iterator over all MUS (Minimal Unsatisfiable Subsets) in the model.
     pub fn muses(&mut self) -> impl Iterator<Item = BTreeSet<T>> + '_ {
         self.explain_unsat().filter_map(|mus_mcs| match mus_mcs {
             MusMcs::Mus(mus) => Some(mus),

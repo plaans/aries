@@ -1,3 +1,4 @@
+pub mod grounding;
 pub mod symmetry;
 
 use aries_solver::lang::ModelView;

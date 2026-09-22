@@ -123,7 +123,7 @@ pub fn bool2int<Ctx: ModelView>(b: Lit, model: &mut Ctx) -> LinTerm {
 }
 
 /// Enforces that the list of variables takes a value in the list of allowed value tuples.
-pub fn in_table<Variable: Into<VarCst>>(
+pub fn in_table<Variable: Into<LinTerm>>(
     variables: impl IntoIterator<Item = Variable>,
     allowed_assignments: impl Into<Arc<Table<IntCst>>>,
 ) -> InTable {
@@ -133,7 +133,7 @@ pub fn in_table<Variable: Into<VarCst>>(
     )
 }
 
-/// Enforces that the variables takes one of the specified value.
-pub fn has_value_in(variable: impl Into<VarCst>, allowed_values: impl IntoIterator<Item = IntCst>) -> HasValueIn {
+/// Enforces that the variable takes one of the specified values.
+pub fn has_value_in(variable: impl Into<LinTerm>, allowed_values: impl IntoIterator<Item = IntCst>) -> HasValueIn {
     HasValueIn::new(variable.into(), allowed_values.into_iter().collect())
 }
