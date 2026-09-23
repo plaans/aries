@@ -139,6 +139,11 @@ pub struct OptimizePlan {
     /// Disabled by default; pass a value to enable (e.g. --stop-threshold 6).
     #[arg(long)]
     stop_threshold: Option<i64>,
+    /// PDDL problem file whose metric gives the utilities of the SIMULATED USER
+    /// (hidden from the planner, which keeps optimizing the metric of --problem).
+    /// Preference names must match those of --problem. Requires --simulate.
+    #[arg(long)]
+    user_utilities: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -312,7 +317,22 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         Some(path) => Some(path.clone()),
     };
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate, command.stop_threshold)
+    // Hidden utilities of the simulated user: parse a second problem file (same
+    // domain) and extract the weights of its metric.
+    let user_weights = match &command.user_utilities {
+        Some(path) => {
+            if command.simulate.is_none() {
+                return Err(Message::error("--user-utilities requires --simulate".to_string()));
+            }
+            println!("> User utilities: {}", path.display());
+            let user_pb = pddl::parse_pddl_problem(Input::from_file(path)?)?;
+            let user_model = pddl::build_model(&dom, &user_pb)?;
+            Some(simulate_preferences::extract_preference_weights(&user_model))
+        }
+        None => None,
+    };
+
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate, command.stop_threshold, user_weights.as_ref())
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {

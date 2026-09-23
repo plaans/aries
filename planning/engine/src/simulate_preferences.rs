@@ -1,13 +1,23 @@
 //! Simulated preference enforcement for automated experimental evaluation.
 //!
-//! Two strategies:
+//! Three strategies:
 //!   - **Greedy**: descending utility order; runs [`run_one_by_one`] once.
 //!   - **AllAtOnce**: selects all violated preferences at once, prunes
 //!     until feasible ([`run_prune`]), then attempts to re-add dropped
 //!     preferences one by one via [`run_one_by_one`] (LIFO order).
+//!   - **Blind**: like Greedy but the simulated user receives NO
+//!     explanation: on conflict it drops the lowest-utility preference of
+//!     its whole selection (not of the MUS) and retries. Baseline that
+//!     isolates the contribution of the MUS explanations.
 //!
-//! Conflict resolution: analyze MUSes to find which preferences are in
-//! conflict, then drop the one with the lowest utility.
+//! Conflict resolution (Greedy/AllAtOnce): analyze MUSes to find which
+//! preferences are in conflict, then drop the one with the lowest utility.
+//!
+//! Hidden utilities: with `--user-utilities <problem.pddl>` the simulated
+//! user orders and drops preferences with the weights of THAT problem's
+//! metric, while the planner keeps optimizing its own metric. The output
+//! then reports the user's utility of the planner's optimum and of the
+//! final plan.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,6 +44,8 @@ pub(crate) enum Strategy {
     Greedy,
     /// Select all violated at once, trim until feasible.
     AllAtOnce,
+    /// Greedy without explanations: on conflict drop the cheapest of the whole selection.
+    Blind,
 }
 
 impl std::fmt::Display for Strategy {
@@ -41,6 +53,7 @@ impl std::fmt::Display for Strategy {
         match self {
             Strategy::Greedy => write!(f, "greedy"),
             Strategy::AllAtOnce => write!(f, "all-at-once"),
+            Strategy::Blind => write!(f, "blind"),
         }
     }
 }
@@ -66,7 +79,7 @@ impl Drop for SimulationMetrics {
 // preference_name -> weight (higher = more important to satisfy).
 // =====================================================================
 
-fn extract_preference_weights(model: &Model) -> BTreeMap<String, i64> {
+pub(crate) fn extract_preference_weights(model: &Model) -> BTreeMap<String, i64> {
     let mut weights = BTreeMap::new();
     let metric_expr_id = match model.metric {
         Some(Metric::Minimize(id)) => id,
@@ -128,6 +141,52 @@ fn pick_cheapest_in_conflict(
 }
 
 // =====================================================================
+// Timing of solver calls (feasibility probes and MUS/MCS analyses).
+// Printed per call as [SIM][label] probe_ms / analysis_ms and summarized
+// at the end, so that the cost of the explanations can be measured.
+// =====================================================================
+
+#[derive(Default)]
+pub(crate) struct SimTimers {
+    probes: usize,
+    probe_ms: u128,
+    analyses: usize,
+    analysis_ms: u128,
+}
+
+impl SimTimers {
+    fn report(&self) {
+        println!("[SIM] Probes: {} ({} ms total), MUS/MCS analyses: {} ({} ms total)",
+            self.probes, self.probe_ms, self.analyses, self.analysis_ms);
+    }
+}
+
+fn timed<T>(count: &mut usize, acc_ms: &mut u128, path_label: &str, kind: &str, f: impl FnOnce() -> T) -> T {
+    let start = std::time::Instant::now();
+    let result = f();
+    let ms = start.elapsed().as_millis();
+    *count += 1;
+    *acc_ms += ms;
+    println!("[SIM][{}] {}_ms: {}", path_label, kind, ms);
+    result
+}
+
+/// User utility (sum of `weights`) of the preferences satisfied in a solution.
+fn user_utility_of(entries: &[PreferenceEntry], satisfied: &BTreeSet<String>, weights: &BTreeMap<String, i64>) -> i64 {
+    entries.iter()
+        .filter(|e| satisfied.contains(&e.name))
+        .map(|e| weights.get(&e.name).copied().unwrap_or(0))
+        .sum()
+}
+
+fn satisfied_in(entries: &[PreferenceEntry], sol: &Solution) -> BTreeSet<String> {
+    entries.iter()
+        .filter(|e| e.lits.iter().all(|lit| sol.entails(*lit)))
+        .map(|e| e.name.clone())
+        .collect()
+}
+
+// =====================================================================
 // One-by-one enforcement.
 //
 // Single pass: try each preference in `ordering`, solve on success,
@@ -140,6 +199,8 @@ struct PathResult {
     outcome: Outcome,
     enforced: Vec<usize>,
     final_obj_val: Option<IntCst>,
+    /// Preferences satisfied by the last solution found (for user-utility reporting).
+    final_satisfied: Option<BTreeSet<String>>,
 }
 
 fn run_one_by_one(
@@ -156,30 +217,77 @@ fn run_one_by_one(
     initial_steps: usize,
     ordering: &[usize],
     path_label: &str,
+    // Blind mode: no MUS analysis; on conflict drop the lowest-`weights`
+    // preference of the whole selection and retry the same request.
+    blind: bool,
+    weights: &BTreeMap<String, i64>,
+    timers: &mut SimTimers,
 ) -> PathResult {
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = initial_set.to_vec();
     let mut steps: usize = initial_steps;
     let mut last_obj_val: Option<IntCst> = None;
+    let mut last_satisfied: Option<BTreeSet<String>> = None;
 
     for &next_idx in ordering {
         steps += 1;
         selected_indices.push(next_idx);
         println!("\n[SIM][{}] Step {}: enforce {}", path_label, steps, entries[next_idx].name);
 
-        let selected_pref_lits: Vec<Lit> = selected_indices.iter()
+        let mut selected_pref_lits: Vec<Lit> = selected_indices.iter()
             .flat_map(|&i| entries[i].lits.iter().copied()).collect();
         let selected_names: BTreeSet<String> = selected_indices.iter()
             .map(|&i| entries[i].name.clone()).collect();
 
-        if !crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits) {
-            println!("\n[SIM][{}] Infeasible, analyzing conflicts...", path_label);
-            let analysis = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
-            display_conflicts(&analysis.muses, &selected_names, model);
-            steps += 1;
-            println!("[SIM][{}] Drop: {}", path_label, entries[next_idx].name);
-            selected_indices.pop();
-            continue;
+        if !blind {
+            // Greedy / re-add phase: the conflict analysis is shown and the
+            // just-added preference (cheapest of the selection by construction)
+            // is dropped.
+            let feasible = timed(&mut timers.probes, &mut timers.probe_ms, path_label, "probe",
+                || crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits));
+            if !feasible {
+                println!("\n[SIM][{}] Infeasible, analyzing conflicts...", path_label);
+                let analysis = timed(&mut timers.analyses, &mut timers.analysis_ms, path_label, "analysis",
+                    || collect_mus_mcs(solver, entries, &selected_indices, &selected_names));
+                display_conflicts(&analysis.muses, &selected_names, model);
+                steps += 1;
+                println!("[SIM][{}] Drop: {}", path_label, entries[next_idx].name);
+                selected_indices.pop();
+                continue;
+            }
+        } else {
+            // Blind: no explanation. While infeasible, drop the cheapest of the
+            // WHOLE selection (ties: name) and retry; if the dropped one is the
+            // request itself, give up on it.
+            let mut gave_up = false;
+            loop {
+                let feasible = timed(&mut timers.probes, &mut timers.probe_ms, path_label, "probe",
+                    || crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits));
+                if feasible { break; }
+                println!("\n[SIM][{}] Infeasible (no explanation available)", path_label);
+                let cheapest_pos = selected_indices.iter().enumerate()
+                    .min_by(|x, y| {
+                        let (a, b) = (*x.1, *y.1);
+                        let wa = weights.get(&entries[a].name).copied().unwrap_or(0);
+                        let wb = weights.get(&entries[b].name).copied().unwrap_or(0);
+                        wa.cmp(&wb).then_with(|| entries[a].name.cmp(&entries[b].name))
+                    })
+                    .map(|(pos, _)| pos)
+                    .expect("selection cannot be empty here");
+                let dropped = selected_indices.remove(cheapest_pos);
+                steps += 1;
+                println!("[SIM][{}] Drop cheapest of selection: {}", path_label, entries[dropped].name);
+                if dropped == next_idx || selected_indices.is_empty() {
+                    gave_up = true;
+                    break;
+                }
+                // retry the same request with the reduced selection
+                steps += 1;
+                println!("[SIM][{}] Step {}: retry enforce {}", path_label, steps, entries[next_idx].name);
+                selected_pref_lits = selected_indices.iter()
+                    .flat_map(|&i| entries[i].lits.iter().copied()).collect();
+            }
+            if gave_up { continue; }
         }
 
         let mut latest_solution = run_phase1(
@@ -197,13 +305,14 @@ fn run_one_by_one(
 
         if let Some(ref sol) = latest_solution {
             last_obj_val = Some(sol.eval(obj).unwrap());
+            last_satisfied = Some(satisfied_in(entries, sol));
         }
 
         if let (Some(current), Some(threshold)) = (last_obj_val, stop_threshold) {
             if current <= threshold {
                 println!("\n[SIM][{}] Stop threshold reached: objective {} ≤ threshold {}",
                     path_label, current, threshold);
-                return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
+                return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val, final_satisfied: last_satisfied };
             }
         }
 
@@ -211,13 +320,13 @@ fn run_one_by_one(
             let still_violated = compute_still_violated(entries, &selected_indices, sol);
             if still_violated.is_empty() {
                 println!("\n[SIM][{}] All preferences are now satisfied.", path_label);
-                return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val };
+                return PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val, final_satisfied: last_satisfied };
             }
         }
     }
 
     println!("\n[SIM][{}] No more preferences to try.", path_label);
-    PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val }
+    PathResult { steps, outcome: Outcome::Accepted, enforced: selected_indices, final_obj_val: last_obj_val, final_satisfied: last_satisfied }
 }
 
 // =====================================================================
@@ -228,6 +337,7 @@ struct PruneResult {
     selected: Vec<usize>,
     steps: usize,
     final_obj_val: Option<IntCst>,
+    final_satisfied: Option<BTreeSet<String>>,
 }
 
 fn run_prune(
@@ -242,6 +352,7 @@ fn run_prune(
     optimal_plan_cost: Option<IntCst>,
     violated_sorted: &[usize],
     path_label: &str,
+    timers: &mut SimTimers,
 ) -> PruneResult {
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = violated_sorted.to_vec();
@@ -263,12 +374,15 @@ fn run_prune(
         let selected_names: BTreeSet<String> = selected_indices.iter()
             .map(|&i| entries[i].name.clone()).collect();
 
-        if crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits) {
+        let feasible = timed(&mut timers.probes, &mut timers.probe_ms, path_label, "probe",
+            || crate::explain_preferences::probe_feasibility(solver, obj, &selected_pref_lits));
+        if feasible {
             break;
         }
 
         println!("\n[SIM][{}] Selection infeasible, analyzing conflicts...", path_label);
-        let analysis = collect_mus_mcs(solver, entries, &selected_indices, &selected_names);
+        let analysis = timed(&mut timers.analyses, &mut timers.analysis_ms, path_label, "analysis",
+            || collect_mus_mcs(solver, entries, &selected_indices, &selected_names));
         display_conflicts(&analysis.muses, &selected_names, model);
 
         steps += 1;
@@ -299,6 +413,7 @@ fn run_prune(
     let readd_ordering: Vec<usize> = dropped.iter().copied().rev().collect();
 
     let mut final_obj_val: Option<IntCst> = None;
+    let mut final_satisfied: Option<BTreeSet<String>> = None;
 
     if !readd_ordering.is_empty() && !selected_indices.is_empty() {
         let readd_str = readd_ordering.iter()
@@ -309,10 +424,12 @@ fn run_prune(
             solver, encoding, model, sched, entries,
             plan_cost_obj, optimal_obj_val, optimal_plan_cost,
             None, &selected_indices, steps, &readd_ordering, path_label,
+            false, weights, timers,
         );
         steps = readd_result.steps;
         selected_indices = readd_result.enforced;
         final_obj_val = readd_result.final_obj_val;
+        final_satisfied = readd_result.final_satisfied;
     }
 
     // Solve the surviving set (only needed if no re-add ran or none succeeded).
@@ -334,6 +451,7 @@ fn run_prune(
         }
         if let Some(ref sol) = latest_solution {
             final_obj_val = Some(sol.eval(obj).unwrap());
+            final_satisfied = Some(satisfied_in(entries, sol));
         }
     }
 
@@ -342,7 +460,7 @@ fn run_prune(
     println!("\n[SIM][{}] Prune done: {} steps, surviving: [{}]",
         path_label, steps, surviving_str);
 
-    PruneResult { selected: selected_indices, steps, final_obj_val }
+    PruneResult { selected: selected_indices, steps, final_obj_val, final_satisfied }
 }
 
 // =====================================================================
@@ -373,6 +491,9 @@ pub(crate) fn simulate_preference_enforcement(
     plan_cost_obj: Option<IntTerm>,
     strategy: Strategy,
     cli_stop_threshold: Option<i64>,
+    // Utilities of the simulated user (from --user-utilities). If None, the
+    // user shares the planner's metric weights (original behaviour).
+    user_weights: Option<&BTreeMap<String, i64>>,
 ) {
     if encoding.preferences.is_empty() { return; }
 
@@ -383,7 +504,14 @@ pub(crate) fn simulate_preference_enforcement(
     let optimal_obj_val = optimal_solution.eval(obj).unwrap();
     let optimal_plan_cost = compute_plan_cost(sched, optimal_solution);
     let entries = build_preference_entries(encoding, model, optimal_solution);
-    let weights = extract_preference_weights(model);
+    let planner_weights = extract_preference_weights(model);
+    // All decisions of the simulated user (ordering, drops) use `weights`.
+    let weights: BTreeMap<String, i64> = match user_weights {
+        Some(w) => w.clone(),
+        None => planner_weights.clone(),
+    };
+    let hidden = user_weights.is_some();
+    let mut timers = SimTimers::default();
 
     println!("\n===== Preference satisfaction (simulated mode) =====\n");
     println!("Optimal objective value: {}", optimal_obj_val);
@@ -403,6 +531,29 @@ pub(crate) fn simulate_preference_enforcement(
     println!("\nPreference weights: {}",
         entries.iter().map(|e| format!("{}={}", e.name, weights.get(&e.name).copied().unwrap_or(0)))
             .collect::<Vec<_>>().join(", "));
+    if hidden {
+        println!("Planner weights: {}",
+            entries.iter().map(|e| format!("{}={}", e.name, planner_weights.get(&e.name).copied().unwrap_or(0)))
+                .collect::<Vec<_>>().join(", "));
+        let missing: Vec<&str> = entries.iter()
+            .filter(|e| !weights.contains_key(&e.name)).map(|e| e.name.as_str()).collect();
+        if !missing.is_empty() {
+            println!("[SIM] WARNING: preferences without user utility (weight 0): {}", missing.join(", "));
+        }
+    }
+    // User utility of the planner's optimum (baseline for "recovered utility").
+    let total_user_utility: i64 = entries.iter().map(|e| weights.get(&e.name).copied().unwrap_or(0)).sum();
+    let baseline_satisfied: BTreeSet<String> = entries.iter()
+        .filter(|e| e.is_satisfied).map(|e| e.name.clone()).collect();
+    let baseline_user_utility = user_utility_of(&entries, &baseline_satisfied, &weights);
+    let report_user_utility = |final_satisfied: &Option<BTreeSet<String>>| {
+        let final_u = match final_satisfied {
+            Some(sat) => user_utility_of(&entries, sat, &weights),
+            None => baseline_user_utility,
+        };
+        println!("[SIM] User utility: total {}, planner optimum {}, final {}, gained {}",
+            total_user_utility, baseline_user_utility, final_u, final_u - baseline_user_utility);
+    };
     println!("\nViolated preferences: {}\n",
         violated_indices.iter().map(|&i| format!("{}", i + 1)).collect::<Vec<_>>().join(", "));
 
@@ -418,21 +569,28 @@ pub(crate) fn simulate_preference_enforcement(
     }
 
     match strategy {
-        Strategy::Greedy => {
+        Strategy::Greedy | Strategy::Blind => {
             // Enforce highest-utility violated preferences first.
+            let blind = matches!(strategy, Strategy::Blind);
+            let label = if blind { "blind" } else { "greedy" };
             let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                stop_threshold, &[], 0, &ordering, "greedy",
+                stop_threshold, &[], 0, &ordering, label,
+                blind, &weights, &mut timers,
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
+            // "Greedy path enforced" is kept for Blind too so that the existing
+            // log parsers (parse_console_logs.py) keep working.
             println!("\n[SIM] Greedy path enforced: [{}]", enforced_str);
             if let Some(final_val) = result.final_obj_val {
                 println!("[SIM] Optimal objective: {}, final objective: {}, distance to optimal: {}",
                     optimal_obj_val, final_val, final_val - optimal_obj_val);
             }
+            report_user_utility(&result.final_satisfied);
+            timers.report();
         }
         Strategy::AllAtOnce => {
             let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
@@ -440,7 +598,7 @@ pub(crate) fn simulate_preference_enforcement(
             let prune = run_prune(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                &ordering, "all-at-once",
+                &ordering, "all-at-once", &mut timers,
             );
 
             let enforced_str = prune.selected.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -450,6 +608,8 @@ pub(crate) fn simulate_preference_enforcement(
                 println!("[SIM] Optimal objective: {}, final objective: {}, distance to optimal: {}",
                     optimal_obj_val, final_val, final_val - optimal_obj_val);
             }
+            report_user_utility(&prune.final_satisfied);
+            timers.report();
             let _metrics = SimulationMetrics { steps: prune.steps, outcome: Outcome::Accepted };
         }
     }
