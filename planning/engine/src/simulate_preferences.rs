@@ -428,6 +428,9 @@ fn run_prune(
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = violated_sorted.to_vec();
     let mut steps: usize = 1;
+    // Actual drop order of the prune, so that the re-add phase can be LIFO
+    // (last dropped = most valuable among the dropped, retried first).
+    let mut drop_order: Vec<usize> = Vec::new();
 
     let selected_str = selected_indices.iter()
         .map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -462,7 +465,7 @@ fn run_prune(
                 println!("[SIM][{}] Drop cheapest in conflict: {}", path_label, name_to_drop);
                 let dropped_idx = selected_indices.iter()
                     .position(|&i| entries[i].name == name_to_drop).unwrap();
-                selected_indices.remove(dropped_idx);
+                drop_order.push(selected_indices.remove(dropped_idx));
             }
             None => {
                 break;
@@ -471,17 +474,14 @@ fn run_prune(
     }
 
     // Re-add phase: reuse the greedy one-by-one loop to try recovering
-    // dropped preferences.  The prune drops cheapest first, so reversing
-    // gives a LIFO order that retries highest-utility drops first.
+    // dropped preferences in LIFO order of the ACTUAL drops (the prune drops
+    // cheapest-in-conflict first, so the last dropped are the most valuable
+    // and are retried first).
     // Each successful re-add is followed by a full solve (Phase 1 / Phase 2),
     // exactly like the Greedy strategy.
     // A single pass suffices: each re-add only grows the selected set,
     // so a preference that fails feasibility cannot succeed later.
-    let dropped: Vec<usize> = violated_sorted.iter()
-        .copied()
-        .filter(|idx| !selected_indices.contains(idx))
-        .collect();
-    let readd_ordering: Vec<usize> = dropped.iter().copied().rev().collect();
+    let readd_ordering: Vec<usize> = drop_order.iter().copied().rev().collect();
 
     let mut final_obj_val: Option<IntCst> = None;
     let mut final_satisfied: Option<BTreeSet<String>> = None;
