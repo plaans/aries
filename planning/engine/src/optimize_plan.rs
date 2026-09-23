@@ -58,7 +58,7 @@ pub enum Explanation {
     InteractiveEnforcePreferences,
 }
 
-pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>, explanations: &[Explanation], simulate: Option<crate::simulate_preferences::Strategy>, stop_threshold: Option<i64>, user_weights: Option<&std::collections::BTreeMap<String, i64>>) -> Res<()> {
+pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>, explanations: &[Explanation], simulate: Option<crate::simulate_preferences::Strategy>, stop_threshold: Option<i64>, user_weights: Option<&std::collections::BTreeMap<String, i64>>, user_model: crate::simulate_preferences::UserModel) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, sched, plan_cost_obj) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
@@ -128,6 +128,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
                             strategy,
                             stop_threshold,
                             user_weights,
+                            user_model,
                         );
                     } else {
                         crate::explain_preferences::interactive_preference_enforcement(

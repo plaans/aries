@@ -13,6 +13,16 @@
 //! Conflict resolution (Greedy/AllAtOnce): analyze MUSes to find which
 //! preferences are in conflict, then drop the one with the lowest utility.
 //!
+//! User models (`--user-model`, orthogonal to the strategy):
+//!   - **original**: asks only for the preferences violated by the planner's
+//!     optimum (June 2026 behaviour). Never reacts to sacrifices.
+//!   - **protective**: asks for ALL preferences in utility order, including the
+//!     ones already satisfied, pinning them so that a later solve cannot
+//!     sacrifice a valuable goal silently. Each protection costs a step.
+//!   - **reactive**: asks only for violated preferences, but whenever a solve
+//!     sacrifices a preference that was satisfied before, re-requests it
+//!     immediately (front of the queue). A re-request that fails is given up.
+//!
 //! Hidden utilities: with `--user-utilities <problem.pddl>` the simulated
 //! user orders and drops preferences with the weights of THAT problem's
 //! metric, while the planner keeps optimizing its own metric. The output
@@ -54,6 +64,27 @@ impl std::fmt::Display for Strategy {
             Strategy::Greedy => write!(f, "greedy"),
             Strategy::AllAtOnce => write!(f, "all-at-once"),
             Strategy::Blind => write!(f, "blind"),
+        }
+    }
+}
+
+/// How the simulated user chooses what to ask for (orthogonal to `Strategy`).
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UserModel {
+    /// Only the preferences violated by the planner's optimum; ignores sacrifices.
+    Original,
+    /// All preferences in utility order, including satisfied ones (pins what it values).
+    Protective,
+    /// Violated preferences, plus re-requests any preference sacrificed by a solve.
+    Reactive,
+}
+
+impl std::fmt::Display for UserModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UserModel::Original => write!(f, "original"),
+            UserModel::Protective => write!(f, "protective"),
+            UserModel::Reactive => write!(f, "reactive"),
         }
     }
 }
@@ -222,14 +253,27 @@ fn run_one_by_one(
     blind: bool,
     weights: &BTreeMap<String, i64>,
     timers: &mut SimTimers,
+    user_model: UserModel,
+    // Preferences satisfied before this loop started (planner's optimum, or the
+    // last known solution); used by the Reactive model to detect sacrifices.
+    baseline_satisfied: &BTreeSet<String>,
 ) -> PathResult {
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = initial_set.to_vec();
     let mut steps: usize = initial_steps;
     let mut last_obj_val: Option<IntCst> = None;
     let mut last_satisfied: Option<BTreeSet<String>> = None;
+    let mut prev_satisfied: BTreeSet<String> = baseline_satisfied.clone();
 
-    for &next_idx in ordering {
+    // Pending requests. The Reactive model pushes sacrificed preferences to the
+    // front; a preference that was requested and dropped is never asked again.
+    let mut pending: std::collections::VecDeque<usize> = ordering.iter().copied().collect();
+    let mut given_up: BTreeSet<usize> = BTreeSet::new();
+
+    while let Some(next_idx) = pending.pop_front() {
+        if selected_indices.contains(&next_idx) || given_up.contains(&next_idx) {
+            continue;
+        }
         steps += 1;
         selected_indices.push(next_idx);
         println!("\n[SIM][{}] Step {}: enforce {}", path_label, steps, entries[next_idx].name);
@@ -253,6 +297,7 @@ fn run_one_by_one(
                 steps += 1;
                 println!("[SIM][{}] Drop: {}", path_label, entries[next_idx].name);
                 selected_indices.pop();
+                given_up.insert(next_idx);
                 continue;
             }
         } else {
@@ -275,6 +320,7 @@ fn run_one_by_one(
                     .map(|(pos, _)| pos)
                     .expect("selection cannot be empty here");
                 let dropped = selected_indices.remove(cheapest_pos);
+                given_up.insert(dropped);
                 steps += 1;
                 println!("[SIM][{}] Drop cheapest of selection: {}", path_label, entries[dropped].name);
                 if dropped == next_idx || selected_indices.is_empty() {
@@ -305,7 +351,30 @@ fn run_one_by_one(
 
         if let Some(ref sol) = latest_solution {
             last_obj_val = Some(sol.eval(obj).unwrap());
-            last_satisfied = Some(satisfied_in(entries, sol));
+            let now_satisfied = satisfied_in(entries, sol);
+            if user_model == UserModel::Reactive {
+                // Preferences the user had (satisfied before) and lost with this
+                // solve, not enforced, not pending and not given up: ask for them
+                // back, most valuable first.
+                let sacrificed: Vec<usize> = entries.iter().enumerate()
+                    .filter(|(i, e)| prev_satisfied.contains(&e.name)
+                        && !now_satisfied.contains(&e.name)
+                        && !selected_indices.contains(i)
+                        && !given_up.contains(i)
+                        && !pending.contains(i))
+                    .map(|(i, _)| i)
+                    .collect();
+                if !sacrificed.is_empty() {
+                    let sacrificed = build_greedy_ordering(&sacrificed, entries, weights);
+                    println!("[SIM][{}] Sacrificed by the solver, re-requesting: [{}]", path_label,
+                        sacrificed.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", "));
+                    for &i in sacrificed.iter().rev() {
+                        pending.push_front(i);
+                    }
+                }
+            }
+            prev_satisfied = now_satisfied.clone();
+            last_satisfied = Some(now_satisfied);
         }
 
         if let (Some(current), Some(threshold)) = (last_obj_val, stop_threshold) {
@@ -353,6 +422,8 @@ fn run_prune(
     violated_sorted: &[usize],
     path_label: &str,
     timers: &mut SimTimers,
+    user_model: UserModel,
+    baseline_satisfied: &BTreeSet<String>,
 ) -> PruneResult {
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = violated_sorted.to_vec();
@@ -424,7 +495,7 @@ fn run_prune(
             solver, encoding, model, sched, entries,
             plan_cost_obj, optimal_obj_val, optimal_plan_cost,
             None, &selected_indices, steps, &readd_ordering, path_label,
-            false, weights, timers,
+            false, weights, timers, user_model, baseline_satisfied,
         );
         steps = readd_result.steps;
         selected_indices = readd_result.enforced;
@@ -452,6 +523,36 @@ fn run_prune(
         if let Some(ref sol) = latest_solution {
             final_obj_val = Some(sol.eval(obj).unwrap());
             final_satisfied = Some(satisfied_in(entries, sol));
+        }
+
+        // Reactive model: the final solve may have sacrificed preferences the
+        // user had; ask for them back through the one-by-one loop.
+        if user_model == UserModel::Reactive {
+            if let Some(ref sat) = final_satisfied {
+                let sacrificed: Vec<usize> = entries.iter().enumerate()
+                    .filter(|(i, e)| baseline_satisfied.contains(&e.name)
+                        && !sat.contains(&e.name)
+                        && !selected_indices.contains(i))
+                    .map(|(i, _)| i)
+                    .collect();
+                if !sacrificed.is_empty() {
+                    let sacrificed = build_greedy_ordering(&sacrificed, entries, weights);
+                    println!("\n[SIM][{}] Sacrificed by the solver, re-requesting: [{}]", path_label,
+                        sacrificed.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", "));
+                    let react = run_one_by_one(
+                        solver, encoding, model, sched, entries,
+                        plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                        None, &selected_indices, steps, &sacrificed, path_label,
+                        false, weights, timers, user_model, sat,
+                    );
+                    steps = react.steps;
+                    selected_indices = react.enforced;
+                    if react.final_obj_val.is_some() {
+                        final_obj_val = react.final_obj_val;
+                        final_satisfied = react.final_satisfied;
+                    }
+                }
+            }
         }
     }
 
@@ -494,10 +595,12 @@ pub(crate) fn simulate_preference_enforcement(
     // Utilities of the simulated user (from --user-utilities). If None, the
     // user shares the planner's metric weights (original behaviour).
     user_weights: Option<&BTreeMap<String, i64>>,
+    user_model: UserModel,
 ) {
     if encoding.preferences.is_empty() { return; }
 
     println!("\nSimulation strategy: {}", strategy);
+    println!("[SIM] User model: {}", user_model);
 
     // Baseline values from the optimal (no-preferences) solution
     let obj = encoding.objectives[0];
@@ -568,17 +671,24 @@ pub(crate) fn simulate_preference_enforcement(
         println!("[SIM] Stop threshold: disabled (pass --stop-threshold to enable)");
     }
 
+    // What the user asks for: only the violated preferences, or all of them
+    // (Protective pins the satisfied ones too, in utility order).
+    let candidate_indices: Vec<usize> = match user_model {
+        UserModel::Protective => (0..entries.len()).collect(),
+        UserModel::Original | UserModel::Reactive => violated_indices.clone(),
+    };
+
     match strategy {
         Strategy::Greedy | Strategy::Blind => {
-            // Enforce highest-utility violated preferences first.
+            // Enforce highest-utility candidates first.
             let blind = matches!(strategy, Strategy::Blind);
             let label = if blind { "blind" } else { "greedy" };
-            let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
+            let ordering = build_greedy_ordering(&candidate_indices, &entries, &weights);
             let result = run_one_by_one(
                 &mut solver.clone(), encoding, model, sched, &entries,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
                 stop_threshold, &[], 0, &ordering, label,
-                blind, &weights, &mut timers,
+                blind, &weights, &mut timers, user_model, &baseline_satisfied,
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -593,12 +703,12 @@ pub(crate) fn simulate_preference_enforcement(
             timers.report();
         }
         Strategy::AllAtOnce => {
-            let ordering = build_greedy_ordering(&violated_indices, &entries, &weights);
+            let ordering = build_greedy_ordering(&candidate_indices, &entries, &weights);
 
             let prune = run_prune(
                 &mut solver.clone(), encoding, model, sched, &entries, &weights,
                 plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                &ordering, "all-at-once", &mut timers,
+                &ordering, "all-at-once", &mut timers, user_model, &baseline_satisfied,
             );
 
             let enforced_str = prune.selected.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");

@@ -144,6 +144,11 @@ pub struct OptimizePlan {
     /// Preference names must match those of --problem. Requires --simulate.
     #[arg(long)]
     user_utilities: Option<PathBuf>,
+    /// What the simulated user asks for: `original` (only violated preferences),
+    /// `protective` (all preferences, pinning the satisfied ones) or `reactive`
+    /// (violated ones, re-requesting any preference sacrificed by a solve).
+    #[arg(long, default_value = "original")]
+    user_model: simulate_preferences::UserModel,
 }
 
 #[derive(Parser, Debug)]
@@ -332,7 +337,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         None => None,
     };
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate, command.stop_threshold, user_weights.as_ref())
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref(), &command.explain, command.simulate, command.stop_threshold, user_weights.as_ref(), command.user_model)
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
