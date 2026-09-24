@@ -258,7 +258,7 @@ impl LpRelaxProblem {
         ctx: &SchedEncoder,
         doms: &Domains,
     ) -> Result<(), Infeasible> {
-        let presence_cols = encoder
+        let lifted_presence_and_support_cols = encoder
             .iter_sources()
             .flat_map(|(source, trans_ids)| {
                 std::iter::chain(
@@ -286,7 +286,7 @@ impl LpRelaxProblem {
                     }),
             );
 
-        for (col_tag, lit) in presence_cols {
+        for (col_tag, lit) in lifted_presence_and_support_cols {
             let value = if doms.entails(doms.presence(lit)) {
                 match doms.value(lit) {
                     Some(true) => 1,
@@ -298,6 +298,16 @@ impl LpRelaxProblem {
             } else {
                 continue;
             };
+
+            if value == 1 && matches!(col_tag, ColTag::Support(..)) && encoder.supports.with_condition_out_transitions {
+                // In the case where conditions can be used as out-transitions,
+                // it is UNSOUND to derive all the columns corresponding to present and true causal link support literals as equal to 1.
+                // Indeed, that case forbids the LP relaxation from having an effect support 2 or more conditions, even though it is allowed in the main model.
+                // As such, this could force two support columns two 1, making their sum equal to 2,
+                // while this very sum would be constrained to be <= 1 by the lp relaxation (with conditions allowed to be out-transitions),
+                // which was contradictory.
+                continue;
+            }
 
             let class = classes.intern(col_tag);
             classes.set_value(class, value)?;
