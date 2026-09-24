@@ -1,95 +1,115 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use aries_solver::prelude::{Lit, Var};
-use smallvec::{SmallVec, smallvec};
+use aries_solver::core::views::{Dom, VarView};
 
-use crate::{LpCol, LpLit};
+use idmap::DirectIdMap;
 
-pub type LitToLpLitsBindingFn = dyn Fn(Lit) -> SmallVec<[LpLit; 4]> + Send + Sync;
-pub type LpLitToLitsBindingFn = dyn Fn(LpLit) -> SmallVec<[Lit; 4]> + Send + Sync;
+use crate::types::*;
 
-#[derive(Clone, Default)]
-pub(crate) struct LpRelaxBindings {
-    lit_to_lplits_bindings: HashMap<Var, LitToLpLitsBindings>,
-    lplit_to_lits_bindings: HashMap<LpCol, LpLitToLitsBindings>,
+pub type AriesLitToLpLitHalfBindingFn = dyn Fn(IntCst) -> Option<(LpLitType, IntCst)>;
+
+#[derive(Default, Clone)]
+pub(super) struct AriesLitToLpLitHalfBindings {
+    on_scope_var: DirectIdMap<AriesVarIdx, (Vec<AriesLitToLpLitHalfBinding>, Vec<AriesLitToLpLitHalfBinding>)>,
+    on_var: DirectIdMap<AriesVarIdx, (Vec<AriesLitToLpLitHalfBinding>, Vec<AriesLitToLpLitHalfBinding>)>,
 }
-impl LpRelaxBindings {
-    pub fn add_lit_to_lplits_binding(&mut self, var: Var, func: Arc<LitToLpLitsBindingFn>) {
-        self.lit_to_lplits_bindings
-            .entry(var)
-            .or_insert_with(|| LitToLpLitsBindings::new(var))
-            .add(func);
+impl AriesLitToLpLitHalfBindings {
+    pub fn add(&mut self, binding: AriesLitToLpLitHalfBinding) {
+        let scope_var_idx = binding.scope.variable().to_u32();
+        let var_idx = binding.svar.variable().to_u32();
+
+        if !self.on_scope_var.contains_key(scope_var_idx) {
+            self.on_scope_var.insert(scope_var_idx, Default::default());
+        }
+        if !self.on_var.contains_key(var_idx) {
+            self.on_var.insert(var_idx, Default::default());
+        }
+
+        {
+            if binding.scope.svar().is_plus() {
+                &mut self.on_scope_var[scope_var_idx].1
+            } else {
+                &mut self.on_scope_var[scope_var_idx].0
+            }
+        }
+        .push(binding.clone());
+
+        {
+            if binding.svar.is_plus() {
+                &mut self.on_var[var_idx].1
+            } else {
+                &mut self.on_var[var_idx].0
+            }
+        }
+        .push(binding.clone());
     }
-    pub fn add_lplit_to_lits_binding(&mut self, col: LpCol, func: Arc<LpLitToLitsBindingFn>) {
-        self.lplit_to_lits_bindings
-            .entry(col)
-            .or_insert_with(|| LpLitToLitsBindings::new(col))
-            .add(func);
+
+    pub fn eval_for_scope_var(
+        &self,
+        scope_svar: AriesSignedVar,
+        dom: &impl Dom,
+    ) -> impl Iterator<Item = (LpLit, AriesLit, AriesLit)> {
+        self.on_scope_var
+            .get(scope_svar.variable().to_u32())
+            .map(|(neg, pos)| if scope_svar.is_plus() { pos } else { neg })
+            .into_iter()
+            .flatten()
+            .filter_map(move |binding| binding.eval(dom))
     }
-    pub fn add_lit_to_lplits_binding_default(&mut self, var: Var, col: LpCol) {
-        self.lit_to_lplits_bindings
-            .entry(var)
-            .or_insert_with(|| LitToLpLitsBindings::new(var))
-            .add_default(var, col);
+
+    pub fn eval_for_var(
+        &self,
+        svar: AriesSignedVar,
+        dom: &impl Dom,
+    ) -> impl Iterator<Item = (LpLit, AriesLit, AriesLit)> {
+        self.on_var
+            .get(svar.variable().to_u32())
+            .map(|(neg, pos)| if svar.is_plus() { pos } else { neg })
+            .into_iter()
+            .flatten()
+            .filter_map(move |binding| binding.eval(dom))
     }
-    pub fn add_lplit_to_lits_binding_default(&mut self, var: Var, col: LpCol) {
-        self.lplit_to_lits_bindings
-            .entry(col)
-            .or_insert_with(|| LpLitToLitsBindings::new(col))
-            .add_default(var, col);
-    }
-    pub fn compute_implied_lplits(&self, lit: Lit) -> Option<impl Iterator<Item = LpLit>> {
-        self.lit_to_lplits_bindings
-            .get(&lit.variable())
-            .map(|bindings| bindings.compute_implied_lplits(lit))
-    }
-    pub fn compute_implied_lits(&self, lplit: LpLit) -> Option<impl Iterator<Item = Lit>> {
-        self.lplit_to_lits_bindings
-            .get(&lplit.col)
-            .map(|bindings| bindings.compute_implied_lit(lplit))
+
+    pub fn eval_all(&self, dom: &impl Dom) -> impl Iterator<Item = (LpLit, AriesLit, AriesLit)> {
+        self.on_scope_var
+            .iter()
+            .flat_map(|(_, (neg, pos))| neg.iter().chain(pos.iter()))
+            .filter_map(move |binding| binding.eval(dom))
     }
 }
 
 #[derive(Clone)]
-struct LitToLpLitsBindings {
-    var: Var,
-    funcs: Vec<Arc<LitToLpLitsBindingFn>>,
-}
-impl LitToLpLitsBindings {
-    fn new(var: Var) -> Self {
-        Self { var, funcs: vec![] }
-    }
-    fn add_default(&mut self, var: Var, col: LpCol) {
-        assert!(var == self.var);
-        self.add(Arc::new(move |lit| smallvec![LpLit::from_model_lit(col, lit)]))
-    }
-    fn add(&mut self, func: Arc<LitToLpLitsBindingFn>) {
-        self.funcs.push(func);
-    }
-    fn compute_implied_lplits(&self, lit: Lit) -> impl Iterator<Item = LpLit> + use<'_> {
-        assert!(lit.variable() == self.var);
-        self.funcs.iter().flat_map(move |func| func(lit))
-    }
-}
-
-#[derive(Clone)]
-struct LpLitToLitsBindings {
+pub(super) struct AriesLitToLpLitHalfBinding {
+    scope: AriesLit,
+    svar: AriesSignedVar,
     col: LpCol,
-    funcs: Vec<Arc<LpLitToLitsBindingFn>>,
+    map_fn: Arc<AriesLitToLpLitHalfBindingFn>,
 }
-impl LpLitToLitsBindings {
-    fn new(col: LpCol) -> Self {
-        Self { col, funcs: vec![] }
+impl AriesLitToLpLitHalfBinding {
+    pub fn new(scope: AriesLit, svar: AriesSignedVar, col: LpCol, map_fn: Arc<AriesLitToLpLitHalfBindingFn>) -> Self {
+        assert!(scope != AriesLit::FALSE);
+        assert!(svar.variable() != AriesVar::ZERO);
+        Self {
+            scope,
+            svar,
+            col,
+            map_fn,
+        }
     }
-    fn add_default(&mut self, var: Var, col: LpCol) {
-        assert!(col == self.col);
-        self.add(Arc::new(move |lplit| smallvec![lplit.into_model_lit(var)]))
-    }
-    fn add(&mut self, func: Arc<LpLitToLitsBindingFn>) {
-        self.funcs.push(func);
-    }
-    fn compute_implied_lit(&self, lplit: LpLit) -> impl Iterator<Item = Lit> + use<'_> {
-        assert!(lplit.col == self.col);
-        self.funcs.iter().flat_map(move |func| func(lplit))
+    pub fn eval(&self, dom: &impl Dom) -> Option<(LpLit, AriesLit, AriesLit)> {
+        if !dom.entails(self.scope) {
+            return None;
+        }
+        let aries_var_bound_value = if self.svar.is_plus() {
+            dom.ub(self.svar.variable())
+        } else {
+            dom.lb(self.svar.variable())
+        };
+        let (tpe, val) = (self.map_fn)(aries_var_bound_value)?;
+        Some((
+            LpLit::new(self.col, tpe, val),
+            self.scope,
+            AriesLit::new(self.svar, self.svar.upper_bound(dom)),
+        ))
     }
 }

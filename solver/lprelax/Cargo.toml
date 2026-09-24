@@ -9,3 +9,4 @@ aries-env-param = { path = "../../utils/env_param" }
 highs = { git = "https://github.com/nrealus/highs.git" }
 itertools = { workspace = true }
 smallvec = { workspace = true }
+idmap = { workspace = true }

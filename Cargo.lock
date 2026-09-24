@@ -213,6 +213,7 @@ dependencies = [
  "aries-env-param",
  "aries-solver",
  "highs 2.1.0",
+ "idmap",
  "itertools 0.14.0",
  "smallvec",
 ]
