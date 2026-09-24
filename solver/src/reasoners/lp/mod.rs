@@ -15,9 +15,10 @@ them to the LP.
 > **Important:** This reasoner is **disabled by default**.
 > To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
 
-[ref-doc]: https://link.springer.com/chapter/10.1007/11817963_11
+[ref-doc]: https://doi.org/10.1007/11817963_11
 */
 
+mod explanation_utils;
 mod solver;
 
 #[cfg(feature = "lp_log")]
@@ -44,7 +45,44 @@ use crate::{
     reasoners::{Contradiction, ReasonerId, Theory},
 };
 
-/// Used to enable/disable the lp reasonner
+/// Contains all the options available for the Lp reasoner
+///
+/// It can be passed when creating the reasoner or modified through following methods:
+/// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
+#[derive(Debug, Clone, Copy)]
+pub struct LpOptions {
+    /// Used to activate/deactivate the propagation of the reasoner
+    ///
+    /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
+    propagation_active: bool,
+    /// Used to enable/disable the reasoner
+    ///
+    /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
+    /// or after the creation with [`Lp::activate`] and [`Lp::deactivate`]
+    enable: bool,
+    /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
+    ///
+    ///Can be controlled with the following methods: [`Lp::activate_refined_explanation`], [`Lp::deactivate_refined_explanation`]
+    is_explanation_refined: bool,
+}
+
+impl LpOptions {
+    fn new(propagation_active: bool, enable: bool, is_explanation_refined: bool) -> Self {
+        LpOptions {
+            propagation_active,
+            enable,
+            is_explanation_refined,
+        }
+    }
+}
+
+impl Default for LpOptions {
+    fn default() -> Self {
+        LpOptions::new(true, LP_ENABLE.get(), true)
+    }
+}
+
+/// Used to enable/disable the lp reasoner
 ///
 /// Can be set either from the env variable **`ARIES_LP_ENABLE`**
 /// or within the code with: `LP_ENABLE.set(true/false)`
@@ -114,19 +152,19 @@ impl Stats {
 /// It encapsulates all the necessary information to run the lp solver on the posted constraints.
 ///
 /// The propagation can be dynamically activated / deactivated through the following methods: [`Lp::activate()`] and [`Lp::deactivate()`].
-/// This can be useful to avoid an overhead of the lp reasonner over the others if its not relevant.
+/// This can be useful to avoid an overhead of the lp reasoner over the others if its not relevant.
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
-    /// Encapsulates both float and integer versions of our constraints and an instance of the minilp solver
+    /// Encapsulates both float and integer versions of our constraints and an instance of the aries-lp solver
     solver: Solver,
     /// Associates each bound constraint with its activation lit
     bound_cons_lit_vec: Vec<(BoundConstraint, Lit)>,
-    /// Associates linear sums with its corresponding variable in the minilp solver
+    /// Associates linear sums with its corresponding variable in the aries-lp solver
     ///
     /// It is used to avoid duplicate variables that should be the same
     memory_s: HashMap<Vec<ScaledVar>, Variable>,
-    /// Maps var from aries solver with their coresponding variable in minilp (if they appear in the post constraints)
+    /// Maps var from aries solver with their coresponding variable in aries-lp (if they appear in the post constraints)
     memory_x: RefMap<Var, Variable>,
     model_events: ObsTrailCursor<Event>,
     /// The watcher corresponds to an index in bound_cons_lit_vec
@@ -134,14 +172,10 @@ pub struct Lp {
     /// History of changes made to the LP with all information necessary to undo them.
     trail: Trail<LpEvent>,
     stats: Stats,
-    /// Used to activate/deactivate the propagation of the reasonner
+    /// Contains all the customizable options for the reasoner
     ///
-    /// It can be controlled with activate and deactivate methods
-    propagation_active: bool,
-    /// Used to enable/disable the reasonner
-    ///
-    /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
-    enable: bool,
+    /// Check [`LpOptions`] for more details
+    options: LpOptions,
     /// Used to log the initial problem
     ///
     /// It supposes that no additonal constraint is added after the first propagation
@@ -151,15 +185,15 @@ pub struct Lp {
 
 impl Default for Lp {
     fn default() -> Self {
-        Self::new()
+        Self::new(LpOptions::default())
     }
 }
 
 impl Lp {
-    pub fn new() -> Self {
+    pub fn new(options: LpOptions) -> Self {
         Self {
             id: ReasonerId::Cp,
-            solver: Solver::new(),
+            solver: Solver::new(options.is_explanation_refined),
 
             bound_cons_lit_vec: Vec::new(),
 
@@ -172,8 +206,7 @@ impl Lp {
 
             stats: Stats::new(),
 
-            enable: LP_ENABLE.get(),
-            propagation_active: true,
+            options,
             #[cfg(feature = "lp_log")]
             is_first_propagate: true,
         }
@@ -182,24 +215,38 @@ impl Lp {
     ///
     /// All constraints registered before the activation of the LP will be ignored
     pub fn activate(&mut self) {
-        self.propagation_active = true;
-        self.enable = true;
+        self.options.propagation_active = true;
+        self.options.enable = true;
     }
 
     /// Deactivate propagation and constraints registration of the LP
     pub fn deactivate(&mut self) {
-        self.propagation_active = false;
-        self.enable = false;
+        self.options.propagation_active = false;
+        self.options.enable = false;
     }
 
     /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
     pub fn deactivate_propagation(&mut self) {
-        self.propagation_active = false;
+        self.options.propagation_active = false;
+    }
+
+    /// Activate refined explanation using minimization based on [`crate::reasoners::cp::linear`]
+    ///
+    /// Explanations will be smaller in general therefore more useful but take more time to compute
+    pub fn activate_refined_explanation(&mut self) {
+        self.options.is_explanation_refined = true;
+        self.solver.is_explanation_refined = true;
+    }
+
+    /// Deactivate refined explanation
+    pub fn deactivate_refined_explanation(&mut self) {
+        self.options.is_explanation_refined = false;
+        self.solver.is_explanation_refined = false;
     }
 
     /// Returns a linear sum which is the opposite in terms of coefficient that the one given
     ///
-    /// We use it to detect that 2 constraints could use the same s variable in minilp
+    /// We use it to detect that 2 constraints could use the same s variable in aries-lp
     fn get_opposite_linear_sum(linear_sum: &[ScaledVar]) -> Vec<ScaledVar> {
         let mut opp = Vec::new();
         for &svar in linear_sum {
@@ -222,6 +269,7 @@ impl Lp {
         );
 
         self.memory_x.insert(x, var);
+        self.solver.map_lp_to_aries.insert(var.idx(), x);
     }
 
     /// Add an s variable, it corresponds to a linear constraint in aries solver
@@ -273,7 +321,7 @@ impl Lp {
     /// We assume that the active literal is always present, it is the responsability of the caller to ensure it:
     /// `doms.presence(active) == Lit::TRUE`
     pub fn add_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
-        if !self.enable {
+        if !self.options.enable {
             return;
         }
 
@@ -336,14 +384,14 @@ impl Lp {
     }
 
     /// Takes the result of a call to [Solver::check_feasibility] and returns either `Ok` or a `Contradiction` if infeasibility was detected
-    fn explain_check_feas(&mut self, res: Result<(), Error>) -> Result<(), Contradiction> {
+    fn explain_check_feas(&mut self, res: Result<(), Error>, domains: &Domains) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
                 if self.solver.problem.is_certificate_valid(&cert) {
                     self.stats.num_val_certif_float += 1;
                 }
-                match self.solver.check_certificate(&cert, &mut self.stats) {
+                match self.solver.check_certificate(&cert, domains, &mut self.stats) {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
                         Err(Contradiction::Explanation(explanation))
@@ -371,7 +419,7 @@ impl Theory for Lp {
     }
 
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.propagation_active || !self.enable {
+        if !self.options.propagation_active || !self.options.enable {
             return Ok(());
         }
 
@@ -427,14 +475,14 @@ impl Theory for Lp {
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
         let res = self.solver.check_feasibility();
-        self.explain_check_feas(res)?;
+        self.explain_check_feas(res, domains)?;
 
         self.stats.num_ok_propagate += 1;
 
         Ok(())
     }
 
-    // Should not be called as this reasonner never infers new lit, it only gives contradictions
+    // Should not be called as this reasoner never infers new lit, it only gives contradictions
     fn explain(
         &mut self,
         _literal: Lit,
@@ -446,7 +494,7 @@ impl Theory for Lp {
     }
 
     fn print_stats(&self) {
-        if self.enable {
+        if self.options.enable {
             println!("# propagations: {}", self.stats.num_propagate);
             println!(
                 "# contradictions: {}",
@@ -496,7 +544,7 @@ mod tests {
     };
 
     use crate::{
-        core::{INT_CST_MAX, INT_CST_MIN, IntCst, state::Cause},
+        core::{IntCst, state::Cause},
         reasoners::cp::testing::pick_decisions,
     };
 
@@ -531,42 +579,6 @@ mod tests {
         }
     }
 
-    impl Lp {
-        fn get_validity_certificates(&mut self) -> Option<(bool, bool)> {
-            let bound_cons_lit_vec = self.bound_cons_lit_vec.clone();
-
-            for (bound_cons, _) in bound_cons_lit_vec {
-                let res_set_bound = self
-                    .solver
-                    .set_bound(bound_cons.var, bound_cons.bound, bound_cons.val, Lit::TRUE);
-
-                let res_check_feas = self.solver.check_feasibility();
-
-                if res_set_bound.is_err() || res_check_feas.is_err() {
-                    if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
-                        // println!("Cert: {:?}", cert);
-
-                        let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.check_certificate(cert, &mut self.stats).is_some();
-                        return Some((is_certif_valid_int, is_certif_valid_float));
-                    }
-
-                    if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
-                        // println!("Cert: {:?}", cert);
-
-                        let is_certif_valid_float = self.solver.problem.is_certificate_valid(cert);
-                        let is_certif_valid_int = self.solver.check_certificate(cert, &mut self.stats).is_some();
-                        return Some((is_certif_valid_int, is_certif_valid_float));
-                    }
-
-                    break;
-                }
-            }
-
-            None
-        }
-    }
-
     fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
         let k = 1.0 / sparse_proportion - 1.0;
 
@@ -583,7 +595,7 @@ mod tests {
         sparse_proportion: f32,
         seed: u64,
     ) -> (Lp, Domains) {
-        let mut lp_reasonner = Lp::new();
+        let mut lp_reasonner = Lp::default();
 
         let mut d = Domains::new();
 
@@ -620,54 +632,7 @@ mod tests {
         (lp_reasonner, d)
     }
 
-    fn compile_stats_certificate(nb_var: usize, nb_const: usize, min: IntCst, max: IntCst) {
-        let n = 1000;
-
-        let mut nb_val_cert_i = 0;
-
-        let mut nb_val_cert_f = 0;
-
-        let mut nb_cert = 0;
-
-        for seed in 0..n {
-            let (mut lp, _) = gen_filled_lp_domain(nb_var, nb_const, min, max, 0.1, seed);
-
-            if let Some((is_val_cert_i, is_val_cert_f)) = lp.get_validity_certificates() {
-                nb_val_cert_i += is_val_cert_i as usize;
-                nb_val_cert_f += is_val_cert_f as usize;
-
-                nb_cert += 1;
-            }
-        }
-
-        println!("float: {nb_val_cert_f}, int: {nb_val_cert_i}, total: {nb_cert}");
-    }
-
-    #[ignore]
-    #[test]
-    fn compile_stats_certificate_single() {
-        compile_stats_certificate(50, 100, -10, 10);
-    }
-
-    #[ignore]
-    #[test]
-    fn compile_stats_certificate_multiple() {
-        for max in [10, 1000, INT_CST_MAX] {
-            for nb_var in [30, 50, 100, 150] {
-                for nb_const in [50, 100, 200, 400] {
-                    print!("nb_var:{nb_var}, nb_const: {nb_const}, max: {max}, ");
-                    compile_stats_certificate(
-                        nb_var,
-                        nb_const,
-                        if max == INT_CST_MAX { INT_CST_MIN } else { -max },
-                        max,
-                    );
-                }
-            }
-        }
-    }
-
-    /// Adapted from testing.rs in cp reasonner
+    /// Adapted from testing.rs in cp reasoner
     ///
     /// Test that triggers propagation of random decisions and checks the explanations are correct
     ///
@@ -712,7 +677,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(&mut d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasonner can't infer new lit
+                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
@@ -786,7 +751,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasonner can't infer new lit
+                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {

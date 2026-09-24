@@ -134,7 +134,7 @@ impl ReasonersTheories {
             diff: StnTheory::new(Default::default()),
             cp: Cp::new(ReasonerId::Cp),
             tautologies: Tautologies::default(),
-            lp: Lp::new(),
+            lp: Lp::default(),
             extra: vec![],
         }
     }

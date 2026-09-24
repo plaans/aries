@@ -20,7 +20,7 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<Val
         objectives: vec![optimize_plan::Objective::Original],
     };
     let (mut solver, encoding, _sched) =
-        encode_plan_optimization_problem(model, plan, Default::default(), &opt_options)?;
+        encode_plan_optimization_problem(model, plan, Default::default(), &opt_options, true)?;
 
     if let Some(solution) = solver.check_satisfiability() {
         println!("> Plan is valid");

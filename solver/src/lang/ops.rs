@@ -295,6 +295,17 @@ impl TryFrom<LinTerm> for IntCst {
         }
     }
 }
+impl TryFrom<LinTerm> for VarCst {
+    type Error = ConversionError;
+
+    fn try_from(value: LinTerm) -> Result<Self, Self::Error> {
+        match value.scaled_var.factor {
+            0 => Ok(VarCst::new(Var::ZERO, value.constant)),
+            1 => Ok(VarCst::new(value.scaled_var.var, value.constant)),
+            _ => Err(ConversionError::NotPure),
+        }
+    }
+}
 
 impl std::ops::Neg for LinTerm {
     type Output = Self;

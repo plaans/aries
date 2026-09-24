@@ -4,7 +4,8 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use crate::core::literals::{ConjunctionBuilder, DisjunctionBuilder};
-use crate::lang::{ModelView, VarCst};
+use crate::core::views::Boundable;
+use crate::lang::ModelView;
 use crate::prelude::*;
 
 /// A set of tuples, representing the allowed values in a table constraint.
@@ -55,12 +56,12 @@ impl<E: Clone> Table<E> {
 /// the entire constraint is undefined.
 #[derive(Clone, Debug)]
 pub struct InTable {
-    variables: Vec<VarCst>,
+    variables: Vec<LinTerm>,
     value_tuples: Arc<Table<IntCst>>,
 }
 
 impl InTable {
-    pub fn new(variables: Vec<VarCst>, allowed_assignments: Arc<Table<IntCst>>) -> Self {
+    pub fn new(variables: Vec<LinTerm>, allowed_assignments: Arc<Table<IntCst>>) -> Self {
         assert_eq!(variables.len(), allowed_assignments.num_columns);
         InTable {
             variables,
@@ -87,8 +88,8 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
             assert_eq!(vars.len(), tuple.len());
             let mut supported_by_this_line = ConjunctionBuilder::with_capacity(tuple.len() * 2);
             for (&var, &val) in vars.iter().zip(tuple.iter()) {
-                supported_by_this_line.push(model.half_reify(leq(var, val)));
-                supported_by_this_line.push(model.half_reify(geq(var, val)));
+                supported_by_this_line.push(var.leq(val));
+                supported_by_this_line.push(var.geq(val));
             }
             let support = model.half_reify(and(supported_by_this_line));
             lines.push((support, tuple));
@@ -121,10 +122,10 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
             for &n in &values {
                 // var > n  =>  or_i { sup_i | tuple_i[k] > n }
                 let mut ge_clause = DisjunctionBuilder::new();
-                ge_clause.push(!var.gt_lit(n));
+                ge_clause.push(var.leq(n));
                 // var < n  =>  or { sup_i | tuple_i[k] < n }
                 let mut le_clause = DisjunctionBuilder::new();
-                le_clause.push(!var.lt_lit(n));
+                le_clause.push(var.geq(n));
 
                 for &(support, val) in &val_supports {
                     if val > n {
@@ -150,14 +151,14 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
 #[derive(Debug, Clone)]
 pub struct HasValueIn {
     /// Variable on which the constraint is placed
-    variable: VarCst,
+    variable: LinTerm,
     /// Values that are allowed for this variable.
     /// The vector is expected to be sorted (and ideally deduplicated)
     allowed_values: Vec<IntCst>,
 }
 
 impl HasValueIn {
-    pub fn new(variable: VarCst, mut allowed_values: Vec<IntCst>) -> Self {
+    pub fn new(variable: LinTerm, mut allowed_values: Vec<IntCst>) -> Self {
         allowed_values.sort();
         allowed_values.dedup();
         Self {
@@ -178,15 +179,15 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for HasValueIn {
 
         let min = *self.allowed_values.first().unwrap();
         let max = *self.allowed_values.last().unwrap();
-        ctx.enforce_if(implicant, self.variable.ge_lit(min));
-        ctx.enforce_if(implicant, self.variable.le_lit(max));
+        ctx.enforce_if(implicant, self.variable.geq(min));
+        ctx.enforce_if(implicant, self.variable.leq(max));
 
         let mut prev = min;
         for &val in self.allowed_values.iter().skip(1) {
             if prev != val - 1 {
                 // there is a hole in the domain
                 // [..., prev] U [val, ..]
-                ctx.enforce_if(implicant, or([self.variable.le_lit(prev), self.variable.ge_lit(val)]));
+                ctx.enforce_if(implicant, or([self.variable.leq(prev), self.variable.geq(val)]));
             }
             prev = val
         }

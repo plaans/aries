@@ -24,3 +24,6 @@ pub use crate::core::INT_CST_MIN;
 #[doc(hidden)]
 #[allow(deprecated)]
 pub use crate::core::VarRef;
+
+pub use crate::lang::ModelView;
+pub use crate::lang::constraints::ScopedExt;

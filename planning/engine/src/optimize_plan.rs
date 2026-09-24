@@ -55,7 +55,8 @@ pub enum Objective {
 pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
-    let (mut solver, encoding, _sched) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
+    let (mut solver, encoding, _sched) =
+        encode_plan_optimization_problem(model, plan, Default::default(), options, false)?;
     let _encoding_time = start.elapsed().as_millis();
 
     // Pinning literals from previous phases; grows as objectives are solved
@@ -154,11 +155,20 @@ fn create_param_variable(var_name: &Sym, var_type: &Type, scope: Lit, sched: &mu
     Ok::<_, Message>(var)
 }
 
+/// Encodes a plan optimization problem into a solver that can be used for producing solutions.
+///
+/// - `lifted_plan`: a plan, specifying actions that must appear in the solution. `options.relaxation` allows setting what is allowed to changed
+///   (reordering, changing parameters, removing actions, ...)
+/// - `free_actions`specifies, of each action template, how many instances is the solver allowed to insert (in addition to the ones in the plan)
+/// - `support_relaxation`: ensures that the encoding support explanation, e.g., identifying that the problem is unsatisfiable due to the presence
+///   of a particular condition. This typically needed for plan validation to explain why a plan is invalid. Enable this option may increase the size
+///   of the problem substantially.
 pub fn encode_plan_optimization_problem(
     model: &Model,
     lifted_plan: &LiftedPlan,
     free_actions: BTreeMap<ActionRef, u32>,
     options: &Options,
+    support_explanation: bool,
 ) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
     let mut encoding = Encoding::new();
 
@@ -429,9 +439,6 @@ pub fn encode_plan_optimization_problem(
     // Important: this MUST be done last so we have already identified all values that may be required (inside conditions, effect values, goals...)
     add_closed_world_negative_effects(&encoding.required_values, model, &mut sched);
 
-    let tags = encoding.constraints_tags.clone();
-    let constraint_to_repair = |cid: ConstraintID| tags.get(&cid).cloned();
-
     // gather all free actions, grouped by action template
     let equiv = operations_scopes
         .iter()
@@ -452,8 +459,21 @@ pub fn encode_plan_optimization_problem(
         timelines::constraints::symmetry::SymmetryBreakingKind::default(),
         equiv,
     ));
+    sched.add_constraint(timelines::constraints::grounding::TasksUnifyWithGrounding::new());
 
-    Ok((sched.explainable_solver(constraint_to_repair), encoding, sched))
+    // to support explanation, we need to provide the solver the mapping from constraint id to composite
+    // constraints (represented by a `Tag` stating for instance that this corresponds to the i^th goal enforcement).
+    let tags = encoding.constraints_tags.clone();
+    let relaxations = |cid: ConstraintID| {
+        if support_explanation {
+            tags.get(&cid).cloned()
+        } else {
+            // no need for explanation, setting everything to None will
+            // make the constraint compulsory and enforced at the root of the solver
+            None
+        }
+    };
+    Ok((sched.explainable_solver(relaxations), encoding, sched))
 }
 
 fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
