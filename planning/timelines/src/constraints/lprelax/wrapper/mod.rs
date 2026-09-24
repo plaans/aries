@@ -1,4 +1,5 @@
-mod lp_highs;
+mod highs;
+mod incremental;
 mod traits;
 
 use aries_solver::{backtrack::Backtrack, reasoners::Theory};
