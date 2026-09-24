@@ -92,8 +92,8 @@ impl ClosedWorldDefaultEffects {
                 .args
                 .iter()
                 .chain(match &eff_view.operation {
-                    crate::EffectOp::Assign(term) => [term],
-                    crate::EffectOp::Step(_term) => todo!(),
+                    EffectOp::Assign(term) => [term],
+                    EffectOp::Step(_term) => todo!(),
                 })
                 .all(|term| term.is_cst())
         );

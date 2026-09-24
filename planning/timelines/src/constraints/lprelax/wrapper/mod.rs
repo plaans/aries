@@ -33,7 +33,7 @@ impl<T: Theory> LpRelaxReasonerWrapper<T> {
         let pre_assumption_doms = doms.clone();
 
         println!(
-            "|-[LPRELAX]- Built LPp *encoder* after {} propagation calls (decision level {:?}, num events: {:?}) in {}s",
+            "|-[LPRELAX]- Built LP *encoder* after {} propagation calls (decision level {:?}, num events: {:?}) in {}s",
             self.propagation_calls,
             doms.current_decision_level(),
             doms.num_events(),

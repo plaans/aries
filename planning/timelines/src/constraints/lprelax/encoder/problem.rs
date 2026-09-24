@@ -127,6 +127,40 @@ impl LpRelaxProblem {
         self.cols.as_deref()
     }
 
+    /// Numbers the columns of the rows as they are, without simplifying anything:
+    /// every tag is its own column.
+    ///
+    /// Afterwards, [`Self::cols`] and `col_index` are available just as after [`Self::simplify`].
+    pub fn seal(&mut self) {
+        self.number_cols(std::iter::empty());
+    }
+
+    /// Numbers the columns appearing in the rows, in order of first appearance.
+    /// Each `(alias, tag)` pair then makes `alias` resolve to the column of `tag`
+    /// (the simplification uses this for tags merged into their class' representative).
+    fn number_cols(&mut self, aliases: impl IntoIterator<Item = (ColTag, ColTag)>) {
+        let mut cols = vec![];
+        let mut col_index = HashMap::new();
+
+        for row in &self.rows {
+            for &(_, col_tag) in &row.terms {
+                col_index.entry(col_tag).or_insert_with(|| {
+                    cols.push(col_tag);
+                    cols.len() - 1
+                });
+            }
+        }
+
+        for (alias, col_tag) in aliases {
+            if let Some(&col) = col_index.get(&col_tag) {
+                col_index.insert(alias, col);
+            }
+        }
+
+        self.cols = Some(cols);
+        self.col_index = Some(col_index);
+    }
+
     /// Simplifies the problem, given what the domains already fix:
     ///
     /// - a column whose value is known is replaced by that value in every row;
@@ -182,10 +216,8 @@ impl LpRelaxProblem {
             }
         }
 
-        // Rewrite the rows over the columns that are left, and number those columns.
+        // Rewrite the rows over the representatives of the columns that are left.
         let mut rows = Vec::with_capacity(self.rows.len());
-        let mut cols = vec![];
-        let mut col_of_class = HashMap::new();
 
         for row in &self.rows {
             let canon = CanonicalRow::of(row, classes);
@@ -194,35 +226,25 @@ impl LpRelaxProblem {
                 continue;
             }
 
-            let mut terms = Vec::with_capacity(canon.coefs.len());
-            for &(coef, class) in &canon.coefs {
-                let col = match col_of_class.get(&class) {
-                    Some(&col) => col,
-                    None => {
-                        let col = cols.len();
-                        cols.push(classes.representative(class));
-                        col_of_class.insert(class, col);
-                        col
-                    }
-                };
-                terms.push((coef, cols[col]));
-            }
+            let terms = canon
+                .coefs
+                .iter()
+                .map(|&(coef, class)| (coef, classes.representative(class)))
+                .collect::<Vec<_>>();
 
             let separator = terms.len();
             rows.push(RowExpr::new(canon.tpe, terms, separator, canon.cst));
         }
+        self.rows = rows;
 
         // Every "surviving" column tag resolves to its equivalence class' representative column.
-        let mut col_index = HashMap::new();
-        for (tag, class) in classes.interned() {
-            if let Some(&col) = col_of_class.get(&classes.find(class)) {
-                col_index.insert(tag, col);
-            }
-        }
-
-        self.rows = rows;
-        self.cols = Some(cols);
-        self.col_index = Some(col_index);
+        // (Tags of classes with a known value aren't columns anymore: their representative appears in no row.)
+        let aliases = classes
+            .interned()
+            .into_iter()
+            .map(|(tag, class)| (tag, classes.representative(class)))
+            .collect::<Vec<_>>();
+        self.number_cols(aliases);
 
         Ok(())
     }
@@ -291,7 +313,7 @@ impl LpRelaxProblem {
                 // (It is 1 only if the term is known present and fixed to that value).
                 let known = if doms.entails(!doms.presence(term)) || value < doms.lb(term) || doms.ub(term) < value {
                     0
-                } else if doms.entails(doms.presence(term)) {
+                } else if doms.entails(doms.presence(term)) && doms.lb(term) == doms.ub(term) {
                     1
                 } else {
                     continue;
@@ -305,14 +327,17 @@ impl LpRelaxProblem {
         Ok(())
     }
 
-    /// Replaces the problem by a single `x >= 2` row over a column of `[0, 1]`: infeasible, and in
-    /// a shape HiGHS handles (a row with inconsistent bounds makes it crash).
+    /// Replaces the problem by two rows over a single column, `x <= 0` and `x >= 1`:
+    /// infeasible whatever the column's bounds, while each row on its own has consistent bounds
+    /// (a row with inconsistent bounds makes HiGHS crash).
     fn make_infeasible(&mut self) {
         let col_tag = ColTag::PresenceSource(None, None);
 
-        self.rows = vec![RowExpr::new(RowExprType::Geq, vec![(1, col_tag)], 1, 2)];
-        self.cols = Some(vec![col_tag]);
-        self.col_index = Some(HashMap::from([(col_tag, 0)]));
+        self.rows = vec![
+            RowExpr::new(RowExprType::Leq, vec![(1, col_tag)], 1, 0),
+            RowExpr::new(RowExprType::Geq, vec![(1, col_tag)], 1, 1),
+        ];
+        self.seal();
     }
 }
 
