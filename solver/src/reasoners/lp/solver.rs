@@ -20,13 +20,26 @@ use aries_lp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirec
 #[allow(unused_imports)]
 use itertools::Itertools;
 
-/// Used to store the bounds of our variable and the associated Lit that is responsible of these bounds (useful for explanations)
+/// Justification of a bound of an LP variable: the reason why that bound was set.
+/// In other words, it corresponds to a sufficient condition for the bound to hold.
+///
+/// - `Some { scope, trigger }`: the bound holds as long as **both** the scope and trigger literal are entailed in the main model.
+///   `scope` is [`Lit::TRUE`] for the bounds that are not guarded by a scope, which is the common case.
+/// - `None`: the bound holds unconditionally (initial bound of a variable, or bound entailed at the root)
+///   (it is functionally equivalent to `Some { scope: Lit::TRUE, trigger: Lit::TRUE }`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundCause {
+    None,
+    Some { scope: Lit, trigger: Lit },
+}
+
+/// Used to store the bounds of our variable and the associated cause that is responsible of these bounds (useful for explanations)
 #[derive(Clone, PartialEq)]
 pub(super) struct IntBounds {
     lower: LongCst,
-    lower_lit: Lit,
+    lower_cause: BoundCause,
     upper: LongCst,
-    upper_lit: Lit,
+    upper_cause: BoundCause,
 }
 
 impl fmt::Debug for IntBounds {
@@ -125,18 +138,21 @@ impl Solver {
         self.bounds.push(IntBounds {
             lower: lb,
             upper: ub,
-            lower_lit: Lit::TRUE,
-            upper_lit: Lit::TRUE,
+            // the initial bounds of a variable hold unconditionally
+            lower_cause: BoundCause::None,
+            upper_cause: BoundCause::None,
         });
         var
     }
 
     /// Set a new Upper/Lower bound for the given variable
     ///
+    /// `cause` justifies the new bound (and it will be reported in the explanations involving it).
+    ///
     /// # Errors
     ///
     /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: LongCst, lit: Lit) -> Result<(), Error> {
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: LongCst, cause: BoundCause) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
         }
@@ -151,11 +167,11 @@ impl Solver {
         match bound {
             Bound::Lower => {
                 self.bounds[var.idx()].lower = val;
-                self.bounds[var.idx()].lower_lit = lit;
+                self.bounds[var.idx()].lower_cause = cause;
             }
             Bound::Upper => {
                 self.bounds[var.idx()].upper = val;
-                self.bounds[var.idx()].upper_lit = lit;
+                self.bounds[var.idx()].upper_cause = cause;
             }
         }
 
@@ -177,37 +193,37 @@ impl Solver {
         var: Variable,
         bound: Bound,
         val: LongCst,
-        lit: Lit,
+        cause: BoundCause,
         trail: &mut Trail<LpEvent>,
     ) -> Result<bool, Error> {
         match bound {
             Bound::Lower => {
                 let old_val = self.bounds[var.idx()].lower;
-                let old_lit = self.bounds[var.idx()].lower_lit;
+                let old_cause = self.bounds[var.idx()].lower_cause;
                 if val > old_val {
                     trail.push(LpEvent {
                         var,
                         bound,
                         old_val,
-                        old_lit,
+                        old_cause,
                     });
-                    self.set_bound(var, bound, val, lit)?;
+                    self.set_bound(var, bound, val, cause)?;
 
                     return Ok(true);
                 }
             }
             Bound::Upper => {
                 let old_val = self.bounds[var.idx()].upper;
-                let old_lit = self.bounds[var.idx()].upper_lit;
+                let old_cause = self.bounds[var.idx()].upper_cause;
 
                 if val < old_val {
                     trail.push(LpEvent {
                         var,
                         bound,
                         old_val,
-                        old_lit,
+                        old_cause,
                     });
-                    self.set_bound(var, bound, val, lit)?;
+                    self.set_bound(var, bound, val, cause)?;
 
                     return Ok(true);
                 }
@@ -426,15 +442,23 @@ impl Solver {
                 }
             } else {
                 // We add the activation Lit associted with the bound of our slack variable and we cancel its contribution to the ub
-                let lit = if coef > 0 {
+                let cause = if coef > 0 {
                     ub -= coef * self.bounds[idx].lower as i128;
-                    self.bounds[idx].lower_lit
+                    self.bounds[idx].lower_cause
                 } else {
                     ub -= coef * self.bounds[idx].upper as i128;
-                    self.bounds[idx].upper_lit
+                    self.bounds[idx].upper_cause
                 };
 
-                explanation.push(lit);
+                // An unconditional bound (`None`) contributes no literal: it holds at the root.
+                if let BoundCause::Some { scope, trigger } = cause {
+                    if scope != Lit::TRUE {
+                        explanation.push(scope);
+                    }
+                    if trigger != Lit::TRUE {
+                        explanation.push(trigger);
+                    }
+                }
             }
         }
 
@@ -522,12 +546,19 @@ impl Solver {
             .iter()
             .enumerate()
             .filter(|&(_, &coeff)| coeff != 0)
-            .map(|(i, &coeff)| {
-                if coeff < 0 {
-                    self.bounds[i].upper_lit
+            .flat_map(|(i, &coeff)| {
+                let cause = if coeff < 0 {
+                    self.bounds[i].upper_cause
                 } else {
-                    self.bounds[i].lower_lit
+                    self.bounds[i].lower_cause
+                };
+                // An unconditional bound (`None`) contributes no literal: it holds at the root
+                match cause {
+                    BoundCause::None => [Lit::TRUE, Lit::TRUE],
+                    BoundCause::Some { scope, trigger } => [scope, trigger],
                 }
+                .into_iter()
+                .filter(|&lit| lit != Lit::TRUE)
             })
             .collect();
 
@@ -547,8 +578,17 @@ impl Solver {
 
         let int_bound = &self.bounds[var.idx()];
 
-        explanation.push(int_bound.upper_lit);
-        explanation.push(int_bound.lower_lit);
+        // An unconditional bound (`None`) contributes no literal: it holds at the root.
+        for cause in [int_bound.upper_cause, int_bound.lower_cause] {
+            if let BoundCause::Some { scope, trigger } = cause {
+                if scope != Lit::TRUE {
+                    explanation.push(scope);
+                }
+                if trigger != Lit::TRUE {
+                    explanation.push(trigger);
+                }
+            }
+        }
 
         explanation
     }

@@ -42,7 +42,7 @@ use crate::{
         state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
     },
     lang::linear::{LinSum, ScaledVar},
-    reasoners::{Contradiction, ReasonerId, Theory},
+    reasoners::{Contradiction, ReasonerId, Theory, lp::solver::BoundCause},
 };
 
 /// Contains all the options available for the Lp reasoner
@@ -97,7 +97,7 @@ struct BoundConstraint {
 
 /// Store all the necessary information for backtracking after modifying a bound
 ///
-/// Only the old value and activation literals are necessary as they will overwrite the current value
+/// Only the old value and cause are necessary as they will overwrite the current value
 #[derive(Clone)]
 struct LpEvent {
     /// variable affected by the bound change
@@ -106,8 +106,8 @@ struct LpEvent {
     bound: Bound,
     /// Old value for the bound that needs to overwrite the new one when backtracking
     old_val: LongCst,
-    /// Activation literal associated with this bound and value
-    old_lit: Lit,
+    /// Cause associated with this bound and value
+    old_cause: BoundCause,
 }
 
 #[derive(Clone)]
@@ -448,7 +448,10 @@ impl Theory for Lp {
                     bound_cons.var,
                     bound_cons.bound,
                     bound_cons.val,
-                    active_lit,
+                    BoundCause::Some {
+                        scope: Lit::TRUE,
+                        trigger: active_lit,
+                    },
                     &mut self.trail,
                 );
 
@@ -459,14 +462,19 @@ impl Theory for Lp {
 
             // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
             if let Some(&x_var) = self.memory_x.get(var) {
+                // the bound holds because this very literal was inferred in the main model
+                let cause = BoundCause::Some {
+                    scope: Lit::TRUE,
+                    trigger: lit,
+                };
                 let res =
                     // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), lit, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), cause, &mut self.trail)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), lit, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), cause, &mut self.trail)
                     };
 
                 self.explain_set_bound(&res, x_var)?;
@@ -530,7 +538,7 @@ impl Backtrack for Lp {
         self.trail.restore_last_with(|lp_event| {
             let _ = self
                 .solver
-                .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.old_lit);
+                .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.old_cause);
         });
     }
 }
