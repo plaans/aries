@@ -158,21 +158,21 @@ mod test {
 
     #[test]
     fn test_tiny() {
-        assert_eq!(solve("instances/tiny.mm"), 10);
+        assert_eq!(solve("examples/rcpsp/instances/tiny.mm"), 10);
     }
 
     #[test]
     fn test_j1014_1() {
-        assert_eq!(solve("instances/j1014_1.mm"), 16);
+        assert_eq!(solve("examples/rcpsp/instances/j1014_1.mm"), 16);
     }
 
     #[test]
     fn test_j1030_3() {
-        assert_eq!(solve("instances/j1030_3.mm"), 17);
+        assert_eq!(solve("examples/rcpsp/instances/j1030_3.mm"), 17);
     }
 
     #[test]
     fn test_j1047_5() {
-        assert_eq!(solve("instances/j1047_5.mm"), 16);
+        assert_eq!(solve("examples/rcpsp/instances/j1047_5.mm"), 16);
     }
 }
