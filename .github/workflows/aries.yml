@@ -73,7 +73,12 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v4
       - name: checkout benchmark instances
-        run: git clone --depth 1 https://github.com/plaans/aries-benchmarks benchmarks
+        uses: actions/checkout@v7
+        with:
+          repository: "plaans/aries-benchmarks"
+          fetch-depth: 0
+          path: "benchmarks"
+          ref: "a5d1d0f21903502b13013a04936cba1d2509a533"
       - name: Run tests from benchmark repo
         run: cd benchmarks && just run_tests
 
