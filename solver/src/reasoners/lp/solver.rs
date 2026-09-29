@@ -182,6 +182,31 @@ impl Solver {
         Ok(())
     }
 
+    /// Same as [`Solver::set_bound_restrict`], but the change is *not* trailed:
+    /// the bound will never be undone by a backtrack.
+    ///
+    /// Only valid for a `cause` that is entailed at the root, i.e. always / unconditionally holds.
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if the problem is immediatly detected as infeasible.
+    pub fn set_bound_restrict_permanent(
+        &mut self,
+        var: Variable,
+        bound: Bound,
+        val: LongCst,
+        cause: BoundCause,
+    ) -> Result<bool, Error> {
+        let restricts = match bound {
+            Bound::Lower => val > self.bounds[var.idx()].lower,
+            Bound::Upper => val < self.bounds[var.idx()].upper,
+        };
+        if restricts {
+            self.set_bound(var, bound, val, cause)?;
+        }
+        Ok(restricts)
+    }
+
     /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bound
     /// Returns true/false whether if the bound was effectively modified or not
     ///
@@ -402,6 +427,13 @@ impl Solver {
     ///
     /// This minimization takes more time to compute that basic explanations but in most of the cases, the clause learnt is stronger, allowing
     /// a better backtracking and pruning.
+    ///
+    /// Note that an auxiliary x variable never contributes a literal *of its own*:
+    /// having no counterpart in the main model, no literal denotes its bounds.
+    /// What it contributes are the literals of the [`BoundCause`] recorded when a bound on it was set,
+    /// i.e. the scope and trigger of the binding that pushed it (which is what makes the bound valid in the first place).
+    ///
+    /// An auxiliary variable still holding its initial bounds ([`BoundCause::None`]) contributes nothing, as they hold unconditionally.
     fn explain_leq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let mut explanation = Explanation::new();
 
