@@ -596,6 +596,7 @@ mod tests {
         seed: u64,
     ) -> (Lp, Domains) {
         let mut lp_reasonner = Lp::default();
+        lp_reasonner.activate();
 
         let mut d = Domains::new();
 
