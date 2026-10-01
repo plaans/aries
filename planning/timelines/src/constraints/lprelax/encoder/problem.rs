@@ -1,10 +1,14 @@
+mod simplify;
+
 use std::collections::HashMap;
 
 use aries_solver::core::IntCst;
+use aries_solver::core::state::Domains;
 
 use crate::IntTerm;
 use crate::analysis::transitions::TransitionId;
-use crate::{analysis::Source};
+use crate::encoder::SchedEncoder;
+use crate::{analysis::Source, constraints::lprelax::LpRelaxEncoder};
 
 use super::ground::{SourceGroundingId, TransitionGroundingId};
 
@@ -158,5 +162,52 @@ impl LpRelaxProblem {
 
         self.cols = Some(cols);
         self.col_index = Some(col_index);
+    }
+
+    /// Simplifies the problem, given what the domains already fix:
+    ///
+    /// - a column whose value is known is replaced by that value in every row;
+    /// - a row sitting at one of its bounds (i.e. equality row) pins all of its columns (e.g. `x + y = 0`, or a single-term `x = 1`) -- which in turn feeds the point above;
+    /// - rows that became empty are dropped, and a row that became contradictory turns the whole problem into a single trivially infeasible one;
+    /// - when `merge_equal_columns` is set, a row of the form `c*x - c*y = 0` merges the two columns into a single one,
+    ///   (represented by a "lifted" column tag when possible).
+    ///
+    /// Afterwards, [`Self::cols`] holds one entry per remaining LP column.
+    ///
+    /// See [`Self::seal`] to get a usable problem without simplifying anything.
+    pub fn simplify(
+        &mut self,
+        encoder: &LpRelaxEncoder,
+        ctx: &SchedEncoder,
+        doms: &Domains,
+        merge_equal_columns: bool,
+    ) {
+        let prev_rows_len = self.rows().len();
+        let time = std::time::Instant::now();
+
+        if simplify::try_simplify(self, encoder, ctx, doms, merge_equal_columns).is_err() {
+            self.make_infeasible();
+        }
+
+        tracing::info!(
+            "|-[LPRELAX]--- LPrelax problem simplification: {} rows removed in {}s (remaining: {} rows and {} columns)",
+            prev_rows_len - self.rows().len(),
+            time.elapsed().as_secs_f64(),
+            self.rows().len(),
+            self.cols().as_ref().unwrap().len(),
+        );
+    }
+
+    /// Replaces the problem by two rows over a single column, `x <= 0` and `x >= 1`:
+    /// infeasible whatever the column's bounds, while each row on its own has consistent bounds
+    /// (a row with inconsistent bounds makes HiGHS crash).
+    fn make_infeasible(&mut self) {
+        let col_tag = ColTag::PresenceSource(None, None);
+
+        self.rows = vec![
+            RowExpr::new(RowExprType::Leq, vec![(1, col_tag)], 1, 0),
+            RowExpr::new(RowExprType::Geq, vec![(1, col_tag)], 1, 1),
+        ];
+        self.seal();
     }
 }
