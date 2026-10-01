@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[derive(Default, Clone)]
-struct LpRelaxStats {
+struct LpStats {
     pub lpruns: u64,
     pub lpruns_time: std::time::Duration,
 }
@@ -56,20 +56,20 @@ impl LpOptions {
     }
 }
 
-pub struct LpRelax {
+pub struct Lp {
     id: ReasonerId,
 
     model_events: ObsTrailCursor<AriesModelEvent>,
     lp_state: LpState,
     bindings: Bindings,
 
-    stats: LpRelaxStats,
+    stats: LpStats,
     options: LpOptions,
 }
-unsafe impl Send for LpRelax {}
-unsafe impl Sync for LpRelax {}
+unsafe impl Send for Lp {}
+unsafe impl Sync for Lp {}
 
-impl Clone for LpRelax {
+impl Clone for Lp {
     fn clone(&self) -> Self {
         let options = LpOptions::default();
         Self {
@@ -82,7 +82,7 @@ impl Clone for LpRelax {
         }
     }
 }
-impl Default for LpRelax {
+impl Default for Lp {
     fn default() -> Self {
         let options = LpOptions::default();
         Self {
@@ -96,7 +96,7 @@ impl Default for LpRelax {
     }
 }
 
-impl LpRelax {
+impl Lp {
     pub fn with_options(options: LpOptions) -> Self {
         Self {
             options,
@@ -202,7 +202,7 @@ impl LpRelax {
 
     /// Makes `col` mirror the domain of `var` while `scope` is entailed.
     ///
-    /// Unlike [`LpRelax::half_bind_fixed`], it constrains the column from both sides and is
+    /// Unlike [`Lp::half_bind_fixed`], it constrains the column from both sides and is
     /// re-evaluated on every event on `var` or on `scope`'s variable.
     pub fn half_bind_tracking(&mut self, scope: AriesLit, var: AriesVar, col: LpCol) {
         assert!(self.lp_state.trail().trail.is_empty());
@@ -308,7 +308,7 @@ impl LpRelax {
     }
 }
 
-impl Theory for LpRelax {
+impl Theory for Lp {
     fn identity(&self) -> ReasonerId {
         self.id
     }
@@ -362,7 +362,7 @@ impl Theory for LpRelax {
     }
 }
 
-impl Backtrack for LpRelax {
+impl Backtrack for Lp {
     fn save_state(&mut self) -> DecLvl {
         self.lp_state.set_backtrack_point()
     }
@@ -381,7 +381,7 @@ pub mod test {
     use aries_solver::core::views::Term;
     use aries_solver::reasoners::{Contradiction, Theory};
 
-    use crate::LpRelax;
+    use crate::Lp;
     use crate::types::*;
 
     #[test]
@@ -393,7 +393,7 @@ pub mod test {
 
         model.add_implication(var2.leq(5), var3.leq(5));
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
 
         let col2 = theory.add_column((Some(0), Some(10)));
         let col3 = theory.add_column((Some(0), Some(10)));
@@ -401,7 +401,7 @@ pub mod test {
         theory.half_bind_tracking(AriesLit::TRUE, var2.variable(), col2);
         theory.half_bind_tracking(AriesLit::TRUE, var3.variable(), col3);
 
-        let assert_col_bounds = |theory: &mut LpRelax, col: LpCol, col_bounds: (LongCst, LongCst)| {
+        let assert_col_bounds = |theory: &mut Lp, col: LpCol, col_bounds: (LongCst, LongCst)| {
             assert_eq!(theory.get_column_bounds(col), col_bounds)
         };
 
@@ -459,7 +459,7 @@ pub mod test {
         let avar = model.new_var(0, 1);
         let bvar = model.new_var(0, 1);
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
 
         let acol = theory.add_column((Some(0), Some(1)));
         let bcol = theory.add_column((Some(0), Some(1)));
@@ -488,7 +488,7 @@ pub mod test {
         let q = model.new_var(0, 1);
         let scope = model.new_var(0, 1);
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
 
         let acol = theory.add_column((Some(0), Some(1)));
         let bcol = theory.add_column((Some(0), Some(1)));
@@ -532,7 +532,7 @@ pub mod test {
         let p = model.new_var(0, 10);
         let scope = model.new_var(0, 1);
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
 
         let acol = theory.add_column((Some(0), Some(1)));
         let bcol = theory.add_column((Some(0), Some(1)));
@@ -565,7 +565,7 @@ pub mod test {
         let p = model.new_var(0, 1);
         let q = model.new_var(0, 1);
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
         let col = theory.add_column((Some(0), Some(1)));
         theory.half_bind_fixed(AriesLit::TRUE, p.leq(0), LpLit::leq(col, 0));
         theory.half_bind_fixed(AriesLit::TRUE, q.leq(0), LpLit::geq(col, 1));
@@ -589,7 +589,7 @@ pub mod test {
         let p = model.new_var(0, 1);
         let q = model.new_var(0, 1);
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
         let col = theory.add_column((Some(0), Some(10)));
         theory.half_bind_fixed(AriesLit::TRUE, p.leq(0), LpLit::leq(col, 6));
         theory.half_bind_fixed(AriesLit::TRUE, q.leq(0), LpLit::leq(col, 3));
@@ -622,12 +622,12 @@ pub mod test {
     fn test_empty_row_with_positive_lower_bound() {
         let mut model = Domains::new();
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
         theory.add_row(std::iter::empty::<(LpCol, IntCst)>(), (Some(1), None));
         assert_eq!(theory.num_columns(), 0);
         assert!(theory.propagate(&mut model).is_ok());
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
         theory.add_column((Some(0), Some(1)));
         theory.add_row(std::iter::empty::<(LpCol, IntCst)>(), (Some(1), None));
 
@@ -636,7 +636,7 @@ pub mod test {
         };
         assert!(expl.literals().is_empty(), "{:?}", expl.literals());
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
         let col = theory.add_column((Some(0), Some(1)));
         theory.add_rows(std::iter::once((Some(1), Some(0), std::iter::once((col, 1)))));
 
@@ -651,7 +651,7 @@ pub mod test {
     fn test_root_infeasibility_is_explained_by_nothing() {
         let mut model = Domains::new();
 
-        let mut theory = LpRelax::default();
+        let mut theory = Lp::default();
         let acol = theory.add_column((Some(0), Some(0)));
         let bcol = theory.add_column((Some(0), Some(0)));
         theory.add_row([(acol, 1), (bcol, 1)].into_iter(), (Some(1), None));

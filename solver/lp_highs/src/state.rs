@@ -331,7 +331,7 @@ impl LpState {
         });
     }
 
-    pub fn solve_or_iis(&mut self, stats: &mut crate::LpRelaxStats) -> Result<LpSolution, LpIis> {
+    pub fn solve_or_iis(&mut self, stats: &mut crate::LpStats) -> Result<LpSolution, LpIis> {
         let time = std::time::Instant::now();
 
         let res = self.lp_model.solve_or_iis();

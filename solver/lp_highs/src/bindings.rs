@@ -63,7 +63,7 @@ impl Binding {
     }
 }
 
-/// The bindings of an [`crate::LpRelax`] reasoner, indexed by what can make them apply.
+/// The bindings of an [`crate::Lp`] reasoner, indexed by what can make them apply.
 #[derive(Default, Clone)]
 pub(super) struct Bindings {
     bindings: Vec<Binding>,
