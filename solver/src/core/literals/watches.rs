@@ -4,7 +4,7 @@ use crate::core::*;
 /// A set of literals watches on bound changes.
 /// The event watches are all on the same bound (i.e. the lower or the upper bound) of a single variable.
 #[derive(Clone)]
-pub(crate) struct WatchSet<Watcher> {
+pub struct WatchSet<Watcher> {
     watches: Vec<Watch<Watcher>>,
 }
 impl<Watcher> WatchSet<Watcher> {
@@ -82,7 +82,7 @@ impl<Watcher> Default for WatchSet<Watcher> {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) struct Watch<Watcher> {
+pub struct Watch<Watcher> {
     pub(crate) watcher: Watcher,
     /// upper bound
     guard: IntCst,
@@ -95,7 +95,7 @@ impl<Watcher> Watch<Watcher> {
 
 /// A datastructure for implementing watches, functionnally equivalent to a `Map<Lit, Set<Watcher>>`
 #[derive(Clone)]
-pub(crate) struct Watches<Watcher> {
+pub struct Watches<Watcher> {
     watches: RefVec<SignedVar, WatchSet<Watcher>>,
     empty_watch_set: WatchSet<Watcher>,
 }
