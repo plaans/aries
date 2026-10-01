@@ -15,7 +15,10 @@ use state::LpState;
 
 pub use types::*;
 
-use crate::bindings::{Binding, Bindings};
+use crate::{
+    bindings::{Binding, Bindings},
+    state::HighsOptionValueWrapper,
+};
 
 #[derive(Default, Clone)]
 struct LpRelaxStats {
@@ -38,8 +41,21 @@ impl Default for LpOptions {
         }
     }
 }
+impl LpOptions {
+    fn get_highs_options(&self) -> impl Iterator<Item = (impl Into<Vec<u8>>, HighsOptionValueWrapper)> {
+        [
+            // ("time_limit", HighsOptionValueWrapper::Float(10.0)),
+            ("parallel", HighsOptionValueWrapper::Str("off")), // use 1 core
+            ("threads", HighsOptionValueWrapper::Int(1)),      // solve on 1 thread
+            (
+                "iis_strategy",
+                HighsOptionValueWrapper::Int(if self.is_explanation_refined { 4 } else { 0 }),
+            ), // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
+        ]
+        .into_iter()
+    }
+}
 
-#[derive(Clone)]
 pub struct LpRelax {
     id: ReasonerId,
 
@@ -53,18 +69,33 @@ pub struct LpRelax {
 unsafe impl Send for LpRelax {}
 unsafe impl Sync for LpRelax {}
 
-impl Default for LpRelax {
-    fn default() -> Self {
+impl Clone for LpRelax {
+    fn clone(&self) -> Self {
+        let options = LpOptions::default();
         Self {
-            id: ReasonerId::Extra(0),
-            model_events: Default::default(),
-            lp_state: Default::default(),
-            bindings: Default::default(),
-            stats: Default::default(),
-            options: Default::default(),
+            id: self.id,
+            model_events: self.model_events.clone(),
+            lp_state: self.lp_state.clone_with_options(options.get_highs_options()),
+            bindings: self.bindings.clone(),
+            stats: self.stats.clone(),
+            options,
         }
     }
 }
+impl Default for LpRelax {
+    fn default() -> Self {
+        let options = LpOptions::default();
+        Self {
+            id: ReasonerId::Extra(0),
+            model_events: Default::default(),
+            lp_state: LpState::default_with_options(options.get_highs_options()),
+            bindings: Default::default(),
+            stats: Default::default(),
+            options,
+        }
+    }
+}
+
 impl LpRelax {
     pub fn with_options(options: LpOptions) -> Self {
         Self {

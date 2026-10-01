@@ -29,24 +29,25 @@ pub(super) struct LpState {
     lp_obj: Option<LpObjective>,
 }
 
-impl Clone for LpState {
-    fn clone(&self) -> Self {
-        let mut lp_model = self.lp_model.clone();
-        set_lp_model_options(&mut lp_model);
-
-        Self {
-            lp_trail: self.lp_trail.clone(),
-            col_bounds: self.col_bounds.clone(),
-            lp_model,
-            lp_obj: self.lp_obj.clone(),
-        }
-    }
+#[allow(dead_code)]
+pub(super) enum HighsOptionValueWrapper {
+    Str(&'static str),
+    Int(i32),
+    Float(f64),
+    Bool(bool),
 }
-impl Default for LpState {
-    fn default() -> Self {
-        let mut lp_model = highs::ColProblem::default().optimise(LpObjectiveSense::Minimise);
-        set_lp_model_options(&mut lp_model);
 
+impl LpState {
+    pub fn default_with_options(options: impl Iterator<Item = (impl Into<Vec<u8>>, HighsOptionValueWrapper)>) -> Self {
+        let mut lp_model = highs::ColProblem::default().optimise(LpObjectiveSense::Minimise);
+        for (k, v) in options {
+            match v {
+                HighsOptionValueWrapper::Str(v) => lp_model.set_option(k, v),
+                HighsOptionValueWrapper::Int(v) => lp_model.set_option(k, v),
+                HighsOptionValueWrapper::Float(v) => lp_model.set_option(k, v),
+                HighsOptionValueWrapper::Bool(v) => lp_model.set_option(k, v),
+            }
+        }
         Self {
             lp_trail: Default::default(),
             col_bounds: Default::default(),
@@ -54,15 +55,28 @@ impl Default for LpState {
             lp_obj: None,
         }
     }
-}
-fn set_lp_model_options(lp_model: &mut LpModel) {
-    //lp_model.set_option("time_limit", 2.0); // stop after 2 seconds
-    lp_model.set_option("parallel", "off"); // use 1 core
-    lp_model.set_option("threads", 1); // solve on 1 thread
-    lp_model.set_option("iis_strategy", 0); // https://github.com/ERGO-Code/HiGHS/blob/3be639f037e0001b617c59830d3965f246ab5beb/highs/interfaces/highs_c_api.h#L153
-}
 
-impl LpState {
+    pub fn clone_with_options(
+        &self,
+        options: impl Iterator<Item = (impl Into<Vec<u8>>, HighsOptionValueWrapper)>,
+    ) -> Self {
+        let mut lp_model = self.lp_model.clone();
+        for (k, v) in options {
+            match v {
+                HighsOptionValueWrapper::Str(v) => lp_model.set_option(k, v),
+                HighsOptionValueWrapper::Int(v) => lp_model.set_option(k, v),
+                HighsOptionValueWrapper::Float(v) => lp_model.set_option(k, v),
+                HighsOptionValueWrapper::Bool(v) => lp_model.set_option(k, v),
+            }
+        }
+        Self {
+            lp_trail: self.lp_trail.clone(),
+            col_bounds: self.col_bounds.clone(),
+            lp_model,
+            lp_obj: self.lp_obj.clone(),
+        }
+    }
+
     pub fn trail(&self) -> &Trail<LpEvent> {
         &self.lp_trail
     }
