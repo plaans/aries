@@ -13,9 +13,6 @@ use crate::{
     },
 };
 
-#[cfg(feature = "lp_log")]
-use crate::reasoners::lp::log::{LOG_FOLDER, LP_LOG_ENABLE, LP_LOG_NAME, Logger};
-
 use aries_lp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 #[allow(unused_imports)]
 use itertools::Itertools;
@@ -74,11 +71,6 @@ pub struct Solver {
     pub(super) map_lp_to_aries: RefMap<usize, Var>,
 
     opt_feas_checker: Option<FeasibilityChecker>,
-
-    #[cfg(feature = "lp_log")]
-    pub(super) logger: Logger,
-    #[cfg(feature = "lp_log")]
-    is_first_invalid_cert: bool,
 }
 
 impl PartialEq for Solver {
@@ -96,10 +88,6 @@ impl Solver {
             is_explanation_refined,
             map_lp_to_aries: RefMap::default(),
             opt_feas_checker: None,
-            #[cfg(feature = "lp_log")]
-            logger: Logger::new(),
-            #[cfg(feature = "lp_log")]
-            is_first_invalid_cert: true,
         }
     }
 
@@ -160,9 +148,6 @@ impl Solver {
         let feas_checker = self.opt_feas_checker.as_mut().unwrap();
 
         debug_assert!(var.idx() < self.bounds.len());
-
-        #[cfg(feature = "lp_log")]
-        self.logger.stack_event.push_event(var, bound, val as f64);
 
         match bound {
             Bound::Lower => {
@@ -392,17 +377,6 @@ impl Solver {
         //         .map(|(i, v)| (i, *v as f64 / min_coeff as f64, &self.bounds[i]))
         //         .collect_vec()
         // );
-
-        #[cfg(feature = "lp_log")]
-        {
-            // Log the execution when the first invalid certificate is detected (both float and integer invalidity)
-            if LP_LOG_ENABLE.get() && self.is_first_invalid_cert {
-                self.is_first_invalid_cert = false;
-                self.logger
-                    .save_to(format!("{LOG_FOLDER}{}", LP_LOG_NAME.get_ref()).as_str())
-                    .expect("Error while logging");
-            }
-        }
 
         None
     }

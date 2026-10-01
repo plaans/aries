@@ -22,9 +22,6 @@ mod explanation_utils;
 mod solver;
 mod xvar;
 
-#[cfg(feature = "lp_log")]
-mod log;
-
 use std::collections::HashMap;
 
 use aries_env_param::EnvParam;
@@ -195,11 +192,6 @@ pub struct Lp {
     ///
     /// Check [`LpOptions`] for more details
     options: LpOptions,
-    /// Used to log the initial problem
-    ///
-    /// It supposes that no additonal constraint is added after the first propagation
-    #[cfg(feature = "lp_log")]
-    is_first_propagate: bool,
 }
 
 impl Default for Lp {
@@ -231,8 +223,6 @@ impl Lp {
             stats: Stats::new(),
 
             options,
-            #[cfg(feature = "lp_log")]
-            is_first_propagate: true,
         }
     }
     /// Activate propagation and constraints registration of the LP
@@ -269,7 +259,7 @@ impl Lp {
     }
 
     /// Add an x variable, which can either be a variable directly mapped with a var in the aries solver,
-    /// or an auxiliary one with no correspondance in it. See [`XVar`].
+    /// or an auxiliary one with no correspondence in it. See [`XVar`].
     ///
     /// Check the reference paper for more details: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc]
     fn add_x_var(&mut self, xvar: XVar, doms: &Domains) {
@@ -377,7 +367,7 @@ impl Lp {
     /// The constant term is included in the sum.
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true`
-    /// We assume that the active literal is always present, it is the responsability of the caller to ensure it:
+    /// We assume that the active literal is always present, it is the responsibility of the caller to ensure it:
     /// `doms.presence(active) == Lit::TRUE`
     pub fn add_linear_leq_constraint_simple(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
@@ -400,7 +390,7 @@ impl Lp {
         }
         let (sum_terms, sum_cst) = simplify_scaled_xvar_sum(sum);
 
-        // Check that the given constraint is always present (not optionnal)
+        // Check that the given constraint is always present (not optional)
         assert!(doms.presence(active) == Lit::TRUE);
 
         let bound_val = cst_int_to_long(-sum_cst);
@@ -629,14 +619,6 @@ impl Theory for Lp {
     fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
         if !self.options.propagation_active || !self.options.enable {
             return Ok(());
-        }
-
-        #[cfg(feature = "lp_log")]
-        {
-            if self.is_first_propagate {
-                self.is_first_propagate = false;
-                self.solver.logger.set_problem(self.solver.problem.clone()); // We save the initial state of our problem
-            }
         }
 
         self.stats.num_propagate += 1;
