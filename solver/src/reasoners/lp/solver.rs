@@ -126,7 +126,7 @@ impl Solver {
             || (ub as i128) < -TRESHOLD_WARNING
         {
             tracing::warn!(
-                "Variable {} in the LP has important bounds, LP stability isn't expected",
+                "Variable {} in the LP has important bounds, may compromise LP stability",
                 var.idx()
             );
         }

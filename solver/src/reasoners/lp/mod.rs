@@ -409,33 +409,31 @@ impl Lp {
 
         let opp_lin_sum = get_opposite_scaled_xvar_sum(&elements);
 
-        let bound_constr: BoundConstraint;
-
-        if self.memory_s.contains_key(&elements) {
+        let bound_constr = if self.memory_s.contains_key(&elements) {
             let &s = self.memory_s.get(&elements).unwrap();
-            bound_constr = BoundConstraint {
+            BoundConstraint {
                 var: s,
                 bound: Bound::Upper,
                 val: bound_val,
-            };
+            }
         } else if self.memory_s.contains_key(&opp_lin_sum) {
             // If an s variable already exists for the opposite of our linear sum, we can use the same by inverting our constraint
 
             let &s = self.memory_s.get(&opp_lin_sum).unwrap();
-            bound_constr = BoundConstraint {
+            BoundConstraint {
                 var: s,
                 bound: Bound::Lower,
                 val: -bound_val,
-            };
+            }
         } else {
             let s = self.add_s_var(&elements, doms);
 
-            bound_constr = BoundConstraint {
+            BoundConstraint {
                 var: s,
                 bound: Bound::Upper,
                 val: bound_val,
-            };
-        }
+            }
+        };
 
         // We memorize our constraint and its active lit to be able to access it during propagation
         self.register_bound_constr(
@@ -459,11 +457,11 @@ impl Lp {
 
         let mut entailed = true;
         if let BoundCause::Some { scope, trigger } = cause {
-            if scope != Lit::TRUE {
+            if !scope.tautological() {
                 self.watches.add_watch(index, scope);
                 entailed &= domains.entails(scope);
             }
-            if trigger != Lit::TRUE {
+            if !trigger.tautological() {
                 self.watches.add_watch(index, trigger);
                 entailed &= domains.entails(trigger);
             }
