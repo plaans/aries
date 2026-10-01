@@ -4,7 +4,7 @@ use crate::{
     backtrack::{DecLvl, Trail},
     collections::ref_store::RefMap,
     core::{
-        IntCst, Lit, LongCst, Var,
+        IntCst, Lit, LongCst, Var, cst_int_to_long,
         state::{Domains, DomainsSnapshot, Explanation},
     },
     reasoners::lp::{
@@ -58,6 +58,7 @@ pub struct IntegerConstraint {
 pub struct Solver {
     pub(super) problem: Problem,
 
+    pub init_bounds: Vec<(LongCst, LongCst)>,
     /// Used to store an exact version of our original problem with integers
     pub(super) bounds: Vec<IntBounds>,
     pub(super) constraints: Vec<IntegerConstraint>,
@@ -83,6 +84,7 @@ impl Solver {
     pub fn new(is_explanation_refined: bool) -> Self {
         Solver {
             problem: Problem::new(OptimizationDirection::Maximize),
+            init_bounds: Vec::new(),
             bounds: Vec::new(),
             constraints: Vec::new(),
             is_explanation_refined,
@@ -123,6 +125,7 @@ impl Solver {
 
         debug_assert_eq!(var.idx(), self.bounds.len());
 
+        self.init_bounds.push((lb, ub));
         self.bounds.push(IntBounds {
             lower: lb,
             upper: ub,
@@ -131,6 +134,16 @@ impl Solver {
             upper_cause: BoundCause::None,
         });
         var
+    }
+
+    pub fn get_init_bounds(&self, factor: IntCst, var: Variable) -> (LongCst, LongCst) {
+        let factor = cst_int_to_long(factor);
+        let (lb, ub) = self.init_bounds[var.idx()];
+        if factor >= 0 {
+            (factor * lb, factor * ub)
+        } else {
+            (factor * ub, factor * lb)
+        }
     }
 
     /// Set a new Upper/Lower bound for the given variable
@@ -447,7 +460,7 @@ impl Solver {
                     ub -= elem_lb;
                 }
             } else {
-                // We add the activation Lit associted with the bound of our slack variable and we cancel its contribution to the ub
+                // We add the activation Lit associated with the bound of our slack variable and we cancel its contribution to the ub
                 let cause = if coef > 0 {
                     ub -= coef * self.bounds[idx].lower as i128;
                     self.bounds[idx].lower_cause
@@ -571,7 +584,7 @@ impl Solver {
         explanation
     }
 
-    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> => 0`
+    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> >= 0`
     fn explain_geq_basic(&self, lin_sum: &[i128]) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 

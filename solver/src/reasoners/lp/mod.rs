@@ -20,7 +20,6 @@ them to the LP.
 
 mod explanation_utils;
 mod solver;
-mod xvar;
 
 use std::collections::HashMap;
 
@@ -40,10 +39,9 @@ use crate::{
         state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
     },
     lang::linear::LinSum,
+    prelude::Conjunction,
     reasoners::{Contradiction, ReasonerId, Theory, lp::solver::BoundCause},
 };
-
-pub use xvar::*;
 
 /// Contains all the options available for the Lp reasoner
 ///
@@ -89,10 +87,27 @@ impl Default for LpOptions {
 pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false");
 
 #[derive(Debug, Clone, Copy)]
-struct BoundConstraint {
+pub struct BoundConstraint {
     var: Variable,
     bound: Bound,
     val: LongCst,
+}
+
+impl BoundConstraint {
+    pub fn leq(var: Variable, ub: LongCst) -> Self {
+        Self {
+            var,
+            bound: Bound::Upper,
+            val: ub,
+        }
+    }
+    pub fn geq(var: Variable, lb: LongCst) -> Self {
+        Self {
+            var,
+            bound: Bound::Lower,
+            val: lb,
+        }
+    }
 }
 
 /// Store all the necessary information for backtracking after modifying a bound
@@ -147,6 +162,13 @@ impl Stats {
     }
 }
 
+pub type LpVar = aries_lp::Variable;
+pub type LpSum = Vec<(LpVar, IntCst)>;
+pub enum BoundRestriction {
+    Ub(IntCst),
+    Lb(IntCst),
+}
+
 /// Struct that implements the [`Theory`] trait (reasoner).
 ///
 /// It encapsulates all the necessary information to run the lp solver on the posted constraints.
@@ -175,13 +197,9 @@ pub struct Lp {
     /// The sums are simplified, i.e. their terms are sorted those sharing the same var are merged.
     ///
     /// Used to avoid duplicate variables for the same sum (or its opposite).
-    memory_s: HashMap<Vec<ScaledXVar>, Variable>,
+    memory_s: HashMap<LpSum, Variable>,
     /// Maps var from aries solver with their coresponding variable in minilp (if they appear in the post constraints)
     memory_x_main: RefMap<Var, Variable>,
-    /// Maps tags of auxiliary variables (having no mapping in aries) with their corresponding variable in minilp.
-    memory_x_aux: RefMap<AuxVarTag, Variable>,
-    #[cfg(debug_assertions)]
-    memory_x_aux_init_bounds: RefMap<AuxVarTag, (IntCst, IntCst)>,
     model_events: ObsTrailCursor<Event>,
     /// The watcher corresponds to an index in `bound_constrs_lit_vec`
     watches: Watches<usize>,
@@ -212,9 +230,6 @@ impl Lp {
 
             memory_s: HashMap::new(),
             memory_x_main: RefMap::default(),
-            memory_x_aux: RefMap::default(),
-            #[cfg(debug_assertions)]
-            memory_x_aux_init_bounds: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
@@ -258,80 +273,51 @@ impl Lp {
         self.solver.is_explanation_refined = false;
     }
 
-    /// Add an x variable, which can either be a variable directly mapped with a var in the aries solver,
-    /// or an auxiliary one with no correspondence in it. See [`XVar`].
+    /// Creates a new variable in the LP that directly mirrors the given CP variable.
     ///
-    /// Check the reference paper for more details: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc]
-    fn add_x_var(&mut self, xvar: XVar, doms: &Domains) {
-        match xvar {
-            XVar::Aux { tag, init_bounds } => {
-                let minilp_var = self.solver.create_variable(
-                    cst_int_to_long(init_bounds.0),
-                    cst_int_to_long(init_bounds.1),
-                    &mut self.stats,
-                );
-                self.memory_x_aux.insert(tag, minilp_var);
-
-                #[cfg(debug_assertions)]
-                self.memory_x_aux_init_bounds.insert(tag, init_bounds);
-            }
-            XVar::Main(aries_var) => {
-                let minilp_var = self.solver.create_variable(
-                    cst_int_to_long(doms.lb(aries_var)),
-                    cst_int_to_long(doms.ub(aries_var)),
-                    &mut self.stats,
-                );
-                self.memory_x_main.insert(aries_var, minilp_var);
-                self.solver.map_lp_to_aries.insert(minilp_var.idx(), aries_var);
-            }
+    /// Any bound change to the CP variable will be reflected in the LP.
+    /// If the CP variable is already bound to an LP variable, this one is returned (no new LP variable is created in this case.).
+    pub fn bind_cp_var(&mut self, solver_var: Var, doms: &Domains) -> LpVar {
+        debug_assert_eq!(
+            doms.current_decision_level(),
+            DecLvl::ROOT,
+            "the variable bounds may have evolved since root"
+        );
+        if let Some(lp_var) = self.memory_x_main.get(solver_var) {
+            *lp_var
+        } else {
+            let lp_var = self.solver.create_variable(
+                cst_int_to_long(doms.lb(solver_var)),
+                cst_int_to_long(doms.ub(solver_var)),
+                &mut self.stats,
+            );
+            self.memory_x_main.insert(solver_var, lp_var);
+            self.solver.map_lp_to_aries.insert(lp_var.idx(), solver_var);
+            lp_var
         }
     }
 
-    /// Add an s variable, it corresponds to a linear constraint in aries solver
-    ///
-    /// They are artificial variables used to be able to activate/deactivate linear constraints just by setting a bound to it.
-    /// Check the reference paper for more details: [A Fast Linear-Arithmetic Solver for DPLL(T)][ref-doc]
-    fn add_s_var(&mut self, linear_sum: &[ScaledXVar], doms: &Domains) -> Variable {
-        for &sxvar in linear_sum {
-            match sxvar {
-                ScaledXVar::Main(svar) => {
-                    if !self.memory_x_main.contains(svar.var) {
-                        self.add_x_var(XVar::Main(svar.var), doms);
-                    }
-                }
-                ScaledXVar::Aux {
-                    tag,
-                    init_bounds_unscaled,
-                    ..
-                } => {
-                    if !self.memory_x_aux.contains(tag) {
-                        self.add_x_var(
-                            XVar::Aux {
-                                tag,
-                                init_bounds: (init_bounds_unscaled.0, init_bounds_unscaled.1),
-                            },
-                            doms,
-                        );
-                    } else {
-                        #[cfg(debug_assertions)]
-                        debug_assert!(
-                            *self.memory_x_aux_init_bounds.get(tag).unwrap() == init_bounds_unscaled,
-                            "the auxiliary variable tagged {tag} was already registered with different initial bounds"
-                        );
-                    }
-                }
-            }
+    /// Creates a variable in the LP that is independent of any variable in the CP solver.
+    pub fn create_auxiliary_variable(&mut self, lb: IntCst, ub: IntCst) -> LpVar {
+        self.solver
+            .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats)
+    }
+
+    fn reify_sum(&mut self, sum: LpSum) -> (LpVar, bool) {
+        // if the sum is exactly one variable, with factor +/-1, no need for a new variable to reify.
+        if let Some([(var, 1)]) = sum.as_array() {
+            return (*var, false);
+        }
+        if let Some([(var, -1)]) = sum.as_array() {
+            return (*var, true);
         }
 
-        // If we depend on only one x variable with a factor 1, no need to create a s var
-        if linear_sum.len() == 1 {
-            let (factor, res) = match linear_sum[0] {
-                ScaledXVar::Main(svar) => (svar.factor, *self.memory_x_main.get(svar.var).unwrap()),
-                ScaledXVar::Aux { tag, factor, .. } => (factor, *self.memory_x_aux.get(tag).unwrap()),
-            };
-            if factor == 1 {
-                return res;
-            }
+        if let Some(reif) = self.memory_s.get(&sum) {
+            return (*reif, false);
+        }
+        let minus_sum: LpSum = sum.iter().map(|&(var, factor)| (var, -factor)).collect();
+        if let Some(reif) = self.memory_s.get(&minus_sum) {
+            return (*reif, true);
         }
 
         let mut constraint = vec![];
@@ -339,28 +325,29 @@ impl Lp {
         let mut lb: LongCst = 0;
         let mut ub: LongCst = 0;
 
-        for &sxvar in linear_sum {
-            ub = ub.saturating_add(sxvar.upper_bound_long(doms));
-            lb = lb.saturating_add(sxvar.lower_bound_long(doms));
+        for &(var, factor) in &sum {
+            let (elem_lb, elem_ub) = self.solver.get_init_bounds(factor, var);
+            ub = ub.saturating_add(elem_ub);
+            lb = lb.saturating_add(elem_lb);
 
-            let (var, factor) = match sxvar {
-                ScaledXVar::Main(svar) => (*self.memory_x_main.get(svar.var).unwrap(), svar.factor),
-                ScaledXVar::Aux { tag, factor, .. } => (*self.memory_x_aux.get(tag).unwrap(), factor),
-            };
             constraint.push((var, factor));
         }
 
+        // Create a variable `s` that we will constraint to be equal to `sum`.
+        // Its bounds corresponds to the min/max value that the sum can take.
         let s = self.solver.create_variable(lb, ub, &mut self.stats);
 
+        // create a constraint such that `sum = s`
+        let mut constraint = sum.clone();
         constraint.push((s, -1));
 
         // We force s to be equal to our linear sum
         self.solver.add_constraint(constraint);
         self.stats.num_constraints += 1;
 
-        self.memory_s.insert(linear_sum.to_vec(), s);
+        self.memory_s.insert(sum, s);
 
-        s
+        (s, false)
     }
 
     /// Post a LinearLeq constraint of the form `sum <= 0`.
@@ -374,66 +361,54 @@ impl Lp {
         let sum_terms = sum
             .terms_slice()
             .iter()
-            .map(|&svar| ScaledXVar::Main(svar))
+            .map(|&svar| (self.bind_cp_var(svar.var, doms), svar.factor))
             .collect::<Vec<_>>();
-        self.add_linear_leq_constraint((sum_terms, sum_cst), active, doms)
+        self.add_linear_leq_constraint(sum_terms, sum_cst, active, doms)
     }
 
-    pub fn add_linear_leq_constraint(
-        &mut self,
-        sum: (impl Into<Vec<ScaledXVar>>, IntCst),
-        active: Lit,
-        doms: &Domains,
-    ) {
+    pub fn add_linear_leq_constraint(&mut self, sum_terms: LpSum, sum_cst: IntCst, active: Lit, doms: &Domains) {
         if !self.options.enable {
             return;
         }
-        let (sum_terms, sum_cst) = simplify_scaled_xvar_sum(sum);
 
         // Check that the given constraint is always present (not optional)
         assert!(doms.presence(active) == Lit::TRUE);
 
         let bound_val = cst_int_to_long(-sum_cst);
 
-        let elements = sum_terms.into();
-
-        let opp_lin_sum = get_opposite_scaled_xvar_sum(&elements);
-
-        let bound_constr = if self.memory_s.contains_key(&elements) {
-            let &s = self.memory_s.get(&elements).unwrap();
-            BoundConstraint {
-                var: s,
-                bound: Bound::Upper,
-                val: bound_val,
-            }
-        } else if self.memory_s.contains_key(&opp_lin_sum) {
-            // If an s variable already exists for the opposite of our linear sum, we can use the same by inverting our constraint
-
-            let &s = self.memory_s.get(&opp_lin_sum).unwrap();
-            BoundConstraint {
-                var: s,
-                bound: Bound::Lower,
-                val: -bound_val,
-            }
+        let (reif, signed) = self.reify_sum(sum_terms);
+        let bound_constr = if signed {
+            // sum_terms = -reif
+            // sum_terms  <= bound_val
+            // -reif <= bound_val
+            // reif >= -bound_val
+            BoundConstraint::geq(reif, -bound_val)
         } else {
-            let s = self.add_s_var(&elements, doms);
-
-            BoundConstraint {
-                var: s,
-                bound: Bound::Upper,
-                val: bound_val,
-            }
+            // sum_terms = reif
+            // reif <= bound_val
+            BoundConstraint::leq(reif, bound_val)
         };
 
-        // We memorize our constraint and its active lit to be able to access it during propagation
-        self.register_bound_constr(
-            bound_constr,
-            BoundCause::Some {
+        // this constraint should be activated when `active is entailed and present
+        let trigger = Conjunction::from([active, doms.presence(active)]);
+        self.add_bound_update_trigger(trigger, bound_constr, doms);
+    }
+
+    pub fn add_bound_update_trigger(&mut self, trigger: Conjunction, bound_update: BoundConstraint, domains: &Domains) {
+        // TODO: this function supports the API we want but its implementation delegates to the previous one, with obvious limitations
+        let cause = match trigger.literals() {
+            [] => BoundCause::None,
+            [l] => BoundCause::Some {
                 scope: Lit::TRUE,
-                trigger: active,
+                trigger: *l,
             },
-            doms,
-        );
+            [l1, l2] => BoundCause::Some {
+                scope: *l1,
+                trigger: *l2,
+            },
+            _ => unimplemented!("Still unsupported (will do it later to phase the transition)"),
+        };
+        self.register_bound_constr(bound_update, cause, domains);
     }
 
     /// Registers a bound constraint, to be applied to the LP as soon as all the literals of `cause` are entailed in the main model.
@@ -502,69 +477,6 @@ impl Lp {
             self.explain_set_bound(&res, bound_constr.var)?;
         }
         Ok(())
-    }
-
-    /// Partially binds an auxiliary variable of the LP to the main model / the aries solver:
-    /// as soon as all the literals of `cause` are entailed, the lower bound of the auxiliary variable identified by `tag` is restricted to `val`.
-    ///
-    /// Contrary to a variable of the main model (non-auxiliary),
-    /// which the reasoner keeps synchronized with its LP counterpart in both directions,
-    /// an auxiliary variable has no counterpart in the main model:
-    /// such a binding is the only way for it to be constrained by the search.
-    ///
-    /// Any number of bindings may be registered on the same variable, as they only ever restrict its bounds.
-    ///
-    /// `cause` justifies the bound in the explanations, hence it must *entail* it: whenever both of its literals hold, the bound must be valid.
-    ///
-    /// Returns whether the binding was registered:
-    /// the auxiliary variable must already have been created, which happens when a constraint using `tag` is posted to the reasoner.
-    pub fn half_bind_aux_var_lower_bound(
-        &mut self,
-        aux_var_tag: AuxVarTag,
-        val: IntCst,
-        cause: BoundCause,
-        domains: &Domains,
-    ) -> bool {
-        self.half_bind_aux_var_bound(aux_var_tag, Bound::Lower, val, cause, domains)
-    }
-
-    /// Restricts the upper bound of an auxiliary variable. See [`Lp::half_bind_aux_var_lower_bound`].
-    pub fn half_bind_aux_var_upper_bound(
-        &mut self,
-        aux_var_tag: AuxVarTag,
-        val: IntCst,
-        cause: BoundCause,
-        domains: &Domains,
-    ) -> bool {
-        self.half_bind_aux_var_bound(aux_var_tag, Bound::Upper, val, cause, domains)
-    }
-
-    fn half_bind_aux_var_bound(
-        &mut self,
-        aux_var_tag: AuxVarTag,
-        bound: Bound,
-        val: IntCst,
-        cause: BoundCause,
-        domains: &Domains,
-    ) -> bool {
-        if !self.options.enable {
-            return false;
-        }
-        // The variable is created when the first constraint mentioning `aux_var_tag` is posted.
-        // (unless its bounds made it constant or have its factor in that constraint was 0).
-        let Some(&var) = self.memory_x_aux.get(aux_var_tag) else {
-            return false;
-        };
-        self.register_bound_constr(
-            BoundConstraint {
-                var,
-                bound,
-                val: cst_int_to_long(val),
-            },
-            cause,
-            domains,
-        );
-        true
     }
 
     /// Takes the result of a call to [Solver::set_bound_restrict] and returns either `Ok` or a `Contradiction` if infeasibility was detected
@@ -764,35 +676,6 @@ mod tests {
     };
 
     use super::*;
-
-    #[test]
-    fn opposite_linear_sum() {
-        {
-            let v1 = Var::from_u32(1);
-            let v2 = Var::from_u32(2);
-            let v3 = Var::from_u32(3);
-            let lin_sum = vec![
-                ScaledXVar::Main(ScaledVar { var: v1, factor: 4 }),
-                ScaledXVar::Main(ScaledVar { var: v3, factor: -1 }),
-                ScaledXVar::Main(ScaledVar { var: v2, factor: 6 }),
-            ];
-
-            assert_eq!(
-                get_opposite_scaled_xvar_sum(&lin_sum),
-                vec![
-                    ScaledXVar::Main(ScaledVar { var: v1, factor: -4 }),
-                    ScaledXVar::Main(ScaledVar { var: v3, factor: 1 }),
-                    ScaledXVar::Main(ScaledVar { var: v2, factor: -6 }),
-                ]
-            )
-        }
-
-        {
-            let lin_sum = vec![];
-
-            assert_eq!(get_opposite_scaled_xvar_sum(&lin_sum), vec![])
-        }
-    }
 
     fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
         let k = 1.0 / sparse_proportion - 1.0;
@@ -1012,28 +895,6 @@ mod tests {
         }
     }
 
-    const AUX_A: AuxVarTag = 0;
-    const AUX_B: AuxVarTag = 1;
-
-    /// An auxiliary term `factor * aux(tag)`, the variable ranging over `[0, 1]`.
-    fn aux(tag: AuxVarTag, factor: IntCst) -> ScaledXVar {
-        ScaledXVar::Aux {
-            tag,
-            factor,
-            init_bounds_unscaled: (0, 1),
-        }
-    }
-
-    /// Binding a tag that no constraint ever mentioned is a no-op: no such variable exists.
-    #[test]
-    fn test_bind_unknown_aux_var() {
-        let d = Domains::new();
-        let mut lp = Lp::default();
-        lp.activate();
-
-        assert!(!lp.half_bind_aux_var_upper_bound(AUX_A, 0, BoundCause::None, &d));
-    }
-
     /// A conflict that a binding took part in must be explained by that binding's literals.
     ///
     /// Reporting an empty explanation instead would read as "infeasible whatever was decided", and
@@ -1045,20 +906,14 @@ mod tests {
         let q = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
+        let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
         // `-a - b + 1 <= 0`
-        lp.add_linear_leq_constraint((vec![aux(AUX_A, -1), aux(AUX_B, -1)], 1), Lit::TRUE, &d);
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        let cause_a = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: p.leq(0),
-        };
-        let cause_b = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: q.leq(0),
-        };
-        assert!(lp.half_bind_aux_var_upper_bound(AUX_A, 0, cause_a, &d));
-        assert!(lp.half_bind_aux_var_upper_bound(AUX_B, 0, cause_b, &d));
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(0).into(), BoundConstraint::leq(aux_b, 0), &d);
 
         d.save_state();
         lp.save_state();
@@ -1081,20 +936,14 @@ mod tests {
         let q = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
+        let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
         // `-a - b + 1 <= 0`
-        lp.add_linear_leq_constraint((vec![aux(AUX_A, -1), aux(AUX_B, -1)], 1), Lit::TRUE, &d);
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        let cause_a = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: p.leq(0),
-        };
-        let cause_b = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: q.leq(0),
-        };
-        lp.half_bind_aux_var_upper_bound(AUX_A, 0, cause_a, &d);
-        lp.half_bind_aux_var_upper_bound(AUX_B, 0, cause_b, &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(0).into(), BoundConstraint::leq(aux_b, 0), &d);
 
         d.save_state();
         lp.save_state();
@@ -1121,9 +970,11 @@ mod tests {
         let unrelated = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
+        let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
         // `-a - b + 1 <= 0`
-        lp.add_linear_leq_constraint((vec![aux(AUX_A, -1), aux(AUX_B, -1)], 1), Lit::TRUE, &d);
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
         // level 1: the causes of both bindings become entailed here
         d.save_state();
@@ -1139,16 +990,10 @@ mod tests {
         // level 3: the bindings are only registered now, long after their causes started holding
         d.save_state();
         lp.save_state();
-        let cause_a = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: p.leq(0),
-        };
-        let cause_b = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: q.leq(0),
-        };
-        lp.half_bind_aux_var_upper_bound(AUX_A, 0, cause_a, &d);
-        lp.half_bind_aux_var_upper_bound(AUX_B, 0, cause_b, &d);
+
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(0).into(), BoundConstraint::leq(aux_b, 0), &d);
+
         assert!(lp.propagate(&mut d).is_err());
 
         lp.restore_last();
@@ -1170,20 +1015,14 @@ mod tests {
         let scope = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
+        let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
         // `-a - b + 1 <= 0`
-        lp.add_linear_leq_constraint((vec![aux(AUX_A, -1), aux(AUX_B, -1)], 1), Lit::TRUE, &d);
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        let unscoped = BoundCause::Some {
-            scope: Lit::TRUE,
-            trigger: p.leq(0),
-        };
-        let scoped = BoundCause::Some {
-            scope: scope.geq(1),
-            trigger: q.leq(0),
-        };
-        lp.half_bind_aux_var_upper_bound(AUX_A, 0, unscoped, &d);
-        lp.half_bind_aux_var_upper_bound(AUX_B, 0, scoped, &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger([scope.geq(1), q.leq(0)].into(), BoundConstraint::leq(aux_b, 0), &d);
 
         d.save_state();
         lp.save_state();
@@ -1209,6 +1048,7 @@ mod tests {
     fn test_root_cause_constraint_is_permanent() {
         let mut d = Domains::new();
         let mut lp = Lp::default();
+        let aux_a = lp.create_auxiliary_variable(0, 1);
         lp.activate();
 
         d.save_state();
@@ -1216,14 +1056,14 @@ mod tests {
 
         // `aux_a <= 0`, registered above the root but justified by `Lit::TRUE`, which can never stop holding.
         // No watch can fire for such a cause, so it is only ever applied by the pending list, without being trailed.
-        lp.add_linear_leq_constraint((vec![aux(AUX_A, 1)], 0), Lit::TRUE, &d);
+        lp.add_linear_leq_constraint(vec![(aux_a, 1)], 0, Lit::TRUE, &d);
         assert!(lp.propagate(&mut d).is_ok());
 
         lp.restore_last();
         d.restore_last();
 
         // `aux_a >= 1`, which only conflicts if the bound above was unaffected by the backtrack
-        lp.add_linear_leq_constraint((vec![aux(AUX_A, -1)], 1), Lit::TRUE, &d);
+        lp.add_linear_leq_constraint(vec![(aux_a, -1)], 1, Lit::TRUE, &d);
         assert!(
             lp.propagate(&mut d).is_err(),
             "a bound justified at the root must not be undone by a backtrack"
