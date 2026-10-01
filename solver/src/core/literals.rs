@@ -17,7 +17,7 @@ pub use conjunction::*;
 pub use disjunction::*;
 pub(crate) use implication_graph::*;
 pub use lit_set::*;
-pub(crate) use watches::*;
+pub use watches::*;
 
 use crate::prelude::*;
 use smallvec::SmallVec;
