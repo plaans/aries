@@ -213,6 +213,7 @@ dependencies = [
  "aries-datalog",
  "aries-env-param",
  "aries-solver",
+ "hashbrown 0.16.1",
  "idmap",
  "itertools 0.14.0",
  "num-rational",
