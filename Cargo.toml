@@ -2,6 +2,7 @@
 
 members = [
     "solver",
+    "solver/lp_highs",
     "bench/data",
     "bench/bench",
     "utils/env_param",

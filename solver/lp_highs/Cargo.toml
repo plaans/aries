@@ -1,0 +1,13 @@
+[package]
+name = "aries-solver-lp-highs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+aries-solver = { path = ".." }
+aries-env-param = { path = "../../utils/env_param" }
+highs = { git = "https://github.com/nrealus/highs.git", branch = "dev" }
+itertools = { workspace = true }
+smallvec = { workspace = true }
+idmap = { workspace = true }
+tracing = { workspace = true }

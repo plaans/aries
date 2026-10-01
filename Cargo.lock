@@ -207,6 +207,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-solver-lp-highs"
+version = "0.1.0"
+dependencies = [
+ "aries-env-param",
+ "aries-solver",
+ "highs 2.4.0 (git+https://github.com/nrealus/highs.git?branch=dev)",
+ "idmap",
+ "itertools 0.14.0",
+ "smallvec",
+ "tracing",
+]
+
+[[package]]
 name = "aries-timelines"
 version = "0.1.0"
 dependencies = [
@@ -1192,7 +1205,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4255eb1d65eea322f73a326038f2bcec19dae13ca50fa557da19b03274b4d56"
 dependencies = [
  "fnv",
- "highs",
+ "highs 2.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1310,7 +1323,16 @@ version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dfc791427e78fdc1a0a37983f79c20f86a0b7b7dfdb5d6a57a6f72d77cd9074"
 dependencies = [
- "highs-sys",
+ "highs-sys 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+]
+
+[[package]]
+name = "highs"
+version = "2.4.0"
+source = "git+https://github.com/nrealus/highs.git?branch=dev#680b09e7b8df6e0a22cdaa62dabf6ef106eed447"
+dependencies = [
+ "highs-sys 1.15.0 (git+https://github.com/nrealus/highs-sys.git?branch=dev)",
  "log",
 ]
 
@@ -1319,6 +1341,15 @@ name = "highs-sys"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4da0c52322648e2360a5a8896d23301fa5ed99ed7607c5faf229bd0bbb30d3f"
+dependencies = [
+ "bindgen",
+ "cmake",
+]
+
+[[package]]
+name = "highs-sys"
+version = "1.15.0"
+source = "git+https://github.com/nrealus/highs-sys.git?branch=dev#c8cd96bdce362d9427ffe8e56c471700da94a3ef"
 dependencies = [
  "bindgen",
  "cmake",
