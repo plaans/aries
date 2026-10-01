@@ -389,7 +389,10 @@ impl Solver {
     fn explain_leq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let mut explanation = Explanation::new();
 
-        let mut ub = 0;
+        // We always explain a contradiction, i.e. lower bounds summing to *strictly* more than 0,
+        // so the budget is raised by one to match the non-strict comparisons used below.
+        // Same trick as in [`crate::reasoners::cp::linear::explain`].
+        let mut ub = 1;
 
         let domain_snap = DomainsSnapshot::current(domains);
 
