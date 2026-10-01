@@ -1,4 +1,5 @@
 mod closed_world_default;
+pub mod ground;
 
 use closed_world_default::ClosedWorldDefaultEffects;
 
