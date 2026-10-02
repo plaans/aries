@@ -279,7 +279,7 @@ impl EquivClasses {
         let (r_kept, r_merged) = (self.representative[kept as usize], self.representative[merged as usize]);
         let key = |i: u32| {
             let tag = self.tags[i as usize];
-            (!tag.is_lifted(), tag)
+            (!tag.is_lifted_or_term_grounding(), tag)
         };
         self.representative[kept as usize] = if key(r_kept) <= key(r_merged) { r_kept } else { r_merged };
 
