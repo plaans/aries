@@ -42,7 +42,14 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 c.enforce(&mut encoding);
             }
         }
-        let mut solver = Solver::new(encoding.store);
+        let mut solver = if crate::constraints::lprelax::ARIES_LPRELAX_USE.get() {
+            let model = encoding.store.clone();
+
+            let reasoner = crate::constraints::lprelax::wrappers::LpRelaxIncr::new(encoding, assumptions_map.len());
+            Solver::with_extra_reasoners(model, vec![Box::new(reasoner)])
+        } else {
+            Solver::new(encoding.store)
+        };
 
         // enable stronger propagation than default in difference logic solver.
         // this is useful in planning models where bounds are not sufficient to reason on precedence between tasks
