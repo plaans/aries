@@ -3,10 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use aries_solver::prelude::*;
 use aries_solver::{
     backtrack::Backtrack,
+    reasoners::Theory,
     solver::{Solver, musmcs::MusMcs},
 };
 use itertools::Itertools;
 
+use crate::constraints::lprelax::wrappers::{LpRelaxHighs, LpRelaxIncr};
 use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
@@ -45,8 +47,13 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         let mut solver = if crate::constraints::lprelax::ARIES_LPRELAX_USE.get() {
             let model = encoding.store.clone();
 
-            let reasoner = crate::constraints::lprelax::wrappers::LpRelaxHighs::new(encoding, assumptions_map.len());
-            Solver::with_extra_reasoners(model, vec![Box::new(reasoner)])
+            // TODO: change ARIES_LPRELAX_USE to be either "none", "highs", or "incr"
+            let reasoners: Vec<Box<dyn Theory>> = if true {
+                vec![Box::new(LpRelaxHighs::new(encoding, assumptions_map.len()))]
+            } else {
+                vec![Box::new(LpRelaxIncr::new(encoding, assumptions_map.len()))]
+            };
+            Solver::with_extra_reasoners(model, reasoners)
         } else {
             Solver::new(encoding.store)
         };
