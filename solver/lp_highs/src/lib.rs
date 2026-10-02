@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[derive(Default, Clone)]
-struct LpStats {
+pub struct LpStats {
     pub lpruns: u64,
     pub lpruns_time: std::time::Duration,
 }
@@ -63,7 +63,7 @@ pub struct Lp {
     lp_state: LpState,
     bindings: Bindings,
 
-    stats: LpStats,
+    pub stats: LpStats,
     options: LpOptions,
 }
 unsafe impl Send for Lp {}
