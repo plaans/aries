@@ -350,13 +350,14 @@ impl Lp {
         (s, false)
     }
 
-    /// Post a LinearLeq constraint of the form `sum <= 0`.
+    /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`.
     /// The constant term is included in the sum.
     ///
-    /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true`
-    /// We assume that the active literal is always present, it is the responsibility of the caller to ensure it:
-    /// `doms.presence(active) == Lit::TRUE`
-    pub fn add_linear_leq_constraint_simple(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
+    /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true` and present.
+    ///
+    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on LP variables. Instead the current
+    /// method will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
+    pub fn add_cp_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
         let sum_terms = sum
             .terms_slice()
@@ -366,13 +367,14 @@ impl Lp {
         self.add_linear_leq_constraint(sum_terms, sum_cst, active, doms)
     }
 
+    /// Adds an `active => sum_terms + sum_cst <= 0` constraint, where `sum_terms` consists only of LP variables.
+    ///
+    /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from CP variables) or with
+    /// [`Self::create_auxiliary_variable`] (independent variable).
     pub fn add_linear_leq_constraint(&mut self, sum_terms: LpSum, sum_cst: IntCst, active: Lit, doms: &Domains) {
         if !self.options.enable {
             return;
         }
-
-        // Check that the given constraint is always present (not optional)
-        assert!(doms.presence(active) == Lit::TRUE);
 
         let bound_val = cst_int_to_long(-sum_cst);
 
@@ -394,6 +396,10 @@ impl Lp {
         self.add_bound_update_trigger(trigger, bound_constr, doms);
     }
 
+    /// Adds a new bound-restriction trigger of the form `l1 & ... & ln => var {<=,>=} bound` where each `li` is a CP literal, `variable is an
+    /// LP variable, and `bound` is an integer value denoting  a new upper/lower bound of `variable`.
+    ///
+    /// This provides an additional mechanism for synchronizing the bounds of the LP variables to the domains in the CP solver.
     pub fn add_bound_update_trigger(&mut self, trigger: Conjunction, bound_update: BoundConstraint, domains: &Domains) {
         // TODO: this function supports the API we want but its implementation delegates to the previous one, with obvious limitations
         let cause = match trigger.literals() {
@@ -724,7 +730,7 @@ mod tests {
 
             // println!("active var: {:?}, constraint: {:?}", active, sum);
 
-            lp_reasonner.add_linear_leq_constraint_simple(&sum, active, &d);
+            lp_reasonner.add_cp_linear_leq_constraint(&sum, active, &d);
         }
 
         (lp_reasonner, d)
