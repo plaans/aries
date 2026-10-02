@@ -86,6 +86,7 @@ impl Default for LpOptions {
 /// or within the code with: `LP_ENABLE.set(true/false)`
 pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false");
 
+/// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
 pub struct BoundConstraint {
     var: Variable,
@@ -94,6 +95,7 @@ pub struct BoundConstraint {
 }
 
 impl BoundConstraint {
+    /// Represents an upper bound on an LP variable.
     pub fn leq(var: Variable, ub: LongCst) -> Self {
         Self {
             var,
@@ -101,6 +103,7 @@ impl BoundConstraint {
             val: ub,
         }
     }
+    /// Represents a lower bound on an LP variable.
     pub fn geq(var: Variable, lb: LongCst) -> Self {
         Self {
             var,
@@ -162,16 +165,22 @@ impl Stats {
     }
 }
 
+/// A variable of the LP solver.
 pub type LpVar = aries_lp::Variable;
+
+/// Applies a sign to a type.
 enum Signed<T> {
+    /// + T
     Plus(T),
+    /// - T
     Minus(T),
 }
+
+/// Represents a sum of scaled LP variables: `var_1 * factor_1 + var_2 * factor_2 + ...`.
+///
+/// TODO: this is a very minimal implementation. In practice we would like to have something like [`LinSum`]
+/// which only differs in the type of variables used.
 pub type LpSum = Vec<(LpVar, IntCst)>;
-pub enum BoundRestriction {
-    Ub(IntCst),
-    Lb(IntCst),
-}
 
 /// Struct that implements the [`Theory`] trait (reasoner).
 ///
@@ -360,13 +369,13 @@ impl Lp {
         Signed::Plus(s)
     }
 
-    /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`.
-    /// The constant term is included in the sum.
+    /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`, where `sum` is a linear sum
+    /// on CP variables and a constant term.
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true` and present.
     ///
-    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on LP variables. Instead the current
-    /// method will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
+    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on CP variables.
+    /// It will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
     pub fn add_cp_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
         let sum_terms = sum
