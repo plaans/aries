@@ -21,11 +21,14 @@ impl Explanation {
         self.lits.reserve(additional)
     }
     pub fn push(&mut self, lit: Lit) {
-        self.lits.push(lit)
+        if !lit.tautological() {
+            self.lits.push(lit)
+        }
     }
 
     pub fn extend(&mut self, additional_lits: impl IntoIterator<Item = Lit>) {
-        self.lits.extend(additional_lits);
+        self.lits
+            .extend(additional_lits.into_iter().filter(|l| !l.tautological()));
     }
 
     pub fn pop(&mut self) -> Option<Lit> {
