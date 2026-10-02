@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use aries_env_param::EnvParam;
 #[allow(unused_imports)]
 use itertools::Itertools;
-use solver::Solver;
+use solver::{BoundJustification, Solver};
 
 use aries_lp::{Bound, Error, Variable};
 
@@ -112,7 +112,7 @@ impl BoundConstraint {
 
 /// Store all the necessary information for backtracking after modifying a bound
 ///
-/// Only the old value and cause are necessary as they will overwrite the current value
+/// The old value and justification are necessary as they will overwrite the current ones
 #[derive(Clone)]
 struct LpEvent {
     /// variable affected by the bound change
@@ -121,8 +121,8 @@ struct LpEvent {
     bound: Bound,
     /// Old value for the bound that needs to overwrite the new one when backtracking
     old_val: LongCst,
-    /// Cause associated with this bound and value
-    old_cause: BoundCause,
+    /// Justification associated with this bound and value
+    old_justification: BoundJustification,
 }
 
 #[derive(Clone)]
@@ -457,22 +457,21 @@ impl Lp {
                 continue;
             }
 
-            let res = if domains.entailing_level(scope) == DecLvl::ROOT
-                && domains.entailing_level(trigger) == DecLvl::ROOT
-            {
-                // A cause entailed at the root can never be undone,
-                // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                self.solver
-                    .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val, cause)
-            } else {
-                self.solver.set_bound_restrict(
-                    bound_constr.var,
-                    bound_constr.bound,
-                    bound_constr.val,
-                    cause,
-                    &mut self.trail,
-                )
-            };
+            let res =
+                if domains.entailing_level(scope) == DecLvl::ROOT && domains.entailing_level(trigger) == DecLvl::ROOT {
+                    // A cause entailed at the root can never be undone,
+                    // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
+                    self.solver
+                        .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val)
+                } else {
+                    self.solver.set_bound_restrict(
+                        bound_constr.var,
+                        bound_constr.bound,
+                        bound_constr.val,
+                        BoundJustification::Trigger(cause),
+                        &mut self.trail,
+                    )
+                };
 
             self.explain_set_bound(&res, bound_constr.var)?;
         }
@@ -561,7 +560,7 @@ impl Theory for Lp {
                     bound_constr.var,
                     bound_constr.bound,
                     bound_constr.val,
-                    cause,
+                    BoundJustification::Trigger(cause),
                     &mut self.trail,
                 );
 
@@ -573,18 +572,15 @@ impl Theory for Lp {
             // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
             if let Some(&x_var) = self.memory_x_main.get(var) {
                 // the bound holds because this very literal was inferred in the main model
-                let cause = BoundCause::Some {
-                    scope: Lit::TRUE,
-                    trigger: lit,
-                };
+                let justification = BoundJustification::CpModel(lit);
                 let res =
                     // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), cause, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), justification, &mut self.trail)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), cause, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), justification, &mut self.trail)
                     };
 
                 self.explain_set_bound(&res, x_var)?;
@@ -646,9 +642,12 @@ impl Backtrack for Lp {
 
     fn restore_last(&mut self) {
         self.trail.restore_last_with(|lp_event| {
-            let _ = self
-                .solver
-                .set_bound(lp_event.var, lp_event.bound, lp_event.old_val, lp_event.old_cause);
+            let _ = self.solver.set_bound(
+                lp_event.var,
+                lp_event.bound,
+                lp_event.old_val,
+                lp_event.old_justification,
+            );
         });
 
         if self.current_decision_level() < self.pending_bound_constrs_applied_at {
@@ -925,6 +924,93 @@ mod tests {
         };
         assert!(expl.literals().contains(&p.leq(0)), "{:?}", expl.literals());
         assert!(expl.literals().contains(&q.leq(0)), "{:?}", expl.literals());
+    }
+
+    /// A bound-update trigger can restrict an LP variable that is mapped to a CP variable
+    /// (here through the -1 shortcut of `reify_sum`), without any counterpart event in the main model.
+    /// A conflict such a bound takes part in must be explained by the trigger's literals:
+    /// the main model alone does not entail the bound.
+    #[test]
+    fn test_mapped_var_bound_trigger_explains_conflict() {
+        let mut d = Domains::new();
+        let x = d.new_var(-100, 100);
+        let a = d.new_var(-1, 1).geq(0);
+        let c = d.new_var(-1, 1).geq(0);
+
+        let mut lp = Lp::default();
+        lp.activate();
+
+        let lp_x = lp.bind_cp_var(x, &d);
+        // s = 97 * x, with s <= 87 when `a`
+        lp.add_linear_leq_constraint(vec![(lp_x, 97)], -87, a, &d);
+        // -1 shortcut: the bound x >= 34 lands on the mapped variable itself, when `c`
+        lp.add_linear_leq_constraint(vec![(lp_x, -1)], 34, c, &d);
+
+        d.save_state();
+        lp.save_state();
+        d.set(a, Cause::Decision).unwrap();
+        d.set(c, Cause::Decision).unwrap();
+
+        let Err(Contradiction::Explanation(expl)) = lp.propagate(&mut d) else {
+            panic!("x >= 34 implies 97*x >= 3298, which contradicts 97*x <= 87");
+        };
+        assert!(expl.literals().contains(&a), "{:?}", expl.literals());
+        assert!(expl.literals().contains(&c), "{:?}", expl.literals());
+    }
+
+    /// Several bound updates may target the same LP variable, from triggers and from the main-model
+    /// synchronization alike. Each restricting update is trailed with the previous value and
+    /// justification of the bound, so backtracking must restore the exact prior state.
+    #[test]
+    fn test_multiple_bound_updates_are_trailed() {
+        let mut d = Domains::new();
+        let x = d.new_var(-10, 10);
+        let a = d.new_var(-1, 1).geq(0);
+        let b = d.new_var(-1, 1).geq(0);
+
+        let mut lp = Lp::default();
+        lp.activate();
+        let lp_x = lp.bind_cp_var(x, &d);
+
+        // two triggers restricting the same upper bound
+        lp.add_bound_update_trigger(a.into(), BoundConstraint::leq(lp_x, 5), &d);
+        lp.add_bound_update_trigger(b.into(), BoundConstraint::leq(lp_x, 2), &d);
+
+        let init_solver = lp.solver.clone();
+
+        // both triggers apply, the second one restricting the bound further
+        d.save_state();
+        lp.save_state();
+        d.set(a, Cause::Decision).unwrap();
+        d.set(b, Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_ok());
+        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 2);
+
+        // backtracking restores the initial bound together with its justification
+        lp.restore_last();
+        d.restore_last();
+        assert!(lp.solver == init_solver);
+
+        // each trigger can now be applied on its own
+        d.save_state();
+        lp.save_state();
+        d.set(a, Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_ok());
+        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 5);
+        lp.restore_last();
+        d.restore_last();
+        assert!(lp.solver == init_solver);
+
+        // a trigger interleaved with a synchronization from the main model
+        d.save_state();
+        lp.save_state();
+        d.set(a, Cause::Decision).unwrap();
+        d.set(x.leq(3), Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_ok());
+        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 3);
+        lp.restore_last();
+        d.restore_last();
+        assert!(lp.solver == init_solver);
     }
 
     /// A bound pushed by a binding does not outlive the cause that justified it: backtracking past that cause releases the bound.

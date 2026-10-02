@@ -30,13 +30,44 @@ pub enum BoundCause {
     Some { scope: Lit, trigger: Lit },
 }
 
-/// Used to store the bounds of our variable and the associated cause that is responsible of these bounds (useful for explanations)
+/// How the current value of a bound was established, i.e. what justifies it in an explanation.
+///
+/// It is recorded in the bound history ([`IntBounds`]) whenever the bound is updated and restored on backtrack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundJustification {
+    /// The bound holds unconditionally: initial bound of the variable,
+    /// or bound of a trigger whose condition is entailed at the root of the main model.
+    Unconditional,
+    /// The bound was pushed by the synchronization with the main model, which entails it:
+    /// `lit` is the literal of the main-model event that justified it.
+    /// Only variables mapped to a var of the main model receive such bounds.
+    CpModel(Lit),
+    /// The bound was pushed by a bound-update trigger (see `Lp::add_bound_update_trigger`):
+    /// the main model does not entail it, only `cause` justifies it.
+    Trigger(BoundCause),
+}
+
+impl BoundJustification {
+    /// Pushes to `explanation` the literals that justify a bound with this justification.
+    ///
+    /// An unconditional bound contributes no literal: it holds at the root.
+    pub fn push_to(self, explanation: &mut Explanation) {
+        match self {
+            BoundJustification::Unconditional => {}
+            BoundJustification::CpModel(lit) => explanation.push(lit),
+            BoundJustification::Trigger(BoundCause::Some { scope, trigger }) => explanation.extend([scope, trigger]),
+            BoundJustification::Trigger(BoundCause::None) => {}
+        }
+    }
+}
+
+/// Used to store the bounds of our variable and the justification of each of them (useful for explanations)
 #[derive(Clone, PartialEq)]
 pub(super) struct IntBounds {
-    lower: LongCst,
-    lower_cause: BoundCause,
-    upper: LongCst,
-    upper_cause: BoundCause,
+    pub(super) lower: LongCst,
+    pub(super) lower_justification: BoundJustification,
+    pub(super) upper: LongCst,
+    pub(super) upper_justification: BoundJustification,
 }
 
 impl fmt::Debug for IntBounds {
@@ -130,8 +161,8 @@ impl Solver {
             lower: lb,
             upper: ub,
             // the initial bounds of a variable hold unconditionally
-            lower_cause: BoundCause::None,
-            upper_cause: BoundCause::None,
+            lower_justification: BoundJustification::Unconditional,
+            upper_justification: BoundJustification::Unconditional,
         });
         var
     }
@@ -148,12 +179,18 @@ impl Solver {
 
     /// Set a new Upper/Lower bound for the given variable
     ///
-    /// `cause` justifies the new bound (and it will be reported in the explanations involving it).
+    /// `justification` tells how the new bound was established (and it will be used to build the explanations involving it).
     ///
     /// # Errors
     ///
     /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: LongCst, cause: BoundCause) -> Result<(), Error> {
+    pub fn set_bound(
+        &mut self,
+        var: Variable,
+        bound: Bound,
+        val: LongCst,
+        justification: BoundJustification,
+    ) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
         }
@@ -165,11 +202,11 @@ impl Solver {
         match bound {
             Bound::Lower => {
                 self.bounds[var.idx()].lower = val;
-                self.bounds[var.idx()].lower_cause = cause;
+                self.bounds[var.idx()].lower_justification = justification;
             }
             Bound::Upper => {
                 self.bounds[var.idx()].upper = val;
-                self.bounds[var.idx()].upper_cause = cause;
+                self.bounds[var.idx()].upper_justification = justification;
             }
         }
 
@@ -183,24 +220,18 @@ impl Solver {
     /// Same as [`Solver::set_bound_restrict`], but the change is *not* trailed:
     /// the bound will never be undone by a backtrack.
     ///
-    /// Only valid for a `cause` that is entailed at the root, i.e. always / unconditionally holds.
+    /// Only valid for a `justification` that holds at the root, i.e. always / unconditionally.
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem is immediatly detected as infeasible.
-    pub fn set_bound_restrict_permanent(
-        &mut self,
-        var: Variable,
-        bound: Bound,
-        val: LongCst,
-        cause: BoundCause,
-    ) -> Result<bool, Error> {
+    /// Will return an error if the problem is immediately detected as infeasible.
+    pub fn set_bound_restrict_permanent(&mut self, var: Variable, bound: Bound, val: LongCst) -> Result<bool, Error> {
         let restricts = match bound {
             Bound::Lower => val > self.bounds[var.idx()].lower,
             Bound::Upper => val < self.bounds[var.idx()].upper,
         };
         if restricts {
-            self.set_bound(var, bound, val, cause)?;
+            self.set_bound(var, bound, val, BoundJustification::Unconditional)?;
         }
         Ok(restricts)
     }
@@ -216,37 +247,37 @@ impl Solver {
         var: Variable,
         bound: Bound,
         val: LongCst,
-        cause: BoundCause,
+        justification: BoundJustification,
         trail: &mut Trail<LpEvent>,
     ) -> Result<bool, Error> {
         match bound {
             Bound::Lower => {
                 let old_val = self.bounds[var.idx()].lower;
-                let old_cause = self.bounds[var.idx()].lower_cause;
+                let old_justification = self.bounds[var.idx()].lower_justification;
                 if val > old_val {
                     trail.push(LpEvent {
                         var,
                         bound,
                         old_val,
-                        old_cause,
+                        old_justification,
                     });
-                    self.set_bound(var, bound, val, cause)?;
+                    self.set_bound(var, bound, val, justification)?;
 
                     return Ok(true);
                 }
             }
             Bound::Upper => {
                 let old_val = self.bounds[var.idx()].upper;
-                let old_cause = self.bounds[var.idx()].upper_cause;
+                let old_justification = self.bounds[var.idx()].upper_justification;
 
                 if val < old_val {
                     trail.push(LpEvent {
                         var,
                         bound,
                         old_val,
-                        old_cause,
+                        old_justification,
                     });
-                    self.set_bound(var, bound, val, cause)?;
+                    self.set_bound(var, bound, val, justification)?;
 
                     return Ok(true);
                 }
@@ -403,8 +434,11 @@ impl Solver {
     /// we start be canceling their contribution to the ub and we update the [`Explanation`] to take into account the activation
     /// [`Lit`] that are responsible of the bounds of the slack [`Variable`]
     ///
-    /// For [`Variable`] that are mapped with a [`Var`] in aries solver, we check if their bound is entailed at the root, if yes
-    /// we cancel their contribution to the ub. For the others, we add their last bound event to the culprits list.
+    /// How each variable is treated depends on the [`BoundJustification`] recorded in its bound history:
+    /// - a bound pushed by the synchronization with the main model can only appear on a variable mapped with a [`Var`]
+    ///   of the aries solver: the events of the main model's history justify it and are added to the culprits list.
+    /// - any other bound (initial bound, or bound pushed by a bound-update trigger) contributes the literals
+    ///   recorded with it and cancels its contribution to the ub.
     ///
     /// The last step consists of eliminating the culprits that are not necessary to explain the infeasibility
     /// and iterate in the past bound events to have an [`Explanation`] as minimal as possible.
@@ -417,10 +451,10 @@ impl Solver {
     ///
     /// Note that an auxiliary x variable never contributes a literal *of its own*:
     /// having no counterpart in the main model, no literal denotes its bounds.
-    /// What it contributes are the literals of the [`BoundCause`] recorded when a bound on it was set,
-    /// i.e. the scope and trigger of the binding that pushed it (which is what makes the bound valid in the first place).
+    /// What it contributes are the literals of the [`BoundJustification`] recorded when a bound on it was set
+    /// (which is what makes the bound valid in the first place).
     ///
-    /// An auxiliary variable still holding its initial bounds ([`BoundCause::None`]) contributes nothing, as they hold unconditionally.
+    /// An auxiliary variable still holding its initial bounds contributes nothing, as they hold unconditionally.
     fn explain_leq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
         let mut explanation = Explanation::new();
 
@@ -434,49 +468,56 @@ impl Solver {
         let mut culprits = BinaryHeap::new();
 
         // We iterate over the lin_sum to eliminate variables with a null coef
-        // Variables that are really present in the constraint (coef != 0) are then treated separatly
-        // depending if they are mapped to var in aries solver or if they are just slack variables.
+        // Variables that are really present in the constraint (coef != 0) are then treated separately
+        // depending on how their minimizing bound was established, as recorded in its justification.
         for (idx, &coef) in lin_sum.iter().enumerate() {
             if coef == 0 {
                 continue;
             }
 
-            // Check if it's a slack variable or not
-            if let Some(&var) = self.map_lp_to_aries.get(idx) {
-                let sum_elem = SumElem::new(coef, var);
-
-                if let Some(event) = LbBoundEvent::new(sum_elem, &domain_snap) {
-                    // there is a lower bound event on this element, add it to the set of culprits for later processing
-                    culprits.push(event)
-                } else {
-                    // no event associated to the element, which means its value is entailed at the ROOT
-                    // Hence it does need to be present in the explanation, but should cancel its contribution to the UB
-                    let elem_var_lb = domains.lb(sum_elem.var);
-                    debug_assert_eq!(
-                        domains.entailing_level(Lit::geq(sum_elem.var, elem_var_lb as IntCst)),
-                        DecLvl::ROOT
-                    );
-                    let elem_lb = (elem_var_lb as i128).saturating_mul(sum_elem.factor);
-                    ub -= elem_lb;
-                }
+            // Bound of the LP variable in the direction that minimizes the sum
+            // (lower bound for a positive coefficient, upper bound for a negative one)
+            // together with the justification recorded when it was set.
+            let (bound, justification) = if coef > 0 {
+                let b = &self.bounds[idx];
+                (b.lower, b.lower_justification)
             } else {
-                // We add the activation Lit associated with the bound of our slack variable and we cancel its contribution to the ub
-                let cause = if coef > 0 {
-                    ub -= coef * self.bounds[idx].lower as i128;
-                    self.bounds[idx].lower_cause
-                } else {
-                    ub -= coef * self.bounds[idx].upper as i128;
-                    self.bounds[idx].upper_cause
-                };
+                let b = &self.bounds[idx];
+                (b.upper, b.upper_justification)
+            };
 
-                // An unconditional bound (`None`) contributes no literal: it holds at the root.
-                if let BoundCause::Some { scope, trigger } = cause {
-                    if scope != Lit::TRUE {
-                        explanation.push(scope);
+            match justification {
+                // The bound was pushed by the synchronization with the main model, which entails it:
+                // the events of the main model's history justify it and can be minimized.
+                // The synchronization only concerns variables that are mapped to a var in aries solver.
+                BoundJustification::CpModel(_) => {
+                    let &var = self
+                        .map_lp_to_aries
+                        .get(idx)
+                        .expect("a bound entailed by the main model can only be set on a variable mapped to it");
+                    let sum_elem = SumElem::new(coef, var);
+
+                    if let Some(event) = LbBoundEvent::new(sum_elem, &domain_snap) {
+                        // there is a lower bound event on this element, add it to the set of culprits for later processing
+                        culprits.push(event)
+                    } else {
+                        // no event associated to the element, which means its value is entailed at the ROOT
+                        // Hence it does need to be present in the explanation, but should cancel its contribution to the UB
+                        let elem_var_lb = domains.lb(sum_elem.var);
+                        debug_assert_eq!(
+                            domains.entailing_level(Lit::geq(sum_elem.var, elem_var_lb as IntCst)),
+                            DecLvl::ROOT
+                        );
+                        ub -= (elem_var_lb as i128).saturating_mul(sum_elem.factor);
                     }
-                    if trigger != Lit::TRUE {
-                        explanation.push(trigger);
-                    }
+                }
+                // The bound either:
+                //  - holds unconditionally (initial bound of the variable, or condition of a trigger entailed at the root), or
+                //  - was pushed by a bound-update trigger: the literals recorded with it are the only justification of its value.
+                _ => {
+                    justification.push_to(&mut explanation);
+                    // the contribution of the bound to the sum is fully determined, it cancels from the UB
+                    ub -= (bound as i128).saturating_mul(coef);
                 }
             }
         }
@@ -561,25 +602,17 @@ impl Solver {
     fn explain_leq_basic(&self, lin_sum: &[i128]) -> Explanation {
         let mut explanation = Explanation::new();
 
-        explanation.lits = lin_sum
-            .iter()
-            .enumerate()
-            .filter(|&(_, &coeff)| coeff != 0)
-            .flat_map(|(i, &coeff)| {
-                let cause = if coeff < 0 {
-                    self.bounds[i].upper_cause
-                } else {
-                    self.bounds[i].lower_cause
-                };
-                // An unconditional bound (`None`) contributes no literal: it holds at the root
-                match cause {
-                    BoundCause::None => [Lit::TRUE, Lit::TRUE],
-                    BoundCause::Some { scope, trigger } => [scope, trigger],
-                }
-                .into_iter()
-                .filter(|&lit| lit != Lit::TRUE)
-            })
-            .collect();
+        for (i, &coeff) in lin_sum.iter().enumerate() {
+            if coeff == 0 {
+                continue;
+            }
+            let justification = if coeff < 0 {
+                self.bounds[i].upper_justification
+            } else {
+                self.bounds[i].lower_justification
+            };
+            justification.push_to(&mut explanation);
+        }
 
         explanation
     }
@@ -597,16 +630,8 @@ impl Solver {
 
         let int_bound = &self.bounds[var.idx()];
 
-        // An unconditional bound (`None`) contributes no literal: it holds at the root.
-        for cause in [int_bound.upper_cause, int_bound.lower_cause] {
-            if let BoundCause::Some { scope, trigger } = cause {
-                if scope != Lit::TRUE {
-                    explanation.push(scope);
-                }
-                if trigger != Lit::TRUE {
-                    explanation.push(trigger);
-                }
-            }
+        for justification in [int_bound.upper_justification, int_bound.lower_justification] {
+            justification.push_to(&mut explanation);
         }
 
         explanation
