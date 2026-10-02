@@ -163,6 +163,10 @@ impl Stats {
 }
 
 pub type LpVar = aries_lp::Variable;
+enum Signed<T> {
+    Plus(T),
+    Minus(T),
+}
 pub type LpSum = Vec<(LpVar, IntCst)>;
 pub enum BoundRestriction {
     Ub(IntCst),
@@ -303,21 +307,27 @@ impl Lp {
             .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats)
     }
 
-    fn reify_sum(&mut self, sum: LpSum) -> (LpVar, bool) {
+    /// Retrieve a single variable `s` that is constrained to always be equals to the given linear `sum`.
+    ///
+    /// In the general case, this means creating a new LP variable `s` and impose a constraint `sum = s` in the LP.
+    ///
+    /// The function returns the `{+,-}s` variable where the sign is required to avoid duplicated reification variables.
+    fn reify_sum(&mut self, sum: LpSum) -> Signed<LpVar> {
         // if the sum is exactly one variable, with factor +/-1, no need for a new variable to reify.
         if let Some([(var, 1)]) = sum.as_array() {
-            return (*var, false);
+            return Signed::Plus(*var);
         }
         if let Some([(var, -1)]) = sum.as_array() {
-            return (*var, true);
+            return Signed::Minus(*var);
         }
 
+        // if already have this sum in our cache, just reuse the reification variable.
         if let Some(reif) = self.memory_s.get(&sum) {
-            return (*reif, false);
+            return Signed::Plus(*reif);
         }
         let minus_sum: LpSum = sum.iter().map(|&(var, factor)| (var, -factor)).collect();
         if let Some(reif) = self.memory_s.get(&minus_sum) {
-            return (*reif, true);
+            return Signed::Minus(*reif);
         }
 
         let mut constraint = vec![];
@@ -347,7 +357,7 @@ impl Lp {
 
         self.memory_s.insert(sum, s);
 
-        (s, false)
+        Signed::Plus(s)
     }
 
     /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`.
@@ -378,17 +388,21 @@ impl Lp {
 
         let bound_val = cst_int_to_long(-sum_cst);
 
-        let (reif, signed) = self.reify_sum(sum_terms);
-        let bound_constr = if signed {
-            // sum_terms = -reif
-            // sum_terms  <= bound_val
-            // -reif <= bound_val
-            // reif >= -bound_val
-            BoundConstraint::geq(reif, -bound_val)
-        } else {
-            // sum_terms = reif
-            // reif <= bound_val
-            BoundConstraint::leq(reif, bound_val)
+        // create a bound constraint (i.e. on a single variable) that is equivalent to this constraint.
+        // We dot this by reifying the sum into a single variable and determine the appropriate bound on this one.
+        let bound_constr = match self.reify_sum(sum_terms) {
+            Signed::Plus(reif) => {
+                // sum_terms = reif
+                // reif <= bound_val
+                BoundConstraint::leq(reif, bound_val)
+            }
+            Signed::Minus(reif) => {
+                // sum_terms = -reif
+                // sum_terms  <= bound_val
+                // -reif <= bound_val
+                // reif >= -bound_val
+                BoundConstraint::geq(reif, -bound_val)
+            }
         };
 
         // this constraint should be activated when `active is entailed and present
