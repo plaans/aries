@@ -25,8 +25,8 @@ pub enum ColTag {
     TermGround(IntTerm, IntCst),
 }
 impl ColTag {
-    /// Whether this column tag is lifted (i.e. isn't specific to a grounding, i.e. corresponds to a variable in the main model).
-    pub fn is_lifted(&self) -> bool {
+    /// Whether this column tag is lifted -- i.e. isn't specific to a grounding -- or is a term grounding.
+    pub fn is_lifted_or_term_grounding(&self) -> bool {
         match self {
             ColTag::PresenceSource(_, grounding) => grounding.is_none(),
             ColTag::PresenceTransition(_, grounding) => grounding.is_none(),
