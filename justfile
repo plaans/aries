@@ -89,9 +89,28 @@ ci-pddl-parse-all lift="false" filter="d":
 ci-ape-val-opt:
     uv run ci/ape-val.py
 
-# Checks that all problems marked are as solvable are indeed solved within their max-depth
+# Checks that all problems marked as solvable are indeed solved within their max-depth
 ci-ape-solve timeout="5":
     uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
+
+# Checks that all problems marked as solvable are indeed solved within their max-depth. With all lprelax configurations (unsoundness checks).
+ci-ape-solve-lprelax:
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=false ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=false ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=false \
+        uv run ci/ape-solve.py -t 30 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=false ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=false ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=true \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=false ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=true ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=false \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=false ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=true ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=true \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=true ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=false ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=false \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=true ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=false ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=true \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=true ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=true ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=false \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
+    ARIES_LPRELAX_USE=true ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS=true ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=true ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=true \
+        uv run ci/ape-solve.py -t 90 --from-toml ci/problems.toml
 
 bench-jsp name timeout="10":
     #!/usr/bin/env bash
