@@ -555,7 +555,7 @@ impl Transitions {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     pub(crate) mod visitall;
 
     use crate::analysis::collect_nonsimple_conditions_and_effects_to_relax;
