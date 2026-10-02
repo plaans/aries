@@ -1,5 +1,5 @@
-#[allow(dead_code)]
-mod encoder;
+pub(crate) mod encoder;
+pub(crate) mod wrappers;
 
 use aries_env_param::EnvParam;
 
