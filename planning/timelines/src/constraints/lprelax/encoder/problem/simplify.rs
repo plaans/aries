@@ -114,42 +114,69 @@ fn try_simplify_inner(
     ctx: &SchedEncoder,
     doms: &Domains,
 ) -> Result<(), Infeasible> {
+    let total_time = std::time::Instant::now();
+
+    let time = std::time::Instant::now();
     seed_known_values(pb, classes, encoder, ctx, doms)?;
+    let seeding_time = time.elapsed();
+
+    // The rows' columns are interned once and for all: the rounds below only deal with their classes.
+    let time = std::time::Instant::now();
+    let rows = pb
+        .rows
+        .iter()
+        .map(|row| InternedRow::of(row, classes))
+        .collect::<Vec<_>>();
+    let interning_time = time.elapsed();
+
+    let num_terms: usize = rows.iter().map(|row| row.terms.len()).sum();
+    let sum_squared_row_lens: usize = rows.iter().map(|row| row.terms.len().pow(2)).sum();
+    let max_row_len = rows.iter().map(|row| row.terms.len()).max().unwrap_or(0);
 
     // Learn values (and equalities) from the rows until nothing new comes out.
-    // Each round re-reads the original rows, whose canonical form only gets simpler as knowledge grows.
-    loop {
+    // Each round re-reads the rows, whose canonical form only gets simpler as knowledge grows.
+    // A row whose columns all have a known value is done for good (`learn` has checked its constant), and is left out of the next rounds.
+    let time = std::time::Instant::now();
+    let mut rounds = 0;
+    let mut live = (0..rows.len()).collect::<Vec<_>>();
+    let canons = loop {
+        rounds += 1;
         let mut learned = false;
-        for row in &pb.rows {
-            learned |= CanonicalRow::of(row, classes).learn(classes)?;
+        let mut canons = Vec::with_capacity(live.len());
+        for &i in &live {
+            let canon = CanonicalRow::of(&rows[i], classes);
+            learned |= canon.learn(classes)?;
+            if !canon.coefs.is_empty() {
+                canons.push((i, canon));
+            }
         }
         if !learned {
-            break;
+            break canons;
         }
-    }
+        live = canons.into_iter().map(|(i, _)| i).collect();
+    };
+    let rounds_time = time.elapsed();
 
-    // Rewrite the rows over the representatives of the columns that are left.
-    let mut rows = Vec::with_capacity(pb.rows.len());
-
-    for row in &pb.rows {
-        let canon = CanonicalRow::of(row, classes);
-        if canon.coefs.is_empty() {
-            // Empty: `learn` has already checked that the constant satisfies the comparison.
-            continue;
-        }
-
-        let terms = canon
-            .coefs
-            .iter()
-            .map(|&(coef, class)| (coef, classes.representative(class)))
-            .collect::<Vec<_>>();
-
-        let separator = terms.len();
-        rows.push(RowExpr::new(canon.tpe, terms, separator, canon.cst));
-    }
-    pb.rows = rows;
+    // Rewrite the rows over the representatives of the columns that are left, from the canonical forms of the last round:
+    // nothing was learned in that round, so they are final.
+    let time = std::time::Instant::now();
+    pb.rows = canons
+        .into_iter()
+        .map(|(_, canon)| {
+            let terms = canon
+                .coefs
+                .iter()
+                .map(|&(coef, class)| (coef, classes.representative(class)))
+                .collect::<Vec<_>>();
+            let separator = terms.len();
+            RowExpr::new(canon.tpe, terms, separator, canon.cst)
+        })
+        .collect();
+    let rewriting_time = time.elapsed();
 
     // Every "surviving" column tag resolves to its equivalence class' representative column.
+    // Tags of classes with a known value aren't columns anymore: their value is recorded instead.
+    let time = std::time::Instant::now();
     let mut aliases = vec![];
     pb.col_known_value.clear();
     for (tag, class) in classes.interned() {
@@ -161,6 +188,21 @@ fn try_simplify_inner(
         }
     }
     pb.number_cols(aliases);
+    let numbering_time = time.elapsed();
+
+    tracing::info!(
+        "|-[LPRELAX]---- simplification phases: total {}s = seeding {}s, interning {}s, {} rounds {}s, rewriting {}s, numbering columns {}s ({} terms, max row length {}, sum of squared row lengths {})",
+        total_time.elapsed().as_secs_f64(),
+        seeding_time.as_secs_f64(),
+        interning_time.as_secs_f64(),
+        rounds,
+        rounds_time.as_secs_f64(),
+        rewriting_time.as_secs_f64(),
+        numbering_time.as_secs_f64(),
+        num_terms,
+        max_row_len,
+        sum_squared_row_lens,
+    );
 
     Ok(())
 }
@@ -181,7 +223,7 @@ struct EquivClasses {
     /// For each class (by root), the index of the tag it is represented by.
     representative: Vec<u32>,
     /// For each class (by root), its value once known.
-    values: HashMap<u32, IntCst>,
+    values: Vec<Option<IntCst>>,
 }
 impl EquivClasses {
     pub(super) fn new(merging: bool) -> Self {
@@ -192,7 +234,7 @@ impl EquivClasses {
             parent: vec![],
             size: vec![],
             representative: vec![],
-            values: HashMap::new(),
+            values: vec![],
         }
     }
 
@@ -205,6 +247,7 @@ impl EquivClasses {
         self.parent.push(i);
         self.size.push(1);
         self.representative.push(i);
+        self.values.push(None);
         self.index.insert(tag, i);
         i
     }
@@ -225,7 +268,7 @@ impl EquivClasses {
 
     fn value(&mut self, i: u32) -> Option<IntCst> {
         let root = self.find(i);
-        self.values.get(&root).copied()
+        self.values[root as usize]
     }
 
     /// The tag that the class of `i` is represented by (a lifted one whenever the class holds one).
@@ -240,11 +283,11 @@ impl EquivClasses {
             return Err(()); // columns live in `[0, 1]`
         }
         let root = self.find(i);
-        match self.values.get(&root) {
-            Some(&old) if old != v => Err(()), // leaves the known value in place, as `merge` does
+        match self.values[root as usize] {
+            Some(old) if old != v => Err(()), // leaves the known value in place, as `merge` does
             Some(_) => Ok(false),
             None => {
-                self.values.insert(root, v);
+                self.values[root as usize] = Some(v);
                 Ok(true)
             }
         }
@@ -263,7 +306,7 @@ impl EquivClasses {
         if kept == merged {
             return Ok(false);
         }
-        if let (Some(va), Some(vb)) = (self.values.get(&kept), self.values.get(&merged))
+        if let (Some(va), Some(vb)) = (self.values[kept as usize], self.values[merged as usize])
             && va != vb
         {
             return Err(());
@@ -275,8 +318,8 @@ impl EquivClasses {
         self.parent[merged as usize] = kept;
         self.size[kept as usize] += self.size[merged as usize];
 
-        if let Some(v) = self.values.remove(&merged) {
-            self.values.insert(kept, v);
+        if let Some(v) = self.values[merged as usize].take() {
+            self.values[kept as usize] = Some(v);
         }
 
         // Of the two representatives, prefer a lifted tag; break ties deterministically.
@@ -291,33 +334,63 @@ impl EquivClasses {
     }
 }
 
+/// A row with its columns interned: `sum(coef * class) cmp cst`, the rhs terms being negated.
+struct InternedRow {
+    tpe: RowExprType,
+    terms: Vec<(IntCst, u32)>,
+    cst: IntCst,
+}
+impl InternedRow {
+    fn of(row: &RowExpr, classes: &mut EquivClasses) -> Self {
+        let terms = row
+            .terms
+            .iter()
+            .enumerate()
+            .map(|(i, &(coef, col_tag))| {
+                // `lhs cmp rhs + cst` reads as `sum(lhs) - sum(rhs) cmp cst`.
+                let coef = if i < row.separator { coef } else { -coef };
+                (coef, classes.intern(col_tag))
+            })
+            .collect();
+
+        Self {
+            tpe: row.tpe,
+            terms,
+            cst: row.cst(),
+        }
+    }
+}
+
 /// A row rewritten with the representative columns / tags of the union-find
 struct CanonicalRow {
     tpe: RowExprType,
+    /// Sorted by class, without duplicates.
     coefs: Vec<(IntCst, u32)>,
     cst: IntCst,
 }
 impl CanonicalRow {
-    fn of(row: &RowExpr, classes: &mut EquivClasses) -> Self {
+    fn of(row: &InternedRow, classes: &mut EquivClasses) -> Self {
         let mut coefs: Vec<(IntCst, u32)> = Vec::with_capacity(row.terms.len());
-        let mut cst = row.cst();
+        let mut cst = row.cst;
 
-        for (i, &(coef, col_tag)) in row.terms.iter().enumerate() {
-            // `lhs cmp rhs + cst` reads as `sum(lhs) - sum(rhs) cmp cst`.
-            let coef = if i < row.separator { coef } else { -coef };
-            let class = classes.intern(col_tag);
-
-            match classes.value(class) {
+        for &(coef, class) in &row.terms {
+            let root = classes.find(class);
+            match classes.value(root) {
                 Some(value) => cst -= coef * value,
-                None => {
-                    let root = classes.find(class);
-                    match coefs.iter_mut().find(|(_, c)| *c == root) {
-                        Some((c, _)) => *c += coef,
-                        None => coefs.push((coef, root)),
-                    }
-                }
+                None => coefs.push((coef, root)),
             }
         }
+
+        // Sum up the coefficients of a same class, then drop those that cancel out.
+        coefs.sort_unstable_by_key(|&(_, root)| root);
+        coefs.dedup_by(|next, prev| {
+            if next.1 == prev.1 {
+                prev.0 += next.0;
+                true
+            } else {
+                false
+            }
+        });
         coefs.retain(|&(coef, _)| coef != 0);
 
         Self {
@@ -385,6 +458,11 @@ mod tests {
     fn row(tpe: RowExprType, terms: Vec<(IntCst, ColTag)>, cst: IntCst) -> RowExpr {
         let separator = terms.len();
         RowExpr::new(tpe, terms, separator, cst)
+    }
+    /// The canonical form of `row` (given what `classes` currently know).
+    fn canonical(row: &RowExpr, classes: &mut EquivClasses) -> CanonicalRow {
+        let row = InternedRow::of(row, classes);
+        CanonicalRow::of(&row, classes)
     }
     /// The coefficient that `canon` carries for the class of `tag` (0 if it carries none).
     fn coef_of(canon: &CanonicalRow, classes: &mut EquivClasses, tag: ColTag) -> IntCst {
@@ -461,7 +539,7 @@ mod tests {
             1,
         );
 
-        let canon = CanonicalRow::of(&r, &mut classes);
+        let canon = canonical(&r, &mut classes);
         assert_eq!(canon.cst, 1);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(0)), 1);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(1)), -1);
@@ -470,7 +548,7 @@ mod tests {
         let y = classes.intern(prez_trans_lifted(1));
         classes.set_value(y, 1).unwrap();
 
-        let canon = CanonicalRow::of(&r, &mut classes);
+        let canon = canonical(&r, &mut classes);
         assert_eq!(canon.cst, 2);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(0)), 1);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(1)), 0); // gone into the constant
@@ -488,7 +566,7 @@ mod tests {
                 vec![(1, prez_trans_lifted(0)), (1, prez_trans_lifted(1))],
                 cst,
             );
-            assert!(CanonicalRow::of(&r, &mut classes).learn(&mut classes).unwrap());
+            assert!(canonical(&r, &mut classes).learn(&mut classes).unwrap());
 
             for tag in [prez_trans_lifted(0), prez_trans_lifted(1)] {
                 let class = classes.intern(tag);
@@ -503,7 +581,7 @@ mod tests {
             vec![(1, prez_trans_lifted(0)), (-1, prez_trans_lifted(1))],
             0,
         );
-        assert!(CanonicalRow::of(&r, &mut classes).learn(&mut classes).unwrap());
+        assert!(canonical(&r, &mut classes).learn(&mut classes).unwrap());
 
         let (x, y) = (
             classes.intern(prez_trans_lifted(0)),
@@ -519,13 +597,13 @@ mod tests {
         let mut classes = EquivClasses::new(true);
         // `x >= 2` cannot hold for a column in `[0, 1]`
         let r = row(RowExprType::Geq, vec![(1, prez_trans_lifted(0))], 2);
-        assert!(CanonicalRow::of(&r, &mut classes).learn(&mut classes).is_err());
+        assert!(canonical(&r, &mut classes).learn(&mut classes).is_err());
 
         let mut classes = EquivClasses::new(true);
         let x = classes.intern(prez_trans_lifted(0));
         classes.set_value(x, 0).unwrap();
         // `x >= 1` with `x = 0` reads as the empty row `0 >= 1`
         let r = row(RowExprType::Geq, vec![(1, prez_trans_lifted(0))], 1);
-        assert!(CanonicalRow::of(&r, &mut classes).learn(&mut classes).is_err());
+        assert!(canonical(&r, &mut classes).learn(&mut classes).is_err());
     }
 }
