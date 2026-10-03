@@ -1,6 +1,6 @@
 //! The simplification pass over an [`LpRelaxProblem`], and the equivalence classes it works on.
 
-use std::collections::HashMap;
+use hashbrown::HashMap;
 
 use aries_solver::core::IntCst;
 
@@ -150,12 +150,16 @@ fn try_simplify_inner(
     pb.rows = rows;
 
     // Every "surviving" column tag resolves to its equivalence class' representative column.
-    // (Tags of classes with a known value aren't columns anymore: their representative appears in no row.)
-    let aliases = classes
-        .interned()
-        .into_iter()
-        .map(|(tag, class)| (tag, classes.representative(class)))
-        .collect::<Vec<_>>();
+    let mut aliases = vec![];
+    pb.col_known_value.clear();
+    for (tag, class) in classes.interned() {
+        match classes.value(class) {
+            Some(value) => {
+                pb.col_known_value.insert(tag, value);
+            }
+            None => aliases.push((tag, classes.representative(class))),
+        }
+    }
     pb.number_cols(aliases);
 
     Ok(())

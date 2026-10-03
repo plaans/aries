@@ -1,6 +1,6 @@
 mod simplify;
 
-use std::collections::HashMap;
+use hashbrown::HashMap;
 
 use aries_solver::core::IntCst;
 use aries_solver::core::state::Domains;
@@ -111,12 +111,16 @@ pub struct LpRelaxProblem {
     /// With column merging enabled, several tags resolve to the same column;
     /// keeping all of them here lets each of their bindings to the main model constrain that column.
     col_index: Option<HashMap<ColTag, usize>>,
+    /// The values that the simplification found column tags to take (given what the domains fixed at the time).
+    /// Such a tag isn't a column anymore though (as it's known to be constant).
+    col_known_value: HashMap<ColTag, IntCst>,
     rows: Vec<RowExpr>,
 }
 impl LpRelaxProblem {
     pub fn push_row(&mut self, row: RowExpr) {
         self.cols = None;
         self.col_index = None;
+        self.col_known_value.clear();
         self.rows.push(row);
     }
     pub fn rows(&self) -> &[RowExpr] {
@@ -125,11 +129,21 @@ impl LpRelaxProblem {
     pub fn cols(&self) -> Option<&[ColTag]> {
         self.cols.as_deref()
     }
+    /// Maps every column tag that resolves to a column (including those merged into another one's)
+    /// to that column's index in [`Self::cols`].
+    pub fn col_index(&self) -> Option<&HashMap<ColTag, usize>> {
+        self.col_index.as_ref()
+    }
+    /// The column tags whose necessary value was found by the simplification
+    /// (such tags aren't held as columns in the simplified problem anymore, though).
+    pub fn col_known_values(&self) -> impl Iterator<Item = (ColTag, IntCst)> {
+        self.col_known_value.iter().map(|(&tag, &value)| (tag, value))
+    }
 
     /// Numbers the columns of the rows as they are, without simplifying anything:
     /// every tag is its own column.
     ///
-    /// Afterwards, [`Self::cols`] and `col_index` are available just as after [`Self::simplify`].
+    /// Afterwards, [`Self::cols`] and [`Self::col_index`] are available just as after [`Self::simplify`].
     pub fn seal(&mut self) {
         self.number_cols(std::iter::empty());
     }
@@ -204,6 +218,7 @@ impl LpRelaxProblem {
             RowExpr::new(RowExprType::Leq, vec![(1, col_tag)], 1, 0),
             RowExpr::new(RowExprType::Geq, vec![(1, col_tag)], 1, 1),
         ];
+        self.col_known_value.clear();
         self.seal();
     }
 }

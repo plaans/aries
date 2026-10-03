@@ -177,15 +177,34 @@ impl Backtrack for LpRelaxIncr {
 }
 
 /// Adds one `[0, 1]` column per column of the problem, then one row per row, and returns the mapping from column tags to LP columns.
+///
+/// With column merging enabled, several tags share a column, and all of them are in the mapping
+/// (see [`LpRelaxProblem::col_index`]), so that each of their bindings constrains that one column.
 fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp) -> HashMap<ColTag, LpVar> {
     let problem_cols = problem
         .cols()
         .expect("the problem must be simplified or sealed before being posted");
 
-    let vars: HashMap<ColTag, LpVar> = problem_cols
+    let lp_vars = problem_cols
         .iter()
-        .map(|&tag| (tag, lp.create_auxiliary_variable(0, 1)))
+        .map(|_| lp.create_auxiliary_variable(0, 1))
+        .collect::<Vec<_>>();
+    let mut vars: HashMap<ColTag, LpVar> = problem
+        .col_index()
+        .unwrap()
+        .iter()
+        .map(|(&tag, &i)| (tag, lp_vars[i]))
         .collect();
+
+    // A tag whose value the simplification knows doesn't correspond to a column anymore,
+    // but a binding on it may still contradict that value.
+    // The fix is for the bindings to go to a column fixed to that value (one per value, outside of any row).
+    let fixed = [lp.create_auxiliary_variable(0, 0), lp.create_auxiliary_variable(1, 1)];
+    vars.extend(
+        problem
+            .col_known_values()
+            .map(|(tag, value)| (tag, fixed[value as usize])),
+    );
 
     debug_assert!(
         problem.rows().iter().all(|row| {
