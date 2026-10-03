@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use aries_solver::prelude::*;
 use aries_solver::{
     backtrack::Backtrack,
-    reasoners::Theory,
     solver::{Solver, musmcs::MusMcs},
 };
 use itertools::Itertools;
@@ -44,18 +43,24 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 c.enforce(&mut encoding);
             }
         }
-        let mut solver = if crate::constraints::lprelax::ARIES_LPRELAX_USE.get() {
-            let model = encoding.store.clone();
-
-            // TODO: change ARIES_LPRELAX_USE to be either "none", "highs", or "incr"
-            let reasoners: Vec<Box<dyn Theory>> = if true {
-                vec![Box::new(LpRelaxHighs::new(encoding, assumptions_map.len()))]
-            } else {
-                vec![Box::new(LpRelaxIncr::new(encoding, assumptions_map.len()))]
-            };
-            Solver::with_extra_reasoners(model, reasoners)
-        } else {
-            Solver::new(encoding.store)
+        let mut solver = {
+            match crate::constraints::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
+                "highs" => {
+                    let model = encoding.store.clone();
+                    Solver::with_extra_reasoners(
+                        model,
+                        vec![Box::new(LpRelaxHighs::new(encoding, assumptions_map.len()))],
+                    )
+                }
+                "incr" => {
+                    let model = encoding.store.clone();
+                    Solver::with_extra_reasoners(
+                        model,
+                        vec![Box::new(LpRelaxIncr::new(encoding, assumptions_map.len()))],
+                    )
+                }
+                _ => Solver::new(encoding.store),
+            }
         };
 
         // enable stronger propagation than default in difference logic solver.
