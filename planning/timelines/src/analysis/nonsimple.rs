@@ -11,16 +11,51 @@ use crate::{
 /// - its non-constant terms (variables) do not all appear in their source's arguments
 ///   (this can happen if it uses a reified variable that is not part of the source's arguments).
 ///
-/// A condition is considered "nonsimple" when one of the following holds:
-/// - its non-constant terms (variables) do not all appear in their source's arguments
-///   (just as with nonsimple effects, this can happen if it uses a reified variable that is not part of the source's arguments).
-/// - it could be supported by a nonsimple effect (there exists a potential causal link between them).
+/// A condition is considered "nonsimple" when its non-constant terms (variables) do not all appear in their source's arguments
+/// (just as with nonsimple effects, this can happen if it uses a reified variable that is not part of the source's arguments).
+///
+/// Nonsimple-ness then extends to whole fluents: as soon as one effect or condition on a fluent is nonsimple,
+/// all the effects and conditions on that fluent are deemed nonsimple too.
+/// In particular, both members of a (potential) causal link are either simple or nonsimple together.
 ///
 /// These conditions and effects may have to be relaxed / ignored in some usages,
 /// e.g. grounding or the LP relaxation, due to their handling being unclear there.
 pub fn collect_nonsimple_conditions_and_effects_to_relax(ctx: &SchedEncoder) -> (HashSet<CondId>, HashSet<EffectId>) {
-    let mut nonsimple_effects = collect_nonsimple_effects(ctx);
-    let nonsimple_conditions = collect_nonsimple_conditions(&mut nonsimple_effects, ctx);
+    // Fluents with at least one nonsimple effect or condition.
+    let nonsimple_fluents = std::iter::chain(
+        collect_nonsimple_effects(ctx)
+            .into_iter()
+            .map(|eff_id| ctx.sched.effects.get(eff_id).state_var.fluent.clone()),
+        collect_nonsimple_conditions(ctx)
+            .into_iter()
+            .map(|cond_id| ctx.causal_links.conditions.get(cond_id).state_var.fluent.clone()),
+    )
+    .collect::<HashSet<_>>();
+
+    let nonsimple_effects = ctx
+        .sched
+        .effects
+        .iter()
+        .enumerate()
+        .filter(|(_, eff)| nonsimple_fluents.contains(&eff.state_var.fluent))
+        .map(|(eff_id, _)| eff_id)
+        .collect::<HashSet<_>>();
+    let nonsimple_conditions = ctx
+        .causal_links
+        .conditions
+        .iter()
+        .enumerate()
+        .filter(|(_, cond)| nonsimple_fluents.contains(&cond.state_var.fluent))
+        .map(|(cond_id, _)| cond_id)
+        .collect::<HashSet<_>>();
+
+    // Both members of a causal link are on the same fluent, so they are either simple or nonsimple together.
+    debug_assert!(
+        ctx.causal_links
+            .get_links()
+            .all(|cl| nonsimple_effects.contains(&cl.eff_id) == nonsimple_conditions.contains(&cl.cond_id))
+    );
+
     (nonsimple_conditions, nonsimple_effects)
 }
 
@@ -46,7 +81,7 @@ fn collect_nonsimple_effects(ctx: &SchedEncoder) -> HashSet<EffectId> {
     res
 }
 
-fn collect_nonsimple_conditions(nonsimple_effects: &mut HashSet<EffectId>, ctx: &SchedEncoder) -> HashSet<CondId> {
+fn collect_nonsimple_conditions(ctx: &SchedEncoder) -> HashSet<CondId> {
     let mut res = HashSet::new();
 
     for (cond_id, cond) in ctx.causal_links.conditions.iter().enumerate() {
@@ -58,24 +93,6 @@ fn collect_nonsimple_conditions(nonsimple_effects: &mut HashSet<EffectId>, ctx: 
             res.insert(cond_id);
         }
     }
-
-    // Propagate "nonsimple-ness":
-    // if a causal link uses an effect or condition marked as nonsimple, mark the other member (condition or effect) as nonsimple too.
-    for cl in ctx.causal_links.get_links() {
-        if nonsimple_effects.contains(&cl.eff_id) {
-            res.insert(cl.cond_id);
-        } else if res.contains(&cl.cond_id) {
-            nonsimple_effects.insert(cl.eff_id);
-        }
-    }
-
-    // A nonsimple effect / condition is such that for all its causal links, the other member is also nonsimple
-    debug_assert!(
-        ctx.causal_links
-            .get_links()
-            .all(|cl| nonsimple_effects.contains(&cl.eff_id) == res.contains(&cl.cond_id))
-    );
-
     res
 }
 
