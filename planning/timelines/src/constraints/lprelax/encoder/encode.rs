@@ -405,40 +405,56 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .supports_ground
             .iter_out_all()
-            .chunk_by(|&(out_trans_id, out_trans_grounding_id, _)| (out_trans_id, out_trans_grounding_id));
+            // NOTE: the "out" view is sorted by `op_assignment` before `val_assignment` (see `SupportsGroundingsInfo`)
+            .chunk_by(|&(out_trans_id, out_trans_grounding_id, _)| {
+                (
+                    out_trans_id,
+                    out_trans_grounding_id.state_var_grounding_id,
+                    out_trans_grounding_id.op_assignment,
+                )
+            });
 
-        for ((out_trans_id, out_trans_grounding_id), in_trans_groundings_ids) in chunkby.into_iter() {
-            let terms = {
-                let mut res = vec![(
-                    1,
-                    ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
-                )];
-                res.append(
-                    &mut in_trans_groundings_ids
-                        .into_iter()
-                        .filter(|&(_, _, (in_trans_id, _))| {
-                            encoder.supports.with_condition_out_transitions
-                                || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
-                        })
-                        .map(|(_, _, (in_trans_id, in_trans_grounding_id))| {
-                            (
-                                1,
-                                ColTag::Support(
-                                    out_trans_id,
-                                    in_trans_id,
-                                    Some((out_trans_grounding_id, in_trans_grounding_id)),
-                                ),
-                            )
-                        })
-                        .collect(),
-                );
-                res
-            };
-
-            if terms.len() >= 2 {
-                let expr = RowExpr::new_geq_single_lhs(terms);
-                problem.push_row(expr);
+        for ((out_trans_id, _, _), entries) in chunkby.into_iter() {
+            // Supports into pure conditions aren't included in the outflow *unless* conditions we're allowing them as out-transitions.
+            let entries = entries
+                .filter(|&(_, _, (in_trans_id, _))| {
+                    encoder.supports.with_condition_out_transitions
+                        || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+                })
+                .collect::<Vec<_>>();
+            if entries.is_empty() {
+                continue;
             }
+
+            let presences = entries
+                .iter()
+                .map(|&(_, out_trans_grounding_id, _)| out_trans_grounding_id)
+                .dedup()
+                .map(|out_trans_grounding_id| {
+                    (
+                        1,
+                        ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let supports = entries
+                .iter()
+                .map(|&(_, out_trans_grounding_id, (in_trans_id, in_trans_grounding_id))| {
+                    (
+                        1,
+                        ColTag::Support(
+                            out_trans_id,
+                            in_trans_id,
+                            Some((out_trans_grounding_id, in_trans_grounding_id)),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            let separator = presences.len();
+            let expr = RowExpr::new(RowExprType::Geq, [presences, supports].concat(), separator, 0);
+
+            problem.push_row(expr);
         }
     }
 
