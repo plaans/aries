@@ -321,82 +321,97 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .supports_ground
             .iter_in_all()
-            .chunk_by(|(in_trans_id, in_trans_grounding_id, _)| (in_trans_id, in_trans_grounding_id));
+            .chunk_by(|&&(in_trans_id, in_trans_grounding_id, _)| {
+                (
+                    in_trans_id,
+                    in_trans_grounding_id.state_var_grounding_id,
+                    in_trans_grounding_id.val_assignment,
+                )
+            });
 
-        for ((&in_trans_id, &in_trans_grounding_id), out_trans_groundings_ids) in chunkby.into_iter() {
-            let terms = {
-                let mut res = vec![(1, ColTag::PresenceTransition(in_trans_id, Some(in_trans_grounding_id)))];
-                res.append(
-                    &mut out_trans_groundings_ids
-                        .into_iter()
-                        .filter_map(|&(_, _, x)| {
-                            x.map(|(out_trans_id, out_trans_grounding_id)| {
-                                (
-                                    1,
-                                    ColTag::Support(
-                                        out_trans_id,
-                                        in_trans_id,
-                                        Some((out_trans_grounding_id, in_trans_grounding_id)),
-                                    ),
-                                )
-                            })
-                        })
-                        .collect(),
-                );
-                res
-            };
+        // State variable groundings whose initial effect is in the model.
+        let initialized_state_vars = encoder
+            .transitions_ground
+            .iter_all_sourced()
+            .filter(|(source, _)| source.is_none())
+            .flat_map(|(_, entries)| entries)
+            .filter(|&&(trans_id, _, _)| encoder.transitions.get(trans_id).tpe() == TransitionType::Eff)
+            .map(|&(_, trans_grounding_id, _)| trans_grounding_id.state_var_grounding_id)
+            .collect::<std::collections::HashSet<_>>();
 
-            let expr = if encoder.transitions.are_recovered_closed_world_default_effects_empty()
+        // (state_var_grounding_id, presences, supports) of the groups of pure effects
+        // whose state variable grounding has no initial effect in the model (see below).
+        let mut missing_initial_eff_inflows = vec![];
+
+        for ((in_trans_id, state_var_grounding_id, _), entries) in chunkby.into_iter() {
+            let entries = entries.collect::<Vec<_>>();
+
+            let presences = entries
+                .iter()
+                .map(|&&(_, in_trans_grounding_id, _)| in_trans_grounding_id)
+                .dedup()
+                .map(|in_trans_grounding_id| (1, ColTag::PresenceTransition(in_trans_id, Some(in_trans_grounding_id))))
+                .collect::<Vec<_>>();
+            let supports = entries
+                .iter()
+                .filter_map(|&&(_, in_trans_grounding_id, out_trans_and_grounding_id)| {
+                    out_trans_and_grounding_id.map(|(out_trans_id, out_trans_grounding_id)| {
+                        (
+                            1,
+                            ColTag::Support(
+                                out_trans_id,
+                                in_trans_id,
+                                Some((out_trans_grounding_id, in_trans_grounding_id)),
+                            ),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            // Without recovered closed world defaults, a pure (ground) effect may have no initial (ground) effect to pass it any flow...
+            let missing_initial_eff = encoder.transitions.are_recovered_closed_world_default_effects_empty()
                 && encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff
-            {
-                // In the case where we do not recover and use "missing" initial effects,
-                // the inflow constraints for (all) effects are slightly weaker.
-                RowExpr::new_geq_single_lhs(terms)
-            } else {
-                RowExpr::new_eq_single_lhs(terms)
-            };
+                && !initialized_state_vars.contains(&state_var_grounding_id);
 
+            let separator = presences.len();
+            let expr = if missing_initial_eff {
+                let expr = RowExpr::new(
+                    RowExprType::Geq,
+                    [presences.as_slice(), &supports].concat(),
+                    separator,
+                    0,
+                );
+                missing_initial_eff_inflows.push((state_var_grounding_id, presences, supports));
+                expr
+            } else {
+                RowExpr::new(RowExprType::Eq, [presences, supports].concat(), separator, 0)
+            };
             problem.push_row(expr);
         }
 
-        if encoder.transitions.are_recovered_closed_world_default_effects_empty() {
-            // In the case where we do not recover and use "missing" initial effects,
-            // the inflow constraints for (all) effects are slightly weaker (see above).
-            // This is (partially? FIXME[proof?]) compensated by the following constraints,
-            // which state that the *sum* of inflows into (ground effects) with the *same state variable* (so, independent of their value) is upper bounded by 1.
+        // [Ground] In the case where we do not recover and use "missing" initial effects, compensates the weaker inflow constraints above:
+        // at most one pure effect per state variable grounding "should" be the first one,
+        // i.e. the "missing" total ground flow (i.e. flow per ground state variable and *across* effects) should be upper-bounded by 1
+        missing_initial_eff_inflows.sort_unstable_by_key(|&(state_var_grounding_id, _, _)| state_var_grounding_id);
 
-            let chunkby = encoder
-                .supports_ground
-                .iter_in_all()
-                .filter(|(in_trans_id, _, _)| encoder.transitions.get(*in_trans_id).tpe() == TransitionType::Eff)
-                .map(|(in_trans_id, in_trans_grounding_id, out_trans_groundings)| {
-                    (in_trans_grounding_id, in_trans_id, out_trans_groundings)
-                })
-                .sorted_unstable_by_key(|&(in_trans_grounding_id, _, _)| *in_trans_grounding_id)
-                .chunk_by(|&(in_trans_grounding_id, _, _)| in_trans_grounding_id.state_var_grounding_id);
-
-            for (_, x) in chunkby.into_iter() {
-                let terms = x
-                    .into_iter()
-                    .filter_map(|(&in_trans_grounding_id, &in_trans_id, out_trans_grounding)| {
-                        out_trans_grounding.map(|(out_trans_id, out_trans_grounding_id)| {
-                            (
-                                1,
-                                ColTag::Support(
-                                    out_trans_id,
-                                    in_trans_id,
-                                    Some((out_trans_grounding_id, in_trans_grounding_id)),
-                                ),
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>();
-
-                if !terms.is_empty() {
-                    let expr = RowExpr::new_leq_1(terms);
-                    problem.push_row(expr);
-                }
+        for chunk in missing_initial_eff_inflows.chunk_by(|a, b| a.0 == b.0) {
+            // Naturally implied when only a single transition is concerned, as its groundings are already constrained to be mutually exclusive.
+            if chunk.len() <= 1 {
+                continue;
             }
+            let presences = chunk
+                .iter()
+                .flat_map(|(_, presences, _)| presences.iter().copied())
+                .collect::<Vec<_>>();
+            let supports = chunk
+                .iter()
+                .flat_map(|(_, _, supports)| supports.iter().copied())
+                .collect::<Vec<_>>();
+
+            let separator = presences.len();
+            let expr = RowExpr::new(RowExprType::Leq, [presences, supports].concat(), separator, 1);
+
+            problem.push_row(expr);
         }
     }
 
