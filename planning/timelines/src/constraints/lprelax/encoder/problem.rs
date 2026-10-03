@@ -10,18 +10,14 @@ use crate::analysis::transitions::TransitionId;
 use crate::encoder::SchedEncoder;
 use crate::{analysis::Source, constraints::lprelax::LpRelaxEncoder};
 
-use super::ground::{SourceGroundingId, TransitionGroundingId};
+use super::ground::{SourceGroundingId, StateVarGroundingId, TransitionGroundingId};
 
 /// Represents a variable / column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum ColTag {
     PresenceSource(Source, Option<SourceGroundingId>),
     PresenceTransition(TransitionId, Option<TransitionGroundingId>),
-    Support(
-        TransitionId,
-        TransitionId,
-        Option<(TransitionGroundingId, TransitionGroundingId)>,
-    ),
+    Support(TransitionId, TransitionId, Option<(StateVarGroundingId, IntCst)>),
     TermGround(IntTerm, IntCst),
 }
 impl ColTag {

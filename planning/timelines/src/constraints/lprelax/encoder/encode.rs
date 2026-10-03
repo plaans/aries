@@ -1,9 +1,10 @@
 use aries_solver::core::views::Dom;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use crate::SchedEncoder;
 use crate::analysis::transitions::TransitionType;
 use crate::constraints::lprelax::LpRelaxEncoder;
+use crate::constraints::lprelax::encoder::ground::GroupEntry;
 use crate::constraints::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
 
 pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
@@ -254,29 +255,31 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
     // [Ground] Support between two (ground) transitions implies presence of both of them
     // NOTE: There's no need to enforce theses constraints for all cases, as the (ground) inflow and outflow constraints are stronger (see below).
     //       They're only actually needed for out-conditions when the in-transition is a "pure-condition", as this case is not implied by (ground) outflow constraints.
-    {
-        for &(out_trans_id, in_trans_id, trans_groundings_ids) in encoder.supports_ground.iter_all() {
-            let Some((out_trans_grounding_id, in_trans_grounding_id)) = trans_groundings_ids else {
-                continue;
-            };
+    if !encoder.supports.with_condition_out_transitions {
+        let chunkby = encoder
+            .supports_ground
+            .iter_out_all()
+            .chunk_by(|&&(out_trans_id, support_grounding_id, _)| (out_trans_id, support_grounding_id));
 
-            if !encoder.supports.with_condition_out_transitions
-                && encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond
-            {
-                problem.push_row(RowExpr::new_leq_single_lhs(vec![
-                    (
+        for ((out_trans_id, support_grounding_id), entries) in chunkby.into_iter() {
+            let (presences, in_trans_ids): (Vec<_>, Vec<_>) = entries.partition_map(|&(_, _, entry)| match entry {
+                GroupEntry::Grounding(out_trans_grounding_id) => Either::Left((
+                    1,
+                    ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
+                )),
+                GroupEntry::Support(in_trans_id) => Either::Right(in_trans_id),
+            });
+
+            for in_trans_id in in_trans_ids {
+                if encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond {
+                    let support = (
                         1,
-                        ColTag::Support(
-                            out_trans_id,
-                            in_trans_id,
-                            Some((out_trans_grounding_id, in_trans_grounding_id)),
-                        ),
-                    ),
-                    (
-                        1,
-                        ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
-                    ),
-                ]));
+                        ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
+                    );
+                    let terms = std::iter::once(support).chain(presences.iter().copied()).collect();
+
+                    problem.push_row(RowExpr::new_leq_single_lhs(terms));
+                }
             }
         }
     }
@@ -294,15 +297,11 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
                 res.append(
                     &mut trans_groundings_ids
                         .into_iter()
-                        .filter_map(|&(_, _, trans_groundings_ids)| {
-                            trans_groundings_ids.map(|(out_trans_grounding_id, in_trans_grounding_id)| {
+                        .filter_map(|&(_, _, support_grounding_id)| {
+                            support_grounding_id.map(|support_grounding_id| {
                                 (
                                     1,
-                                    ColTag::Support(
-                                        out_trans_id,
-                                        in_trans_id,
-                                        Some((out_trans_grounding_id, in_trans_grounding_id)),
-                                    ),
+                                    ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
                                 )
                             })
                         })
@@ -321,13 +320,7 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .supports_ground
             .iter_in_all()
-            .chunk_by(|&&(in_trans_id, in_trans_grounding_id, _)| {
-                (
-                    in_trans_id,
-                    in_trans_grounding_id.state_var_grounding_id,
-                    in_trans_grounding_id.val_assignment,
-                )
-            });
+            .chunk_by(|&&(in_trans_id, in_group_key, _)| (in_trans_id, in_group_key));
 
         // State variable groundings whose initial effect is in the model.
         let initialized_state_vars = encoder
@@ -343,30 +336,16 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         // whose state variable grounding has no initial effect in the model (see below).
         let mut missing_initial_eff_inflows = vec![];
 
-        for ((in_trans_id, state_var_grounding_id, _), entries) in chunkby.into_iter() {
-            let entries = entries.collect::<Vec<_>>();
-
-            let presences = entries
-                .iter()
-                .map(|&&(_, in_trans_grounding_id, _)| in_trans_grounding_id)
-                .dedup()
-                .map(|in_trans_grounding_id| (1, ColTag::PresenceTransition(in_trans_id, Some(in_trans_grounding_id))))
-                .collect::<Vec<_>>();
-            let supports = entries
-                .iter()
-                .filter_map(|&&(_, in_trans_grounding_id, out_trans_and_grounding_id)| {
-                    out_trans_and_grounding_id.map(|(out_trans_id, out_trans_grounding_id)| {
-                        (
-                            1,
-                            ColTag::Support(
-                                out_trans_id,
-                                in_trans_id,
-                                Some((out_trans_grounding_id, in_trans_grounding_id)),
-                            ),
-                        )
-                    })
-                })
-                .collect::<Vec<_>>();
+        for ((in_trans_id, (state_var_grounding_id, _)), entries) in chunkby.into_iter() {
+            let (presences, supports): (Vec<_>, Vec<_>) = entries.partition_map(|&(_, _, entry)| match entry {
+                GroupEntry::Grounding(in_trans_grounding_id) => {
+                    Either::Left((1, ColTag::PresenceTransition(in_trans_id, Some(in_trans_grounding_id))))
+                }
+                GroupEntry::Support((out_trans_id, support_grounding_id)) => Either::Right((
+                    1,
+                    ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
+                )),
+            });
 
             // Without recovered closed world defaults, a pure (ground) effect may have no initial (ground) effect to pass it any flow...
             let missing_initial_eff = encoder.transitions.are_recovered_closed_world_default_effects_empty()
@@ -420,51 +399,34 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .supports_ground
             .iter_out_all()
-            // NOTE: the "out" view is sorted by `op_assignment` before `val_assignment` (see `SupportsGroundingsInfo`)
-            .chunk_by(|&(out_trans_id, out_trans_grounding_id, _)| {
-                (
-                    out_trans_id,
-                    out_trans_grounding_id.state_var_grounding_id,
-                    out_trans_grounding_id.op_assignment,
-                )
+            .chunk_by(|&&(out_trans_id, support_grounding_id, _)| (out_trans_id, support_grounding_id));
+
+        for ((out_trans_id, support_grounding_id), entries) in chunkby.into_iter() {
+            let (presences, supports): (Vec<_>, Vec<_>) = entries.partition_map(|&(_, _, entry)| match entry {
+                GroupEntry::Grounding(out_trans_grounding_id) => Either::Left((
+                    1,
+                    ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
+                )),
+                GroupEntry::Support(in_trans_id) => Either::Right(in_trans_id),
             });
 
-        for ((out_trans_id, _, _), entries) in chunkby.into_iter() {
             // Supports into pure conditions aren't included in the outflow *unless* conditions we're allowing them as out-transitions.
-            let entries = entries
-                .filter(|&(_, _, (in_trans_id, _))| {
+            let supports = supports
+                .into_iter()
+                .filter(|&in_trans_id| {
                     encoder.supports.with_condition_out_transitions
                         || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
                 })
+                .map(|in_trans_id| {
+                    (
+                        1,
+                        ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
+                    )
+                })
                 .collect::<Vec<_>>();
-            if entries.is_empty() {
+            if supports.is_empty() {
                 continue;
             }
-
-            let presences = entries
-                .iter()
-                .map(|&(_, out_trans_grounding_id, _)| out_trans_grounding_id)
-                .dedup()
-                .map(|out_trans_grounding_id| {
-                    (
-                        1,
-                        ColTag::PresenceTransition(out_trans_id, Some(out_trans_grounding_id)),
-                    )
-                })
-                .collect::<Vec<_>>();
-            let supports = entries
-                .iter()
-                .map(|&(_, out_trans_grounding_id, (in_trans_id, in_trans_grounding_id))| {
-                    (
-                        1,
-                        ColTag::Support(
-                            out_trans_id,
-                            in_trans_id,
-                            Some((out_trans_grounding_id, in_trans_grounding_id)),
-                        ),
-                    )
-                })
-                .collect::<Vec<_>>();
 
             let separator = presences.len();
             let expr = RowExpr::new(RowExprType::Geq, [presences, supports].concat(), separator, 0);
