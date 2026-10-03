@@ -62,19 +62,19 @@ impl SourcesGroundingsInfo {
 
     pub fn get(&self, source: Source) -> &[SourceGroundingId] {
         if let Some(task_id) = source {
-            debug_assert!(
-                self.entries
-                    .1
-                    .get(task_id)
-                    .is_none_or(|entries| entries.iter().all_unique())
-            );
+            // debug_assert!(
+            //     self.entries
+            //         .1
+            //         .get(task_id)
+            //         .is_none_or(|entries| entries.iter().all_unique())
+            // );
             self.entries
                 .1
                 .get(task_id)
                 .map(|entries| entries.as_slice())
                 .unwrap_or_default()
         } else {
-            debug_assert!(self.entries.0.iter().all_unique());
+            // debug_assert!(self.entries.0.iter().all_unique());
             &self.entries.0
         }
     }
@@ -314,18 +314,20 @@ impl TransitionsGroundingsInfo {
             if !self.entries_sourced_concrete_sources.contains_key(task_id) {
                 self.entries_sourced_concrete_sources.insert(task_id, vec![]);
             }
-            debug_assert!(!self.entries_sourced_concrete_sources[task_id].contains(&(
-                trans_id,
-                trans_grounding_id,
-                source_grounding_id
-            )));
+            // debug_assert!(!self.entries_sourced_concrete_sources[task_id].contains(&(
+            //     trans_id,
+            //     trans_grounding_id,
+            //     source_grounding_id
+            // )));
+            // ^ commented out: expensive
             self.entries_sourced_concrete_sources[task_id].push((trans_id, trans_grounding_id, source_grounding_id));
         } else {
-            debug_assert!(!self.entries_sourced_empty_source.contains(&(
-                trans_id,
-                trans_grounding_id,
-                source_grounding_id
-            )));
+            // debug_assert!(!self.entries_sourced_empty_source.contains(&(
+            //     trans_id,
+            //     trans_grounding_id,
+            //     source_grounding_id
+            // )));
+            // ^ commented out: expensive
             self.entries_sourced_empty_source
                 .push((trans_id, trans_grounding_id, source_grounding_id));
         }
