@@ -405,9 +405,9 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
         let chunkby = encoder
             .supports_ground
             .iter_out_all()
-            .chunk_by(|(out_trans_id, out_trans_grounding_id, _)| (out_trans_id, out_trans_grounding_id));
+            .chunk_by(|&(out_trans_id, out_trans_grounding_id, _)| (out_trans_id, out_trans_grounding_id));
 
-        for ((&out_trans_id, &out_trans_grounding_id), in_trans_groundings_ids) in chunkby.into_iter() {
+        for ((out_trans_id, out_trans_grounding_id), in_trans_groundings_ids) in chunkby.into_iter() {
             let terms = {
                 let mut res = vec![(
                     1,
@@ -416,11 +416,11 @@ pub fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, probl
                 res.append(
                     &mut in_trans_groundings_ids
                         .into_iter()
-                        .filter(|&&(_, _, (in_trans_id, _))| {
+                        .filter(|&(_, _, (in_trans_id, _))| {
                             encoder.supports.with_condition_out_transitions
                                 || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
                         })
-                        .map(|&(_, _, (in_trans_id, in_trans_grounding_id))| {
+                        .map(|(_, _, (in_trans_id, in_trans_grounding_id))| {
                             (
                                 1,
                                 ColTag::Support(

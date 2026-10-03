@@ -415,13 +415,16 @@ impl TransitionsGroundingsInfo {
     }
 }
 
+type InvertedTransitionGroundingId = (StateVarGroundingId, Option<IntCst>, Option<IntCst>);
+
 #[derive(Clone, Default)]
 pub(crate) struct SupportsGroundingsInfo {
     /// Sorted flat storage of ground supports: "outgoing view":
-    /// (out_trans_id, out_trans_grounding_id, (in_trans_id, in_trans_grounding_id)).
+    /// (out_trans_id, out_inv_trans_grounding_id, (in_trans_id, in_trans_grounding_id)).
+    /// NOTE: the out transition's grounding is INVERTED in storage ! (op_assignment first, val_assignment second !)
     out: Vec<(
         TransitionId,
-        TransitionGroundingId,
+        InvertedTransitionGroundingId,
         (TransitionId, TransitionGroundingId),
     )>,
     /// Sorted flat storage of ground supports: "incoming view":
@@ -477,7 +480,11 @@ impl SupportsGroundingsInfo {
                                      in_trans_grounding_id: TransitionGroundingId| {
                 out.push((
                     out_trans_id,
-                    out_trans_grounding_id,
+                    (
+                        out_trans_grounding_id.state_var_grounding_id,
+                        out_trans_grounding_id.op_assignment,
+                        out_trans_grounding_id.val_assignment,
+                    ),
                     (in_trans_id, in_trans_grounding_id),
                 ));
                 in_.push((
@@ -663,13 +670,25 @@ impl SupportsGroundingsInfo {
     pub fn iter_out_all(
         &self,
     ) -> impl Iterator<
-        Item = &(
+        Item = (
             TransitionId,
             TransitionGroundingId,
             (TransitionId, TransitionGroundingId),
         ),
     > {
-        self.out.iter()
+        self.out.iter().map(
+            |&(out_transition_id, out_inv_transition_grounding_id, (in_transition_id, in_transition_grounding_id))| {
+                (
+                    out_transition_id,
+                    TransitionGroundingId {
+                        state_var_grounding_id: out_inv_transition_grounding_id.0,
+                        val_assignment: out_inv_transition_grounding_id.2,
+                        op_assignment: out_inv_transition_grounding_id.1,
+                    },
+                    (in_transition_id, in_transition_grounding_id),
+                )
+            },
+        )
     }
     pub fn iter_in_all(
         &self,
