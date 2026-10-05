@@ -215,7 +215,7 @@ pub struct Lp {
     pending_bound_constrs: Vec<BoundConstraintId>,
     /// Decision level at which the pending constraints were last applied. No watch can trigger them
     /// again, so backtracking below it makes them all pending anew.
-    pending_bound_constrs_applied_at: DecLvl,
+    pending_bound_constrs_applied_at: Option<DecLvl>,
     /// Associates linear sums with its corresponding reifying variable in the aries-lp solver.
     /// The sums are simplified, i.e. their terms are sorted those sharing the same var are merged.
     ///
@@ -249,7 +249,7 @@ impl Lp {
 
             bound_constrs: Default::default(),
             pending_bound_constrs: Vec::new(),
-            pending_bound_constrs_applied_at: DecLvl::ROOT,
+            pending_bound_constrs_applied_at: None,
 
             reifications: HashMap::new(),
             memory_x_main: RefMap::default(),
@@ -471,8 +471,8 @@ impl Lp {
     /// Applies the bound constraints whose cause was already entailed when they were registered.
     fn apply_pending_bound_constrs(&mut self, domains: &Domains) -> Result<(), Contradiction> {
         if !self.pending_bound_constrs.is_empty() {
-            debug_assert!(self.pending_bound_constrs_applied_at <= self.current_decision_level());
-            self.pending_bound_constrs_applied_at = self.current_decision_level();
+            debug_assert!(self.pending_bound_constrs_applied_at.is_none());
+            self.pending_bound_constrs_applied_at = Some(self.current_decision_level());
         }
 
         while let Some(index) = self.pending_bound_constrs.pop() {
@@ -680,12 +680,15 @@ impl Backtrack for Lp {
             );
         });
 
-        if self.current_decision_level() < self.pending_bound_constrs_applied_at {
+        if self
+            .pending_bound_constrs_applied_at
+            .is_some_and(|lvl| lvl > self.current_decision_level())
+        {
             // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
             // We reset them all as pending again.
             self.pending_bound_constrs.clear();
             self.pending_bound_constrs.extend(self.bound_constrs.keys());
-            self.pending_bound_constrs_applied_at = self.current_decision_level(); // TODO: check with @nrealus, previous impl was likely incorrect
+            self.pending_bound_constrs_applied_at = None;
         }
     }
 }
