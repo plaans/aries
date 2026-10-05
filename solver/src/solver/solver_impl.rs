@@ -328,7 +328,7 @@ impl<Lbl: Label> Solver<Lbl> {
                     if self.model.state.presence(enabler) == Lit::TRUE {
                         self.reasoners
                             .lp
-                            .add_linear_leq_constraint(lin, enabler, &self.model.state);
+                            .add_cp_linear_leq_constraint(lin, enabler, &self.model.state);
                     }
 
                     Ok(())
