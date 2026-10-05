@@ -1192,12 +1192,14 @@ impl Solver {
                 },
             });
         }
-        breakpoints.sort_by(|bp1, bp2| bp1.step.total_cmp(&bp2.step));
 
         let mut infeasibility = (self.basic_var_vals[row] - leaving_new_val).abs();
         let mut num_flips = 0;
         let entering = loop {
-            let rest = &breakpoints[num_flips..];
+            // The breakpoints that haven't been passed yet. Rather than sorting them all by step,
+            // each group is found by going through them: the step usually stops at the first group
+            // (so usually a single pass) which is cheaper than a sort.
+            let rest = &mut breakpoints[num_flips..];
             if rest.is_empty() {
                 break None;
             }
@@ -1211,35 +1213,43 @@ impl Solver {
 
             // First, we determine the max step that still leaves us with a dual-feasible state
             // using relaxed bounds.
-            let mut max_step = f64::INFINITY;
-            for bp in rest {
-                if bp.step > max_step {
-                    break;
-                }
-                max_step = max_step.min(bp.step + EPS / bp.coeff.abs());
-            }
+            let max_step = rest
+                .iter()
+                .map(|bp| bp.step + EPS / bp.coeff.abs())
+                .fold(f64::INFINITY, f64::min);
+            let in_group = |bp: &Breakpoint| bp.step <= max_step;
 
             // Second, the breakpoints within that step are passed together,
             // if the leaving variable remains infeasible once they all are.
-            let group = &rest[..rest.partition_point(|bp| bp.step <= max_step)];
-            let slope_decrease: f64 = group
-                .iter()
-                .map(|bp| bp.coeff.abs() * (bp.flipped_val - self.nb_var_vals[bp.col]).abs())
-                .sum();
+            let (group_len, slope_decrease) = rest.iter().filter(|bp| in_group(bp)).fold((0, 0.0), |(len, sum), bp| {
+                (
+                    len + 1,
+                    sum + bp.coeff.abs() * (bp.flipped_val - self.nb_var_vals[bp.col]).abs(),
+                )
+            });
             let remaining_infeasibility = infeasibility - slope_decrease;
             // Past the last breakpoint, only an infeasibility beyond the tolerance proves the problem infeasible.
-            let threshold = if group.len() == rest.len() { EPS } else { 0.0 };
+            let threshold = if group_len == rest.len() { EPS } else { 0.0 };
             if remaining_infeasibility > threshold {
                 infeasibility = remaining_infeasibility;
-                num_flips += group.len();
+                // The group joins the breakpoints passed before it, at the front.
+                let mut passed = 0;
+                for i in 0..rest.len() {
+                    if in_group(&rest[i]) {
+                        rest.swap(passed, i);
+                        passed += 1;
+                    }
+                }
+                num_flips += passed;
                 continue;
             }
 
             // Otherwise, we choose among them the var with the biggest pivot coefficient.
             // This allows for a much more numerically stable basis
             // at the price of slight infeasibility in dual variables.
-            break group
+            break rest
                 .iter()
+                .filter(|bp| in_group(bp))
                 .reduce(|best, bp| if bp.coeff.abs() > best.coeff.abs() { bp } else { best })
                 .map(|bp| (bp.col, bp.coeff));
         };
@@ -1248,7 +1258,10 @@ impl Solver {
             // Harris rule may choose a var whose obj. coeff. is slightly dual-infeasible:
             // the step would then go backwards, pushing the other obj. coeffs further into dual infeasibility.
             // Shifting it to zero makes the step zero instead (like the perturbations, `recalc_obj_coeffs` removes the shift).
-            self.shift_obj_coeff(col, clamp_obj_coeff(self.nb_var_obj_coeffs[col], &self.nb_var_states[col]));
+            self.shift_obj_coeff(
+                col,
+                clamp_obj_coeff(self.nb_var_obj_coeffs[col], &self.nb_var_states[col]),
+            );
 
             if num_flips > 0 {
                 self.flipped_cols_sum.clear_and_resize(self.num_constraints());
