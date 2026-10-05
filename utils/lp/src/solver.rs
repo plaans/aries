@@ -894,7 +894,13 @@ impl Solver {
                 .filter_map(|(col, (&obj_coeff, var_state))| {
                     // Choose only among non-basic vars that can be changed
                     // with objective decreasing.
-                    if (var_state.at_min && obj_coeff > -EPS) || (var_state.at_max && obj_coeff < EPS) {
+                    // (a free var with a zero obj. coeff. may have nowhere to go: it's left where it is)
+                    let var = self.nb_vars[col];
+                    let is_free = self.orig_var_mins[var].is_infinite() && self.orig_var_maxs[var].is_infinite();
+                    if (is_free && obj_coeff.abs() < EPS)
+                        || (var_state.at_min && obj_coeff > -EPS)
+                        || (var_state.at_max && obj_coeff < EPS)
+                    {
                         None
                     } else {
                         Some((col, obj_coeff))
@@ -929,13 +935,20 @@ impl Solver {
         };
 
         let entering_cur_val = self.nb_var_vals[entering_c];
+        let entering_var = self.nb_vars[entering_c];
+        let (entering_min, entering_max) = (self.orig_var_mins[entering_var], self.orig_var_maxs[entering_var]);
         // If true, entering variable will increase (because the objective function must decrease).
-        let entering_diff_sign = self.nb_var_obj_coeffs[entering_c] < 0.0;
-        let entering_other_val = if entering_diff_sign {
-            self.orig_var_maxs[self.nb_vars[entering_c]]
-        } else {
-            self.orig_var_mins[self.nb_vars[entering_c]]
-        };
+        let mut entering_diff_sign = self.nb_var_obj_coeffs[entering_c] < 0.0;
+        // A zero obj. coeff. only gets here for a var strictly between its bounds, with at least one being finite.
+        // The others are filtered out above.
+        // Moving such a var will not change the objective, so either way could be chosen.
+        // But to ensure the move ends, the move is chosen in the direction of a finite bound (if the other one is infinite).
+        if self.nb_var_obj_coeffs[entering_c].abs() < EPS
+            && (if entering_diff_sign { entering_max } else { entering_min }).is_infinite()
+        {
+            entering_diff_sign = !entering_diff_sign;
+        }
+        let entering_other_val = if entering_diff_sign { entering_max } else { entering_min };
 
         self.calc_col_coeffs(entering_c);
 
@@ -990,7 +1003,7 @@ impl Solver {
             }
 
             let cur_step = get_leaving_var_step(r, coeff) / coeff_abs;
-            if cur_step <= max_step && coeff_abs > pivot_coeff_abs {
+            if cur_step.is_finite() && cur_step <= max_step && coeff_abs > pivot_coeff_abs {
                 leaving_r = Some(r);
                 leaving_new_val = if (entering_diff_sign && coeff < 0.0) || (!entering_diff_sign && coeff > 0.0) {
                     self.basic_var_maxs[r]
