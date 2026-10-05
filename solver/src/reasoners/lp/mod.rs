@@ -20,6 +20,9 @@ them to the LP.
 
 mod explanation_utils;
 mod solver;
+mod sum;
+
+pub use sum::LpSum;
 
 use std::collections::HashMap;
 
@@ -32,7 +35,7 @@ use aries_lp::{Bound, Error, Variable};
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
-    collections::ref_store::RefMap,
+    collections::ref_store::{RefMap, RefVec},
     core::{
         IntCst, Lit, LongCst, Var, cst_int_to_long,
         literals::Watches,
@@ -40,7 +43,7 @@ use crate::{
     },
     lang::linear::LinSum,
     prelude::Conjunction,
-    reasoners::{Contradiction, ReasonerId, Theory, lp::solver::BoundCause},
+    reasoners::{Contradiction, ReasonerId, Theory},
 };
 
 /// Contains all the options available for the Lp reasoner
@@ -86,14 +89,16 @@ impl Default for LpOptions {
 /// or within the code with: `LP_ENABLE.set(true/false)`
 pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false");
 
+/// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
-pub struct BoundConstraint {
+pub struct BoundRestriction {
     var: Variable,
     bound: Bound,
     val: LongCst,
 }
 
-impl BoundConstraint {
+impl BoundRestriction {
+    /// Represents an upper bound on an LP variable.
     pub fn leq(var: Variable, ub: LongCst) -> Self {
         Self {
             var,
@@ -101,6 +106,7 @@ impl BoundConstraint {
             val: ub,
         }
     }
+    /// Represents a lower bound on an LP variable.
     pub fn geq(var: Variable, lb: LongCst) -> Self {
         Self {
             var,
@@ -109,6 +115,23 @@ impl BoundConstraint {
         }
     }
 }
+
+/// Identifies a bound constraint in the reasoner.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct BoundConstraintId(usize);
+
+impl From<usize> for BoundConstraintId {
+    fn from(value: usize) -> Self {
+        BoundConstraintId(value)
+    }
+}
+impl From<BoundConstraintId> for usize {
+    fn from(value: BoundConstraintId) -> Self {
+        value.0
+    }
+}
+
+type BoundConstraintsStore = RefVec<BoundConstraintId, (Conjunction, BoundRestriction)>;
 
 /// Store all the necessary information for backtracking after modifying a bound
 ///
@@ -162,15 +185,15 @@ impl Stats {
     }
 }
 
+/// A variable of the LP solver.
 pub type LpVar = aries_lp::Variable;
+
+/// Applies a sign to a type.
 enum Signed<T> {
+    /// + T
     Plus(T),
+    /// - T
     Minus(T),
-}
-pub type LpSum = Vec<(LpVar, IntCst)>;
-pub enum BoundRestriction {
-    Ub(IntCst),
-    Lb(IntCst),
 }
 
 /// Struct that implements the [`Theory`] trait (reasoner).
@@ -184,29 +207,25 @@ pub struct Lp {
     id: ReasonerId,
     /// Encapsulates both float and integer versions of our constraints and an instance of the aries-lp solver
     solver: Solver,
-    /// Associates each bound constraint with the cause that triggers it:
-    /// the constraint is applied to the LP as soon as all the literals of its cause (scope and trigger) are entailed.
-    ///
-    /// Holds both the activation of the linear constraints posted to the reasoner
-    /// (whose cause is their activation lit) and the (partial) bindings of auxiliary variables to the main model
-    /// (see [`Lp::half_bind_aux_var_lower_bound`]).
-    bound_constrs_lit_vec: Vec<(BoundConstraint, BoundCause)>,
-    /// Indices in `bound_constrs_lit_vec` of the constraints whose cause was already entailed when
+    /// Associates each bound constraint identifiers with a trigger (conjunction of CP literals) and a corresponding bound restriction.
+    /// the constraint is applied to the LP as soon as all the literals of its trigger are entailed.
+    bound_constrs: BoundConstraintsStore,
+    /// Indices in `bound_constrs` of the constraints whose cause was already entailed when
     /// they were registered, and that are thus waiting to be applied at the next propagation.
-    pending_bound_constrs: Vec<usize>,
+    pending_bound_constrs: Vec<BoundConstraintId>,
     /// Decision level at which the pending constraints were last applied. No watch can trigger them
     /// again, so backtracking below it makes them all pending anew.
-    pending_bound_constrs_applied_at: DecLvl,
-    /// Associates linear sums with its corresponding variable in the aries-lp solver.
+    pending_bound_constrs_applied_at: Option<DecLvl>,
+    /// Associates linear sums with its corresponding reifying variable in the aries-lp solver.
     /// The sums are simplified, i.e. their terms are sorted those sharing the same var are merged.
     ///
     /// Used to avoid duplicate variables for the same sum (or its opposite).
-    memory_s: HashMap<LpSum, Variable>,
-    /// Maps var from aries solver with their coresponding variable in minilp (if they appear in the post constraints)
+    reifications: HashMap<LpSum, Variable>,
+    /// Maps var from aries solver with their corresponding variable in minilp (if they appear in the post constraints)
     memory_x_main: RefMap<Var, Variable>,
     model_events: ObsTrailCursor<Event>,
     /// The watcher corresponds to an index in `bound_constrs_lit_vec`
-    watches: Watches<usize>,
+    watches: Watches<BoundConstraintId>,
     /// History of changes made to the LP with all information necessary to undo them.
     trail: Trail<LpEvent>,
     stats: Stats,
@@ -228,11 +247,11 @@ impl Lp {
             id: ReasonerId::Cp,
             solver: Solver::new(options.is_explanation_refined),
 
-            bound_constrs_lit_vec: Vec::new(),
+            bound_constrs: Default::default(),
             pending_bound_constrs: Vec::new(),
-            pending_bound_constrs_applied_at: DecLvl::ROOT,
+            pending_bound_constrs_applied_at: None,
 
-            memory_s: HashMap::new(),
+            reifications: HashMap::new(),
             memory_x_main: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
@@ -314,19 +333,19 @@ impl Lp {
     /// The function returns the `{+,-}s` variable where the sign is required to avoid duplicated reification variables.
     fn reify_sum(&mut self, sum: LpSum) -> Signed<LpVar> {
         // if the sum is exactly one variable, with factor +/-1, no need for a new variable to reify.
-        if let Some([(var, 1)]) = sum.as_array() {
-            return Signed::Plus(*var);
+        if let Some((var, 1)) = sum.as_single_term() {
+            return Signed::Plus(var);
         }
-        if let Some([(var, -1)]) = sum.as_array() {
-            return Signed::Minus(*var);
+        if let Some((var, -1)) = sum.as_single_term() {
+            return Signed::Minus(var);
         }
 
         // if already have this sum in our cache, just reuse the reification variable.
-        if let Some(reif) = self.memory_s.get(&sum) {
+        if let Some(reif) = self.reifications.get(&sum) {
             return Signed::Plus(*reif);
         }
-        let minus_sum: LpSum = sum.iter().map(|&(var, factor)| (var, -factor)).collect();
-        if let Some(reif) = self.memory_s.get(&minus_sum) {
+        let minus_sum: LpSum = sum.iter().map(|(var, factor)| (var, -factor)).into();
+        if let Some(reif) = self.reifications.get(&minus_sum) {
             return Signed::Minus(*reif);
         }
 
@@ -335,7 +354,7 @@ impl Lp {
         let mut lb: LongCst = 0;
         let mut ub: LongCst = 0;
 
-        for &(var, factor) in &sum {
+        for (var, factor) in sum.iter() {
             let (elem_lb, elem_ub) = self.solver.get_init_bounds(factor, var);
             ub = ub.saturating_add(elem_ub);
             lb = lb.saturating_add(elem_lb);
@@ -349,31 +368,31 @@ impl Lp {
 
         // create a constraint such that `sum = s`
         let mut constraint = sum.clone();
-        constraint.push((s, -1));
+        constraint.push(s, -1);
 
         // We force s to be equal to our linear sum
         self.solver.add_constraint(constraint);
         self.stats.num_constraints += 1;
 
-        self.memory_s.insert(sum, s);
+        self.reifications.insert(sum, s);
 
         Signed::Plus(s)
     }
 
-    /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`.
-    /// The constant term is included in the sum.
+    /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`, where `sum` is a linear sum
+    /// on CP variables and a constant term.
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true` and present.
     ///
-    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on LP variables. Instead the current
-    /// method will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
+    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on CP variables.
+    /// It will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
     pub fn add_cp_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
-        let sum_terms = sum
-            .terms_slice()
-            .iter()
-            .map(|&svar| (self.bind_cp_var(svar.var, doms), svar.factor))
-            .collect::<Vec<_>>();
+        let sum_terms = LpSum::new(
+            sum.terms_slice()
+                .iter()
+                .map(|&svar| (self.bind_cp_var(svar.var, doms), svar.factor)),
+        );
         self.add_linear_leq_constraint(sum_terms, sum_cst, active, doms)
     }
 
@@ -381,7 +400,14 @@ impl Lp {
     ///
     /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from CP variables) or with
     /// [`Self::create_auxiliary_variable`] (independent variable).
-    pub fn add_linear_leq_constraint(&mut self, sum_terms: LpSum, sum_cst: IntCst, active: Lit, doms: &Domains) {
+    pub fn add_linear_leq_constraint(
+        &mut self,
+        sum_terms: impl Into<LpSum>,
+        sum_cst: IntCst,
+        active: Lit,
+        doms: &Domains,
+    ) {
+        let sum_terms = sum_terms.into();
         if !self.options.enable {
             return;
         }
@@ -394,14 +420,14 @@ impl Lp {
             Signed::Plus(reif) => {
                 // sum_terms = reif
                 // reif <= bound_val
-                BoundConstraint::leq(reif, bound_val)
+                BoundRestriction::leq(reif, bound_val)
             }
             Signed::Minus(reif) => {
                 // sum_terms = -reif
                 // sum_terms  <= bound_val
                 // -reif <= bound_val
                 // reif >= -bound_val
-                BoundConstraint::geq(reif, -bound_val)
+                BoundRestriction::geq(reif, -bound_val)
             }
         };
 
@@ -414,84 +440,66 @@ impl Lp {
     /// LP variable, and `bound` is an integer value denoting  a new upper/lower bound of `variable`.
     ///
     /// This provides an additional mechanism for synchronizing the bounds of the LP variables to the domains in the CP solver.
-    pub fn add_bound_update_trigger(&mut self, trigger: Conjunction, bound_update: BoundConstraint, domains: &Domains) {
-        // TODO: this function supports the API we want but its implementation delegates to the previous one, with obvious limitations
-        let cause = match trigger.literals() {
-            [] => BoundCause::None,
-            [l] => BoundCause::Some {
-                scope: Lit::TRUE,
-                trigger: *l,
-            },
-            [l1, l2] => BoundCause::Some {
-                scope: *l1,
-                trigger: *l2,
-            },
-            _ => unimplemented!("Still unsupported (will do it later to phase the transition)"),
-        };
-        self.register_bound_constr(bound_update, cause, domains);
-    }
+    pub fn add_bound_update_trigger(
+        &mut self,
+        trigger: Conjunction,
+        bound_update: BoundRestriction,
+        domains: &Domains,
+    ) {
+        let id = self.bound_constrs.next_key();
 
-    /// Registers a bound constraint, to be applied to the LP as soon as all the literals of `cause` are entailed in the main model.
-    ///
-    /// If they are *already* entailed, the constraint is scheduled to be applied at the next call to
-    /// [`Theory::propagate`]: watches only fire on future events, so an already entailed cause
-    /// (in particular an unconditional one) would otherwise never trigger.
-    fn register_bound_constr(&mut self, bound_constr: BoundConstraint, cause: BoundCause, domains: &Domains) {
-        let index = self.bound_constrs_lit_vec.len();
-        self.bound_constrs_lit_vec.push((bound_constr, cause));
-
-        let mut entailed = true;
-        if let BoundCause::Some { scope, trigger } = cause {
-            if !scope.tautological() {
-                self.watches.add_watch(index, scope);
-                entailed &= domains.entails(scope);
-            }
-            if !trigger.tautological() {
-                self.watches.add_watch(index, trigger);
-                entailed &= domains.entails(trigger);
-            }
-        }
-
+        // check if the trigger is already entailed and in which case, enqueue for immediate propagation.
+        // This is necessary because watches would only trigger for future events.
+        let entailed = trigger.iter().all(|l| domains.entails(l));
         if entailed {
-            self.pending_bound_constrs.push(index);
+            self.pending_bound_constrs.push(id);
         }
+        if !entailed || self.current_decision_level() != DecLvl::ROOT {
+            // unless we are at ROOT AND the trigger is entailed, we place watch to we can check the trigger if one of its literals becomes true
+            //
+            // Note: if this becomes performance critical, we could use a single watch, always placed on an undecided literal
+            // but this would complicate the implementation and unlikely to be useful in practice as the the vast majority of case should involve only one/two
+            // literals in the conjunction.
+            for l in &trigger {
+                self.watches.add_watch(id, l);
+            }
+        }
+        let actual_id = self.bound_constrs.push((trigger, bound_update));
+        debug_assert!(id == actual_id);
     }
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
     fn apply_pending_bound_constrs(&mut self, domains: &Domains) -> Result<(), Contradiction> {
         if !self.pending_bound_constrs.is_empty() {
-            debug_assert!(self.pending_bound_constrs_applied_at <= self.current_decision_level());
-            self.pending_bound_constrs_applied_at = self.current_decision_level();
+            debug_assert!(self.pending_bound_constrs_applied_at.is_none());
+            self.pending_bound_constrs_applied_at = Some(self.current_decision_level());
         }
 
         while let Some(index) = self.pending_bound_constrs.pop() {
-            let (bound_constr, cause) = self.bound_constrs_lit_vec[index];
-            let (scope, trigger) = match cause {
-                BoundCause::None => (Lit::TRUE, Lit::TRUE),
-                BoundCause::Some { scope, trigger } => (scope, trigger),
-            };
+            let (cause, bound_constr) = &self.bound_constrs[index];
 
-            if !domains.entails(scope) || !domains.entails(trigger) {
+            let entailed = cause.iter().all(|l| domains.entails(l));
+
+            if !entailed {
                 // No longer entailed (we backtracked since the registration).
                 // The watches will trigger the constraint again if its cause becomes entailed anew.
                 continue;
             }
 
-            let res =
-                if domains.entailing_level(scope) == DecLvl::ROOT && domains.entailing_level(trigger) == DecLvl::ROOT {
-                    // A cause entailed at the root can never be undone,
-                    // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                    self.solver
-                        .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val)
-                } else {
-                    self.solver.set_bound_restrict(
-                        bound_constr.var,
-                        bound_constr.bound,
-                        bound_constr.val,
-                        BoundJustification::Trigger(cause),
-                        &mut self.trail,
-                    )
-                };
+            let res = if cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT) {
+                // A cause entailed at the root can never be undone,
+                // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
+                self.solver
+                    .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val)
+            } else {
+                self.solver.set_bound_restrict(
+                    bound_constr.var,
+                    bound_constr.bound,
+                    bound_constr.val,
+                    BoundJustification::Trigger(index),
+                    &mut self.trail,
+                )
+            };
 
             self.explain_set_bound(&res, bound_constr.var)?;
         }
@@ -502,7 +510,7 @@ impl Lp {
     fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
             Err(Error::InfeasibleTrivial) => {
-                let explanation = self.solver.explain_infeasible_var(var);
+                let explanation = self.solver.explain_infeasible_var(var, &self.bound_constrs);
                 Err(Contradiction::Explanation(explanation))
             }
             Err(Error::InfeasibleWithCertificate(_)) => {
@@ -520,7 +528,10 @@ impl Lp {
                 if self.solver.problem.is_certificate_valid(&cert) {
                     self.stats.num_val_certif_float += 1;
                 }
-                match self.solver.check_certificate(&cert, domains, &mut self.stats) {
+                match self
+                    .solver
+                    .check_certificate(&cert, domains, &mut self.stats, &self.bound_constrs)
+                {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
                         Err(Contradiction::Explanation(explanation))
@@ -564,15 +575,14 @@ impl Theory for Lp {
             // println!("Lit: {:?}", lit);
 
             // We first set the bounds associated with the active lit triggered by the newly inferred lit
-            let watchers: Vec<usize> = self.watches.watches_on(lit).collect();
+            let watchers: Vec<BoundConstraintId> = self.watches.watches_on(lit).collect(); // TODO: remove allocation
             for watcher in watchers {
-                let (bound_constr, cause) = self.bound_constrs_lit_vec[watcher];
+                let (cause, bound_constr) = &self.bound_constrs[watcher];
 
-                // A cause with two literals is watched on both of them:
-                // the one that did not trigger this watch still has to be entailed for the bound to hold.
-                if let BoundCause::Some { scope, trigger } = cause
-                    && (!domains.entails(scope) || !domains.entails(trigger))
-                {
+                // the fact that we got triggered means at least one literal became true.
+                // If they are all true we can proceed to enforce the bound
+                let entailed = cause.iter().all(|l| domains.entails(l));
+                if !entailed {
                     continue;
                 }
 
@@ -580,7 +590,7 @@ impl Theory for Lp {
                     bound_constr.var,
                     bound_constr.bound,
                     bound_constr.val,
-                    BoundJustification::Trigger(cause),
+                    BoundJustification::Trigger(watcher),
                     &mut self.trail,
                 );
 
@@ -670,12 +680,15 @@ impl Backtrack for Lp {
             );
         });
 
-        if self.current_decision_level() < self.pending_bound_constrs_applied_at {
+        if self
+            .pending_bound_constrs_applied_at
+            .is_some_and(|lvl| lvl > self.current_decision_level())
+        {
             // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
             // We reset them all as pending again.
             self.pending_bound_constrs.clear();
-            self.pending_bound_constrs.extend(0..self.bound_constrs_lit_vec.len());
-            self.pending_bound_constrs_applied_at = DecLvl::ROOT;
+            self.pending_bound_constrs.extend(self.bound_constrs.keys());
+            self.pending_bound_constrs_applied_at = None;
         }
     }
 }
@@ -931,8 +944,8 @@ mod tests {
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
-        lp.add_bound_update_trigger(q.leq(0).into(), BoundConstraint::leq(aux_b, 0), &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(0).into(), BoundRestriction::leq(aux_b, 0), &d);
 
         d.save_state();
         lp.save_state();
@@ -993,8 +1006,8 @@ mod tests {
         let lp_x = lp.bind_cp_var(x, &d);
 
         // two triggers restricting the same upper bound
-        lp.add_bound_update_trigger(a.into(), BoundConstraint::leq(lp_x, 5), &d);
-        lp.add_bound_update_trigger(b.into(), BoundConstraint::leq(lp_x, 2), &d);
+        lp.add_bound_update_trigger(a.into(), BoundRestriction::leq(lp_x, 5), &d);
+        lp.add_bound_update_trigger(b.into(), BoundRestriction::leq(lp_x, 2), &d);
 
         let init_solver = lp.solver.clone();
 
@@ -1048,8 +1061,8 @@ mod tests {
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
-        lp.add_bound_update_trigger(q.leq(0).into(), BoundConstraint::leq(aux_b, 0), &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(0).into(), BoundRestriction::leq(aux_b, 0), &d);
 
         d.save_state();
         lp.save_state();
@@ -1097,8 +1110,8 @@ mod tests {
         d.save_state();
         lp.save_state();
 
-        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
-        lp.add_bound_update_trigger(q.leq(0).into(), BoundConstraint::leq(aux_b, 0), &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(0).into(), BoundRestriction::leq(aux_b, 0), &d);
 
         assert!(lp.propagate(&mut d).is_err());
 
@@ -1127,8 +1140,8 @@ mod tests {
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        lp.add_bound_update_trigger(p.leq(0).into(), BoundConstraint::leq(aux_a, 0), &d);
-        lp.add_bound_update_trigger([scope.geq(1), q.leq(0)].into(), BoundConstraint::leq(aux_b, 0), &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger([scope.geq(1), q.leq(0)].into(), BoundRestriction::leq(aux_b, 0), &d);
 
         d.save_state();
         lp.save_state();

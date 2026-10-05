@@ -8,7 +8,7 @@ use crate::{
         state::{Domains, DomainsSnapshot, Explanation},
     },
     reasoners::lp::{
-        LpEvent, Stats,
+        BoundConstraintId, BoundConstraintsStore, LpEvent, LpSum, Stats,
         explanation_utils::{LbBoundEvent, SumElem},
     },
 };
@@ -16,19 +16,6 @@ use crate::{
 use aries_lp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
 #[allow(unused_imports)]
 use itertools::Itertools;
-
-/// Justification of a bound of an LP variable: the reason why that bound was set.
-/// In other words, it corresponds to a sufficient condition for the bound to hold.
-///
-/// - `Some { scope, trigger }`: the bound holds as long as **both** the scope and trigger literal are entailed in the main model.
-///   `scope` is [`Lit::TRUE`] for the bounds that are not guarded by a scope, which is the common case.
-/// - `None`: the bound holds unconditionally (initial bound of a variable, or bound entailed at the root)
-///   (it is functionally equivalent to `Some { scope: Lit::TRUE, trigger: Lit::TRUE }`)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoundCause {
-    None,
-    Some { scope: Lit, trigger: Lit },
-}
 
 /// How the current value of a bound was established, i.e. what justifies it in an explanation.
 ///
@@ -44,19 +31,18 @@ pub enum BoundJustification {
     CpModel(Lit),
     /// The bound was pushed by a bound-update trigger (see `Lp::add_bound_update_trigger`):
     /// the main model does not entail it, only `cause` justifies it.
-    Trigger(BoundCause),
+    Trigger(BoundConstraintId),
 }
 
 impl BoundJustification {
     /// Pushes to `explanation` the literals that justify a bound with this justification.
     ///
     /// An unconditional bound contributes no literal: it holds at the root.
-    pub fn push_to(self, explanation: &mut Explanation) {
+    pub fn push_to(self, explanation: &mut Explanation, bc_store: &BoundConstraintsStore) {
         match self {
             BoundJustification::Unconditional => {}
             BoundJustification::CpModel(lit) => explanation.push(lit),
-            BoundJustification::Trigger(BoundCause::Some { scope, trigger }) => explanation.extend([scope, trigger]),
-            BoundJustification::Trigger(BoundCause::None) => {}
+            BoundJustification::Trigger(bc) => explanation.extend(&bc_store[bc].0),
         }
     }
 }
@@ -79,10 +65,7 @@ impl fmt::Debug for IntBounds {
 /// Stores a constraint of our lp with integer coefficients, necessary to verify the certificate
 ///
 /// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
-#[derive(Debug, Clone, PartialEq)]
-pub struct IntegerConstraint {
-    lin_sum: Vec<(Variable, IntCst)>,
-}
+pub type IntegerConstraint = super::LpSum;
 
 /// Interface with the aries-lp solver, also used to verify its certificates
 #[derive(Clone)]
@@ -167,6 +150,7 @@ impl Solver {
         var
     }
 
+    /// Returns always valid bounds for `var * factor`
     pub fn get_init_bounds(&self, factor: IntCst, var: Variable) -> (LongCst, LongCst) {
         let factor = cst_int_to_long(factor);
         let (lb, ub) = self.init_bounds[var.idx()];
@@ -305,8 +289,8 @@ impl Solver {
     }
 
     /// Add a new constraint in both float and integer problems
-    pub fn add_constraint(&mut self, lin_sum: Vec<(Variable, IntCst)>) {
-        let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|&(var, coef)| (var, coef as f64)).collect();
+    pub fn add_constraint(&mut self, lin_sum: LpSum) {
+        let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|(var, coef)| (var, coef as f64)).collect();
 
         if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
             let res = feas_checker.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
@@ -316,7 +300,7 @@ impl Solver {
 
         self.problem.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
 
-        self.constraints.push(IntegerConstraint { lin_sum });
+        self.constraints.push(lin_sum);
     }
 
     /// Return the maximum value that the given linear sum can take to respect to its variable bounds
@@ -367,7 +351,13 @@ impl Solver {
     /// Verify the certificate of unsatisfiability
     ///
     /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
-    pub fn check_certificate(&mut self, cert: &[f64], domains: &Domains, stats: &mut Stats) -> Option<Explanation> {
+    pub fn check_certificate(
+        &mut self,
+        cert: &[f64],
+        domains: &Domains,
+        stats: &mut Stats,
+        bc_store: &BoundConstraintsStore,
+    ) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
@@ -382,7 +372,7 @@ impl Solver {
                 continue;
             }
 
-            for &(var_i, coef_var) in self.constraints[const_i].lin_sum.iter() {
+            for (var_i, coef_var) in self.constraints[const_i].iter() {
                 let prod = coef_cert.checked_mul(coef_var as i128)?;
                 lin_sum[var_i.idx()] = lin_sum[var_i.idx()].checked_add(prod)?;
             }
@@ -396,17 +386,17 @@ impl Solver {
         // To detect the infeasibility, we check if 0 is in the range [min, max] as our linear sum should be equal to 0
         if max_lin_sum < 0 {
             if self.is_explanation_refined {
-                return Some(self.explain_geq(&lin_sum, domains));
+                return Some(self.explain_geq(&lin_sum, domains, bc_store));
             } else {
-                return Some(self.explain_geq_basic(&lin_sum));
+                return Some(self.explain_geq_basic(&lin_sum, bc_store));
             }
         }
 
         if min_lin_sum > 0 {
             if self.is_explanation_refined {
-                return Some(self.explain_leq(&lin_sum, domains));
+                return Some(self.explain_leq(&lin_sum, domains, bc_store));
             } else {
-                return Some(self.explain_leq_basic(&lin_sum));
+                return Some(self.explain_leq_basic(&lin_sum, bc_store));
             }
         }
 
@@ -455,7 +445,7 @@ impl Solver {
     /// (which is what makes the bound valid in the first place).
     ///
     /// An auxiliary variable still holding its initial bounds contributes nothing, as they hold unconditionally.
-    fn explain_leq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
+    fn explain_leq(&self, lin_sum: &[i128], domains: &Domains, bc_store: &BoundConstraintsStore) -> Explanation {
         let mut explanation = Explanation::new();
 
         // We always explain a contradiction, i.e. lower bounds summing to *strictly* more than 0,
@@ -515,7 +505,7 @@ impl Solver {
                 //  - holds unconditionally (initial bound of the variable, or condition of a trigger entailed at the root), or
                 //  - was pushed by a bound-update trigger: the literals recorded with it are the only justification of its value.
                 _ => {
-                    justification.push_to(&mut explanation);
+                    justification.push_to(&mut explanation, bc_store);
                     // the contribution of the bound to the sum is fully determined, it cancels from the UB
                     ub -= (bound as i128).saturating_mul(coef);
                 }
@@ -589,17 +579,17 @@ impl Solver {
     /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint `<lin_sum, variables> => 0`
     ///
     /// Check [`Solver::explain_leq`] for more details on how these [`Explanation`] are generated
-    fn explain_geq(&self, lin_sum: &[i128], domains: &Domains) -> Explanation {
+    fn explain_geq(&self, lin_sum: &[i128], domains: &Domains, bc_store: &BoundConstraintsStore) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 
-        self.explain_leq(opp_constraint, domains)
+        self.explain_leq(opp_constraint, domains, bc_store)
     }
 
     /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> <= 0`
     ///
     /// lin_sum contains the coefficients for every lp [`Variable`] in the constraint (including null coefficients).
     /// The coefficient at index 0 is associated with the [`Variable`] of [`Variable::idx`] 0 and so on
-    fn explain_leq_basic(&self, lin_sum: &[i128]) -> Explanation {
+    fn explain_leq_basic(&self, lin_sum: &[i128], bc_store: &BoundConstraintsStore) -> Explanation {
         let mut explanation = Explanation::new();
 
         for (i, &coeff) in lin_sum.iter().enumerate() {
@@ -611,27 +601,27 @@ impl Solver {
             } else {
                 self.bounds[i].lower_justification
             };
-            justification.push_to(&mut explanation);
+            justification.push_to(&mut explanation, bc_store);
         }
 
         explanation
     }
 
     /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> >= 0`
-    fn explain_geq_basic(&self, lin_sum: &[i128]) -> Explanation {
+    fn explain_geq_basic(&self, lin_sum: &[i128], bc_store: &BoundConstraintsStore) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 
-        self.explain_leq_basic(opp_constraint)
+        self.explain_leq_basic(opp_constraint, bc_store)
     }
 
     /// Return an explanation containing the upper and lower lit associated with a var, used to explain trivial errors (with no certificate)
-    pub fn explain_infeasible_var(&self, var: Variable) -> Explanation {
+    pub fn explain_infeasible_var(&self, var: Variable, bc_store: &BoundConstraintsStore) -> Explanation {
         let mut explanation = Explanation::new();
 
         let int_bound = &self.bounds[var.idx()];
 
         for justification in [int_bound.upper_justification, int_bound.lower_justification] {
-            justification.push_to(&mut explanation);
+            justification.push_to(&mut explanation, bc_store);
         }
 
         explanation

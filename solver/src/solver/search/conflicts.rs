@@ -15,6 +15,12 @@ use rand::{Rng, SeedableRng};
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
+/// Priority at which we need to scale down all priorities
+const MAX_PRIORITY: f64 = 1e150;
+/// When reaching the `MAX_PRIORITY` all priorities would be multiplied by this constant,
+/// so that they remain roughly in the `[1e-150, 1e+150]` range.
+const PRIORITY_SCALE_DOWN: f64 = 1e-300;
+
 #[derive(Default, Clone)]
 struct ConflictTracking {
     num_conflicts: u64,
@@ -464,7 +470,7 @@ impl VarSelect {
 
             self.heap.change_priority(var, |p| *p += var_inc);
             let p = self.heap.priority(var);
-            if p > 1e300 {
+            if p > MAX_PRIORITY {
                 self.var_rescale_activity()
             }
         }
@@ -485,12 +491,12 @@ impl VarSelect {
                 // to avoid rare case, (1/0.95)^14000 = infinity, we saturate very high
                 let correction = (self.params.var_decay)
                     .powi(-(num_decays_to_undo as i32))
-                    .min(1e300_f64);
+                    .min(MAX_PRIORITY);
                 let corrected = previous * correction;
                 // we might lose a lot of precision in the above multiplication, make sure we stay within the normal bounds
                 let corrected = corrected.clamp(0.0, var_inc);
                 let new = corrected * (1.0 - factor) + new_value * factor * var_inc;
-                if new > 1e300_f64 {
+                if new > MAX_PRIORITY {
                     // the result would not fit in an f32, rescale all variables and repeat
                     // I suspect that in extreme cases, several rescale might be necessary, hence the loop
                     self.var_rescale_activity();
@@ -523,16 +529,21 @@ impl VarSelect {
         // instead of reducing the the priority of all variables, we increase the reference.
         // This way a previous activity bump is worth less than before. On the other hand,
         // future increases will be based on the reference. `var_inc`
+        debug_assert!(self.params.var_inc.is_finite(),);
+        if self.params.var_inc >= MAX_PRIORITY {
+            self.var_rescale_activity();
+        }
         self.params.var_inc /= self.params.var_decay;
+        debug_assert!(self.params.var_inc.is_finite(),);
     }
 
     fn var_rescale_activity(&mut self) {
         // here we scale the activity of all variables, to avoid overflowing
         // this can not change the relative order in the heap, since activities are scaled by the same amount.
         self.heap.change_all_priorities_in_place(|p| {
-            *p *= 1e-300;
+            *p *= PRIORITY_SCALE_DOWN;
         });
-        self.params.var_inc *= 1e-300;
+        self.params.var_inc *= PRIORITY_SCALE_DOWN;
     }
 }
 impl Backtrack for VarSelect {
