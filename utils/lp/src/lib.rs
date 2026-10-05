@@ -349,7 +349,8 @@ impl Problem {
     /// - min > max for a the domain of a var
     /// - contradiction in a constraint free of any var: 0.0 <= -1.0 for example
     pub fn create_feasibility_checker(&self) -> Result<FeasibilityChecker, Error> {
-        let solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
+        let mut solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
+        solver.perturb_obj_coeffs();
         Ok(FeasibilityChecker { solver })
     }
 
@@ -733,7 +734,9 @@ impl FeasibilityChecker {
     ///
     /// Will return an error if the variable has inconsistent bounds
     pub fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
-        self.solver.add_variable(obj_coeff, min, max)
+        let var = self.solver.add_variable(obj_coeff, min, max)?;
+        self.solver.perturb_obj_coeff(var);
+        Ok(var)
     }
 
     /// Try to restore the feasibility of our problem

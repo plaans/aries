@@ -576,11 +576,17 @@ impl Solver {
     }
 
     pub(crate) fn initial_solve(&mut self) -> Result<(), Error> {
+        let mut perturbed = false;
         if !self.is_primal_feasible {
+            // The perturbations only guide the dual simplex (`restore_feasibility`).
+            // After that, the obj. coeffs are recalculated from the original costs (`recalc_obj_coeffs()`)
+            // and the primal simplex (`optimize`) finishes the job.
+            self.perturb_obj_coeffs();
+            perturbed = true;
             self.restore_feasibility()?;
         }
 
-        if !self.is_dual_feasible {
+        if perturbed || !self.is_dual_feasible {
             self.recalc_obj_coeffs()?;
             self.optimize()?;
         }
@@ -1469,6 +1475,44 @@ impl Solver {
         }
 
         Ok(())
+    }
+
+    /// Perturbs the obj. coeffs of the non-basic vars.
+    ///
+    /// With many costs at zero, the dual simplex is highly degenerate: without any progress measure, it can wander without restoring feasibility.
+    /// A small perturbation, different for each var, breaks the ties.
+    /// The perturbations only shift the *current* obj. coeffs (in the direction that keeps each var dual-feasible at its bound),
+    /// not the original ones.
+    ///
+    /// The perturbations can be removed by calling [`Self::recalc_obj_coeffs`].
+    pub(crate) fn perturb_obj_coeffs(&mut self) {
+        for col in 0..self.nb_vars.len() {
+            self.perturb_obj_coeff(self.nb_vars[col]);
+        }
+    }
+
+    /// Perturbs the obj. coeff. of a var, if it's non-basic (see [`Self::perturb_obj_coeffs`]).
+    pub(crate) fn perturb_obj_coeff(&mut self, var: usize) {
+        let VarState::NonBasic(col) = self.var_states[var] else {
+            return;
+        };
+        // Fibonacci hashing of the var, mapped to `[1e-6, 2e-6)`, relative to its cost.
+        let x = (var as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 11;
+        let perturbation = 1e-6 * (1.0 + x as f64 / (1u64 << 53) as f64) * (1.0 + self.orig_obj_coeffs[var].abs());
+        let perturbation = match self.nb_var_states[col] {
+            NonBasicVarState {
+                at_min: true,
+                at_max: false,
+            } => perturbation,
+            NonBasicVarState {
+                at_min: false,
+                at_max: true,
+            } => -perturbation,
+            // fixed, or between its bounds
+            _ => return,
+        };
+        self.nb_var_obj_coeffs[col] += perturbation;
+        self.cur_obj_val += perturbation * self.nb_var_vals[col];
     }
 
     #[allow(dead_code)]
