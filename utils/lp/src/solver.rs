@@ -55,6 +55,8 @@ pub(crate) struct Solver {
     sq_norms_update_helper: Vec<f64>,
     inv_basis_row_coeffs: SparseVec,
     row_coeffs: ScatteredVec,
+    /// The original columns of the vars flipped by the dual ratio test, weighted by their change.
+    flipped_cols_sum: ScatteredVec,
 }
 
 #[derive(Clone, Debug)]
@@ -350,6 +352,7 @@ impl Solver {
             sq_norms_update_helper,
             inv_basis_row_coeffs: SparseVec::new(),
             row_coeffs: ScatteredVec::empty(num_total_vars - num_constraints),
+            flipped_cols_sum: ScatteredVec::empty(num_constraints),
         };
 
         log::debug!(
@@ -1101,51 +1104,39 @@ impl Solver {
             obj_coeff
         }
 
-        let is_eligible_var = |coeff: f64, var_state: &NonBasicVarState| -> bool {
-            let entering_diff_sign = if coeff >= EPS {
-                !leaving_diff_sign
-            } else if coeff <= -EPS {
-                leaving_diff_sign
-            } else {
-                return false;
-            };
+        // True if the var must increase to reduce the infeasibility of the leaving variable.
+        let entering_diff_sign = |coeff: f64| (coeff > 0.0) != leaving_diff_sign;
 
-            if entering_diff_sign {
+        let is_eligible_var = |coeff: f64, var_state: &NonBasicVarState| -> bool {
+            if coeff.abs() < EPS {
+                return false;
+            }
+
+            if entering_diff_sign(coeff) {
                 !var_state.at_max
             } else {
                 !var_state.at_min
             }
         };
 
-        // Harris rule. See e.g.
-        // Gill, P. E., Murray, W., Saunders, M. A., & Wright, M. H. (1989).
-        // A practical anti-cycling procedure for linearly constrained optimization.
-        // Mathematical Programming, 45(1-3), 437-474.
+        // Bound flipping ratio test (a.k.a. long-step rule).
         //
-        // https://link.springer.com/content/pdf/10.1007/BF01589114.pdf
-
-        // First, we determine the max step (change in the leaving variable obj. coeff that still
-        // leaves us with a dual-feasible state) using relaxed bounds.
-        let mut max_step = f64::INFINITY;
-        for (c, &coeff) in self.row_coeffs.iter() {
-            let var_state = &self.nb_var_states[c];
-            if !is_eligible_var(coeff, var_state) {
-                continue;
-            }
-
-            let obj_coeff = clamp_obj_coeff(self.nb_var_obj_coeffs[c], var_state);
-            let cur_step = (obj_coeff.abs() + EPS) / coeff.abs();
-            if cur_step < max_step {
-                max_step = cur_step;
-            }
+        // Each eligible var has a breakpoint: the step (change in the leaving variable obj. coeff.)
+        // at which its own obj. coeff. reaches the bound of dual infeasibility.
+        // Past it, a var stays dual-feasible by moving to its other bound,
+        // which reduces the infeasibility of the leaving variable (when that bound is finite).
+        // As long as some infeasibility remains, the step (and the objective) can keep increasing.
+        // The var whose breakpoint can't be passed becomes the entering variable, and its new value stays within its bounds.
+        // Without the flips, it can end up arbitrarily far from them, and these large values snowball into a numerically unstable basis.
+        struct Breakpoint {
+            col: usize,
+            coeff: f64,
+            step: f64,
+            /// The value of the var once its breakpoint is passed.
+            flipped_val: f64,
         }
 
-        // Second, we choose among the variables satisfying the relaxed step bound
-        // the one with the biggest pivot coefficient. This allows for a much more
-        // numerically stable basis at the price of slight infeasibility in dual variables.
-        let mut entering_c = None;
-        let mut pivot_coeff_abs = f64::NEG_INFINITY;
-        let mut pivot_coeff = 0.0;
+        let mut breakpoints = vec![];
         for (c, &coeff) in self.row_coeffs.iter() {
             let var_state = &self.nb_var_states[c];
             if !is_eligible_var(coeff, var_state) {
@@ -1153,22 +1144,92 @@ impl Solver {
             }
 
             let obj_coeff = clamp_obj_coeff(self.nb_var_obj_coeffs[c], var_state);
+            let var = self.nb_vars[c];
+            breakpoints.push(Breakpoint {
+                col: c,
+                coeff,
+                step: obj_coeff.abs() / coeff.abs(),
+                flipped_val: if entering_diff_sign(coeff) {
+                    self.orig_var_maxs[var]
+                } else {
+                    self.orig_var_mins[var]
+                },
+            });
+        }
+        breakpoints.sort_by(|bp1, bp2| bp1.step.total_cmp(&bp2.step));
 
-            // If we change obj. coeff of the leaving variable by this amount,
-            // obj. coeff if the current variable will reach the bound of dual infeasibility.
-            // Variable with the tightest such bound is the entering variable.
-            let cur_step = obj_coeff.abs() / coeff.abs();
-            if cur_step <= max_step {
-                let coeff_abs = coeff.abs();
-                if coeff_abs > pivot_coeff_abs {
-                    entering_c = Some(c);
-                    pivot_coeff_abs = coeff_abs;
-                    pivot_coeff = coeff;
+        let mut infeasibility = (self.basic_var_vals[row] - leaving_new_val).abs();
+        let mut num_flips = 0;
+        let entering = loop {
+            let rest = &breakpoints[num_flips..];
+            if rest.is_empty() {
+                break None;
+            }
+
+            // Harris rule. See e.g.
+            // Gill, P. E., Murray, W., Saunders, M. A., & Wright, M. H. (1989).
+            // A practical anti-cycling procedure for linearly constrained optimization.
+            // Mathematical Programming, 45(1-3), 437-474.
+            //
+            // https://link.springer.com/content/pdf/10.1007/BF01589114.pdf
+
+            // First, we determine the max step that still leaves us with a dual-feasible state
+            // using relaxed bounds.
+            let mut max_step = f64::INFINITY;
+            for bp in rest {
+                if bp.step > max_step {
+                    break;
+                }
+                max_step = max_step.min(bp.step + EPS / bp.coeff.abs());
+            }
+
+            // Second, the breakpoints within that step are passed together,
+            // if the leaving variable remains infeasible once they all are.
+            let group = &rest[..rest.partition_point(|bp| bp.step <= max_step)];
+            let slope_decrease: f64 = group
+                .iter()
+                .map(|bp| bp.coeff.abs() * (bp.flipped_val - self.nb_var_vals[bp.col]).abs())
+                .sum();
+            let remaining_infeasibility = infeasibility - slope_decrease;
+            // Past the last breakpoint, only an infeasibility beyond the tolerance proves the problem infeasible.
+            let threshold = if group.len() == rest.len() { EPS } else { 0.0 };
+            if remaining_infeasibility > threshold {
+                infeasibility = remaining_infeasibility;
+                num_flips += group.len();
+                continue;
+            }
+
+            // Otherwise, we choose among them the var with the biggest pivot coefficient.
+            // This allows for a much more numerically stable basis
+            // at the price of slight infeasibility in dual variables.
+            break group
+                .iter()
+                .reduce(|best, bp| if bp.coeff.abs() > best.coeff.abs() { bp } else { best })
+                .map(|bp| (bp.col, bp.coeff));
+        };
+
+        if let Some((col, pivot_coeff)) = entering {
+            if num_flips > 0 {
+                self.flipped_cols_sum.clear_and_resize(self.num_constraints());
+                for bp in &breakpoints[..num_flips] {
+                    let var = self.nb_vars[bp.col];
+                    let diff = bp.flipped_val - self.nb_var_vals[bp.col];
+                    self.nb_var_vals[bp.col] = bp.flipped_val;
+                    self.nb_var_states[bp.col] = NonBasicVarState {
+                        at_min: bp.flipped_val == self.orig_var_mins[var],
+                        at_max: bp.flipped_val == self.orig_var_maxs[var],
+                    };
+                    self.cur_obj_val += self.nb_var_obj_coeffs[bp.col] * diff;
+                    for (r, &coeff) in self.orig_constraints_csc.outer_view(var).unwrap().iter() {
+                        *self.flipped_cols_sum.get_mut(r) += diff * coeff;
+                    }
+                }
+                let basic_vals_diff = self.basis_solver.solve(self.flipped_cols_sum.iter());
+                for (r, &diff) in basic_vals_diff.iter() {
+                    self.basic_var_vals[r] -= diff;
                 }
             }
-        }
 
-        if let Some(col) = entering_c {
             let entering_diff = (self.basic_var_vals[row] - leaving_new_val) / pivot_coeff;
             let entering_new_val = self.nb_var_vals[col] + entering_diff;
 
