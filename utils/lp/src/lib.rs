@@ -577,6 +577,8 @@ impl Solution {
         let expr = expr.into();
         self.solver
             .add_constraint(CsVec::new(self.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)?;
+        // The dual simplex may have shifted obj. coeffs, which `initial_solve` undoes (restoring optimality)
+        self.solver.initial_solve()?;
         Ok(self)
     }
 
@@ -590,6 +592,8 @@ impl Solution {
     pub fn fix_var(mut self, var: Variable, val: f64) -> Result<Self, Error> {
         assert!(var.0 < self.num_vars);
         self.solver.fix_var(var.0, val)?;
+        // The dual simplex may have shifted obj. coeffs, which `initial_solve` undoes (restoring optimality)
+        self.solver.initial_solve()?;
         Ok(self)
     }
 
@@ -638,6 +642,8 @@ impl Solution {
     pub fn add_gomory_cut(mut self, var: Variable) -> Result<Self, Error> {
         assert!(var.0 < self.num_vars);
         self.solver.add_gomory_cut(var.0)?;
+        // The dual simplex may have shifted obj. coeffs, which `initial_solve` undoes (restoring optimality)
+        self.solver.initial_solve()?;
         Ok(self)
     }
 }
