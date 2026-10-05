@@ -488,25 +488,37 @@ impl Solver {
             VarState::Basic(row) => {
                 // if var was basic, remove it.
                 self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, val)?;
+                let cur_val = self.basic_var_vals[row];
+                let increases = val > cur_val;
+                let pivot_info = match self.choose_entering_col_dual(row, val, increases) {
+                    // If it's already at `val` (up to the tolerance), it can as well leave the basis the other way, without moving.
+                    Err(Error::InfeasibleWithCertificate(_)) if (val - cur_val).abs() <= EPS => {
+                        match self.choose_entering_col_dual(row, cur_val, !increases) {
+                            Ok(pivot_info) => pivot_info,
+                            // Or in exchange for a fixed var, if only those remain in its row.
+                            Err(err) => self.choose_fixed_entering_col(row).ok_or(err)?,
+                        }
+                    }
+                    res => res?,
+                };
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
                 pivot_info.col
             }
 
-            VarState::NonBasic(col) => {
-                self.calc_col_coeffs(col);
-
-                let diff = val - self.nb_var_vals[col];
-                for (r, coeff) in self.col_coeffs.iter() {
-                    self.basic_var_vals[r] -= diff * coeff;
-                }
-                self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
-                self.nb_var_vals[col] = val;
-
-                col
-            }
+            VarState::NonBasic(col) => col,
         };
+
+        // (a var that left the basis "without moving" is only within the tolerance of `val`)
+        let diff = val - self.nb_var_vals[col];
+        if diff != 0.0 {
+            self.calc_col_coeffs(col);
+            for (r, coeff) in self.col_coeffs.iter() {
+                self.basic_var_vals[r] -= diff * coeff;
+            }
+            self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
+            self.nb_var_vals[col] = val;
+        }
 
         self.nb_var_states[col] = NonBasicVarState {
             at_min: true,
@@ -645,7 +657,8 @@ impl Solver {
 
             if let Some((row, leaving_new_val)) = self.choose_pivot_row_dual() {
                 self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
+                let leaving_diff_sign = leaving_new_val > self.basic_var_vals[row];
+                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val, leaving_diff_sign)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
             } else {
@@ -1109,10 +1122,14 @@ impl Solver {
         })
     }
 
-    fn choose_entering_col_dual(&mut self, row: usize, leaving_new_val: f64) -> Result<PivotInfo, Error> {
-        // True if the new obj. coeff. must be nonnegative in a dual-feasible configuration.
-        let leaving_diff_sign = leaving_new_val > self.basic_var_vals[row];
-
+    /// `leaving_diff_sign` is true if the leaving variable increases to `leaving_new_val`,
+    /// i.e. if its new obj. coeff. must be nonnegative in a dual-feasible configuration.
+    fn choose_entering_col_dual(
+        &mut self,
+        row: usize,
+        leaving_new_val: f64,
+        leaving_diff_sign: bool,
+    ) -> Result<PivotInfo, Error> {
         fn clamp_obj_coeff(mut obj_coeff: f64, var_state: &NonBasicVarState) -> f64 {
             if var_state.at_min && obj_coeff < 0.0 {
                 obj_coeff = 0.0;
@@ -1274,6 +1291,34 @@ impl Solver {
 
             Err(Error::InfeasibleWithCertificate(certificate))
         }
+    }
+
+    /// Chooses a var fixed by its bounds to take the place of the basic var of `row`, without moving anything.
+    ///
+    /// Being fixed, its cost doesn't matter: its obj. coeff. is set to zero,
+    /// so that the pivot leaves all the other ones (and their dual feasibility) unchanged.
+    fn choose_fixed_entering_col(&mut self, row: usize) -> Option<PivotInfo> {
+        let (col, coeff) = self
+            .row_coeffs
+            .iter()
+            .filter(|&(c, coeff)| {
+                // (not one fixed by `fix_var`: entering the basis would unfix it)
+                let var = self.nb_vars[c];
+                coeff.abs() >= EPS && self.orig_var_mins[var] == self.orig_var_maxs[var] && !self.nb_var_is_fixed[c]
+            })
+            .reduce(|best, cur| if cur.1.abs() > best.1.abs() { cur } else { best })
+            .map(|(c, &coeff)| (c, coeff))?;
+        self.nb_var_obj_coeffs[col] = 0.0;
+        Some(PivotInfo {
+            col,
+            entering_new_val: self.nb_var_vals[col],
+            entering_diff: 0.0,
+            elem: Some(PivotElem {
+                row,
+                coeff,
+                leaving_new_val: self.basic_var_vals[row],
+            }),
+        })
     }
 
     fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), Error> {
