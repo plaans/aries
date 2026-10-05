@@ -8,7 +8,7 @@ use aries_solver::core::{IntCst, Lit, Var, views::Term};
 use aries_solver::prelude::Conjunction;
 use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
-use aries_solver::reasoners::lp::{BoundConstraint, Lp, LpSum, LpVar};
+use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpSum, LpVar};
 
 use crate::constraints::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
 use crate::constraints::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
@@ -199,12 +199,12 @@ fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp
     );
 
     for row in problem.rows() {
-        let sum: LpSum = row
-            .lhs()
-            .iter()
-            .map(|&(coef, tag)| (vars[&tag], coef))
-            .chain(row.rhs().iter().map(|&(coef, tag)| (vars[&tag], -coef)))
-            .collect();
+        let sum = LpSum::new(
+            row.lhs()
+                .iter()
+                .map(|&(coef, tag)| (vars[&tag], coef))
+                .chain(row.rhs().iter().map(|&(coef, tag)| (vars[&tag], -coef))),
+        );
 
         match row.tpe {
             // `sum <= cst`
@@ -222,7 +222,7 @@ fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp
 }
 
 fn negated(sum: &LpSum) -> LpSum {
-    sum.iter().map(|&(var, coef)| (var, -coef)).collect()
+    LpSum::new(sum.iter().map(|(var, coef)| (var, -coef)))
 }
 
 /// Ties the lifted columns (as well as term grounding columns) of the LP to the literals of the main model that decide them.
@@ -261,15 +261,15 @@ fn post_bindings(
     for (lit, lit_vars) in presence_lits_and_vars {
         for &var in &lit_vars {
             if lit.tautological() {
-                lp.add_bound_update_trigger(Conjunction::tautology(), BoundConstraint::geq(var, 1), doms);
+                lp.add_bound_update_trigger(Conjunction::tautology(), BoundRestriction::geq(var, 1), doms);
             } else if lit.absurd() {
-                lp.add_bound_update_trigger(Conjunction::tautology(), BoundConstraint::leq(var, 0), doms);
+                lp.add_bound_update_trigger(Conjunction::tautology(), BoundRestriction::leq(var, 0), doms);
             } else {
                 let p = lit.variable();
                 debug_assert!(p != Var::ZERO && lit == p.geq(1));
 
-                lp.add_bound_update_trigger([doms.presence(p), lit].into(), BoundConstraint::geq(var, 1), doms);
-                lp.add_bound_update_trigger((!lit).into(), BoundConstraint::leq(var, 0), doms);
+                lp.add_bound_update_trigger([doms.presence(p), lit].into(), BoundRestriction::geq(var, 1), doms);
+                lp.add_bound_update_trigger((!lit).into(), BoundRestriction::leq(var, 0), doms);
             }
         }
     }
@@ -286,16 +286,16 @@ fn post_bindings(
 
         let Some(x) = var_value_of(term, value) else {
             // There exists no `x` value that `var` could ever take such that `term = value`
-            lp.add_bound_update_trigger(Conjunction::tautology(), BoundConstraint::leq(col_var, 0), doms);
+            lp.add_bound_update_trigger(Conjunction::tautology(), BoundRestriction::leq(col_var, 0), doms);
             continue;
         };
 
         // The column is pinned to 0 as soon as we're sure the variable cannot take the value `x`
         if let Some(above) = x.checked_add(1) {
-            lp.add_bound_update_trigger(var.geq(above).into(), BoundConstraint::leq(col_var, 0), doms);
+            lp.add_bound_update_trigger(var.geq(above).into(), BoundRestriction::leq(col_var, 0), doms);
         }
         if let Some(below) = x.checked_sub(1) {
-            lp.add_bound_update_trigger(var.leq(below).into(), BoundConstraint::leq(col_var, 0), doms);
+            lp.add_bound_update_trigger(var.leq(below).into(), BoundRestriction::leq(col_var, 0), doms);
         }
     }
 
@@ -308,7 +308,7 @@ fn post_bindings(
         };
         debug_assert!(lit.variable() != Var::ZERO && lit == lit.variable().geq(1));
 
-        lp.add_bound_update_trigger((!lit).into(), BoundConstraint::leq(var, 0), doms);
+        lp.add_bound_update_trigger((!lit).into(), BoundRestriction::leq(var, 0), doms);
 
         // NOTE: the converse half-binding, raising the column's lower bound to 1 on an *active* link, is deliberately absent by default !!
         // Indeed, it is *unsound* if condition transitions are allowed to support other transitions (i.e. act as out-transitions).
