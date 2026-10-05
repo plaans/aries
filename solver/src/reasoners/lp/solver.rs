@@ -8,7 +8,7 @@ use crate::{
         state::{Domains, DomainsSnapshot, Explanation},
     },
     reasoners::lp::{
-        BoundConstraintId, BoundConstraintsStore, LpEvent, Stats,
+        BoundConstraintId, BoundConstraintsStore, LpEvent, LpSum, Stats,
         explanation_utils::{LbBoundEvent, SumElem},
     },
 };
@@ -65,10 +65,7 @@ impl fmt::Debug for IntBounds {
 /// Stores a constraint of our lp with integer coefficients, necessary to verify the certificate
 ///
 /// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
-#[derive(Debug, Clone, PartialEq)]
-pub struct IntegerConstraint {
-    lin_sum: Vec<(Variable, IntCst)>,
-}
+pub type IntegerConstraint = super::LpSum;
 
 /// Interface with the aries-lp solver, also used to verify its certificates
 #[derive(Clone)]
@@ -153,6 +150,7 @@ impl Solver {
         var
     }
 
+    /// Returns always valid bounds for `var * factor`
     pub fn get_init_bounds(&self, factor: IntCst, var: Variable) -> (LongCst, LongCst) {
         let factor = cst_int_to_long(factor);
         let (lb, ub) = self.init_bounds[var.idx()];
@@ -291,8 +289,8 @@ impl Solver {
     }
 
     /// Add a new constraint in both float and integer problems
-    pub fn add_constraint(&mut self, lin_sum: Vec<(Variable, IntCst)>) {
-        let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|&(var, coef)| (var, coef as f64)).collect();
+    pub fn add_constraint(&mut self, lin_sum: LpSum) {
+        let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|(var, coef)| (var, coef as f64)).collect();
 
         if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
             let res = feas_checker.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
@@ -302,7 +300,7 @@ impl Solver {
 
         self.problem.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
 
-        self.constraints.push(IntegerConstraint { lin_sum });
+        self.constraints.push(lin_sum);
     }
 
     /// Return the maximum value that the given linear sum can take to respect to its variable bounds
@@ -374,7 +372,7 @@ impl Solver {
                 continue;
             }
 
-            for &(var_i, coef_var) in self.constraints[const_i].lin_sum.iter() {
+            for (var_i, coef_var) in self.constraints[const_i].iter() {
                 let prod = coef_cert.checked_mul(coef_var as i128)?;
                 lin_sum[var_i.idx()] = lin_sum[var_i.idx()].checked_add(prod)?;
             }

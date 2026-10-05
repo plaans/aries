@@ -20,6 +20,9 @@ them to the LP.
 
 mod explanation_utils;
 mod solver;
+mod sum;
+
+pub use sum::LpSum;
 
 use std::collections::HashMap;
 
@@ -193,12 +196,6 @@ enum Signed<T> {
     Minus(T),
 }
 
-/// Represents a sum of scaled LP variables: `var_1 * factor_1 + var_2 * factor_2 + ...`.
-///
-/// TODO: this is a very minimal implementation. In practice we would like to have something like [`LinSum`]
-/// which only differs in the type of variables used.
-pub type LpSum = Vec<(LpVar, IntCst)>;
-
 /// Struct that implements the [`Theory`] trait (reasoner).
 ///
 /// It encapsulates all the necessary information to run the lp solver on the posted constraints.
@@ -219,11 +216,11 @@ pub struct Lp {
     /// Decision level at which the pending constraints were last applied. No watch can trigger them
     /// again, so backtracking below it makes them all pending anew.
     pending_bound_constrs_applied_at: DecLvl,
-    /// Associates linear sums with its corresponding variable in the aries-lp solver.
+    /// Associates linear sums with its corresponding reifying variable in the aries-lp solver.
     /// The sums are simplified, i.e. their terms are sorted those sharing the same var are merged.
     ///
     /// Used to avoid duplicate variables for the same sum (or its opposite).
-    memory_s: HashMap<LpSum, Variable>,
+    reifications: HashMap<LpSum, Variable>,
     /// Maps var from aries solver with their corresponding variable in minilp (if they appear in the post constraints)
     memory_x_main: RefMap<Var, Variable>,
     model_events: ObsTrailCursor<Event>,
@@ -254,7 +251,7 @@ impl Lp {
             pending_bound_constrs: Vec::new(),
             pending_bound_constrs_applied_at: DecLvl::ROOT,
 
-            memory_s: HashMap::new(),
+            reifications: HashMap::new(),
             memory_x_main: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
@@ -336,19 +333,19 @@ impl Lp {
     /// The function returns the `{+,-}s` variable where the sign is required to avoid duplicated reification variables.
     fn reify_sum(&mut self, sum: LpSum) -> Signed<LpVar> {
         // if the sum is exactly one variable, with factor +/-1, no need for a new variable to reify.
-        if let Some([(var, 1)]) = sum.as_array() {
-            return Signed::Plus(*var);
+        if let Some((var, 1)) = sum.as_single_term() {
+            return Signed::Plus(var);
         }
-        if let Some([(var, -1)]) = sum.as_array() {
-            return Signed::Minus(*var);
+        if let Some((var, -1)) = sum.as_single_term() {
+            return Signed::Minus(var);
         }
 
         // if already have this sum in our cache, just reuse the reification variable.
-        if let Some(reif) = self.memory_s.get(&sum) {
+        if let Some(reif) = self.reifications.get(&sum) {
             return Signed::Plus(*reif);
         }
-        let minus_sum: LpSum = sum.iter().map(|&(var, factor)| (var, -factor)).collect();
-        if let Some(reif) = self.memory_s.get(&minus_sum) {
+        let minus_sum: LpSum = sum.iter().map(|(var, factor)| (var, -factor)).into();
+        if let Some(reif) = self.reifications.get(&minus_sum) {
             return Signed::Minus(*reif);
         }
 
@@ -357,7 +354,7 @@ impl Lp {
         let mut lb: LongCst = 0;
         let mut ub: LongCst = 0;
 
-        for &(var, factor) in &sum {
+        for (var, factor) in sum.iter() {
             let (elem_lb, elem_ub) = self.solver.get_init_bounds(factor, var);
             ub = ub.saturating_add(elem_ub);
             lb = lb.saturating_add(elem_lb);
@@ -371,13 +368,13 @@ impl Lp {
 
         // create a constraint such that `sum = s`
         let mut constraint = sum.clone();
-        constraint.push((s, -1));
+        constraint.push(s, -1);
 
         // We force s to be equal to our linear sum
         self.solver.add_constraint(constraint);
         self.stats.num_constraints += 1;
 
-        self.memory_s.insert(sum, s);
+        self.reifications.insert(sum, s);
 
         Signed::Plus(s)
     }
@@ -391,11 +388,11 @@ impl Lp {
     /// It will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
     pub fn add_cp_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
-        let sum_terms = sum
-            .terms_slice()
-            .iter()
-            .map(|&svar| (self.bind_cp_var(svar.var, doms), svar.factor))
-            .collect::<Vec<_>>();
+        let sum_terms = LpSum::new(
+            sum.terms_slice()
+                .iter()
+                .map(|&svar| (self.bind_cp_var(svar.var, doms), svar.factor)),
+        );
         self.add_linear_leq_constraint(sum_terms, sum_cst, active, doms)
     }
 
@@ -403,7 +400,14 @@ impl Lp {
     ///
     /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from CP variables) or with
     /// [`Self::create_auxiliary_variable`] (independent variable).
-    pub fn add_linear_leq_constraint(&mut self, sum_terms: LpSum, sum_cst: IntCst, active: Lit, doms: &Domains) {
+    pub fn add_linear_leq_constraint(
+        &mut self,
+        sum_terms: impl Into<LpSum>,
+        sum_cst: IntCst,
+        active: Lit,
+        doms: &Domains,
+    ) {
+        let sum_terms = sum_terms.into();
         if !self.options.enable {
             return;
         }
