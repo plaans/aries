@@ -1245,6 +1245,11 @@ impl Solver {
         };
 
         if let Some((col, pivot_coeff)) = entering {
+            // Harris rule may choose a var whose obj. coeff. is slightly dual-infeasible:
+            // the step would then go backwards, pushing the other obj. coeffs further into dual infeasibility.
+            // Shifting it to zero makes the step zero instead (like the perturbations, `recalc_obj_coeffs` removes the shift).
+            self.shift_obj_coeff(col, clamp_obj_coeff(self.nb_var_obj_coeffs[col], &self.nb_var_states[col]));
+
             if num_flips > 0 {
                 self.flipped_cols_sum.clear_and_resize(self.num_constraints());
                 for bp in &breakpoints[..num_flips] {
@@ -1308,7 +1313,7 @@ impl Solver {
             })
             .reduce(|best, cur| if cur.1.abs() > best.1.abs() { cur } else { best })
             .map(|(c, &coeff)| (c, coeff))?;
-        self.nb_var_obj_coeffs[col] = 0.0;
+        self.shift_obj_coeff(col, 0.0);
         Some(PivotInfo {
             col,
             entering_new_val: self.nb_var_vals[col],
@@ -1569,8 +1574,22 @@ impl Solver {
             // fixed, or between its bounds
             _ => return,
         };
-        self.nb_var_obj_coeffs[col] += perturbation;
-        self.cur_obj_val += perturbation * self.nb_var_vals[col];
+        self.shift_obj_coeff(col, self.nb_var_obj_coeffs[col] + perturbation);
+    }
+
+    /// Changes the obj. coeff. of a non-basic var to `obj_coeff`.
+    ///
+    /// It's as if the cost of the var had changed by the same amount (but `orig_obj_coeffs` stays unchanged).
+    /// The obj. coeffs then no longer match the original costs, so the basis is no longer known to be optimal for them:
+    /// `is_dual_feasible` becomes false, which makes `initial_solve` recalculate the obj. coeffs from the original costs
+    /// (and then finish with the primal simplex).
+    fn shift_obj_coeff(&mut self, col: usize, obj_coeff: f64) {
+        let shift = obj_coeff - self.nb_var_obj_coeffs[col];
+        if shift != 0.0 {
+            self.nb_var_obj_coeffs[col] = obj_coeff;
+            self.cur_obj_val += shift * self.nb_var_vals[col];
+            self.is_dual_feasible = false;
+        }
     }
 
     #[allow(dead_code)]
