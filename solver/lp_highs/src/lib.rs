@@ -270,9 +270,25 @@ impl Lp {
     }
 
     fn check_feasibility(&mut self) -> Result<(), Contradiction> {
+        let time = std::time::Instant::now();
         match self.lp_state.solve_or_iis(&mut self.stats) {
-            Err(iis) => Err(self.build_contradiction(iis)),
-            _ => Ok(()),
+            Err(iis) => {
+                tracing::info!(
+                    "|-[LPRELAX]- Solved LP (UNSAT) in {}s with HiGHS",
+                    time.elapsed().as_secs_f64()
+                );
+                let time = std::time::Instant::now();
+                let iis = self.build_contradiction(iis);
+                tracing::info!("|-[LPRELAX]- Built IIS in {}s with HiGHS", time.elapsed().as_secs_f64());
+                Err(iis)
+            }
+            _ => {
+                tracing::info!(
+                    "|-[LPRELAX]- Solved LP (SAT) in {}s with HiGHS",
+                    time.elapsed().as_secs_f64()
+                );
+                Ok(())
+            }
         }
     }
 

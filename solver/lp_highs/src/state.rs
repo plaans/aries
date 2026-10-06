@@ -362,8 +362,6 @@ impl LpState {
     }
 
     pub fn undo_to_last_backtrack_point(&mut self) {
-        self.lp_model.clear_solver();
-
         let (col_bounds, lp_model, is_counted, num_fixed_counted) = (
             &mut self.col_bounds,
             &mut self.lp_model,
@@ -395,10 +393,6 @@ impl LpState {
         let time = std::time::Instant::now();
 
         let res = self.lp_model.solve_or_iis();
-
-        if res.is_err() {
-            self.lp_model.clear_solver();
-        }
 
         stats.feasibility_checks_time += time.elapsed();
         stats.num_feasibility_checks += 1;
