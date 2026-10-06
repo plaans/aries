@@ -121,6 +121,15 @@ impl Lp {
         self.lp_state.get_column_bounds(col)
     }
 
+    /// First: the number of columns of the LP, created with [`Lp::add_column`] or [`Lp::add_columns`]
+    /// (i.e. not counting the objective column, see [`Lp::add_objective_column`])
+    ///
+    /// Second: how many of them have equal lower and upper bounds
+    /// (as of the last propagation, which syncs the LP's bounds with the model)
+    pub fn column_counts(&self) -> (usize, usize) {
+        (self.lp_state.num_counted(), self.lp_state.num_fixed_counted())
+    }
+
     pub fn add_column_01(&mut self) -> LpCol {
         assert!(self.lp_state.trail().trail.is_empty());
         self.add_column((Some(0), Some(1)))
@@ -128,14 +137,20 @@ impl Lp {
     pub fn add_column(&mut self, bounds: (Option<IntCst>, Option<IntCst>)) -> LpCol {
         assert!(self.lp_state.trail().trail.is_empty());
         let bounds = (bounds.0.map(int_cst_as_long), bounds.1.map(int_cst_as_long));
-        self.lp_state.add_column(bounds)
+        let col = self.lp_state.add_column(bounds);
+        self.lp_state.mark_counted(col);
+        col
     }
     pub fn add_columns(&mut self, bounds: &[(Option<IntCst>, Option<IntCst>)]) -> Vec<LpCol> {
         assert!(self.lp_state.trail().trail.is_empty());
         let bounds = bounds
             .iter()
             .map(|bounds| (bounds.0.map(int_cst_as_long), bounds.1.map(int_cst_as_long)));
-        self.lp_state.add_columns(bounds)
+        let cols = self.lp_state.add_columns(bounds);
+        for &col in &cols {
+            self.lp_state.mark_counted(col);
+        }
+        cols
     }
     pub fn tighten_column(&mut self, col: LpCol, bounds: (Option<IntCst>, Option<IntCst>)) -> bool {
         assert!(self.lp_state.trail().trail.is_empty());
