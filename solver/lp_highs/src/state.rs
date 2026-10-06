@@ -340,8 +340,8 @@ impl LpState {
             self.lp_model.clear_solver();
         }
 
-        stats.lpruns_time += time.elapsed();
-        stats.lpruns += 1;
+        stats.feasibility_checks_time += time.elapsed();
+        stats.num_feasibility_checks += 1;
 
         res
     }

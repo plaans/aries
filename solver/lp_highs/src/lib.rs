@@ -22,8 +22,8 @@ use crate::{
 
 #[derive(Default, Clone)]
 pub struct LpStats {
-    pub lpruns: u64,
-    pub lpruns_time: std::time::Duration,
+    pub num_feasibility_checks: u64,
+    pub feasibility_checks_time: std::time::Duration,
 }
 
 #[derive(Clone)]
@@ -353,8 +353,8 @@ impl Theory for Lp {
     }
 
     fn print_stats(&self) {
-        println!("# lp runs: {}", self.stats.lpruns);
-        println!("# lp runs time: {:.6} s", self.stats.lpruns_time.as_secs_f64());
+        println!("# feasibility checks: {}", self.stats.num_feasibility_checks);
+        println!("# feasibility checks time: {:.6} s", self.stats.feasibility_checks_time.as_secs_f64());
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
