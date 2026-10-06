@@ -166,6 +166,12 @@ struct Stats {
     num_val_certif_float: usize,
     /// Number of overflows detected during the certificate verification
     num_overflow: usize,
+    /// Number of feasibility checks performed
+    num_feasibility_checks: usize,
+    /// Time spent in feasibility checks
+    feasibility_checks_time: std::time::Duration,
+    /// Time spent updating bounds
+    bound_updates_time: std::time::Duration,
 }
 
 impl Stats {
@@ -181,6 +187,10 @@ impl Stats {
             num_val_certif: 0,
             num_val_certif_float: 0,
             num_overflow: 0,
+
+            num_feasibility_checks: 0,
+            feasibility_checks_time: std::time::Duration::ZERO,
+            bound_updates_time: std::time::Duration::ZERO,
         }
     }
 }
@@ -551,20 +561,8 @@ impl Lp {
             _ => Ok(()),
         }
     }
-}
 
-impl Theory for Lp {
-    fn identity(&self) -> ReasonerId {
-        self.id
-    }
-
-    fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.options.propagation_active || !self.options.enable {
-            return Ok(());
-        }
-
-        self.stats.num_propagate += 1;
-
+    fn process_model_events(&mut self, domains: &Domains) -> Result<(), Contradiction> {
         // Constraints registered with an already entailed cause are not triggered by any watch
         self.apply_pending_bound_constrs(domains)?;
 
@@ -617,9 +615,49 @@ impl Theory for Lp {
             }
         }
 
+        Ok(())
+    }
+}
+
+impl Theory for Lp {
+    fn identity(&self) -> ReasonerId {
+        self.id
+    }
+
+    fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
+        if !self.options.propagation_active || !self.options.enable {
+            return Ok(());
+        }
+
+        self.stats.num_propagate += 1;
+
+        let time = std::time::Instant::now();
+        let res = self.process_model_events(domains);
+        self.stats.bound_updates_time += time.elapsed();
+        res?;
+
         // After updating all the bounds, we check that our lp solver is still in a feasible state
+        let time = std::time::Instant::now();
         let res = self.solver.check_feasibility();
-        self.explain_check_feas(res, domains)?;
+        let elapsed = time.elapsed();
+        self.stats.num_feasibility_checks += 1;
+        self.stats.feasibility_checks_time += elapsed;
+        tracing::info!(
+            "|-[LPRELAX]- Solved LP ({}) in {}s with aries-lp",
+            if res.is_err() { "UNSAT" } else { "SAT" },
+            elapsed.as_secs_f64()
+        );
+
+        if res.is_err() {
+            let time = std::time::Instant::now();
+            let res = self.explain_check_feas(res, domains);
+            tracing::info!(
+                "|-[LPRELAX]- Checked certificate (valid: {}) in {}s with aries-lp",
+                res.is_err(),
+                time.elapsed().as_secs_f64()
+            );
+            res?;
+        }
 
         self.stats.num_ok_propagate += 1;
 
@@ -651,6 +689,15 @@ impl Theory for Lp {
                 self.stats.num_certif, self.stats.num_val_certif, self.stats.num_overflow
             );
             println!("# valid float certificates: {}", self.stats.num_val_certif_float);
+            println!("# feasibility checks: {}", self.stats.num_feasibility_checks);
+            println!(
+                "# feasibility checks time: {:.6} s",
+                self.stats.feasibility_checks_time.as_secs_f64()
+            );
+            println!(
+                "# bound updates time: {:.6} s",
+                self.stats.bound_updates_time.as_secs_f64()
+            );
         } else {
             println!("DISABLED");
         }
