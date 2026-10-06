@@ -52,6 +52,10 @@ use crate::{
 /// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
 #[derive(Debug, Clone, Copy)]
 pub struct LpOptions {
+    /// Used to activate/deactivate the check of the LP's feasibility during propagation (the bounds are still synced when deactivated)
+    ///
+    /// Can be controlled with [`Lp::activate_feasibility_check`] and [`Lp::deactivate_feasibility_check`]
+    feasibility_check_active: bool,
     /// Used to activate/deactivate the propagation of the reasoner
     ///
     /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
@@ -71,6 +75,7 @@ impl LpOptions {
     fn new(propagation_active: bool, enable: bool, is_explanation_refined: bool) -> Self {
         LpOptions {
             propagation_active,
+            feasibility_check_active: propagation_active,
             enable,
             is_explanation_refined,
         }
@@ -290,6 +295,16 @@ impl Lp {
     /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
     pub fn deactivate_propagation(&mut self) {
         self.options.propagation_active = false;
+    }
+
+    /// Activate the check of the LP's feasibility during propagation (active by default)
+    pub fn activate_feasibility_check(&mut self) {
+        self.options.feasibility_check_active = true;
+    }
+
+    /// Deactivate the check of the LP's feasibility during propagation, which then only syncs the LP's bounds with the model
+    pub fn deactivate_feasibility_check(&mut self) {
+        self.options.feasibility_check_active = false;
     }
 
     /// Activate refined explanation using minimization based on [`crate::reasoners::cp::linear`]
@@ -637,26 +652,28 @@ impl Theory for Lp {
         res?;
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
-        let time = std::time::Instant::now();
-        let res = self.solver.check_feasibility();
-        let elapsed = time.elapsed();
-        self.stats.num_feasibility_checks += 1;
-        self.stats.feasibility_checks_time += elapsed;
-        tracing::info!(
-            "|-[LPRELAX]- Solved LP ({}) in {}s with aries-lp",
-            if res.is_err() { "UNSAT" } else { "SAT" },
-            elapsed.as_secs_f64()
-        );
-
-        if res.is_err() {
+        if self.options.feasibility_check_active {
             let time = std::time::Instant::now();
-            let res = self.explain_check_feas(res, domains);
+            let res = self.solver.check_feasibility();
+            let elapsed = time.elapsed();
+            self.stats.num_feasibility_checks += 1;
+            self.stats.feasibility_checks_time += elapsed;
             tracing::info!(
-                "|-[LPRELAX]- Checked certificate (valid: {}) in {}s with aries-lp",
-                res.is_err(),
-                time.elapsed().as_secs_f64()
+                "|-[LPRELAX]- Solved LP ({}) in {}s with aries-lp",
+                if res.is_err() { "UNSAT" } else { "SAT" },
+                elapsed.as_secs_f64()
             );
-            res?;
+
+            if res.is_err() {
+                let time = std::time::Instant::now();
+                let res = self.explain_check_feas(res, domains);
+                tracing::info!(
+                    "|-[LPRELAX]- Checked certificate (valid: {}) in {}s with aries-lp",
+                    res.is_err(),
+                    time.elapsed().as_secs_f64()
+                );
+                res?;
+            }
         }
 
         self.stats.num_ok_propagate += 1;
