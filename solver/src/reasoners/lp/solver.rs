@@ -8,7 +8,7 @@ use crate::{
         state::{Domains, DomainsSnapshot, Explanation},
     },
     reasoners::lp::{
-        BoundConstraintId, BoundConstraintsStore, LpEvent, LpSum, Stats,
+        BoundConstraintId, BoundConstraintsStore, LpEvent, LpSum, Stats, VariableCounts,
         explanation_utils::{LbBoundEvent, SumElem},
     },
 };
@@ -164,6 +164,7 @@ impl Solver {
     /// Set a new Upper/Lower bound for the given variable
     ///
     /// `justification` tells how the new bound was established (and it will be used to build the explanations involving it).
+    /// `counts` is told whether the variable became fixed / unfixed.
     ///
     /// # Errors
     ///
@@ -174,6 +175,7 @@ impl Solver {
         bound: Bound,
         val: LongCst,
         justification: BoundJustification,
+        counts: &mut VariableCounts,
     ) -> Result<(), Error> {
         if self.opt_feas_checker.is_none() {
             self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
@@ -183,6 +185,7 @@ impl Solver {
 
         debug_assert!(var.idx() < self.bounds.len());
 
+        let was_fixed = self.bounds[var.idx()].lower == self.bounds[var.idx()].upper;
         match bound {
             Bound::Lower => {
                 self.bounds[var.idx()].lower = val;
@@ -193,6 +196,8 @@ impl Solver {
                 self.bounds[var.idx()].upper_justification = justification;
             }
         }
+        let is_fixed = self.bounds[var.idx()].lower == self.bounds[var.idx()].upper;
+        counts.update(var, was_fixed, is_fixed);
 
         self.problem.set_bound(var, &bound, val as f64);
 
@@ -209,13 +214,19 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound_restrict_permanent(&mut self, var: Variable, bound: Bound, val: LongCst) -> Result<bool, Error> {
+    pub fn set_bound_restrict_permanent(
+        &mut self,
+        var: Variable,
+        bound: Bound,
+        val: LongCst,
+        counts: &mut VariableCounts,
+    ) -> Result<bool, Error> {
         let restricts = match bound {
             Bound::Lower => val > self.bounds[var.idx()].lower,
             Bound::Upper => val < self.bounds[var.idx()].upper,
         };
         if restricts {
-            self.set_bound(var, bound, val, BoundJustification::Unconditional)?;
+            self.set_bound(var, bound, val, BoundJustification::Unconditional, counts)?;
         }
         Ok(restricts)
     }
@@ -233,6 +244,7 @@ impl Solver {
         val: LongCst,
         justification: BoundJustification,
         trail: &mut Trail<LpEvent>,
+        counts: &mut VariableCounts,
     ) -> Result<bool, Error> {
         match bound {
             Bound::Lower => {
@@ -245,7 +257,7 @@ impl Solver {
                         old_val,
                         old_justification,
                     });
-                    self.set_bound(var, bound, val, justification)?;
+                    self.set_bound(var, bound, val, justification, counts)?;
 
                     return Ok(true);
                 }
@@ -261,7 +273,7 @@ impl Solver {
                         old_val,
                         old_justification,
                     });
-                    self.set_bound(var, bound, val, justification)?;
+                    self.set_bound(var, bound, val, justification, counts)?;
 
                     return Ok(true);
                 }

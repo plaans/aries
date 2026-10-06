@@ -153,6 +153,47 @@ struct LpEvent {
     old_justification: BoundJustification,
 }
 
+/// Counts of the variables of the LP, except those reifying sums (created by `Lp::reify_sum`),
+/// kept up to date by the [`Solver`] whenever a bound changes
+#[derive(Clone, Default)]
+struct VariableCounts {
+    /// Whether each variable is counted, by index (any missing index is not counted)
+    is_counted: Vec<bool>,
+    /// The number of counted variables
+    num_counted: usize,
+    /// The number of counted variables whose lower and upper bounds are equal
+    num_fixed: usize,
+}
+
+impl VariableCounts {
+    /// Marks `var` as counted, given whether its bounds are currently equal
+    fn mark_counted(&mut self, var: Variable, is_fixed: bool) {
+        if self.is_counted.len() <= var.idx() {
+            self.is_counted.resize(var.idx() + 1, false);
+        }
+        if self.is_counted[var.idx()] {
+            return;
+        }
+        self.is_counted[var.idx()] = true;
+        self.num_counted += 1;
+        if is_fixed {
+            self.num_fixed += 1;
+        }
+    }
+
+    /// Updates the counts after a change of the bounds of `var`, given whether they were equal before and after it
+    fn update(&mut self, var: Variable, was_fixed: bool, is_fixed: bool) {
+        if self.is_counted.get(var.idx()) != Some(&true) {
+            return;
+        }
+        match (was_fixed, is_fixed) {
+            (false, true) => self.num_fixed += 1,
+            (true, false) => self.num_fixed -= 1,
+            _ => {}
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Stats {
     /// Number of propagations where no contradaction was detected, used to determine the number of contradiction generated
@@ -243,6 +284,8 @@ pub struct Lp {
     watches: Watches<BoundConstraintId>,
     /// History of changes made to the LP with all information necessary to undo them.
     trail: Trail<LpEvent>,
+    /// Counts of the variables (except those reifying sums)
+    variable_counts: VariableCounts,
     stats: Stats,
     /// Contains all the customizable options for the reasoner
     ///
@@ -272,6 +315,7 @@ impl Lp {
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
             trail: Default::default(),
+            variable_counts: Default::default(),
 
             stats: Stats::new(),
 
@@ -334,11 +378,11 @@ impl Lp {
         if let Some(lp_var) = self.memory_x_main.get(solver_var) {
             *lp_var
         } else {
-            let lp_var = self.solver.create_variable(
-                cst_int_to_long(doms.lb(solver_var)),
-                cst_int_to_long(doms.ub(solver_var)),
-                &mut self.stats,
-            );
+            let (lb, ub) = (doms.lb(solver_var), doms.ub(solver_var));
+            let lp_var = self
+                .solver
+                .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats);
+            self.variable_counts.mark_counted(lp_var, lb == ub);
             self.memory_x_main.insert(solver_var, lp_var);
             self.solver.map_lp_to_aries.insert(lp_var.idx(), solver_var);
             lp_var
@@ -347,8 +391,20 @@ impl Lp {
 
     /// Creates a variable in the LP that is independent of any variable in the CP solver.
     pub fn create_auxiliary_variable(&mut self, lb: IntCst, ub: IntCst) -> LpVar {
-        self.solver
-            .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats)
+        let var = self
+            .solver
+            .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats);
+        self.variable_counts.mark_counted(var, lb == ub);
+        var
+    }
+
+    /// First: the number of variables of the LP, created with [`Lp::bind_cp_var`] or [`Lp::create_auxiliary_variable`]
+    /// (i.e. not counting those that the LP creates itself to reify sums)
+    ///
+    /// Second: how many of them have equal lower and upper bounds
+    /// (as of the last propagation, which syncs the LP's bounds with the model)
+    pub fn variable_counts(&self) -> (usize, usize) {
+        (self.variable_counts.num_counted, self.variable_counts.num_fixed)
     }
 
     /// Retrieve a single variable `s` that is constrained to always be equals to the given linear `sum`.
@@ -514,8 +570,12 @@ impl Lp {
             let res = if cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT) {
                 // A cause entailed at the root can never be undone,
                 // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                self.solver
-                    .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val)
+                self.solver.set_bound_restrict_permanent(
+                    bound_constr.var,
+                    bound_constr.bound,
+                    bound_constr.val,
+                    &mut self.variable_counts,
+                )
             } else {
                 self.solver.set_bound_restrict(
                     bound_constr.var,
@@ -523,6 +583,7 @@ impl Lp {
                     bound_constr.val,
                     BoundJustification::Trigger(index),
                     &mut self.trail,
+                    &mut self.variable_counts,
                 )
             };
 
@@ -605,6 +666,7 @@ impl Lp {
                     bound_constr.val,
                     BoundJustification::Trigger(watcher),
                     &mut self.trail,
+                    &mut self.variable_counts,
                 );
 
                 self.explain_set_bound(&res, bound_constr.var)?;
@@ -620,10 +682,10 @@ impl Lp {
                     // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), justification, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), justification, &mut self.trail, &mut self.variable_counts)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), justification, &mut self.trail)
+                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), justification, &mut self.trail, &mut self.variable_counts)
                     };
 
                 self.explain_set_bound(&res, x_var)?;
@@ -741,6 +803,7 @@ impl Backtrack for Lp {
                 lp_event.bound,
                 lp_event.old_val,
                 lp_event.old_justification,
+                &mut self.variable_counts,
             );
         });
 
