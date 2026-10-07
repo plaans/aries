@@ -674,4 +674,109 @@ pub mod test {
         };
         assert!(expl.literals().is_empty(), "{:?}", expl.literals());
     }
+
+    /// After an infeasible solve, backtracking makes the LP feasible again,
+    /// and every later propagation really solves the LP instead of reusing the previous status.
+    #[test]
+    fn test_feasible_again_after_infeasible() {
+        let mut model = Domains::new();
+
+        let avar = model.new_var(0, 1);
+        let bvar = model.new_var(0, 1);
+
+        let mut theory = Lp::default();
+
+        let acol = theory.add_column((Some(0), Some(1)));
+        let bcol = theory.add_column((Some(0), Some(1)));
+
+        theory.half_bind_tracking(AriesLit::TRUE, avar.variable(), acol);
+        theory.half_bind_tracking(AriesLit::TRUE, bvar.variable(), bcol);
+
+        theory.add_row([(acol, 1), (bcol, 1)].into_iter(), (Some(1), None));
+
+        // Propagates, and checks that the LP was solved (once) to get the result.
+        let propagate = |theory: &mut Lp, model: &mut Domains| {
+            let lpruns = theory.stats.num_feasibility_checks;
+            let res = theory.propagate(model);
+            assert_eq!(theory.stats.num_feasibility_checks, lpruns + 1);
+            res
+        };
+
+        model.save_state();
+        theory.save_state();
+        assert_eq!(model.set(avar.leq(0), Cause::Decision), Ok(true));
+        assert!(propagate(&mut theory, &mut model).is_ok());
+
+        model.save_state();
+        theory.save_state();
+        assert_eq!(model.set(bvar.leq(0), Cause::Decision), Ok(true));
+        let Err(Contradiction::Explanation(expl)) = propagate(&mut theory, &mut model) else {
+            panic!("`a + b >= 1` cannot hold with `a <= 0` and `b <= 0`")
+        };
+        assert_eq!(expl.literals(), [avar.leq(0), bvar.leq(0)]);
+
+        // `b` can be 1 again
+        model.restore_last();
+        theory.restore_last();
+        assert!(propagate(&mut theory, &mut model).is_ok());
+
+        // and the infeasibility is found again
+        model.save_state();
+        theory.save_state();
+        assert_eq!(model.set(bvar.leq(0), Cause::Decision), Ok(true));
+        assert!(propagate(&mut theory, &mut model).is_err());
+
+        model.restore_last();
+        theory.restore_last();
+        model.restore_last();
+        theory.restore_last();
+        assert!(propagate(&mut theory, &mut model).is_ok());
+    }
+
+    /// The columns are counted as fixed whenever their bounds are equal.
+    /// Bounds are synced with backtracking and propagation (even when deactivated).
+    #[test]
+    fn test_column_counts() {
+        let mut model = Domains::new();
+        let p = model.new_var(0, 1);
+        let q = model.new_var(0, 1);
+
+        let mut theory = Lp::with_options(LpOptions {
+            propagation_active: false,
+            ..Default::default()
+        });
+        let acol = theory.add_column((Some(0), Some(1)));
+        let bcol = theory.add_column((Some(0), Some(1)));
+        let ccol = theory.add_column((Some(0), Some(1)));
+        theory.half_bind_fixed(AriesLit::TRUE, p.leq(0), LpLit::leq(acol, 0));
+        theory.half_bind_fixed(AriesLit::TRUE, q.geq(1), LpLit::geq(bcol, 1));
+
+        assert_eq!(theory.column_counts(), (3, 0));
+        theory.tighten_column(ccol, (None, Some(0)));
+        assert_eq!(theory.column_counts(), (3, 1));
+
+        model.save_state();
+        theory.save_state();
+        assert_eq!(model.set(p.leq(0), Cause::Decision), Ok(true));
+        assert!(theory.propagate(&mut model).is_ok());
+        assert_eq!(theory.column_counts(), (3, 2));
+
+        model.save_state();
+        theory.save_state();
+        assert_eq!(model.set(q.geq(1), Cause::Decision), Ok(true));
+        assert!(theory.propagate(&mut model).is_ok());
+        assert_eq!(theory.column_counts(), (3, 3));
+        assert_eq!(theory.stats.num_feasibility_checks, 0);
+
+        model.restore_last();
+        theory.restore_last();
+        assert_eq!(theory.column_counts(), (3, 2));
+        model.restore_last();
+        theory.restore_last();
+        assert_eq!(theory.column_counts(), (3, 1));
+
+        theory.activate_propagation();
+        assert!(theory.propagate(&mut model).is_ok());
+        assert_eq!(theory.stats.num_feasibility_checks, 1);
+    }
 }
