@@ -11,8 +11,16 @@ use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpSum, LpVar};
 
 use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
-use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
+use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, ARIES_LPRELAX_PHASES, LpRelaxEncoder};
 use crate::{IntTerm, SchedEncoder};
+
+/// Fractions of the LP's columns that trigger a new solve of the LP, when that many columns are fixed
+/// (only once, until re-armed: see [`PHASE_REARM_MARGIN`]).
+const PHASES: [f64; 3] = [0.5, 0.75, 0.9];
+
+/// A phase is re-armed (i.e. can trigger a solve again) once the fraction of fixed columns falls this much below it, e.g. after backtracking.
+/// Not less, to avoid many solves if the search "oscillates" around a phase.
+const PHASE_REARM_MARGIN: f64 = 0.1;
 
 /// Wrapper over the incremental LP reasoner, specifically for the LP relaxation problem.
 ///
@@ -26,7 +34,7 @@ use crate::{IntTerm, SchedEncoder};
 /// This 2-stage approach allows to build the encoder more efficiently (as it will be done after the first propagation)
 /// and to avoid building and solving the LP if it can be detected as unsatisfiable without it, after all assumptions are propagated.
 ///
-/// By default, we attempt solving the LP at most once.
+/// The LP is solved once when posted, then once each time a new phase of fixed columns is reached (see [`PHASES`]).
 #[derive(Clone)]
 pub(crate) struct LpRelaxIncr {
     lp: Lp,
@@ -42,13 +50,15 @@ pub(crate) struct LpRelaxIncr {
 
     num_events: u32,
     propagation_calls: usize,
+
+    /// Index of the current phase (see [`PHASES`])
+    current_phase: usize,
 }
 
 impl LpRelaxIncr {
     pub(crate) fn new(ctx: SchedEncoder, num_assumptions: usize) -> Self {
         let mut lp = Lp::default();
         lp.activate();
-        lp.deactivate_propagation();
 
         Self {
             lp,
@@ -58,6 +68,7 @@ impl LpRelaxIncr {
             posted: false,
             num_events: 0,
             propagation_calls: 0,
+            current_phase: 0,
         }
     }
 
@@ -125,6 +136,8 @@ impl Theory for LpRelaxIncr {
             quiescent
         };
 
+        let mut check_feas = false;
+
         if quiescent {
             if self.encoder.is_none() && model.current_decision_level() == DecLvl::ROOT {
                 self.build_encoder(model);
@@ -133,16 +146,43 @@ impl Theory for LpRelaxIncr {
                 && !self.posted
                 && self.current_decision_level().to_int() as usize >= self.num_assumptions
             {
-                self.lp.activate();
                 self.post_relaxation(model);
+                check_feas = true;
             }
         }
 
-        let res = self.lp.propagate(model);
+        if !self.posted {
+            return Ok(());
+        }
 
-        self.lp.deactivate_propagation();
+        // Sync the LP's bounds with the model, without solving it.
+        self.lp.sync_bounds(model)?;
 
-        res
+        if quiescent && ARIES_LPRELAX_PHASES.get() {
+            let (num_vars_total, num_vars_fixed) = self.lp.variable_counts();
+            let fixed_ratio = num_vars_fixed as f64 / num_vars_total.max(1) as f64;
+            while self.current_phase > 0 && fixed_ratio < PHASES[self.current_phase - 1] - PHASE_REARM_MARGIN {
+                self.current_phase -= 1;
+            }
+            let num_phase_reached = PHASES.iter().take_while(|&&phase| fixed_ratio >= phase).count();
+            if num_phase_reached > self.current_phase {
+                self.current_phase = num_phase_reached;
+                check_feas = true;
+                lprelax_log!(
+                    "Reached the phase of {}% fixed columns ({} / {}) at decision level {:?}",
+                    100. * PHASES[num_phase_reached - 1],
+                    num_vars_fixed,
+                    num_vars_total,
+                    model.current_decision_level(),
+                );
+            }
+        }
+
+        if !check_feas {
+            return Ok(());
+        }
+
+        self.lp.check_feasibility(model)
     }
 
     fn explain(

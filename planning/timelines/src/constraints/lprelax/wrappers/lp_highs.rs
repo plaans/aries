@@ -10,11 +10,16 @@ use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 use aries_solver_lp_highs::{Lp, LpCol, LpLit};
 
 use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
-use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
+use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, ARIES_LPRELAX_PHASES, LpRelaxEncoder};
 use crate::{IntTerm, SchedEncoder};
 
-/// Fractions of the LP's columns that trigger a new solve of the LP, the first time (over the whole search) that many columns are fixed.
+/// Fractions of the LP's columns that trigger a new solve of the LP, when that many columns are fixed
+/// (only once, until re-armed: see [`PHASE_REARM_MARGIN`]).
 const PHASES: [f64; 3] = [0.5, 0.75, 0.9];
+
+/// A phase is re-armed (i.e. can trigger a solve again) once the fraction of fixed columns falls this much below it, e.g. after backtracking.
+/// Not less, to avoid many solves if the search "oscillates" around a phase.
+const PHASE_REARM_MARGIN: f64 = 0.1;
 
 /// Wrapper over the HiGHS-backed LP reasoner, specifically for the LP relaxation problem.
 ///
@@ -147,9 +152,12 @@ impl Theory for LpRelaxHighs {
         // Sync the LP's bounds with the model, without solving it.
         self.lp.sync_bounds(model)?;
 
-        if quiescent && self.posted {
+        if quiescent && self.posted && ARIES_LPRELAX_PHASES.get() {
             let (num_vars_total, num_vars_fixed) = self.lp.column_counts();
             let fixed_ratio = num_vars_fixed as f64 / num_vars_total.max(1) as f64;
+            while self.current_phase > 0 && fixed_ratio < PHASES[self.current_phase - 1] - PHASE_REARM_MARGIN {
+                self.current_phase -= 1;
+            }
             let num_phase_reached = PHASES.iter().take_while(|&&phase| fixed_ratio >= phase).count();
             if num_phase_reached > self.current_phase {
                 self.current_phase = num_phase_reached;
