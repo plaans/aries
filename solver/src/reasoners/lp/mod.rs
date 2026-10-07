@@ -1293,4 +1293,47 @@ mod tests {
             "a bound justified at the root must not be undone by a backtrack"
         );
     }
+
+    /// The variables (except those reifying sums) are counted as fixed whenever their bounds are equal.
+    #[test]
+    fn test_variable_counts() {
+        let mut d = Domains::new();
+        let p = d.new_var(0, 1);
+        let q = d.new_var(0, 1);
+
+        let mut lp = Lp::default();
+        lp.activate();
+        let a = lp.create_auxiliary_variable(0, 1);
+        let b = lp.create_auxiliary_variable(0, 1);
+        let _c = lp.create_auxiliary_variable(0, 0);
+        // `a + b <= 2`, whose reification variable isn't counted
+        lp.add_linear_leq_constraint(vec![(a, 1), (b, 1)], -2, Lit::TRUE, &d);
+        lp.add_bound_update_trigger(p.leq(0).into(), BoundRestriction::leq(a, 0), &d);
+        lp.add_bound_update_trigger(q.geq(1).into(), BoundRestriction::geq(b, 1), &d);
+
+        assert_eq!(lp.variable_counts(), (3, 1));
+
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(0), Cause::Decision).unwrap();
+        assert!(lp.sync_bounds(&d).is_ok());
+        assert_eq!(lp.variable_counts(), (3, 2));
+
+        d.save_state();
+        lp.save_state();
+        d.set(q.geq(1), Cause::Decision).unwrap();
+        assert!(lp.sync_bounds(&d).is_ok());
+        assert_eq!(lp.variable_counts(), (3, 3));
+        assert_eq!(lp.stats.num_feasibility_checks, 0);
+
+        lp.restore_last();
+        d.restore_last();
+        assert_eq!(lp.variable_counts(), (3, 2));
+        lp.restore_last();
+        d.restore_last();
+        assert_eq!(lp.variable_counts(), (3, 1));
+
+        assert!(lp.check_feasibility(&d).is_ok());
+        assert_eq!(lp.stats.num_feasibility_checks, 1);
+    }
 }
