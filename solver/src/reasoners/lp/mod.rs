@@ -52,10 +52,6 @@ use crate::{
 /// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
 #[derive(Debug, Clone, Copy)]
 pub struct LpOptions {
-    /// Used to activate/deactivate the check of the LP's feasibility during propagation (the bounds are still synced when deactivated)
-    ///
-    /// Can be controlled with [`Lp::activate_feasibility_check`] and [`Lp::deactivate_feasibility_check`]
-    feasibility_check_active: bool,
     /// Used to activate/deactivate the propagation of the reasoner
     ///
     /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
@@ -75,7 +71,6 @@ impl LpOptions {
     fn new(propagation_active: bool, enable: bool, is_explanation_refined: bool) -> Self {
         LpOptions {
             propagation_active,
-            feasibility_check_active: propagation_active,
             enable,
             is_explanation_refined,
         }
@@ -196,8 +191,8 @@ impl VariableCounts {
 
 #[derive(Clone)]
 struct Stats {
-    /// Number of propagations where no contradaction was detected, used to determine the number of contradiction generated
-    num_ok_propagate: usize,
+    /// Number of contradictions detected
+    num_contradictions: usize,
     /// Number of propagations
     num_propagate: usize,
     /// Number of constraints within the LP relaxation
@@ -223,7 +218,7 @@ struct Stats {
 impl Stats {
     fn new() -> Self {
         Self {
-            num_ok_propagate: 0,
+            num_contradictions: 0,
             num_propagate: 0,
 
             num_constraints: 0,
@@ -339,16 +334,6 @@ impl Lp {
     /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
     pub fn deactivate_propagation(&mut self) {
         self.options.propagation_active = false;
-    }
-
-    /// Activate the check of the LP's feasibility during propagation (active by default)
-    pub fn activate_feasibility_check(&mut self) {
-        self.options.feasibility_check_active = true;
-    }
-
-    /// Deactivate the check of the LP's feasibility during propagation, which then only syncs the LP's bounds with the model
-    pub fn deactivate_feasibility_check(&mut self) {
-        self.options.feasibility_check_active = false;
     }
 
     /// Activate refined explanation using minimization based on [`crate::reasoners::cp::linear`]
@@ -694,6 +679,35 @@ impl Lp {
 
         Ok(())
     }
+
+    /// Syncs the LP's bounds with the model, without solving the LP.
+    pub fn sync_bounds(&mut self, domains: &Domains) -> Result<(), Contradiction> {
+        self.stats.num_propagate += 1;
+
+        let time = std::time::Instant::now();
+        let res = self.process_model_events(domains);
+        self.stats.bound_updates_time += time.elapsed();
+
+        if res.is_err() {
+            self.stats.num_contradictions += 1;
+        }
+        res
+    }
+
+    /// Checks the feasibility of the LP, giving a contradiction (explained by a certificate) if it is infeasible.
+    pub fn check_feasibility(&mut self, domains: &Domains) -> Result<(), Contradiction> {
+        self.stats.num_feasibility_checks += 1;
+
+        let time = std::time::Instant::now();
+        let feas = self.solver.check_feasibility();
+        self.stats.feasibility_checks_time += time.elapsed();
+
+        let res = self.explain_check_feas(feas, domains);
+        if res.is_err() {
+            self.stats.num_contradictions += 1;
+        }
+        res
+    }
 }
 
 impl Theory for Lp {
@@ -706,29 +720,8 @@ impl Theory for Lp {
             return Ok(());
         }
 
-        self.stats.num_propagate += 1;
-
-        let time = std::time::Instant::now();
-        let res = self.process_model_events(domains);
-        self.stats.bound_updates_time += time.elapsed();
-        res?;
-
-        // After updating all the bounds, we check that our lp solver is still in a feasible state
-        if self.options.feasibility_check_active {
-            self.stats.num_feasibility_checks += 1;
-
-            let time = std::time::Instant::now();
-            let feas = self.solver.check_feasibility();
-            self.stats.feasibility_checks_time += time.elapsed();
-
-            if feas.is_err() {
-                self.explain_check_feas(feas, domains)?;
-            }
-        }
-
-        self.stats.num_ok_propagate += 1;
-
-        Ok(())
+        self.sync_bounds(domains)?;
+        self.check_feasibility(domains)
     }
 
     // Should not be called as this reasoner never infers new lit, it only gives contradictions
@@ -745,10 +738,7 @@ impl Theory for Lp {
     fn print_stats(&self) {
         if self.options.enable {
             println!("# propagations: {}", self.stats.num_propagate);
-            println!(
-                "# contradictions: {}",
-                self.stats.num_propagate - self.stats.num_ok_propagate
-            );
+            println!("# contradictions: {}", self.stats.num_contradictions);
             println!("# constraints: {}", self.stats.num_constraints);
             println!("# variables: {}", self.stats.num_variables);
             println!(
