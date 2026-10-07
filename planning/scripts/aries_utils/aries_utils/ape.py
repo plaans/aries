@@ -1,6 +1,7 @@
 """APE command runner with error reporting."""
 
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -285,43 +286,44 @@ class ApeRunner:
     def _report_memory_limit(
         result: subprocess.CompletedProcess, limit_mb: int
     ) -> None:
-        print(f"\n{'=' * 60}")
-        print(f"APE COMMAND MEMORY LIMIT EXCEEDED ({limit_mb} MB)")
-        print(f"{'=' * 60}")
-        print(f"\nCommand: {' '.join(result.args)}")
-        print("\nStdout:")
-        print(result.stdout if result.stdout else "(empty)")
-        print("\nStderr:")
-        print(result.stderr if result.stderr else "(empty)")
-        print(f"\nSignal: {-result.returncode}")
-        print("\nTo reproduce:")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"APE COMMAND MEMORY LIMIT EXCEEDED ({limit_mb} MB)", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        print(f"\nCommand: {' '.join(result.args)}", file=sys.stderr)
+        print("\nStdout:", file=sys.stderr)
+        print(result.stdout if result.stdout else "(empty)", file=sys.stderr)
+        print("\nStderr:", file=sys.stderr)
+        print(result.stderr if result.stderr else "(empty)", file=sys.stderr)
+        print(f"\nSignal: {-result.returncode}", file=sys.stderr)
+        print("\nTo reproduce:", file=sys.stderr)
         print(
-            f"  systemd-run --user --scope -p MemoryMax=$(({limit_mb} * 1024 * 1024)) -- {' '.join(result.args)}"
+            f"  systemd-run --user --scope -p MemoryMax=$(({limit_mb} * 1024 * 1024)) -- {' '.join(result.args)}",
+            file=sys.stderr,
         )
 
     @staticmethod
     def _report_timeout(cmd: list[str], timeout: Optional[int]) -> None:
-        print(f"\n{'=' * 60}")
-        print(f"APE COMMAND TIMEOUT after {timeout}s")
-        print(f"{'=' * 60}")
-        print(f"\nCommand: {' '.join(cmd)}")
-        print("\nTo reproduce:")
-        print(f"  timeout {timeout}s {' '.join(cmd)}")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"APE COMMAND TIMEOUT after {timeout}s", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        print(f"\nCommand: {' '.join(cmd)}", file=sys.stderr)
+        print("\nTo reproduce:", file=sys.stderr)
+        print(f"  timeout {timeout}s {' '.join(cmd)}", file=sys.stderr)
 
     @staticmethod
     def _report_error(result: ApeResult):
         """Report detailed error information."""
-        print(f"\n{'=' * 60}")
-        print("APE COMMAND FAILED")
-        print(f"{'=' * 60}")
-        print(f"\nCommand: {' '.join(result.command)}")
-        print("\nStdout:")
-        print(result.stdout if result.stdout else "(empty)")
-        print("\nStderr:")
-        print(result.stderr if result.stderr else "(empty)")
-        print(f"\nReturn code: {result.returncode}")
-        print("\nTo reproduce:")
-        print(f"  {' '.join(result.command)}")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print("APE COMMAND FAILED", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        print(f"\nCommand: {' '.join(result.command)}", file=sys.stderr)
+        print("\nStdout:", file=sys.stderr)
+        print(result.stdout if result.stdout else "(empty)", file=sys.stderr)
+        print("\nStderr:", file=sys.stderr)
+        print(result.stderr if result.stderr else "(empty)", file=sys.stderr)
+        print(f"\nReturn code: {result.returncode}", file=sys.stderr)
+        print("\nTo reproduce:", file=sys.stderr)
+        print(f"  {' '.join(result.command)}", file=sys.stderr)
 
     def find_problem(self, plan_file: Path) -> Path:
         """
