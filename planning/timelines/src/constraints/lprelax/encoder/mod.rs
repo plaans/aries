@@ -104,42 +104,33 @@ impl LpRelaxEncoder {
     }
 
     fn sort(&mut self) {
-        let time_all = std::time::Instant::now();
-        let time = std::time::Instant::now();
+        let mut times = vec![];
 
+        let time = std::time::Instant::now();
         self.supports_sorted = Some(self.supports.sort());
+        times.push(time.elapsed());
 
-        tracing::info!(
-            "|-[LPRELAX]----- Sorted lifted supports in {}s",
-            time.elapsed().as_secs_f64(),
-        );
         let time = std::time::Instant::now();
-
         self.transitions_ground.sort_for_all();
+        times.push(time.elapsed());
 
-        tracing::info!(
-            "|-[LPRELAX]----- Sorted transitions groundings in {}s",
-            time.elapsed().as_secs_f64(),
-        );
         let time = std::time::Instant::now();
-
         self.supports_ground =
             ground::SupportsGroundingsInfo::from(self.supports_sorted.as_ref().unwrap(), &self.transitions_ground);
+        times.push(time.elapsed());
 
-        tracing::info!(
-            "|-[LPRELAX]----- Built sorted support groundings in {}s",
-            time.elapsed().as_secs_f64(),
-        );
         let time = std::time::Instant::now();
-
         self.terms_ground.sort();
+        times.push(time.elapsed());
 
-        tracing::info!(
-            "|-[LPRELAX]----- Sorted terms groundings in {}s",
-            time.elapsed().as_secs_f64(),
+        lprelax_log!(
+            "Sorted all in {} (lifted supports {}, transitions groundings {}, [built and sorted] support groundings {}, terms groundings {})",
+            times.iter().sum::<std::time::Duration>().as_secs_f64(),
+            times[0].as_secs_f64(),
+            times[1].as_secs_f64(),
+            times[2].as_secs_f64(),
+            times[3].as_secs_f64(),
         );
-
-        tracing::info!("|-[LPRELAX]--- Sorted all in {}s", time_all.elapsed().as_secs_f64(),);
     }
 
     pub fn get_source<'a>(&self, source: Source, ctx: &'a SchedEncoder) -> Option<&'a Task> {
@@ -167,7 +158,7 @@ impl LpRelaxEncoder {
                 .map(|(task, gs)| (Some(task), gs.to_vec())),
         );
 
-        tracing::info!("|-[LPRELAX]--- Ran grounder in {}s", time.elapsed().as_secs_f64(),);
+        lprelax_log!("Ran grounder in {}", time.elapsed().as_secs_f64(),);
 
         let time = std::time::Instant::now();
 
@@ -179,11 +170,7 @@ impl LpRelaxEncoder {
             }
         }
 
-        tracing::info!(
-            "|-[LPRELAX]--- Interned {} groundings in {}s",
-            n,
-            time.elapsed().as_secs_f64(),
-        );
+        lprelax_log!("Interned {} groundings in {}", n, time.elapsed().as_secs_f64(),);
 
         self.sort();
 
@@ -193,18 +180,12 @@ impl LpRelaxEncoder {
 
         encode_problem_lifted(self, ctx, &mut problem);
 
-        tracing::info!(
-            "|-[LPRELAX]--- Collected lifted constraints in {}s",
-            time.elapsed().as_secs_f64(),
-        );
+        lprelax_log!("Collected lifted constraints in {}", time.elapsed().as_secs_f64(),);
         let time = std::time::Instant::now();
 
         encode_problem_ground(self, ctx, &mut problem);
 
-        tracing::info!(
-            "|-[LPRELAX]--- Collected ground constraints in {}s",
-            time.elapsed().as_secs_f64(),
-        );
+        lprelax_log!("Collected ground constraints in {}", time.elapsed().as_secs_f64(),);
 
         problem
     }

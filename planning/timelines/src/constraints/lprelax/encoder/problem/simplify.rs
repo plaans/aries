@@ -4,6 +4,7 @@ use hashbrown::HashMap;
 
 use aries_solver::core::IntCst;
 
+use crate::lprelax::LpRelaxEncoder;
 use crate::{Domains, SchedEncoder};
 
 use super::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
@@ -113,11 +114,11 @@ fn try_simplify_inner(
     ctx: &SchedEncoder,
     doms: &Domains,
 ) -> Result<(), Infeasible> {
-    let total_time = std::time::Instant::now();
+    let mut times = vec![];
 
     let time = std::time::Instant::now();
     seed_known_values(pb, classes, encoder, ctx, doms)?;
-    let seeding_time = time.elapsed();
+    times.push(time.elapsed());
 
     // The rows' columns are interned once and for all: the rounds below only deal with their classes.
     let time = std::time::Instant::now();
@@ -126,11 +127,7 @@ fn try_simplify_inner(
         .iter()
         .map(|row| InternedRow::of(row, classes))
         .collect::<Vec<_>>();
-    let interning_time = time.elapsed();
-
-    let num_terms: usize = rows.iter().map(|row| row.terms.len()).sum();
-    let sum_squared_row_lens: usize = rows.iter().map(|row| row.terms.len().pow(2)).sum();
-    let max_row_len = rows.iter().map(|row| row.terms.len()).max().unwrap_or(0);
+    times.push(time.elapsed());
 
     // Learn values (and equalities) from the rows until nothing new comes out.
     // Each round re-reads the rows, whose canonical form only gets simpler as knowledge grows.
@@ -154,7 +151,7 @@ fn try_simplify_inner(
         }
         live = canons.into_iter().map(|(i, _)| i).collect();
     };
-    let rounds_time = time.elapsed();
+    times.push(time.elapsed());
 
     // Rewrite the rows over the representatives of the columns that are left, from the canonical forms of the last round:
     // nothing was learned in that round, so they are final.
@@ -171,7 +168,7 @@ fn try_simplify_inner(
             RowExpr::new(canon.tpe, terms, separator, canon.cst)
         })
         .collect();
-    let rewriting_time = time.elapsed();
+    times.push(time.elapsed());
 
     // Every "surviving" column tag resolves to its equivalence class' representative column.
     // Tags of classes with a known value aren't columns anymore: their value is recorded instead.
@@ -187,20 +184,17 @@ fn try_simplify_inner(
         }
     }
     pb.number_cols(aliases);
-    let numbering_time = time.elapsed();
+    times.push(time.elapsed());
 
-    tracing::info!(
-        "|-[LPRELAX]---- simplification phases: total {}s = seeding {}s, interning {}s, {} rounds {}s, rewriting {}s, numbering columns {}s ({} terms, max row length {}, sum of squared row lengths {})",
-        total_time.elapsed().as_secs_f64(),
-        seeding_time.as_secs_f64(),
-        interning_time.as_secs_f64(),
+    lprelax_log!(
+        "LpRelaxProblem simplified in {} (seeding {}, interning {}, {} rounds {}, rewriting {}, numbering columns {})",
+        times.iter().sum::<std::time::Duration>().as_secs_f64(),
+        times[0].as_secs_f64(),
+        times[1].as_secs_f64(),
+        times[2].as_secs_f64(),
         rounds,
-        rounds_time.as_secs_f64(),
-        rewriting_time.as_secs_f64(),
-        numbering_time.as_secs_f64(),
-        num_terms,
-        max_row_len,
-        sum_squared_row_lens,
+        times[3].as_secs_f64(),
+        times[4].as_secs_f64(),
     );
 
     Ok(())

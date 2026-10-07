@@ -68,8 +68,8 @@ impl LpRelaxIncr {
 
         let encoder = LpRelaxEncoder::with_transitions_from(&self.ctx);
 
-        tracing::info!(
-            "|-[LPRELAX]- Built LP encoder after {} propagation calls (decision level {:?}, num events: {}) in {}s",
+        lprelax_log!(
+            "Built LpRelaxEncoder after {} propagation calls (decision level {:?}, num events: {}) in {}",
             self.propagation_calls,
             doms.current_decision_level(),
             doms.num_events(),
@@ -96,8 +96,8 @@ impl LpRelaxIncr {
 
         self.posted = true;
 
-        tracing::info!(
-            "|-[LPRELAX]- Posted LP ({} variables, {} rows) after {} propagation calls (decision level {:?}, num events: {}) from the model at level {:?} in {}s",
+        lprelax_log!(
+            "Posted LpRelaxProblem ({} variables, {} rows) after {} propagation calls (decision level {:?}, num events: {}) from the model at level {:?} in {}",
             problem.cols().unwrap().len(),
             problem.rows().len(),
             self.propagation_calls,

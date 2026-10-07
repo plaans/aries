@@ -199,8 +199,8 @@ impl LpRelaxProblem {
             self.make_infeasible();
         }
 
-        tracing::info!(
-            "|-[LPRELAX]--- LPrelax problem simplification: {} rows removed in {}s (remaining: {} rows and {} columns)",
+        lprelax_log!(
+            "LpRelaxProblem simplification: {} rows removed in {} (remaining: {} rows and {} columns)",
             prev_rows_len - self.rows().len(),
             time.elapsed().as_secs_f64(),
             self.rows().len(),
