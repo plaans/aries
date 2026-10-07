@@ -715,26 +715,14 @@ impl Theory for Lp {
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
         if self.options.feasibility_check_active {
-            let time = std::time::Instant::now();
-            let res = self.solver.check_feasibility();
-            let elapsed = time.elapsed();
             self.stats.num_feasibility_checks += 1;
-            self.stats.feasibility_checks_time += elapsed;
-            tracing::info!(
-                "|-[LPRELAX]- Solved LP ({}) in {}s with aries-lp",
-                if res.is_err() { "UNSAT" } else { "SAT" },
-                elapsed.as_secs_f64()
-            );
 
-            if res.is_err() {
-                let time = std::time::Instant::now();
-                let res = self.explain_check_feas(res, domains);
-                tracing::info!(
-                    "|-[LPRELAX]- Checked certificate (valid: {}) in {}s with aries-lp",
-                    res.is_err(),
-                    time.elapsed().as_secs_f64()
-                );
-                res?;
+            let time = std::time::Instant::now();
+            let feas = self.solver.check_feasibility();
+            self.stats.feasibility_checks_time += time.elapsed();
+
+            if feas.is_err() {
+                self.explain_check_feas(feas, domains)?;
             }
         }
 

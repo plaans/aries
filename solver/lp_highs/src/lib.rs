@@ -270,25 +270,9 @@ impl Lp {
     }
 
     fn check_feasibility(&mut self) -> Result<(), Contradiction> {
-        let time = std::time::Instant::now();
         match self.lp_state.solve_or_iis(&mut self.stats) {
-            Err(iis) => {
-                tracing::info!(
-                    "|-[LPRELAX]- Solved LP (UNSAT) in {}s with HiGHS",
-                    time.elapsed().as_secs_f64()
-                );
-                let time = std::time::Instant::now();
-                let iis = self.build_contradiction(iis);
-                tracing::info!("|-[LPRELAX]- Built IIS in {}s with HiGHS", time.elapsed().as_secs_f64());
-                Err(iis)
-            }
-            _ => {
-                tracing::info!(
-                    "|-[LPRELAX]- Solved LP (SAT) in {}s with HiGHS",
-                    time.elapsed().as_secs_f64()
-                );
-                Ok(())
-            }
+            Err(iis) => Err(self.build_contradiction(iis)),
+            _ => Ok(()),
         }
     }
 
@@ -364,11 +348,6 @@ impl Theory for Lp {
             return Ok(());
         }
 
-        tracing::info!(
-            "|-[LPRELAX]- Solving LP at decision level {:?} (num events: {:?}) with HiGHS",
-            model.current_decision_level(),
-            model.num_events()
-        );
         self.check_feasibility()
     }
 
@@ -385,7 +364,10 @@ impl Theory for Lp {
 
     fn print_stats(&self) {
         println!("# feasibility checks: {}", self.stats.num_feasibility_checks);
-        println!("# feasibility checks time: {:.6} s", self.stats.feasibility_checks_time.as_secs_f64());
+        println!(
+            "# feasibility checks time: {:.6} s",
+            self.stats.feasibility_checks_time.as_secs_f64()
+        );
     }
 
     fn clone_box(&self) -> Box<dyn Theory> {
@@ -412,8 +394,8 @@ pub mod test {
     use aries_solver::core::views::Term;
     use aries_solver::reasoners::{Contradiction, Theory};
 
-    use crate::Lp;
     use crate::types::*;
+    use crate::{Lp, LpOptions};
 
     #[test]
     fn test_trail_backtrack() {
