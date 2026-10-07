@@ -224,7 +224,22 @@ impl Lp {
         self.bindings.add(Binding::Tracking { scope, var, col });
     }
 
-    fn process_model_events(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
+    /// Syncs the bounds of the LP's columns with the model, through the bindings, without solving the LP.
+    pub fn sync_bounds(&mut self, model: &Domains) -> Result<(), Contradiction> {
+        // No bound was set yet (or all were undone): apply all the bindings that hold
+        if self.lp_state.trail().trail.is_empty() {
+            let derived = self.bindings.eval_all(model).collect::<Vec<_>>();
+            for (lp_lit, scope, main_lit) in derived {
+                self.set_lp_lit(
+                    lp_lit,
+                    BoundCause::Some {
+                        scope,
+                        trigger: main_lit,
+                    },
+                )?;
+            }
+        }
+
         while let Some(main_event) = self.model_events.pop(model.trail()) {
             // Ignore model events that originate from us (this reasoner),
             // as they were already pushed to our (local) trail.
@@ -269,7 +284,8 @@ impl Lp {
         }
     }
 
-    fn check_feasibility(&mut self) -> Result<(), Contradiction> {
+    /// Solves the LP, giving a contradiction (explained by an IIS) if it is infeasible.
+    pub fn check_feasibility(&mut self) -> Result<(), Contradiction> {
         match self.lp_state.solve_or_iis(&mut self.stats) {
             Err(iis) => Err(self.build_contradiction(iis)),
             _ => Ok(()),
@@ -329,25 +345,11 @@ impl Theory for Lp {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        if self.lp_state.trail().trail.is_empty() {
-            let derived = self.bindings.eval_all(model).collect::<Vec<_>>();
-            for (lp_lit, scope, main_lit) in derived {
-                self.set_lp_lit(
-                    lp_lit,
-                    BoundCause::Some {
-                        scope,
-                        trigger: main_lit,
-                    },
-                )?;
-            }
-        }
-
-        self.process_model_events(model)?;
-
         if !self.options.propagation_active {
             return Ok(());
         }
 
+        self.sync_bounds(model)?;
         self.check_feasibility()
     }
 
@@ -394,8 +396,8 @@ pub mod test {
     use aries_solver::core::views::Term;
     use aries_solver::reasoners::{Contradiction, Theory};
 
+    use crate::Lp;
     use crate::types::*;
-    use crate::{Lp, LpOptions};
 
     #[test]
     fn test_trail_backtrack() {
@@ -734,17 +736,13 @@ pub mod test {
     }
 
     /// The columns are counted as fixed whenever their bounds are equal.
-    /// Bounds are synced with backtracking and propagation (even when deactivated).
     #[test]
     fn test_column_counts() {
         let mut model = Domains::new();
         let p = model.new_var(0, 1);
         let q = model.new_var(0, 1);
 
-        let mut theory = Lp::with_options(LpOptions {
-            propagation_active: false,
-            ..Default::default()
-        });
+        let mut theory = Lp::default();
         let acol = theory.add_column((Some(0), Some(1)));
         let bcol = theory.add_column((Some(0), Some(1)));
         let ccol = theory.add_column((Some(0), Some(1)));
@@ -758,13 +756,13 @@ pub mod test {
         model.save_state();
         theory.save_state();
         assert_eq!(model.set(p.leq(0), Cause::Decision), Ok(true));
-        assert!(theory.propagate(&mut model).is_ok());
+        assert!(theory.sync_bounds(&model).is_ok());
         assert_eq!(theory.column_counts(), (3, 2));
 
         model.save_state();
         theory.save_state();
         assert_eq!(model.set(q.geq(1), Cause::Decision), Ok(true));
-        assert!(theory.propagate(&mut model).is_ok());
+        assert!(theory.sync_bounds(&model).is_ok());
         assert_eq!(theory.column_counts(), (3, 3));
         assert_eq!(theory.stats.num_feasibility_checks, 0);
 
@@ -775,8 +773,7 @@ pub mod test {
         theory.restore_last();
         assert_eq!(theory.column_counts(), (3, 1));
 
-        theory.activate_propagation();
-        assert!(theory.propagate(&mut model).is_ok());
+        assert!(theory.check_feasibility().is_ok());
         assert_eq!(theory.stats.num_feasibility_checks, 1);
     }
 }
