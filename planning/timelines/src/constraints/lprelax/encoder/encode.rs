@@ -3,9 +3,10 @@ use itertools::{Either, Itertools};
 
 use crate::SchedEncoder;
 use crate::analysis::transitions::TransitionType;
-use crate::constraints::lprelax::LpRelaxEncoder;
-use crate::constraints::lprelax::encoder::ground::GroupEntry;
-use crate::constraints::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
+use crate::lprelax::LpRelaxEncoder;
+
+use super::ground::GroupEntry;
+use super::problem::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
 
 pub fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     // [Lifted] A source is present if(f) its transitions are

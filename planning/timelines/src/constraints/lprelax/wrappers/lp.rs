@@ -10,8 +10,8 @@ use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
 use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpSum, LpVar};
 
-use crate::constraints::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
-use crate::constraints::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
+use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
+use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
 use crate::{IntTerm, SchedEncoder};
 
 /// Wrapper over the incremental LP reasoner, specifically for the LP relaxation problem.

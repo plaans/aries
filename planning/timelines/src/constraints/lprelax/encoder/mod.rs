@@ -10,8 +10,10 @@ pub use problem::LpRelaxProblem;
 
 use crate::analysis::Source;
 use crate::analysis::grounding::ground_all_tasks;
-use crate::analysis::transitions::supports::{Supports, SupportsSorted};
-use crate::analysis::transitions::{TransitionId, Transitions};
+use crate::analysis::transitions::{
+    TransitionId, Transitions,
+    supports::{Supports, SupportsSorted},
+};
 use crate::{IntTerm, SchedEncoder, Task};
 
 #[derive(Clone)]

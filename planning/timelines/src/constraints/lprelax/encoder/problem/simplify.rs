@@ -6,7 +6,6 @@ use aries_solver::core::IntCst;
 
 use crate::{Domains, SchedEncoder};
 
-use super::super::LpRelaxEncoder;
 use super::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
 
 /// Records the values that the domains already fix for the lifted presence and support columns,

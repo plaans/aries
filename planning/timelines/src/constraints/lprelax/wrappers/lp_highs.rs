@@ -9,8 +9,8 @@ use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
 use aries_solver_lp_highs::{Lp, LpCol, LpLit, LpOptions};
 
-use crate::constraints::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
-use crate::constraints::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
+use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
+use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxEncoder};
 use crate::{IntTerm, SchedEncoder};
 
 /// Wrapper over the HiGHS-backed LP reasoner, specifically for the LP relaxation problem.

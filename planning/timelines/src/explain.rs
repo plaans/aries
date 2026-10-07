@@ -7,7 +7,7 @@ use aries_solver::{
 };
 use itertools::Itertools;
 
-use crate::constraints::lprelax::wrappers::{LpRelaxHighs, LpRelaxIncr};
+use crate::lprelax::wrappers::{LpRelaxHighs, LpRelaxIncr};
 use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
@@ -44,7 +44,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
         }
         let mut solver = {
-            match crate::constraints::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
+            match crate::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
                 "highs" => {
                     let model = encoding.store.clone();
                     Solver::with_extra_reasoners(

@@ -6,9 +6,9 @@ use aries_solver::core::IntCst;
 use aries_solver::core::state::Domains;
 
 use crate::IntTerm;
-use crate::analysis::transitions::TransitionId;
+use crate::analysis::{Source, transitions::TransitionId};
 use crate::encoder::SchedEncoder;
-use crate::{analysis::Source, constraints::lprelax::LpRelaxEncoder};
+use crate::lprelax::LpRelaxEncoder;
 
 use super::ground::{SourceGroundingId, StateVarGroundingId, TransitionGroundingId};
 
