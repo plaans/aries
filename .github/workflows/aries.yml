@@ -210,7 +210,9 @@ jobs:
       - name: APE solver
         run: just ci-ape-solve 15 # increase the timeout to avoid flaky tests
       - name: APE solver (LpRelaxHighs)
-        run: just ci-ape-solve-lprelax # timeouts should be large enough to avoid flaky tests
+        run: just ci-ape-solve-lprelax-highs # timeouts should be large enough to avoid flaky tests
+      - name: APE solver (LpRelaxIncr)
+        run: just ci-ape-solve-lprelax-incr # timeouts should be large enough to avoid flaky tests
 
   tests:
     # Meta-job that only requires all test-jobs to pass
