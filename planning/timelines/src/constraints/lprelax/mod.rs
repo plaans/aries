@@ -6,7 +6,31 @@ pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "true");
 pub static ARIES_LPRELAX_MERGE_EQUAL_COLUMNS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_MERGE_EQUAL_COLUMNS", "true");
-pub static ARIES_LPRELAX_PHASES: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_PHASES", "false");
+pub static ARIES_LPRELAX_CHECKS: EnvParam<LpRelaxChecks> = EnvParam::new("ARIES_LPRELAX_CHECKS", "once");
+
+/// When the feasibility of the LP relaxation is checked, besides once when it is posted.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LpRelaxChecks {
+    /// At quiescence, only after posting the relaxation and never again
+    Once,
+    /// At quiscence, when reaching a new phase of fixed columns (`phases`).
+    Phases,
+    /// At quiescence, when some columns became fixed or unfixed since the last check (`changes`).
+    Changes,
+}
+
+impl std::str::FromStr for LpRelaxChecks {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "once" => Ok(Self::Once),
+            "phases" => Ok(Self::Phases),
+            "changes" => Ok(Self::Changes),
+            _ => Err(format!("unknown value {s:?} (expected once, phases or changes)")),
+        }
+    }
+}
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {

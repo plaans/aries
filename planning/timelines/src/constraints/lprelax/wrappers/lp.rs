@@ -11,7 +11,7 @@ use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpSum, LpVar};
 
 use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
-use crate::lprelax::{ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, ARIES_LPRELAX_PHASES, LpRelaxEncoder};
+use crate::lprelax::{ARIES_LPRELAX_CHECKS, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxChecks, LpRelaxEncoder};
 use crate::{IntTerm, SchedEncoder};
 
 /// Fractions of the LP's columns that trigger a new solve of the LP, when that many columns are fixed
@@ -34,7 +34,9 @@ const PHASE_REARM_MARGIN: f64 = 0.1;
 /// This 2-stage approach allows to build the encoder more efficiently (as it will be done after the first propagation)
 /// and to avoid building and solving the LP if it can be detected as unsatisfiable without it, after all assumptions are propagated.
 ///
-/// The LP is solved once when posted, then once each time a new phase of fixed columns is reached (see [`PHASES`]).
+/// The LP is solved once when posted, then depending on [`ARIES_LPRELAX_CHECKS`]: never again,
+/// once each time a new phase of fixed columns is reached (see [`PHASES`]),
+/// or at every quiescent propagation where the fixed columns changed since the last solve.
 #[derive(Clone)]
 pub(crate) struct LpRelaxIncr {
     lp: Lp,
@@ -53,6 +55,8 @@ pub(crate) struct LpRelaxIncr {
 
     /// Index of the current phase (see [`PHASES`])
     current_phase: usize,
+    /// The LP's number of changes in fixed columns at its last solve (see [`Lp::num_fixed_changes`])
+    fixed_changes_at_last_check: usize,
 }
 
 impl LpRelaxIncr {
@@ -69,6 +73,7 @@ impl LpRelaxIncr {
             num_events: 0,
             propagation_calls: 0,
             current_phase: 0,
+            fixed_changes_at_last_check: 0,
         }
     }
 
@@ -158,7 +163,7 @@ impl Theory for LpRelaxIncr {
         // Sync the LP's bounds with the model, without solving it.
         self.lp.sync_bounds(model)?;
 
-        if quiescent && ARIES_LPRELAX_PHASES.get() {
+        if quiescent && ARIES_LPRELAX_CHECKS.get() == LpRelaxChecks::Phases {
             let (num_vars_total, num_vars_fixed) = self.lp.variable_counts();
             let fixed_ratio = num_vars_fixed as f64 / num_vars_total.max(1) as f64;
             while self.current_phase > 0 && fixed_ratio < PHASES[self.current_phase - 1] - PHASE_REARM_MARGIN {
@@ -178,10 +183,18 @@ impl Theory for LpRelaxIncr {
             }
         }
 
+        if quiescent
+            && ARIES_LPRELAX_CHECKS.get() == LpRelaxChecks::Changes
+            && self.lp.num_fixed_changes() != self.fixed_changes_at_last_check
+        {
+            check_feas = true;
+        }
+
         if !check_feas {
             return Ok(());
         }
 
+        self.fixed_changes_at_last_check = self.lp.num_fixed_changes();
         self.lp.check_feasibility(model)
     }
 
