@@ -158,6 +158,8 @@ struct VariableCounts {
     num_counted: usize,
     /// The number of counted variables whose lower and upper bounds are equal
     num_fixed: usize,
+    /// The number of times a counted variable became fixed or unfixed (never decreases, even when backtracking)
+    num_fixed_changes: usize,
 }
 
 impl VariableCounts {
@@ -182,8 +184,14 @@ impl VariableCounts {
             return;
         }
         match (was_fixed, is_fixed) {
-            (false, true) => self.num_fixed += 1,
-            (true, false) => self.num_fixed -= 1,
+            (false, true) => {
+                self.num_fixed += 1;
+                self.num_fixed_changes += 1;
+            }
+            (true, false) => {
+                self.num_fixed -= 1;
+                self.num_fixed_changes += 1;
+            }
             _ => {}
         }
     }
@@ -390,6 +398,13 @@ impl Lp {
     /// (as of the last propagation, which syncs the LP's bounds with the model)
     pub fn variable_counts(&self) -> (usize, usize) {
         (self.variable_counts.num_counted, self.variable_counts.num_fixed)
+    }
+
+    /// The number of times one of the variables counted in [`Lp::variable_counts`] became fixed or unfixed so far.
+    ///
+    /// It never decreases (even when backtracking), so a different value means that the fixed variables changed in between.
+    pub fn num_fixed_changes(&self) -> usize {
+        self.variable_counts.num_fixed_changes
     }
 
     /// Retrieve a single variable `s` that is constrained to always be equals to the given linear `sum`.

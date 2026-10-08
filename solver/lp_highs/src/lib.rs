@@ -130,6 +130,13 @@ impl Lp {
         (self.lp_state.num_counted(), self.lp_state.num_fixed_counted())
     }
 
+    /// The number of times one of the columns counted in [`Lp::column_counts`] became fixed or unfixed so far.
+    ///
+    /// It never decreases (even when backtracking), so a different value means that the fixed columns changed in between.
+    pub fn num_fixed_changes(&self) -> usize {
+        self.lp_state.num_fixed_changes()
+    }
+
     pub fn add_column_01(&mut self) -> LpCol {
         assert!(self.lp_state.trail().trail.is_empty());
         self.add_column((Some(0), Some(1)))

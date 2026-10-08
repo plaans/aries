@@ -34,6 +34,8 @@ pub(super) struct LpState {
     num_counted: usize,
     /// The number of counted columns whose lower and upper bounds are equal
     num_fixed_counted: usize,
+    /// The number of times a counted column became fixed or unfixed (never decreases, even when backtracking)
+    num_fixed_changes: usize,
 }
 
 #[allow(dead_code)]
@@ -63,6 +65,7 @@ impl LpState {
             is_counted: Default::default(),
             num_counted: 0,
             num_fixed_counted: 0,
+            num_fixed_changes: 0,
         }
     }
 
@@ -87,6 +90,7 @@ impl LpState {
             is_counted: self.is_counted.clone(),
             num_counted: self.num_counted,
             num_fixed_counted: self.num_fixed_counted,
+            num_fixed_changes: self.num_fixed_changes,
         }
     }
 
@@ -133,16 +137,25 @@ impl LpState {
     pub fn num_fixed_counted(&self) -> usize {
         self.num_fixed_counted
     }
+    pub fn num_fixed_changes(&self) -> usize {
+        self.num_fixed_changes
+    }
 
-    /// Keeps `num_fixed_counted` up to date after a change of the bounds of `col`, given whether they were equal before
+    /// Keeps `num_fixed_counted` (and `num_fixed_changes`) up to date after a change of the bounds of `col`, given whether they were equal before
     fn update_num_fixed_counted(&mut self, col: LpCol, was_fixed: bool) {
         if !self.is_counted[col.index()] {
             return;
         }
         let (lower, upper) = self.get_column_bounds(col);
         match (was_fixed, lower == upper) {
-            (false, true) => self.num_fixed_counted += 1,
-            (true, false) => self.num_fixed_counted -= 1,
+            (false, true) => {
+                self.num_fixed_counted += 1;
+                self.num_fixed_changes += 1;
+            }
+            (true, false) => {
+                self.num_fixed_counted -= 1;
+                self.num_fixed_changes += 1;
+            }
             _ => {}
         }
     }
@@ -362,11 +375,12 @@ impl LpState {
     }
 
     pub fn undo_to_last_backtrack_point(&mut self) {
-        let (col_bounds, lp_model, is_counted, num_fixed_counted) = (
+        let (col_bounds, lp_model, is_counted, num_fixed_counted, num_fixed_changes) = (
             &mut self.col_bounds,
             &mut self.lp_model,
             &self.is_counted,
             &mut self.num_fixed_counted,
+            &mut self.num_fixed_changes,
         );
         self.lp_trail.restore_last_with(|ev| {
             let entry = &mut col_bounds[ev.col.index()];
@@ -384,6 +398,7 @@ impl LpState {
             // (undoing a tightening can only loosen the bounds)
             if is_counted[ev.col.index()] && was_fixed && entry.lower != entry.upper {
                 *num_fixed_counted -= 1;
+                *num_fixed_changes += 1;
             }
             lp_model.change_column_bounds(ev.col, long_cst_as_float(entry.lower)..=long_cst_as_float(entry.upper));
         });
