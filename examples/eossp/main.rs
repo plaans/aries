@@ -17,14 +17,39 @@ pub struct Args {
     pub instance: PathBuf,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Window {
+    pub start: IntCst,
+    pub end: IntCst,
+}
+
+impl Window {
+    pub fn duration(&self) -> IntCst {
+        self.end - self.start
+    }
+
+    pub fn is_before(&self, other: &Window) -> bool {
+        self.end <= other.start
+    }
+
+    pub fn is_after(&self, other: &Window) -> bool {
+        self.start >= other.end
+    }
+
+    pub fn is_ordered(&self, other: &Window) -> bool {
+        self.is_before(other) || self.is_after(other)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EnergyDelta {
-    pub delta: Option<IntCst>,
-    pub min: Option<IntCst>,
-    pub max: Option<IntCst>,
+    pub delta: IntCst,
+    pub min: IntCst,
+    pub max: IntCst,
 }
 
 impl EnergyDelta {
+    /// TODO: detect unecessary constraints
     pub fn enforce_if(
         &self,
         model: &mut Model,
@@ -34,21 +59,16 @@ impl EnergyDelta {
         energy_max: IntCst,
     ) {
         // enabler -> energy_at_start + delta >= energy_at_start_j
-        if let Some(delta) = self.delta {
-            model.enforce_if(enabler, geq(energy_at_start + delta, energy_at_end));
-        }
+        model.enforce_if(enabler, geq(energy_at_start + self.delta, energy_at_end));
 
         // enabler -> energy_at_start >= delta_min
-        if let Some(delta_min) = self.min {
-            model.enforce_if(enabler, geq(energy_at_start, delta_min));
-        }
+        model.enforce_if(enabler, geq(energy_at_start, self.min));
 
         // enabler -> energy_at_start <= delta_max
-        if let Some(delta_max) = self.max {
-            model.enforce_if(enabler, leq(energy_at_end, energy_max - delta_max));
-        }
+        model.enforce_if(enabler, leq(energy_at_end, energy_max - self.max));
     }
 
+    /// TODO: detect unecessary constraints
     pub fn enforce_scoped(
         &self,
         model: &mut Model,
@@ -58,43 +78,88 @@ impl EnergyDelta {
         energy_max: IntCst,
     ) {
         // enabler -> energy_at_start + delta >= energy_at_start_j
-        if let Some(delta) = self.delta {
-            model.enforce_scoped(geq(energy_at_start + delta, energy_at_end), scope.clone());
-        }
+        model.enforce_scoped(geq(energy_at_start + self.delta, energy_at_end), scope.clone());
 
         // enabler -> energy_at_start >= delta_min
-        if let Some(delta_min) = self.min {
-            model.enforce_scoped(geq(energy_at_start, delta_min), scope.clone());
-        }
+        model.enforce_scoped(geq(energy_at_start, self.min), scope.clone());
 
         // enabler -> energy_at_start <= delta_max
-        if let Some(delta_max) = self.max {
-            model.enforce_scoped(leq(energy_at_end, energy_max - delta_max), scope);
+        model.enforce_scoped(leq(energy_at_end, energy_max - self.max), scope);
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Label {
+    pub duration: IntCst,
+    pub energy: EnergyDelta,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TaskJson {
+    pub window: Window,
+    pub label: Label,
+    pub optional: bool,
+    pub reward: IntCst,
+}
+
+#[derive(Debug)]
+pub struct Task {
+    pub id: usize,
+    pub window: Window,
+    pub label: Label,
+    pub optional: bool,
+    pub reward: IntCst,
+}
+
+impl Task {
+    pub fn duration(&self) -> IntCst {
+        self.label.duration
+    }
+
+    pub fn energy(&self) -> &EnergyDelta {
+        &self.label.energy
+    }
+
+    pub fn earliest_start_time(&self) -> IntCst {
+        self.window.start
+    }
+
+    pub fn latest_end_time(&self) -> IntCst {
+        self.window.end
+    }
+
+    pub fn earliest_end_time(&self) -> IntCst {
+        self.earliest_start_time() + self.duration()
+    }
+
+    pub fn latest_start_time(&self) -> IntCst {
+        self.latest_end_time() - self.duration()
+    }
+}
+
+impl From<TaskJson> for Task {
+    fn from(task_json: TaskJson) -> Self {
+        Self {
+            id: 0,
+            window: task_json.window,
+            label: task_json.label,
+            optional: task_json.optional,
+            reward: task_json.reward,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct TaskJson {
-    pub release: IntCst,
-    pub deadline: IntCst,
-    pub duration: IntCst,
-    pub energy: EnergyDelta,
-    pub optional: bool,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct TransitionJson {
+pub struct Transition {
     pub source: usize,
     pub destination: usize,
-    pub duration: Option<IntCst>,
-    pub energy: Option<EnergyDelta>,
+    pub label: Option<Label>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InstanceJson {
     pub tasks: Vec<TaskJson>,
-    pub transitions: Vec<TransitionJson>,
+    pub transitions: Vec<Transition>,
     pub energy_max: IntCst,
 }
 
@@ -105,95 +170,10 @@ impl InstanceJson {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Task {
-    pub id: usize,
-    pub release: IntCst,
-    pub deadline: IntCst,
-    pub duration: IntCst,
-    pub energy: EnergyDelta,
-    pub optional: bool,
-}
-
-impl Task {
-    /// Return true iff task i must be before task j ie i < j.
-    pub fn before(task_i: &Task, task_j: &Task, t_ji: IntCst) -> bool {
-        task_j.release + task_j.duration + t_ji + task_i.duration > task_i.deadline
-    }
-}
-
-impl From<TaskJson> for Task {
-    fn from(task_json: TaskJson) -> Self {
-        Self {
-            id: 0,
-            release: task_json.release,
-            deadline: task_json.deadline,
-            duration: task_json.duration,
-            energy: task_json.energy,
-            optional: task_json.optional,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct TransitionLabel {
-    pub duration: Option<IntCst>,
-    pub energy: Option<EnergyDelta>,
-}
-
-impl From<&TransitionJson> for (usize, usize) {
-    fn from(transition_json: &TransitionJson) -> Self {
-        (transition_json.source, transition_json.destination)
-    }
-}
-
-impl From<&TransitionJson> for TransitionLabel {
-    fn from(transition_json: &TransitionJson) -> Self {
-        Self {
-            duration: transition_json.duration,
-            energy: transition_json.energy,
-        }
-    }
-}
-
-impl From<&TransitionJson> for ((usize, usize), TransitionLabel) {
-    fn from(transition_json: &TransitionJson) -> Self {
-        (transition_json.into(), transition_json.into())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Transition {
-    pub source: usize,
-    pub destination: usize,
-    pub label: TransitionLabel,
-}
-
-impl From<&TransitionJson> for Transition {
-    fn from(transition_json: &TransitionJson) -> Self {
-        Self {
-            source: transition_json.source,
-            destination: transition_json.destination,
-            label: transition_json.into(),
-        }
-    }
-}
-
-impl From<((usize, usize), TransitionLabel)> for Transition {
-    fn from(value: ((usize, usize), TransitionLabel)) -> Self {
-        let ((source, destination), label) = value;
-        Self {
-            source,
-            destination,
-            label,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Instance {
     pub tasks: Vec<Task>,
-    pub transitions: HashMap<(usize, usize), TransitionLabel>,
+    pub transitions: HashMap<(usize, usize), Option<Label>>,
     pub energy_max: IntCst,
 }
 
@@ -214,13 +194,14 @@ impl From<InstanceJson> for Instance {
             task.id = i;
         }
 
-        let transitions = instance_json.transitions.iter().map(Into::into).collect();
-        let energy_max = instance_json.energy_max;
-
         Self {
             tasks,
-            transitions,
-            energy_max,
+            transitions: instance_json
+                .transitions
+                .into_iter()
+                .map(|t| ((t.source, t.destination), t.label))
+                .collect(),
+            energy_max: instance_json.energy_max,
         }
     }
 }
@@ -228,10 +209,11 @@ impl From<InstanceJson> for Instance {
 pub struct TaskVar {
     pub id: usize,
     pub duration: IntCst,
+    pub reward: IntCst,
     pub presence: Lit,
     pub start: Var,
     pub energy_at_start: Var,
-    pub energy_at_end: Var, // We could remove this variable by putting all saturation on energy at start
+    pub energy_at_end: Var,
 }
 
 impl TaskVar {
@@ -242,18 +224,23 @@ impl TaskVar {
             Lit::TRUE
         };
 
-        let latest_start = task.deadline - task.duration;
-        let start = model.new_optional_ivar(task.release, latest_start, presence, format!("start_{}", task.id));
+        let start = model.new_optional_ivar(
+            task.earliest_start_time(),
+            task.latest_start_time(),
+            presence,
+            format!("start_{}", task.id),
+        );
 
         let energy_at_start = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_start_{}", task.id));
         let energy_at_end = model.new_optional_ivar(0, energy_max, presence, format!("energy_at_end_{}", task.id));
 
-        task.energy
+        task.energy()
             .enforce_scoped(model, [presence], energy_at_start, energy_at_end, energy_max);
 
         Self {
             id: task.id,
-            duration: task.duration,
+            duration: task.duration(),
+            reward: task.reward,
             presence,
             start,
             energy_at_start,
@@ -266,134 +253,6 @@ impl TaskVar {
     }
 }
 
-pub struct TransitionVar {
-    pub transition: Transition,
-    pub before: Lit,
-}
-
-impl TransitionVar {
-    pub fn new(
-        model: &mut Model,
-        transition: Transition,
-        task_var_i: &TaskVar,
-        task_var_j: &TaskVar,
-        energy_max: IntCst,
-    ) -> Self {
-        // Both duration and energy are none: i and j are incompatible
-        if transition.label.duration.is_none() && transition.label.energy.is_none() {
-            let before = Lit::FALSE;
-            return Self { transition, before };
-        }
-
-        let presence = model.get_conjunctive_scope(&[task_var_i.presence, task_var_j.presence]);
-
-        let before = model
-            .new_optional_bvar(presence, format!("before_{}_{}", task_var_i.id, task_var_j.id))
-            .true_lit();
-
-        // before_ij => end_i + duration_ij <= start_j
-        if let Some(duration) = transition.label.duration {
-            model.enforce_if(before, leq(task_var_i.end() + duration, task_var_j.start));
-        }
-
-        if let Some(energy) = transition.label.energy {
-            energy.enforce_if(
-                model,
-                before,
-                task_var_i.energy_at_end,
-                task_var_j.energy_at_start,
-                energy_max,
-            );
-        }
-
-        Self { transition, before }
-    }
-}
-
-impl From<TransitionVar> for ((usize, usize), TransitionVar) {
-    fn from(transition_var: TransitionVar) -> Self {
-        (
-            (transition_var.transition.source, transition_var.transition.destination),
-            transition_var,
-        )
-    }
-}
-
-pub struct EosspModel {
-    pub task_vars: Vec<TaskVar>,
-    pub transition_vars: HashMap<(usize, usize), TransitionVar>,
-    pub objective: Var,
-}
-
-impl EosspModel {
-    pub fn new(model: &mut Model, instance: &Instance) -> Self {
-        let num_tasks: IntCst = instance.num_tasks().try_into().expect("overflow on num_tasks");
-        let objective = model.new_ivar(0, num_tasks, "objective");
-
-        let task_vars: Vec<TaskVar> = instance
-            .tasks
-            .iter()
-            .map(|task| TaskVar::new(model, task, instance.energy_max))
-            .collect();
-
-        let transition_vars = instance
-            .transitions
-            .iter()
-            .map(|((i, j), t)| {
-                TransitionVar::new(
-                    model,
-                    ((*i, *j), *t).into(),
-                    &task_vars[*i],
-                    &task_vars[*j],
-                    instance.energy_max,
-                )
-                .into()
-            })
-            .collect();
-
-        let mut eossp_model = Self {
-            task_vars,
-            transition_vars,
-            objective,
-        };
-
-        eossp_model.post_disjunctions(model);
-        eossp_model.post_objective(model);
-        eossp_model
-    }
-
-    fn post_disjunctions(&mut self, model: &mut Model) {
-        for ((i, j), transition_ij) in self.transition_vars.iter() {
-            let task_i = &self.task_vars[*i];
-            let task_j = &self.task_vars[*j];
-
-            let mut disjunction = vec![task_i.presence.not(), task_j.presence.not(), transition_ij.before];
-
-            if let Some(transition_ji) = self.transition_vars.get(&(*j, *i)) {
-                if i < j {
-                    continue;
-                };
-                disjunction.push(transition_ji.before);
-            }
-
-            model.enforce(or(disjunction));
-        }
-    }
-
-    fn post_objective(&mut self, model: &mut Model) {
-        let mut sum = LinSum::zero();
-        for task in self.task_vars.iter() {
-            if task.presence == Lit::TRUE {
-                sum += 1;
-            } else {
-                sum += task.presence.variable();
-            }
-        }
-        model.enforce(sum.clone().geq(self.objective));
-        model.enforce(sum.leq(self.objective));
-    }
-}
-
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).init();
 
@@ -401,20 +260,90 @@ fn main() -> anyhow::Result<()> {
 
     let instance = Instance::read(&args.instance);
 
-    println!("{:?}", instance);
+    // println!("{:?}", instance);
+    // println!("----------");
+
+    let mut model = Model::new();
+
+    let task_vars: Vec<TaskVar> = instance
+        .tasks
+        .iter()
+        .map(|task| TaskVar::new(&mut model, task, instance.energy_max))
+        .collect();
+
+    let objective = model.new_variable(0, instance.num_tasks().try_into().unwrap());
+    let mut sum = LinSum::zero();
+    for task_var in &task_vars {
+        if task_var.presence == Lit::TRUE {
+            sum += task_var.reward;
+        } else {
+            sum += task_var.reward * task_var.presence.variable();
+        }
+    }
+    model.enforce(sum.geq(objective));
+
+    for (i, task_var_i) in task_vars.iter().enumerate() {
+        for task_var_j in &task_vars[i + 1..] {
+            let j = task_var_j.id;
+
+            // Get a new presence variable presence_ij <=> (presence_i && presence_j)
+            // This variable will be true when both tasks are present
+            let presence_ij = model.get_conjunctive_scope(&[task_var_i.presence, task_var_j.presence]);
+
+            // Create a decision variable with scope presence_ij.
+            // When presence_ij is true, a boolean value will need to be assigned to this one.
+            // The value will decide which of task i or task j precedes the other.
+            let before_ij = model.new_optional_bool_var(presence_ij);
+
+            let before_ji = before_ij.not();
+
+            let label_ij = instance.transitions.get(&(i, j)).unwrap();
+            let label_ji = instance.transitions.get(&(j, i)).unwrap();
+
+            match label_ij {
+                Some(label_ij) => {
+                    // before_ij => end_i + duration_ij <= start_j
+                    model.enforce_if(before_ij, leq(task_var_i.end() + label_ij.duration, task_var_j.start));
+
+                    label_ij.energy.enforce_if(
+                        &mut model,
+                        before_ij,
+                        task_var_i.energy_at_end,
+                        task_var_j.energy_at_start,
+                        instance.energy_max,
+                    );
+                }
+                None => model.enforce_if(before_ij, Lit::FALSE),
+            }
+
+            // TODO: clean this copy-paste
+            match label_ji {
+                Some(label_ji) => {
+                    // before_ji => end_j + duration_ji <= start_i
+                    model.enforce_if(before_ji, leq(task_var_j.end() + label_ji.duration, task_var_i.start));
+
+                    label_ji.energy.enforce_if(
+                        &mut model,
+                        before_ji,
+                        task_var_j.energy_at_end,
+                        task_var_i.energy_at_start,
+                        instance.energy_max,
+                    );
+                }
+                None => model.enforce_if(before_ji, Lit::FALSE),
+            }
+        }
+    }
+
     println!("----------");
 
-    let mut aries_model = Model::new();
-
-    let model = EosspModel::new(&mut aries_model, &instance);
-    println!("----------");
-
-    let mut solver = Solver::new(aries_model);
-    let result = solver.maximize(model.objective, SearchLimit::None);
+    let mut solver = Solver::new(model);
+    let result = solver.maximize(objective, SearchLimit::None);
 
     let (objective, solution) = result.expect("error while solving").expect("unsat");
+    
 
-    for task_var in model.task_vars.iter() {
+    for task_var in &task_vars {
         let present = solution.entails(task_var.presence);
         if present {
             let start = solution.lb(task_var.start);
@@ -436,6 +365,7 @@ fn main() -> anyhow::Result<()> {
 
     println!("----------");
     println!("Objective: {objective}");
+    println!("Duration: {}", solver.stats.solve_time.as_secs_f32());
 
     Ok(())
 }
