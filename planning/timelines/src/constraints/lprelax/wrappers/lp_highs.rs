@@ -13,11 +13,11 @@ use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
 use crate::lprelax::{ARIES_LPRELAX_CHECKS, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS, LpRelaxChecks, LpRelaxEncoder};
 use crate::{IntTerm, SchedEncoder};
 
-/// Fractions of the LP's columns that trigger a new solve of the LP, when that many columns are fixed
+/// Fractions of the presence literals of the relaxed transitions and sources that trigger a new solve of the LP, when that many are decided
 /// (only once, until re-armed: see [`PHASE_REARM_MARGIN`]).
 const PHASES: [f64; 3] = [0.5, 0.75, 0.9];
 
-/// A phase is re-armed (i.e. can trigger a solve again) once the fraction of fixed columns falls this much below it, e.g. after backtracking.
+/// A phase is re-armed (i.e. can trigger a solve again) once the fraction of decided presence literals falls this much below it, e.g. after backtracking.
 /// Not less, to avoid many solves if the search "oscillates" around a phase.
 const PHASE_REARM_MARGIN: f64 = 0.1;
 
@@ -34,7 +34,7 @@ const PHASE_REARM_MARGIN: f64 = 0.1;
 /// and to avoid building and solving the LP if it can be detected as unsatisfiable without it, after all assumptions are propagated.
 ///
 /// The LP is solved once when posted, then depending on [`ARIES_LPRELAX_CHECKS`]: never again,
-/// once each time a new phase of fixed columns is reached (see [`PHASES`]),
+/// once each time a new phase of decided presence literals is reached (see [`PHASES`]),
 /// or at every quiescent propagation where the fixed columns changed since the last solve.
 #[derive(Clone)]
 pub(crate) struct LpRelaxHighs {
@@ -53,6 +53,8 @@ pub(crate) struct LpRelaxHighs {
     num_events: u32,
     propagation_calls: usize,
 
+    /// The (non-constant) presence literals of the relaxed transitions and sources, whose decided fraction defines the phases
+    presence_lits: Vec<Lit>,
     /// Index of the current phase (see [`PHASES`])
     current_phase: usize,
     /// The LP's number of changes in fixed columns at its last solve (see [`Lp::num_fixed_changes`])
@@ -69,6 +71,7 @@ impl LpRelaxHighs {
             posted: false,
             num_events: 0,
             propagation_calls: 0,
+            presence_lits: Vec::new(),
             current_phase: 0,
             fixed_changes_at_last_check: 0,
         }
@@ -106,7 +109,7 @@ impl LpRelaxHighs {
         problem.simplify(encoder, &self.ctx, base_doms, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get());
 
         let cols = post_columns_and_rows(&problem, &mut self.lp);
-        post_bindings(&cols, encoder, &self.ctx, base_doms, &mut self.lp);
+        self.presence_lits = post_bindings(&cols, encoder, &self.ctx, base_doms, &mut self.lp);
 
         self.posted = true;
 
@@ -158,20 +161,25 @@ impl Theory for LpRelaxHighs {
         self.lp.sync_bounds(model)?;
 
         if quiescent && self.posted && ARIES_LPRELAX_CHECKS.get() == LpRelaxChecks::Phases {
-            let (num_vars_total, num_vars_fixed) = self.lp.column_counts();
-            let fixed_ratio = num_vars_fixed as f64 / num_vars_total.max(1) as f64;
-            while self.current_phase > 0 && fixed_ratio < PHASES[self.current_phase - 1] - PHASE_REARM_MARGIN {
+            let num_total = self.presence_lits.len();
+            let num_decided = self
+                .presence_lits
+                .iter()
+                .filter(|&&lit| model.entails(lit) || model.entails(!lit))
+                .count();
+            let decided_ratio = num_decided as f64 / num_total.max(1) as f64;
+            while self.current_phase > 0 && decided_ratio < PHASES[self.current_phase - 1] - PHASE_REARM_MARGIN {
                 self.current_phase -= 1;
             }
-            let num_phase_reached = PHASES.iter().take_while(|&&phase| fixed_ratio >= phase).count();
+            let num_phase_reached = PHASES.iter().take_while(|&&phase| decided_ratio >= phase).count();
             if num_phase_reached > self.current_phase {
                 self.current_phase = num_phase_reached;
                 check_feas = true;
                 lprelax_log!(
-                    "Reached the phase of {}% fixed columns ({} / {}) at decision level {:?}",
+                    "Reached the phase of {}% decided presences ({} / {}) at decision level {:?}",
                     100. * PHASES[num_phase_reached - 1],
-                    num_vars_fixed,
-                    num_vars_total,
+                    num_decided,
+                    num_total,
                     model.current_decision_level(),
                 );
             }
@@ -297,13 +305,15 @@ fn post_columns_and_rows(problem: &LpRelaxProblem, lp: &mut Lp) -> HashMap<ColTa
 ///
 /// Every binding is a half-binding: it constrains the column when the main model's literal becomes
 /// entailed, and never the other way round.
+///
+/// Returns the (non-constant) presence literals of the relaxed transitions and sources.
 fn post_bindings(
     cols: &HashMap<ColTag, LpCol>,
     encoder: &LpRelaxEncoder,
     ctx: &SchedEncoder,
     doms: &Domains,
     lp: &mut Lp,
-) {
+) -> Vec<Lit> {
     // Bind lifted presence columns of the LP with corresponding literals in the main CSP.
 
     let presence_lits_and_cols = {
@@ -325,6 +335,12 @@ fn post_bindings(
         }
         res
     };
+
+    let presence_lits = presence_lits_and_cols
+        .keys()
+        .filter(|lit| !lit.tautological() && !lit.absurd())
+        .copied()
+        .collect();
 
     for (lit, lit_cols) in presence_lits_and_cols {
         if lit.tautological() {
@@ -390,6 +406,8 @@ fn post_bindings(
         //
         // // lp.half_bind_fixed(doms.presence(lit.variable()), lit, LpLit::geq(col, 1));
     }
+
+    presence_lits
 }
 
 /// The value `x` of a term's variable that makes the term `a*x + b` equal to `value`, if any.
