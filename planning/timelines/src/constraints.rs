@@ -1,4 +1,5 @@
 pub mod grounding;
+pub mod lprelax;
 pub mod symmetry;
 
 use aries_solver::lang::ModelView;
