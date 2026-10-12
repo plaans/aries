@@ -354,7 +354,7 @@ impl Problem {
     }
 
     /// Set a new upper/lower bound to an existing variable
-    pub fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) {
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) {
         debug_assert!(var.0 < self.var_maxs.len());
 
         match bound {
@@ -699,12 +699,12 @@ pub struct FeasibilityChecker {
 }
 
 impl FeasibilityChecker {
-    /// Set a new Upper/Lower bound for the given variable and return the previous bound
+    /// Sets a new upper/lower bound for the given variable and return the previous bound
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem is immediatly detected as infeasible.
-    pub fn set_bound(&mut self, var: Variable, bound: &Bound, val: f64) -> Result<f64, Error> {
+    /// Will return an error if the problem is immediately detected as infeasible.
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<f64, Error> {
         let old_val_solver = match bound {
             Bound::Lower => self.solver.set_lb_var(var.0, val)?,
             Bound::Upper => self.solver.set_ub_var(var.0, val)?,
@@ -713,10 +713,10 @@ impl FeasibilityChecker {
         Ok(old_val_solver)
     }
 
-    /// Add a new constraint to our lp
-    /// The variables involved must be already declared
+    /// Adds a new constraint to the LP.
     ///
-    /// [`Problem::add_constraint`]: struct.Problem.html#method.add_constraint
+    /// All variables involved must have been previously declared.
+    ///
     ///
     /// # Errors
     ///
@@ -732,8 +732,9 @@ impl FeasibilityChecker {
     /// # Errors
     ///
     /// Will return an error if the variable has inconsistent bounds
-    pub fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
-        self.solver.add_variable(obj_coeff, min, max)
+    pub fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<Variable, Error> {
+        let var_idx = self.solver.add_variable(obj_coeff, min, max)?;
+        Ok(Variable(var_idx))
     }
 
     /// Try to restore the feasibility of our problem
@@ -741,11 +742,9 @@ impl FeasibilityChecker {
     ///  # Errors
     ///
     /// Will return an error if th feasibility can't be restored
-    /// Note that if set_bound already returned an error, cheack_feasibility might not return that the problem is infeasible, both need to be checked
+    /// Note that if set_bound already returned an error, `check_feasibility` might not return that the problem is infeasible, both need to be checked
     pub fn check_feasibility(&mut self) -> Result<(), Error> {
-        self.solver.solve_feasibility()?;
-
-        Ok(())
+        self.solver.solve_feasibility()
     }
 }
 
@@ -924,17 +923,17 @@ mod tests {
 
         let res = feas_check.add_variable(2.0, f64::NEG_INFINITY, f64::INFINITY);
         assert!(res.is_ok());
-        let v3 = Variable(res.unwrap());
+        let v3 = res.unwrap();
         assert_eq!(v3, problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY)));
 
         let res = feas_check.add_variable(-3.0, -10.0, f64::INFINITY);
         assert!(res.is_ok());
-        let v4 = Variable(res.unwrap());
+        let v4 = res.unwrap();
         assert_eq!(v4, problem.add_var(-3.0, (-10.0, f64::INFINITY)));
 
         let res = feas_check.add_variable(1.0, f64::NEG_INFINITY, 10.0);
         assert!(res.is_ok());
-        let v5 = Variable(res.unwrap());
+        let v5 = res.unwrap();
         assert_eq!(v5, problem.add_var(1.0, (f64::NEG_INFINITY, 10.0)));
 
         let res = feas_check.add_variable(0.0, 2.0, 0.0);
@@ -942,7 +941,7 @@ mod tests {
 
         let res = feas_check.add_variable(0.0, -10.0, 10.0);
         assert!(res.is_ok());
-        let v6 = Variable(res.unwrap());
+        let v6 = res.unwrap();
         assert_eq!(v6, problem.add_var(0.0, (-10.0, 10.0)));
 
         // Adding constraint with the new variables
@@ -952,7 +951,7 @@ mod tests {
         let res = feas_check.add_constraint([(v1, 1.0), (v6, 1.0)], ComparisonOp::Ge, 10.0);
         assert!(res.is_ok());
 
-        let res = feas_check.set_bound(v6, &Bound::Upper, 5.0);
+        let res = feas_check.set_bound(v6, Bound::Upper, 5.0);
         let res_check = feas_check.check_feasibility();
 
         assert!(res.is_err() || res_check.is_err());
@@ -1082,12 +1081,12 @@ mod tests {
 
             assert!(feas_checker.check_feasibility().is_ok());
 
-            let r1 = feas_checker.set_bound(v2, &Bound::Lower, 2.0);
-            let r2 = feas_checker.set_bound(v1, &Bound::Lower, 4.0);
+            let r1 = feas_checker.set_bound(v2, Bound::Lower, 2.0);
+            let r2 = feas_checker.set_bound(v1, Bound::Lower, 4.0);
 
             assert!(feas_checker.check_feasibility().is_err() || r1.is_err() || r2.is_err());
 
-            let _ = feas_checker.set_bound(v1, &Bound::Lower, 2.0);
+            let _ = feas_checker.set_bound(v1, Bound::Lower, 2.0);
 
             assert!(feas_checker.check_feasibility().is_ok());
         }
@@ -1218,9 +1217,9 @@ mod tests {
         let mut nb_val_cert_feas = 0;
 
         for (i, lit) in lit_vec.iter().enumerate() {
-            problem.set_bound(lit.var, &lit.bound, lit.val);
+            problem.set_bound(lit.var, lit.bound, lit.val);
 
-            let res_set_bound = feas_checker.set_bound(lit.var, &lit.bound, lit.val);
+            let res_set_bound = feas_checker.set_bound(lit.var, lit.bound, lit.val);
 
             let res_check_feas = feas_checker.check_feasibility();
 

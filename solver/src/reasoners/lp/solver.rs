@@ -119,7 +119,7 @@ impl Solver {
 
             let idx_var = res.unwrap();
 
-            assert_eq!(idx_var, var.idx());
+            assert_eq!(idx_var, var);
         }
 
         const TRESHOLD_WARNING: i128 = 1_i128 << 40; // Experimentally computed
@@ -194,9 +194,9 @@ impl Solver {
             }
         }
 
-        self.problem.set_bound(var, &bound, val as f64);
+        self.problem.set_bound(var, bound, val as f64);
 
-        feas_checker.set_bound(var, &bound, val as f64)?;
+        feas_checker.set_bound(var, bound, val as f64)?;
 
         Ok(())
     }
