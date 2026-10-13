@@ -28,13 +28,7 @@ fn main() {
     let input = io::BufReader::new(file);
     let file = MpsFile::parse(input, direction).unwrap();
 
-    let res_solve = if is_incremental {
-        println!("Incremental");
-        file.problem.solve_incremental()
-    } else {
-        println!("normal");
-        file.problem.solve()
-    };
+    let res_solve = file.problem.solve();
 
     match res_solve {
         Ok(solution) => {

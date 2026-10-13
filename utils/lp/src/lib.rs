@@ -475,40 +475,6 @@ impl Problem {
         })
     }
 
-    /// Solve the problem, finding the optimal objective function value and variable values by adding bounds one by one.
-    ///
-    /// # Used for benchmark
-    ///
-    /// If it's not for testing the incremental aspect, it is recommended to use [`Problem::solve`] instead
-    ///
-    /// # Errors
-    ///
-    /// Will return an error, if the problem is infeasible (constraints can't be satisfied)
-    /// or if the objective value is unbounded.
-    ///
-    /// TODO: remove
-    pub fn solve_incremental(&self) -> Result<Solution, Error> {
-        let num_vars = self.obj_coeffs.len();
-
-        let init_var_mins = vec![f64::NEG_INFINITY; num_vars];
-        let init_var_maxs = vec![f64::INFINITY; num_vars];
-        let mut solver = Solver::try_new(&self.obj_coeffs, &init_var_mins, &init_var_maxs, &self.constraints)?;
-
-        for var in 0..num_vars {
-            solver.set_lb_var(var, self.var_mins[var])?;
-
-            solver.set_ub_var(var, self.var_maxs[var])?;
-
-            solver.solve_feasibility()?;
-        }
-        solver.initial_solve()?;
-        Ok(Solution {
-            num_vars,
-            direction: self.direction,
-            solver,
-        })
-    }
-
     /// Set a new upper/lower bound to an existing variable
     pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) {
         debug_assert!(var.0 < self.var_maxs.len());
