@@ -525,7 +525,7 @@ impl Lp {
         match res {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 self.stats.num_certif += 1;
-                if self.solver.problem.is_certificate_valid(&cert) {
+                if self.solver.lp.is_certificate_valid(&cert) {
                     self.stats.num_val_certif_float += 1;
                 }
                 match self

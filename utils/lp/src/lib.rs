@@ -44,7 +44,7 @@ assert_eq!(solution[y], 3.0);
 ```
 */
 
-#![deny(missing_debug_implementations, missing_docs)]
+#![warn(missing_debug_implementations, missing_docs)]
 #![allow(clippy::needless_range_loop)]
 
 mod helpers;
@@ -57,6 +57,112 @@ mod sparse;
 #[allow(unused_imports)]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+/// A Linear Program (LP), that can be use to construct the LP and solve it.
+#[derive(Clone, Debug)]
+pub struct Lp {
+    /// The linear program
+    problem: Problem,
+    /// If present, a solver for the linear program. Importantly, the LP in `problem` and `solver`
+    /// are kept in sync: any variable, constraint, bound restriction is added to both.
+    /// The solver is typically constructed lazily on the first check.
+    solver: Option<Box<Solver>>,
+}
+
+impl Lp {
+    /// Creates the LP from a pre-existing [`Problem`]
+    pub fn from(problem: Problem) -> Self {
+        Self { problem, solver: None }
+    }
+
+    /// Initialize an empty LP, specifying whether it is intended for minimization or maximization.
+    pub fn new(dir: OptimizationDirection) -> Self {
+        Self {
+            problem: Problem::new(dir),
+            solver: None,
+        }
+    }
+
+    /// Declare a new variable in the LP, with the given coefficient in the LP's objective expression as
+    /// well as its lower and upper bounds `(lb, ub)`.
+    pub fn add_var(&mut self, obj_coeff: f64, bounds: (f64, f64)) -> Variable {
+        let (lb, ub) = bounds;
+        let var = self.problem.add_var(obj_coeff, (lb, ub));
+        if let Some(solver) = self.solver.as_mut() {
+            let res = solver.add_variable(obj_coeff, lb, ub);
+            let var2 = res.expect("A variable with inconsistent bounds was added");
+            assert_eq!(var, var2);
+        }
+        var
+    }
+
+    /// Add a constraint (row) to the LP.
+    pub fn add_constraint(&mut self, sum: impl Into<LinearExpr>, cmp_op: ComparisonOp, val: f64) {
+        let sum = sum.into();
+        if let Some(checker) = self.solver.as_mut() {
+            let sum = CsVec::new(checker.num_vars, sum.vars.clone(), sum.coeffs.clone());
+            // TODO: the check is ok in the common context of the reasoner but not in a more general setting.
+            checker
+                .add_constraint(sum, cmp_op, val)
+                .expect("Adding a constraint that is not active yet should not generate an error")
+        }
+        self.problem.add_constraint(sum, cmp_op, val);
+    }
+
+    /// Updates the bound of the variable, returning an error if the bound is obviously incompatible
+    /// with the current opposite bound.
+    ///
+    /// TODO: make error more specific
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<(), Error> {
+        self.problem.set_bound(var, bound, val);
+        if let Some(checker) = self.solver.as_mut() {
+            checker.set_bound(var, bound, val)?;
+        }
+        Ok(())
+    }
+
+    // TODO: should be kept internal
+    #[doc(hidden)]
+    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
+        self.problem.is_certificate_valid(cert)
+    }
+
+    /// Returns a solver of this LP, initializing a new one on its first call.
+    ///
+    /// Might return an error if an obvious inconsistency is detected when initializing the solver.
+    ///
+    /// TODO: make errors more specific.
+    fn get_solver(&mut self) -> Result<&mut Solver, Error> {
+        if self.solver.is_none() {
+            let solver = Solver::try_new(
+                &self.problem.obj_coeffs,
+                &self.problem.var_mins,
+                &self.problem.var_maxs,
+                &self.problem.constraints,
+            )?;
+            self.solver = Some(Box::new(solver));
+            // from this point on, every modification to the problem must be applied to the problem as well
+        }
+        Ok(self.solver.as_mut().unwrap())
+    }
+
+    /// Checks whether the LP is feasible (admits at least one valid solution).
+    /// An error is returned if the LP is *not* feasible.
+    ///
+    /// Note that the objective is completely ignored when checking feasibility.
+    ///
+    /// TODO: make results more specific.
+    pub fn check_feasibility(&mut self) -> Result<(), Error> {
+        self.get_solver()?.solve_feasibility()
+    }
+}
+
+impl PartialEq for Lp {
+    fn eq(&self, other: &Self) -> bool {
+        // only the linear programs need to be equal, the checker is just materialized for efficiency
+        self.problem == other.problem
+    }
+}
 
 use solver::Solver;
 
@@ -80,6 +186,7 @@ impl Variable {
     ///
     /// Variables are referenced by their number in the addition sequence. The method returns
     /// this number.
+    #[inline(always)]
     pub fn idx(&self) -> usize {
         self.0
     }
@@ -116,9 +223,8 @@ impl LinearExpr {
 
 /// A single `variable * constant` term in a linear expression.
 /// This is an auxiliary struct for specifying conversions.
-#[doc(hidden)]
 #[derive(Clone, Copy, Debug)]
-pub struct LinearTerm(Variable, f64);
+struct LinearTerm(Variable, f64);
 
 impl From<(Variable, f64)> for LinearTerm {
     fn from(term: (Variable, f64)) -> Self {
@@ -319,6 +425,8 @@ impl Problem {
     ///
     /// Will return an error, if the problem is infeasible (constraints can't be satisfied)
     /// or if the objective value is unbounded.
+    ///
+    /// TODO: remove
     pub fn solve_incremental(&self) -> Result<Solution, Error> {
         let num_vars = self.obj_coeffs.len();
 
@@ -339,18 +447,6 @@ impl Problem {
             direction: self.direction,
             solver,
         })
-    }
-
-    /// Create a solver for the problem and wrap it in a FeasbilityChecker
-    ///
-    /// # Errors
-    ///
-    /// Will return an error, if the problem is trivially infeasible:
-    /// - min > max for a the domain of a var
-    /// - contradiction in a constraint free of any var: 0.0 <= -1.0 for example
-    pub fn create_feasibility_checker(&self) -> Result<FeasibilityChecker, Error> {
-        let solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
-        Ok(FeasibilityChecker { solver })
     }
 
     /// Set a new upper/lower bound to an existing variable
@@ -690,64 +786,6 @@ impl From<Bound> for ComparisonOp {
     }
 }
 
-/// Allow us to check the feasibility of a problem while changing bounds, adding constraints and variables incrementally.
-///
-/// Important: optimality isn't maintained
-#[derive(Debug, Clone)]
-pub struct FeasibilityChecker {
-    solver: Solver,
-}
-
-impl FeasibilityChecker {
-    /// Sets a new upper/lower bound for the given variable and return the previous bound
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<f64, Error> {
-        let old_val_solver = match bound {
-            Bound::Lower => self.solver.set_lb_var(var.0, val)?,
-            Bound::Upper => self.solver.set_ub_var(var.0, val)?,
-        };
-
-        Ok(old_val_solver)
-    }
-
-    /// Adds a new constraint to the LP.
-    ///
-    /// All variables involved must have been previously declared.
-    ///
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem becomes infeasible with the additional constraint.
-    pub fn add_constraint(&mut self, expr: impl Into<LinearExpr>, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
-        let expr = expr.into();
-        self.solver
-            .add_constraint(CsVec::new(self.solver.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)
-    }
-
-    /// Add a new variable to our lp
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the variable has inconsistent bounds
-    pub fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<Variable, Error> {
-        let var_idx = self.solver.add_variable(obj_coeff, min, max)?;
-        Ok(Variable(var_idx))
-    }
-
-    /// Try to restore the feasibility of our problem
-    ///
-    ///  # Errors
-    ///
-    /// Will return an error if th feasibility can't be restored
-    /// Note that if set_bound already returned an error, `check_feasibility` might not return that the problem is infeasible, both need to be checked
-    pub fn check_feasibility(&mut self) -> Result<(), Error> {
-        self.solver.solve_feasibility()
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -910,49 +948,26 @@ mod tests {
 
     #[test]
     fn add_variable() {
-        let mut problem = Problem::new(OptimizationDirection::Minimize);
+        let mut problem = Lp::new(OptimizationDirection::Minimize);
         let v1 = problem.add_var(2.0, (0.0, f64::INFINITY));
         let v2 = problem.add_var(1.0, (0.0, f64::INFINITY));
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
 
-        let mut feas_check = problem.create_feasibility_checker().unwrap();
-
-        let res = feas_check.check_feasibility();
+        let res = problem.check_feasibility();
         assert!(res.is_ok());
 
-        let res = feas_check.add_variable(2.0, f64::NEG_INFINITY, f64::INFINITY);
-        assert!(res.is_ok());
-        let v3 = res.unwrap();
-        assert_eq!(v3, problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY)));
-
-        let res = feas_check.add_variable(-3.0, -10.0, f64::INFINITY);
-        assert!(res.is_ok());
-        let v4 = res.unwrap();
-        assert_eq!(v4, problem.add_var(-3.0, (-10.0, f64::INFINITY)));
-
-        let res = feas_check.add_variable(1.0, f64::NEG_INFINITY, 10.0);
-        assert!(res.is_ok());
-        let v5 = res.unwrap();
-        assert_eq!(v5, problem.add_var(1.0, (f64::NEG_INFINITY, 10.0)));
-
-        let res = feas_check.add_variable(0.0, 2.0, 0.0);
-        assert!(res.is_err());
-
-        let res = feas_check.add_variable(0.0, -10.0, 10.0);
-        assert!(res.is_ok());
-        let v6 = res.unwrap();
-        assert_eq!(v6, problem.add_var(0.0, (-10.0, 10.0)));
+        let v3 = problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY));
+        let v4 = problem.add_var(-3.0, (-10.0, f64::INFINITY));
+        let _v5 = problem.add_var(1.0, (f64::NEG_INFINITY, 10.0));
+        let v6 = problem.add_var(0.0, (-10.0, 10.0));
 
         // Adding constraint with the new variables
-        let res = feas_check.add_constraint([(v3, 1.0), (v4, 1.0)], ComparisonOp::Le, 4.0);
-        assert!(res.is_ok());
+        problem.add_constraint([(v3, 1.0), (v4, 1.0)], ComparisonOp::Le, 4.0);
+        problem.add_constraint([(v1, 1.0), (v6, 1.0)], ComparisonOp::Ge, 10.0);
 
-        let res = feas_check.add_constraint([(v1, 1.0), (v6, 1.0)], ComparisonOp::Ge, 10.0);
-        assert!(res.is_ok());
-
-        let res = feas_check.set_bound(v6, Bound::Upper, 5.0);
-        let res_check = feas_check.check_feasibility();
+        let res = problem.set_bound(v6, Bound::Upper, 5.0);
+        let res_check = problem.check_feasibility();
 
         assert!(res.is_err() || res_check.is_err());
     }
@@ -1042,53 +1057,47 @@ mod tests {
     }
 
     #[test]
-    fn check_feasability() {
+    fn check_feasibility() {
         {
-            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let mut problem = Lp::new(OptimizationDirection::Maximize);
             let v1 = problem.add_var(1.0, (0.0, 3.0));
             let v2 = problem.add_var(2.0, (0.0, 3.0));
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-            let mut feas_checker = problem.create_feasibility_checker().unwrap();
-
-            assert!(feas_checker.check_feasibility().is_ok());
+            assert!(problem.check_feasibility().is_ok());
         }
 
         {
-            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let mut problem = Lp::new(OptimizationDirection::Maximize);
             let v1 = problem.add_var(1.0, (0.0, 3.0));
             let v2 = problem.add_var(2.0, (0.0, 3.0));
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 5.0);
 
-            let mut feas_checker = problem.create_feasibility_checker().unwrap();
-
-            assert!(feas_checker.check_feasibility().is_err());
+            assert!(problem.check_feasibility().is_err());
         }
     }
 
     #[test]
     fn set_bound() {
         {
-            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let mut problem = Lp::new(OptimizationDirection::Maximize);
             let v1 = problem.add_var(1.0, (0.0, 3.0));
             let v2 = problem.add_var(2.0, (0.0, 3.0));
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-            let mut feas_checker = problem.create_feasibility_checker().unwrap();
+            assert!(problem.check_feasibility().is_ok());
 
-            assert!(feas_checker.check_feasibility().is_ok());
+            let r1 = problem.set_bound(v2, Bound::Lower, 2.0);
+            let r2 = problem.set_bound(v1, Bound::Lower, 4.0);
 
-            let r1 = feas_checker.set_bound(v2, Bound::Lower, 2.0);
-            let r2 = feas_checker.set_bound(v1, Bound::Lower, 4.0);
+            assert!(problem.check_feasibility().is_err() || r1.is_err() || r2.is_err());
 
-            assert!(feas_checker.check_feasibility().is_err() || r1.is_err() || r2.is_err());
+            let _ = problem.set_bound(v1, Bound::Lower, 2.0);
 
-            let _ = feas_checker.set_bound(v1, Bound::Lower, 2.0);
-
-            assert!(feas_checker.check_feasibility().is_ok());
+            assert!(problem.check_feasibility().is_ok());
         }
     }
 
@@ -1187,25 +1196,17 @@ mod tests {
     }
 
     fn test_incremental_constraints(
-        mut problem: Problem,
+        problem: Problem,
         lit_vec: Vec<Lit>,
         nb_const: usize,
         verbose: bool,
         assert_on: bool,
     ) -> (usize, usize, usize, usize) {
-        let init_feas_checker = problem.create_feasibility_checker();
-
         let init_solve = problem.solve();
-
-        if init_feas_checker.is_err() {
-            assert!(init_solve.is_err());
-            return (0, 0, 0, 0);
-        }
-
-        let mut feas_checker = init_feas_checker.unwrap();
+        let mut lp = Lp::from(problem);
 
         if init_solve.is_err() {
-            assert!(feas_checker.check_feasibility().is_err());
+            assert!(lp.check_feasibility().is_err());
         }
 
         let mut solution = init_solve.unwrap();
@@ -1217,30 +1218,28 @@ mod tests {
         let mut nb_val_cert_feas = 0;
 
         for (i, lit) in lit_vec.iter().enumerate() {
-            problem.set_bound(lit.var, lit.bound, lit.val);
+            let res_set_bound = lp.set_bound(lit.var, lit.bound, lit.val);
 
-            let res_set_bound = feas_checker.set_bound(lit.var, lit.bound, lit.val);
-
-            let res_check_feas = feas_checker.check_feasibility();
+            let res_check_feas = lp.check_feasibility();
 
             let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
 
             if let Err(Error::InfeasibleWithCertificate(cert)) = &res_add_const {
-                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
+                let is_certif_valid = lp.is_certificate_valid(&cert[..nb_const]);
                 println!("Is certificate valid add_const: {}", is_certif_valid);
                 nb_cert_gen_const += 1;
                 nb_val_cert_const += is_certif_valid as usize;
             }
 
             if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
-                let is_certif_valid = problem.is_certificate_valid(cert);
+                let is_certif_valid = lp.is_certificate_valid(cert);
                 println!("Is certificate valid set_bound: {}", is_certif_valid);
                 nb_cert_gen_feas += 1;
                 nb_val_cert_feas += is_certif_valid as usize;
             }
 
             if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
-                let is_certif_valid = problem.is_certificate_valid(cert);
+                let is_certif_valid = lp.is_certificate_valid(cert);
                 println!("Is certificate valid cheak_feas: {}", is_certif_valid);
                 nb_cert_gen_feas += 1;
                 nb_val_cert_feas += is_certif_valid as usize;

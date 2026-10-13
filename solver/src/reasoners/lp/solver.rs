@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use aries_lp::{Bound, ComparisonOp, Error, FeasibilityChecker, OptimizationDirection, Problem, Variable};
+use aries_lp::{Bound, Error, Lp, OptimizationDirection, Variable};
 #[allow(unused_imports)]
 use itertools::Itertools;
 
@@ -46,7 +46,6 @@ impl BoundJustification {
         }
     }
 }
-
 /// Used to store the bounds of our variable and the justification of each of them (useful for explanations)
 #[derive(Clone, PartialEq)]
 pub(super) struct IntBounds {
@@ -70,8 +69,7 @@ pub type IntegerConstraint = super::LpSum;
 /// Interface with the aries-lp solver, also used to verify its certificates
 #[derive(Clone)]
 pub struct Solver {
-    pub(super) problem: Problem,
-
+    pub(super) lp: Lp,
     pub init_bounds: Vec<(LongCst, LongCst)>,
     /// Used to store an exact version of our original problem with integers
     pub(super) bounds: Vec<IntBounds>,
@@ -84,43 +82,29 @@ pub struct Solver {
     ///
     /// Variable can't be used directly as the key, therefore we use their associated index: [`Variable::idx()`]
     pub(super) map_lp_to_aries: RefMap<usize, Var>,
-
-    opt_feas_checker: Option<FeasibilityChecker>,
 }
 
 impl PartialEq for Solver {
     fn eq(&self, other: &Self) -> bool {
-        self.bounds == other.bounds && self.constraints == other.constraints && self.problem == other.problem
+        self.bounds == other.bounds && self.constraints == other.constraints && self.lp == other.lp
     }
 }
 
 impl Solver {
     pub fn new(is_explanation_refined: bool) -> Self {
         Solver {
-            problem: Problem::new(OptimizationDirection::Maximize),
+            lp: Lp::new(OptimizationDirection::Maximize),
             init_bounds: Vec::new(),
             bounds: Vec::new(),
             constraints: Vec::new(),
             is_explanation_refined,
             map_lp_to_aries: RefMap::default(),
-            opt_feas_checker: None,
         }
     }
 
     /// Create a new solver variable both for Problem and the mirror of our problem
     pub fn create_variable(&mut self, lb: LongCst, ub: LongCst, stats: &mut Stats) -> Variable {
-        let var = self.problem.add_var(0.0, (lb as f64, ub as f64));
-
-        // If the aries-lp instance is already created, we need to update it
-        if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
-            let res = feas_checker.add_variable(0.0, lb as f64, ub as f64);
-            // Adding a variable should not generate an error as it would mean that we are trying to add a variable with inconsistent bounds
-            assert!(res.is_ok());
-
-            let idx_var = res.unwrap();
-
-            assert_eq!(idx_var, var);
-        }
+        let var = self.lp.add_var(0.0, (lb as f64, ub as f64));
 
         const TRESHOLD_WARNING: i128 = 1_i128 << 40; // Experimentally computed
 
@@ -175,12 +159,6 @@ impl Solver {
         val: LongCst,
         justification: BoundJustification,
     ) -> Result<(), Error> {
-        if self.opt_feas_checker.is_none() {
-            self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
-        }
-
-        let feas_checker = self.opt_feas_checker.as_mut().unwrap();
-
         debug_assert!(var.idx() < self.bounds.len());
 
         match bound {
@@ -194,11 +172,7 @@ impl Solver {
             }
         }
 
-        self.problem.set_bound(var, bound, val as f64);
-
-        feas_checker.set_bound(var, bound, val as f64)?;
-
-        Ok(())
+        self.lp.set_bound(var, bound, val as f64)
     }
 
     /// Same as [`Solver::set_bound_restrict`], but the change is *not* trailed:
@@ -277,28 +251,14 @@ impl Solver {
     ///
     /// Will return an error if it can't be restored
     pub fn check_feasibility(&mut self) -> Result<(), Error> {
-        if self.opt_feas_checker.is_none() {
-            self.opt_feas_checker = Some(self.problem.create_feasibility_checker()?);
-        }
-
-        let feas_checker = self.opt_feas_checker.as_mut().unwrap();
-
-        feas_checker.check_feasibility()?;
-
-        Ok(())
+        self.lp.check_feasibility()
     }
 
     /// Add a new constraint in both float and integer problems
     pub fn add_constraint(&mut self, lin_sum: LpSum) {
         let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|(var, coef)| (var, coef as f64)).collect();
 
-        if let Some(feas_checker) = self.opt_feas_checker.as_mut() {
-            let res = feas_checker.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
-            // Adding a constraint that is not active yet should no generate an error
-            assert!(res.is_ok())
-        }
-
-        self.problem.add_constraint(&float_lin_sum, ComparisonOp::Eq, 0.0);
+        self.lp.add_constraint(&float_lin_sum, aries_lp::ComparisonOp::Eq, 0.0);
 
         self.constraints.push(lin_sum);
     }

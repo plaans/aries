@@ -1,5 +1,5 @@
 use crate::{
-    ComparisonOp, CsVec, Error,
+    Bound, ComparisonOp, CsVec, Error, Variable,
     helpers::{resized_view, to_dense},
     lu::{LUFactors, ScratchSpace, lu_factorize},
     sparse::{ScatteredVec, SparseMat, SparseVec},
@@ -421,6 +421,13 @@ impl Solver {
         Ok(old_val)
     }
 
+    pub(crate) fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<f64, Error> {
+        match bound {
+            Bound::Lower => self.set_lb_var(var.idx(), val),
+            Bound::Upper => self.set_ub_var(var.idx(), val),
+        }
+    }
+
     /// Set a new lower bound for a var, optimality an feasability aren't restored automatically:
     /// A call to solve_feasibility or initial_solve is necessary
     ///
@@ -659,7 +666,7 @@ impl Solver {
     /// # Errors
     ///
     /// Returns an error if the given bounds are inconsistent (min > max)
-    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
+    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<Variable, Error> {
         if min > max {
             return Err(Error::InfeasibleTrivial);
         }
@@ -733,7 +740,7 @@ impl Solver {
 
         self.is_dual_feasible = false;
 
-        Ok(new_var_idx)
+        Ok(Variable(new_var_idx))
     }
 
     pub(crate) fn add_constraint(&mut self, mut coeffs: CsVec, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
