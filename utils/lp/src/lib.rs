@@ -150,10 +150,70 @@ impl Lp {
     /// An error is returned if the LP is *not* feasible.
     ///
     /// Note that the objective is completely ignored when checking feasibility.
-    ///
-    /// TODO: make results more specific.
-    pub fn check_feasibility(&mut self) -> Result<(), Error> {
-        self.get_solver()?.solve_feasibility()
+    pub fn check_feasibility(&mut self) -> Result<FeasibilityStatus, FeasibilityCheckFailure> {
+        let solver = match self.get_solver() {
+            Ok(solver) => solver,
+            Err(Error::InfeasibleTrivial) => return Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Trivial)),
+            _ => unreachable!(),
+        };
+
+        match solver.solve_feasibility() {
+            Ok(()) => Ok(FeasibilityStatus::Feasible),
+            Err(Error::InfeasibleTrivial) => Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Trivial)),
+            Err(Error::InfeasibleWithCertificate(cert)) => {
+                Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)))
+            }
+            Err(Error::Unstable) => Err(FeasibilityCheckFailure::Unstable),
+            Err(Error::Unbounded) => unreachable!("Cannot return unbounded when checking feasibility only"),
+        }
+    }
+}
+
+pub mod results {
+    //! Exports various types capturing the status of an LP or a solver.
+
+    /// Result for a successful check of satisfiability.
+    #[derive(Debug)]
+    pub enum FeasibilityStatus {
+        /// The LP is feasible, i.e., admits at least one solution (ignoring the objective).
+        Feasible,
+        /// The LP admits no solution (ignoring the objective).
+        Infeasible(InfeasibilityReason),
+    }
+
+    impl FeasibilityStatus {
+        /// Returns `true` iff the LP is feasible.
+        pub fn feasible(&self) -> bool {
+            match self {
+                FeasibilityStatus::Feasible => true,
+                FeasibilityStatus::Infeasible(_) => false,
+            }
+        }
+
+        /// Returns `true` iff the LP has no feasible solution.
+        pub fn infeasible(&self) -> bool {
+            !self.feasible()
+        }
+    }
+
+    /// A Farkas certificate that can be used as a proof of unsatisfiability.
+    pub type InfeasibilityCertificate = Vec<f64>;
+
+    /// Explain where the infeasibility comes from.
+    #[derive(Debug, Clone)]
+    pub enum InfeasibilityReason {
+        /// Obvious infeasibility, that can be typically detected at model construction
+        Trivial,
+        /// Infeasibility was proven by the solver (typically after a number of simplex pivots).
+        /// This variant contains a Farkas certificate that can be used to certify the infeasibility.
+        Certified(InfeasibilityCertificate),
+    }
+
+    /// Denotes the reason why a feasibility check could not be concluded.
+    #[derive(Debug, Clone)]
+    pub enum FeasibilityCheckFailure {
+        /// Instability detected in floating point operations, preventing the solver to reach a conclusion.
+        Unstable,
     }
 }
 
@@ -777,6 +837,8 @@ impl<'a> IntoIterator for &'a Solution {
 
 pub use mps::MpsFile;
 
+use crate::results::{FeasibilityCheckFailure, FeasibilityStatus, InfeasibilityReason};
+
 impl From<Bound> for ComparisonOp {
     fn from(bound: Bound) -> ComparisonOp {
         match bound {
@@ -954,8 +1016,8 @@ mod tests {
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
 
-        let res = problem.check_feasibility();
-        assert!(res.is_ok());
+        let res = problem.check_feasibility().unwrap();
+        assert!(res.feasible());
 
         let v3 = problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY));
         let v4 = problem.add_var(-3.0, (-10.0, f64::INFINITY));
@@ -967,9 +1029,9 @@ mod tests {
         problem.add_constraint([(v1, 1.0), (v6, 1.0)], ComparisonOp::Ge, 10.0);
 
         let res = problem.set_bound(v6, Bound::Upper, 5.0);
-        let res_check = problem.check_feasibility();
+        let res_check = problem.check_feasibility().unwrap();
 
-        assert!(res.is_err() || res_check.is_err());
+        assert!(res.is_err() || res_check.infeasible());
     }
 
     #[test]
@@ -1065,7 +1127,7 @@ mod tests {
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-            assert!(problem.check_feasibility().is_ok());
+            assert!(problem.check_feasibility().unwrap().feasible());
         }
 
         {
@@ -1075,7 +1137,7 @@ mod tests {
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 5.0);
 
-            assert!(problem.check_feasibility().is_err());
+            assert!(problem.check_feasibility().unwrap().infeasible());
         }
     }
 
@@ -1088,16 +1150,16 @@ mod tests {
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
             problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-            assert!(problem.check_feasibility().is_ok());
+            assert!(problem.check_feasibility().unwrap().feasible());
 
             let r1 = problem.set_bound(v2, Bound::Lower, 2.0);
             let r2 = problem.set_bound(v1, Bound::Lower, 4.0);
 
-            assert!(problem.check_feasibility().is_err() || r1.is_err() || r2.is_err());
+            assert!(problem.check_feasibility().unwrap().infeasible() || r1.is_err() || r2.is_err());
 
             let _ = problem.set_bound(v1, Bound::Lower, 2.0);
 
-            assert!(problem.check_feasibility().is_ok());
+            assert!(problem.check_feasibility().unwrap().feasible());
         }
     }
 
@@ -1206,7 +1268,7 @@ mod tests {
         let mut lp = Lp::from(problem);
 
         if init_solve.is_err() {
-            assert!(lp.check_feasibility().is_err());
+            assert!(lp.check_feasibility().unwrap().infeasible());
         }
 
         let mut solution = init_solve.unwrap();
@@ -1220,9 +1282,12 @@ mod tests {
         for (i, lit) in lit_vec.iter().enumerate() {
             let res_set_bound = lp.set_bound(lit.var, lit.bound, lit.val);
 
-            let res_check_feas = lp.check_feasibility();
+            let res_check_feas = lp.check_feasibility().unwrap();
 
             let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
+
+            use results::FeasibilityStatus::*;
+            use results::InfeasibilityReason::*;
 
             if let Err(Error::InfeasibleWithCertificate(cert)) = &res_add_const {
                 let is_certif_valid = lp.is_certificate_valid(&cert[..nb_const]);
@@ -1238,7 +1303,7 @@ mod tests {
                 nb_val_cert_feas += is_certif_valid as usize;
             }
 
-            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_check_feas {
+            if let Infeasible(Certified(cert)) = &res_check_feas {
                 let is_certif_valid = lp.is_certificate_valid(cert);
                 println!("Is certificate valid cheak_feas: {}", is_certif_valid);
                 nb_cert_gen_feas += 1;
@@ -1248,11 +1313,11 @@ mod tests {
             if assert_on {
                 assert_eq!(
                     res_add_const.is_err(),
-                    res_check_feas.is_err() || res_set_bound.is_err()
+                    res_check_feas.infeasible() || res_set_bound.is_err()
                 );
             }
 
-            if res_add_const.is_err() || res_check_feas.is_err() || res_set_bound.is_err() {
+            if res_add_const.is_err() || res_check_feas.infeasible() || res_set_bound.is_err() {
                 if verbose {
                     println!(
                         "{i}\nadd_const: {:?}\nset_bound: {:?}\ncheack_feas: {:?}",

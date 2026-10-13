@@ -250,7 +250,9 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if it can't be restored
-    pub fn check_feasibility(&mut self) -> Result<(), Error> {
+    pub fn check_feasibility(
+        &mut self,
+    ) -> Result<aries_lp::results::FeasibilityStatus, aries_lp::results::FeasibilityCheckFailure> {
         self.lp.check_feasibility()
     }
 

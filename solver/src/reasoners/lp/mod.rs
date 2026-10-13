@@ -31,7 +31,10 @@ use aries_env_param::EnvParam;
 use itertools::Itertools;
 use solver::{BoundJustification, Solver};
 
-use aries_lp::{Bound, Error, Variable};
+use aries_lp::{
+    Bound, Error, Variable,
+    results::{FeasibilityCheckFailure, FeasibilityStatus, InfeasibilityReason},
+};
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -521,9 +524,13 @@ impl Lp {
     }
 
     /// Takes the result of a call to [Solver::check_feasibility] and returns either `Ok` or a `Contradiction` if infeasibility was detected
-    fn explain_check_feas(&mut self, res: Result<(), Error>, domains: &Domains) -> Result<(), Contradiction> {
+    fn explain_check_feas(
+        &mut self,
+        res: Result<FeasibilityStatus, FeasibilityCheckFailure>,
+        domains: &Domains,
+    ) -> Result<(), Contradiction> {
         match res {
-            Err(Error::InfeasibleWithCertificate(cert)) => {
+            Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert))) => {
                 self.stats.num_certif += 1;
                 if self.solver.lp.is_certificate_valid(&cert) {
                     self.stats.num_val_certif_float += 1;
@@ -548,6 +555,7 @@ impl Lp {
                     }
                 }
             }
+            Ok(FeasibilityStatus::Infeasible(_)) => todo!(),
             _ => Ok(()),
         }
     }
