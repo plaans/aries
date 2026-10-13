@@ -13,15 +13,10 @@ struct Args {
     /// If set, the solver will panic if it does not find the indicated optimal value.
     #[arg(long)]
     expected_value: Option<f64>,
-    /// If set, the solver will build the LP incrementally (intended for testing purposes).
-    #[arg(long)]
-    incremental: bool,
 }
 
 fn main() {
     let args = Args::parse();
-
-    let is_incremental = args.incremental;
 
     let direction = aries_lp::OptimizationDirection::Minimize;
     let file = std::fs::File::open(args.file).unwrap();
@@ -38,7 +33,7 @@ fn main() {
                 assert!((optimum - expected).abs() < 1e-3)
             }
         }
-        Err(Error::InfeasibleTrivial) | Err(Error::InfeasibleWithCertificate(_)) => {
+        Err(Error::IncompatibleBounds(_)) | Err(Error::InfeasibleWithCertificate(_)) => {
             println!("status: INFEASIBLE");
             if let Some(expected) = args.expected_value {
                 assert!(expected.is_nan());

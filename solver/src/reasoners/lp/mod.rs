@@ -512,7 +512,8 @@ impl Lp {
     /// Takes the result of a call to [Solver::set_bound_restrict] and returns either `Ok` or a `Contradiction` if infeasibility was detected
     fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
         match res {
-            Err(Error::InfeasibleTrivial) => {
+            Err(Error::IncompatibleBounds(culprit_var)) => {
+                debug_assert_eq!(&var, culprit_var); // TODO: remove var parameter and unify the two `explain` methods
                 let explanation = self.solver.explain_infeasible_var(var, &self.bound_constrs);
                 Err(Contradiction::Explanation(explanation))
             }

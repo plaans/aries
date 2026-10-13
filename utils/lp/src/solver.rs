@@ -1,7 +1,10 @@
+use std::panic;
+
 use crate::{
     Bound, ComparisonOp, CsVec, Error, Variable,
     helpers::{resized_view, to_dense},
     lu::{LUFactors, ScratchSpace, lu_factorize},
+    results::{InfeasibilityReason, NumericalErrors},
     sparse::{ScatteredVec, SparseMat, SparseVec},
 };
 
@@ -106,7 +109,7 @@ impl Solver {
         var_mins: &[f64],
         var_maxs: &[f64],
         constraints: &[(CsVec, ComparisonOp, f64)],
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, InfeasibilityReason> {
         let enable_steepest_edge = true; // TODO: make user-settable.
 
         let num_vars = obj_coeffs.len();
@@ -132,7 +135,7 @@ impl Solver {
             let min = orig_var_mins[v];
             let max = orig_var_maxs[v];
             if min > max {
-                return Err(Error::InfeasibleTrivial);
+                return Err(InfeasibilityReason::IncompatibleBounds(Variable(v)));
             }
 
             // initially all user-created variables are non-basic
@@ -194,19 +197,13 @@ impl Solver {
         for (coeffs, cmp_op, rhs) in constraints {
             let rhs = *rhs;
 
-            if coeffs.indices().is_empty() {
-                let is_tautological = match cmp_op {
-                    ComparisonOp::Eq => 0.0 == rhs,
-                    ComparisonOp::Le => 0.0 <= rhs,
-                    ComparisonOp::Ge => 0.0 >= rhs,
-                };
-
-                if is_tautological {
-                    continue;
-                } else {
-                    return Err(Error::InfeasibleTrivial);
-                }
-            }
+            // NOTE: a possible optimization would be to treat specially constraints with no variables by:
+            // 1) ignoring tautological ones
+            // 2) returning an error on the seconds
+            //
+            // We do not do this
+            // 1) means skipping rows, which might have implications on the certificate (that identifies constraints by their row number)
+            // 2) requires computing a certificate for explanation and handling it in constructors of the solver, complicating things for little gain.
 
             constraint_coeffs.push(coeffs.clone());
             orig_rhs.push(rhs);
@@ -379,7 +376,7 @@ impl Solver {
     /// Will return an error if the new bound is trivially infeasible (ub < lb)
     pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
         if val < self.orig_var_mins[var] {
-            return Err(Error::InfeasibleTrivial);
+            return Err(Error::IncompatibleBounds(Variable(var)));
         }
 
         let old_val = self.orig_var_maxs[var];
@@ -436,7 +433,7 @@ impl Solver {
     /// Will return an error if the new bound is trivially infeasible (lb > ub)
     pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
         if val > self.orig_var_maxs[var] {
-            return Err(Error::InfeasibleTrivial);
+            return Err(Error::IncompatibleBounds(Variable(var)));
         }
 
         let old_val = self.orig_var_mins[var];
@@ -485,7 +482,7 @@ impl Solver {
     /// or if feasibility couldn't be restored
     pub(crate) fn fix_var(&mut self, var: usize, val: f64) -> Result<(), Error> {
         if val < self.orig_var_mins[var] || val > self.orig_var_maxs[var] {
-            return Err(Error::InfeasibleTrivial);
+            return Err(Error::IncompatibleBounds(Variable(var)));
         }
 
         let col = match self.var_states[var] {
@@ -666,10 +663,8 @@ impl Solver {
     /// # Errors
     ///
     /// Returns an error if the given bounds are inconsistent (min > max)
-    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<Variable, Error> {
-        if min > max {
-            return Err(Error::InfeasibleTrivial);
-        }
+    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<Variable, NumericalErrors> {
+        assert!(min <= max && !max.is_nan() && !min.is_nan() && !obj_coeff.is_nan());
 
         let new_var_idx = self.num_vars;
         self.num_vars += 1;
@@ -744,22 +739,8 @@ impl Solver {
     }
 
     pub(crate) fn add_constraint(&mut self, mut coeffs: CsVec, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
-        assert!(self.is_primal_feasible);
+        assert!(self.is_primal_feasible); // TODO: this appears unnecessary
         // assert!(self.is_dual_feasible); // necesarry if we want to garanty optimality after adding the constraint
-
-        if coeffs.indices().is_empty() {
-            let is_tautological = match cmp_op {
-                ComparisonOp::Eq => 0.0 == rhs,
-                ComparisonOp::Le => 0.0 <= rhs,
-                ComparisonOp::Ge => 0.0 >= rhs,
-            };
-
-            if is_tautological {
-                return Ok(());
-            } else {
-                return Err(Error::InfeasibleTrivial);
-            }
-        }
 
         let slack_var = self.num_total_vars();
         let (slack_var_min, slack_var_max) = match cmp_op {
@@ -820,7 +801,7 @@ impl Solver {
 
         self.is_primal_feasible = false;
         // println!("restore?");
-        self.restore_feasibility()
+        self.restore_feasibility() // TODO: remove, we don't want such implicit calls
     }
 
     /// Number of infeasible basic vars and sum of their infeasibilities.
@@ -1203,7 +1184,7 @@ impl Solver {
         }
     }
 
-    fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), Error> {
+    fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), NumericalErrors> {
         // TODO: periodically (say, every 1000 pivots) recalc basic vars and object coeffs
         // from scratch for numerical stability.
 
@@ -1360,7 +1341,7 @@ impl Solver {
     }
 
     #[allow(dead_code)]
-    fn recalc_basic_var_vals(&mut self) -> Result<(), Error> {
+    fn recalc_basic_var_vals(&mut self) -> Result<(), NumericalErrors> {
         let mut cur_vals = self.orig_rhs.clone();
         for (i, var) in self.nb_vars.iter().enumerate() {
             let val = self.nb_var_vals[i];
@@ -1383,7 +1364,7 @@ impl Solver {
         Ok(())
     }
 
-    fn recalc_obj_coeffs(&mut self) -> Result<(), Error> {
+    fn recalc_obj_coeffs(&mut self) -> Result<(), NumericalErrors> {
         if self.basis_solver.eta_matrices.len() > 0 {
             self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
         }
@@ -1470,11 +1451,11 @@ impl BasisSolver {
         self.eta_matrices.push(r_leaving, coeffs);
     }
 
-    fn reset(&mut self, orig_constraints_csc: &CsMat, basic_vars: &[usize]) -> Result<(), Error> {
+    fn reset(&mut self, orig_constraints_csc: &CsMat, basic_vars: &[usize]) -> Result<(), NumericalErrors> {
         self.scratch.clear_sparse(basic_vars.len());
         self.eta_matrices.clear_and_resize(basic_vars.len());
         self.rhs.clear_and_resize(basic_vars.len());
-        let res_lu_factorize = lu_factorize(
+        self.lu_factors = lu_factorize(
             basic_vars.len(),
             |c| {
                 orig_constraints_csc
@@ -1484,12 +1465,7 @@ impl BasisSolver {
             },
             0.1,
             &mut self.scratch,
-        );
-        if let Ok(lu_factors) = res_lu_factorize {
-            self.lu_factors = lu_factors;
-        } else {
-            return Err(Error::Unstable);
-        }
+        )?;
         self.lu_factors_transp = self.lu_factors.transpose();
 
         Ok(())

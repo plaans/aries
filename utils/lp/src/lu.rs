@@ -1,4 +1,7 @@
-use crate::sparse::{Error, Perm, ScatteredVec, SparseMat, TriangleMat};
+use crate::{
+    results::NumericalErrors,
+    sparse::{Perm, ScatteredVec, SparseMat, TriangleMat},
+};
 
 #[derive(Clone)]
 pub struct LUFactors {
@@ -120,7 +123,7 @@ pub fn lu_factorize<'a>(
     get_col: impl Fn(usize) -> (&'a [usize], &'a [f64]),
     stability_coeff: f64,
     scratch: &mut ScratchSpace,
-) -> Result<LUFactors, Error> {
+) -> Result<LUFactors, NumericalErrors> {
     // Implementation of the Gilbert-Peierls algorithm:
     //
     // Gilbert, John R., and Tim Peierls. "Sparse partial pivoting in time
@@ -205,7 +208,8 @@ pub fn lu_factorize<'a>(
             }
 
             if max_abs < 1e-8 {
-                return Err(Error::SingularMatrix);
+                // singular matrix
+                return Err(NumericalErrors);
             }
 
             assert!(max_abs.is_normal());
@@ -554,7 +558,7 @@ mod tests {
                 0.9,
                 &mut scratch,
             );
-            assert_eq!(err.unwrap_err(), Error::SingularMatrix);
+            assert_eq!(err.unwrap_err(), NumericalErrors);
         }
 
         {
@@ -579,7 +583,7 @@ mod tests {
                 0.9,
                 &mut scratch,
             );
-            assert_eq!(err.unwrap_err(), Error::SingularMatrix);
+            assert_eq!(err.unwrap_err(), NumericalErrors);
         }
     }
 

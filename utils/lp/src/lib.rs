@@ -132,7 +132,7 @@ impl Lp {
     /// Might return an error if an obvious inconsistency is detected when initializing the solver.
     ///
     /// TODO: make errors more specific.
-    fn get_solver(&mut self) -> Result<&mut Solver, Error> {
+    fn get_solver(&mut self) -> Result<&mut Solver, InfeasibilityReason> {
         if self.solver.is_none() {
             let solver = Solver::try_new(
                 &self.problem.obj_coeffs,
@@ -153,13 +153,16 @@ impl Lp {
     pub fn check_feasibility(&mut self) -> Result<FeasibilityStatus, FeasibilityCheckFailure> {
         let solver = match self.get_solver() {
             Ok(solver) => solver,
-            Err(Error::InfeasibleTrivial) => return Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Trivial)),
-            _ => unreachable!(),
+            Err(infeasibitiy) => {
+                return Ok(FeasibilityStatus::Infeasible(infeasibitiy));
+            }
         };
 
         match solver.solve_feasibility() {
             Ok(()) => Ok(FeasibilityStatus::Feasible),
-            Err(Error::InfeasibleTrivial) => Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Trivial)),
+            Err(Error::IncompatibleBounds(var)) => Ok(FeasibilityStatus::Infeasible(
+                InfeasibilityReason::IncompatibleBounds(var),
+            )),
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)))
             }
@@ -171,6 +174,8 @@ impl Lp {
 
 pub mod results {
     //! Exports various types capturing the status of an LP or a solver.
+
+    use crate::Variable;
 
     /// Result for a successful check of satisfiability.
     #[derive(Debug)]
@@ -203,7 +208,7 @@ pub mod results {
     #[derive(Debug, Clone)]
     pub enum InfeasibilityReason {
         /// Obvious infeasibility, that can be typically detected at model construction
-        Trivial,
+        IncompatibleBounds(Variable),
         /// Infeasibility was proven by the solver (typically after a number of simplex pivots).
         /// This variant contains a Farkas certificate that can be used to certify the infeasibility.
         Certified(InfeasibilityCertificate),
@@ -215,6 +220,10 @@ pub mod results {
         /// Instability detected in floating point operations, preventing the solver to reach a conclusion.
         Unstable,
     }
+
+    /// Error denoting the presence of numerical instability.
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub struct NumericalErrors;
 }
 
 impl PartialEq for Lp {
@@ -344,7 +353,7 @@ pub enum ComparisonOp {
 pub enum Error {
     /// The problem is infeasible because an added constraint is a contradiction
     /// or because a var has inconsistent bounds: min > max
-    InfeasibleTrivial,
+    IncompatibleBounds(Variable),
     /// Constrains can't simultaneously be satisfied and a certificate was generated
     /// The coefficients of the certificate correspond to the associated constraint
     InfeasibleWithCertificate(Vec<f64>),
@@ -354,15 +363,29 @@ pub enum Error {
     Unstable,
 }
 
+impl From<results::NumericalErrors> for Error {
+    fn from(_: results::NumericalErrors) -> Self {
+        Self::Unstable
+    }
+}
+
+impl From<InfeasibilityReason> for Error {
+    fn from(value: InfeasibilityReason) -> Self {
+        match value {
+            InfeasibilityReason::IncompatibleBounds(variable) => Error::IncompatibleBounds(variable),
+            InfeasibilityReason::Certified(items) => Error::InfeasibleWithCertificate(items),
+        }
+    }
+}
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let msg = match self {
-            Error::InfeasibleTrivial => "problem is infeasible",
-            Error::InfeasibleWithCertificate(v) => &format!("problem is infeasible, certificate: {:?}", v),
-            Error::Unbounded => "problem is unbounded",
-            Error::Unstable => "problem is instable",
-        };
-        msg.fmt(f)
+        match self {
+            Error::IncompatibleBounds(var) => write!(f, "problem is infeasible: vars with incoherent bounds: {var:?}"),
+            Error::InfeasibleWithCertificate(v) => write!(f, "problem is infeasible, certificate: {:?}", v),
+            Error::Unbounded => write!(f, "problem is unbounded"),
+            Error::Unstable => write!(f, "problem is instable"),
+        }
     }
 }
 
@@ -867,12 +890,18 @@ mod tests {
         for (expr, op, b) in infeasible.iter().cloned() {
             let mut cloned = problem.clone();
             cloned.add_constraint(expr, op, b);
-            assert_eq!(cloned.solve().map(|_| "solved"), Err(Error::InfeasibleTrivial));
+            std::assert_matches!(
+                cloned.solve(),
+                Err(Error::IncompatibleBounds(_) | Error::InfeasibleWithCertificate(_))
+            );
         }
 
         for (expr, op, b) in infeasible.iter().cloned() {
             let sol = problem.solve().unwrap().add_constraint(expr, op, b);
-            assert_eq!(sol.map(|_| "solved"), Err(Error::InfeasibleTrivial));
+            std::assert_matches!(
+                sol,
+                Err(Error::IncompatibleBounds(_) | Error::InfeasibleWithCertificate(_))
+            );
         }
 
         let _ = problem.add_var(-1.0, (0.0, f64::INFINITY));
