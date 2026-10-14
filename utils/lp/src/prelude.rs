@@ -12,3 +12,12 @@ pub use crate::{
     expr::LinExpr,
     results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
 };
+
+/// `<=` Comparison operator.
+pub const LEQ: ComparisonOp = ComparisonOp::Le;
+
+/// `>=` Comparison operator.
+pub const GEQ: ComparisonOp = ComparisonOp::Ge;
+
+/// `=` Comparison operator.
+pub const EQ: ComparisonOp = ComparisonOp::Eq;

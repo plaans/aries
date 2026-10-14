@@ -44,8 +44,8 @@ let x = lp.add_var(1.0, (0.0, f64::INFINITY));
 let y = lp.add_var(2.0, (0.0, 3.0));
 
 // Constraints: x + y <= 4 and 2 * x + y >= 2
-lp.add_constraint(x + y, ComparisonOp::Le, 4.0);
-lp.add_constraint(2 * x + y, ComparisonOp::Ge, 2.0);
+lp.add_constraint(x + y, LEQ, 4.0);
+lp.add_constraint(2 * x + y, GEQ, 2.0);
 
 // Optimal value is 7, achieved at x = 1 and y = 3
 match lp.solve().unwrap() {
@@ -70,7 +70,7 @@ use aries_lp::prelude::*;
 let mut lp = Lp::new(OptimizationDirection::Maximize);
 let x = lp.add_var(1.0, (0.0, 3.0));
 let y = lp.add_var(2.0, (0.0, 3.0));
-lp.add_constraint(x + y, ComparisonOp::Le, 4.0);
+lp.add_constraint(x + y, LEQ, 4.0);
 
 // Optimal value is 7, achieved at x = 1 and y = 3
 let solution = lp.solve().unwrap().solution().unwrap();
@@ -97,7 +97,7 @@ use aries_lp::prelude::*;
 let mut lp = Lp::new(OptimizationDirection::Minimize);
 let x = lp.add_var(0.0, (0.0, f64::INFINITY));
 let y = lp.add_var(0.0, (0.0, 10.0));
-lp.add_constraint(x + y, ComparisonOp::Ge, 5.0);
+lp.add_constraint(x + y, GEQ, 5.0);
 
 // Feasible: x = 5, y = 0 satisfies the constraint
 assert!(lp.check_feasibility().unwrap().feasible());
@@ -125,8 +125,8 @@ let x = lp.add_var(0.0, (0.0, f64::INFINITY));
 let y = lp.add_var(0.0, (0.0, f64::INFINITY));
 
 // x + y can not be both <= 5 and >= 10
-lp.add_constraint(x + y, ComparisonOp::Le, 5.0);
-lp.add_constraint(x + y, ComparisonOp::Ge, 10.0);
+lp.add_constraint(x + y, LEQ, 5.0);
+lp.add_constraint(x + y, GEQ, 10.0);
 
 // Extract the certificate from the solve status
 let certificate = match lp.solve().unwrap() {
