@@ -386,9 +386,11 @@ impl Solver {
             VarState::Basic(row) => {
                 self.basic_var_maxs[row] = val;
                 if self.basic_var_vals[row] > val {
+                    // restricts the previous bound, so the LP might become infeasible
                     self.is_primal_feasible = false;
-                }
-                if self.basic_var_vals[row] < val {
+                } else if self.basic_var_vals[row] < val {
+                    // relaxes the previous bound, so the LP remains feasible but might not be optimal anymore
+                    // (if it previously was)
                     self.is_dual_feasible = false;
                 }
             }
@@ -443,8 +445,10 @@ impl Solver {
             VarState::Basic(row) => {
                 self.basic_var_mins[row] = val;
                 if self.basic_var_vals[row] < val {
+                    // restricts the previous bound, so the LP might become infeasible
                     self.is_primal_feasible = false;
                 } else {
+                    // relaxes the previous bound so the LP might become non-optimal
                     self.is_dual_feasible = false;
                 }
             }
@@ -838,7 +842,7 @@ impl Solver {
         (num_vars, infeasibility)
     }
 
-    /// Calculate current coeffs column for a single non-basic variable.
+    /// Computes current coeffs column for a single non-basic variable (writtein to [`Self::col_coeffs`])
     fn calc_col_coeffs(&mut self, c_var: usize) {
         let var = self.nb_vars[c_var];
         let orig_col = self.orig_constraints_csc.outer_view(var).unwrap();
@@ -963,6 +967,11 @@ impl Solver {
                 max_step = cur_step;
             }
         }
+        debug_assert!(entering_cur_val.is_finite());
+        if max_step.is_infinite() {
+            return Err(Error::Unbounded);
+        }
+        debug_assert!(max_step.is_finite()); // not infinite nor NaN
 
         // Second, we choose among variables with steps less than max_step a variable with the biggest
         // abs. coefficient as the leaving variable. This means that we get numerically more stable
@@ -979,6 +988,8 @@ impl Solver {
 
             let cur_step = get_leaving_var_step(r, coeff) / coeff_abs;
             if cur_step <= max_step && coeff_abs > pivot_coeff_abs {
+                // cur step cannot be infinite because we would otherwise need max_step infinite and this is caught earlier
+                debug_assert!(cur_step.is_finite());
                 leaving_r = Some(r);
                 leaving_new_val = if (entering_diff_sign && coeff < 0.0) || (!entering_diff_sign && coeff > 0.0) {
                     self.basic_var_maxs[r]
@@ -991,6 +1002,8 @@ impl Solver {
         }
 
         if let Some(row) = leaving_r {
+            // we have a leaving row to perform the pivot. The leaving row is the origin of the
+            // blocking value for the step size
             self.calc_row_coeffs(row);
 
             let entering_diff = (self.basic_var_vals[row] - leaving_new_val) / pivot_coeff;
@@ -1007,9 +1020,12 @@ impl Solver {
                 }),
             }))
         } else {
-            if entering_other_val.is_infinite() {
-                return Err(Error::Unbounded);
-            }
+            // we have no blocking row, hence we will do a bound-flip, placing the entering val
+            // at its bound that maximizes the objective
+
+            // `entering_other_val` will be the new value. If it was infinite, this would imply that the LP
+            // is unbounded. However this cannot occur because we have an early termination test based on max_step being infinite.
+            debug_assert!(entering_other_val.is_finite());
 
             Ok(Some(PivotInfo {
                 col: entering_c,
