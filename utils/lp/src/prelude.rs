@@ -8,6 +8,7 @@
 //! ```
 
 pub use crate::{
-    Bound, ComparisonOp, Error, Lp, LinearExpr, OptimizationDirection, Solution, Variable,
+    Bound, ComparisonOp, Error, Lp, OptimizationDirection, Problem, Solution, Variable,
+    expr::LinExpr,
     results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
 };

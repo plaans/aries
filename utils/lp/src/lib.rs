@@ -1,8 +1,8 @@
 #![doc = include_str!("../README.md")]
-
 #![warn(missing_debug_implementations, missing_docs)]
 #![allow(clippy::needless_range_loop)]
 
+mod expr;
 mod helpers;
 mod lu;
 mod mps;
@@ -10,9 +10,14 @@ mod ordering;
 mod solver;
 mod sparse;
 
+pub mod prelude;
+pub mod results;
+
 #[allow(unused_imports)]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use crate::{expr::Constraint, prelude::*};
 
 /// A Linear Program (LP), that can be use to construct the LP and solve it.
 #[derive(Clone, Debug)]
@@ -53,16 +58,20 @@ impl Lp {
     }
 
     /// Add a constraint (row) to the LP.
-    pub fn add_constraint(&mut self, sum: impl Into<LinearExpr>, cmp_op: ComparisonOp, val: f64) {
-        let sum = sum.into();
+    pub fn add_constraint(&mut self, sum: impl Into<LinExpr>, cmp_op: ComparisonOp, val: f64) {
+        let constraint = sum.into().into_constraint(cmp_op, val);
         if let Some(checker) = self.solver.as_mut() {
-            let sum = CsVec::new(checker.num_vars, sum.vars.clone(), sum.coeffs.clone());
+            let sum = CsVec::new(
+                checker.num_vars,
+                constraint.lhs.vars.clone(),
+                constraint.lhs.coeffs.clone(),
+            );
             // TODO: the check is ok in the common context of the reasoner but not in a more general setting.
             checker
-                .add_constraint(sum, cmp_op, val)
+                .add_constraint(sum, constraint.comp_op, constraint.rhs)
                 .expect("Adding a constraint that is not active yet should not generate an error")
         }
-        self.problem.add_constraint(sum, cmp_op, val);
+        self.problem.add_constraint_impl(constraint);
     }
 
     /// Updates the bound of the variable, returning an error if the bound is obviously incompatible
@@ -157,9 +166,6 @@ impl Lp {
     }
 }
 
-pub mod prelude;
-pub mod results;
-
 use results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure};
 
 impl PartialEq for Lp {
@@ -194,81 +200,6 @@ impl Variable {
     #[inline(always)]
     pub fn idx(&self) -> usize {
         self.0
-    }
-}
-
-/// A sum of variables multiplied by constant coefficients used as a left-hand side
-/// when defining constraints.
-#[derive(Clone, Debug)]
-pub struct LinearExpr {
-    vars: Vec<usize>,
-    coeffs: Vec<f64>,
-}
-
-impl LinearExpr {
-    /// Creates an empty linear expression.
-    pub fn empty() -> Self {
-        Self {
-            vars: vec![],
-            coeffs: vec![],
-        }
-    }
-
-    /// Add a single term to the linear expression.
-    ///
-    /// Variables can be added to an expression in any order, but adding the same variable
-    /// several times is forbidden (the [`Problem::add_constraint`] method will panic).
-    ///
-    /// [`Problem::add_constraint`]: struct.Problem.html#method.add_constraint
-    pub fn add(&mut self, var: Variable, coeff: f64) {
-        self.vars.push(var.0);
-        self.coeffs.push(coeff);
-    }
-}
-
-/// A single `variable * constant` term in a linear expression.
-/// This is an auxiliary struct for specifying conversions.
-#[derive(Clone, Copy, Debug)]
-struct LinearTerm(Variable, f64);
-
-impl From<(Variable, f64)> for LinearTerm {
-    fn from(term: (Variable, f64)) -> Self {
-        LinearTerm(term.0, term.1)
-    }
-}
-
-impl<'a> From<&'a (Variable, f64)> for LinearTerm {
-    fn from(term: &'a (Variable, f64)) -> Self {
-        LinearTerm(term.0, term.1)
-    }
-}
-
-impl<I: IntoIterator<Item = impl Into<LinearTerm>>> From<I> for LinearExpr {
-    fn from(iter: I) -> Self {
-        let mut expr = LinearExpr::empty();
-        for term in iter {
-            let LinearTerm(var, coeff) = term.into();
-            expr.add(var, coeff);
-        }
-        expr
-    }
-}
-
-impl std::iter::FromIterator<(Variable, f64)> for LinearExpr {
-    fn from_iter<I: IntoIterator<Item = (Variable, f64)>>(iter: I) -> Self {
-        let mut expr = LinearExpr::empty();
-        for term in iter {
-            expr.add(term.0, term.1)
-        }
-        expr
-    }
-}
-
-impl std::iter::Extend<(Variable, f64)> for LinearExpr {
-    fn extend<I: IntoIterator<Item = (Variable, f64)>>(&mut self, iter: I) {
-        for term in iter {
-            self.add(term.0, term.1)
-        }
     }
 }
 
@@ -397,7 +328,7 @@ impl Problem {
     ///
     /// Left-hand side of the constraint can be specified in several ways:
     /// ```
-    /// # use aries_lp::*;
+    /// # use aries_lp::prelude::*;
     /// let mut problem = Problem::new(OptimizationDirection::Minimize);
     /// let x = problem.add_var(1.0, (0.0, f64::INFINITY));
     /// let y = problem.add_var(1.0, (0.0, f64::INFINITY));
@@ -405,23 +336,28 @@ impl Problem {
     /// // Add an x + y >= 2 constraint, specifying the left-hand side expression:
     ///
     /// // * by passing a slice of pairs (useful when explicitly enumerating variables)
-    /// problem.add_constraint([(x, 1.0), (y, 1.0)], ComparisonOp::Ge, 2.0);
+    /// problem.add_constraint(x + y, ComparisonOp::Ge, 2.0);
     ///
     /// // * by passing an iterator of variable-coefficient pairs.
     /// let vars = [x, y];
     /// problem.add_constraint(vars.iter().map(|&v| (v, 1.0)), ComparisonOp::Ge, 2.0);
     ///
     /// // * by manually constructing a LinearExpr.
-    /// let mut lhs = LinearExpr::empty();
+    /// let mut lhs = LinExpr::zero();
     /// for &v in &vars {
-    ///     lhs.add(v, 1.0);
+    ///     lhs += v;
     /// }
     /// problem.add_constraint(lhs, ComparisonOp::Ge, 2.0);
     /// ```
-    pub fn add_constraint(&mut self, expr: impl Into<LinearExpr>, cmp_op: ComparisonOp, rhs: f64) {
-        let expr = expr.into();
-        self.constraints
-            .push((CsVec::new(self.obj_coeffs.len(), expr.vars, expr.coeffs), cmp_op, rhs));
+    pub fn add_constraint(&mut self, expr: impl Into<LinExpr>, cmp_op: ComparisonOp, rhs: f64) {
+        self.add_constraint_impl(expr.into().into_constraint(cmp_op, rhs))
+    }
+    fn add_constraint_impl(&mut self, c: Constraint) {
+        self.constraints.push((
+            CsVec::new(self.obj_coeffs.len(), c.lhs.vars, c.lhs.coeffs),
+            c.comp_op,
+            c.rhs,
+        ));
     }
 
     /// Set a new upper/lower bound to an existing variable
@@ -702,9 +638,9 @@ mod tests {
     #[test]
     fn empty_expr_constraints() {
         let trivial = [
-            (LinearExpr::empty(), ComparisonOp::Eq, 0.0),
-            (LinearExpr::empty(), ComparisonOp::Ge, -1.0),
-            (LinearExpr::empty(), ComparisonOp::Le, 1.0),
+            (LinExpr::zero(), ComparisonOp::Eq, 0.0),
+            (LinExpr::zero(), ComparisonOp::Ge, -1.0),
+            (LinExpr::zero(), ComparisonOp::Le, 1.0),
         ];
 
         let mut problem = Lp::new(OptimizationDirection::Minimize);
@@ -724,9 +660,9 @@ mod tests {
         }
 
         let infeasible = [
-            (LinearExpr::empty(), ComparisonOp::Eq, 12.0),
-            (LinearExpr::empty(), ComparisonOp::Ge, 34.0),
-            (LinearExpr::empty(), ComparisonOp::Le, -56.0),
+            (LinExpr::zero(), ComparisonOp::Eq, 12.0),
+            (LinExpr::zero(), ComparisonOp::Ge, 34.0),
+            (LinExpr::zero(), ComparisonOp::Le, -56.0),
         ];
 
         for (expr, op, b) in infeasible.iter().cloned() {
