@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use aries_lp::{Bound, Error, Lp, OptimizationDirection, Variable, results::InfeasibilityReason};
+use aries_lp::{Bound, Lp, OptimizationDirection, Variable, results::InfeasibilityReason};
 #[allow(unused_imports)]
 use itertools::Itertools;
 
@@ -183,7 +183,12 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound_restrict_permanent(&mut self, var: Variable, bound: Bound, val: LongCst) -> Result<bool, Error> {
+    pub fn set_bound_restrict_permanent(
+        &mut self,
+        var: Variable,
+        bound: Bound,
+        val: LongCst,
+    ) -> Result<bool, InfeasibilityReason> {
         let restricts = match bound {
             Bound::Lower => val > self.bounds[var.idx()].lower,
             Bound::Upper => val < self.bounds[var.idx()].upper,
@@ -207,7 +212,7 @@ impl Solver {
         val: LongCst,
         justification: BoundJustification,
         trail: &mut Trail<LpEvent>,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, InfeasibilityReason> {
         match bound {
             Bound::Lower => {
                 let old_val = self.bounds[var.idx()].lower;
