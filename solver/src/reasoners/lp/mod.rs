@@ -33,7 +33,7 @@ use solver::{BoundJustification, Solver};
 
 use aries_lp::{
     Bound, Error, Variable,
-    results::{FeasibilityCheckFailure, FeasibilityStatus, InfeasibilityReason},
+    results::{FeasibilityStatus, InfeasibilityReason, SolverFailure},
 };
 
 use crate::{
@@ -527,7 +527,7 @@ impl Lp {
     /// Takes the result of a call to [Solver::check_feasibility] and returns either `Ok` or a `Contradiction` if infeasibility was detected
     fn explain_check_feas(
         &mut self,
-        res: Result<FeasibilityStatus, FeasibilityCheckFailure>,
+        res: Result<FeasibilityStatus, SolverFailure>,
         domains: &Domains,
     ) -> Result<(), Contradiction> {
         match res {

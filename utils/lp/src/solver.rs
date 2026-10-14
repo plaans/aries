@@ -1,5 +1,3 @@
-use std::panic;
-
 use crate::{
     Bound, ComparisonOp, CsVec, Error, Variable,
     helpers::{resized_view, to_dense},
@@ -374,9 +372,9 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the new bound is trivially infeasible (ub < lb)
-    pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
+    pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, InfeasibilityReason> {
         if val < self.orig_var_mins[var] {
-            return Err(Error::IncompatibleBounds(Variable(var)));
+            return Err(InfeasibilityReason::IncompatibleBounds(Variable(var)));
         }
 
         let old_val = self.orig_var_maxs[var];
@@ -420,7 +418,7 @@ impl Solver {
         Ok(old_val)
     }
 
-    pub(crate) fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<f64, Error> {
+    pub(crate) fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<f64, InfeasibilityReason> {
         match bound {
             Bound::Lower => self.set_lb_var(var.idx(), val),
             Bound::Upper => self.set_ub_var(var.idx(), val),
@@ -433,9 +431,9 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the new bound is trivially infeasible (lb > ub)
-    pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
+    pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, InfeasibilityReason> {
         if val > self.orig_var_maxs[var] {
-            return Err(Error::IncompatibleBounds(Variable(var)));
+            return Err(InfeasibilityReason::IncompatibleBounds(Variable(var)));
         }
 
         let old_val = self.orig_var_mins[var];
@@ -476,92 +474,6 @@ impl Solver {
         }
 
         Ok(old_val)
-    }
-
-    /// Fix the value of a variable and immediatly restore feasibility
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the given value isn't within the bounds of the var
-    /// or if feasibility couldn't be restored
-    pub(crate) fn fix_var(&mut self, var: usize, val: f64) -> Result<(), Error> {
-        if val < self.orig_var_mins[var] || val > self.orig_var_maxs[var] {
-            return Err(Error::IncompatibleBounds(Variable(var)));
-        }
-
-        let col = match self.var_states[var] {
-            VarState::Basic(row) => {
-                // if var was basic, remove it.
-                self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, val)?;
-                self.calc_col_coeffs(pivot_info.col);
-                self.pivot(&pivot_info)?;
-                pivot_info.col
-            }
-
-            VarState::NonBasic(col) => {
-                self.calc_col_coeffs(col);
-
-                let diff = val - self.nb_var_vals[col];
-                for (r, coeff) in self.col_coeffs.iter() {
-                    self.basic_var_vals[r] -= diff * coeff;
-                }
-                self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
-                self.nb_var_vals[col] = val;
-
-                col
-            }
-        };
-
-        self.nb_var_states[col] = NonBasicVarState {
-            at_min: true,
-            at_max: true,
-        };
-        self.nb_var_is_fixed[col] = true;
-
-        self.is_primal_feasible = false;
-        self.restore_feasibility()
-    }
-
-    /// Return true if the var was really unset.
-    pub(crate) fn unfix_var(&mut self, var: usize) -> bool {
-        if let VarState::NonBasic(col) = self.var_states[var] {
-            if !std::mem::replace(&mut self.nb_var_is_fixed[col], false) {
-                return false;
-            }
-
-            let cur_val = self.nb_var_vals[col];
-            self.nb_var_states[col] = NonBasicVarState {
-                at_min: cur_val == self.orig_var_mins[var],
-                at_max: cur_val == self.orig_var_maxs[var],
-            };
-
-            // Shouldn't result in error, presumably problem was solvable before this variable
-            // was fixed.
-            self.is_dual_feasible = false;
-            self.optimize().unwrap();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub(crate) fn add_gomory_cut(&mut self, var: usize) -> Result<(), Error> {
-        if let VarState::Basic(row) = self.var_states[var] {
-            self.calc_row_coeffs(row);
-
-            let mut cut_coeffs = SparseVec::new();
-            for (col, &coeff) in self.row_coeffs.iter() {
-                let var = self.nb_vars[col];
-                cut_coeffs.push(var, coeff.floor() - coeff);
-            }
-
-            let cut_bound = self.basic_var_vals[row].floor() - self.basic_var_vals[row];
-            let num_total_vars = self.num_total_vars();
-            self.add_constraint(cut_coeffs.into_csvec(num_total_vars), ComparisonOp::Le, cut_bound)
-        } else {
-            panic!("var {:?} is not basic!", var);
-        }
     }
 
     pub(crate) fn num_constraints(&self) -> usize {
@@ -742,10 +654,12 @@ impl Solver {
         Ok(Variable(new_var_idx))
     }
 
-    pub(crate) fn add_constraint(&mut self, mut coeffs: CsVec, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
-        assert!(self.is_primal_feasible); // TODO: this appears unnecessary
-        // assert!(self.is_dual_feasible); // necesarry if we want to garanty optimality after adding the constraint
-
+    pub(crate) fn add_constraint(
+        &mut self,
+        mut coeffs: CsVec,
+        cmp_op: ComparisonOp,
+        rhs: f64,
+    ) -> Result<(), NumericalErrors> {
         let slack_var = self.num_total_vars();
         let (slack_var_min, slack_var_max) = match cmp_op {
             ComparisonOp::Le => (0.0, f64::INFINITY),
@@ -804,8 +718,7 @@ impl Solver {
         }
 
         self.is_primal_feasible = false;
-        // println!("restore?");
-        self.restore_feasibility() // TODO: remove, we don't want such implicit calls
+        Ok(())
     }
 
     /// Number of infeasible basic vars and sum of their infeasibilities.

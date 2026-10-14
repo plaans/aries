@@ -449,6 +449,8 @@ impl<'a> KVPairs<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Lp, results::SolveStatus};
+
     use super::*;
 
     const TEST_FILE: &str = "\
@@ -485,7 +487,10 @@ ENDATA
         assert_eq!(file.problem_name, "TESTPROB");
         assert_eq!(file.variables.len(), 3);
 
-        let sol = file.problem.solve().unwrap();
+        let mut lp = Lp::from(file.problem);
+        let SolveStatus::Optimal(sol) = lp.solve().unwrap() else {
+            panic!();
+        };
         assert_eq!(sol[file.variables["XONE"]], 4.0);
         assert_eq!(sol[file.variables["YTWO"]], -1.0);
         assert_eq!(sol[file.variables["ZTHREE"]], 6.0);

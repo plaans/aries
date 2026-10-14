@@ -111,9 +111,7 @@ impl Lp {
 
     /// Updates the bound of the variable, returning an error if the bound is obviously incompatible
     /// with the current opposite bound.
-    ///
-    /// TODO: make error more specific
-    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<(), Error> {
+    pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<(), InfeasibilityReason> {
         self.problem.set_bound(var, bound, val);
         if let Some(checker) = self.solver.as_mut() {
             checker.set_bound(var, bound, val)?;
@@ -127,11 +125,9 @@ impl Lp {
         self.problem.is_certificate_valid(cert)
     }
 
-    /// Returns a solver of this LP, initializing a new one on its first call.
+    /// Returns a solver for this LP, initializing a new one on its first call.
     ///
     /// Might return an error if an obvious inconsistency is detected when initializing the solver.
-    ///
-    /// TODO: make errors more specific.
     fn get_solver(&mut self) -> Result<&mut Solver, InfeasibilityReason> {
         if self.solver.is_none() {
             let solver = Solver::try_new(
@@ -147,10 +143,10 @@ impl Lp {
     }
 
     /// Checks whether the LP is feasible (admits at least one valid solution).
-    /// An error is returned if the LP is *not* feasible.
+    /// An error is returned if the results could not be established.
     ///
     /// Note that the objective is completely ignored when checking feasibility.
-    pub fn check_feasibility(&mut self) -> Result<FeasibilityStatus, FeasibilityCheckFailure> {
+    pub fn check_feasibility(&mut self) -> Result<FeasibilityStatus, SolverFailure> {
         let solver = match self.get_solver() {
             Ok(solver) => solver,
             Err(infeasibitiy) => {
@@ -166,8 +162,31 @@ impl Lp {
             Err(Error::InfeasibleWithCertificate(cert)) => {
                 Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)))
             }
-            Err(Error::Unstable) => Err(FeasibilityCheckFailure::Unstable),
+            Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => unreachable!("Cannot return unbounded when checking feasibility only"),
+        }
+    }
+    /// Solve the problem, finding an assignment to all variables that maximizes/minimizes the objective.
+    ///
+    /// Will returns an error if the solve could not terminate and the status of the LP is therefore not known.
+    pub fn solve<'this>(&'this mut self) -> Result<SolveStatus<'this>, SolverFailure> {
+        let num_vars = self.problem.obj_coeffs.len();
+        let direction = self.problem.direction;
+        let solver = match self.get_solver() {
+            Ok(solver) => solver,
+            Err(infeasible) => return Ok(SolveStatus::Infeasible(infeasible)),
+        };
+        use SolveStatus::*;
+        match solver.initial_solve() {
+            Ok(()) => Ok(Optimal(Solution {
+                num_vars,
+                direction,
+                solver,
+            })),
+            Err(Error::IncompatibleBounds(var)) => Ok(Infeasible(InfeasibilityReason::IncompatibleBounds(var))),
+            Err(Error::InfeasibleWithCertificate(cert)) => Ok(Infeasible(InfeasibilityReason::Certified(cert))),
+            Err(Error::Unstable) => Err(SolverFailure::Unstable),
+            Err(Error::Unbounded) => Ok(SolveStatus::Unbounded),
         }
     }
 }
@@ -175,7 +194,54 @@ impl Lp {
 pub mod results {
     //! Exports various types capturing the status of an LP or a solver.
 
-    use crate::Variable;
+    use crate::{Solution, Variable};
+
+    /// Results of a successful run of an [`Lp::solve`](crate::Lp::solve) call (solving the LP to an optimal).
+    #[derive(Debug)]
+    pub enum SolveStatus<'solver> {
+        /// Solver terminated at an optimal solution.
+        ///
+        /// Provides an interface for extracting the optimal solution.
+        Optimal(Solution<'solver>),
+        /// Solver terminated by proving that the problem has no feasible solution.
+        Infeasible(InfeasibilityReason),
+        /// Solver terminated by proving that the problem is unbounded (admits feasible solution with arbitrary high objective).
+        Unbounded,
+    }
+
+    impl<'a> SolveStatus<'a> {
+        /// Returns the solution if the LP has a finite optimal solution (not infeasible nor unbounded).
+        pub fn solution(self) -> Option<Solution<'a>> {
+            match self {
+                SolveStatus::Optimal(solution) => Some(solution),
+                SolveStatus::Infeasible(_) | SolveStatus::Unbounded => None,
+            }
+        }
+
+        /// Returns true iff the LP is infeasible
+        pub fn infeasible(&self) -> bool {
+            match self {
+                SolveStatus::Infeasible(_) => true,
+                SolveStatus::Optimal(_) | SolveStatus::Unbounded => false,
+            }
+        }
+
+        /// Returns true if the LP is unbounded
+        pub fn unbounded(&self) -> bool {
+            match self {
+                SolveStatus::Unbounded => true,
+                SolveStatus::Optimal(_) | SolveStatus::Infeasible(_) => false,
+            }
+        }
+
+        /// Returns true, iff the LP has an finite optimal solution and that the one found is accepted by the given predicate.
+        pub fn is_optimal_and(&'a self, pred: impl FnOnce(&'a Solution<'a>) -> bool) -> bool {
+            match self {
+                SolveStatus::Optimal(s) => pred(s),
+                _ => false,
+            }
+        }
+    }
 
     /// Result for a successful check of satisfiability.
     #[derive(Debug)]
@@ -216,7 +282,7 @@ pub mod results {
 
     /// Denotes the reason why a feasibility check could not be concluded.
     #[derive(Debug, Clone)]
-    pub enum FeasibilityCheckFailure {
+    pub enum SolverFailure {
         /// Instability detected in floating point operations, preventing the solver to reach a conclusion.
         Unstable,
     }
@@ -482,22 +548,6 @@ impl Problem {
             .push((CsVec::new(self.obj_coeffs.len(), expr.vars, expr.coeffs), cmp_op, rhs));
     }
 
-    /// Solve the problem, finding the optimal objective function value and variable values.
-    ///
-    /// # Errors
-    ///
-    /// Will return an error, if the problem is infeasible (constraints can't be satisfied)
-    /// or if the objective value is unbounded.
-    pub fn solve(&self) -> Result<Solution, Error> {
-        let mut solver = Solver::try_new(&self.obj_coeffs, &self.var_mins, &self.var_maxs, &self.constraints)?;
-        solver.initial_solve()?;
-        Ok(Solution {
-            num_vars: self.obj_coeffs.len(),
-            direction: self.direction,
-            solver,
-        })
-    }
-
     /// Set a new upper/lower bound to an existing variable
     pub fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) {
         debug_assert!(var.0 < self.var_maxs.len());
@@ -658,13 +708,13 @@ pub enum Bound {
 /// to getting the values of interest and discarding the solution) is mainly useful if you
 /// want to add more constraints to it later.
 #[derive(Clone)]
-pub struct Solution {
+pub struct Solution<'solver> {
     direction: OptimizationDirection,
     num_vars: usize,
-    solver: solver::Solver,
+    solver: &'solver solver::Solver,
 }
 
-impl std::fmt::Debug for Solution {
+impl<'solver> std::fmt::Debug for Solution<'solver> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Only printing lengths here because actual data is probably huge.
         f.debug_struct("Solution")
@@ -676,7 +726,7 @@ impl std::fmt::Debug for Solution {
     }
 }
 
-impl Solution {
+impl<'solver> Solution<'solver> {
     /// Optimal value of the objective function.
     pub fn objective(&self) -> f64 {
         match self.direction {
@@ -700,93 +750,9 @@ impl Solution {
             var_idx: 0,
         }
     }
-
-    /// Add another constraint and return the solution to the updated problem.
-    ///
-    /// This method will consume the solution and not return it in case of error. See also
-    /// examples of specifying the left-hand side in the docs for the [`Problem::add_constraint`]
-    /// method.
-    ///
-    /// [`Problem::add_constraint`]: struct.Problem.html#method.add_constraint
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem becomes infeasible with the additional constraint.
-    pub fn add_constraint(
-        mut self,
-        expr: impl Into<LinearExpr>,
-        cmp_op: ComparisonOp,
-        rhs: f64,
-    ) -> Result<Self, Error> {
-        let expr = expr.into();
-        self.solver
-            .add_constraint(CsVec::new(self.num_vars, expr.vars, expr.coeffs), cmp_op, rhs)?;
-        Ok(self)
-    }
-
-    /// Fix the variable to the specified value and return the solution to the updated problem.
-    ///
-    /// This method will consume the solution and not return it in case of error.
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem becomes infeasible with the additional constraint.
-    pub fn fix_var(mut self, var: Variable, val: f64) -> Result<Self, Error> {
-        assert!(var.0 < self.num_vars);
-        self.solver.fix_var(var.0, val)?;
-        Ok(self)
-    }
-
-    /// Fix the upper/lower bound of a variable to the specified value and return the solution to the updated problem.
-    ///
-    /// This method will consume the solution and not return it in case of error.
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem becomes infeasible/unbounded with the new bound
-    pub fn set_bound_var(mut self, var: Variable, val: f64, bound: Bound) -> Result<Self, Error> {
-        assert!(var.0 < self.num_vars);
-        match bound {
-            Bound::Lower => self.solver.set_lb_var(var.0, val)?,
-            Bound::Upper => self.solver.set_ub_var(var.0, val)?,
-        };
-
-        // As set_lb_var/set_ub_var doesn't restore optimality/feasibility, a call to initial solve is necessary
-        self.solver.initial_solve()?;
-        Ok(self)
-    }
-
-    /// If the variable was fixed with [`fix_var`](#method.fix_var) before, remove that constraint
-    /// and return the solution to the updated problem and a boolean indicating if the variable was
-    /// really fixed before.
-    pub fn unfix_var(mut self, var: Variable) -> (Self, bool) {
-        assert!(var.0 < self.num_vars);
-        let res = self.solver.unfix_var(var.0);
-        (self, res)
-    }
-
-    // TODO: remove_constraint
-
-    /// Add a [Gomory cut] constraint to the problem and return the solution.
-    ///
-    /// [Gomory cut]: https://en.wikipedia.org/wiki/Cutting-plane_method#Gomory's_cut
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if the problem becomes infeasible with the additional constraint.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the variable is not basic (variable is basic if it has value other than
-    /// its bounds).
-    pub fn add_gomory_cut(mut self, var: Variable) -> Result<Self, Error> {
-        assert!(var.0 < self.num_vars);
-        self.solver.add_gomory_cut(var.0)?;
-        Ok(self)
-    }
 }
 
-impl std::ops::Index<Variable> for Solution {
+impl<'a> std::ops::Index<Variable> for Solution<'a> {
     type Output = f64;
 
     fn index(&self, var: Variable) -> &Self::Output {
@@ -797,7 +763,7 @@ impl std::ops::Index<Variable> for Solution {
 /// An iterator over the variable-value pairs of a [`Solution`].
 #[derive(Debug, Clone)]
 pub struct SolutionIter<'a> {
-    solution: &'a Solution,
+    solution: &'a Solution<'a>,
     var_idx: usize,
 }
 
@@ -815,7 +781,7 @@ impl<'a> Iterator for SolutionIter<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a Solution {
+impl<'a> IntoIterator for &'a Solution<'a> {
     type Item = (Variable, &'a f64);
     type IntoIter = SolutionIter<'a>;
 
@@ -826,7 +792,7 @@ impl<'a> IntoIterator for &'a Solution {
 
 pub use mps::MpsFile;
 
-use crate::results::{FeasibilityCheckFailure, FeasibilityStatus, InfeasibilityReason};
+use crate::results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure};
 
 impl From<Bound> for ComparisonOp {
     fn from(bound: Bound) -> ComparisonOp {
@@ -846,13 +812,14 @@ mod tests {
 
     #[test]
     fn optimize() {
-        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(3.0, (12.0, f64::INFINITY));
         let v2 = problem.add_var(4.0, (5.0, f64::INFINITY));
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 20.0);
         problem.add_constraint([(v2, -4.0), (v1, 1.0)], ComparisonOp::Ge, -20.0);
 
         let sol = problem.solve().unwrap();
+        let sol = sol.solution().unwrap();
         assert_eq!(sol[v1], 12.0);
         assert_eq!(sol[v2], 8.0);
         assert_eq!(sol.objective(), 68.0);
@@ -866,19 +833,20 @@ mod tests {
             (LinearExpr::empty(), ComparisonOp::Le, 1.0),
         ];
 
-        let mut problem = Problem::new(OptimizationDirection::Minimize);
+        let mut problem = Lp::new(OptimizationDirection::Minimize);
         let _ = problem.add_var(1.0, (0.0, f64::INFINITY));
         for (expr, op, b) in trivial.iter().cloned() {
             problem.add_constraint(expr, op, b);
         }
-        assert_eq!(problem.solve().map(|s| s.objective()), Ok(0.0));
+        assert!(problem.solve().unwrap().is_optimal_and(|s| s.objective() == 0.0));
 
         {
-            let mut sol = problem.solve().unwrap();
+            let mut problem = problem.clone();
             for (expr, op, b) in trivial.iter().cloned() {
-                sol = sol.add_constraint(expr, op, b).unwrap();
+                problem.add_constraint(expr, op, b);
             }
-            assert_eq!(sol.objective(), 0.0);
+            let sol = problem.solve().unwrap();
+            assert!(sol.is_optimal_and(|s| s.objective() == 0.0));
         }
 
         let infeasible = [
@@ -890,27 +858,16 @@ mod tests {
         for (expr, op, b) in infeasible.iter().cloned() {
             let mut cloned = problem.clone();
             cloned.add_constraint(expr, op, b);
-            std::assert_matches!(
-                cloned.solve(),
-                Err(Error::IncompatibleBounds(_) | Error::InfeasibleWithCertificate(_))
-            );
-        }
-
-        for (expr, op, b) in infeasible.iter().cloned() {
-            let sol = problem.solve().unwrap().add_constraint(expr, op, b);
-            std::assert_matches!(
-                sol,
-                Err(Error::IncompatibleBounds(_) | Error::InfeasibleWithCertificate(_))
-            );
+            assert!(cloned.solve().unwrap().infeasible());
         }
 
         let _ = problem.add_var(-1.0, (0.0, f64::INFINITY));
-        assert_eq!(problem.solve().map(|_| "solved"), Err(Error::Unbounded));
+        assert!(problem.solve().unwrap().unbounded());
     }
 
     #[test]
     fn free_variables() {
-        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(1.0, (0.0, f64::INFINITY));
         let v2 = problem.add_var(2.0, (f64::NEG_INFINITY, f64::INFINITY));
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
@@ -918,89 +875,10 @@ mod tests {
         problem.add_constraint([(v1, 1.0), (v2, -1.0)], ComparisonOp::Ge, 0.0);
 
         let sol = problem.solve().unwrap();
+        let sol = sol.solution().unwrap();
         assert_eq!(sol[v1], 2.0);
         assert_eq!(sol[v2], 2.0);
         assert_eq!(sol.objective(), 6.0);
-    }
-
-    #[test]
-    fn fix_unfix_var() {
-        let mut problem = Problem::new(OptimizationDirection::Maximize);
-        let v1 = problem.add_var(1.0, (0.0, 3.0));
-        let v2 = problem.add_var(2.0, (0.0, 3.0));
-        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
-        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
-
-        let orig_sol = problem.solve().unwrap();
-
-        {
-            let mut sol = orig_sol.clone().fix_var(v1, 0.5).unwrap();
-            assert_eq!(sol[v1], 0.5);
-            assert_eq!(sol[v2], 3.0);
-            assert_eq!(sol.objective(), 6.5);
-
-            sol = sol.unfix_var(v1).0;
-            assert_eq!(sol[v1], 1.0);
-            assert_eq!(sol[v2], 3.0);
-            assert_eq!(sol.objective(), 7.0);
-        }
-
-        {
-            let mut sol = orig_sol.clone().fix_var(v2, 2.5).unwrap();
-            assert_eq!(sol[v1], 1.5);
-            assert_eq!(sol[v2], 2.5);
-            assert_eq!(sol.objective(), 6.5);
-
-            sol = sol.unfix_var(v2).0;
-            assert_eq!(sol[v1], 1.0);
-            assert_eq!(sol[v2], 3.0);
-            assert_eq!(sol.objective(), 7.0);
-        }
-    }
-
-    #[test]
-    fn add_constraint() {
-        let mut problem = Problem::new(OptimizationDirection::Minimize);
-        let v1 = problem.add_var(2.0, (0.0, f64::INFINITY));
-        let v2 = problem.add_var(1.0, (0.0, f64::INFINITY));
-        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
-        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 2.0);
-
-        let orig_sol = problem.solve().unwrap();
-
-        {
-            let sol = orig_sol
-                .clone()
-                .add_constraint([(v1, -1.0), (v2, 1.0)], ComparisonOp::Le, 0.0)
-                .unwrap();
-
-            assert_eq!(sol[v1], 1.0);
-            assert_eq!(sol[v2], 1.0);
-            assert_eq!(sol.objective(), 3.0);
-        }
-
-        {
-            let sol = orig_sol
-                .clone()
-                .fix_var(v2, 1.5)
-                .unwrap()
-                .add_constraint([(v1, -1.0), (v2, 1.0)], ComparisonOp::Le, 0.0)
-                .unwrap();
-            assert_eq!(sol[v1], 1.5);
-            assert_eq!(sol[v2], 1.5);
-            assert_eq!(sol.objective(), 4.5);
-        }
-
-        {
-            let sol = orig_sol
-                .clone()
-                .add_constraint([(v1, -1.0), (v2, 1.0)], ComparisonOp::Ge, 3.0)
-                .unwrap();
-
-            assert_eq!(sol[v1], 0.0);
-            assert_eq!(sol[v2], 3.0);
-            assert_eq!(sol.objective(), 3.0);
-        }
     }
 
     #[test]
@@ -1030,58 +908,38 @@ mod tests {
     }
 
     #[test]
-    fn gomory_cut() {
-        let mut problem = Problem::new(OptimizationDirection::Minimize);
-        let v1 = problem.add_var(0.0, (0.0, f64::INFINITY));
-        let v2 = problem.add_var(-1.0, (0.0, f64::INFINITY));
-        problem.add_constraint([(v1, 3.0), (v2, 2.0)], ComparisonOp::Le, 6.0);
-        problem.add_constraint([(v1, -3.0), (v2, 2.0)], ComparisonOp::Le, 0.0);
-
-        let mut sol = problem.solve().unwrap();
-        assert_eq!(sol[v1], 1.0);
-        assert_eq!(sol[v2], 1.5);
-        assert_eq!(sol.objective(), -1.5);
-
-        sol = sol.add_gomory_cut(v2).unwrap();
-        assert!(f64::abs(sol[v1] - 2.0 / 3.0) < 1e-8);
-        assert_eq!(sol[v2], 1.0);
-        assert_eq!(sol.objective(), -1.0);
-
-        sol = sol.add_gomory_cut(v1).unwrap();
-        assert!(f64::abs(sol[v1] - 1.0) < 1e-8);
-        assert_eq!(sol[v2], 1.0);
-        assert_eq!(sol.objective(), -1.0);
-    }
-
-    #[test]
     fn set_ub_var() {
-        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(1.0, (0.0, 3.0));
         let v2 = problem.add_var(2.0, (0.0, 3.0));
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-        let orig_sol = problem.solve().unwrap();
-
         {
-            let mut sol = orig_sol.clone().set_bound_var(v1, 0.5, Bound::Upper).unwrap();
+            let mut problem = problem.clone();
+            problem.set_bound(v1, Bound::Upper, 0.5).unwrap();
+            let sol = problem.solve().unwrap().solution().unwrap();
             assert_eq!(sol[v1], 0.5);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 6.5);
 
-            sol = sol.set_bound_var(v1, 3.0, Bound::Upper).unwrap();
+            problem.set_bound(v1, Bound::Upper, 3.0).unwrap();
+            let sol = problem.solve().unwrap().solution().unwrap();
             assert_eq!(sol[v1], 1.0);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 7.0);
         }
 
         {
-            let mut sol = orig_sol.clone().set_bound_var(v2, 2.5, Bound::Upper).unwrap();
+            let mut problem = problem.clone();
+            problem.set_bound(v2, Bound::Upper, 2.5).unwrap();
+            let sol = problem.solve().unwrap().solution().unwrap();
             assert_eq!(sol[v1], 1.5);
             assert_eq!(sol[v2], 2.5);
             assert_eq!(sol.objective(), 6.5);
 
-            sol = sol.set_bound_var(v2, 3.0, Bound::Upper).unwrap();
+            problem.set_bound(v2, Bound::Upper, 3.0).unwrap();
+            let sol = problem.solve().unwrap().solution().unwrap();
             assert_eq!(sol[v1], 1.0);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 7.0);
@@ -1090,26 +948,26 @@ mod tests {
 
     #[test]
     fn set_lb_var() {
-        let mut problem = Problem::new(OptimizationDirection::Maximize);
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
         let v1 = problem.add_var(1.0, (0.0, 3.0));
         let v2 = problem.add_var(2.0, (0.0, 3.0));
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 4.0);
         problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Ge, 1.0);
 
-        let orig_sol = problem.solve().unwrap();
-
         {
-            let mut sol = orig_sol.clone().set_bound_var(v1, 1.5, Bound::Lower).unwrap();
+            problem.set_bound(v1, Bound::Lower, 1.5).unwrap();
+            let sol = problem.solve().unwrap().solution().unwrap();
             assert_eq!(sol[v1], 1.5);
             assert_eq!(sol[v2], 2.5);
             assert_eq!(sol.objective(), 6.5);
 
-            sol = sol.set_bound_var(v1, 0.0, Bound::Lower).unwrap();
+            problem.set_bound(v1, Bound::Lower, 0.0).unwrap();
+            let sol = problem.solve().unwrap().solution().unwrap();
             assert_eq!(sol[v1], 1.0);
             assert_eq!(sol[v2], 3.0);
             assert_eq!(sol.objective(), 7.0);
 
-            assert!(sol.set_bound_var(v2, 4.0, Bound::Lower).is_err());
+            assert!(problem.set_bound(v2, Bound::Lower, 4.0).is_err());
         }
     }
 
@@ -1259,14 +1117,7 @@ mod tests {
         verbose: bool,
         assert_on: bool,
     ) -> (usize, usize, usize, usize) {
-        let init_solve = problem.solve();
         let mut lp = Lp::from(problem);
-
-        if init_solve.is_err() {
-            assert!(lp.check_feasibility().unwrap().infeasible());
-        }
-
-        let mut solution = init_solve.unwrap();
 
         let mut nb_cert_gen_const = 0;
         let mut nb_val_cert_const = 0;
@@ -1275,54 +1126,68 @@ mod tests {
         let mut nb_val_cert_feas = 0;
 
         for (i, lit) in lit_vec.iter().enumerate() {
-            let res_set_bound = lp.set_bound(lit.var, lit.bound, lit.val);
+            // problem with the added constraint
+            // update LP for the incremental checks
+            lp.set_bound(lit.var, lit.bound, lit.val).unwrap();
 
-            let res_check_feas = lp.check_feasibility().unwrap();
+            // from scratch, create a new LP from the problem and solve
+            let from_scratch = {
+                let problem = lp.problem.clone();
+                let mut lp = Lp::from(problem.clone());
+                lp.check_feasibility().unwrap()
+            };
 
-            let res_add_const = solution.add_constraint([(lit.var, 1.0)], lit.bound.into(), lit.val);
+            let problem = lp.problem.clone();
+            let incremental = {
+                let mut lp = lp.clone();
+                lp.check_feasibility().unwrap()
+            };
+            let incremental_solve = { lp.solve().unwrap() };
 
             use results::FeasibilityStatus::*;
             use results::InfeasibilityReason::*;
 
-            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_add_const {
-                let is_certif_valid = lp.is_certificate_valid(&cert[..nb_const]);
+            if let Infeasible(Certified(cert)) = &from_scratch {
+                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
                 println!("Is certificate valid add_const: {}", is_certif_valid);
                 nb_cert_gen_const += 1;
                 nb_val_cert_const += is_certif_valid as usize;
             }
 
-            if let Err(Error::InfeasibleWithCertificate(cert)) = &res_set_bound {
-                let is_certif_valid = lp.is_certificate_valid(cert);
+            if let SolveStatus::Infeasible(Certified(cert)) = &incremental_solve {
+                let is_certif_valid = problem.is_certificate_valid(cert);
                 println!("Is certificate valid set_bound: {}", is_certif_valid);
                 nb_cert_gen_feas += 1;
                 nb_val_cert_feas += is_certif_valid as usize;
             }
 
-            if let Infeasible(Certified(cert)) = &res_check_feas {
-                let is_certif_valid = lp.is_certificate_valid(cert);
+            if let Infeasible(Certified(cert)) = &incremental {
+                let is_certif_valid = problem.is_certificate_valid(cert);
                 println!("Is certificate valid cheak_feas: {}", is_certif_valid);
                 nb_cert_gen_feas += 1;
                 nb_val_cert_feas += is_certif_valid as usize;
             }
 
-            if assert_on {
-                assert_eq!(
-                    res_add_const.is_err(),
-                    res_check_feas.infeasible() || res_set_bound.is_err()
+            if from_scratch.infeasible() != incremental.infeasible()
+                || from_scratch.infeasible() != incremental_solve.infeasible()
+            {
+                println!(
+                    "{i} INCONSISTENT RESULTS ======\nfrom_scratch: {:?}\nincremental: {:?}\nincremental_solve: {:?}",
+                    from_scratch, incremental, incremental_solve
                 );
+                assert!(!assert_on);
+                break;
             }
 
-            if res_add_const.is_err() || res_check_feas.infeasible() || res_set_bound.is_err() {
+            if from_scratch.infeasible() || incremental.infeasible() || incremental_solve.infeasible() {
                 if verbose {
                     println!(
-                        "{i}\nadd_const: {:?}\nset_bound: {:?}\ncheack_feas: {:?}",
-                        res_add_const, res_set_bound, res_check_feas
+                        "{i}\nfrom_scratch: {:?}\nincremental: {:?}\nincremental_solve: {:?}",
+                        from_scratch, incremental, incremental_solve
                     );
                 }
                 break;
             }
-
-            solution = res_add_const.unwrap();
         }
 
         (nb_val_cert_const, nb_cert_gen_const, nb_val_cert_feas, nb_cert_gen_feas)
@@ -1367,7 +1232,7 @@ mod tests {
             let (problem, lit_vec) = gen_problem(nb_var, nb_const, min, max, sparse_proportion, seed);
 
             let (nb_val_cert_const_tmp, nb_cert_gen_const_tmp, nb_val_cert_feas_tmp, nb_cert_gen_feas_tmp) =
-                test_incremental_constraints(problem, lit_vec, nb_const, true, assert_on);
+                test_incremental_constraints(problem, lit_vec, nb_const, false, assert_on);
             nb_cert_gen_feas += nb_cert_gen_feas_tmp;
             nb_val_cert_feas += nb_val_cert_feas_tmp;
 
@@ -1382,10 +1247,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rand_tiny_problems() {
+        rand_problems(1, 1000, 5, 10, -10, 10, 0.3, true);
+    }
+
     #[ignore]
     #[test]
     fn rand_10_problems() {
-        rand_problems(0, 1000, 50, 100, -10, 10, 0.05, false);
+        rand_problems(0, 1000, 50, 100, -10, 10, 0.05, true);
+    }
+    #[ignore]
+    #[test]
+    fn rand_5k_problems() {
+        rand_problems(0, 1000, 50, 100, -5000, 5000, 0.05, true);
     }
 
     #[ignore]
@@ -1397,7 +1272,7 @@ mod tests {
     #[test]
     fn certificate() {
         {
-            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let mut problem = Lp::new(OptimizationDirection::Maximize);
             let x1 = problem.add_var(0.0, (0.0, f64::INFINITY));
             let x2 = problem.add_var(0.0, (0.0, f64::INFINITY));
             problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Le, 5.0);
@@ -1405,48 +1280,40 @@ mod tests {
 
             let sol = problem.solve();
 
-            assert!(sol.is_err());
-
-            println!("{:?}", sol);
-
-            if let Error::InfeasibleWithCertificate(cert) = sol.unwrap_err() {
+            if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
                 assert!(problem.is_certificate_valid(&cert));
+            } else {
+                panic!()
             }
         }
 
         {
-            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let mut problem = Lp::new(OptimizationDirection::Maximize);
             let x1 = problem.add_var(0.0, (0.0, 3.0));
             let x2 = problem.add_var(0.0, (0.0, 4.0));
             problem.add_constraint([(x1, 1.0), (x2, 2.0)], ComparisonOp::Le, 15.0);
             problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 9.0);
 
             let sol = problem.solve();
-
-            assert!(sol.is_err());
-
-            println!("{:?}", sol);
-
-            if let Error::InfeasibleWithCertificate(cert) = sol.unwrap_err() {
+            if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
                 assert!(problem.is_certificate_valid(&cert));
+            } else {
+                panic!()
             }
         }
 
         {
-            let mut problem = Problem::new(OptimizationDirection::Maximize);
+            let mut problem = Lp::new(OptimizationDirection::Maximize);
             let x1 = problem.add_var(0.0, (0.0, 2.0));
             let x2 = problem.add_var(0.0, (0.0, 2.0));
             problem.add_constraint([(x1, 2.0), (x2, 1.0)], ComparisonOp::Ge, 5.0);
             problem.add_constraint([(x1, -1.0), (x2, 1.0)], ComparisonOp::Ge, 2.0);
 
             let sol = problem.solve();
-
-            assert!(sol.is_err());
-
-            println!("{:?}", sol);
-
-            if let Error::InfeasibleWithCertificate(cert) = sol.unwrap_err() {
+            if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
                 assert!(problem.is_certificate_valid(&cert));
+            } else {
+                panic!()
             }
         }
     }

@@ -20,6 +20,7 @@ impl SparseVec {
         self.values.clear();
     }
 
+    #[allow(unused)]
     pub(crate) fn push(&mut self, i: usize, val: f64) {
         self.indices.push(i);
         self.values.push(val);
@@ -33,6 +34,7 @@ impl SparseVec {
         self.values.iter().map(|&v| v * v).sum()
     }
 
+    #[allow(unused)]
     pub(crate) fn into_csvec(self, len: usize) -> CsVec<f64> {
         CsVec::new(len, self.indices, self.values)
     }

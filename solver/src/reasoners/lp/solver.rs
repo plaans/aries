@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use aries_lp::{Bound, Error, Lp, OptimizationDirection, Variable};
+use aries_lp::{Bound, Error, Lp, OptimizationDirection, Variable, results::InfeasibilityReason};
 #[allow(unused_imports)]
 use itertools::Itertools;
 
@@ -158,7 +158,7 @@ impl Solver {
         bound: Bound,
         val: LongCst,
         justification: BoundJustification,
-    ) -> Result<(), Error> {
+    ) -> Result<(), InfeasibilityReason> {
         debug_assert!(var.idx() < self.bounds.len());
 
         match bound {
@@ -252,7 +252,7 @@ impl Solver {
     /// Will return an error if it can't be restored
     pub fn check_feasibility(
         &mut self,
-    ) -> Result<aries_lp::results::FeasibilityStatus, aries_lp::results::FeasibilityCheckFailure> {
+    ) -> Result<aries_lp::results::FeasibilityStatus, aries_lp::results::SolverFailure> {
         self.lp.check_feasibility()
     }
 
