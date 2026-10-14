@@ -871,9 +871,18 @@ impl Solver {
                 .zip(&self.nb_var_states)
                 .enumerate()
                 .filter_map(|(col, (&obj_coeff, var_state))| {
-                    // Choose only among non-basic vars that can be changed
-                    // with objective decreasing.
-                    if (var_state.at_min && obj_coeff > -EPS) || (var_state.at_max && obj_coeff < EPS) {
+                    debug_assert!(!obj_coeff.is_nan());
+                    // Choose only among non-basic vars that can be changed with objective decreasing.
+                    if obj_coeff.abs() < EPS {
+                        // var has a zero reduced cost and no change can improve the objective
+                        // Note that this check also considers variables that are not at their bounds which can occur
+                        // when updating the bounds of variables
+                        None
+                    } else if var_state.at_min && obj_coeff > 0.0 {
+                        // var should decrease to improve objective but already at minimum
+                        None
+                    } else if var_state.at_max && obj_coeff < 0.0 {
+                        // var should increase to improve objective but already at maximum
                         None
                     } else {
                         Some((col, obj_coeff))
