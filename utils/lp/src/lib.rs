@@ -1,48 +1,4 @@
-/*!
-A fast linear programming solver library.
-
-[Linear programming](https://en.wikipedia.org/wiki/Linear_programming) is a technique for
-finding the minimum (or maximum) of a linear function of a set of continuous variables
-subject to linear equality and inequality constraints.
-
-# Features
-
-* Pure Rust implementation.
-* Able to solve problems with hundreds of thousands of variables and constraints.
-* Incremental: add constraints to an existing solution without solving it from scratch.
-* Problems can be defined via an API or parsed from an
-  [MPS](https://en.wikipedia.org/wiki/MPS_(format)) file.
-
-# Entry points
-
-Begin by creating a [`Problem`](struct.Problem.html) instance, declaring variables and adding
-constraints. Solving it will produce a [`Solution`](struct.Solution.html) that can be used to
-get the optimal objective value, corresponding variable values and to add more constraints
-to the problem.
-
-Alternatively, create an [`MpsFile`](mps/struct.MpsFile.html) by parsing a file in the MPS format.
-
-# Example
-
-```
-use aries_lp::{Problem, OptimizationDirection, ComparisonOp};
-
-// Maximize an objective function x + 2 * y of two variables x >= 0 and 0 <= y <= 3
-let mut problem = Problem::new(OptimizationDirection::Maximize);
-let x = problem.add_var(1.0, (0.0, f64::INFINITY));
-let y = problem.add_var(2.0, (0.0, 3.0));
-
-// subject to constraints: x + y <= 4 and 2 * x + y >= 2.
-problem.add_constraint([(x, 1.0), (y, 1.0)], ComparisonOp::Le, 4.0);
-problem.add_constraint([(x, 2.0), (y, 1.0)], ComparisonOp::Ge, 2.0);
-
-// Optimal value is 7, achieved at x = 1 and y = 3.
-let solution = problem.solve().unwrap();
-assert_eq!(solution.objective(), 7.0);
-assert_eq!(solution[x], 1.0);
-assert_eq!(solution[y], 3.0);
-```
-*/
+#![doc = include_str!("../README.md")]
 
 #![warn(missing_debug_implementations, missing_docs)]
 #![allow(clippy::needless_range_loop)]
@@ -119,8 +75,18 @@ impl Lp {
         Ok(())
     }
 
-    // TODO: should be kept internal
-    #[doc(hidden)]
+    /// Verify a certificate of unsatisfiability against this LP.
+    ///
+    /// The certificate is a vector with one coefficient per constraint: each constraint is multiplied
+    /// by its coefficient and the results are summed, which must produce a constraint that is
+    /// trivially unsatisfiable given the variables' bounds.
+    ///
+    /// Certificates are typically obtained from [`results::InfeasibilityReason::Certified`] after a failed
+    /// [`Lp::solve`] or [`Lp::check_feasibility`] call.
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug mode if the number of coefficients does not match the number of constraints.
     pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
         self.problem.is_certificate_valid(cert)
     }
@@ -191,106 +157,10 @@ impl Lp {
     }
 }
 
-pub mod results {
-    //! Exports various types capturing the status of an LP or a solver.
+pub mod prelude;
+pub mod results;
 
-    use crate::{Solution, Variable};
-
-    /// Results of a successful run of an [`Lp::solve`](crate::Lp::solve) call (solving the LP to an optimal).
-    #[derive(Debug)]
-    pub enum SolveStatus<'solver> {
-        /// Solver terminated at an optimal solution.
-        ///
-        /// Provides an interface for extracting the optimal solution.
-        Optimal(Solution<'solver>),
-        /// Solver terminated by proving that the problem has no feasible solution.
-        Infeasible(InfeasibilityReason),
-        /// Solver terminated by proving that the problem is unbounded (admits feasible solution with arbitrary high objective).
-        Unbounded,
-    }
-
-    impl<'a> SolveStatus<'a> {
-        /// Returns the solution if the LP has a finite optimal solution (not infeasible nor unbounded).
-        pub fn solution(self) -> Option<Solution<'a>> {
-            match self {
-                SolveStatus::Optimal(solution) => Some(solution),
-                SolveStatus::Infeasible(_) | SolveStatus::Unbounded => None,
-            }
-        }
-
-        /// Returns true iff the LP is infeasible
-        pub fn infeasible(&self) -> bool {
-            match self {
-                SolveStatus::Infeasible(_) => true,
-                SolveStatus::Optimal(_) | SolveStatus::Unbounded => false,
-            }
-        }
-
-        /// Returns true if the LP is unbounded
-        pub fn unbounded(&self) -> bool {
-            match self {
-                SolveStatus::Unbounded => true,
-                SolveStatus::Optimal(_) | SolveStatus::Infeasible(_) => false,
-            }
-        }
-
-        /// Returns true, iff the LP has an finite optimal solution and that the one found is accepted by the given predicate.
-        pub fn is_optimal_and(&'a self, pred: impl FnOnce(&'a Solution<'a>) -> bool) -> bool {
-            match self {
-                SolveStatus::Optimal(s) => pred(s),
-                _ => false,
-            }
-        }
-    }
-
-    /// Result for a successful check of satisfiability.
-    #[derive(Debug)]
-    pub enum FeasibilityStatus {
-        /// The LP is feasible, i.e., admits at least one solution (ignoring the objective).
-        Feasible,
-        /// The LP admits no solution (ignoring the objective).
-        Infeasible(InfeasibilityReason),
-    }
-
-    impl FeasibilityStatus {
-        /// Returns `true` iff the LP is feasible.
-        pub fn feasible(&self) -> bool {
-            match self {
-                FeasibilityStatus::Feasible => true,
-                FeasibilityStatus::Infeasible(_) => false,
-            }
-        }
-
-        /// Returns `true` iff the LP has no feasible solution.
-        pub fn infeasible(&self) -> bool {
-            !self.feasible()
-        }
-    }
-
-    /// A Farkas certificate that can be used as a proof of unsatisfiability.
-    pub type InfeasibilityCertificate = Vec<f64>;
-
-    /// Explain where the infeasibility comes from.
-    #[derive(Debug, Clone)]
-    pub enum InfeasibilityReason {
-        /// Obvious infeasibility, that can be typically detected at model construction
-        IncompatibleBounds(Variable),
-        /// Infeasibility was proven by the solver (typically after a number of simplex pivots).
-        /// This variant contains a Farkas certificate that can be used to certify the infeasibility.
-        Certified(InfeasibilityCertificate),
-    }
-
-    /// Denotes the reason why a feasibility check could not be concluded.
-    #[derive(Debug, Clone)]
-    pub enum SolverFailure {
-        /// Instability detected in floating point operations, preventing the solver to reach a conclusion.
-        Unstable,
-    }
-
-    /// Error denoting the presence of numerical instability.
-    #[derive(Debug, Clone, Eq, PartialEq)]
-    pub struct NumericalErrors;
-}
+use results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure};
 
 impl PartialEq for Lp {
     fn eq(&self, other: &Self) -> bool {
@@ -457,7 +327,13 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// A specification of a linear programming problem.
+/// A specification of a linear programming problem: the objective direction, the variables
+/// with their bounds, and the constraints.
+///
+/// This is the low-level, static representation of an LP. It contains no solver state:
+/// use [`Lp`] as the entry point for building and solving an LP (including incremental
+/// modifications and feasibility checks). [`Lp::from`] can be used to build an [`Lp`] on top
+/// of an already-constructed problem.
 #[derive(Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Problem {
@@ -791,8 +667,6 @@ impl<'a> IntoIterator for &'a Solution<'a> {
 }
 
 pub use mps::MpsFile;
-
-use crate::results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure};
 
 impl From<Bound> for ComparisonOp {
     fn from(bound: Bound) -> ComparisonOp {
