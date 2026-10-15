@@ -31,7 +31,7 @@ use aries_env_param::EnvParam;
 use itertools::Itertools;
 use solver::{BoundJustification, Solver};
 
-use aries_lp::{Bound, Error, Variable};
+use aries_lp::prelude::*;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
@@ -501,54 +501,49 @@ impl Lp {
                 )
             };
 
-            self.explain_set_bound(&res, bound_constr.var)?;
+            if let Err(infeasible) = res {
+                self.explain_infeasibility(&infeasible, domains)?;
+            }
         }
         Ok(())
     }
 
-    /// Takes the result of a call to [Solver::set_bound_restrict] and returns either `Ok` or a `Contradiction` if infeasibility was detected
-    fn explain_set_bound<T>(&mut self, res: &Result<T, Error>, var: Variable) -> Result<(), Contradiction> {
-        match res {
-            Err(Error::InfeasibleTrivial) => {
-                let explanation = self.solver.explain_infeasible_var(var, &self.bound_constrs);
-                Err(Contradiction::Explanation(explanation))
-            }
-            Err(Error::InfeasibleWithCertificate(_)) => {
-                unreachable!("Setting a bound should not generate a certificate")
-            }
-            _ => Ok(()),
-        }
-    }
-
-    /// Takes the result of a call to [Solver::check_feasibility] and returns either `Ok` or a `Contradiction` if infeasibility was detected
-    fn explain_check_feas(&mut self, res: Result<(), Error>, domains: &Domains) -> Result<(), Contradiction> {
-        match res {
-            Err(Error::InfeasibleWithCertificate(cert)) => {
+    /// Attempts to derive a contradiction from a LP infeasibility and returns it as an error (to facilitate the propagation of the contradiction).
+    ///
+    /// In theory, any LP infeasibility lead to a contradiction in the solver because the LP is a relaxation of the CP model.
+    /// However, the LP' simplex is using floating point arithmetic and it might the case that it hands out an incorrect result.
+    ///
+    /// To isolate such errors from the solver, we validate the infeasibility justification from the LP with exact integer arithmetic.
+    /// This may fail when 1) the LP's output was erroneous or 2) our conversion into integers lost some precision and invalidated the certificate.
+    ///
+    /// In both cases (which should exceptional), we ignore the infeasibility and report that there is nothing to see.
+    fn explain_infeasibility(&mut self, cause: &InfeasibilityReason, domains: &Domains) -> Result<(), Contradiction> {
+        match cause {
+            InfeasibilityReason::Certified(cert) => {
                 self.stats.num_certif += 1;
-                if self.solver.problem.is_certificate_valid(&cert) {
+                if self.solver.lp.is_certificate_valid(cert) {
                     self.stats.num_val_certif_float += 1;
                 }
                 match self
                     .solver
-                    .check_certificate(&cert, domains, &mut self.stats, &self.bound_constrs)
+                    .check_certificate(cert, domains, &mut self.stats, &self.bound_constrs)
                 {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
                         Err(Contradiction::Explanation(explanation))
                     }
                     None => {
-                        // println!("CHECK FEAS");
-                        // let filtered_cert = cert.iter().enumerate().filter(|(_, v)| **v != 0.0).collect_vec();
-                        // println!("Invalid certificate: {:?}", filtered_cert);
-                        // // if filtered_cert.len() == 1 {
-                        // //     println!("Constraint: {:?}", self.solver.constraints[filtered_cert[0].0]);
-                        // // }
-                        // println!();
+                        // We could not validate this certificate, so we ignore this LP infeasibility
+                        // as we are lacking a proof that it is a real UNSAT and not an internal error due to, e.g.,
+                        // floating point errors.
                         Ok(())
                     }
                 }
             }
-            _ => Ok(()),
+            InfeasibilityReason::IncompatibleBounds(var) => {
+                let explanation = self.solver.explain_infeasible_var(*var, &self.bound_constrs);
+                Err(Contradiction::Explanation(explanation))
+            }
         }
     }
 }
@@ -586,15 +581,15 @@ impl Theory for Lp {
                     continue;
                 }
 
-                let res = self.solver.set_bound_restrict(
+                if let Err(infeasible) = self.solver.set_bound_restrict(
                     bound_constr.var,
                     bound_constr.bound,
                     bound_constr.val,
                     BoundJustification::Trigger(watcher),
                     &mut self.trail,
-                );
-
-                self.explain_set_bound(&res, bound_constr.var)?;
+                ) {
+                    self.explain_infeasibility(&infeasible, domains)?;
+                }
             }
 
             let var = event.affected_bound.variable();
@@ -613,13 +608,16 @@ impl Theory for Lp {
                             .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), justification, &mut self.trail)
                     };
 
-                self.explain_set_bound(&res, x_var)?;
+                if let Err(infeasible) = res {
+                    self.explain_infeasibility(&infeasible, domains)?;
+                }
             }
         }
 
         // After updating all the bounds, we check that our lp solver is still in a feasible state
-        let res = self.solver.check_feasibility();
-        self.explain_check_feas(res, domains)?;
+        if let Ok(FeasibilityStatus::Infeasible(cause)) = self.solver.check_feasibility() {
+            self.explain_infeasibility(&cause, domains)?;
+        }
 
         self.stats.num_ok_propagate += 1;
 

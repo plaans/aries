@@ -1,9 +1,12 @@
 use crate::{
-    ComparisonOp, CsVec, Error,
+    Bound, ComparisonOp, CsVec, Error, Variable,
     helpers::{resized_view, to_dense},
     lu::{LUFactors, ScratchSpace, lu_factorize},
+    results::{InfeasibilityReason, NumericalErrors},
     sparse::{ScatteredVec, SparseMat, SparseVec},
 };
+
+use crate::prelude::*;
 
 use sprs::CompressedStorage;
 
@@ -32,6 +35,18 @@ pub(crate) struct Solver {
     /// For each var: whether it is basic/non-basic and the corresponding index.
     var_states: Vec<VarState>,
     basis_solver: BasisSolver,
+
+    /// First constraint row not yet processed by the basis solver, if any.
+    ///
+    /// Invariant: `pending.is_none()` if and only if the basis solver is in sync with
+    /// `basic_vars` and `orig_constraints_csc`.
+    ///
+    /// Structural additions (`add_variable`, `add_constraint`) break the invariant by setting
+    /// this to the index of the first new row (or `num_constraints()` for a variable, which
+    /// adds no row). [`Solver::solve_feasibility`] and [`Solver::initial_solve`] restore it,
+    /// with a single refactorization regardless of the number of additions, before any use of
+    /// the basis solver.
+    pending: Option<usize>,
 
     /// For each constraint the corresponding basic var.
     basic_vars: Vec<usize>,
@@ -106,7 +121,7 @@ impl Solver {
         var_mins: &[f64],
         var_maxs: &[f64],
         constraints: &[(CsVec, ComparisonOp, f64)],
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, InfeasibilityReason> {
         let enable_steepest_edge = true; // TODO: make user-settable.
 
         let num_vars = obj_coeffs.len();
@@ -132,7 +147,7 @@ impl Solver {
             let min = orig_var_mins[v];
             let max = orig_var_maxs[v];
             if min > max {
-                return Err(Error::InfeasibleTrivial);
+                return Err(InfeasibilityReason::IncompatibleBounds(Variable(v)));
             }
 
             // initially all user-created variables are non-basic
@@ -194,19 +209,13 @@ impl Solver {
         for (coeffs, cmp_op, rhs) in constraints {
             let rhs = *rhs;
 
-            if coeffs.indices().is_empty() {
-                let is_tautological = match cmp_op {
-                    ComparisonOp::Eq => 0.0 == rhs,
-                    ComparisonOp::Le => 0.0 <= rhs,
-                    ComparisonOp::Ge => 0.0 >= rhs,
-                };
-
-                if is_tautological {
-                    continue;
-                } else {
-                    return Err(Error::InfeasibleTrivial);
-                }
-            }
+            // NOTE: a possible optimization would be to treat specially constraints with no variables by:
+            // 1) ignoring tautological ones
+            // 2) returning an error on the seconds
+            //
+            // We do not do this
+            // 1) means skipping rows, which might have implications on the certificate (that identifies constraints by their row number)
+            // 2) requires computing a certificate for explanation and handling it in constructors of the solver, complicating things for little gain.
 
             constraint_coeffs.push(coeffs.clone());
             orig_rhs.push(rhs);
@@ -334,6 +343,7 @@ impl Solver {
                 eta_matrices: EtaMatrices::new(num_constraints),
                 rhs: ScatteredVec::empty(num_constraints),
             },
+            pending: None,
             basic_vars,
             basic_var_vals,
             basic_var_mins,
@@ -377,9 +387,9 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the new bound is trivially infeasible (ub < lb)
-    pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
+    pub(crate) fn set_ub_var(&mut self, var: usize, val: f64) -> Result<f64, InfeasibilityReason> {
         if val < self.orig_var_mins[var] {
-            return Err(Error::InfeasibleTrivial);
+            return Err(InfeasibilityReason::IncompatibleBounds(Variable(var)));
         }
 
         let old_val = self.orig_var_maxs[var];
@@ -389,9 +399,11 @@ impl Solver {
             VarState::Basic(row) => {
                 self.basic_var_maxs[row] = val;
                 if self.basic_var_vals[row] > val {
+                    // restricts the previous bound, so the LP might become infeasible
                     self.is_primal_feasible = false;
-                }
-                if self.basic_var_vals[row] < val {
+                } else if self.basic_var_vals[row] < val {
+                    // relaxes the previous bound, so the LP remains feasible but might not be optimal anymore
+                    // (if it previously was)
                     self.is_dual_feasible = false;
                 }
             }
@@ -421,15 +433,22 @@ impl Solver {
         Ok(old_val)
     }
 
+    pub(crate) fn set_bound(&mut self, var: Variable, bound: Bound, val: f64) -> Result<f64, InfeasibilityReason> {
+        match bound {
+            Bound::Lower => self.set_lb_var(var.idx(), val),
+            Bound::Upper => self.set_ub_var(var.idx(), val),
+        }
+    }
+
     /// Set a new lower bound for a var, optimality an feasability aren't restored automatically:
     /// A call to solve_feasibility or initial_solve is necessary
     ///
     /// # Errors
     ///
     /// Will return an error if the new bound is trivially infeasible (lb > ub)
-    pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, Error> {
+    pub(crate) fn set_lb_var(&mut self, var: usize, val: f64) -> Result<f64, InfeasibilityReason> {
         if val > self.orig_var_maxs[var] {
-            return Err(Error::InfeasibleTrivial);
+            return Err(InfeasibilityReason::IncompatibleBounds(Variable(var)));
         }
 
         let old_val = self.orig_var_mins[var];
@@ -439,8 +458,10 @@ impl Solver {
             VarState::Basic(row) => {
                 self.basic_var_mins[row] = val;
                 if self.basic_var_vals[row] < val {
+                    // restricts the previous bound, so the LP might become infeasible
                     self.is_primal_feasible = false;
                 } else {
+                    // relaxes the previous bound so the LP might become non-optimal
                     self.is_dual_feasible = false;
                 }
             }
@@ -470,92 +491,6 @@ impl Solver {
         Ok(old_val)
     }
 
-    /// Fix the value of a variable and immediatly restore feasibility
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the given value isn't within the bounds of the var
-    /// or if feasibility couldn't be restored
-    pub(crate) fn fix_var(&mut self, var: usize, val: f64) -> Result<(), Error> {
-        if val < self.orig_var_mins[var] || val > self.orig_var_maxs[var] {
-            return Err(Error::InfeasibleTrivial);
-        }
-
-        let col = match self.var_states[var] {
-            VarState::Basic(row) => {
-                // if var was basic, remove it.
-                self.calc_row_coeffs(row);
-                let pivot_info = self.choose_entering_col_dual(row, val)?;
-                self.calc_col_coeffs(pivot_info.col);
-                self.pivot(&pivot_info)?;
-                pivot_info.col
-            }
-
-            VarState::NonBasic(col) => {
-                self.calc_col_coeffs(col);
-
-                let diff = val - self.nb_var_vals[col];
-                for (r, coeff) in self.col_coeffs.iter() {
-                    self.basic_var_vals[r] -= diff * coeff;
-                }
-                self.cur_obj_val += diff * self.nb_var_obj_coeffs[col];
-                self.nb_var_vals[col] = val;
-
-                col
-            }
-        };
-
-        self.nb_var_states[col] = NonBasicVarState {
-            at_min: true,
-            at_max: true,
-        };
-        self.nb_var_is_fixed[col] = true;
-
-        self.is_primal_feasible = false;
-        self.restore_feasibility()
-    }
-
-    /// Return true if the var was really unset.
-    pub(crate) fn unfix_var(&mut self, var: usize) -> bool {
-        if let VarState::NonBasic(col) = self.var_states[var] {
-            if !std::mem::replace(&mut self.nb_var_is_fixed[col], false) {
-                return false;
-            }
-
-            let cur_val = self.nb_var_vals[col];
-            self.nb_var_states[col] = NonBasicVarState {
-                at_min: cur_val == self.orig_var_mins[var],
-                at_max: cur_val == self.orig_var_maxs[var],
-            };
-
-            // Shouldn't result in error, presumably problem was solvable before this variable
-            // was fixed.
-            self.is_dual_feasible = false;
-            self.optimize().unwrap();
-            true
-        } else {
-            false
-        }
-    }
-
-    pub(crate) fn add_gomory_cut(&mut self, var: usize) -> Result<(), Error> {
-        if let VarState::Basic(row) = self.var_states[var] {
-            self.calc_row_coeffs(row);
-
-            let mut cut_coeffs = SparseVec::new();
-            for (col, &coeff) in self.row_coeffs.iter() {
-                let var = self.nb_vars[col];
-                cut_coeffs.push(var, coeff.floor() - coeff);
-            }
-
-            let cut_bound = self.basic_var_vals[row].floor() - self.basic_var_vals[row];
-            let num_total_vars = self.num_total_vars();
-            self.add_constraint(cut_coeffs.into_csvec(num_total_vars), ComparisonOp::Le, cut_bound)
-        } else {
-            panic!("var {:?} is not basic!", var);
-        }
-    }
-
     pub(crate) fn num_constraints(&self) -> usize {
         self.orig_constraints.rows()
     }
@@ -565,6 +500,8 @@ impl Solver {
     }
 
     pub(crate) fn solve_feasibility(&mut self) -> Result<(), Error> {
+        self.process_pending_basis_updates()?;
+
         if !self.is_primal_feasible {
             self.restore_feasibility()?;
         }
@@ -573,6 +510,8 @@ impl Solver {
     }
 
     pub(crate) fn initial_solve(&mut self) -> Result<(), Error> {
+        self.process_pending_basis_updates()?;
+
         if !self.is_primal_feasible {
             self.restore_feasibility()?;
         }
@@ -590,6 +529,7 @@ impl Solver {
     }
 
     fn optimize(&mut self) -> Result<(), Error> {
+        debug_assert!(self.pending.is_none());
         for iter in 0.. {
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_dual_infeasibility();
@@ -615,6 +555,7 @@ impl Solver {
     }
 
     fn restore_feasibility(&mut self) -> Result<(), Error> {
+        debug_assert!(self.pending.is_none());
         let obj_str = if self.is_dual_feasible {
             "obj."
         } else {
@@ -654,15 +595,51 @@ impl Solver {
         Ok(())
     }
 
-    /// Add a new variable to the solver, can typically be used with add_constraint to add it on the fly
+    /// Restores the validity of the basis solver after structural model additions
+    /// (see [`Self::pending`]).
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the given bounds are inconsistent (min > max)
-    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Result<usize, Error> {
-        if min > max {
-            return Err(Error::InfeasibleTrivial);
+    /// A single refactorization is performed regardless of the number of variables and
+    /// constraints added since the last call, then the steepest edge norms are updated for
+    /// each of the rows added in the meantime.
+    fn process_pending_basis_updates(&mut self) -> Result<(), NumericalErrors> {
+        let Some(first_new_row) = self.pending.take() else {
+            return Ok(());
+        };
+
+        self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+
+        if self.enable_primal_steepest_edge || self.enable_dual_steepest_edge {
+            for r in first_new_row..self.num_constraints() {
+                // Existing tableau rows didn't change, so we only need to compute the new ones
+                // and add their contribution to the sq. norms.
+                self.calc_row_coeffs(r);
+
+                if self.enable_primal_steepest_edge {
+                    for (c, &coeff) in self.row_coeffs.iter() {
+                        self.primal_edge_sq_norms[c] += coeff * coeff;
+                    }
+                }
+
+                if self.enable_dual_steepest_edge {
+                    self.dual_edge_sq_norms.push(self.inv_basis_row_coeffs.sq_norm());
+                }
+            }
         }
+
+        Ok(())
+    }
+
+    /// Add a new variable to the solver. This is typically used together with `add_constraint`
+    /// to add them on the fly to an already-solved problem.
+    ///
+    /// The variable starts non-basic, at one of its bounds (or at 0 if both are infinite).
+    /// The basis solver is not updated: see [`Self::pending`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given bounds are inconsistent (`min > max`).
+    pub(crate) fn add_variable(&mut self, obj_coeff: f64, min: f64, max: f64) -> Variable {
+        assert!(min <= max && !max.is_nan() && !min.is_nan() && !obj_coeff.is_nan());
 
         let new_var_idx = self.num_vars;
         self.num_vars += 1;
@@ -724,7 +701,9 @@ impl Solver {
         self.orig_constraints = new_orig_constraints;
         self.orig_constraints_csc = self.orig_constraints.to_csc();
 
-        self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+        // A new variable does not add a constraint row, but the basis solver must still be
+        // refreshed before its next use (its variable indices shifted).
+        self.pending.get_or_insert(self.num_constraints());
 
         if self.enable_primal_steepest_edge {
             self.primal_edge_sq_norms.push(1.0);
@@ -733,26 +712,15 @@ impl Solver {
 
         self.is_dual_feasible = false;
 
-        Ok(new_var_idx)
+        Variable(new_var_idx)
     }
 
-    pub(crate) fn add_constraint(&mut self, mut coeffs: CsVec, cmp_op: ComparisonOp, rhs: f64) -> Result<(), Error> {
-        assert!(self.is_primal_feasible);
-        // assert!(self.is_dual_feasible); // necesarry if we want to garanty optimality after adding the constraint
-
-        if coeffs.indices().is_empty() {
-            let is_tautological = match cmp_op {
-                ComparisonOp::Eq => 0.0 == rhs,
-                ComparisonOp::Le => 0.0 <= rhs,
-                ComparisonOp::Ge => 0.0 >= rhs,
-            };
-
-            if is_tautological {
-                return Ok(());
-            } else {
-                return Err(Error::InfeasibleTrivial);
-            }
-        }
+    /// Add a linear constraint to the solver, which starts satisfied by the current values of
+    /// the variables (its slack is basic at value `rhs - lhs`).
+    ///
+    /// The basis solver is not updated: see [`Self::pending`].
+    pub(crate) fn add_constraint(&mut self, constraint: &Constraint) {
+        let (mut coeffs, cmp_op, rhs) = constraint.decompose(self.num_vars);
 
         let slack_var = self.num_total_vars();
         let (slack_var_min, slack_var_max) = match cmp_op {
@@ -761,10 +729,12 @@ impl Solver {
             ComparisonOp::Eq => (0.0, 0.0),
         };
 
+        let new_row = self.basic_vars.len();
+
         self.orig_obj_coeffs.push(0.0);
         self.orig_var_mins.push(slack_var_min);
         self.orig_var_maxs.push(slack_var_max);
-        self.var_states.push(VarState::Basic(self.basic_vars.len()));
+        self.var_states.push(VarState::Basic(new_row));
         self.basic_vars.push(slack_var);
         self.basic_var_mins.push(slack_var_min);
         self.basic_var_maxs.push(slack_var_max);
@@ -793,27 +763,10 @@ impl Solver {
         self.orig_constraints = new_orig_constraints;
         self.orig_constraints_csc = self.orig_constraints.to_csc();
 
-        self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
-
-        if self.enable_primal_steepest_edge || self.enable_dual_steepest_edge {
-            // existing tableau rows didn't change, so we calc the last rowa
-            // and add its contribution to the sq. norms.
-            self.calc_row_coeffs(self.num_constraints() - 1);
-
-            if self.enable_primal_steepest_edge {
-                for (c, &coeff) in self.row_coeffs.iter() {
-                    self.primal_edge_sq_norms[c] += coeff * coeff;
-                }
-            }
-
-            if self.enable_dual_steepest_edge {
-                self.dual_edge_sq_norms.push(self.inv_basis_row_coeffs.sq_norm());
-            }
-        }
+        // The basis solver is only refreshed at the next solve: see [`Self::pending`].
+        self.pending.get_or_insert(new_row);
 
         self.is_primal_feasible = false;
-        // println!("restore?");
-        self.restore_feasibility()
     }
 
     /// Number of infeasible basic vars and sum of their infeasibilities.
@@ -850,8 +803,9 @@ impl Solver {
         (num_vars, infeasibility)
     }
 
-    /// Calculate current coeffs column for a single non-basic variable.
+    /// Computes current coeffs column for a single non-basic variable (writtein to [`Self::col_coeffs`])
     fn calc_col_coeffs(&mut self, c_var: usize) {
+        debug_assert!(self.pending.is_none());
         let var = self.nb_vars[c_var];
         let orig_col = self.orig_constraints_csc.outer_view(var).unwrap();
         self.basis_solver
@@ -861,6 +815,7 @@ impl Solver {
 
     /// Calculate current coeffs row for a single constraint (permuted according to nb_vars).
     fn calc_row_coeffs(&mut self, r_constr: usize) {
+        debug_assert!(self.pending.is_none());
         self.basis_solver
             .solve_transp(std::iter::once((r_constr, &1.0)))
             .to_sparse_vec(&mut self.inv_basis_row_coeffs);
@@ -883,9 +838,18 @@ impl Solver {
                 .zip(&self.nb_var_states)
                 .enumerate()
                 .filter_map(|(col, (&obj_coeff, var_state))| {
-                    // Choose only among non-basic vars that can be changed
-                    // with objective decreasing.
-                    if (var_state.at_min && obj_coeff > -EPS) || (var_state.at_max && obj_coeff < EPS) {
+                    debug_assert!(!obj_coeff.is_nan());
+                    // Choose only among non-basic vars that can be changed with objective decreasing.
+                    if obj_coeff.abs() < EPS {
+                        // var has a zero reduced cost and no change can improve the objective
+                        // Note that this check also considers variables that are not at their bounds which can occur
+                        // when updating the bounds of variables
+                        None
+                    } else if var_state.at_min && obj_coeff > 0.0 {
+                        // var should decrease to improve objective but already at minimum
+                        None
+                    } else if var_state.at_max && obj_coeff < 0.0 {
+                        // var should increase to improve objective but already at maximum
                         None
                     } else {
                         Some((col, obj_coeff))
@@ -966,6 +930,11 @@ impl Solver {
                 max_step = cur_step;
             }
         }
+        debug_assert!(entering_cur_val.is_finite());
+        if max_step.is_infinite() {
+            return Err(Error::Unbounded);
+        }
+        debug_assert!(max_step.is_finite()); // not infinite nor NaN
 
         // Second, we choose among variables with steps less than max_step a variable with the biggest
         // abs. coefficient as the leaving variable. This means that we get numerically more stable
@@ -982,6 +951,8 @@ impl Solver {
 
             let cur_step = get_leaving_var_step(r, coeff) / coeff_abs;
             if cur_step <= max_step && coeff_abs > pivot_coeff_abs {
+                // cur step cannot be infinite because we would otherwise need max_step infinite and this is caught earlier
+                debug_assert!(cur_step.is_finite());
                 leaving_r = Some(r);
                 leaving_new_val = if (entering_diff_sign && coeff < 0.0) || (!entering_diff_sign && coeff > 0.0) {
                     self.basic_var_maxs[r]
@@ -994,6 +965,8 @@ impl Solver {
         }
 
         if let Some(row) = leaving_r {
+            // we have a leaving row to perform the pivot. The leaving row is the origin of the
+            // blocking value for the step size
             self.calc_row_coeffs(row);
 
             let entering_diff = (self.basic_var_vals[row] - leaving_new_val) / pivot_coeff;
@@ -1010,9 +983,12 @@ impl Solver {
                 }),
             }))
         } else {
-            if entering_other_val.is_infinite() {
-                return Err(Error::Unbounded);
-            }
+            // we have no blocking row, hence we will do a bound-flip, placing the entering val
+            // at its bound that maximizes the objective
+
+            // `entering_other_val` will be the new value. If it was infinite, this would imply that the LP
+            // is unbounded. However this cannot occur because we have an early termination test based on max_step being infinite.
+            debug_assert!(entering_other_val.is_finite());
 
             Ok(Some(PivotInfo {
                 col: entering_c,
@@ -1196,7 +1172,8 @@ impl Solver {
         }
     }
 
-    fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), Error> {
+    fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), NumericalErrors> {
+        debug_assert!(self.pending.is_none());
         // TODO: periodically (say, every 1000 pivots) recalc basic vars and object coeffs
         // from scratch for numerical stability.
 
@@ -1353,7 +1330,8 @@ impl Solver {
     }
 
     #[allow(dead_code)]
-    fn recalc_basic_var_vals(&mut self) -> Result<(), Error> {
+    fn recalc_basic_var_vals(&mut self) -> Result<(), NumericalErrors> {
+        debug_assert!(self.pending.is_none());
         let mut cur_vals = self.orig_rhs.clone();
         for (i, var) in self.nb_vars.iter().enumerate() {
             let val = self.nb_var_vals[i];
@@ -1376,7 +1354,8 @@ impl Solver {
         Ok(())
     }
 
-    fn recalc_obj_coeffs(&mut self) -> Result<(), Error> {
+    fn recalc_obj_coeffs(&mut self) -> Result<(), NumericalErrors> {
+        debug_assert!(self.pending.is_none());
         if self.basis_solver.eta_matrices.len() > 0 {
             self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
         }
@@ -1463,11 +1442,18 @@ impl BasisSolver {
         self.eta_matrices.push(r_leaving, coeffs);
     }
 
-    fn reset(&mut self, orig_constraints_csc: &CsMat, basic_vars: &[usize]) -> Result<(), Error> {
+    /// Recompute the LU factorization of the basis matrix from scratch, based only on the original constraint and the idenitification
+    /// of the basic vars..
+    ///
+    /// This method is expensive (LU factorization from scratch) but gets rid of any accumulated numerical approximation during the pivot phases.
+    ///
+    /// The factorization may fail when B is nearly singular which is a marker of numerical instability
+    /// (mathematically, the simplex maintains the invariant the basis matrix is invertible)
+    fn reset(&mut self, orig_constraints_csc: &CsMat, basic_vars: &[usize]) -> Result<(), NumericalErrors> {
         self.scratch.clear_sparse(basic_vars.len());
         self.eta_matrices.clear_and_resize(basic_vars.len());
         self.rhs.clear_and_resize(basic_vars.len());
-        let res_lu_factorize = lu_factorize(
+        self.lu_factors = lu_factorize(
             basic_vars.len(),
             |c| {
                 orig_constraints_csc
@@ -1477,12 +1463,7 @@ impl BasisSolver {
             },
             0.1,
             &mut self.scratch,
-        );
-        if let Ok(lu_factors) = res_lu_factorize {
-            self.lu_factors = lu_factors;
-        } else {
-            return Err(Error::Unstable);
-        }
+        )?;
         self.lu_factors_transp = self.lu_factors.transpose();
 
         Ok(())

@@ -1,4 +1,4 @@
-use crate::{ComparisonOp, LinearExpr, OptimizationDirection, Problem, Variable};
+use crate::{ComparisonOp, OptimizationDirection, Problem, Variable, expr::LinExpr};
 use std::{
     collections::{HashMap, HashSet},
     io,
@@ -62,7 +62,7 @@ impl MpsFile {
         };
 
         struct ConstraintDef {
-            lhs: LinearExpr,
+            lhs: LinExpr,
             cmp_op: ComparisonOp,
             rhs: f64,
             range: f64,
@@ -107,7 +107,7 @@ impl MpsFile {
                 }
 
                 constraints.push(ConstraintDef {
-                    lhs: LinearExpr::empty(),
+                    lhs: LinExpr::zero(),
                     cmp_op,
                     rhs: 0.0,
                     range: 0.0,
@@ -164,7 +164,7 @@ impl MpsFile {
                     if key == obj_func_name {
                         cur_def.obj_coeff = val;
                     } else if let Some(idx) = constr_name2idx.get(key) {
-                        constraints[*idx].lhs.add(cur_var, val);
+                        constraints[*idx].lhs += cur_var * val;
                     } else if !free_rows.contains(key) {
                         return Err(lines.err(&format!("unknown constraint: {}", key)));
                     }
@@ -449,6 +449,8 @@ impl<'a> KVPairs<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Lp, results::SolveStatus};
+
     use super::*;
 
     const TEST_FILE: &str = "\
@@ -485,7 +487,10 @@ ENDATA
         assert_eq!(file.problem_name, "TESTPROB");
         assert_eq!(file.variables.len(), 3);
 
-        let sol = file.problem.solve().unwrap();
+        let mut lp = Lp::from(file.problem);
+        let SolveStatus::Optimal(sol) = lp.solve().unwrap() else {
+            panic!();
+        };
         assert_eq!(sol[file.variables["XONE"]], 4.0);
         assert_eq!(sol[file.variables["YTWO"]], -1.0);
         assert_eq!(sol[file.variables["ZTHREE"]], 6.0);
