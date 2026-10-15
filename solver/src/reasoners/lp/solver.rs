@@ -8,7 +8,7 @@ use crate::{
         state::{Domains, DomainsSnapshot, Explanation},
     },
     reasoners::lp::{
-        BoundConstraintId, BoundConstraintsStore, LpEvent, LpSum, Stats,
+        BoundConstraintId, BoundConstraintsStore, BoundRestriction, LpEvent, LpSum, Stats,
         explanation_utils::{LbBoundEvent, SumElem},
     },
 };
@@ -183,18 +183,13 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound_restrict_permanent(
-        &mut self,
-        var: Variable,
-        bound: Bound,
-        val: LongCst,
-    ) -> Result<bool, InfeasibilityReason> {
-        let restricts = match bound {
-            Bound::Lower => val > self.bounds[var.idx()].lower,
-            Bound::Upper => val < self.bounds[var.idx()].upper,
+    pub fn set_bound_restrict_permanent(&mut self, c: &BoundRestriction) -> Result<bool, InfeasibilityReason> {
+        let restricts = match c.bound {
+            Bound::Lower => c.val > self.bounds[c.var.idx()].lower,
+            Bound::Upper => c.val < self.bounds[c.var.idx()].upper,
         };
         if restricts {
-            self.set_bound(var, bound, val, BoundJustification::Unconditional)?;
+            self.set_bound(c.var, c.bound, c.val, BoundJustification::Unconditional)?;
         }
         Ok(restricts)
     }
@@ -207,40 +202,38 @@ impl Solver {
     /// Will return an error if the problem is immediatly detected as infeasible.
     pub fn set_bound_restrict(
         &mut self,
-        var: Variable,
-        bound: Bound,
-        val: LongCst,
+        c: &BoundRestriction,
         justification: BoundJustification,
         trail: &mut Trail<LpEvent>,
     ) -> Result<bool, InfeasibilityReason> {
-        match bound {
+        match c.bound {
             Bound::Lower => {
-                let old_val = self.bounds[var.idx()].lower;
-                let old_justification = self.bounds[var.idx()].lower_justification;
-                if val > old_val {
+                let old_val = self.bounds[c.var.idx()].lower;
+                let old_justification = self.bounds[c.var.idx()].lower_justification;
+                if c.val > old_val {
                     trail.push(LpEvent {
-                        var,
-                        bound,
+                        var: c.var,
+                        bound: c.bound,
                         old_val,
                         old_justification,
                     });
-                    self.set_bound(var, bound, val, justification)?;
+                    self.set_bound(c.var, c.bound, c.val, justification)?;
 
                     return Ok(true);
                 }
             }
             Bound::Upper => {
-                let old_val = self.bounds[var.idx()].upper;
-                let old_justification = self.bounds[var.idx()].upper_justification;
+                let old_val = self.bounds[c.var.idx()].upper;
+                let old_justification = self.bounds[c.var.idx()].upper_justification;
 
-                if val < old_val {
+                if c.val < old_val {
                     trail.push(LpEvent {
-                        var,
-                        bound,
+                        var: c.var,
+                        bound: c.bound,
                         old_val,
                         old_justification,
                     });
-                    self.set_bound(var, bound, val, justification)?;
+                    self.set_bound(c.var, c.bound, c.val, justification)?;
 
                     return Ok(true);
                 }

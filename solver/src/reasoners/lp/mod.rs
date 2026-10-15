@@ -489,16 +489,10 @@ impl Lp {
             let res = if cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT) {
                 // A cause entailed at the root can never be undone,
                 // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                self.solver
-                    .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val)
+                self.solver.set_bound_restrict_permanent(bound_constr)
             } else {
-                self.solver.set_bound_restrict(
-                    bound_constr.var,
-                    bound_constr.bound,
-                    bound_constr.val,
-                    BoundJustification::Trigger(index),
-                    &mut self.trail,
-                )
+                self.solver
+                    .set_bound_restrict(bound_constr, BoundJustification::Trigger(index), &mut self.trail)
             };
 
             if let Err(infeasible) = res {
@@ -602,10 +596,10 @@ impl Theory for Lp {
                     // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), justification, &mut self.trail)
+                            .set_bound_restrict(&BoundRestriction::leq(x_var, cst_int_to_long(event.new_upper_bound)), justification, &mut self.trail)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), justification, &mut self.trail)
+                            .set_bound_restrict(&BoundRestriction::geq(x_var, cst_int_to_long(-event.new_upper_bound)), justification, &mut self.trail)
                     };
 
                 if let Err(infeasible) = res {
