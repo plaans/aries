@@ -699,6 +699,12 @@ impl Solver {
         self.orig_constraints = new_orig_constraints;
         self.orig_constraints_csc = self.orig_constraints.to_csc();
 
+        // TODO: this reset is not ideal:
+        //   - it recomputes the basis matrix from scratch for every added constraint (which is expensive if we want to add many of them)
+        //   - it is the single failure point of this method. That's a failure that is extremely unlikely
+        //     (especially so when this is not called after a long sequence of pivots)
+        // An alternative to consider would be to have a marker bool for "we need to recompute all this" an only do it prior to solving.
+        // As a result this method would not be fallible.
         self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
 
         if self.enable_primal_steepest_edge || self.enable_dual_steepest_edge {
@@ -1389,6 +1395,13 @@ impl BasisSolver {
         self.eta_matrices.push(r_leaving, coeffs);
     }
 
+    /// Recompute the LU factorization of the basis matrix from scratch, based only on the original constraint and the idenitification
+    /// of the basic vars..
+    ///
+    /// This method is expensive (LU factorization from scratch) but gets rid of any accumulated numerical approximation during the pivot phases.
+    ///
+    /// The factorization may fail when B is nearly singular which is a marker of numerical instability
+    /// (mathematically, the simplex maintains the invariant the basis matrix is invertible)
     fn reset(&mut self, orig_constraints_csc: &CsMat, basic_vars: &[usize]) -> Result<(), NumericalErrors> {
         self.scratch.clear_sparse(basic_vars.len());
         self.eta_matrices.clear_and_resize(basic_vars.len());
