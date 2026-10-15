@@ -61,14 +61,9 @@ impl Lp {
     pub fn add_constraint(&mut self, sum: impl Into<LinExpr>, cmp_op: ComparisonOp, val: f64) {
         let constraint = sum.into().into_constraint(cmp_op, val);
         if let Some(checker) = self.solver.as_mut() {
-            let sum = CsVec::new(
-                checker.num_vars,
-                constraint.lhs.vars.clone(),
-                constraint.lhs.coeffs.clone(),
-            );
             // TODO: the check is ok in the common context of the reasoner but not in a more general setting.
             checker
-                .add_constraint(sum, constraint.comp_op, constraint.rhs)
+                .add_constraint(&constraint)
                 .expect("Adding a constraint that is not active yet should not generate an error")
         }
         self.problem.add_constraint_impl(constraint);
@@ -353,11 +348,7 @@ impl Problem {
         self.add_constraint_impl(expr.into().into_constraint(cmp_op, rhs))
     }
     fn add_constraint_impl(&mut self, c: Constraint) {
-        self.constraints.push((
-            CsVec::new(self.obj_coeffs.len(), c.lhs.vars, c.lhs.coeffs),
-            c.comp_op,
-            c.rhs,
-        ));
+        self.constraints.push(c.decompose(self.obj_coeffs.len()));
     }
 
     /// Set a new upper/lower bound to an existing variable

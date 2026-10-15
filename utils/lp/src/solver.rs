@@ -6,6 +6,8 @@ use crate::{
     sparse::{ScatteredVec, SparseMat, SparseVec},
 };
 
+use crate::prelude::*;
+
 use sprs::CompressedStorage;
 
 type CsMat = sprs::CsMatI<f64, usize>;
@@ -654,12 +656,9 @@ impl Solver {
         Ok(Variable(new_var_idx))
     }
 
-    pub(crate) fn add_constraint(
-        &mut self,
-        mut coeffs: CsVec,
-        cmp_op: ComparisonOp,
-        rhs: f64,
-    ) -> Result<(), NumericalErrors> {
+    pub(crate) fn add_constraint(&mut self, constraint: &Constraint) -> Result<(), NumericalErrors> {
+        let (mut coeffs, cmp_op, rhs) = constraint.decompose(self.num_vars);
+
         let slack_var = self.num_total_vars();
         let (slack_var_min, slack_var_max) = match cmp_op {
             ComparisonOp::Le => (0.0, f64::INFINITY),

@@ -1,6 +1,6 @@
-use std::ops::{Add, AddAssign, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign};
 
-use crate::prelude::*;
+use crate::{CsVec, prelude::*};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ScaledVariable {
@@ -28,16 +28,25 @@ impl LinExpr {
         self.terms.push(term);
     }
 
-    pub(crate) fn into_constraint(self, comp_op: ComparisonOp, rhs: f64) -> Constraint {
-        let mut lhs = TermsSumSparse::empty();
-        for t in self.terms {
-            lhs.add(t.variable, t.factor);
-        }
-        Constraint {
-            lhs,
-            comp_op,
-            rhs: rhs - self.constant,
-        }
+    /// Constraint comparing this  linear expression to a constant.
+    ///
+    /// This is a more general form of [`Self::leq`], [`Self::geq`] and [`Self::eq`].
+    pub fn into_constraint(mut self, comp_op: ComparisonOp, rhs: f64) -> Constraint {
+        self -= rhs;
+        Constraint { expr: self, comp_op }
+    }
+
+    /// Constraint requiring the expression to be lesser than or equal to `rhs`
+    pub fn leq(self, rhs: f64) -> Constraint {
+        self.into_constraint(LEQ, rhs)
+    }
+    /// Constraint requiring the expression to be greater than or equal to `rhs`
+    pub fn geq(self, rhs: f64) -> Constraint {
+        self.into_constraint(GEQ, rhs)
+    }
+    /// Constraint requiring the expression to be equal to `rhs`
+    pub fn eq(self, rhs: f64) -> Constraint {
+        self.into_constraint(EQ, rhs)
     }
 }
 impl From<(Variable, f64)> for ScaledVariable {
@@ -189,6 +198,30 @@ impl AddAssign<Variable> for LinExpr {
         self.push(1.0 * rhs);
     }
 }
+#[allow(clippy::suspicious_op_assign_impl)]
+impl AddAssign<f64> for LinExpr {
+    fn add_assign(&mut self, rhs: f64) {
+        self.constant += rhs
+    }
+}
+impl SubAssign<ScaledVariable> for LinExpr {
+    fn sub_assign(&mut self, rhs: ScaledVariable) {
+        self.push(-rhs);
+    }
+}
+
+#[allow(clippy::suspicious_op_assign_impl)]
+impl SubAssign<Variable> for LinExpr {
+    fn sub_assign(&mut self, rhs: Variable) {
+        self.push(-1.0 * rhs);
+    }
+}
+#[allow(clippy::suspicious_op_assign_impl)]
+impl SubAssign<f64> for LinExpr {
+    fn sub_assign(&mut self, rhs: f64) {
+        self.constant -= rhs
+    }
+}
 
 impl Add<ScaledVariable> for LinExpr {
     type Output = LinExpr;
@@ -226,36 +259,25 @@ impl Sub<Variable> for LinExpr {
 
 /// A linear constraint of the for `f_1 * v_1 + ... f_n * v_n {<=,=,>=} v`
 #[derive(Debug, Clone)]
-pub(crate) struct Constraint {
-    pub(crate) lhs: TermsSumSparse,
+pub struct Constraint {
+    pub(crate) expr: LinExpr,
+    /// Comparison of the expression to 0
     pub(crate) comp_op: ComparisonOp,
-    pub(crate) rhs: f64,
 }
 
-/// An intermediate representation before building a sparse CsVec for representing constraints in the solver.
-#[derive(Clone, Debug)]
-pub(crate) struct TermsSumSparse {
-    pub(crate) vars: Vec<usize>,
-    pub(crate) coeffs: Vec<f64>,
-}
-
-impl TermsSumSparse {
-    /// Creates an empty linear expression.
-    pub fn empty() -> Self {
-        Self {
-            vars: vec![],
-            coeffs: vec![],
-        }
+impl Constraint {
+    /// Splits the constraints into its main components
+    pub fn split(self) -> (LinExpr, ComparisonOp, f64) {
+        (self.expr, self.comp_op, 0.0)
     }
 
-    /// Add a single term to the linear expression.
-    ///
-    /// Variables can be added to an expression in any order, but adding the same variable
-    /// several times is forbidden (the [`Problem::add_constraint`] method will panic).
-    ///
-    /// [`Problem::add_constraint`]: struct.Problem.html#method.add_constraint
-    pub fn add(&mut self, var: Variable, coeff: f64) {
-        self.vars.push(var.0);
-        self.coeffs.push(coeff);
+    pub(crate) fn decompose(&self, num_vars: usize) -> (CsVec, ComparisonOp, f64) {
+        let mut vars = Vec::with_capacity(self.expr.terms.len());
+        let mut coeffs = Vec::with_capacity(self.expr.terms.len());
+        for t in &self.expr.terms {
+            vars.push(t.variable.0);
+            coeffs.push(t.factor);
+        }
+        (CsVec::new(num_vars, vars, coeffs), self.comp_op, -self.expr.constant)
     }
 }

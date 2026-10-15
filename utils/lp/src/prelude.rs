@@ -9,7 +9,7 @@
 
 pub use crate::{
     Bound, ComparisonOp, Error, Lp, OptimizationDirection, Problem, Solution, Variable,
-    expr::LinExpr,
+    expr::{Constraint, LinExpr},
     results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
 };
 
