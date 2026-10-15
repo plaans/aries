@@ -53,8 +53,7 @@ impl Lp {
             // The solver works on the direction-adjusted objective: `Problem::add_var` negates
             // the coefficient for maximization, so the solver must receive the adjusted value
             let obj_coeff = self.problem.get_obj_coeffs()[var.idx()];
-            let res = solver.add_variable(obj_coeff, lb, ub);
-            let var2 = res.expect("A variable with inconsistent bounds was added");
+            let var2 = solver.add_variable(obj_coeff, lb, ub);
             assert_eq!(var, var2);
         }
         var
@@ -63,11 +62,8 @@ impl Lp {
     /// Add a constraint (row) to the LP.
     pub fn add_constraint(&mut self, sum: impl Into<LinExpr>, cmp_op: ComparisonOp, val: f64) {
         let constraint = sum.into().into_constraint(cmp_op, val);
-        if let Some(checker) = self.solver.as_mut() {
-            // TODO: the check is ok in the common context of the reasoner but not in a more general setting.
-            checker
-                .add_constraint(&constraint)
-                .expect("Adding a constraint that is not active yet should not generate an error")
+        if let Some(solver) = self.solver.as_mut() {
+            solver.add_constraint(&constraint);
         }
         self.problem.add_constraint_impl(constraint);
     }
