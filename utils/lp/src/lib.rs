@@ -50,6 +50,9 @@ impl Lp {
         let (lb, ub) = bounds;
         let var = self.problem.add_var(obj_coeff, (lb, ub));
         if let Some(solver) = self.solver.as_mut() {
+            // The solver works on the direction-adjusted objective: `Problem::add_var` negates
+            // the coefficient for maximization, so the solver must receive the adjusted value
+            let obj_coeff = self.problem.get_obj_coeffs()[var.idx()];
             let res = solver.add_variable(obj_coeff, lb, ub);
             let var2 = res.expect("A variable with inconsistent bounds was added");
             assert_eq!(var, var2);
