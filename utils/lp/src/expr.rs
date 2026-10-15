@@ -28,6 +28,16 @@ impl LinExpr {
         self.terms.push(term);
     }
 
+    /// The constant term of this expression.
+    pub fn constant(&self) -> f64 {
+        self.constant
+    }
+
+    /// The `(variable, factor)` terms of this expression.
+    pub fn iter(&self) -> impl Iterator<Item = (Variable, f64)> + '_ {
+        self.terms.iter().map(|t| (t.variable, t.factor))
+    }
+
     /// Constraint comparing this  linear expression to a constant.
     ///
     /// This is a more general form of [`Self::leq`], [`Self::geq`] and [`Self::eq`].
@@ -269,6 +279,16 @@ impl Constraint {
     /// Splits the constraints into its main components
     pub fn split(self) -> (LinExpr, ComparisonOp, f64) {
         (self.expr, self.comp_op, 0.0)
+    }
+
+    /// The linear expression that this constraint compares to zero.
+    pub fn expr(&self) -> &LinExpr {
+        &self.expr
+    }
+
+    /// The comparison operator applied between the expression and zero.
+    pub fn comp_op(&self) -> ComparisonOp {
+        self.comp_op
     }
 
     pub(crate) fn decompose(&self, num_vars: usize) -> (CsVec, ComparisonOp, f64) {
