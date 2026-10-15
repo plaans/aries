@@ -209,49 +209,6 @@ pub enum ComparisonOp {
     Ge,
 }
 
-/// An error encountered while solving a problem.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Error {
-    /// The problem is infeasible because an added constraint is a contradiction
-    /// or because a var has inconsistent bounds: min > max
-    IncompatibleBounds(Variable),
-    /// Constrains can't simultaneously be satisfied and a certificate was generated
-    /// The coefficients of the certificate correspond to the associated constraint
-    InfeasibleWithCertificate(Vec<f64>),
-    /// The objective function is unbounded.
-    Unbounded,
-    /// Floating point operations caused unstability
-    Unstable,
-}
-
-impl From<results::NumericalErrors> for Error {
-    fn from(_: results::NumericalErrors) -> Self {
-        Self::Unstable
-    }
-}
-
-impl From<InfeasibilityReason> for Error {
-    fn from(value: InfeasibilityReason) -> Self {
-        match value {
-            InfeasibilityReason::IncompatibleBounds(variable) => Error::IncompatibleBounds(variable),
-            InfeasibilityReason::Certified(items) => Error::InfeasibleWithCertificate(items),
-        }
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Error::IncompatibleBounds(var) => write!(f, "problem is infeasible: vars with incoherent bounds: {var:?}"),
-            Error::InfeasibleWithCertificate(v) => write!(f, "problem is infeasible, certificate: {:?}", v),
-            Error::Unbounded => write!(f, "problem is unbounded"),
-            Error::Unstable => write!(f, "problem is instable"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
 /// A specification of a linear programming problem: the objective direction, the variables
 /// with their bounds, and the constraints.
 ///

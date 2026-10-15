@@ -8,10 +8,13 @@
 //! ```
 
 pub use crate::{
-    Bound, ComparisonOp, Error, Lp, OptimizationDirection, Problem, Solution, Variable,
+    Bound, ComparisonOp, Lp, OptimizationDirection, Problem, Solution, Variable,
     expr::{Constraint, LinExpr},
     results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
 };
+
+// only re-exported for in-crate use
+pub(crate) use crate::results::Error;
 
 /// `<=` Comparison operator.
 pub const LEQ: ComparisonOp = ComparisonOp::Le;
