@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Constraint, prelude::*};
+use crate::{expr::Constraint, prelude::*, solver::Stats};
 
 /// A Linear Program (LP), that can be use to construct the LP and solve it.
 #[derive(Clone, Debug)]
@@ -174,6 +174,11 @@ impl Lp {
             Err(Error::Unbounded) => Ok(SolveStatus::Unbounded),
             Err(Error::Timeout) => Err(SolverFailure::Timeout),
         }
+    }
+
+    /// Returns solver statistics.
+    pub fn solver_stats(&self) -> &Stats {
+        self.solver.as_ref().map_or(&Stats::DEFAULT, |s| &s.stats)
     }
 }
 

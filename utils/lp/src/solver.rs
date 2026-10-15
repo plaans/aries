@@ -77,10 +77,23 @@ pub(crate) struct Solver {
     pub stats: Stats,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct Stats {
     /// Total number of pivots [`Solver::pivot`] done since the solver was created.
     pub num_pivots: usize,
+}
+
+impl Stats {
+    /// The default statistics given to the solver when creating it.
+    ///
+    /// We need this const to be able to hand-out statistics even if no solver was created.
+    pub(crate) const DEFAULT: Stats = Stats { num_pivots: 0 };
+}
+
+impl Default for Stats {
+    fn default() -> Self {
+        Stats::DEFAULT
+    }
 }
 
 #[derive(Clone, Debug)]
