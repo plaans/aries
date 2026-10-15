@@ -43,6 +43,15 @@ impl<'a> DomainsSnapshot<'a> {
         }
     }
 
+    /// Returns a snapshot of the state at the last event of the given decision level.
+    pub fn up_to(domains: &'a Domains, lvl: DecLvl) -> Self {
+        let first_ignored_event = domains.trail().first_event_after(lvl);
+        Self::Past {
+            doms: domains,
+            next_event: first_ignored_event,
+        }
+    }
+
     /// Returns the upper bound of the given (signed) variable.
     ///
     /// Note: this is only meant to implement the [`Dom`] trait.

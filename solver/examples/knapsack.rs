@@ -35,6 +35,7 @@ fn solve(items: &[(IntCst, IntCst)], capacity: IntCst) -> Option<IntCst> {
             }
         }
         println!();
+        solver.print_stats();
         Some(objective_value)
     } else {
         println!("No solution");
