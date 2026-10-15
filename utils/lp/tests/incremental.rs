@@ -89,6 +89,7 @@ fn run_solve(lp: &mut Lp, nb_vars: usize) -> (Status, Option<f64>, Option<Vec<f6
         Ok(SolveStatus::Infeasible(_)) => (Status::Infeasible, None, None),
         Ok(SolveStatus::Unbounded) => (Status::Unbounded, None, None),
         Err(SolverFailure::Unstable) => (Status::Unstable, None, None),
+        Err(SolverFailure::Timeout) => unreachable!("no deadline was set"),
     }
 }
 

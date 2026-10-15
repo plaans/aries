@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::{
     Bound, ComparisonOp, CsVec, Error, Variable,
     helpers::{resized_view, to_dense},
@@ -70,6 +72,15 @@ pub(crate) struct Solver {
     sq_norms_update_helper: Vec<f64>,
     inv_basis_row_coeffs: SparseVec,
     row_coeffs: ScatteredVec,
+
+    /// Statistics of the solver
+    pub stats: Stats,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct Stats {
+    /// Total number of pivots [`Solver::pivot`] done since the solver was created.
+    pub num_pivots: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -360,6 +371,7 @@ impl Solver {
             sq_norms_update_helper,
             inv_basis_row_coeffs: SparseVec::new(),
             row_coeffs: ScatteredVec::empty(num_total_vars - num_constraints),
+            stats: Default::default(),
         };
 
         log::debug!(
@@ -499,26 +511,26 @@ impl Solver {
         self.num_vars + self.num_constraints()
     }
 
-    pub(crate) fn solve_feasibility(&mut self) -> Result<(), Error> {
+    pub(crate) fn solve_feasibility(&mut self, deadline: Deadline) -> Result<(), Error> {
         self.process_pending_basis_updates()?;
 
         if !self.is_primal_feasible {
-            self.restore_feasibility()?;
+            self.restore_feasibility(deadline)?;
         }
 
         Ok(())
     }
 
-    pub(crate) fn initial_solve(&mut self) -> Result<(), Error> {
+    pub(crate) fn initial_solve(&mut self, deadline: Deadline) -> Result<(), Error> {
         self.process_pending_basis_updates()?;
 
         if !self.is_primal_feasible {
-            self.restore_feasibility()?;
+            self.restore_feasibility(deadline)?;
         }
 
         if !self.is_dual_feasible {
             self.recalc_obj_coeffs()?;
-            self.optimize()?;
+            self.optimize(deadline)?;
         }
 
         // Disable updates of primal sq. norms, because lengthy primal simplex runs
@@ -528,9 +540,13 @@ impl Solver {
         Ok(())
     }
 
-    fn optimize(&mut self) -> Result<(), Error> {
+    fn optimize(&mut self, deadline: Deadline) -> Result<(), Error> {
         debug_assert!(self.pending.is_none());
         for iter in 0.. {
+            if self.time_elapsed(deadline) {
+                return Err(Error::Timeout);
+            }
+
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_dual_infeasibility();
                 log::debug!(
@@ -554,7 +570,7 @@ impl Solver {
         Ok(())
     }
 
-    fn restore_feasibility(&mut self) -> Result<(), Error> {
+    fn restore_feasibility(&mut self, deadline: Deadline) -> Result<(), Error> {
         debug_assert!(self.pending.is_none());
         let obj_str = if self.is_dual_feasible {
             "obj."
@@ -563,6 +579,10 @@ impl Solver {
         };
 
         for iter in 0.. {
+            if self.time_elapsed(deadline) {
+                return Err(Error::Timeout);
+            }
+
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_primal_infeasibility();
                 log::debug!(
@@ -593,6 +613,14 @@ impl Solver {
 
         self.is_primal_feasible = true;
         Ok(())
+    }
+
+    fn time_elapsed(&self, deadline: Deadline) -> bool {
+        match deadline {
+            Deadline::NumPivots(max_pivots) => self.stats.num_pivots >= max_pivots,
+            Deadline::Date(deadline) => Instant::now() >= deadline,
+            Deadline::None => false,
+        }
     }
 
     /// Restores the validity of the basis solver after structural model additions
@@ -1173,9 +1201,10 @@ impl Solver {
     }
 
     fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), NumericalErrors> {
+        self.stats.num_pivots += 1;
         debug_assert!(self.pending.is_none());
         // TODO: periodically (say, every 1000 pivots) recalc basic vars and object coeffs
-        // from scratch for numerical stability.
+        // from scratch for numerical stability. (from minilp)
 
         self.cur_obj_val += self.nb_var_obj_coeffs[pivot_info.col] * pivot_info.entering_diff;
 
@@ -1618,7 +1647,7 @@ mod tests {
             ],
         )
         .unwrap();
-        sol.initial_solve().unwrap();
+        sol.initial_solve(Deadline::None).unwrap();
 
         assert!(sol.is_primal_feasible);
         assert!(sol.is_dual_feasible);
@@ -1640,7 +1669,7 @@ mod tests {
             ],
         )
         .unwrap()
-        .initial_solve();
+        .initial_solve(Deadline::None);
         assert_eq!(
             std::mem::discriminant(&infeasible.unwrap_err()),
             std::mem::discriminant(&Error::InfeasibleWithCertificate(vec![]))

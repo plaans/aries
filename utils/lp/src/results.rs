@@ -91,6 +91,10 @@ pub enum InfeasibilityReason {
 pub enum SolverFailure {
     /// Instability detected in floating point operations, preventing the solver to reach a conclusion.
     Unstable,
+    /// Solver reached an explicit time limit before reaching a conclusion.
+    ///
+    /// Can only occur when calling the solver with an explicit deadline.
+    Timeout,
 }
 
 /// Error denoting the presence of numerical instability.
@@ -112,6 +116,7 @@ pub(crate) enum Error {
     Unbounded,
     /// Floating point operations caused unstability
     Unstable,
+    Timeout,
 }
 
 impl From<NumericalErrors> for Error {
@@ -136,6 +141,7 @@ impl std::fmt::Display for Error {
             Error::InfeasibleWithCertificate(v) => write!(f, "problem is infeasible, certificate: {:?}", v),
             Error::Unbounded => write!(f, "problem is unbounded"),
             Error::Unstable => write!(f, "problem is instable"),
+            Error::Timeout => write!(f, "solver did not terminate in the allocated time."),
         }
     }
 }

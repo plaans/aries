@@ -13,6 +13,8 @@ mod sparse;
 pub mod prelude;
 pub mod results;
 
+use std::time::{Duration, Instant};
+
 #[allow(unused_imports)]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -116,6 +118,11 @@ impl Lp {
     ///
     /// Note that the objective is completely ignored when checking feasibility.
     pub fn check_feasibility(&mut self) -> Result<FeasibilityStatus, SolverFailure> {
+        self.check_feasibility_with_deadline(Deadline::None)
+    }
+
+    /// Same as [`Self::check_feasibility`] but accepts a [`Deadline`] at which the search will time-out.
+    pub fn check_feasibility_with_deadline(&mut self, deadline: Deadline) -> Result<FeasibilityStatus, SolverFailure> {
         let solver = match self.get_solver() {
             Ok(solver) => solver,
             Err(infeasibitiy) => {
@@ -123,7 +130,7 @@ impl Lp {
             }
         };
 
-        match solver.solve_feasibility() {
+        match solver.solve_feasibility(deadline) {
             Ok(()) => Ok(FeasibilityStatus::Feasible),
             Err(Error::IncompatibleBounds(var)) => Ok(FeasibilityStatus::Infeasible(
                 InfeasibilityReason::IncompatibleBounds(var),
@@ -133,12 +140,21 @@ impl Lp {
             }
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => unreachable!("Cannot return unbounded when checking feasibility only"),
+            Err(Error::Timeout) => Err(SolverFailure::Timeout),
         }
     }
     /// Solve the problem, finding an assignment to all variables that maximizes/minimizes the objective.
     ///
     /// Will returns an error if the solve could not terminate and the status of the LP is therefore not known.
     pub fn solve<'this>(&'this mut self) -> Result<SolveStatus<'this>, SolverFailure> {
+        self.solve_with_deadline(Deadline::None)
+    }
+
+    /// Same as [`Self::solve`] but accepts a [`Deadline`] at which the search will time-out.
+    pub fn solve_with_deadline<'this>(
+        &'this mut self,
+        deadline: Deadline,
+    ) -> Result<SolveStatus<'this>, SolverFailure> {
         let num_vars = self.problem.obj_coeffs.len();
         let direction = self.problem.direction;
         let solver = match self.get_solver() {
@@ -146,7 +162,7 @@ impl Lp {
             Err(infeasible) => return Ok(SolveStatus::Infeasible(infeasible)),
         };
         use SolveStatus::*;
-        match solver.initial_solve() {
+        match solver.initial_solve(deadline) {
             Ok(()) => Ok(Optimal(Solution {
                 num_vars,
                 direction,
@@ -156,6 +172,7 @@ impl Lp {
             Err(Error::InfeasibleWithCertificate(cert)) => Ok(Infeasible(InfeasibilityReason::Certified(cert))),
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => Ok(SolveStatus::Unbounded),
+            Err(Error::Timeout) => Err(SolverFailure::Timeout),
         }
     }
 }
@@ -207,6 +224,39 @@ pub enum ComparisonOp {
     Le,
     /// The >= operator (greater than or equal to)
     Ge,
+}
+
+/// Absolute deadline to pass to a solver to limit its runtime.
+#[derive(Copy, Clone, Debug)]
+pub enum Deadline {
+    /// Maximum number of pivots SINCE THE SOLVER CREATION.
+    NumPivots(usize),
+    /// Absolute time at which the solver should stop.
+    ///
+    /// See [`Self::duration`] and [`Self::duration_s`] for creating deadlines from durations.
+    Date(Instant),
+    /// Unlimited runtime.
+    None,
+}
+
+impl Deadline {
+    /// An absolute time ([`Instant]).
+    pub fn date(deadline: Instant) -> Self {
+        Deadline::Date(deadline)
+    }
+
+    /// Convenience method to create a deadline from a duration.
+    ///
+    /// The deadline will be set to `duration` after the date *at which this function is called*
+    /// (as given by [`Instant::now`]).
+    pub fn duration(duration: Duration) -> Self {
+        Self::date(Instant::now() + duration)
+    }
+
+    /// Convenience method to specify a deadline from a duration in seconds.
+    pub fn duration_s(seconds: f64) -> Self {
+        Self::duration(Duration::from_secs_f64(seconds))
+    }
 }
 
 /// A specification of a linear programming problem: the objective direction, the variables
