@@ -235,6 +235,12 @@ pub enum ComparisonOp {
 #[derive(Copy, Clone, Debug)]
 pub enum Deadline {
     /// Maximum number of pivots SINCE THE SOLVER CREATION.
+    ///
+    /// The solver never exceeds this budget, but a solve may still *conclude* (feasible,
+    /// infeasible, optimal) with no budget left: reaching a conclusion costs no pivot.
+    /// When the budget is exhausted mid-search, the call times out ([`SolverFailure::Timeout`])
+    /// leaving a consistent state from which a later call resumes, warm-starting from the
+    /// pivots already performed.
     NumPivots(usize),
     /// Absolute time at which the solver should stop.
     ///
@@ -1164,6 +1170,43 @@ mod tests {
         }
     }
 
+    /// Builds a degenerate feasibility-only LP (zero objective, duplicated equality
+    /// rows) together with the order in which its variables must be fixed to a hidden
+    /// satisfying assignment — the usage pattern of the CP solver's LP reasoner.
+    fn degenerate_problem_and_fixing_order(seed: u64) -> (Lp, Vec<Variable>, Vec<usize>) {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let num_vars = 10 + rng.gen_range(0, 10);
+        let num_cons = num_vars * 2 + rng.gen_range(0, num_vars);
+        const HIDDEN: f64 = 2.0; // the assignment all vars will be fixed to
+
+        let mut problem = Lp::new(OptimizationDirection::Minimize);
+        let vars: Vec<Variable> = (0..num_vars).map(|_| problem.add_var(0.0, (0.0, 4.0))).collect();
+
+        // Equalities satisfied by the hidden assignment; duplicated rows make the
+        // instance highly degenerate (many rows are linear combinations of others).
+        for _ in 0..num_cons {
+            let nnz = 2 + rng.gen_range(0, 3);
+            let mut terms: Vec<(Variable, f64)> = vec![];
+            for _ in 0..nnz {
+                let v = vars[rng.gen_range(0, num_vars)];
+                let c = 1.0 + rng.gen_range(0, 2) as f64;
+                match terms.iter_mut().find(|(t, _)| *t == v) {
+                    Some(entry) => entry.1 += c,
+                    None => terms.push((v, c)),
+                }
+            }
+            terms.sort_by_key(|(v, _)| v.idx());
+            let rhs = HIDDEN * terms.iter().map(|(_, c)| *c).sum::<f64>();
+            problem.add_constraint(terms, ComparisonOp::Eq, rhs);
+        }
+
+        let mut order: Vec<usize> = (0..num_vars).collect();
+        for i in (1..order.len()).rev() {
+            order.swap(i, rng.gen_range(0, i + 1));
+        }
+        (problem, vars, order)
+    }
+
     #[test]
     fn degenerate_feasibility_checks_conclude() {
         // Feasibility-only usage (zero objective) on highly degenerate instances, with
@@ -1173,43 +1216,48 @@ mod tests {
         // ratio test is fully degenerate and can cycle. Every check must conclude within
         // a generous pivot budget.
         for seed in 1..=20u64 {
-            let mut rng = SmallRng::seed_from_u64(seed);
-            let num_vars = 10 + rng.gen_range(0, 10);
-            let num_cons = num_vars * 2 + rng.gen_range(0, num_vars);
-            const HIDDEN: f64 = 2.0; // the assignment all vars will be fixed to
-
-            let mut problem = Lp::new(OptimizationDirection::Minimize);
-            let vars: Vec<Variable> = (0..num_vars).map(|_| problem.add_var(0.0, (0.0, 4.0))).collect();
-
-            // Equalities satisfied by the hidden assignment; duplicated rows make the
-            // instance highly degenerate (many rows are linear combinations of others).
-            for _ in 0..num_cons {
-                let nnz = 2 + rng.gen_range(0, 3);
-                let mut terms: Vec<(Variable, f64)> = vec![];
-                for _ in 0..nnz {
-                    let v = vars[rng.gen_range(0, num_vars)];
-                    let c = 1.0 + rng.gen_range(0, 2) as f64;
-                    match terms.iter_mut().find(|(t, _)| *t == v) {
-                        Some(entry) => entry.1 += c,
-                        None => terms.push((v, c)),
-                    }
-                }
-                terms.sort_by_key(|(v, _)| v.idx());
-                let rhs = HIDDEN * terms.iter().map(|(_, c)| *c).sum::<f64>();
-                problem.add_constraint(terms, ComparisonOp::Eq, rhs);
-            }
-
-            let mut order: Vec<usize> = (0..num_vars).collect();
-            for i in (1..order.len()).rev() {
-                order.swap(i, rng.gen_range(0, i + 1));
-            }
+            let (mut problem, vars, order) = degenerate_problem_and_fixing_order(seed);
             for &v in &order {
-                problem.set_bound(vars[v], Bound::Lower, HIDDEN).unwrap();
-                problem.set_bound(vars[v], Bound::Upper, HIDDEN).unwrap();
+                problem.set_bound(vars[v], Bound::Lower, 2.0).unwrap();
+                problem.set_bound(vars[v], Bound::Upper, 2.0).unwrap();
                 let res = problem
                     .check_feasibility_with_deadline(Deadline::NumPivots(10_000))
                     .unwrap();
                 assert!(res.feasible(), "seed {seed}: fixing var {v} must stay feasible");
+            }
+        }
+    }
+
+    #[test]
+    fn feasibility_checks_conclude_under_tight_pivot_budgets() {
+        // Mimics the LP reasoner's default rhythm: the pivot budget starts at zero and
+        // grows by a fraction of a pivot per decision, so each check performs at most a
+        // handful of pivots — sometimes none — and the restoration of feasibility is
+        // spread over many calls. Interrupted checks must leave a consistent resumable
+        // state, and the final verdict must be correct.
+        for budget_increment in [0usize, 1, 3] {
+            for seed in 1..=10u64 {
+                let (mut problem, vars, order) = degenerate_problem_and_fixing_order(seed);
+                for &v in &order {
+                    problem.set_bound(vars[v], Bound::Lower, 2.0).unwrap();
+                    problem.set_bound(vars[v], Bound::Upper, 2.0).unwrap();
+
+                    // Whatever budget is left, plus a small increment.
+                    let max_pivots = problem.solver_stats().num_pivots + budget_increment;
+                    match problem.check_feasibility_with_deadline(Deadline::NumPivots(max_pivots)) {
+                        Ok(FeasibilityStatus::Feasible) | Err(SolverFailure::Timeout) => {}
+                        other => panic!("seed {seed}, budget +{budget_increment}: unexpected result {other:?}"),
+                    }
+                }
+                // Once the search is over, a check with a generous budget must conclude.
+                let res = problem
+                    .check_feasibility_with_deadline(Deadline::NumPivots(10_000))
+                    .unwrap();
+                assert!(
+                    res.feasible(),
+                    "seed {seed}, budget +{budget_increment}: must be feasible in the end"
+                );
+                assert!(problem.solver_stats().num_pivots < 10_000);
             }
         }
     }
