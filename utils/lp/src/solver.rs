@@ -648,6 +648,10 @@ impl Solver {
         }
 
         for iter in 0.. {
+            if self.time_elapsed(deadline) {
+                return Err(Error::Timeout);
+            }
+
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_dual_infeasibility();
                 log::debug!(
@@ -660,11 +664,6 @@ impl Solver {
             }
 
             if let Some(pivot_info) = self.choose_pivot()? {
-                // Concluding "optimal" costs no pivot, so the deadline is checked only
-                // once there is an actual pivot to perform (see [`Self::restore_feasibility`]).
-                if self.time_elapsed(deadline) {
-                    return Err(Error::Timeout);
-                }
                 self.pivot(&pivot_info)?;
             } else {
                 log::debug!("found optimum in {} iterations, obj.: {}", iter + 1, self.cur_obj_val,);
@@ -707,6 +706,10 @@ impl Solver {
         let mut last_obj_val = self.cur_obj_val;
 
         for iter in 0.. {
+            if self.time_elapsed(deadline) {
+                return Err(Error::Timeout);
+            }
+
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_primal_infeasibility();
                 log::debug!(
@@ -720,14 +723,6 @@ impl Solver {
             }
 
             if let Some((row, leaving_new_val)) = self.choose_pivot_row_dual() {
-                // Concluding "feasible" costs no pivot, so the deadline is checked only
-                // once there is an actual pivot to perform: a call with no budget left
-                // can still conclude, e.g. when the previous call's last pivot completed
-                // the restoration.
-                if self.time_elapsed(deadline) {
-                    return Err(Error::Timeout);
-                }
-
                 // The dual ratio test is about to run: make sure tie-breaking
                 // perturbations are in place (no-op if already perturbed).
                 if !self.obj_coeffs_perturbed {
@@ -2158,7 +2153,7 @@ mod tests {
         // pivots. This is the rhythm of the LP reasoner, whose pivot budget starts at
         // zero and grows by a fraction of a pivot per decision: checks must be no-ops
         // when nothing is allowed, leave a resumable state when interrupted, and
-        // conclude as soon as the work is done.
+        // conclude as soon as one spare pivot of budget is available.
         let mut sol = Solver::try_new(
             &[0.0, 0.0, 0.0],
             &[0.0, 0.0, 0.0],
@@ -2194,9 +2189,27 @@ mod tests {
         assert!(sol.obj_coeffs_inexact);
 
         // Budget replenished: the restoration resumes — without re-applying the
-        // perturbations — and concludes although the budget exactly covers the last
-        // pivot (concluding costs no pivot).
-        sol.solve_feasibility(Deadline::NumPivots(2)).unwrap();
+        // perturbations — and completes the work with the last allowed pivot. Since the
+        // budget is then exactly exhausted, the call still times out (the budget is
+        // checked before each pivot iteration, and concluding requires one spare pivot)
+        // and `is_primal_feasible` is left stale.
+        assert_eq!(
+            sol.solve_feasibility(Deadline::NumPivots(2)).unwrap_err(),
+            Error::Timeout
+        );
+        assert_eq!(sol.stats.num_pivots, 2);
+        assert!(!sol.is_primal_feasible);
+
+        // Further calls without spare budget are no-ops (no pivot selection is run).
+        assert_eq!(
+            sol.solve_feasibility(Deadline::NumPivots(2)).unwrap_err(),
+            Error::Timeout
+        );
+        assert_eq!(sol.stats.num_pivots, 2);
+
+        // One spare pivot of budget: the work detection finds nothing left to do and
+        // concludes, without performing any pivot.
+        sol.solve_feasibility(Deadline::NumPivots(3)).unwrap();
         assert!(sol.is_primal_feasible);
         assert_eq!(sol.stats.num_pivots, 2);
         // The perturbations are only removed by optimization, not by feasibility checks.

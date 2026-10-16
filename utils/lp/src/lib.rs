@@ -236,11 +236,17 @@ pub enum ComparisonOp {
 pub enum Deadline {
     /// Maximum number of pivots SINCE THE SOLVER CREATION.
     ///
-    /// The solver never exceeds this budget, but a solve may still *conclude* (feasible,
-    /// infeasible, optimal) with no budget left: reaching a conclusion costs no pivot.
-    /// When the budget is exhausted mid-search, the call times out ([`SolverFailure::Timeout`])
-    /// leaving a consistent state from which a later call resumes, warm-starting from the
-    /// pivots already performed.
+    /// The budget is checked before each pivot iteration: a call whose budget is already
+    /// exhausted returns [`SolverFailure::Timeout`] without doing any work — in particular
+    /// without selecting a pivot, which is what keeps repeated no-budget calls almost
+    /// free. The work-detection (whether a pivot is needed at all) is accounted as part
+    /// of a pivot iteration, so reaching a conclusion (feasible, infeasible, optimal)
+    /// requires one spare pivot of budget, even when the conclusion itself needs no
+    /// pivot.
+    ///
+    /// When the budget is exhausted mid-search, the call times out leaving a consistent
+    /// state from which a later call resumes, warm-starting from the pivots already
+    /// performed.
     NumPivots(usize),
     /// Absolute time at which the solver should stop.
     ///
