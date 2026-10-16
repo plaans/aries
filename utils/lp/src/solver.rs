@@ -51,22 +51,35 @@ pub(crate) struct Solver {
     /// - a non-basic variable's reduced cost pulls it outside the bound it sits at
     ///   (genuine dual infeasibility), or nothing is known about the reduced costs
     ///   (after a bound update or a structural addition left them stale);
-    /// - the reduced costs contain anti-degeneracy perturbations or Harris shifts,
-    ///   which are only removed by [`Self::recalc_obj_coeffs`].
+    /// - the reduced costs are not the exact ones: an artificial objective is in use, or
+    ///   anti-degeneracy perturbations or Harris shifts have been applied (tracked by
+    ///   [`Self::obj_coeffs_inexact`]; only [`Self::recalc_obj_coeffs`] removes them).
     ///
-    /// In all cases the reaction is the same: [`Self::initial_solve`] recomputes the reduced
+    /// In all cases the reaction is the same: [`Self::optimize`] recomputes the reduced
     /// costs from the original objective and re-optimizes, restoring exact optimality.
     /// Feasibility checking ([`Self::solve_feasibility`]) is unaffected: it runs the dual
     /// simplex, which only requires the costs it is given to be dual feasible, exact or not.
     is_dual_feasible: bool,
 
     /// `true` if [`Self::nb_var_obj_coeffs`] may deviate from the exact reduced costs of
-    /// [`Self::orig_obj_coeffs`] because of perturbations or shifts.
+    /// [`Self::orig_obj_coeffs`] for the current basis.
     ///
-    /// Invariant: this flag is `false` iff the reduced costs are exact; the only place where
-    /// it is cleared is [`Self::recalc_obj_coeffs`], which recomputes them from the original
-    /// objective. It guards against applying the perturbations of
-    /// [`Self::perturb_obj_coeffs`] more than once.
+    /// This is the case when an artificial objective is in use (see [`Solver::try_new`]),
+    /// or when anti-degeneracy perturbations or Harris shifts have been applied (see
+    /// [`Self::perturb_obj_coeffs`] and [`Self::shift_obj_coeff`]).
+    ///
+    /// Invariant: this flag is `false` if and only if the reduced costs are exact.
+    /// [`Self::recalc_obj_coeffs`] is the only place where it is cleared. Consumers that
+    /// need the exact reduced costs — [`Self::optimize`] — recompute them when this flag
+    /// is set, so they remain correct regardless of the context in which they are called.
+    obj_coeffs_inexact: bool,
+
+    /// `true` if anti-degeneracy perturbations have been applied to the reduced costs
+    /// and not removed since.
+    ///
+    /// Invariant: cleared together with [`Self::obj_coeffs_inexact`] by
+    /// [`Self::recalc_obj_coeffs`]. It guards [`Self::perturb_obj_coeffs`] against
+    /// accumulating perturbations on top of each other.
     obj_coeffs_perturbed: bool,
 
     // Updated on each pivot
@@ -103,11 +116,18 @@ pub(crate) struct Solver {
 
     pub(crate) cur_obj_val: f64,
 
-    // Recomputed on each pivot
+    // Scratch buffers, recomputed on each pivot. Because they are scratch state, methods
+    // that read them (`pivot`) must be able to tell *what* they currently hold: the
+    // `*_of` fields track the provenance of each buffer and are asserted by the consumers
+    // (see [`Solver::calc_col_coeffs`] and [`Solver::calc_row_coeffs`], which set them).
     col_coeffs: SparseVec,
+    /// The index in `nb_var_*` arrays of the var whose coefficients `col_coeffs` holds.
+    col_coeffs_of: Option<usize>,
     sq_norms_update_helper: Vec<f64>,
     inv_basis_row_coeffs: SparseVec,
     row_coeffs: ScatteredVec,
+    /// The constraint row whose coefficients `row_coeffs` and `inv_basis_row_coeffs` hold.
+    row_coeffs_of: Option<usize>,
 
     /// Scratch space for the bound flipping ratio test: the original columns of the flipped
     /// variables, weighted by their change of value. See
@@ -400,6 +420,9 @@ impl Solver {
             enable_dual_steepest_edge,
             is_primal_feasible,
             is_dual_feasible,
+            // The artificial objective (if any) is not the exact reduced costs of the
+            // original objective.
+            obj_coeffs_inexact: need_artificial_obj,
             obj_coeffs_perturbed: false,
             var_states,
             basis_solver: BasisSolver {
@@ -423,9 +446,11 @@ impl Solver {
             primal_edge_sq_norms,
             cur_obj_val,
             col_coeffs: SparseVec::new(),
+            col_coeffs_of: None,
             sq_norms_update_helper,
             inv_basis_row_coeffs: SparseVec::new(),
             row_coeffs: ScatteredVec::empty(num_total_vars - num_constraints),
+            row_coeffs_of: None,
             flipped_cols_sum: ScatteredVec::empty(num_constraints),
             stats: Default::default(),
         };
@@ -580,14 +605,7 @@ impl Solver {
     pub(crate) fn initial_solve(&mut self, deadline: Deadline) -> Result<(), Error> {
         self.process_pending_basis_updates()?;
 
-        if !self.is_primal_feasible {
-            self.restore_feasibility(deadline)?;
-        }
-
-        if !self.is_dual_feasible {
-            self.recalc_obj_coeffs()?;
-            self.optimize(deadline)?;
-        }
+        self.optimize(deadline)?;
 
         // Disable updates of primal sq. norms, because lengthy primal simplex runs
         // are unlikely after the initial solve.
@@ -596,8 +614,27 @@ impl Solver {
         Ok(())
     }
 
+    /// Optimizes the current basis to optimality of the *original* objective with the
+    /// primal simplex.
+    ///
+    /// This method is valid regardless of the state it is called in; it restores its own
+    /// preconditions first:
+    /// - if the basis is not primal feasible, [`Self::restore_feasibility`] fixes it
+    ///   with the dual simplex;
+    /// - if the reduced costs are not the exact ones (artificial objective, perturbations
+    ///   or shifts, see [`Self::obj_coeffs_inexact`]), [`Self::recalc_obj_coeffs`]
+    ///   recomputes them from the original objective.
     fn optimize(&mut self, deadline: Deadline) -> Result<(), Error> {
         debug_assert!(self.pending.is_none());
+
+        if !self.is_primal_feasible {
+            self.restore_feasibility(deadline)?;
+        }
+
+        if self.obj_coeffs_inexact {
+            self.recalc_obj_coeffs()?;
+        }
+
         for iter in 0.. {
             if self.time_elapsed(deadline) {
                 return Err(Error::Timeout);
@@ -681,7 +718,6 @@ impl Solver {
                 if !self.obj_coeffs_perturbed {
                     self.perturb_obj_coeffs(perturb_round);
                 }
-                self.calc_row_coeffs(row);
                 let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
@@ -732,6 +768,12 @@ impl Solver {
         };
 
         self.basis_solver.reset(&self.orig_constraints_csc, &self.basic_vars)?;
+
+        // The scratch buffers were computed against the old basis: mark them invalid.
+        // (Structural additions also shift variable indices, so their contents cannot be
+        // trusted either.)
+        self.col_coeffs_of = None;
+        self.row_coeffs_of = None;
 
         if self.enable_primal_steepest_edge || self.enable_dual_steepest_edge {
             for r in first_new_row..self.num_constraints() {
@@ -928,9 +970,13 @@ impl Solver {
         (num_vars, infeasibility)
     }
 
-    /// Computes current coeffs column for a single non-basic variable (writtein to [`Self::col_coeffs`])
+    /// Computes current coeffs column for a single non-basic variable (writtein to [`Self::col_coeffs`]).
+    ///
+    /// Also records the provenance of the buffer in [`Self::col_coeffs_of`], which
+    /// [`Solver::pivot`] asserts before using it.
     fn calc_col_coeffs(&mut self, c_var: usize) {
         debug_assert!(self.pending.is_none());
+        self.col_coeffs_of = Some(c_var);
         let var = self.nb_vars[c_var];
         let orig_col = self.orig_constraints_csc.outer_view(var).unwrap();
         self.basis_solver
@@ -939,8 +985,12 @@ impl Solver {
     }
 
     /// Calculate current coeffs row for a single constraint (permuted according to nb_vars).
+    ///
+    /// Also records the provenance of the buffers in [`Self::row_coeffs_of`], which
+    /// [`Solver::pivot`] asserts before using them.
     fn calc_row_coeffs(&mut self, r_constr: usize) {
         debug_assert!(self.pending.is_none());
+        self.row_coeffs_of = Some(r_constr);
         self.basis_solver
             .solve_transp(std::iter::once((r_constr, &1.0)))
             .to_sparse_vec(&mut self.inv_basis_row_coeffs);
@@ -1191,6 +1241,8 @@ impl Solver {
     /// Chooses the entering column for a dual pivot on `row`, whose basic variable must
     /// move to `leaving_new_val` (the bound of its domain that it currently violates).
     ///
+    /// This method is self-contained: it computes the pivot row's coefficients itself.
+    ///
     /// This is the *bound flipping ratio test* (BFRT, a.k.a. long-step dual ratio test).
     ///
     /// # How it works
@@ -1225,6 +1277,9 @@ impl Solver {
     /// On success, every non-basic variable is within its bounds and every flipped
     /// variable sits exactly at one of its bounds.
     fn choose_entering_col_dual(&mut self, row: usize, leaving_new_val: f64) -> Result<PivotInfo, Error> {
+        // Coefficients of the pivot row (and the row of B^-1 for the certificate).
+        self.calc_row_coeffs(row);
+
         // True if the leaving variable must increase (decrease) to reach `leaving_new_val`,
         // i.e. if its new reduced cost must be non-negative (non-positive) for the basis to
         // remain dual-feasible.
@@ -1405,6 +1460,22 @@ impl Solver {
     fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), NumericalErrors> {
         self.stats.num_pivots += 1;
         debug_assert!(self.pending.is_none());
+        // The scratch buffers must hold the coefficients of this pivot's entering column
+        // (and of its pivot row, for an actual basis change): they are recomputed on each
+        // pivot, and using stale contents would silently produce a wrong basis.
+        // See `col_coeffs_of` / `row_coeffs_of`.
+        debug_assert_eq!(
+            self.col_coeffs_of,
+            Some(pivot_info.col),
+            "col_coeffs does not hold the entering var's coefficients"
+        );
+        if let Some(elem) = &pivot_info.elem {
+            debug_assert_eq!(
+                self.row_coeffs_of,
+                Some(elem.row),
+                "row_coeffs does not hold the pivot row's coefficients"
+            );
+        }
         // TODO: periodically (say, every 1000 pivots) recalc basic vars and object coeffs
         // from scratch for numerical stability. (from minilp)
 
@@ -1597,6 +1668,7 @@ impl Solver {
     /// `seed` selects the perturbation pattern; re-perturbing with a new seed is the
     /// stall-breaking mechanism of [`Self::restore_feasibility`].
     fn perturb_obj_coeffs(&mut self, seed: u32) {
+        self.obj_coeffs_perturbed = true;
         for col in 0..self.nb_vars.len() {
             self.perturb_obj_coeff(self.nb_vars[col], seed);
         }
@@ -1610,9 +1682,9 @@ impl Solver {
     /// 2. costs only guide pivot choices — primal values, the feasibility status and
     ///    infeasibility certificates do not depend on them;
     /// 3. the original objective [`Self::orig_obj_coeffs`] is untouched, so exact
-    ///    optimality survives: [`Self::recalc_obj_coeffs`] drops the perturbations and
-    ///    [`Self::initial_solve`] always calls it when the costs may be inexact (see the
-    ///    invariant on [`Self::is_dual_feasible`]).
+    ///    optimality survives: [`Self::recalc_obj_coeffs`] drops the perturbations, and
+    ///    [`Self::optimize`] always calls it when the costs may be inexact (see the
+    ///    invariant on [`Self::obj_coeffs_inexact`]).
     ///
     /// Vars that are basic, fixed, or between their bounds are left untouched: the sign of
     /// their reduced cost is unconstrained, so they cannot create dual degeneracy.
@@ -1646,17 +1718,16 @@ impl Solver {
 
     /// Sets the reduced cost of the non-basic var at `col` to `obj_coeff`.
     ///
-    /// If this changes the cost, the reduced costs stop matching the original objective:
-    /// [`Self::is_dual_feasible`] is set to `false` (see its invariant) and
-    /// [`Self::obj_coeffs_perturbed`] to `true`, so that [`Self::initial_solve`] restores
-    /// the exact costs before optimizing.
+    /// If this changes the cost, the reduced costs stop being the exact ones of the
+    /// original objective: [`Self::obj_coeffs_inexact`] is set (see its invariant), which
+    /// makes [`Self::optimize`] recompute the exact costs before optimizing.
     fn shift_obj_coeff(&mut self, col: usize, obj_coeff: f64) {
         let shift = obj_coeff - self.nb_var_obj_coeffs[col];
         if shift != 0.0 {
             self.nb_var_obj_coeffs[col] = obj_coeff;
             self.cur_obj_val += shift * self.nb_var_vals[col];
             self.is_dual_feasible = false;
-            self.obj_coeffs_perturbed = true;
+            self.obj_coeffs_inexact = true;
         }
     }
 
@@ -1692,7 +1763,9 @@ impl Solver {
             self.cur_obj_val += self.orig_obj_coeffs[var] * self.nb_var_vals[c];
         }
 
-        // The reduced costs are exact again (see the invariant on `obj_coeffs_perturbed`).
+        // The reduced costs are exact again (see the invariants on `obj_coeffs_inexact`
+        // and `obj_coeffs_perturbed`).
+        self.obj_coeffs_inexact = false;
         self.obj_coeffs_perturbed = false;
 
         Ok(())
@@ -2002,5 +2075,65 @@ mod tests {
             sol.solve_feasibility(Deadline::None).unwrap_err(),
             Error::InfeasibleWithCertificate(vec![1.0])
         );
+    }
+
+    /// Builds the LP: minimize -x0 + 2*x1 subject to x0 + x1 >= 4 and x0 <= 5,
+    /// with x0 in [0, inf) and x1 in [0, 3].
+    ///
+    /// Its optimum is -5, at x0 = 5, x1 = 0. At creation the solver is neither primal
+    /// nor dual feasible: x0 sits at its lower bound with a negative cost (dual
+    /// infeasible), and the first constraint is violated (primal infeasible), so an
+    /// artificial objective is engaged.
+    fn adversarial_lp() -> Solver {
+        Solver::try_new(
+            &[-1.0, 2.0],
+            &[0.0, 0.0],
+            &[f64::INFINITY, 3.0],
+            &[
+                (to_sparse(&[1.0, 1.0]), ComparisonOp::Ge, 4.0),
+                (to_sparse(&[1.0, 0.0]), ComparisonOp::Le, 5.0),
+            ],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn optimize_is_valid_on_an_artificial_objective() {
+        let mut sol = adversarial_lp();
+        // Creation context: primal and dual infeasible, artificial objective in use.
+        assert!(!sol.is_primal_feasible);
+        assert!(!sol.is_dual_feasible);
+        assert!(sol.obj_coeffs_inexact);
+        assert!(!sol.obj_coeffs_perturbed);
+
+        // optimize() is called directly, without initial_solve(): it must restore its
+        // own preconditions (feasibility, exact costs) and find the true optimum.
+        sol.optimize(Deadline::None).unwrap();
+
+        assert!(sol.is_primal_feasible);
+        assert!(sol.is_dual_feasible);
+        assert!(!sol.obj_coeffs_inexact);
+        assert!(!sol.obj_coeffs_perturbed);
+        assert!((sol.cur_obj_val - (-5.0)).abs() < 1e-9);
+        assert!(*sol.get_value(0) <= 5.0 + 1e-9);
+        assert!(*sol.get_value(0) + *sol.get_value(1) >= 4.0 - 1e-9);
+    }
+
+    #[test]
+    fn optimize_is_valid_on_perturbed_costs() {
+        let mut sol = adversarial_lp();
+
+        // A feasibility check leaves perturbed (hence inexact) costs behind.
+        sol.solve_feasibility(Deadline::None).unwrap();
+        assert!(sol.is_primal_feasible);
+        assert!(sol.obj_coeffs_perturbed);
+        assert!(sol.obj_coeffs_inexact);
+
+        // optimize() must drop them and report the optimum of the true objective.
+        sol.optimize(Deadline::None).unwrap();
+        assert!(sol.is_dual_feasible);
+        assert!(!sol.obj_coeffs_inexact);
+        assert!(!sol.obj_coeffs_perturbed);
+        assert!((sol.cur_obj_val - (-5.0)).abs() < 1e-9);
     }
 }
