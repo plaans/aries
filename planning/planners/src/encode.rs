@@ -275,7 +275,16 @@ pub fn populate_with_task_network(pb: &mut FiniteProblem, spec: &Problem, max_de
                     let template_task_name = template.chronicle.task.as_ref().unwrap();
                     #[allow(clippy::needless_range_loop)]
                     for i in 0..template_task_name.len() {
-                        let _ = sub.add_expr_unification(template_task_name[i], task.task_name[i]);
+                        // Only if the task's argument cannot take a value outside the domain of the template's
+                        // parameter: a method may declare a parameter with a narrower type than the task's
+                        // (e.g. a subtype), which the substitution would lose. Otherwise the parameter gets a
+                        // fresh variable, and the refinement constraints make it equal to the task's argument.
+                        let (param, arg) = (template_task_name[i], task.task_name[i]);
+                        let (param_lb, param_ub) = pb.model.bounds(param);
+                        let (arg_lb, arg_ub) = pb.model.bounds(arg);
+                        if param.kind() == arg.kind() && param_lb <= arg_lb && arg_ub <= param_ub {
+                            let _ = sub.add_expr_unification(param, arg);
+                        }
                     }
                 }
 
