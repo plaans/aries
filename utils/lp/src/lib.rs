@@ -1129,4 +1129,88 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn feasibility_check_preserves_exact_optimum() {
+        // Feasibility restoration perturbs the objective coefficients to break ties in the
+        // dual ratio test; a subsequent solve must discard them entirely and report the
+        // exact optimum of the true objective.
+        let mut problem = Lp::new(OptimizationDirection::Minimize);
+        let x1 = problem.add_var(1.0, (0.0, 1.0));
+        let x2 = problem.add_var(1.0, (0.0, 1.0));
+        problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 2.0);
+
+        assert!(problem.check_feasibility().unwrap().feasible());
+
+        let sol = problem.solve().unwrap().solution().unwrap();
+        assert_eq!(sol[x1] + sol[x2], 2.0);
+        assert_eq!(sol.objective(), 2.0);
+    }
+
+    #[test]
+    fn infeasibility_certificate_after_bound_flips() {
+        // x1 + x2 >= 3 with both vars in [0, 1]: only after flipping both vars to their
+        // upper bound does the ratio test prove that the constraint cannot be satisfied.
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
+        let x1 = problem.add_var(0.0, (0.0, 1.0));
+        let x2 = problem.add_var(0.0, (0.0, 1.0));
+        problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 3.0);
+
+        match problem.check_feasibility().unwrap() {
+            FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)) => {
+                assert!(problem.is_certificate_valid(&cert));
+            }
+            status => panic!("expected a certified infeasibility, got {status:?}"),
+        }
+    }
+
+    #[test]
+    fn degenerate_feasibility_checks_conclude() {
+        // Feasibility-only usage (zero objective) on highly degenerate instances, with
+        // variables progressively fixed to a hidden satisfying assignment — the pattern
+        // of the CP solver's LP reasoner, and the worst case for the dual simplex: all
+        // reduced costs are zero at all times, so without anti-cycling measures the dual
+        // ratio test is fully degenerate and can cycle. Every check must conclude within
+        // a generous pivot budget.
+        for seed in 1..=20u64 {
+            let mut rng = SmallRng::seed_from_u64(seed);
+            let num_vars = 10 + rng.gen_range(0, 10);
+            let num_cons = num_vars * 2 + rng.gen_range(0, num_vars);
+            const HIDDEN: f64 = 2.0; // the assignment all vars will be fixed to
+
+            let mut problem = Lp::new(OptimizationDirection::Minimize);
+            let vars: Vec<Variable> = (0..num_vars).map(|_| problem.add_var(0.0, (0.0, 4.0))).collect();
+
+            // Equalities satisfied by the hidden assignment; duplicated rows make the
+            // instance highly degenerate (many rows are linear combinations of others).
+            for _ in 0..num_cons {
+                let nnz = 2 + rng.gen_range(0, 3);
+                let mut terms: Vec<(Variable, f64)> = vec![];
+                for _ in 0..nnz {
+                    let v = vars[rng.gen_range(0, num_vars)];
+                    let c = 1.0 + rng.gen_range(0, 2) as f64;
+                    match terms.iter_mut().find(|(t, _)| *t == v) {
+                        Some(entry) => entry.1 += c,
+                        None => terms.push((v, c)),
+                    }
+                }
+                terms.sort_by_key(|(v, _)| v.idx());
+                let rhs = HIDDEN * terms.iter().map(|(_, c)| *c).sum::<f64>();
+                problem.add_constraint(terms, ComparisonOp::Eq, rhs);
+            }
+
+            let mut order: Vec<usize> = (0..num_vars).collect();
+            for i in (1..order.len()).rev() {
+                order.swap(i, rng.gen_range(0, i + 1));
+            }
+            for &v in &order {
+                problem.set_bound(vars[v], Bound::Lower, HIDDEN).unwrap();
+                problem.set_bound(vars[v], Bound::Upper, HIDDEN).unwrap();
+                let res = problem
+                    .check_feasibility_with_deadline(Deadline::NumPivots(10_000))
+                    .unwrap();
+                assert!(res.feasible(), "seed {seed}: fixing var {v} must stay feasible");
+            }
+        }
+    }
 }

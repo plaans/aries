@@ -16,6 +16,13 @@ type CsMat = sprs::CsMatI<f64, usize>;
 
 const EPS: f64 = 1e-8;
 
+/// Number of consecutive non-improving dual pivots after which the anti-degeneracy
+/// perturbations are refreshed with a new pattern. See [`Solver::restore_feasibility`].
+const STALL_PIVOT_LIMIT: usize = 100;
+
+/// Base magnitude of the anti-degeneracy perturbations. See [`Solver::perturb_obj_coeff`].
+const PERTURBATION: f64 = 1e-6;
+
 #[derive(Clone)]
 pub(crate) struct Solver {
     pub(crate) num_vars: usize,
@@ -30,8 +37,37 @@ pub(crate) struct Solver {
     enable_primal_steepest_edge: bool,
     enable_dual_steepest_edge: bool,
 
+    /// Whether the basic variables are known to satisfy their bounds.
     is_primal_feasible: bool,
+
+    /// Whether the current basis is known to be dual feasible with the *exact* reduced costs
+    /// of [`Self::orig_obj_coeffs`].
+    ///
+    /// Invariant: if this is `true`, then [`Self::nb_var_obj_coeffs`] are exactly the reduced
+    /// costs of the original objective for the current basis — in particular they contain no
+    /// perturbation or shift (see [`Self::perturb_obj_coeffs`] and [`Self::shift_obj_coeff`]).
+    ///
+    /// It is `false` in any of the following situations:
+    /// - a non-basic variable's reduced cost pulls it outside the bound it sits at
+    ///   (genuine dual infeasibility), or nothing is known about the reduced costs
+    ///   (after a bound update or a structural addition left them stale);
+    /// - the reduced costs contain anti-degeneracy perturbations or Harris shifts,
+    ///   which are only removed by [`Self::recalc_obj_coeffs`].
+    ///
+    /// In all cases the reaction is the same: [`Self::initial_solve`] recomputes the reduced
+    /// costs from the original objective and re-optimizes, restoring exact optimality.
+    /// Feasibility checking ([`Self::solve_feasibility`]) is unaffected: it runs the dual
+    /// simplex, which only requires the costs it is given to be dual feasible, exact or not.
     is_dual_feasible: bool,
+
+    /// `true` if [`Self::nb_var_obj_coeffs`] may deviate from the exact reduced costs of
+    /// [`Self::orig_obj_coeffs`] because of perturbations or shifts.
+    ///
+    /// Invariant: this flag is `false` iff the reduced costs are exact; the only place where
+    /// it is cleared is [`Self::recalc_obj_coeffs`], which recomputes them from the original
+    /// objective. It guards against applying the perturbations of
+    /// [`Self::perturb_obj_coeffs`] more than once.
+    obj_coeffs_perturbed: bool,
 
     // Updated on each pivot
     /// For each var: whether it is basic/non-basic and the corresponding index.
@@ -72,6 +108,11 @@ pub(crate) struct Solver {
     sq_norms_update_helper: Vec<f64>,
     inv_basis_row_coeffs: SparseVec,
     row_coeffs: ScatteredVec,
+
+    /// Scratch space for the bound flipping ratio test: the original columns of the flipped
+    /// variables, weighted by their change of value. See
+    /// [`Solver::choose_entering_col_dual`].
+    flipped_cols_sum: ScatteredVec,
 
     /// Statistics of the solver
     pub stats: Stats,
@@ -359,6 +400,7 @@ impl Solver {
             enable_dual_steepest_edge,
             is_primal_feasible,
             is_dual_feasible,
+            obj_coeffs_perturbed: false,
             var_states,
             basis_solver: BasisSolver {
                 lu_factors,
@@ -384,6 +426,7 @@ impl Solver {
             sq_norms_update_helper,
             inv_basis_row_coeffs: SparseVec::new(),
             row_coeffs: ScatteredVec::empty(num_total_vars - num_constraints),
+            flipped_cols_sum: ScatteredVec::empty(num_constraints),
             stats: Default::default(),
         };
 
@@ -583,6 +626,16 @@ impl Solver {
         Ok(())
     }
 
+    /// Restores primal feasibility of the basic variables with the dual simplex.
+    ///
+    /// Anti-cycling and anti-stalling measures (see the respective docs for details):
+    /// 1. [`Self::perturb_obj_coeffs`], applied before the first dual ratio test — with
+    ///    many zero reduced costs (always the case in feasibility-only mode, where the
+    ///    objective is ignored), every dual step would be zero and the dual simplex would
+    ///    have no progress measure at all;
+    /// 2. the bound flipping ratio test in [`Self::choose_entering_col_dual`];
+    /// 3. stall detection below, which refreshes the perturbations if pivots stop
+    ///    improving the objective.
     fn restore_feasibility(&mut self, deadline: Deadline) -> Result<(), Error> {
         debug_assert!(self.pending.is_none());
         let obj_str = if self.is_dual_feasible {
@@ -590,6 +643,20 @@ impl Solver {
         } else {
             "artificial obj."
         };
+
+        // Stall detection state. Each dual pivot improves the objective by
+        // (dual step) x (infeasibility of the leaving variable), which is strictly
+        // positive unless the pivot is degenerate. A long-enough sequence of degenerate
+        // pivots means the solver is not making progress — the classic setup for
+        // cycling among a fixed set of bases. Refreshing the perturbations with a new
+        // pattern changes all pivot choices and breaks such cycles.
+        //
+        // The improvement test needs a tolerance: improvements below it are counted as
+        // zero. This can only err towards an extra refresh of the perturbations, which
+        // is always safe (see [`Self::perturb_obj_coeff`]).
+        let mut stalled_pivots: usize = 0;
+        let mut perturb_round: u32 = 0;
+        let mut last_obj_val = self.cur_obj_val;
 
         for iter in 0.. {
             if self.time_elapsed(deadline) {
@@ -609,10 +676,27 @@ impl Solver {
             }
 
             if let Some((row, leaving_new_val)) = self.choose_pivot_row_dual() {
+                // The dual ratio test is about to run: make sure tie-breaking
+                // perturbations are in place (no-op if already perturbed).
+                if !self.obj_coeffs_perturbed {
+                    self.perturb_obj_coeffs(perturb_round);
+                }
                 self.calc_row_coeffs(row);
                 let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
+
+                if self.cur_obj_val > last_obj_val + EPS * (1.0 + last_obj_val.abs()) {
+                    stalled_pivots = 0;
+                } else {
+                    stalled_pivots += 1;
+                    if stalled_pivots >= STALL_PIVOT_LIMIT {
+                        stalled_pivots = 0;
+                        perturb_round += 1;
+                        self.perturb_obj_coeffs(perturb_round);
+                    }
+                }
+                last_obj_val = self.cur_obj_val;
             } else {
                 log::debug!(
                     "restored feasibility in {} iterations, {}: {}",
@@ -1104,10 +1188,50 @@ impl Solver {
         })
     }
 
+    /// Chooses the entering column for a dual pivot on `row`, whose basic variable must
+    /// move to `leaving_new_val` (the bound of its domain that it currently violates).
+    ///
+    /// This is the *bound flipping ratio test* (BFRT, a.k.a. long-step dual ratio test).
+    ///
+    /// # How it works
+    ///
+    /// During a dual pivot, all reduced costs change at rates given by [`Self::row_coeffs`]
+    /// (the row of the basis inverse). Each eligible non-basic variable has a
+    /// *breakpoint*: the dual step at which its own reduced cost reaches zero; past that
+    /// point it can only remain dual-feasible by moving to its other bound. Moving to the
+    /// other bound also reduces the infeasibility of the leaving variable, so as long as
+    /// some infeasibility remains, breakpoints can be *passed*: their variables are
+    /// *flipped* from one bound to the other without changing the basis.
+    ///
+    /// The first breakpoint whose flip would absorb the remaining infeasibility blocks the
+    /// step: its variable enters the basis. Compared to the plain ratio test, which stops
+    /// at the first breakpoint unconditionally, this has two important consequences:
+    /// - the entering variable's new value provably stays within its own bounds (up to the
+    ///   `EPS` tolerance), whereas the plain test can push it arbitrarily far beyond the
+    ///   bound it crosses — which snowballs into a numerically unstable basis; and
+    /// - a single dual iteration absorbs the infeasibility of several variables, which
+    ///   reduces the pivot count.
+    ///
+    /// If no breakpoint blocks the step, no combination of in-bounds moves of the
+    /// non-basic variables can fix the leaving variable: the problem is infeasible and a
+    /// certificate is produced from the row of the basis inverse.
+    ///
+    /// Note that flips are not pivots: they do not change the basis and do not count in
+    /// [`Self::stats`], so a flip-heavy iteration stays within a [`Deadline::NumPivots`]
+    /// budget that counts pivots only.
+    ///
+    /// # Invariant
+    ///
+    /// On success, every non-basic variable is within its bounds and every flipped
+    /// variable sits exactly at one of its bounds.
     fn choose_entering_col_dual(&mut self, row: usize, leaving_new_val: f64) -> Result<PivotInfo, Error> {
-        // True if the new obj. coeff. must be nonnegative in a dual-feasible configuration.
+        // True if the leaving variable must increase (decrease) to reach `leaving_new_val`,
+        // i.e. if its new reduced cost must be non-negative (non-positive) for the basis to
+        // remain dual-feasible.
         let leaving_diff_sign = leaving_new_val > self.basic_var_vals[row];
 
+        // Reduced cost of a non-basic var, clamped to the boundary of dual feasibility
+        // given the bound it sits at.
         fn clamp_obj_coeff(mut obj_coeff: f64, var_state: &NonBasicVarState) -> f64 {
             if var_state.at_min && obj_coeff < 0.0 {
                 obj_coeff = 0.0;
@@ -1118,88 +1242,86 @@ impl Solver {
             obj_coeff
         }
 
-        let is_eligible_var = |coeff: f64, var_state: &NonBasicVarState| -> bool {
-            let entering_diff_sign = if coeff >= EPS {
-                !leaving_diff_sign
-            } else if coeff <= -EPS {
-                leaving_diff_sign
-            } else {
-                return false;
-            };
+        // True if the var must increase (decrease) to reduce the infeasibility of the
+        // leaving variable.
+        let entering_diff_sign = |coeff: f64| (coeff > 0.0) != leaving_diff_sign;
 
-            if entering_diff_sign {
+        let is_eligible_var = |coeff: f64, var_state: &NonBasicVarState| -> bool {
+            if coeff.abs() < EPS {
+                return false;
+            }
+            if entering_diff_sign(coeff) {
                 !var_state.at_max
             } else {
                 !var_state.at_min
             }
         };
 
-        // Harris rule. See e.g.
-        // Gill, P. E., Murray, W., Saunders, M. A., & Wright, M. H. (1989).
-        // A practical anti-cycling procedure for linearly constrained optimization.
-        // Mathematical Programming, 45(1-3), 437-474.
-        //
-        // https://link.springer.com/content/pdf/10.1007/BF01589114.pdf
+        // A candidate for the dual step: a non-basic var whose movement can reduce the
+        // infeasibility of the leaving variable, either by entering the basis or by
+        // flipping to its other bound.
+        struct Breakpoint {
+            /// Index in the `nb_var_*` arrays of the var.
+            col: usize,
+            /// Coefficient of the var in the pivot row.
+            coeff: f64,
+            /// Dual step at which the var's reduced cost reaches zero.
+            step: f64,
+            /// Value of the var once its breakpoint is passed: its other bound
+            /// (infinite if it has none in that direction).
+            flipped_val: f64,
+            /// Decrease of the leaving var's infeasibility if the var flips to
+            /// `flipped_val`. Infinite if it cannot flip.
+            slope: f64,
+        }
 
-        // First, we determine the max step (change in the leaving variable obj. coeff that still
-        // leaves us with a dual-feasible state) using relaxed bounds.
-        let mut max_step = f64::INFINITY;
+        let mut breakpoints = vec![];
         for (c, &coeff) in self.row_coeffs.iter() {
             let var_state = &self.nb_var_states[c];
             if !is_eligible_var(coeff, var_state) {
                 continue;
             }
+            let var = self.nb_vars[c];
+            let flipped_val = if entering_diff_sign(coeff) {
+                self.orig_var_maxs[var]
+            } else {
+                self.orig_var_mins[var]
+            };
+            breakpoints.push(Breakpoint {
+                col: c,
+                coeff,
+                step: clamp_obj_coeff(self.nb_var_obj_coeffs[c], var_state).abs() / coeff.abs(),
+                flipped_val,
+                slope: coeff.abs() * (flipped_val - self.nb_var_vals[c]).abs(),
+            });
+        }
+        breakpoints.sort_by(|bp1, bp2| bp1.step.total_cmp(&bp2.step));
 
-            let obj_coeff = clamp_obj_coeff(self.nb_var_obj_coeffs[c], var_state);
-            let cur_step = (obj_coeff.abs() + EPS) / coeff.abs();
-            if cur_step < max_step {
-                max_step = cur_step;
+        // Amount by which the leaving variable must still change to reach its bound.
+        let mut infeasibility = (self.basic_var_vals[row] - leaving_new_val).abs();
+        // Number of breakpoints passed so far: their vars will be flipped.
+        let mut num_flips = 0;
+        // Index of the blocking breakpoint, if any: the first one whose flip would absorb
+        // the remaining infeasibility.
+        let mut blocking = None;
+
+        for (i, bp) in breakpoints.iter().enumerate() {
+            // Pass the breakpoint only if the flip leaves some infeasibility (beyond the
+            // tolerance: a remaining infeasibility within EPS is noise and must not lead
+            // to a certificate of infeasibility).
+            if infeasibility - bp.slope > EPS {
+                infeasibility -= bp.slope;
+                num_flips = i + 1;
+            } else {
+                blocking = Some(i);
+                break;
             }
         }
 
-        // Second, we choose among the variables satisfying the relaxed step bound
-        // the one with the biggest pivot coefficient. This allows for a much more
-        // numerically stable basis at the price of slight infeasibility in dual variables.
-        let mut entering_c = None;
-        let mut pivot_coeff_abs = f64::NEG_INFINITY;
-        let mut pivot_coeff = 0.0;
-        for (c, &coeff) in self.row_coeffs.iter() {
-            let var_state = &self.nb_var_states[c];
-            if !is_eligible_var(coeff, var_state) {
-                continue;
-            }
-
-            let obj_coeff = clamp_obj_coeff(self.nb_var_obj_coeffs[c], var_state);
-
-            // If we change obj. coeff of the leaving variable by this amount,
-            // obj. coeff if the current variable will reach the bound of dual infeasibility.
-            // Variable with the tightest such bound is the entering variable.
-            let cur_step = obj_coeff.abs() / coeff.abs();
-            if cur_step <= max_step {
-                let coeff_abs = coeff.abs();
-                if coeff_abs > pivot_coeff_abs {
-                    entering_c = Some(c);
-                    pivot_coeff_abs = coeff_abs;
-                    pivot_coeff = coeff;
-                }
-            }
-        }
-
-        if let Some(col) = entering_c {
-            let entering_diff = (self.basic_var_vals[row] - leaving_new_val) / pivot_coeff;
-            let entering_new_val = self.nb_var_vals[col] + entering_diff;
-
-            Ok(PivotInfo {
-                col,
-                entering_new_val,
-                entering_diff,
-                elem: Some(PivotElem {
-                    row,
-                    leaving_new_val,
-                    coeff: pivot_coeff,
-                }),
-            })
-        } else {
+        let Some(blocking) = blocking else {
+            // All breakpoints can be passed and the leaving variable is still infeasible
+            // beyond the tolerance: no assignment of the non-basic vars within their
+            // bounds satisfies the pivot row.
             const TRESHOLD_ZERO: f64 = 1e-12;
 
             let mut certificate = vec![0.0; self.num_constraints()];
@@ -1209,8 +1331,75 @@ impl Solver {
                 }
             }
 
-            Err(Error::InfeasibleWithCertificate(certificate))
+            return Err(Error::InfeasibleWithCertificate(certificate));
+        };
+
+        // Harris-style tie-breaking among the breakpoints that were not passed: the
+        // candidates are those whose step ties (within the tolerance) with the blocking
+        // one and that could not have been flipped either — entering with a flippable
+        // var would push it beyond its opposite bound. Among the candidates the biggest
+        // pivot coefficient gives the most numerically stable basis, at the price of a
+        // slight dual infeasibility within the tolerance.
+        //
+        // See e.g. Gill, P. E., Murray, W., Saunders, M. A., & Wright, M. H. (1989).
+        // A practical anti-cycling procedure for linearly constrained optimization.
+        // Mathematical Programming, 45(1-3), 437-474.
+        let max_step = breakpoints[blocking].step + EPS / breakpoints[blocking].coeff.abs();
+        let entering = breakpoints[blocking..]
+            .iter()
+            .filter(|bp| bp.step <= max_step && infeasibility - bp.slope <= EPS)
+            .max_by(|bp1, bp2| bp1.coeff.abs().total_cmp(&bp2.coeff.abs()))
+            .expect("the blocking breakpoint is itself a candidate");
+        let (col, pivot_coeff) = (entering.col, entering.coeff);
+
+        // The Harris tolerance can select an entering var whose reduced cost is slightly
+        // on the wrong side of zero; using it as-is would make the dual step go
+        // backwards, pushing the other reduced costs further into dual infeasibility.
+        // Instead the cost is shifted to exactly the boundary of dual feasibility
+        // (zero at a bound), stopping the step there. Like the perturbations, this
+        // temporary cost modification is undone by `recalc_obj_coeffs`.
+        let clamped = clamp_obj_coeff(self.nb_var_obj_coeffs[col], &self.nb_var_states[col]);
+        self.shift_obj_coeff(col, clamped);
+
+        // Apply the flips: each flipped var moves from one bound to the other, and the
+        // change propagates to the basic variables through the basis.
+        if num_flips > 0 {
+            self.flipped_cols_sum.clear_and_resize(self.num_constraints());
+            for bp in &breakpoints[..num_flips] {
+                let var = self.nb_vars[bp.col];
+                let diff = bp.flipped_val - self.nb_var_vals[bp.col];
+                self.nb_var_vals[bp.col] = bp.flipped_val;
+                self.nb_var_states[bp.col] = NonBasicVarState {
+                    at_min: bp.flipped_val == self.orig_var_mins[var],
+                    at_max: bp.flipped_val == self.orig_var_maxs[var],
+                };
+                self.cur_obj_val += self.nb_var_obj_coeffs[bp.col] * diff;
+                for (r, &coeff) in self.orig_constraints_csc.outer_view(var).unwrap().iter() {
+                    *self.flipped_cols_sum.get_mut(r) += diff * coeff;
+                }
+            }
+            let basic_vals_diff = self.basis_solver.solve(self.flipped_cols_sum.iter());
+            for (r, &diff) in basic_vals_diff.iter() {
+                self.basic_var_vals[r] -= diff;
+            }
         }
+
+        // The entering var takes care of the infeasibility left after the flips, so its
+        // new value stays within its bounds (the blocking condition guarantees that its
+        // own bound range covers the remaining infeasibility, up to the tolerance).
+        let entering_diff = (self.basic_var_vals[row] - leaving_new_val) / pivot_coeff;
+        let entering_new_val = self.nb_var_vals[col] + entering_diff;
+
+        Ok(PivotInfo {
+            col,
+            entering_new_val,
+            entering_diff,
+            elem: Some(PivotElem {
+                row,
+                leaving_new_val,
+                coeff: pivot_coeff,
+            }),
+        })
     }
 
     fn pivot(&mut self, pivot_info: &PivotInfo) -> Result<(), NumericalErrors> {
@@ -1396,6 +1585,81 @@ impl Solver {
         Ok(())
     }
 
+    /// Applies anti-degeneracy perturbations to the reduced costs of all non-basic vars.
+    ///
+    /// With many reduced costs at zero — always the case when checking feasibility, where
+    /// the objective is ignored — every step of the dual ratio test is zero: the dual
+    /// simplex has no progress measure and can wander indefinitely among degenerate bases
+    /// (cycling). Perturbing the costs, each by a small distinct amount, breaks those ties:
+    /// dual steps become strictly positive and each dual pivot strictly improves the
+    /// (perturbed) objective. See [`Self::perturb_obj_coeff`] for why this is safe.
+    ///
+    /// `seed` selects the perturbation pattern; re-perturbing with a new seed is the
+    /// stall-breaking mechanism of [`Self::restore_feasibility`].
+    fn perturb_obj_coeffs(&mut self, seed: u32) {
+        for col in 0..self.nb_vars.len() {
+            self.perturb_obj_coeff(self.nb_vars[col], seed);
+        }
+    }
+
+    /// Nudges the reduced cost of `var` — if it is non-basic and sits at a bound — by a
+    /// small amount further into its *dual-feasible side*.
+    ///
+    /// Safety properties, which together make perturbations applicable at any time:
+    /// 1. pushing a cost further into dual feasibility can never break dual feasibility;
+    /// 2. costs only guide pivot choices — primal values, the feasibility status and
+    ///    infeasibility certificates do not depend on them;
+    /// 3. the original objective [`Self::orig_obj_coeffs`] is untouched, so exact
+    ///    optimality survives: [`Self::recalc_obj_coeffs`] drops the perturbations and
+    ///    [`Self::initial_solve`] always calls it when the costs may be inexact (see the
+    ///    invariant on [`Self::is_dual_feasible`]).
+    ///
+    /// Vars that are basic, fixed, or between their bounds are left untouched: the sign of
+    /// their reduced cost is unconstrained, so they cannot create dual degeneracy.
+    fn perturb_obj_coeff(&mut self, var: usize, seed: u32) {
+        let VarState::NonBasic(col) = self.var_states[var] else {
+            return;
+        };
+        // Fibonacci hashing of (var, seed): a deterministic pattern that spreads
+        // consecutive values apart; a new seed yields a completely different pattern.
+        let x = ((var as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) ^ ((seed as u64) << 32);
+        let x = x >> 11;
+        // A perturbation in [PERTURBATION, 2 * PERTURBATION), scaled by the magnitude of
+        // the true cost so it stays significant next to large costs, while remaining far
+        // above EPS (below which it would be rounded away by tolerance checks).
+        let perturbation =
+            PERTURBATION * (1.0 + x as f64 / (1u64 << 53) as f64) * (1.0 + self.orig_obj_coeffs[var].abs());
+        let perturbation = match self.nb_var_states[col] {
+            NonBasicVarState {
+                at_min: true,
+                at_max: false,
+            } => perturbation,
+            NonBasicVarState {
+                at_min: false,
+                at_max: true,
+            } => -perturbation,
+            // fixed, or between its bounds
+            _ => return,
+        };
+        self.shift_obj_coeff(col, self.nb_var_obj_coeffs[col] + perturbation);
+    }
+
+    /// Sets the reduced cost of the non-basic var at `col` to `obj_coeff`.
+    ///
+    /// If this changes the cost, the reduced costs stop matching the original objective:
+    /// [`Self::is_dual_feasible`] is set to `false` (see its invariant) and
+    /// [`Self::obj_coeffs_perturbed`] to `true`, so that [`Self::initial_solve`] restores
+    /// the exact costs before optimizing.
+    fn shift_obj_coeff(&mut self, col: usize, obj_coeff: f64) {
+        let shift = obj_coeff - self.nb_var_obj_coeffs[col];
+        if shift != 0.0 {
+            self.nb_var_obj_coeffs[col] = obj_coeff;
+            self.cur_obj_val += shift * self.nb_var_vals[col];
+            self.is_dual_feasible = false;
+            self.obj_coeffs_perturbed = true;
+        }
+    }
+
     fn recalc_obj_coeffs(&mut self) -> Result<(), NumericalErrors> {
         debug_assert!(self.pending.is_none());
         if self.basis_solver.eta_matrices.len() > 0 {
@@ -1427,6 +1691,9 @@ impl Solver {
         for (c, &var) in self.nb_vars.iter().enumerate() {
             self.cur_obj_val += self.orig_obj_coeffs[var] * self.nb_var_vals[c];
         }
+
+        // The reduced costs are exact again (see the invariant on `obj_coeffs_perturbed`).
+        self.obj_coeffs_perturbed = false;
 
         Ok(())
     }
@@ -1686,6 +1953,54 @@ mod tests {
         assert_eq!(
             std::mem::discriminant(&infeasible.unwrap_err()),
             std::mem::discriminant(&Error::InfeasibleWithCertificate(vec![]))
+        );
+    }
+
+    #[test]
+    fn dual_ratio_test_flips_bounds() {
+        // The row x0 + x1 + x2 >= 30 is only satisfiable at x0 = x1 = x2 = 10.
+        // Restoring feasibility must flip the first two vars to their upper bound and
+        // pivot the third one in, with every variable staying within its bounds.
+        let mut sol = Solver::try_new(
+            &[0.0, 0.0, 0.0],
+            &[0.0, 0.0, 0.0],
+            &[10.0, 10.0, 10.0],
+            &[(to_sparse(&[1.0, 1.0, 1.0]), ComparisonOp::Ge, 30.0)],
+        )
+        .unwrap();
+        assert!(!sol.is_primal_feasible);
+
+        sol.solve_feasibility(Deadline::None).unwrap();
+
+        assert!(sol.is_primal_feasible);
+        for var in 0..3 {
+            assert_eq!(*sol.get_value(var), 10.0, "var {var} out of bounds");
+        }
+
+        // Feasibility restoration perturbs the reduced costs, which invalidates the
+        // exactness invariant tracked by `is_dual_feasible`/`obj_coeffs_perturbed`...
+        assert!(!sol.is_dual_feasible);
+        assert!(sol.obj_coeffs_perturbed);
+        // ...and the full solve restores exact costs.
+        sol.initial_solve(Deadline::None).unwrap();
+        assert!(sol.is_dual_feasible);
+        assert!(!sol.obj_coeffs_perturbed);
+    }
+
+    #[test]
+    fn infeasibility_detected_after_bound_flips() {
+        // x0 + x1 >= 3 with both vars in [0, 1]: after flipping both to their upper
+        // bound the row is still infeasible, which proves the problem infeasible.
+        let mut sol = Solver::try_new(
+            &[0.0, 0.0],
+            &[0.0, 0.0],
+            &[1.0, 1.0],
+            &[(to_sparse(&[1.0, 1.0]), ComparisonOp::Ge, 3.0)],
+        )
+        .unwrap();
+        assert_eq!(
+            sol.solve_feasibility(Deadline::None).unwrap_err(),
+            Error::InfeasibleWithCertificate(vec![1.0])
         );
     }
 }

@@ -17,6 +17,7 @@ Compared to standard `minilp`, this crate introduces:
 * **Incremental solving**: tighten or relax variable bounds ([`Lp::set_bound`]) and add new variables or constraints on the fly; subsequent solves start from the previous simplex state.
 * **Feasibility checking**: [`Lp::check_feasibility`] quickly verifies that the LP admits at least one solution, ignoring the objective, which is useful for interactive algorithms such as branch-and-bound or SAT/SMT-style search.
 * **Infeasibility certificates**: when the constraints cannot be satisfied, the solver can produce a Farkas certificate of infeasibility ([`results::InfeasibilityReason::Certified`]) that can be independently verified with [`Lp::is_certificate_valid`].
+* **Cycling-free feasibility restoration**: feasibility checks run a dual simplex with a zero objective, where every reduced cost is zero and a plain ratio test degenerates. The solver counters this with a bound flipping ratio test, anti-degeneracy cost perturbations, and stall detection — all transparent to the user: results (values, feasibility status, certificates, optima) are exact regardless.
 
 ---
 
