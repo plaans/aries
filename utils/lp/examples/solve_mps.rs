@@ -1,4 +1,4 @@
-use aries_lp::{Lp, MpsFile};
+use aries_lp::{MpsFile, prelude::*};
 use clap::Parser;
 use std::{io, path::PathBuf};
 
@@ -10,6 +10,9 @@ struct Args {
     /// Path to a file in the MPS format. You can download some sample
     /// problems from http://www.netlib.org/lp/data/.
     file: PathBuf,
+    /// If set, limits the runtime of the solver to the given number (in seconds).
+    #[arg(short, long)]
+    timeout: Option<f64>,
     /// If set, the solver will panic if it does not find the indicated optimal value.
     #[arg(long)]
     expected_value: Option<f64>,
@@ -25,8 +28,14 @@ fn main() {
 
     let mut lp = Lp::from(file.problem);
 
+    let deadline = if let Some(max_runtime) = args.timeout {
+        Deadline::duration_s(max_runtime)
+    } else {
+        Deadline::None
+    };
+
     use aries_lp::results::SolveStatus::*;
-    match lp.solve() {
+    match lp.solve_with_deadline(deadline) {
         Ok(Optimal(solution)) => {
             let optimum = solution.objective() + file.obj_offset;
             println!("status: OPTIMAL objective: {}", solution.objective() + file.obj_offset);
@@ -46,7 +55,11 @@ fn main() {
                 assert!(expected.is_infinite());
             }
         }
-        Err(aries_lp::results::SolverFailure::Unstable) => {
+        Err(SolverFailure::Timeout) => {
+            println!("status: TIMEOUT");
+            std::process::exit(1);
+        }
+        Err(SolverFailure::Unstable) => {
             println!("status: UNSTABLE");
             std::process::exit(1)
         }

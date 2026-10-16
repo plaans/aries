@@ -12,6 +12,26 @@ Its entry point is the function [`Lp::add_linear_leq_constraint()`], which is us
 It is the responsibility of the caller to linearize other types of constraints before posting
 them to the LP.
 
+The reasoner uses an underlying LP solver, using a dual-revised simplex algorithm. In many problems,
+the LP relaxation can detect early that entire subtrees are infeasible. However, solving the LP (even just for feasibility)
+is typically much slower than a typical propagation budget and many terribly slow down the solver
+(sometime for no benefit).
+To limit the downsides (while keeping the upsides), the LP reasoner operates on computational budget,
+expressed as a number of pivot operations per decision of the solver.
+Each time a decision is made (as witnessed by a save_state call), the LP is given a number additional pivots allowance.
+When this number is small, the LP checker might not be able to provide a conclusion on the feasibility of the LP.
+When that is the case, the LP will not be updated when the solver takes a new decision and the next propagate will
+keep trying to determine feasibility at the previous level. It is only when the simplex establishes feasibility of a given
+decision level that the LP will proceed to the next.
+
+The consequences are thus that the LP solver as a budget that is proportional to the number of decisions.
+Hence the LP is typically lagging behind the CP solver, and may detect unsatisfiability of a subtree that the
+CP solver has already spent many decisions/conflict in.
+THis however generally a good trade-off because the if the subtree that could be cut is very large, the LP
+will eventually get enough budget to prune it (just with some delay). On the other hand, if the small tree,
+is small, the CP solver will close with limited time lost on the LP solver.
+
+
 > **Important:** This reasoner is **disabled by default**.
 > To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
 
@@ -31,10 +51,11 @@ use aries_env_param::EnvParam;
 use itertools::Itertools;
 use solver::{BoundJustification, Solver};
 
+use crate::prelude::*;
 use aries_lp::prelude::*;
 
 use crate::{
-    backtrack::{Backtrack, DecLvl, ObsTrailCursor, Trail},
+    backtrack::{Backtrack, DecLvl, DecisionLevelTracker, ObsTrailCursor, Trail},
     collections::ref_store::{RefMap, RefVec},
     core::{
         IntCst, Lit, LongCst, Var, cst_int_to_long,
@@ -55,31 +76,31 @@ pub struct LpOptions {
     /// Used to activate/deactivate the propagation of the reasoner
     ///
     /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
-    propagation_active: bool,
+    pub propagation_active: bool,
     /// Used to enable/disable the reasoner
     ///
     /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
     /// or after the creation with [`Lp::activate`] and [`Lp::deactivate`]
-    enable: bool,
+    pub enable: bool,
     /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
     ///
     ///Can be controlled with the following methods: [`Lp::activate_refined_explanation`], [`Lp::deactivate_refined_explanation`]
-    is_explanation_refined: bool,
-}
-
-impl LpOptions {
-    fn new(propagation_active: bool, enable: bool, is_explanation_refined: bool) -> Self {
-        LpOptions {
-            propagation_active,
-            enable,
-            is_explanation_refined,
-        }
-    }
+    pub is_explanation_refined: bool,
+    /// Number of pivots allowed for each decision.
+    ///
+    /// THe default value is controlled by [`LP_PIVOTS_PER_DECISION`].
+    /// THe best value is very problem-dependent and the default is typically very small (~0.1).
+    pub pivots_per_decision: f64,
 }
 
 impl Default for LpOptions {
     fn default() -> Self {
-        LpOptions::new(true, LP_ENABLE.get(), true)
+        Self {
+            propagation_active: true,
+            enable: LP_ENABLE.get(),
+            is_explanation_refined: true,
+            pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
+        }
     }
 }
 
@@ -88,6 +109,12 @@ impl Default for LpOptions {
 /// Can be set either from the env variable **`ARIES_LP_ENABLE`**
 /// or within the code with: `LP_ENABLE.set(true/false)`
 pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false");
+
+/// Default number of pivots per decision.
+pub static LP_PIVOTS_PER_DECISION: EnvParam<f64> = EnvParam::new("ARIES_LP_PIVOTS_PER_DECISION", "0.1");
+
+/// Number of initially allowed pivots, before any decision is taken.
+pub static LP_INITIALLY_ALLOWED_PIVOTS: EnvParam<f64> = EnvParam::new("ARIES_LP_INITIALLY_ALLOWED_PIVOTS", "0");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -150,8 +177,8 @@ struct LpEvent {
 
 #[derive(Clone)]
 struct Stats {
-    /// Number of propagations where no contradaction was detected, used to determine the number of contradiction generated
-    num_ok_propagate: usize,
+    /// Number of propagations where the solver returned `Feasible`
+    num_feasible: usize,
     /// Number of propagations
     num_propagate: usize,
     /// Number of constraints within the LP relaxation
@@ -166,12 +193,18 @@ struct Stats {
     num_val_certif_float: usize,
     /// Number of overflows detected during the certificate verification
     num_overflow: usize,
+    /// Number of proven infeasibility
+    num_contradictions: usize,
+    /// Number of timeouts
+    num_check_timeouts: usize,
+    /// Number of times the LP reported a numerical instability error.
+    num_unstable: usize,
 }
 
 impl Stats {
     fn new() -> Self {
         Self {
-            num_ok_propagate: 0,
+            num_feasible: 0,
             num_propagate: 0,
 
             num_constraints: 0,
@@ -181,6 +214,9 @@ impl Stats {
             num_val_certif: 0,
             num_val_certif_float: 0,
             num_overflow: 0,
+            num_contradictions: 0,
+            num_check_timeouts: 0,
+            num_unstable: 0,
         }
     }
 }
@@ -227,12 +263,27 @@ pub struct Lp {
     /// The watcher corresponds to an index in `bound_constrs_lit_vec`
     watches: Watches<BoundConstraintId>,
     /// History of changes made to the LP with all information necessary to undo them.
+    ///
+    /// The trail may have less saved states as the CP solver we evolve in because the reasoner is typically lagging behind due to
+    /// a bounded computational effort.
     trail: Trail<LpEvent>,
+    /// Mirrors the decision level of the CP solver. Incremented/decremented each time a save/restore is invoked.
+    ///
+    /// It differs from the logical decision level ([`Self::lp_level`]) of this reasoner (`self.trail.current_decision_level`) because we only go to the next decision level
+    /// once we have determined that the LP relaxation is feasible.
+    cp_decision_level: DecisionLevelTracker,
+    /// Running statistics of the solver (number of propagations, conflicts, ...)
     stats: Stats,
     /// Contains all the customizable options for the reasoner
-    ///
-    /// Check [`LpOptions`] for more details
     options: LpOptions,
+    /// Total number of pivots allowed for this reasoner (since its start).
+    /// This is used to bound the effort of the simplex solver.
+    ///
+    /// It is incremented by [`LpOptions::pivots_per_decision`] on each decision (we assume 1 decision per save_state call)
+    ///
+    /// Setting this `INFINITY` will remove any limit on the pivots (useful for testing).
+    /// Setting it `-INFINITY` will disallow any pivot operation.
+    total_allowed_pivots: f64,
 }
 
 impl Default for Lp {
@@ -257,10 +308,12 @@ impl Lp {
             model_events: ObsTrailCursor::new(),
             watches: Default::default(),
             trail: Default::default(),
+            cp_decision_level: DecisionLevelTracker::new(),
 
             stats: Stats::new(),
 
             options,
+            total_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
         }
     }
     /// Activate propagation and constraints registration of the LP
@@ -446,6 +499,9 @@ impl Lp {
         bound_update: BoundRestriction,
         domains: &Domains,
     ) {
+        // use domains that mirror the state at the LP level.
+        let domains = DomainsSnapshot::up_to(domains, self.lp_level());
+
         let id = self.bound_constrs.next_key();
 
         // check if the trigger is already entailed and in which case, enqueue for immediate propagation.
@@ -469,7 +525,7 @@ impl Lp {
     }
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
-    fn apply_pending_bound_constrs(&mut self, domains: &Domains) -> Result<(), Contradiction> {
+    fn apply_pending_bound_constrs(&mut self, domains: &DomainsSnapshot) -> Result<(), Contradiction> {
         if !self.pending_bound_constrs.is_empty() {
             debug_assert!(self.pending_bound_constrs_applied_at.is_none());
             self.pending_bound_constrs_applied_at = Some(self.current_decision_level());
@@ -489,16 +545,10 @@ impl Lp {
             let res = if cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT) {
                 // A cause entailed at the root can never be undone,
                 // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                self.solver
-                    .set_bound_restrict_permanent(bound_constr.var, bound_constr.bound, bound_constr.val)
+                self.solver.set_bound_restrict_permanent(bound_constr)
             } else {
-                self.solver.set_bound_restrict(
-                    bound_constr.var,
-                    bound_constr.bound,
-                    bound_constr.val,
-                    BoundJustification::Trigger(index),
-                    &mut self.trail,
-                )
+                self.solver
+                    .set_bound_restrict(bound_constr, BoundJustification::Trigger(index), &mut self.trail)
             };
 
             if let Err(infeasible) = res {
@@ -517,7 +567,11 @@ impl Lp {
     /// This may fail when 1) the LP's output was erroneous or 2) our conversion into integers lost some precision and invalidated the certificate.
     ///
     /// In both cases (which should exceptional), we ignore the infeasibility and report that there is nothing to see.
-    fn explain_infeasibility(&mut self, cause: &InfeasibilityReason, domains: &Domains) -> Result<(), Contradiction> {
+    fn explain_infeasibility(
+        &mut self,
+        cause: &InfeasibilityReason,
+        domains: &DomainsSnapshot,
+    ) -> Result<(), Contradiction> {
         match cause {
             InfeasibilityReason::Certified(cert) => {
                 self.stats.num_certif += 1;
@@ -530,21 +584,50 @@ impl Lp {
                 {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
+                        self.stats.num_contradictions += 1;
                         Err(Contradiction::Explanation(explanation))
                     }
                     None => {
                         // We could not validate this certificate, so we ignore this LP infeasibility
                         // as we are lacking a proof that it is a real UNSAT and not an internal error due to, e.g.,
                         // floating point errors.
+                        self.stats.num_unstable += 1;
                         Ok(())
                     }
                 }
             }
             InfeasibilityReason::IncompatibleBounds(var) => {
                 let explanation = self.solver.explain_infeasible_var(*var, &self.bound_constrs);
+                self.stats.num_contradictions += 1;
                 Err(Contradiction::Explanation(explanation))
             }
         }
+    }
+
+    /// Decision level that LP mirrors.
+    /// Cannot be greater than the solver's level.
+    fn lp_level(&self) -> DecLvl {
+        self.trail.current_decision_level()
+    }
+
+    /// Decision level at which the CP solver is currently at.
+    fn solver_lvl(&self) -> DecLvl {
+        self.cp_decision_level.current_decision_level()
+    }
+
+    /// Determines the deadline which an LP solver call must finish.
+    ///
+    /// Note that the deadline is expressed in a maximum number of pivots over the entire
+    /// lifetime of the reasoner.
+    fn lp_dealine(&self) -> aries_lp::Deadline {
+        let max_pivots = if self.total_allowed_pivots == f64::INFINITY {
+            usize::MAX
+        } else if self.total_allowed_pivots <= 0.0 {
+            0
+        } else {
+            self.total_allowed_pivots.floor() as usize
+        };
+        aries_lp::Deadline::NumPivots(max_pivots)
     }
 }
 
@@ -558,68 +641,110 @@ impl Theory for Lp {
             return Ok(());
         }
 
-        self.stats.num_propagate += 1;
+        // the domains in the CP solver. We are not allowed to operate on them but
+        // must instead operate on the domains as they were on the LP level.
+        let cp_domains = domains;
 
-        // Constraints registered with an already entailed cause are not triggered by any watch
-        self.apply_pending_bound_constrs(domains)?;
+        // marker for whether we bump the LP level in the propagation.
+        // Initially true to kickstart at least one propagation loop
+        let mut increased_level = true;
 
-        // We process all the newly inferred literals since last propagation
-        while let Some(&event) = self.model_events.pop(domains.trail()) {
-            let lit = event.new_literal();
+        // run a loop, that will be allowed to restart if be concluded feasibility of the
+        // current LP level (which is thus bumped to the next).
+        while increased_level {
+            increased_level = false;
+            self.stats.num_propagate += 1;
 
-            // println!("Lit: {:?}", lit);
+            // mirror the domains of the LP level.
+            let domains = DomainsSnapshot::up_to(cp_domains, self.lp_level());
 
-            // We first set the bounds associated with the active lit triggered by the newly inferred lit
-            let watchers: Vec<BoundConstraintId> = self.watches.watches_on(lit).collect(); // TODO: remove allocation
-            for watcher in watchers {
-                let (cause, bound_constr) = &self.bound_constrs[watcher];
+            // Constraints registered with an already entailed cause are not triggered by any watch
+            self.apply_pending_bound_constrs(&domains)?;
 
-                // the fact that we got triggered means at least one literal became true.
-                // If they are all true we can proceed to enforce the bound
-                let entailed = cause.iter().all(|l| domains.entails(l));
-                if !entailed {
-                    continue;
+            // We process all the newly inferred literals since last propagation and
+            // up to the current decision level.
+            while let Some(&event) = self
+                .model_events
+                .pop_up_to(self.trail.current_decision_level(), cp_domains.trail())
+            {
+                let lit = event.new_literal();
+                debug_assert!(cp_domains.entailing_level(lit) <= self.lp_level());
+
+                // We first set the bounds associated with the active lit triggered by the newly inferred lit
+                let watchers: Vec<BoundConstraintId> = self.watches.watches_on(lit).collect(); // TODO: remove allocation
+                for watcher in watchers {
+                    let (cause, bound_constr) = &self.bound_constrs[watcher];
+
+                    // the fact that we got triggered means at least one literal became true.
+                    // If they are all true we can proceed to enforce the bound
+                    let entailed = cause.iter().all(|l| domains.entails(l));
+                    if !entailed {
+                        continue;
+                    }
+
+                    if let Err(infeasible) = self.solver.set_bound_restrict(
+                        bound_constr,
+                        BoundJustification::Trigger(watcher),
+                        &mut self.trail,
+                    ) {
+                        self.explain_infeasibility(&infeasible, &domains)?;
+                    }
                 }
 
-                if let Err(infeasible) = self.solver.set_bound_restrict(
-                    bound_constr.var,
-                    bound_constr.bound,
-                    bound_constr.val,
-                    BoundJustification::Trigger(watcher),
-                    &mut self.trail,
-                ) {
-                    self.explain_infeasibility(&infeasible, domains)?;
-                }
-            }
+                let var = event.affected_bound.variable();
 
-            let var = event.affected_bound.variable();
-
-            // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
-            if let Some(&x_var) = self.memory_x_main.get(var) {
-                // the bound holds because this very literal was inferred in the main model
-                let justification = BoundJustification::CpModel(lit);
-                let res =
+                // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
+                if let Some(&x_var) = self.memory_x_main.get(var) {
+                    // the bound holds because this very literal was inferred in the main model
+                    let justification = BoundJustification::CpModel(lit);
+                    let res =
                     // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
                     if event.affected_bound.is_plus() {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Upper, cst_int_to_long(event.new_upper_bound), justification, &mut self.trail)
+                            .set_bound_restrict(&BoundRestriction::leq(x_var, cst_int_to_long(event.new_upper_bound)), justification, &mut self.trail)
                     } else {
                         self.solver
-                            .set_bound_restrict(x_var, Bound::Lower, cst_int_to_long(-event.new_upper_bound), justification, &mut self.trail)
+                            .set_bound_restrict(&BoundRestriction::geq(x_var, cst_int_to_long(-event.new_upper_bound)), justification, &mut self.trail)
                     };
 
-                if let Err(infeasible) = res {
-                    self.explain_infeasibility(&infeasible, domains)?;
+                    if let Err(infeasible) = res {
+                        self.explain_infeasibility(&infeasible, &domains)?;
+                    }
+                }
+            }
+
+            // check feasibility with a maximum number of pivot operation.
+            let feas_result = self.solver.check_feasibility(self.lp_dealine());
+
+            match feas_result {
+                Ok(FeasibilityStatus::Feasible) => {
+                    // we proved feasibility \o/
+                    // we are allowed to go to next level (if there is already one)
+                    if self.solver_lvl() > self.lp_level() {
+                        self.trail.save_state(); // bump LP level
+                        increased_level = true // enable a new round of propagation
+                    }
+                    debug_assert!(self.lp_level() <= self.solver_lvl());
+                    self.stats.num_feasible += 1;
+                }
+                Ok(FeasibilityStatus::Infeasible(cause)) => {
+                    // infeasibility in the LP, compute a contraction and short-circuit
+                    self.explain_infeasibility(&cause, &domains)?;
+                    // if we are here, it means we could not validate the infeasibility T_T
+                    // TODO: right now we do nothing but we may want to take some measure
+                    // to improve numerical stability or decrease the computational effort
+                }
+                Err(SolverFailure::Timeout) => {
+                    // not enough time allocated to the LP, we will continue later
+                    self.stats.num_check_timeouts += 1;
+                }
+                Err(SolverFailure::Unstable) => {
+                    // solver had numerical problems and could not reach a conclusion
+                    // TODO: see above, we may want to take measures to improve results or reduce cost
+                    self.stats.num_unstable += 1;
                 }
             }
         }
-
-        // After updating all the bounds, we check that our lp solver is still in a feasible state
-        if let Ok(FeasibilityStatus::Infeasible(cause)) = self.solver.check_feasibility() {
-            self.explain_infeasibility(&cause, domains)?;
-        }
-
-        self.stats.num_ok_propagate += 1;
 
         Ok(())
     }
@@ -638,10 +763,7 @@ impl Theory for Lp {
     fn print_stats(&self) {
         if self.options.enable {
             println!("# propagations: {}", self.stats.num_propagate);
-            println!(
-                "# contradictions: {}",
-                self.stats.num_propagate - self.stats.num_ok_propagate
-            );
+            println!("# contradictions: {}", self.stats.num_contradictions);
             println!("# constraints: {}", self.stats.num_constraints);
             println!("# variables: {}", self.stats.num_variables);
             println!(
@@ -649,6 +771,9 @@ impl Theory for Lp {
                 self.stats.num_certif, self.stats.num_val_certif, self.stats.num_overflow
             );
             println!("# valid float certificates: {}", self.stats.num_val_certif_float);
+            println!("# pivots: {}", self.solver.lp.solver_stats().num_pivots);
+            println!("# timeouts: {}", self.stats.num_check_timeouts);
+            println!("# unstable: {}", self.stats.num_unstable);
         } else {
             println!("DISABLED");
         }
@@ -661,38 +786,54 @@ impl Theory for Lp {
 
 impl Backtrack for Lp {
     fn save_state(&mut self) -> DecLvl {
-        self.trail.save_state()
+        // bump number of allowed pivots
+        self.total_allowed_pivots += self.options.pivots_per_decision;
+
+        // track solver level
+        self.cp_decision_level.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        self.trail.num_saved()
+        // use the CP level as this is what should be externally visible.
+        self.cp_decision_level.num_saved()
     }
 
     fn restore_last(&mut self) {
-        self.trail.restore_last_with(|lp_event| {
-            let _ = self.solver.set_bound(
-                lp_event.var,
-                lp_event.bound,
-                lp_event.old_val,
-                lp_event.old_justification,
-            );
-        });
+        // track solver state
+        self.cp_decision_level.restore_last();
 
-        if self
-            .pending_bound_constrs_applied_at
-            .is_some_and(|lvl| lvl > self.current_decision_level())
-        {
-            // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
-            // We reset them all as pending again.
-            self.pending_bound_constrs.clear();
-            self.pending_bound_constrs.extend(self.bound_constrs.keys());
-            self.pending_bound_constrs_applied_at = None;
+        // if the solver backtracked past the current LP level, we need to backtrack
+        // on it too.
+        if self.solver_lvl() < self.lp_level() {
+            self.trail.restore_last_with(|lp_event| {
+                let _ = self.solver.set_bound(
+                    lp_event.var,
+                    lp_event.bound,
+                    lp_event.old_val,
+                    lp_event.old_justification,
+                );
+            });
+
+            if self
+                .pending_bound_constrs_applied_at
+                .is_some_and(|lvl| lvl > self.lp_level())
+            {
+                // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
+                // We reset them all as pending again.
+                self.pending_bound_constrs.clear();
+                self.pending_bound_constrs.extend(self.bound_constrs.keys());
+                self.pending_bound_constrs_applied_at = None;
+            }
+            debug_assert_eq!(self.solver_lvl(), self.lp_level());
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::field_reassign_with_default)]
+    use std::f64;
+
     use rand::{
         Rng, SeedableRng,
         rngs::SmallRng,
@@ -921,6 +1062,7 @@ mod tests {
         for seed in 0..n {
             println!("seed: {seed}");
             let (mut lp, mut d) = gen_filled_lp_domain(30, 30, -100, 100, 0.1, seed);
+            lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
             backtracking_single(&mut d, &mut lp);
         }
     }
@@ -936,6 +1078,7 @@ mod tests {
         let q = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
@@ -969,6 +1112,7 @@ mod tests {
         let c = d.new_var(-1, 1).geq(0);
 
         let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         lp.activate();
 
         let lp_x = lp.bind_cp_var(x, &d);
@@ -1053,6 +1197,7 @@ mod tests {
         let q = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
@@ -1087,6 +1232,7 @@ mod tests {
         let unrelated = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();
@@ -1132,6 +1278,7 @@ mod tests {
         let scope = d.new_var(0, 1);
 
         let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.activate();

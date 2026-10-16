@@ -13,11 +13,13 @@ mod sparse;
 pub mod prelude;
 pub mod results;
 
+use std::time::{Duration, Instant};
+
 #[allow(unused_imports)]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::{expr::Constraint, prelude::*};
+use crate::{expr::Constraint, prelude::*, solver::Stats};
 
 /// A Linear Program (LP), that can be use to construct the LP and solve it.
 #[derive(Clone, Debug)]
@@ -116,6 +118,11 @@ impl Lp {
     ///
     /// Note that the objective is completely ignored when checking feasibility.
     pub fn check_feasibility(&mut self) -> Result<FeasibilityStatus, SolverFailure> {
+        self.check_feasibility_with_deadline(Deadline::None)
+    }
+
+    /// Same as [`Self::check_feasibility`] but accepts a [`Deadline`] at which the search will time-out.
+    pub fn check_feasibility_with_deadline(&mut self, deadline: Deadline) -> Result<FeasibilityStatus, SolverFailure> {
         let solver = match self.get_solver() {
             Ok(solver) => solver,
             Err(infeasibitiy) => {
@@ -123,7 +130,7 @@ impl Lp {
             }
         };
 
-        match solver.solve_feasibility() {
+        match solver.solve_feasibility(deadline) {
             Ok(()) => Ok(FeasibilityStatus::Feasible),
             Err(Error::IncompatibleBounds(var)) => Ok(FeasibilityStatus::Infeasible(
                 InfeasibilityReason::IncompatibleBounds(var),
@@ -133,12 +140,21 @@ impl Lp {
             }
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => unreachable!("Cannot return unbounded when checking feasibility only"),
+            Err(Error::Timeout) => Err(SolverFailure::Timeout),
         }
     }
     /// Solve the problem, finding an assignment to all variables that maximizes/minimizes the objective.
     ///
     /// Will returns an error if the solve could not terminate and the status of the LP is therefore not known.
     pub fn solve<'this>(&'this mut self) -> Result<SolveStatus<'this>, SolverFailure> {
+        self.solve_with_deadline(Deadline::None)
+    }
+
+    /// Same as [`Self::solve`] but accepts a [`Deadline`] at which the search will time-out.
+    pub fn solve_with_deadline<'this>(
+        &'this mut self,
+        deadline: Deadline,
+    ) -> Result<SolveStatus<'this>, SolverFailure> {
         let num_vars = self.problem.obj_coeffs.len();
         let direction = self.problem.direction;
         let solver = match self.get_solver() {
@@ -146,7 +162,7 @@ impl Lp {
             Err(infeasible) => return Ok(SolveStatus::Infeasible(infeasible)),
         };
         use SolveStatus::*;
-        match solver.initial_solve() {
+        match solver.initial_solve(deadline) {
             Ok(()) => Ok(Optimal(Solution {
                 num_vars,
                 direction,
@@ -156,7 +172,13 @@ impl Lp {
             Err(Error::InfeasibleWithCertificate(cert)) => Ok(Infeasible(InfeasibilityReason::Certified(cert))),
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => Ok(SolveStatus::Unbounded),
+            Err(Error::Timeout) => Err(SolverFailure::Timeout),
         }
+    }
+
+    /// Returns solver statistics.
+    pub fn solver_stats(&self) -> &Stats {
+        self.solver.as_ref().map_or(&Stats::DEFAULT, |s| &s.stats)
     }
 }
 
@@ -209,48 +231,38 @@ pub enum ComparisonOp {
     Ge,
 }
 
-/// An error encountered while solving a problem.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Error {
-    /// The problem is infeasible because an added constraint is a contradiction
-    /// or because a var has inconsistent bounds: min > max
-    IncompatibleBounds(Variable),
-    /// Constrains can't simultaneously be satisfied and a certificate was generated
-    /// The coefficients of the certificate correspond to the associated constraint
-    InfeasibleWithCertificate(Vec<f64>),
-    /// The objective function is unbounded.
-    Unbounded,
-    /// Floating point operations caused unstability
-    Unstable,
+/// Absolute deadline to pass to a solver to limit its runtime.
+#[derive(Copy, Clone, Debug)]
+pub enum Deadline {
+    /// Maximum number of pivots SINCE THE SOLVER CREATION.
+    NumPivots(usize),
+    /// Absolute time at which the solver should stop.
+    ///
+    /// See [`Self::duration`] and [`Self::duration_s`] for creating deadlines from durations.
+    Date(Instant),
+    /// Unlimited runtime.
+    None,
 }
 
-impl From<results::NumericalErrors> for Error {
-    fn from(_: results::NumericalErrors) -> Self {
-        Self::Unstable
+impl Deadline {
+    /// An absolute time ([`Instant]).
+    pub fn date(deadline: Instant) -> Self {
+        Deadline::Date(deadline)
+    }
+
+    /// Convenience method to create a deadline from a duration.
+    ///
+    /// The deadline will be set to `duration` after the date *at which this function is called*
+    /// (as given by [`Instant::now`]).
+    pub fn duration(duration: Duration) -> Self {
+        Self::date(Instant::now() + duration)
+    }
+
+    /// Convenience method to specify a deadline from a duration in seconds.
+    pub fn duration_s(seconds: f64) -> Self {
+        Self::duration(Duration::from_secs_f64(seconds))
     }
 }
-
-impl From<InfeasibilityReason> for Error {
-    fn from(value: InfeasibilityReason) -> Self {
-        match value {
-            InfeasibilityReason::IncompatibleBounds(variable) => Error::IncompatibleBounds(variable),
-            InfeasibilityReason::Certified(items) => Error::InfeasibleWithCertificate(items),
-        }
-    }
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Error::IncompatibleBounds(var) => write!(f, "problem is infeasible: vars with incoherent bounds: {var:?}"),
-            Error::InfeasibleWithCertificate(v) => write!(f, "problem is infeasible, certificate: {:?}", v),
-            Error::Unbounded => write!(f, "problem is unbounded"),
-            Error::Unstable => write!(f, "problem is instable"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 /// A specification of a linear programming problem: the objective direction, the variables
 /// with their bounds, and the constraints.

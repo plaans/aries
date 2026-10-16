@@ -273,9 +273,17 @@ impl<V> ObsTrail<V> {
     /// Returns an iterator over all events after the indicated decision level,
     /// starting from the most recent.
     pub fn events_after(&self, dec_lvl: DecLvl) -> impl Iterator<Item = &V> + '_ {
-        let last = self.backtrack_points[dec_lvl + 1];
+        let last = self.first_event_after(dec_lvl);
         let last = usize::from(last);
         self.events[last..].iter().rev()
+    }
+
+    /// Returns the index of the first event that is not present at this decision level or earlier.
+    pub fn first_event_after(&self, dec_lvl: DecLvl) -> EventIndex {
+        self.backtrack_points
+            .get((dec_lvl).to_int() as usize)
+            .copied()
+            .unwrap_or(self.next_slot())
     }
 
     pub fn get_event(&self, id: EventIndex) -> &V {
@@ -476,12 +484,30 @@ impl<V> ObsTrailCursor<V> {
         size - usize::from(self.next_read)
     }
 
+    /// Returns the earliest unseen event in the given trail, and mark it as seen.
     pub fn pop<'q>(&mut self, queue: &'q ObsTrail<V>) -> Option<&'q V> {
         self.sync_backtrack(queue);
 
         let next = self.next_read;
         if next < queue.next_slot() {
             self.next_read += 1;
+            Some(&queue.events[next])
+        } else {
+            None
+        }
+    }
+
+    /// Returns the earliest unseen event in the given trail that is at or below the given decision level,
+    /// and mark it as seen.
+    ///
+    /// Returns `None` if there is no such events.
+    pub fn pop_up_to<'q>(&mut self, lvl: DecLvl, queue: &'q ObsTrail<V>) -> Option<&'q V> {
+        self.sync_backtrack(queue);
+
+        let next = self.next_read;
+        if next < queue.next_slot() && next < queue.first_event_after(lvl) {
+            self.next_read += 1;
+            debug_assert!(queue.decision_level(next) <= lvl);
             Some(&queue.events[next])
         } else {
             None

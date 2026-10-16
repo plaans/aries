@@ -1,20 +1,21 @@
 use std::{collections::BinaryHeap, fmt};
 
+use crate::prelude::*;
+use aries_lp::prelude::*;
+
 use crate::{
     backtrack::{DecLvl, Trail},
     collections::ref_store::RefMap,
     core::{
-        IntCst, Lit, LongCst, Var, cst_int_to_long,
-        state::{Domains, DomainsSnapshot, Explanation},
+        LongCst, cst_int_to_long,
+        state::{DomainsSnapshot, Explanation},
     },
     reasoners::lp::{
-        BoundConstraintId, BoundConstraintsStore, LpEvent, LpSum, Stats,
+        BoundConstraintId, BoundConstraintsStore, BoundRestriction, LpEvent, LpSum, Stats,
         explanation_utils::{LbBoundEvent, SumElem},
     },
 };
 
-use aries_lp::{Bound, Lp, OptimizationDirection, Variable, results::InfeasibilityReason};
-#[allow(unused_imports)]
 use itertools::Itertools;
 
 /// How the current value of a bound was established, i.e. what justifies it in an explanation.
@@ -183,18 +184,13 @@ impl Solver {
     /// # Errors
     ///
     /// Will return an error if the problem is immediately detected as infeasible.
-    pub fn set_bound_restrict_permanent(
-        &mut self,
-        var: Variable,
-        bound: Bound,
-        val: LongCst,
-    ) -> Result<bool, InfeasibilityReason> {
-        let restricts = match bound {
-            Bound::Lower => val > self.bounds[var.idx()].lower,
-            Bound::Upper => val < self.bounds[var.idx()].upper,
+    pub fn set_bound_restrict_permanent(&mut self, c: &BoundRestriction) -> Result<bool, InfeasibilityReason> {
+        let restricts = match c.bound {
+            Bound::Lower => c.val > self.bounds[c.var.idx()].lower,
+            Bound::Upper => c.val < self.bounds[c.var.idx()].upper,
         };
         if restricts {
-            self.set_bound(var, bound, val, BoundJustification::Unconditional)?;
+            self.set_bound(c.var, c.bound, c.val, BoundJustification::Unconditional)?;
         }
         Ok(restricts)
     }
@@ -207,40 +203,38 @@ impl Solver {
     /// Will return an error if the problem is immediatly detected as infeasible.
     pub fn set_bound_restrict(
         &mut self,
-        var: Variable,
-        bound: Bound,
-        val: LongCst,
+        c: &BoundRestriction,
         justification: BoundJustification,
         trail: &mut Trail<LpEvent>,
     ) -> Result<bool, InfeasibilityReason> {
-        match bound {
+        match c.bound {
             Bound::Lower => {
-                let old_val = self.bounds[var.idx()].lower;
-                let old_justification = self.bounds[var.idx()].lower_justification;
-                if val > old_val {
+                let old_val = self.bounds[c.var.idx()].lower;
+                let old_justification = self.bounds[c.var.idx()].lower_justification;
+                if c.val > old_val {
                     trail.push(LpEvent {
-                        var,
-                        bound,
+                        var: c.var,
+                        bound: c.bound,
                         old_val,
                         old_justification,
                     });
-                    self.set_bound(var, bound, val, justification)?;
+                    self.set_bound(c.var, c.bound, c.val, justification)?;
 
                     return Ok(true);
                 }
             }
             Bound::Upper => {
-                let old_val = self.bounds[var.idx()].upper;
-                let old_justification = self.bounds[var.idx()].upper_justification;
+                let old_val = self.bounds[c.var.idx()].upper;
+                let old_justification = self.bounds[c.var.idx()].upper_justification;
 
-                if val < old_val {
+                if c.val < old_val {
                     trail.push(LpEvent {
-                        var,
-                        bound,
+                        var: c.var,
+                        bound: c.bound,
                         old_val,
                         old_justification,
                     });
-                    self.set_bound(var, bound, val, justification)?;
+                    self.set_bound(c.var, c.bound, c.val, justification)?;
 
                     return Ok(true);
                 }
@@ -250,15 +244,12 @@ impl Solver {
         Ok(false)
     }
 
-    /// Restore the feasibility of the lp solver
-    ///
-    /// # Errors
-    ///
-    /// Will return an error if it can't be restored
+    /// Checks whether the current LP is feasible, with given time budget.
     pub fn check_feasibility(
         &mut self,
+        deadline: Deadline,
     ) -> Result<aries_lp::results::FeasibilityStatus, aries_lp::results::SolverFailure> {
-        self.lp.check_feasibility()
+        self.lp.check_feasibility_with_deadline(deadline)
     }
 
     /// Add a new constraint in both float and integer problems
@@ -321,7 +312,7 @@ impl Solver {
     pub fn check_certificate(
         &mut self,
         cert: &[f64],
-        domains: &Domains,
+        domains: &DomainsSnapshot,
         stats: &mut Stats,
         bc_store: &BoundConstraintsStore,
     ) -> Option<Explanation> {
@@ -412,15 +403,18 @@ impl Solver {
     /// (which is what makes the bound valid in the first place).
     ///
     /// An auxiliary variable still holding its initial bounds contributes nothing, as they hold unconditionally.
-    fn explain_leq(&self, lin_sum: &[i128], domains: &Domains, bc_store: &BoundConstraintsStore) -> Explanation {
+    fn explain_leq(
+        &self,
+        lin_sum: &[i128],
+        domains: &DomainsSnapshot,
+        bc_store: &BoundConstraintsStore,
+    ) -> Explanation {
         let mut explanation = Explanation::new();
 
         // We always explain a contradiction, i.e. lower bounds summing to *strictly* more than 0,
         // so the budget is raised by one to match the non-strict comparisons used below.
         // Same trick as in [`crate::reasoners::cp::linear::explain`].
         let mut ub = 1;
-
-        let domain_snap = DomainsSnapshot::current(domains);
 
         let mut culprits = BinaryHeap::new();
 
@@ -454,7 +448,7 @@ impl Solver {
                         .expect("a bound entailed by the main model can only be set on a variable mapped to it");
                     let sum_elem = SumElem::new(coef, var);
 
-                    if let Some(event) = LbBoundEvent::new(sum_elem, &domain_snap) {
+                    if let Some(event) = LbBoundEvent::new(sum_elem, domains) {
                         // there is a lower bound event on this element, add it to the set of culprits for later processing
                         culprits.push(event)
                     } else {
@@ -546,7 +540,12 @@ impl Solver {
     /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint `<lin_sum, variables> => 0`
     ///
     /// Check [`Solver::explain_leq`] for more details on how these [`Explanation`] are generated
-    fn explain_geq(&self, lin_sum: &[i128], domains: &Domains, bc_store: &BoundConstraintsStore) -> Explanation {
+    fn explain_geq(
+        &self,
+        lin_sum: &[i128],
+        domains: &DomainsSnapshot,
+        bc_store: &BoundConstraintsStore,
+    ) -> Explanation {
         let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
 
         self.explain_leq(opp_constraint, domains, bc_store)
