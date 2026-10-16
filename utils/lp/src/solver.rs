@@ -9,6 +9,7 @@ use crate::{
 };
 
 use crate::prelude::*;
+use crate::validation;
 
 use sprs::CompressedStorage;
 
@@ -27,12 +28,12 @@ const PERTURBATION: f64 = 1e-6;
 pub(crate) struct Solver {
     pub(crate) num_vars: usize,
 
-    orig_obj_coeffs: Vec<f64>,
-    orig_var_mins: Vec<f64>,
-    orig_var_maxs: Vec<f64>,
-    orig_constraints: CsMat, // excluding rhs
+    pub(crate) orig_obj_coeffs: Vec<f64>,
+    pub(crate) orig_var_mins: Vec<f64>,
+    pub(crate) orig_var_maxs: Vec<f64>,
+    pub(crate) orig_constraints: CsMat, // excluding rhs
     orig_constraints_csc: CsMat,
-    orig_rhs: Vec<f64>,
+    pub(crate) orig_rhs: Vec<f64>,
 
     enable_primal_steepest_edge: bool,
     enable_dual_steepest_edge: bool,
@@ -600,7 +601,7 @@ impl Solver {
         self.orig_constraints.rows()
     }
 
-    fn num_total_vars(&self) -> usize {
+    pub(crate) fn num_total_vars(&self) -> usize {
         self.num_vars + self.num_constraints()
     }
 
@@ -614,16 +615,36 @@ impl Solver {
         Ok(())
     }
 
-    pub(crate) fn initial_solve(&mut self, deadline: Deadline) -> Result<(), Error> {
+    /// Solves the problem to optimality and verifies the result.
+    ///
+    /// On success, returns the dual multipliers of the optimal basis — an optimality
+    /// certificate — with the certified solution readable from the solver.
+    ///
+    /// The result is verified before being reported (see [`crate::validation`]): the
+    /// solution and the certificate are checked against the problem, and a result that
+    /// does not check out is reported as a numerical failure ([`Error::Unstable`]) instead
+    /// of a wrong answer.
+    pub(crate) fn initial_solve(&mut self, deadline: Deadline) -> Result<Vec<f64>, Error> {
         self.process_pending_basis_updates()?;
 
         self.optimize(deadline)?;
+
+        if !validation::solution_is_valid(self) {
+            log::warn!("solver produced a solution that violates the model");
+            return Err(Error::Unstable);
+        }
+
+        let duals = self.dual_multipliers();
+        if !validation::optimality_certificate_is_valid(self, &duals, self.cur_obj_val) {
+            log::warn!("solver produced an optimality certificate that failed validation");
+            return Err(Error::Unstable);
+        }
 
         // Disable updates of primal sq. norms, because lengthy primal simplex runs
         // are unlikely after the initial solve.
         self.enable_primal_steepest_edge = false;
 
-        Ok(())
+        Ok(duals)
     }
 
     /// Optimizes the current basis to optimality of the *original* objective with the
@@ -1396,7 +1417,15 @@ impl Solver {
                 }
             }
 
-            return Err(Error::InfeasibleWithCertificate(certificate));
+            // The certificate is verified before being handed out: an invalid one would
+            // be an unsound verdict (claiming the infeasibility of a possibly
+            // satisfiable problem), and is reported as a numerical failure instead.
+            return if validation::infeasibility_certificate_is_valid(self, &certificate) {
+                Err(Error::InfeasibleWithCertificate(certificate))
+            } else {
+                log::warn!("solver produced an infeasibility certificate that failed validation");
+                Err(Error::Unstable)
+            };
         };
 
         // Harris-style tie-breaking among the breakpoints that were not passed: the
@@ -1779,6 +1808,50 @@ impl Solver {
         self.obj_coeffs_perturbed = false;
 
         Ok(())
+    }
+
+    /// Computes the dual multipliers of the current basis: `y = B^-T c_B`, where `c_B`
+    /// are the (original) costs of the basic variables.
+    ///
+    /// At an optimal basis, the multipliers form an optimality certificate (see
+    /// [`Problem::is_optimality_certificate_valid`]): the reduced costs they induce are
+    /// dual feasible, and the dual bound they prove matches the optimal objective value.
+    ///
+    /// Requires an optimal basis: primal feasible, dual feasible, with the exact reduced
+    /// costs of the original objective (see the invariants on [`Self::is_primal_feasible`],
+    /// [`Self::is_dual_feasible`] and [`Self::obj_coeffs_inexact`]).
+    pub(crate) fn dual_multipliers(&mut self) -> Vec<f64> {
+        debug_assert!(self.pending.is_none());
+        debug_assert!(
+            self.is_primal_feasible,
+            "dual multipliers require a primal feasible basis"
+        );
+        debug_assert!(self.is_dual_feasible, "dual multipliers require a dual feasible basis");
+        debug_assert!(
+            !self.obj_coeffs_inexact,
+            "dual multipliers require the exact reduced costs"
+        );
+
+        // Right-hand side: the costs of the basic variables, one per row.
+        let basic_costs: Vec<(usize, f64)> = self
+            .basic_vars
+            .iter()
+            .enumerate()
+            .filter_map(|(row, var)| {
+                let cost = self.orig_obj_coeffs[*var];
+                (cost != 0.0).then_some((row, cost))
+            })
+            .collect();
+        let num_constraints = self.num_constraints();
+        let multipliers = self.basis_solver.solve_transp(basic_costs.iter().map(|(r, c)| (*r, c)));
+
+        let mut y = vec![0.0; num_constraints];
+        for (r, &val) in multipliers.iter() {
+            if r < y.len() {
+                y[r] = val;
+            }
+        }
+        y
     }
 
     #[allow(dead_code)]

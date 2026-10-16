@@ -9,6 +9,7 @@ mod mps;
 mod ordering;
 mod solver;
 mod sparse;
+mod validation;
 
 pub mod prelude;
 pub mod results;
@@ -80,22 +81,6 @@ impl Lp {
         Ok(())
     }
 
-    /// Verify a certificate of unsatisfiability against this LP.
-    ///
-    /// The certificate is a vector with one coefficient per constraint: each constraint is multiplied
-    /// by its coefficient and the results are summed, which must produce a constraint that is
-    /// trivially unsatisfiable given the variables' bounds.
-    ///
-    /// Certificates are typically obtained from [`results::InfeasibilityReason::Certified`] after a failed
-    /// [`Lp::solve`] or [`Lp::check_feasibility`] call.
-    ///
-    /// # Panics
-    ///
-    /// Panics in debug mode if the number of coefficients does not match the number of constraints.
-    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
-        self.problem.is_certificate_valid(cert)
-    }
-
     /// Returns a solver for this LP, initializing a new one on its first call.
     ///
     /// Might return an error if an obvious inconsistency is detected when initializing the solver.
@@ -135,9 +120,11 @@ impl Lp {
             Err(Error::IncompatibleBounds(var)) => Ok(FeasibilityStatus::Infeasible(
                 InfeasibilityReason::IncompatibleBounds(var),
             )),
-            Err(Error::InfeasibleWithCertificate(cert)) => {
-                Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)))
-            }
+            // The certificate was verified by the solver before being reported
+            // (see the `validation` module).
+            Err(Error::InfeasibleWithCertificate(cert)) => Ok(FeasibilityStatus::Infeasible(
+                InfeasibilityReason::Certified(Certificate::new(cert)),
+            )),
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => unreachable!("Cannot return unbounded when checking feasibility only"),
             Err(Error::Timeout) => Err(SolverFailure::Timeout),
@@ -163,13 +150,19 @@ impl Lp {
         };
         use SolveStatus::*;
         match solver.initial_solve(deadline) {
-            Ok(()) => Ok(Optimal(Solution {
+            // The solution and its optimality certificate were verified by the solver
+            // before being reported (see the `validation` module).
+            Ok(dual_multipliers) => Ok(Optimal(Solution {
                 num_vars,
                 direction,
+                optimality_certificate: Certificate::new(dual_multipliers),
                 solver,
             })),
             Err(Error::IncompatibleBounds(var)) => Ok(Infeasible(InfeasibilityReason::IncompatibleBounds(var))),
-            Err(Error::InfeasibleWithCertificate(cert)) => Ok(Infeasible(InfeasibilityReason::Certified(cert))),
+            // The certificate was verified by the solver before being reported.
+            Err(Error::InfeasibleWithCertificate(cert)) => {
+                Ok(Infeasible(InfeasibilityReason::Certified(Certificate::new(cert))))
+            }
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => Ok(SolveStatus::Unbounded),
             Err(Error::Timeout) => Err(SolverFailure::Timeout),
@@ -384,113 +377,6 @@ impl Problem {
         }
     }
 
-    const TOL: f64 = 1e-8;
-
-    /// Calculate the maximum value that the linear sum with the expr coeff can take regarding the bounds of the variables
-    ///
-    /// Used to verify a certificate of unsatisfiability
-    fn calculate_max_expr(&self, expr: &[f64]) -> f64 {
-        debug_assert_eq!(expr.len(), self.var_maxs.len());
-
-        expr.iter()
-            .enumerate()
-            .map(|(i, &coeff)| {
-                if coeff.abs() <= Problem::TOL {
-                    0.0
-                } else if coeff < 0.0 {
-                    self.var_mins[i] * coeff
-                } else {
-                    self.var_maxs[i] * coeff
-                }
-            })
-            .sum()
-    }
-
-    /// Calculate the minimum value that the linear sum with the expr coeff can take regarding the bounds of the variables
-    ///
-    /// Used to verify a certificate of unsatisfiability
-    fn calculate_min_expr(&self, expr: &[f64]) -> f64 {
-        debug_assert_eq!(expr.len(), self.var_mins.len());
-
-        expr.iter()
-            .enumerate()
-            .map(|(i, &coeff)| {
-                if coeff.abs() <= Problem::TOL {
-                    0.0
-                } else if coeff > 0.0 {
-                    self.var_mins[i] * coeff
-                } else {
-                    self.var_maxs[i] * coeff
-                }
-            })
-            .sum()
-    }
-
-    /// Verify the certificate of unsatisfiability
-    ///
-    /// Coeffcicient i in cert corresponds to the constraint number i
-    /// All constraints are multiplies with their coefficient and summed to construct the unsatisfiable constraint
-    ///
-    /// Important: the Problem bounds/constraints need to be up to date with the Solver/FeasbilityChecker generating the certificate
-    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
-        debug_assert_eq!(cert.len(), self.constraints.len());
-
-        let mut expr = vec![0.0; self.var_maxs.len()];
-
-        let mut bound = 0.0;
-
-        let mut cmp_op = ComparisonOp::Eq;
-
-        for (const_i, &coef_cert) in cert.iter().enumerate() {
-            if coef_cert == 0.0 {
-                continue;
-            }
-
-            match self.constraints[const_i].1 {
-                ComparisonOp::Le => {
-                    if coef_cert > 0.0 {
-                        cmp_op = ComparisonOp::Le;
-                    } else {
-                        cmp_op = ComparisonOp::Ge;
-                    }
-                }
-                ComparisonOp::Ge => {
-                    if coef_cert > 0.0 {
-                        cmp_op = ComparisonOp::Ge;
-                    } else {
-                        cmp_op = ComparisonOp::Le;
-                    }
-                }
-                ComparisonOp::Eq => {}
-            }
-
-            bound += coef_cert * self.constraints[const_i].2;
-
-            for (var_i, coef_var) in self.constraints[const_i].0.iter() {
-                expr[var_i] += coef_cert * coef_var;
-            }
-        }
-
-        match cmp_op {
-            ComparisonOp::Ge => {
-                let max_expr = self.calculate_max_expr(&expr);
-                max_expr < bound //+ Self::TOL
-            }
-            ComparisonOp::Le => {
-                let min_expr = self.calculate_min_expr(&expr);
-                min_expr > bound //- Self::TOL
-            }
-            ComparisonOp::Eq => {
-                let min_expr = self.calculate_min_expr(&expr);
-                let max_expr = self.calculate_max_expr(&expr);
-
-                // println!("max: {max_expr}, min: {min_expr}, bound: {bound}");
-
-                max_expr < bound /*+ Self::TOL*/ || min_expr > bound //- Self::TOL
-            }
-        }
-    }
-
     /// Returns the optimization direction
     pub fn get_direction(&self) -> OptimizationDirection {
         self.direction
@@ -537,6 +423,8 @@ pub enum Bound {
 pub struct Solution<'solver> {
     direction: OptimizationDirection,
     num_vars: usize,
+    /// The dual multipliers of the optimal basis: an optimality certificate.
+    optimality_certificate: Certificate,
     solver: &'solver solver::Solver,
 }
 
@@ -559,6 +447,16 @@ impl<'solver> Solution<'solver> {
             OptimizationDirection::Minimize => self.solver.cur_obj_val,
             OptimizationDirection::Maximize => -self.solver.cur_obj_val,
         }
+    }
+
+    /// The optimality certificate of this solution: the dual multipliers of the optimal
+    /// basis, proving that the reported objective value cannot be improved upon.
+    ///
+    /// The certificate is verified by the solver before the solution is handed out (see
+    /// the `validation` module); the multipliers are available for independent
+    /// verification (e.g. with exact arithmetic).
+    pub fn optimality_certificate(&self) -> &Certificate {
+        &self.optimality_certificate
     }
 
     /// Value of the variable at optimum.
@@ -940,14 +838,8 @@ mod tests {
         nb_const: usize,
         verbose: bool,
         assert_on: bool,
-    ) -> (usize, usize, usize, usize) {
+    ) {
         let mut lp = Lp::from(problem);
-
-        let mut nb_cert_gen_const = 0;
-        let mut nb_val_cert_const = 0;
-
-        let mut nb_cert_gen_feas = 0;
-        let mut nb_val_cert_feas = 0;
 
         for (i, lit) in lit_vec.iter().enumerate() {
             // problem with the added constraint
@@ -967,30 +859,6 @@ mod tests {
                 lp.check_feasibility().unwrap()
             };
             let incremental_solve = { lp.solve().unwrap() };
-
-            use results::FeasibilityStatus::*;
-            use results::InfeasibilityReason::*;
-
-            if let Infeasible(Certified(cert)) = &from_scratch {
-                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
-                println!("Is certificate valid add_const: {}", is_certif_valid);
-                nb_cert_gen_const += 1;
-                nb_val_cert_const += is_certif_valid as usize;
-            }
-
-            if let SolveStatus::Infeasible(Certified(cert)) = &incremental_solve {
-                let is_certif_valid = problem.is_certificate_valid(cert);
-                println!("Is certificate valid set_bound: {}", is_certif_valid);
-                nb_cert_gen_feas += 1;
-                nb_val_cert_feas += is_certif_valid as usize;
-            }
-
-            if let Infeasible(Certified(cert)) = &incremental {
-                let is_certif_valid = problem.is_certificate_valid(cert);
-                println!("Is certificate valid cheak_feas: {}", is_certif_valid);
-                nb_cert_gen_feas += 1;
-                nb_val_cert_feas += is_certif_valid as usize;
-            }
 
             if from_scratch.infeasible() != incremental.infeasible()
                 || from_scratch.infeasible() != incremental_solve.infeasible()
@@ -1013,8 +881,6 @@ mod tests {
                 break;
             }
         }
-
-        (nb_val_cert_const, nb_cert_gen_const, nb_val_cert_feas, nb_cert_gen_feas)
     }
 
     #[test]
@@ -1044,31 +910,12 @@ mod tests {
         sparse_proportion: f32,
         assert_on: bool,
     ) {
-        let mut nb_cert_gen_const = 0;
-        let mut nb_val_cert_const = 0;
-
-        let mut nb_cert_gen_feas = 0;
-        let mut nb_val_cert_feas = 0;
-
         for seed in first_seed..last_seed {
             println!("Seed: {seed}");
 
             let (problem, lit_vec) = gen_problem(nb_var, nb_const, min, max, sparse_proportion, seed);
-
-            let (nb_val_cert_const_tmp, nb_cert_gen_const_tmp, nb_val_cert_feas_tmp, nb_cert_gen_feas_tmp) =
-                test_incremental_constraints(problem, lit_vec, nb_const, false, assert_on);
-            nb_cert_gen_feas += nb_cert_gen_feas_tmp;
-            nb_val_cert_feas += nb_val_cert_feas_tmp;
-
-            nb_cert_gen_const += nb_cert_gen_const_tmp;
-            nb_val_cert_const += nb_val_cert_const_tmp;
+            test_incremental_constraints(problem, lit_vec, nb_const, false, assert_on);
         }
-
-        println!(
-            "Proportion valid certificate feas checker: {}, add const: {}",
-            nb_val_cert_feas as f32 / nb_cert_gen_feas as f32,
-            nb_val_cert_const as f32 / nb_cert_gen_const as f32,
-        );
     }
 
     #[test]
@@ -1104,8 +951,9 @@ mod tests {
 
             let sol = problem.solve();
 
+            // The certificate was validated by the solver before being reported.
             if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 2);
             } else {
                 panic!()
             }
@@ -1119,8 +967,9 @@ mod tests {
             problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 9.0);
 
             let sol = problem.solve();
+            // The certificate was validated by the solver before being reported.
             if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 2);
             } else {
                 panic!()
             }
@@ -1134,8 +983,9 @@ mod tests {
             problem.add_constraint([(x1, -1.0), (x2, 1.0)], ComparisonOp::Ge, 2.0);
 
             let sol = problem.solve();
+            // The certificate was validated by the solver before being reported.
             if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 2);
             } else {
                 panic!()
             }
@@ -1168,9 +1018,10 @@ mod tests {
         let x2 = problem.add_var(0.0, (0.0, 1.0));
         problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 3.0);
 
+        // The certificate was validated by the solver before being reported.
         match problem.check_feasibility().unwrap() {
             FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)) => {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 1);
             }
             status => panic!("expected a certified infeasibility, got {status:?}"),
         }
@@ -1211,6 +1062,26 @@ mod tests {
             order.swap(i, rng.gen_range(0, i + 1));
         }
         (problem, vars, order)
+    }
+
+    #[test]
+    fn optimality_certificates_are_validated() {
+        // A maximization problem with optimum 68 at (12, 8). The solver verifies the
+        // solution and its optimality certificate before reporting them (see the
+        // `validation` module): solving successfully is the validation passing.
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
+        let v1 = problem.add_var(3.0, (0.0, 12.0));
+        let v2 = problem.add_var(4.0, (0.0, f64::INFINITY));
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 20.0);
+        problem.add_constraint([(v2, -4.0), (v1, 1.0)], ComparisonOp::Ge, -20.0);
+
+        let solution = problem.solve().unwrap().solution().unwrap();
+        assert_eq!(solution.objective(), 68.0);
+
+        // The solution carries the verified optimality certificate: the dual
+        // multipliers, one per constraint, available for independent verification.
+        let cert = solution.optimality_certificate();
+        assert_eq!(cert.as_multipliers().len(), 2);
     }
 
     #[test]

@@ -189,8 +189,6 @@ struct Stats {
     num_certif: usize,
     /// Number of valid certificates generated
     num_val_certif: usize,
-    /// Number of valid certificates generated using float calculations for verification
-    num_val_certif_float: usize,
     /// Number of overflows detected during the certificate verification
     num_overflow: usize,
     /// Number of proven infeasibility
@@ -212,7 +210,6 @@ impl Stats {
 
             num_certif: 0,
             num_val_certif: 0,
-            num_val_certif_float: 0,
             num_overflow: 0,
             num_contradictions: 0,
             num_check_timeouts: 0,
@@ -575,13 +572,15 @@ impl Lp {
         match cause {
             InfeasibilityReason::Certified(cert) => {
                 self.stats.num_certif += 1;
-                if self.solver.lp.is_certificate_valid(cert) {
-                    self.stats.num_val_certif_float += 1;
-                }
-                match self
-                    .solver
-                    .check_certificate(cert, domains, &mut self.stats, &self.bound_constrs)
-                {
+                // The certificate was already verified by the LP solver itself (with
+                // floating point arithmetic); it is cross-checked here with exact
+                // integer arithmetic over the CP model.
+                match self.solver.check_certificate(
+                    cert.as_multipliers(),
+                    domains,
+                    &mut self.stats,
+                    &self.bound_constrs,
+                ) {
                     Some(explanation) => {
                         self.stats.num_val_certif += 1;
                         self.stats.num_contradictions += 1;
@@ -770,7 +769,6 @@ impl Theory for Lp {
                 "# certificates: {}, valid: {}, overflow: {}",
                 self.stats.num_certif, self.stats.num_val_certif, self.stats.num_overflow
             );
-            println!("# valid float certificates: {}", self.stats.num_val_certif_float);
             println!("# pivots: {}", self.solver.lp.solver_stats().num_pivots);
             println!("# timeouts: {}", self.stats.num_check_timeouts);
             println!("# unstable: {}", self.stats.num_unstable);

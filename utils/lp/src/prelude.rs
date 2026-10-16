@@ -10,7 +10,7 @@
 pub use crate::{
     Bound, ComparisonOp, Deadline, Lp, OptimizationDirection, Problem, Solution, Variable,
     expr::{Constraint, LinExpr},
-    results::{FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
+    results::{Certificate, FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
 };
 
 // only re-exported for in-crate use

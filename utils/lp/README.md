@@ -16,7 +16,7 @@ Compared to standard `minilp`, this crate introduces:
   Variables, constraints and bound updates applied to an `Lp` are immediately available for the next solve, without rebuilding the problem from scratch.
 * **Incremental solving**: tighten or relax variable bounds ([`Lp::set_bound`]) and add new variables or constraints on the fly; subsequent solves start from the previous simplex state.
 * **Feasibility checking**: [`Lp::check_feasibility`] quickly verifies that the LP admits at least one solution, ignoring the objective, which is useful for interactive algorithms such as branch-and-bound or SAT/SMT-style search.
-* **Infeasibility certificates**: when the constraints cannot be satisfied, the solver can produce a Farkas certificate of infeasibility ([`results::InfeasibilityReason::Certified`]) that can be independently verified with [`Lp::is_certificate_valid`].
+* **Verified results**: the solver verifies everything it reports before handing it out — solutions, feasibility verdicts and certificates (a Farkas certificate of infeasibility when the constraints cannot be satisfied, the dual multipliers proving optimality for optimal solutions). A result that does not check out is reported as a numerical failure ([`results::SolverFailure::Unstable`]) instead of a wrong answer. Certificates ([`results::Certificate`]) expose their multipliers for independent verification, e.g. with exact arithmetic.
 * **Cycling-free feasibility restoration**: feasibility checks run a dual simplex with a zero objective, where every reduced cost is zero and a plain ratio test degenerates. The solver counters this with a bound flipping ratio test, anti-degeneracy cost perturbations, and stall detection — all transparent to the user: results (values, feasibility status, certificates, optima) are exact regardless.
 
 ---
@@ -135,8 +135,9 @@ let certificate = match lp.solve().unwrap() {
     _ => unreachable!("this problem is infeasible"),
 };
 
-// Verify the certificate against the current LP
-assert!(lp.is_certificate_valid(&certificate));
+// The certificate was already verified by the solver against the LP; its multipliers
+// are available for independent verification, e.g. with exact arithmetic.
+let multipliers = certificate.as_multipliers();
 ```
 
 
