@@ -82,6 +82,16 @@ pub(crate) struct Solver {
     /// accumulating perturbations on top of each other.
     obj_coeffs_perturbed: bool,
 
+    /// Number of consecutive dual pivots that did not significantly improve the objective
+    /// (see [`Self::restore_feasibility`]), and index of the current perturbation pattern.
+    ///
+    /// These persist across calls to [`Self::restore_feasibility`] so that stalls are
+    /// detected even when the restoration is spread over many calls with a tight pivot
+    /// budget — the LP reasoner typically allows only a handful of pivots per call, and
+    /// a cycle that spans calls must still be broken by refreshing the perturbations.
+    stalled_pivots: usize,
+    perturb_round: u32,
+
     // Updated on each pivot
     /// For each var: whether it is basic/non-basic and the corresponding index.
     var_states: Vec<VarState>,
@@ -424,6 +434,8 @@ impl Solver {
             // original objective.
             obj_coeffs_inexact: need_artificial_obj,
             obj_coeffs_perturbed: false,
+            stalled_pivots: 0,
+            perturb_round: 0,
             var_states,
             basis_solver: BasisSolver {
                 lu_factors,
@@ -636,10 +648,6 @@ impl Solver {
         }
 
         for iter in 0.. {
-            if self.time_elapsed(deadline) {
-                return Err(Error::Timeout);
-            }
-
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_dual_infeasibility();
                 log::debug!(
@@ -652,6 +660,11 @@ impl Solver {
             }
 
             if let Some(pivot_info) = self.choose_pivot()? {
+                // Concluding "optimal" costs no pivot, so the deadline is checked only
+                // once there is an actual pivot to perform (see [`Self::restore_feasibility`]).
+                if self.time_elapsed(deadline) {
+                    return Err(Error::Timeout);
+                }
                 self.pivot(&pivot_info)?;
             } else {
                 log::debug!("found optimum in {} iterations, obj.: {}", iter + 1, self.cur_obj_val,);
@@ -691,15 +704,9 @@ impl Solver {
         // The improvement test needs a tolerance: improvements below it are counted as
         // zero. This can only err towards an extra refresh of the perturbations, which
         // is always safe (see [`Self::perturb_obj_coeff`]).
-        let mut stalled_pivots: usize = 0;
-        let mut perturb_round: u32 = 0;
         let mut last_obj_val = self.cur_obj_val;
 
         for iter in 0.. {
-            if self.time_elapsed(deadline) {
-                return Err(Error::Timeout);
-            }
-
             if iter % 1000 == 0 {
                 let (num_vars, infeasibility) = self.calc_primal_infeasibility();
                 log::debug!(
@@ -713,23 +720,31 @@ impl Solver {
             }
 
             if let Some((row, leaving_new_val)) = self.choose_pivot_row_dual() {
+                // Concluding "feasible" costs no pivot, so the deadline is checked only
+                // once there is an actual pivot to perform: a call with no budget left
+                // can still conclude, e.g. when the previous call's last pivot completed
+                // the restoration.
+                if self.time_elapsed(deadline) {
+                    return Err(Error::Timeout);
+                }
+
                 // The dual ratio test is about to run: make sure tie-breaking
                 // perturbations are in place (no-op if already perturbed).
                 if !self.obj_coeffs_perturbed {
-                    self.perturb_obj_coeffs(perturb_round);
+                    self.perturb_obj_coeffs(self.perturb_round);
                 }
                 let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
 
                 if self.cur_obj_val > last_obj_val + EPS * (1.0 + last_obj_val.abs()) {
-                    stalled_pivots = 0;
+                    self.stalled_pivots = 0;
                 } else {
-                    stalled_pivots += 1;
-                    if stalled_pivots >= STALL_PIVOT_LIMIT {
-                        stalled_pivots = 0;
-                        perturb_round += 1;
-                        self.perturb_obj_coeffs(perturb_round);
+                    self.stalled_pivots += 1;
+                    if self.stalled_pivots >= STALL_PIVOT_LIMIT {
+                        self.stalled_pivots = 0;
+                        self.perturb_round += 1;
+                        self.perturb_obj_coeffs(self.perturb_round);
                     }
                 }
                 last_obj_val = self.cur_obj_val;
@@ -2135,5 +2150,64 @@ mod tests {
         assert!(!sol.obj_coeffs_inexact);
         assert!(!sol.obj_coeffs_perturbed);
         assert!((sol.cur_obj_val - (-5.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn feasibility_restoration_under_tight_pivot_budgets() {
+        // Two independent violated rows: restoring feasibility needs exactly two dual
+        // pivots. This is the rhythm of the LP reasoner, whose pivot budget starts at
+        // zero and grows by a fraction of a pivot per decision: checks must be no-ops
+        // when nothing is allowed, leave a resumable state when interrupted, and
+        // conclude as soon as the work is done.
+        let mut sol = Solver::try_new(
+            &[0.0, 0.0, 0.0],
+            &[0.0, 0.0, 0.0],
+            &[3.0, 3.0, 3.0],
+            &[
+                (to_sparse(&[1.0, 1.0, 0.0]), ComparisonOp::Ge, 4.0),
+                (to_sparse(&[0.0, 0.0, 1.0]), ComparisonOp::Ge, 2.0),
+            ],
+        )
+        .unwrap();
+        assert!(!sol.is_primal_feasible);
+
+        // No pivot allowed: the restoration must time out without touching any state,
+        // in particular without applying the perturbations.
+        assert_eq!(
+            sol.solve_feasibility(Deadline::NumPivots(0)).unwrap_err(),
+            Error::Timeout
+        );
+        assert!(!sol.is_primal_feasible);
+        assert!(!sol.obj_coeffs_inexact);
+        assert!(!sol.obj_coeffs_perturbed);
+        assert_eq!(sol.stats.num_pivots, 0);
+
+        // One pivot allowed: the first row is fixed, the perturbations are applied, then
+        // the budget is exhausted mid-restoration.
+        assert_eq!(
+            sol.solve_feasibility(Deadline::NumPivots(1)).unwrap_err(),
+            Error::Timeout
+        );
+        assert_eq!(sol.stats.num_pivots, 1);
+        assert!(!sol.is_primal_feasible);
+        assert!(sol.obj_coeffs_perturbed);
+        assert!(sol.obj_coeffs_inexact);
+
+        // Budget replenished: the restoration resumes — without re-applying the
+        // perturbations — and concludes although the budget exactly covers the last
+        // pivot (concluding costs no pivot).
+        sol.solve_feasibility(Deadline::NumPivots(2)).unwrap();
+        assert!(sol.is_primal_feasible);
+        assert_eq!(sol.stats.num_pivots, 2);
+        // The perturbations are only removed by optimization, not by feasibility checks.
+        assert!(sol.obj_coeffs_perturbed);
+
+        // The conclusion is valid: both rows are satisfied, all vars within bounds.
+        assert!(*sol.get_value(0) + *sol.get_value(1) >= 4.0 - 1e-9);
+        assert!(*sol.get_value(2) >= 2.0 - 1e-9);
+        for var in 0..3 {
+            let val = *sol.get_value(var);
+            assert!((0.0..=3.0).contains(&val), "var {var} out of bounds: {val}");
+        }
     }
 }
