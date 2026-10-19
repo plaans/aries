@@ -51,7 +51,7 @@ pub fn find_domain_of(problem_file: &std::path::Path) -> Res<PathBuf> {
 
     // if the problem if of the form instance-NN.Zddl
     // the add domain-NN.Zddl to the candidates filenames
-    let re = Regex::new("^instance-([1-9]+)\\.([hp]ddl)$").unwrap();
+    let re = Regex::new("^instance-([0-9]+)\\.([hp]ddl)$").unwrap();
     for m in re.captures_iter(problem_filename) {
         let name = format!("domain-{}.{}", &m[1], &m[2]);
         candidate_domain_files.push(name.into());
