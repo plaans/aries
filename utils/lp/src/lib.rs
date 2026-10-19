@@ -772,7 +772,7 @@ mod tests {
             lit_vec.push(Lit { bound, var: s, val });
         }
 
-        test_incremental_constraints(problem, lit_vec, 10, false, true);
+        test_incremental_constraints(problem, lit_vec, false, true);
     }
 
     fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
@@ -832,13 +832,7 @@ mod tests {
         (problem, lit_vec)
     }
 
-    fn test_incremental_constraints(
-        problem: Problem,
-        lit_vec: Vec<Lit>,
-        nb_const: usize,
-        verbose: bool,
-        assert_on: bool,
-    ) {
+    fn test_incremental_constraints(problem: Problem, lit_vec: Vec<Lit>, verbose: bool, assert_on: bool) {
         let mut lp = Lp::from(problem);
 
         for (i, lit) in lit_vec.iter().enumerate() {
@@ -853,7 +847,6 @@ mod tests {
                 lp.check_feasibility().unwrap()
             };
 
-            let problem = lp.problem.clone();
             let incremental = {
                 let mut lp = lp.clone();
                 lp.check_feasibility().unwrap()
@@ -914,7 +907,7 @@ mod tests {
             println!("Seed: {seed}");
 
             let (problem, lit_vec) = gen_problem(nb_var, nb_const, min, max, sparse_proportion, seed);
-            test_incremental_constraints(problem, lit_vec, nb_const, false, assert_on);
+            test_incremental_constraints(problem, lit_vec, false, assert_on);
         }
     }
 
