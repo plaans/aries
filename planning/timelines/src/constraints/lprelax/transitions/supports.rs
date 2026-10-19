@@ -216,10 +216,10 @@ mod tests {
     use aries_solver::prelude::Lit;
     use itertools::Itertools;
 
-    use crate::analysis::transitions::tests::visitall::{VisitAllLine, build_and_encode_visitall_line};
+    use crate::lprelax::tests::visitall::{VisitAllLine, build_and_encode_visitall_line};
 
-    use crate::analysis::transitions::{Transition, TransitionId, TransitionType, Transitions, supports::Supports};
     use crate::encoder::{CausalLink, SchedEncoder};
+    use crate::lprelax::transitions::{Transition, TransitionId, TransitionType, Transitions, supports::Supports};
 
     #[test]
     fn test_supports() {

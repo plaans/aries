@@ -1,3 +1,21 @@
+//! This module allows collecting and manipulating "transitions", which can be:
+//! - conditions (or condition-transitions),
+//! - effects (or effect-transitions),
+//! - pure transitions, i.e. pairs (condition, effect) where the condition and effect share:
+//!   - their source (container action instance),
+//!   - presence literal,
+//!   - their state variable name (state function),
+//!   - and their state variable parameter-variables (arguments).
+//!
+//! The module allows:
+//! - collecting the transitions in a low-level planning model (i.e. SchedEncoder), over "unambiguous" state functions
+//!   (see [`crate::analysis::nonsimple::collect_nonsimple_conditions_and_effects_to_relax`]),
+//! - evaluating a transition's terms given a grounding of its source (i.e. an assignment to its container action's parameters),
+//! - collecting the possible lifted support links between transitions.
+//!
+//! Note that although this module is contained in the [`lprelax`] model,
+//! it is completely independent of the rest of it of it.
+
 mod closed_world_default;
 pub mod ground;
 pub mod supports;
@@ -556,11 +574,9 @@ impl Transitions {
 
 #[cfg(test)]
 mod tests {
-    pub(crate) mod visitall;
-
     use crate::analysis::collect_nonsimple_conditions_and_effects_to_relax;
-    use crate::analysis::transitions::tests::visitall::{VisitAllLine, build_and_encode_visitall_line};
-    use crate::analysis::transitions::{TransitionType, Transitions};
+    use crate::lprelax::tests::visitall::{VisitAllLine, build_and_encode_visitall_line};
+    use crate::lprelax::transitions::{TransitionType, Transitions};
 
     #[test]
     fn test_transitions_visitall_line() {
