@@ -183,30 +183,7 @@ where
 /// It must be invoked in the crate that owns the `Var` type, at most once per
 /// `Var` type.
 ///
-/// # Example
-///
-/// ```
-/// use aries_linexpr::{ComparisonOp, LinExpr, VarCoeff, impl_linear_ops};
-///
-/// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// pub struct Var(pub usize);
-///
-/// impl_linear_ops!(Var, f64);
-///
-/// let x = Var(0);
-/// let y = Var(1);
-///
-/// // 2x + 3y <= 4
-/// let constraint = (2.0 * x + 3.0 * y).leq(4.0);
-/// assert_eq!(constraint.comp_op(), ComparisonOp::Le);
-///
-/// // x - y >= 0
-/// let constraint = (x - y).geq(0.0);
-/// assert_eq!(constraint.comp_op(), ComparisonOp::Ge);
-///
-/// let scaled: VarCoeff<Var, f64> = 3.0 * x;
-/// let expr: LinExpr<Var, f64> = scaled + x;
-/// ```
+/// See the [crate documentation](crate) for a complete example.
 #[macro_export]
 macro_rules! impl_linear_ops {
     ($var:ty, $num:ty) => {
