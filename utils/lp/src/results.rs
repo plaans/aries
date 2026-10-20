@@ -92,7 +92,6 @@ impl FeasibilityStatus {
 /// verification, e.g. with exact arithmetic over the constraints of the problem it was
 /// produced for (with the bounds it was produced with).
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Certificate {
     multipliers: Vec<f64>,
 }

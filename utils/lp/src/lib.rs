@@ -16,10 +16,6 @@ pub mod results;
 
 use std::time::{Duration, Instant};
 
-#[allow(unused_imports)]
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 use crate::{expr::Constraint, prelude::*, solver::Stats};
 
 /// A Linear Program (LP), that can be use to construct the LP and solve it.
@@ -188,7 +184,6 @@ use solver::Solver;
 
 /// An enum indicating whether to minimize or maximize objective function.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OptimizationDirection {
     /// Minimize the objective function.
     Minimize,
@@ -198,7 +193,6 @@ pub enum OptimizationDirection {
 
 /// A reference to a variable in a linear programming problem.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Variable(pub(crate) usize);
 
 impl Variable {
@@ -213,16 +207,7 @@ impl Variable {
 }
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum ComparisonOp {
-    /// The == operator (equal to)
-    Eq,
-    /// The <= operator (less than or equal to)
-    Le,
-    /// The >= operator (greater than or equal to)
-    Ge,
-}
+pub type ComparisonOp = aries_linexpr::ComparisonOp;
 
 /// Absolute deadline to pass to a solver to limit its runtime.
 #[derive(Copy, Clone, Debug)]
@@ -277,7 +262,6 @@ impl Deadline {
 /// modifications and feasibility checks). [`Lp::from`] can be used to build an [`Lp`] on top
 /// of an already-constructed problem.
 #[derive(Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Problem {
     direction: OptimizationDirection,
     obj_coeffs: Vec<f64>,
@@ -364,7 +348,7 @@ impl Problem {
         self.add_constraint_impl(expr.into().into_constraint(cmp_op, rhs))
     }
     fn add_constraint_impl(&mut self, c: Constraint) {
-        self.constraints.push(c.decompose(self.obj_coeffs.len()));
+        self.constraints.push(expr::decompose(&c, self.obj_coeffs.len()));
     }
 
     /// Set a new upper/lower bound to an existing variable
@@ -405,7 +389,6 @@ impl Problem {
 
 /// Used to select the bound we want to modify when using set_bound
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Bound {
     /// Lower bound
     Lower,

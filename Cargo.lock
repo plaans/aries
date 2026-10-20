@@ -153,15 +153,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-linexpr"
+version = "0.1.0"
+dependencies = [
+ "num-traits",
+ "smallvec",
+]
+
+[[package]]
 name = "aries-lp"
 version = "0.1.0"
 dependencies = [
+ "aries-linexpr",
  "clap 4.6.1",
  "env_logger",
  "log",
  "rand 0.7.3",
  "rand_pcg",
- "serde",
  "sprs",
 ]
 
@@ -2310,7 +2318,6 @@ dependencies = [
  "ndarray",
  "num-complex 0.2.4",
  "num-traits",
- "serde",
  "smallvec",
 ]
 

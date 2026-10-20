@@ -918,7 +918,7 @@ impl Solver {
     ///
     /// The basis solver is not updated: see [`Self::pending`].
     pub(crate) fn add_constraint(&mut self, constraint: &Constraint) {
-        let (mut coeffs, cmp_op, rhs) = constraint.decompose(self.num_vars);
+        let (mut coeffs, cmp_op, rhs) = crate::expr::decompose(constraint, self.num_vars);
 
         let slack_var = self.num_total_vars();
         let (slack_var_min, slack_var_max) = match cmp_op {
