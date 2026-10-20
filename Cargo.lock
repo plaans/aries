@@ -157,12 +157,14 @@ name = "aries-linexpr"
 version = "0.1.0"
 dependencies = [
  "num-traits",
+ "serde",
 ]
 
 [[package]]
 name = "aries-lp"
 version = "0.1.0"
 dependencies = [
+ "aries-linexpr",
  "clap 4.6.1",
  "env_logger",
  "log",

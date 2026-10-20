@@ -13,3 +13,7 @@ categories = ["mathematics", "science"]
 
 [dependencies]
 num-traits = { workspace = true }
+serde = { workspace = true, optional = true }
+
+[features]
+serde = ["dep:serde"]

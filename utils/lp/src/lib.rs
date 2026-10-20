@@ -213,16 +213,7 @@ impl Variable {
 }
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum ComparisonOp {
-    /// The == operator (equal to)
-    Eq,
-    /// The <= operator (less than or equal to)
-    Le,
-    /// The >= operator (greater than or equal to)
-    Ge,
-}
+pub type ComparisonOp = aries_linexpr::ComparisonOp;
 
 /// Absolute deadline to pass to a solver to limit its runtime.
 #[derive(Copy, Clone, Debug)]
@@ -364,7 +355,7 @@ impl Problem {
         self.add_constraint_impl(expr.into().into_constraint(cmp_op, rhs))
     }
     fn add_constraint_impl(&mut self, c: Constraint) {
-        self.constraints.push(c.decompose(self.obj_coeffs.len()));
+        self.constraints.push(expr::decompose(&c, self.obj_coeffs.len()));
     }
 
     /// Set a new upper/lower bound to an existing variable

@@ -11,6 +11,7 @@ keywords = ["linear-programming", "optimization"]
 categories = ["mathematics", "science"]
 
 [dependencies]
+aries-linexpr = { path = "../linexpr" }
 sprs = { version = "0.9.4", default-features = false}
 log = "0.4.32"
 serde = { workspace = true, optional = true }
@@ -24,4 +25,4 @@ clap = { workspace = true }
 
 [features]
 default = []
-serde = ["dep:serde", "sprs/serde"]
+serde = ["dep:serde", "sprs/serde", "aries-linexpr/serde"]
