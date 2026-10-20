@@ -51,20 +51,25 @@ fn main() {
     let result = solver.minimize_with_callback(makespan, |obj, _| println!("  solution with makespan {obj}"), deadline);
     solver.print_stats();
 
-    match result {
+    let objective = match result {
         Ok(Some((obj, sol))) => {
             println!("> OPTIMAL (makespan: {obj})");
             assert_eq!(obj, sol.value_of(makespan).unwrap());
             print_schedule(&pb, &encoding, &sol);
             check_solution(&pb, &encoding, &sol, obj);
-            if let Some(expected) = opt.expected_makespan
-                && expected != obj
-            {
-                panic!("expected makespan {expected}, found {obj}");
-            }
+            Some(obj)
         }
-        Ok(None) => println!("> UNSATISFIABLE"),
-        Err(Exit::Interrupted) => println!("> TIMEOUT (after {}s)", start_time.elapsed().as_secs()),
+        Ok(None) => {
+            println!("> UNSATISFIABLE");
+            None
+        }
+        Err(Exit::Interrupted) => {
+            println!("> TIMEOUT (after {}s)", start_time.elapsed().as_secs());
+            None
+        }
+    };
+    if opt.expected_makespan.is_some() {
+        assert_eq!(objective, opt.expected_makespan);
     }
 }
 
