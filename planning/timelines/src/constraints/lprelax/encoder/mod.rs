@@ -1,7 +1,10 @@
+mod encode;
 mod ground;
 pub mod problem;
 
 use aries_solver::prelude::*;
+
+use problem::LpRelaxProblem;
 
 use crate::analysis::Source;
 use crate::analysis::grounding::ground_all_tasks;
@@ -61,7 +64,7 @@ impl LpRelaxEncoder {
 
     /// Grounds the sources, then interns their groundings, those of their transitions and terms,
     /// and the ground supports between transitions.
-    pub fn ground(&mut self, ctx: &SchedEncoder) {
+    fn ground(&mut self, ctx: &SchedEncoder) {
         let time = std::time::Instant::now();
 
         let binding = ground_all_tasks(ctx);
@@ -88,6 +91,23 @@ impl LpRelaxEncoder {
         lprelax_log!("Interned {} groundings in {}", n, time.elapsed().as_secs_f64(),);
 
         self.sort();
+    }
+
+    /// Grounds the sources Encodes the problem's rows (after having computed and interned source groundings).
+    pub fn encode(&mut self, ctx: &SchedEncoder) -> LpRelaxProblem {
+        self.ground(ctx);
+
+        let mut problem = LpRelaxProblem::default();
+
+        let time = std::time::Instant::now();
+        encode::encode_problem_lifted(self, ctx, &mut problem);
+        lprelax_log!("Collected lifted rows in {}", time.elapsed().as_secs_f64());
+
+        let time = std::time::Instant::now();
+        encode::encode_problem_ground(self, ctx, &mut problem);
+        lprelax_log!("Collected ground rows in {}", time.elapsed().as_secs_f64());
+
+        problem
     }
 
     pub fn iter_distinct_term_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {

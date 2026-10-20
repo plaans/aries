@@ -30,11 +30,6 @@ pub struct TransitionGroundingId {
     pub(super) val_assignment: Option<IntCst>,
     pub(super) op_assignment: Option<IntCst>,
 }
-impl TransitionGroundingId {
-    fn is_pure_eff(&self) -> bool {
-        self.op_assignment.is_some() && self.val_assignment.is_none()
-    }
-}
 
 #[derive(Clone, Default)]
 pub(super) struct GroundingsInfo {
@@ -119,9 +114,107 @@ impl GroundingsInfo {
         );
     }
 
+    /// The groundings of the given source.
+    pub fn source_groundings(&self, source: Source) -> &[SourceGroundingId] {
+        self.sources.get(source)
+    }
+
+    /// Each distinct ground transition once (chunked by transition, but not necessarily sorted).
+    pub fn iter_distinct_transition_groundings(&self) -> impl Iterator<Item = (TransitionId, TransitionGroundingId)> {
+        self.transitions.iter_distinct()
+    }
+
+    /// For each source, the ground transitions with the source groundings they come from (sorted, so can be chunked).
+    pub fn iter_transition_groundings_by_source(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            Source,
+            impl Iterator<Item = &(TransitionId, TransitionGroundingId, SourceGroundingId)>,
+        ),
+    > {
+        self.transitions.iter_by_source()
+    }
+
+    /// The distinct ground transitions of each ground state variable (sorted, so can be chunked).
+    pub fn iter_transition_groundings_by_state_var(
+        &self,
+    ) -> impl Iterator<Item = (StateVarGroundingId, &[(TransitionGroundingId, TransitionId)])> {
+        self.transitions.iter_by_state_var()
+    }
+
+    /// The distinct effects of each ground state variable (sorted).
+    pub fn iter_effects_by_state_var(&self) -> impl Iterator<Item = (StateVarGroundingId, Vec<TransitionId>)> {
+        self.iter_transition_groundings_by_state_var()
+            .map(|(state_var_grounding_id, entries)| {
+                // (The effects come first, as they read no value.)
+                let effects = entries
+                    .iter()
+                    .take_while(|(trans_grounding_id, _)| trans_grounding_id.val_assignment.is_none())
+                    .map(|&(_, trans_id)| trans_id)
+                    .sorted_unstable()
+                    .dedup()
+                    .collect();
+                (state_var_grounding_id, effects)
+            })
+    }
+
+    /// The distinct ground state variables of the groundings of the transition (sorted).
+    pub fn iter_ground_state_vars_of(&self, trans_id: TransitionId) -> impl Iterator<Item = StateVarGroundingId> {
+        // (The groundings of a transition are sorted by ground state variable first.)
+        self.transitions
+            .groundings_of(trans_id)
+            .iter()
+            .map(|(_, trans_grounding_id, _)| trans_grounding_id.state_var_grounding_id)
+            .dedup()
+    }
+
+    /// The ground supports of each (lifted) support, or `None` if it has none (sorted, so can be chunked).
+    pub fn iter_support_groundings(
+        &self,
+    ) -> impl Iterator<Item = &(TransitionId, TransitionId, Option<SupportGroundingId>)> {
+        self.supports.iter_all()
+    }
+
+    /// The groups of the outgoing view of the ground supports (see [`SupportsGroundingsInfo::iter_out_groups`]).
+    pub fn iter_support_out_groups(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            TransitionId,
+            SupportGroundingId,
+            impl ExactSizeIterator<Item = TransitionGroundingId>,
+            impl ExactSizeIterator<Item = TransitionId>,
+        ),
+    > {
+        self.supports.iter_out_groups()
+    }
+
+    /// The groups of the incoming view of the ground supports (see [`SupportsGroundingsInfo::iter_in_groups`]).
+    pub fn iter_support_in_groups(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            TransitionId,
+            InGroupKey,
+            impl ExactSizeIterator<Item = TransitionGroundingId>,
+            impl ExactSizeIterator<Item = (TransitionId, SupportGroundingId)>,
+        ),
+    > {
+        self.supports.iter_in_groups()
+    }
+
     /// The distinct assignments of (non-constant) terms to values (sorted, so can be chunked).
     pub fn iter_distinct_term_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
         self.terms.iter_distinct()
+    }
+
+    /// The assignments of (non-constant) terms to values, one entry per ground source in which they appear
+    /// (sorted, so can be chunked).
+    pub fn iter_term_assignments_with_sources(
+        &self,
+    ) -> impl Iterator<Item = &(IntTerm, IntCst, Source, SourceGroundingId)> {
+        self.terms.iter_with_sources()
     }
 }
 
@@ -449,15 +542,6 @@ impl TransitionsGroundingsInfo {
         debug_assert!(is_sorted_and_no_dupes(self.entries_by_state_var.iter()));
     }
 
-    fn source_of(&self, trans_id: TransitionId) -> Source {
-        self.sources_of[trans_id]
-    }
-
-    /// Whether the ground transition is an initial effect (i.e. a pure effect of the empty source).
-    fn is_initial_effect(&self, trans_id: TransitionId, trans_grounding_id: TransitionGroundingId) -> bool {
-        trans_grounding_id.is_pure_eff() && self.source_of(trans_id).is_none()
-    }
-
     /// The distinct ground transitions of each ground state variable.
     /// They are sorted -- as [`TransitionGroundingId`] is (by `val_assignment`, then `op_assignment`) -- so they can be chunked.
     fn iter_by_state_var(
@@ -571,20 +655,16 @@ impl SupportsGroundingsInfo {
     /// grounding of its out-transition hands over and that a grounding of its in-transition can receive (see [`SupportGroundingId`] and [`InGroupKey`]).
     /// If there is no such ground support, the "neutral" view ([`Self::entries`]) is to contain a `None` element instead.
     ///
-    /// The incoming view ([`Self::in_`]) groups the groundings of every transition that may need support, even if nothing can support them.
+    /// The incoming view ([`Self::in_`]) groups the groundings of every transition, even if nothing can support them
     ///
     /// Expects the transitions groundings to be sorted (see [`TransitionsGroundingsInfo::sort_for_all`]).
     fn from(supports_sorted: &SupportsSorted, transitions_groundings: &TransitionsGroundingsInfo) -> Self {
         debug_assert!(transitions_groundings.debug_check_valid());
 
-        // The groundings of all the transitions that may need support (i.e. all but initial pure effects),
-        // grouped by the ground supports they can receive.
+        // The groundings of all the transitions, grouped by the ground supports they can receive.
         // A group that nothing can support is left with only these entries.
         let mut in_ = transitions_groundings
             .iter_distinct()
-            .filter(|&(trans_id, trans_grounding_id)| {
-                !transitions_groundings.is_initial_effect(trans_id, trans_grounding_id)
-            })
             .map(|(trans_id, trans_grounding_id)| {
                 (
                     trans_id,

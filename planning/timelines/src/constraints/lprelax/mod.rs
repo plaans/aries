@@ -3,6 +3,8 @@ pub static ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS", "false");
 pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "true");
+pub static ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS", "true");
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {
@@ -17,5 +19,6 @@ pub(crate) mod encoder;
 mod tests;
 #[allow(dead_code)]
 mod transitions;
+// pub(crate) mod wrappers;
 
 use aries_env_param::EnvParam;

@@ -1,9 +1,32 @@
 use aries_solver::core::IntCst;
 
+use crate::IntTerm;
+use crate::analysis::Source;
+use crate::lprelax::transitions::TransitionId;
+
+use super::ground::{SourceGroundingId, StateVarGroundingId, SupportGroundingId, TransitionGroundingId};
+
+/// Represents a variable / column
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
+pub enum ColTag {
+    /// Presence of a source: lifted (`None`), or of one of its groundings (`Some`).
+    PresenceSource(Source, Option<SourceGroundingId>),
+    /// Presence of a transition: lifted (`None`), or of one of its groundings (`Some`).
+    PresenceTransition(TransitionId, Option<TransitionGroundingId>),
+    /// Support from a transition to another:
+    /// lifted (`None`), or ground (`Some`, for a given ground state variable and a given handed-over value).
+    Support(TransitionId, TransitionId, Option<SupportGroundingId>),
+    /// Support of an effect by the initial state of a ground state variable grounding (when `Some`), or of any of them (lifted, when `None`).
+    /// On each ground state variable, the initial state supports at most one effect (whatever its source).
+    SupportFromInitialState(Option<StateVarGroundingId>, TransitionId),
+    /// Whether a term is assigned a value (ground).
+    TermGround(IntTerm, IntCst),
+}
+
 /// Represents an expression of the form `lhs cmp rhs + cst`,
 /// where `cmp` can be `=`, `<=`, or `>=`, and `lhs` and `rhs` are weighted sums of columns (designated by `C`).
 #[derive(Debug, Clone)]
-pub struct RowExpr<C> {
+pub struct RowExpr<C = ColTag> {
     pub tpe: RowExprType,
     /// Index separating the lhs and rhs terms. As such, `terms[separator]` must be the first term of the rhs.
     separator: usize,
@@ -75,7 +98,7 @@ impl<C> RowExpr<C> {
 
 /// Represents a problem: its rows, over columns designated by `C`.
 #[derive(Clone)]
-pub struct LpRelaxProblem<C> {
+pub struct LpRelaxProblem<C = ColTag> {
     rows: Vec<RowExpr<C>>,
 }
 // (Not derived, as that would require `C: Default`.)
