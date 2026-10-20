@@ -66,7 +66,7 @@ impl LpRelaxEncoder {
 
         // For each transition of the source, intern the corresponding grounding,
         // marking each of them as being appearing in the source grounding.
-        // Also mark each of the variable assignments as appearing in the corresponding transition groundings.
+        // (Commented out: Also mark each of the variable assignments as appearing in the corresponding transition groundings.)
         {
             for &trans_id in self.transitions.of_source(source) {
                 let trans_grounding = self.transitions.evaluate_terms(trans_id, source_grounding, ctx);
@@ -80,15 +80,15 @@ impl LpRelaxEncoder {
                     op_assignment: trans_grounding.op_evaluated(),
                 };
 
-                for (term, value) in self
-                    .transitions
-                    .iter_evaluated_non_constant_terms(trans_id, source_grounding, ctx)
-                {
-                    debug_assert!(!term.is_cst());
-
-                    self.terms_ground
-                        .post_for_ground_transition(term, value, trans_id, trans_grounding_id);
-                }
+                // for (term, value) in self
+                //     .transitions
+                //     .iter_evaluated_non_constant_terms(trans_id, source_grounding, ctx)
+                // {
+                //     debug_assert!(!term.is_cst());
+                //
+                //     self.terms_ground
+                //         .post_for_ground_transition(term, value, trans_id, trans_grounding_id);
+                // }
 
                 self.transitions_ground.post_ground_transition(
                     trans_id,
@@ -174,7 +174,7 @@ impl LpRelaxEncoder {
         self.sort();
     }
 
-    pub fn iter_sorted_all_only_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
-        self.terms_ground.iter_sorted_all_only_assignments()
+    pub fn iter_distinct_term_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
+        self.terms_ground.iter_distinct()
     }
 }
