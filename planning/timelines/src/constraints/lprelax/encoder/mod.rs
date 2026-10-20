@@ -3,8 +3,6 @@ pub mod problem;
 
 use aries_solver::prelude::*;
 
-use ground::{SourceGrounding, TransitionGroundingId};
-
 use crate::analysis::Source;
 use crate::analysis::grounding::ground_all_tasks;
 use crate::lprelax::transitions::{
@@ -19,11 +17,7 @@ pub(crate) struct LpRelaxEncoder {
     pub(crate) supports: Supports,
     supports_sorted: Option<SupportsSorted>,
 
-    sources_ground: ground::SourcesGroundingsInfo,
-    state_vars_ground: ground::StateVarsGroundingsInfo,
-    transitions_ground: ground::TransitionsGroundingsInfo,
-    terms_ground: ground::TermsGroundingsInfo,
-    supports_ground: ground::SupportsGroundingsInfo,
+    ground: ground::GroundingsInfo,
 }
 
 impl LpRelaxEncoder {
@@ -38,96 +32,16 @@ impl LpRelaxEncoder {
             transitions,
             supports,
             supports_sorted: None,
-            sources_ground: Default::default(),
-            state_vars_ground: Default::default(),
-            transitions_ground: Default::default(),
-            terms_ground: Default::default(),
-            supports_ground: Default::default(),
-        }
-    }
-
-    fn post_ground_source(&mut self, source: Source, source_grounding: &SourceGrounding, ctx: &SchedEncoder) {
-        // Will panic (in debug mode) if the source and the grounding have already been interned.
-        let source_grounding_id = self.sources_ground.post_ground_source(source, source_grounding);
-
-        // Intern each of the variable assignments in the source grounding,
-        // marking each of them as appearing in it.
-        {
-            let source_terms = self.get_source_terms(source, ctx);
-
-            for (i, &term) in source_terms.iter().enumerate() {
-                let value = source_grounding[i];
-                if !term.is_cst() {
-                    self.terms_ground
-                        .post_for_ground_source(term, value, source, source_grounding_id);
-                }
-            }
-        }
-
-        // For each transition of the source, intern the corresponding grounding,
-        // marking each of them as being appearing in the source grounding.
-        // (Commented out: Also mark each of the variable assignments as appearing in the corresponding transition groundings.)
-        {
-            for &trans_id in self.transitions.of_source(source) {
-                let trans_grounding = self.transitions.evaluate_terms(trans_id, source_grounding, ctx);
-
-                let trans_grounding_id = TransitionGroundingId {
-                    state_var_grounding_id: self.state_vars_ground.post_ground_state_var(
-                        &self.transitions.get_state_var(trans_id, ctx).fluent,
-                        trans_grounding.args_evaluated(),
-                    ),
-                    val_assignment: trans_grounding.val_evaluated(),
-                    op_assignment: trans_grounding.op_evaluated(),
-                };
-
-                // for (term, value) in self
-                //     .transitions
-                //     .iter_evaluated_non_constant_terms(trans_id, source_grounding, ctx)
-                // {
-                //     debug_assert!(!term.is_cst());
-                //
-                //     self.terms_ground
-                //         .post_for_ground_transition(term, value, trans_id, trans_grounding_id);
-                // }
-
-                self.transitions_ground.post_ground_transition(
-                    trans_id,
-                    trans_grounding_id,
-                    source,
-                    source_grounding_id,
-                );
-            }
+            ground: Default::default(),
         }
     }
 
     fn sort(&mut self) {
-        let mut times = vec![];
-
         let time = std::time::Instant::now();
         self.supports_sorted = Some(self.supports.sort());
-        times.push(time.elapsed());
+        lprelax_log!("Sorted lifted supports in {}", time.elapsed().as_secs_f64());
 
-        let time = std::time::Instant::now();
-        self.transitions_ground.sort_for_all();
-        times.push(time.elapsed());
-
-        let time = std::time::Instant::now();
-        self.supports_ground =
-            ground::SupportsGroundingsInfo::from(self.supports_sorted.as_ref().unwrap(), &self.transitions_ground);
-        times.push(time.elapsed());
-
-        let time = std::time::Instant::now();
-        self.terms_ground.sort();
-        times.push(time.elapsed());
-
-        lprelax_log!(
-            "Sorted all in {} (lifted supports {}, transitions groundings {}, [built and sorted] support groundings {}, terms groundings {})",
-            times.iter().sum::<std::time::Duration>().as_secs_f64(),
-            times[0].as_secs_f64(),
-            times[1].as_secs_f64(),
-            times[2].as_secs_f64(),
-            times[3].as_secs_f64(),
-        );
+        self.ground.sort(self.supports_sorted.as_ref().unwrap());
     }
 
     pub fn get_source<'a>(&self, source: Source, ctx: &'a SchedEncoder) -> Option<&'a Task> {
@@ -163,8 +77,10 @@ impl LpRelaxEncoder {
 
         let mut n = 0;
         for (source, source_groundings) in sources_groundings {
+            let source_terms = self.get_source_terms(source, ctx);
             for source_grounding in source_groundings {
-                self.post_ground_source(source, &source_grounding, ctx);
+                self.ground
+                    .post_ground_source(source, source_terms, &source_grounding, &self.transitions, ctx);
                 n += 1;
             }
         }
@@ -175,6 +91,6 @@ impl LpRelaxEncoder {
     }
 
     pub fn iter_distinct_term_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
-        self.terms_ground.iter_distinct()
+        self.ground.iter_distinct_term_assignments()
     }
 }
