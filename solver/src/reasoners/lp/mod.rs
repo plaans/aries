@@ -91,6 +91,11 @@ pub struct LpOptions {
     /// THe default value is controlled by [`LP_PIVOTS_PER_DECISION`].
     /// THe best value is very problem-dependent and the default is typically very small (~0.1).
     pub pivots_per_decision: f64,
+    /// Number of pivots allowed before any decision is taken.
+    ///
+    /// The default value is controlled by [`LP_INITIALLY_ALLOWED_PIVOTS`].
+    /// `f64::INFINITY` removes any limit on the pivots (useful for testing).
+    pub initially_allowed_pivots: f64,
 }
 
 impl Default for LpOptions {
@@ -100,6 +105,7 @@ impl Default for LpOptions {
             enable: LP_ENABLE.get(),
             is_explanation_refined: true,
             pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
+            initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
         }
     }
 }
@@ -313,7 +319,7 @@ impl Lp {
             stats: Stats::new(),
 
             options,
-            total_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
+            total_allowed_pivots: options.initially_allowed_pivots,
         }
     }
     /// Activate propagation and constraints registration of the LP
