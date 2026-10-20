@@ -13,3 +13,4 @@ categories = ["mathematics", "science"]
 
 [dependencies]
 num-traits = { workspace = true }
+smallvec = { workspace = true }

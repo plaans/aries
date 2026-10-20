@@ -157,6 +157,7 @@ name = "aries-linexpr"
 version = "0.1.0"
 dependencies = [
  "num-traits",
+ "smallvec",
 ]
 
 [[package]]

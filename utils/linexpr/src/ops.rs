@@ -1,4 +1,5 @@
 use num_traits::{One, Zero};
+use smallvec::smallvec;
 use std::ops::{Add, AddAssign, Neg, Sub, SubAssign};
 
 use crate::{LinExpr, VarCoeff};
@@ -25,7 +26,7 @@ impl<Var, Num: Zero> IntoLinExpr<Var, Num> for VarCoeff<Var, Num> {
     fn into_linexpr(self) -> LinExpr<Var, Num> {
         LinExpr {
             constant: Num::zero(),
-            terms: vec![self],
+            terms: smallvec![self],
         }
     }
 }
@@ -91,7 +92,7 @@ impl<Var, Num: Zero> Add<VarCoeff<Var, Num>> for VarCoeff<Var, Num> {
     fn add(self, rhs: VarCoeff<Var, Num>) -> Self::Output {
         LinExpr {
             constant: Num::zero(),
-            terms: vec![self, rhs],
+            terms: smallvec![self, rhs],
         }
     }
 }
@@ -102,7 +103,7 @@ impl<Var, Num: Zero + Neg<Output = Num>> Sub<VarCoeff<Var, Num>> for VarCoeff<Va
     fn sub(self, rhs: VarCoeff<Var, Num>) -> Self::Output {
         LinExpr {
             constant: Num::zero(),
-            terms: vec![self, -rhs],
+            terms: smallvec![self, -rhs],
         }
     }
 }

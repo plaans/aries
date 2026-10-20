@@ -1,3 +1,5 @@
+use std::ops::AddAssign;
+
 use num_traits::{One, Zero};
 
 // Re-exported so that the `impl_linear_ops!` macro can reference `num_traits`
@@ -8,6 +10,7 @@ pub use num_traits;
 mod ops;
 
 pub use ops::IntoLinExpr;
+use smallvec::{SmallVec, smallvec};
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -60,7 +63,7 @@ impl<Var, Num> VarCoeff<Var, Num> {
 #[derive(Debug, Clone)]
 pub struct LinExpr<Var, Num> {
     constant: Num,
-    terms: Vec<VarCoeff<Var, Num>>,
+    terms: SmallVec<[VarCoeff<Var, Num>; 2]>,
 }
 
 impl<Var, Num> LinExpr<Var, Num> {
@@ -71,7 +74,7 @@ impl<Var, Num> LinExpr<Var, Num> {
     {
         Self {
             constant: Num::zero(),
-            terms: Vec::new(),
+            terms: smallvec![],
         }
     }
 
@@ -79,7 +82,7 @@ impl<Var, Num> LinExpr<Var, Num> {
     pub fn from_constant(constant: Num) -> Self {
         Self {
             constant,
-            terms: Vec::new(),
+            terms: smallvec![],
         }
     }
 
@@ -131,6 +134,25 @@ impl<Var, Num> LinExpr<Var, Num> {
     pub fn eq(self, rhs: impl IntoLinExpr<Var, Num>) -> Constraint<Var, Num> {
         self.into_constraint(EQ, rhs)
     }
+
+    /// Normalizes the expression to its canonical form, where terms are sorted and deduplicated.
+    pub fn simplify(&mut self)
+    where
+        Var: Ord + Copy,
+        Num: Zero + AddAssign + Copy,
+    {
+        self.terms.sort_unstable_by_key(|sv| sv.var);
+        self.terms.dedup_by(|second, first| {
+            if first.var == second.var {
+                // same variables, merge
+                first.coeff += second.coeff;
+                true // remove second
+            } else {
+                false // different terms, don't merge
+            }
+        });
+        self.terms.retain(|sv| !sv.coeff.is_zero());
+    }
 }
 
 /// A linear constraint of the form `lhs {<=,=,>=} rhs`.
@@ -162,33 +184,7 @@ impl<Var, Num> Constraint<Var, Num> {
         Var: Ord + Copy,
         Num: Copy + Zero + std::ops::AddAssign + std::ops::Neg<Output = Num>,
     {
-        let mut constant = self.lhs.constant();
-        constant += -self.rhs.constant();
-
-        let mut terms = Vec::with_capacity(self.lhs.terms.len() + self.rhs.terms.len());
-        for (var, coeff) in self.lhs.iter() {
-            terms.push(VarCoeff::new(var, coeff));
-        }
-        for (var, coeff) in self.rhs.iter() {
-            terms.push(VarCoeff::new(var, -coeff));
-        }
-        terms.sort_by_key(|term| term.var);
-
-        let mut merged: Vec<VarCoeff<Var, Num>> = Vec::with_capacity(terms.len());
-        for term in terms {
-            match merged.last_mut() {
-                Some(last) if last.var == term.var => last.coeff += term.coeff,
-                _ => merged.push(term),
-            }
-        }
-
-        CanonicalConstraint {
-            expr: LinExpr {
-                constant,
-                terms: merged,
-            },
-            cmp: self.cmp,
-        }
+        CanonicalConstraint::new(self.lhs.clone(), self.cmp, &self.rhs)
     }
 }
 
@@ -206,7 +202,28 @@ pub struct CanonicalConstraint<Var, Num> {
 }
 
 impl<Var, Num> CanonicalConstraint<Var, Num> {
+    fn new(mut lhs: LinExpr<Var, Num>, cmp: ComparisonOp, rhs: &LinExpr<Var, Num>) -> Self
+    where
+        Var: Ord + Copy,
+        Num: Copy + Zero + std::ops::AddAssign + std::ops::Neg<Output = Num>,
+    {
+        // retract the RHS from the LHS
+        lhs.constant += -rhs.constant;
+
+        lhs.terms.reserve(rhs.terms.len());
+        for (var, coeff) in rhs.iter() {
+            lhs.terms.push(VarCoeff::new(var, -coeff));
+        }
+
+        // put in canonical form
+        lhs.simplify();
+
+        Self { expr: lhs, cmp }
+    }
+
     /// The expression that this constraint compares to zero.
+    ///
+    /// Guaranteed to be in simplified form.
     pub fn expr(&self) -> &LinExpr<Var, Num> {
         &self.expr
     }
