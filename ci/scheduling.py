@@ -5,10 +5,11 @@
 
 import os
 import subprocess
+import sys
 
 res = os.system("cargo build --profile ci --bin scheduler")
 if res != 0:
-    exit(1)
+    sys.exit(1)
 solver = "target/ci/scheduler"
 
 solver_cmd = solver + " {kind} {instance} --expected-makespan {makespan}"
@@ -31,9 +32,11 @@ instances = [
     ("jobshop", "examples/scheduling/instances/jobshop/orb05.jsp", 887),
     ("jobshop", "examples/scheduling/instances/jobshop/ta01.jsp", 1231),
     ("jobshop", "examples/scheduling/instances/jobshop/ta02.jsp", 1244),
-
-    ("openshop", "examples/scheduling/instances/openshop/taillard/tai04_04_01.osp", 193),
-
+    (
+        "openshop",
+        "examples/scheduling/instances/openshop/taillard/tai04_04_01.osp",
+        193,
+    ),
     ("flexible", "examples/scheduling/instances/flexible/hu/edata/mt06.fjs", 55),
     ("flexible", "examples/scheduling/instances/flexible/hu/edata/la01.fjs", 609),
     ("flexible", "examples/scheduling/instances/flexible/hu/edata/la02.fjs", 655),
@@ -41,14 +44,13 @@ instances = [
     ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la16.fjs", 717),
     ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la17.fjs", 646),
     ("flexible", "examples/scheduling/instances/flexible/hu/vdata/mt06.fjs", 47),
-    ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la38.fjs", 954)
-
+    ("flexible", "examples/scheduling/instances/flexible/hu/rdata/la38.fjs", 954),
 ]
 
 for kind, instance, makespan in instances:
     cmd = solver_cmd.format(kind=kind, instance=instance, makespan=makespan).split(" ")
     print("Solving instance: " + instance)
-    solver_run = subprocess.run(cmd, stdout=subprocess.PIPE, universal_newlines=True)
+    solver_run = subprocess.run(cmd, check=False, stdout=subprocess.PIPE, text=True)
     if solver_run.returncode != 0:
         print("Solver did not return expected result")
-        exit(1)
+        sys.exit(1)

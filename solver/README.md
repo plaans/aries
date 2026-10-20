@@ -108,6 +108,7 @@ Several other examples are available in the `examples/` directory of this crate:
 - [`ilp.rs`](https://github.com/plaans/aries/blob/master/solver/examples/ilp.rs): a generic integer linear program solver.
 - [`sat.rs`](https://github.com/plaans/aries/blob/master/solver/examples/sat.rs): a SAT solver working on clauses (disjunctions of literals).
 - [`orienteering.rs`](https://github.com/plaans/aries/blob/master/solver/examples/orienteering.rs): the orienteering routing problem.
+- [`rcpsp.rs`](https://github.com/plaans/aries/blob/master/solver/examples/rcpsp/main.rs): single/multi-mode resource-constrained project scheduling problem (RCPSP)
 
 Examples can be run with cargo, e.g., `cargo run --example sudoku`
 
