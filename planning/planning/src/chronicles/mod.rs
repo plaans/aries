@@ -18,11 +18,43 @@ use aries_solver::model::Model;
 use aries_solver::prelude::*;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 /// Time being represented as a fixed point numeral, this is the denominator of any time numeral.
 /// Having a time scale 100, will allow a resolution of `0.01` for time values.
-pub static TIME_SCALE: EnvParam<IntCst> = EnvParam::new("ARIES_LCP_TIME_SCALE", "10");
+pub static TIME_SCALE: TimeScale = TimeScale {
+    default: EnvParam::new("ARIES_LCP_TIME_SCALE", "10"),
+    value: AtomicI64::new(0),
+};
+
+/// Process-wide time scale that, unlike an [`EnvParam`], can be changed between problems solved in the same process.
+pub struct TimeScale {
+    default: EnvParam<IntCst>,
+    /// Value set programmatically, 0 if unset.
+    value: AtomicI64,
+}
+
+impl TimeScale {
+    /// Returns the value set programmatically, or the one of the environment variable `ARIES_LCP_TIME_SCALE`.
+    pub fn get(&self) -> IntCst {
+        match self.value.load(Ordering::Relaxed) {
+            0 => self.default.get(),
+            scale => scale as IntCst,
+        }
+    }
+
+    /// Sets the time scale for all subsequent problems.
+    pub fn set(&self, scale: IntCst) {
+        assert!(scale > 0, "Invalid time scale: {scale}");
+        self.value.store(scale as i64, Ordering::Relaxed);
+    }
+
+    /// Restores the time scale of the environment variable `ARIES_LCP_TIME_SCALE`.
+    pub fn reset(&self) {
+        self.value.store(0, Ordering::Relaxed);
+    }
+}
 
 /// A fluent is a state function is a symbol and a set of parameter and return types.
 ///
