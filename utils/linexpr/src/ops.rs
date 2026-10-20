@@ -178,17 +178,44 @@ where
     }
 }
 
-/// Implements the expression-level operators on a user-defined variable type:
-/// `Neg`, `Add<Var>` and `Sub<Var>` on `Var` itself, plus its conversion into a
-/// [`LinExpr`].
+/// Implements all the linear-expression operators for a `(Var, Num)` pair.
 ///
-/// Because the signatures of these impls do not mention `Num`, they can exist
-/// only once for a given `Var` type: this macro must be invoked at most once
-/// per `Var`, with the *primary* numeric type. Use [`impl_scale_ops!`] for
-/// additional numeric types.
+/// This is the combination of [`impl_var_ops!`] and [`impl_scale_ops!`]: it
+/// must be invoked in the crate that owns the `Var` type, at most once per
+/// `Var` type. See [`impl_scale_ops!`] for supporting additional numeric
+/// types on the same variable type.
+///
+/// # Example
+///
+/// ```
+/// use aries_linexpr::{ComparisonOp, LinExpr, VarCoeff, impl_linear_ops};
+///
+/// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// pub struct Var(pub usize);
+///
+/// impl_linear_ops!(Var, f64);
+///
+/// let x = Var(0);
+/// let y = Var(1);
+///
+/// // 2x + 3y <= 4
+/// let constraint = (2.0 * x + 3.0 * y).leq(4.0);
+/// assert_eq!(constraint.comp_op(), ComparisonOp::Le);
+///
+/// // x - y >= 0
+/// let constraint = (x - y).geq(0.0);
+/// assert_eq!(constraint.comp_op(), ComparisonOp::Ge);
+///
+/// let scaled: VarCoeff<Var, f64> = 3.0 * x;
+/// let expr: LinExpr<Var, f64> = scaled + x;
+/// ```
 #[macro_export]
-macro_rules! impl_var_ops {
+macro_rules! impl_linear_ops {
     ($var:ty, $num:ty) => {
+        // Implements the expression-level operators on a user-defined variable type:
+        // `Neg`, `Add<Var>` and `Sub<Var>` on `Var` itself, plus its conversion into a
+        // [`LinExpr`].
+
         impl ::std::ops::Neg for $var
         where
             $num: $crate::num_traits::One + ::std::ops::Neg<Output = $num>,
@@ -235,17 +262,10 @@ macro_rules! impl_var_ops {
                 expr
             }
         }
-    };
-}
 
-/// Implements the scaling operators between a user-defined variable type and a
-/// numeric type: `Var * Num`, `Num * Var`, `Var + Num` and `Var - Num`.
-///
-/// Unlike [`impl_var_ops!`], these impls mention `Num` in their signature, so
-/// this macro may be invoked once per `(Var, Num)` pair.
-#[macro_export]
-macro_rules! impl_scale_ops {
-    ($var:ty, $num:ty) => {
+        // Implements the scaling operators between a user-defined variable type and a
+        // numeric type: `Var * Num`, `Num * Var`, `Var + Num` and `Var - Num`.
+
         impl ::std::ops::Mul<$num> for $var {
             type Output = $crate::VarCoeff<$var, $num>;
 
@@ -290,44 +310,5 @@ macro_rules! impl_scale_ops {
                 expr - rhs
             }
         }
-    };
-}
-
-/// Implements all the linear-expression operators for a `(Var, Num)` pair.
-///
-/// This is the combination of [`impl_var_ops!`] and [`impl_scale_ops!`]: it
-/// must be invoked in the crate that owns the `Var` type, at most once per
-/// `Var` type. See [`impl_scale_ops!`] for supporting additional numeric
-/// types on the same variable type.
-///
-/// # Example
-///
-/// ```
-/// use aries_linexpr::{ComparisonOp, LinExpr, VarCoeff, impl_linear_ops};
-///
-/// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-/// pub struct Var(pub usize);
-///
-/// impl_linear_ops!(Var, f64);
-///
-/// let x = Var(0);
-/// let y = Var(1);
-///
-/// // 2x + 3y <= 4
-/// let constraint = (2.0 * x + 3.0 * y).leq(4.0);
-/// assert_eq!(constraint.comp_op(), ComparisonOp::Le);
-///
-/// // x - y >= 0
-/// let constraint = (x - y).geq(0.0);
-/// assert_eq!(constraint.comp_op(), ComparisonOp::Ge);
-///
-/// let scaled: VarCoeff<Var, f64> = 3.0 * x;
-/// let expr: LinExpr<Var, f64> = scaled + x;
-/// ```
-#[macro_export]
-macro_rules! impl_linear_ops {
-    ($var:ty, $num:ty) => {
-        $crate::impl_var_ops!($var, $num);
-        $crate::impl_scale_ops!($var, $num);
     };
 }

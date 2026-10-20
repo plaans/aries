@@ -1,17 +1,12 @@
 //! Integration test simulating a downstream crate that owns its own variable
 //! type and uses the macros to generate the `std::ops` impls locally.
 
-use aries_linexpr::{ComparisonOp, IntoLinExpr, LinExpr, VarCoeff, impl_scale_ops, impl_var_ops};
+use aries_linexpr::{ComparisonOp, IntoLinExpr, LinExpr, VarCoeff, impl_linear_ops};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Var(pub usize);
 
-// The `Var`-level operators exist once per variable type, with f64 as primary
-// numeric type.
-impl_var_ops!(Var, f64);
-// The scaling operators exist once per (Var, Num) pair.
-impl_scale_ops!(Var, f64);
-impl_scale_ops!(Var, i32);
+impl_linear_ops!(Var, f64);
 
 /// Evaluates the expression, substituting `values[var.0]` for each variable.
 fn eval_f64(expr: &LinExpr<Var, f64>, values: &[f64]) -> f64 {
@@ -148,34 +143,4 @@ fn iterable_constructors_f64() {
     assert_eq!(t.coeff, 3.0);
     let t: VarCoeff<Var, f64> = (&(x, 3.0)).into();
     assert_eq!(t.coeff, 3.0);
-}
-
-#[test]
-fn ops_i32() {
-    let x = Var(0);
-    let y = Var(1);
-
-    let eval = |e: &LinExpr<Var, i32>, values: &[i32]| -> i32 {
-        e.constant() + e.iter().map(|(v, c)| c * values[v.0]).sum::<i32>()
-    };
-
-    // i32 is a secondary numeric type: scaling works, so does everything that
-    // goes through VarCoeff / LinExpr.
-    let e = 2 * x + 3 * y - 1;
-    assert_eq!(eval(&e, &[1, 2]), 2 + 6 - 1);
-
-    let e = 1 * y - 4 * x;
-    assert_eq!(eval(&e, &[1, 3]), 3 - 4);
-
-    // variable plus / minus a constant works for secondary numeric types too
-    let e = x + 1;
-    assert_eq!(eval(&e, &[2]), 3);
-    let e = x - 1;
-    assert_eq!(eval(&e, &[2]), 1);
-
-    let c = (1 * x + 2 * y).leq(3);
-    assert_eq!(c.comp_op(), ComparisonOp::Le);
-    assert_eq!(eval(&c.lhs, &[1, 1]), 3);
-    assert_eq!(c.rhs.constant(), 3);
-    assert_eq!(eval(c.canonical().expr(), &[1, 1]), 0);
 }

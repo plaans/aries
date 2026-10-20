@@ -99,6 +99,11 @@ impl<Var, Num> LinExpr<Var, Num> {
         self.constant
     }
 
+    /// All variable terms in this expressions (excluding the constant).
+    pub fn terms(&self) -> &[VarCoeff<Var, Num>] {
+        &self.terms
+    }
+
     /// The `(variable, factor)` terms of this expression.
     pub fn iter(&self) -> impl Iterator<Item = (Var, Num)> + '_
     where
