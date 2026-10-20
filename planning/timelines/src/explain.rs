@@ -1,12 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aries_solver::prelude::*;
+use aries_solver::reasoners::lp::LpOptions;
 use aries_solver::{
     backtrack::Backtrack,
     solver::{Solver, musmcs::MusMcs},
 };
 use itertools::Itertools;
 
+use crate::lprelax::wrappers::LpRelaxIncr;
 use crate::{ConstraintID, IntExp, Sched};
 
 pub struct ExplainableSolver<T> {
@@ -42,7 +44,14 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 c.enforce(&mut encoding);
             }
         }
-        let mut solver = Solver::new(encoding.store);
+        let mut solver = match crate::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
+            "incr" => {
+                let model = encoding.store.clone();
+                let reasoner = LpRelaxIncr::new(encoding, assumptions_map.len(), LpOptions::default());
+                Solver::with_extra_reasoners(model, vec![Box::new(reasoner)])
+            }
+            _ => Solver::new(encoding.store),
+        };
 
         // enable stronger propagation than default in difference logic solver.
         // this is useful in planning models where bounds are not sufficient to reason on precedence between tasks
