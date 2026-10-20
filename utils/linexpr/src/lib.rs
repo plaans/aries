@@ -5,6 +5,7 @@ use num_traits::{One, Zero};
 // Re-exported so that the `impl_linear_ops!` macro can reference `num_traits`
 // items (e.g. `One`, `Zero`) from the caller's crate without requiring the
 // caller to add `num-traits` to its own dependencies.
+#[doc(hidden)]
 pub use num_traits;
 
 mod ops;
@@ -118,7 +119,7 @@ impl<Var, Num> LinExpr<Var, Num> {
     /// This is a more general form of [`Self::leq`], [`Self::geq`] and [`Self::eq`].
     ///
     /// The constraint keeps the left-hand and right-hand sides as they were at
-    /// construction. Use [`Self::canonical`] to get the folded representation.
+    /// construction. Use [`Constraint::canonical`] to get the folded representation.
     pub fn into_constraint(self, cmp: ComparisonOp, rhs: impl IntoLinExpr<Var, Num>) -> Constraint<Var, Num> {
         Constraint {
             lhs: self,

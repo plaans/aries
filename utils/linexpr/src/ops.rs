@@ -10,7 +10,7 @@ use crate::{LinExpr, VarCoeff};
 /// This is the linexpr-native counterpart of `Into<LinExpr>`: because the
 /// trait is local to this crate, it can be implemented generically for `Num`
 /// and `VarCoeff` here, and for the user's own `Var` type by the
-/// [`impl_var_ops!`] macro, without tripping the orphan rules.
+/// [`crate::impl_linear_ops!`] macro, without tripping the orphan rules.
 pub trait IntoLinExpr<Var, Num> {
     /// Converts `self` into the equivalent linear expression.
     fn into_linexpr(self) -> LinExpr<Var, Num>;
@@ -180,10 +180,8 @@ where
 
 /// Implements all the linear-expression operators for a `(Var, Num)` pair.
 ///
-/// This is the combination of [`impl_var_ops!`] and [`impl_scale_ops!`]: it
-/// must be invoked in the crate that owns the `Var` type, at most once per
-/// `Var` type. See [`impl_scale_ops!`] for supporting additional numeric
-/// types on the same variable type.
+/// It must be invoked in the crate that owns the `Var` type, at most once per
+/// `Var` type.
 ///
 /// # Example
 ///
