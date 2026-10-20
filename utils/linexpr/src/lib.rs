@@ -11,7 +11,6 @@ pub use ops::IntoLinExpr;
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ComparisonOp {
     /// The == operator (equal to)
     Eq,

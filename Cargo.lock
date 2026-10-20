@@ -157,7 +157,6 @@ name = "aries-linexpr"
 version = "0.1.0"
 dependencies = [
  "num-traits",
- "serde",
 ]
 
 [[package]]
@@ -170,7 +169,6 @@ dependencies = [
  "log",
  "rand 0.7.3",
  "rand_pcg",
- "serde",
  "sprs",
 ]
 
@@ -2319,7 +2317,6 @@ dependencies = [
  "ndarray",
  "num-complex 0.2.4",
  "num-traits",
- "serde",
  "smallvec",
 ]
 
