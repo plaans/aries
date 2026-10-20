@@ -125,6 +125,38 @@ fn canonical_form_f64() {
 }
 
 #[test]
+fn debug_format_f64() {
+    let x = Var(0);
+    let y = Var(1);
+
+    // terms
+    assert_eq!(format!("{:?}", 3.0 * x), "3.0*Var(0)");
+    assert_eq!(format!("{:?}", 1.0 * x), "Var(0)");
+    assert_eq!(format!("{:?}", -x), "-Var(0)");
+    assert_eq!(format!("{:?}", -2.0 * x), "-2.0*Var(0)");
+
+    // expressions: one coefficients and the zero constant are omitted
+    assert_eq!(format!("{:?}", 2.0 * x + y), "2.0*Var(0) + Var(1)");
+    assert_eq!(format!("{:?}", x - 4.0), "Var(0) - 4.0");
+    assert_eq!(format!("{:?}", -x + y - 0.5 * x), "-Var(0) + Var(1) - 0.5*Var(0)");
+    assert_eq!(format!("{:?}", LinExpr::<Var, f64>::zero()), "0.0");
+    assert_eq!(format!("{:?}", LinExpr::<Var, f64>::from_constant(-2.0)), "-2.0");
+
+    // constraints keep their as-constructed shape
+    let c = (2.0 * x + y - 4.0).leq(1.0);
+    assert_eq!(format!("{c:?}"), "2.0*Var(0) + Var(1) - 4.0 <= 1.0");
+
+    // canonical constraints fold the rhs and compare to zero
+    let canonical = c.canonical();
+    assert_eq!(format!("{canonical:?}"), "2.0*Var(0) + Var(1) - 5.0 <= 0");
+
+    let c: LinExpr<Var, f64> = x.into_linexpr();
+    let c = c.eq(y);
+    assert_eq!(format!("{c:?}"), "Var(0) == Var(1)");
+    assert_eq!(format!("{:?}", c.canonical()), "Var(0) - Var(1) == 0");
+}
+
+#[test]
 fn iterable_constructors_f64() {
     let x = Var(0);
     let y = Var(1);

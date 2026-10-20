@@ -1,3 +1,4 @@
+use std::fmt;
 use std::ops::AddAssign;
 
 use num_traits::{One, Zero};
@@ -33,8 +34,19 @@ pub const GEQ: ComparisonOp = ComparisonOp::Ge;
 /// `=` Comparison operator.
 pub const EQ: ComparisonOp = ComparisonOp::Eq;
 
+impl ComparisonOp {
+    /// The standard mathematical symbol for this operator.
+    fn symbol(self) -> &'static str {
+        match self {
+            ComparisonOp::Eq => "==",
+            ComparisonOp::Le => "<=",
+            ComparisonOp::Ge => ">=",
+        }
+    }
+}
+
 /// A `var * coeff` term.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct VarCoeff<Var, Num> {
     /// Variable of this term.
     pub var: Var,
@@ -60,8 +72,78 @@ impl<Var, Num> VarCoeff<Var, Num> {
     }
 }
 
+impl<Var, Num> fmt::Debug for VarCoeff<Var, Num>
+where
+    Var: fmt::Debug,
+    Num: fmt::Debug + PartialEq + One + std::ops::Neg<Output = Num>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (negative, body) = render_term(&self.coeff, &self.var);
+        if negative {
+            write!(f, "-{body}")
+        } else {
+            f.write_str(&body)
+        }
+    }
+}
+
+/// Renders a `coeff * var` product in math style, omitting a coefficient of
+/// one.
+///
+/// Returns whether the term is negative, and its representation without the
+/// leading sign.
+fn render_term<Var, Num>(coeff: &Num, var: &Var) -> (bool, String)
+where
+    Var: fmt::Debug,
+    Num: fmt::Debug + PartialEq + One + std::ops::Neg<Output = Num>,
+{
+    let repr = format!("{coeff:?}");
+    match repr.strip_prefix('-') {
+        Some(rest) => {
+            if *coeff == -Num::one() {
+                (true, format!("{var:?}"))
+            } else {
+                (true, format!("{rest}*{var:?}"))
+            }
+        }
+        None => {
+            if *coeff == Num::one() {
+                (false, format!("{var:?}"))
+            } else {
+                (false, format!("{coeff:?}*{var:?}"))
+            }
+        }
+    }
+}
+
+/// Renders a bare number.
+///
+/// Returns whether it is negative, and its representation without the leading
+/// sign.
+fn render_num<Num: fmt::Debug>(num: &Num) -> (bool, String) {
+    let repr = format!("{num:?}");
+    match repr.strip_prefix('-') {
+        Some(rest) => (true, rest.to_string()),
+        None => (false, repr),
+    }
+}
+
+/// Writes one part of a sum: `-body` if it is the first part, otherwise
+/// ` - body` or ` + body`.
+fn write_sum_part(f: &mut fmt::Formatter<'_>, first: &mut bool, negative: bool, body: &str) -> fmt::Result {
+    if *first {
+        *first = false;
+        if negative {
+            f.write_str("-")?;
+        }
+    } else {
+        f.write_str(if negative { " - " } else { " + " })?;
+    }
+    f.write_str(body)
+}
+
 /// A linear expression, composed of a constant and a sum of scaled variables.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LinExpr<Var, Num> {
     constant: Num,
     terms: SmallVec<[VarCoeff<Var, Num>; 2]>,
@@ -161,12 +243,38 @@ impl<Var, Num> LinExpr<Var, Num> {
     }
 }
 
+impl<Var, Num> fmt::Debug for LinExpr<Var, Num>
+where
+    Var: fmt::Debug,
+    Num: fmt::Debug + PartialEq + Zero + One + std::ops::Neg<Output = Num>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut first = true;
+        for term in self.terms() {
+            if term.coeff.is_zero() {
+                continue;
+            }
+            let (negative, body) = render_term(&term.coeff, &term.var);
+            write_sum_part(f, &mut first, negative, &body)?;
+        }
+        if !self.constant.is_zero() {
+            let (negative, body) = render_num(&self.constant);
+            write_sum_part(f, &mut first, negative, &body)?;
+        }
+        if first {
+            // the expression is zero
+            write!(f, "{:?}", self.constant)?;
+        }
+        Ok(())
+    }
+}
+
 /// A linear constraint of the form `lhs {<=,=,>=} rhs`.
 ///
 /// The two sides are kept as they were at construction, which is convenient
 /// for debugging and presentation. Use [`Self::canonical`] to obtain the
 /// equivalent [`CanonicalConstraint`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Constraint<Var, Num> {
     /// The left-hand side of the constraint.
     pub lhs: LinExpr<Var, Num>,
@@ -174,6 +282,16 @@ pub struct Constraint<Var, Num> {
     pub cmp: ComparisonOp,
     /// The right-hand side of the constraint.
     pub rhs: LinExpr<Var, Num>,
+}
+
+impl<Var, Num> fmt::Debug for Constraint<Var, Num>
+where
+    Var: fmt::Debug,
+    Num: fmt::Debug + PartialEq + Zero + One + std::ops::Neg<Output = Num>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} {} {:?}", self.lhs, self.cmp.symbol(), self.rhs)
+    }
 }
 
 impl<Var, Num> Constraint<Var, Num> {
@@ -199,12 +317,22 @@ impl<Var, Num> Constraint<Var, Num> {
 /// the expression, whose terms are sorted by variable and deduplicated.
 ///
 /// Obtained from a [`Constraint`] with [`Constraint::canonical`].
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CanonicalConstraint<Var, Num> {
     /// The expression, compared to zero.
     expr: LinExpr<Var, Num>,
     /// Comparison of the expression to zero.
     cmp: ComparisonOp,
+}
+
+impl<Var, Num> fmt::Debug for CanonicalConstraint<Var, Num>
+where
+    Var: fmt::Debug,
+    Num: fmt::Debug + PartialEq + Zero + One + std::ops::Neg<Output = Num>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} {} 0", self.expr, self.cmp.symbol())
+    }
 }
 
 impl<Var, Num> CanonicalConstraint<Var, Num> {
