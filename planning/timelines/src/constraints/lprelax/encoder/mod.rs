@@ -1,4 +1,5 @@
 mod ground;
+pub mod problem;
 
 use aries_solver::prelude::*;
 
