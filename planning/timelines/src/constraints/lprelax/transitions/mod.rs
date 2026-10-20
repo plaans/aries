@@ -25,7 +25,10 @@ use closed_world_default::ClosedWorldDefaultEffects;
 use crate::analysis::{Source, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::{EffectId, EffectOp, IntTerm, SchedEncoder, StateVar, TaskId, constraints::HasValueAt, encoder::CondId};
 
-use aries_solver::{core::IntCst, lang::Lit};
+use aries_solver::{
+    core::{IntCst, views::Dom},
+    lang::Lit,
+};
 use idmap::DirectIdMap;
 
 pub type TransitionId = usize;
@@ -243,6 +246,41 @@ impl Transitions {
                 res
             }
         }
+    }
+
+    /// Whether the transition necessarily ends before the other one starts (given the bounds of their time points, as per `ctx`).
+    pub fn necessarily_precedes(
+        &self,
+        trans_id: TransitionId,
+        other_trans_id: TransitionId,
+        ctx: &SchedEncoder,
+    ) -> bool {
+        let effect_span = |eff_id: EffectId| {
+            let eff = ctx.sched.effects.get(eff_id);
+            (ctx.lb(eff.transition_start), ctx.ub(eff.transition_end))
+        };
+        let condition_span = |cond_id: CondId| {
+            let timepoint = ctx.causal_links.conditions.get(cond_id).timepoint;
+            (ctx.lb(timepoint), ctx.ub(timepoint))
+        };
+        let time_span_bounds = |tr_id| {
+            match self.store[tr_id] {
+                // A recovered closed-world default is considered to be before everything (except another one).
+                Transition::Eff(eff_id) if self.recovered_closed_world_defaults.contains(eff_id) => {
+                    (IntCst::MIN, IntCst::MIN)
+                }
+                Transition::Eff(eff_id) => effect_span(eff_id),
+                Transition::Cond(cond_id) => condition_span(cond_id),
+                Transition::CondEff(cond_id, eff_id) => {
+                    let (cond_start, cond_end) = condition_span(cond_id);
+                    let (eff_start, eff_end) = effect_span(eff_id);
+                    (cond_start.min(eff_start), cond_end.max(eff_end))
+                }
+            }
+        };
+        let (_, latest_end) = time_span_bounds(trans_id);
+        let (earliest_start, _) = time_span_bounds(other_trans_id);
+        latest_end < earliest_start
     }
 
     pub(self) fn get_terms<'a>(&'a self, trans_id: TransitionId, ctx: &'a SchedEncoder) -> TransitionTermsView<'a> {

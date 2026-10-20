@@ -20,7 +20,8 @@ impl Supports {
                 transitions.get_state_var(out_trans_id, ctx).fluent,
                 transitions.get_state_var(in_trans_id, ctx).fluent,
             );
-            Some(((out_trans_id, in_trans_id), Some(cl.active)))
+            (!transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx))
+                .then_some(((out_trans_id, in_trans_id), Some(cl.active)))
         });
 
         // Supports from effects to other effects
@@ -40,6 +41,7 @@ impl Supports {
                     || transitions.get(in_trans_id).tpe() == TransitionType::CondEff
                     || transitions.get_state_var(out_trans_id, ctx).fluent
                         != transitions.get_state_var(in_trans_id, ctx).fluent
+                    || transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
                 {
                     return None;
                 }
@@ -77,6 +79,7 @@ impl Supports {
                                     || transitions.get(in_trans_id).tpe() == TransitionType::CondEff
                                     || transitions.get_state_var(out_trans_id, ctx).fluent
                                         != transitions.get_state_var(in_trans_id, ctx).fluent
+                                    || transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
                                 {
                                     return None;
                                 }
@@ -97,6 +100,7 @@ impl Supports {
                                 if out_trans_id == in_trans_id
                                     || transitions.get_state_var(out_trans_id, ctx).fluent
                                         != transitions.get_state_var(in_trans_id, ctx).fluent
+                                    || transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
                                 {
                                     return None;
                                 }
@@ -134,6 +138,7 @@ impl Supports {
             .chain(supports_from_conditions))
         .inspect(|&((out_trans_id, in_trans_id), _)| {
             debug_assert!(out_trans_id != in_trans_id);
+            debug_assert!(!transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx));
             debug_assert!(
                 transitions.get(out_trans_id).tpe() != TransitionType::CondEff
                     || transitions.get_source(out_trans_id, ctx).is_some()
