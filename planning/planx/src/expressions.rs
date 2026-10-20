@@ -22,6 +22,7 @@ impl idmap::intid::IntegerId for ExprId {
     idmap::intid::impl_newtype_id_body!(for ExprId(u32));
 }
 
+#[derive(Clone)]
 pub(crate) struct ExprNode {
     expr: Expr,
     tpe: Type,

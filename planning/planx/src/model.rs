@@ -3,6 +3,7 @@ use crate::{env::Environment, *};
 mod conditions;
 pub use conditions::*;
 
+#[derive(Clone)]
 pub struct Model {
     pub env: Environment,
     pub actions: Actions,

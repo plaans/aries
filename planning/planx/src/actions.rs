@@ -18,7 +18,7 @@ pub enum ActionsError {
 /// Collection of actions and tasks in the problem.
 ///
 /// An action may contain conditions, effects and subtasks, unifying the normal PDDL actions and the methods of HTN planning.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Actions {
     tasks: BTreeMap<TaskRef, Task>,
     actions: BTreeMap<ActionRef, Action>,

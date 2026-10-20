@@ -7,7 +7,7 @@ use crate::{errors::*, *};
 pub type TaskRef = Sym;
 
 /// Describes a declared task as the ones in standard HTN models.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Task {
     pub name: TaskRef,
     pub params: Vec<Param>,
@@ -50,7 +50,7 @@ impl Task {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AchievedTask {
     pub name: TaskRef,
     pub args: Vec<ExprId>,
@@ -74,7 +74,7 @@ impl Display for SubtaskId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Subtask {
     /// Original name of the task (human readable)
     pub ref_name: Option<Sym>,
@@ -110,7 +110,7 @@ impl Spanned for Env<'_, &Subtask> {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct TaskNet {
     next_id: usize,
     pub variables: Vec<Param>,
