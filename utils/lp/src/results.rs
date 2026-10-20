@@ -73,8 +73,42 @@ impl FeasibilityStatus {
     }
 }
 
-/// A Farkas certificate that can be used as a proof of unsatisfiability.
-pub type InfeasibilityCertificate = Vec<f64>;
+/// A certificate produced by the solver: the multipliers of a linear combination of the
+/// constraints of a [`Problem`](crate::Problem).
+///
+/// Multiplier `i` applies to constraint number `i` (constraints are numbered in their
+/// addition order). Depending on what the solver proved, the multipliers are:
+///
+/// - a *Farkas certificate of infeasibility*: the linear combination of the constraints
+///   contradicts the variables' bounds, proving that the problem admits no solution.
+///   Validated by [`Problem::is_infeasibility_certificate_valid`](crate::Problem::is_infeasibility_certificate_valid),
+///   which the solver also does itself before handing a certificate out;
+/// - an *optimality certificate*: the dual multipliers of an optimal basis, proving that
+///   the reported optimal objective value cannot be improved. Validated by
+///   [`Problem::is_optimality_certificate_valid`](crate::Problem::is_optimality_certificate_valid).
+///
+/// A certificate is verified by the solver before being handed out (see the `validation`
+/// module). The multipliers are available ([`Self::as_multipliers`]) for independent
+/// verification, e.g. with exact arithmetic over the constraints of the problem it was
+/// produced for (with the bounds it was produced with).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Certificate {
+    multipliers: Vec<f64>,
+}
+
+impl Certificate {
+    /// Builds a certificate from the multipliers of the linear combination: multiplier
+    /// `i` applies to constraint number `i`.
+    pub fn new(multipliers: Vec<f64>) -> Self {
+        Self { multipliers }
+    }
+
+    /// The multipliers of the linear combination: multiplier `i` applies to constraint
+    /// number `i`.
+    pub fn as_multipliers(&self) -> &[f64] {
+        &self.multipliers
+    }
+}
 
 /// Explain where the infeasibility comes from.
 #[derive(Debug, Clone)]
@@ -83,7 +117,7 @@ pub enum InfeasibilityReason {
     IncompatibleBounds(Variable),
     /// Infeasibility was proven by the solver (typically after a number of simplex pivots).
     /// This variant contains a Farkas certificate that can be used to certify the infeasibility.
-    Certified(InfeasibilityCertificate),
+    Certified(Certificate),
 }
 
 /// Denotes the reason why a feasibility check could not be concluded.
@@ -129,7 +163,7 @@ impl From<InfeasibilityReason> for Error {
     fn from(value: InfeasibilityReason) -> Self {
         match value {
             InfeasibilityReason::IncompatibleBounds(variable) => Error::IncompatibleBounds(variable),
-            InfeasibilityReason::Certified(items) => Error::InfeasibleWithCertificate(items),
+            InfeasibilityReason::Certified(cert) => Error::InfeasibleWithCertificate(cert.as_multipliers().to_vec()),
         }
     }
 }

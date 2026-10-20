@@ -9,15 +9,12 @@ mod mps;
 mod ordering;
 mod solver;
 mod sparse;
+mod validation;
 
 pub mod prelude;
 pub mod results;
 
 use std::time::{Duration, Instant};
-
-#[allow(unused_imports)]
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::{expr::Constraint, prelude::*, solver::Stats};
 
@@ -80,22 +77,6 @@ impl Lp {
         Ok(())
     }
 
-    /// Verify a certificate of unsatisfiability against this LP.
-    ///
-    /// The certificate is a vector with one coefficient per constraint: each constraint is multiplied
-    /// by its coefficient and the results are summed, which must produce a constraint that is
-    /// trivially unsatisfiable given the variables' bounds.
-    ///
-    /// Certificates are typically obtained from [`results::InfeasibilityReason::Certified`] after a failed
-    /// [`Lp::solve`] or [`Lp::check_feasibility`] call.
-    ///
-    /// # Panics
-    ///
-    /// Panics in debug mode if the number of coefficients does not match the number of constraints.
-    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
-        self.problem.is_certificate_valid(cert)
-    }
-
     /// Returns a solver for this LP, initializing a new one on its first call.
     ///
     /// Might return an error if an obvious inconsistency is detected when initializing the solver.
@@ -135,9 +116,11 @@ impl Lp {
             Err(Error::IncompatibleBounds(var)) => Ok(FeasibilityStatus::Infeasible(
                 InfeasibilityReason::IncompatibleBounds(var),
             )),
-            Err(Error::InfeasibleWithCertificate(cert)) => {
-                Ok(FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)))
-            }
+            // The certificate was verified by the solver before being reported
+            // (see the `validation` module).
+            Err(Error::InfeasibleWithCertificate(cert)) => Ok(FeasibilityStatus::Infeasible(
+                InfeasibilityReason::Certified(Certificate::new(cert)),
+            )),
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => unreachable!("Cannot return unbounded when checking feasibility only"),
             Err(Error::Timeout) => Err(SolverFailure::Timeout),
@@ -163,13 +146,19 @@ impl Lp {
         };
         use SolveStatus::*;
         match solver.initial_solve(deadline) {
-            Ok(()) => Ok(Optimal(Solution {
+            // The solution and its optimality certificate were verified by the solver
+            // before being reported (see the `validation` module).
+            Ok(dual_multipliers) => Ok(Optimal(Solution {
                 num_vars,
                 direction,
+                optimality_certificate: Certificate::new(dual_multipliers),
                 solver,
             })),
             Err(Error::IncompatibleBounds(var)) => Ok(Infeasible(InfeasibilityReason::IncompatibleBounds(var))),
-            Err(Error::InfeasibleWithCertificate(cert)) => Ok(Infeasible(InfeasibilityReason::Certified(cert))),
+            // The certificate was verified by the solver before being reported.
+            Err(Error::InfeasibleWithCertificate(cert)) => {
+                Ok(Infeasible(InfeasibilityReason::Certified(Certificate::new(cert))))
+            }
             Err(Error::Unstable) => Err(SolverFailure::Unstable),
             Err(Error::Unbounded) => Ok(SolveStatus::Unbounded),
             Err(Error::Timeout) => Err(SolverFailure::Timeout),
@@ -195,7 +184,6 @@ use solver::Solver;
 
 /// An enum indicating whether to minimize or maximize objective function.
 #[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum OptimizationDirection {
     /// Minimize the objective function.
     Minimize,
@@ -205,7 +193,6 @@ pub enum OptimizationDirection {
 
 /// A reference to a variable in a linear programming problem.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Variable(pub(crate) usize);
 
 impl Variable {
@@ -220,21 +207,24 @@ impl Variable {
 }
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub enum ComparisonOp {
-    /// The == operator (equal to)
-    Eq,
-    /// The <= operator (less than or equal to)
-    Le,
-    /// The >= operator (greater than or equal to)
-    Ge,
-}
+pub type ComparisonOp = aries_linexpr::ComparisonOp;
 
 /// Absolute deadline to pass to a solver to limit its runtime.
 #[derive(Copy, Clone, Debug)]
 pub enum Deadline {
     /// Maximum number of pivots SINCE THE SOLVER CREATION.
+    ///
+    /// The budget is checked before each pivot iteration: a call whose budget is already
+    /// exhausted returns [`SolverFailure::Timeout`] without doing any work — in particular
+    /// without selecting a pivot, which is what keeps repeated no-budget calls almost
+    /// free. The work-detection (whether a pivot is needed at all) is accounted as part
+    /// of a pivot iteration, so reaching a conclusion (feasible, infeasible, optimal)
+    /// requires one spare pivot of budget, even when the conclusion itself needs no
+    /// pivot.
+    ///
+    /// When the budget is exhausted mid-search, the call times out leaving a consistent
+    /// state from which a later call resumes, warm-starting from the pivots already
+    /// performed.
     NumPivots(usize),
     /// Absolute time at which the solver should stop.
     ///
@@ -272,7 +262,6 @@ impl Deadline {
 /// modifications and feasibility checks). [`Lp::from`] can be used to build an [`Lp`] on top
 /// of an already-constructed problem.
 #[derive(Clone, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Problem {
     direction: OptimizationDirection,
     obj_coeffs: Vec<f64>,
@@ -359,7 +348,7 @@ impl Problem {
         self.add_constraint_impl(expr.into().into_constraint(cmp_op, rhs))
     }
     fn add_constraint_impl(&mut self, c: Constraint) {
-        self.constraints.push(c.decompose(self.obj_coeffs.len()));
+        self.constraints.push(expr::decompose(&c, self.obj_coeffs.len()));
     }
 
     /// Set a new upper/lower bound to an existing variable
@@ -369,113 +358,6 @@ impl Problem {
         match bound {
             Bound::Upper => self.var_maxs[var.0] = val,
             Bound::Lower => self.var_mins[var.0] = val,
-        }
-    }
-
-    const TOL: f64 = 1e-8;
-
-    /// Calculate the maximum value that the linear sum with the expr coeff can take regarding the bounds of the variables
-    ///
-    /// Used to verify a certificate of unsatisfiability
-    fn calculate_max_expr(&self, expr: &[f64]) -> f64 {
-        debug_assert_eq!(expr.len(), self.var_maxs.len());
-
-        expr.iter()
-            .enumerate()
-            .map(|(i, &coeff)| {
-                if coeff.abs() <= Problem::TOL {
-                    0.0
-                } else if coeff < 0.0 {
-                    self.var_mins[i] * coeff
-                } else {
-                    self.var_maxs[i] * coeff
-                }
-            })
-            .sum()
-    }
-
-    /// Calculate the minimum value that the linear sum with the expr coeff can take regarding the bounds of the variables
-    ///
-    /// Used to verify a certificate of unsatisfiability
-    fn calculate_min_expr(&self, expr: &[f64]) -> f64 {
-        debug_assert_eq!(expr.len(), self.var_mins.len());
-
-        expr.iter()
-            .enumerate()
-            .map(|(i, &coeff)| {
-                if coeff.abs() <= Problem::TOL {
-                    0.0
-                } else if coeff > 0.0 {
-                    self.var_mins[i] * coeff
-                } else {
-                    self.var_maxs[i] * coeff
-                }
-            })
-            .sum()
-    }
-
-    /// Verify the certificate of unsatisfiability
-    ///
-    /// Coeffcicient i in cert corresponds to the constraint number i
-    /// All constraints are multiplies with their coefficient and summed to construct the unsatisfiable constraint
-    ///
-    /// Important: the Problem bounds/constraints need to be up to date with the Solver/FeasbilityChecker generating the certificate
-    pub fn is_certificate_valid(&self, cert: &[f64]) -> bool {
-        debug_assert_eq!(cert.len(), self.constraints.len());
-
-        let mut expr = vec![0.0; self.var_maxs.len()];
-
-        let mut bound = 0.0;
-
-        let mut cmp_op = ComparisonOp::Eq;
-
-        for (const_i, &coef_cert) in cert.iter().enumerate() {
-            if coef_cert == 0.0 {
-                continue;
-            }
-
-            match self.constraints[const_i].1 {
-                ComparisonOp::Le => {
-                    if coef_cert > 0.0 {
-                        cmp_op = ComparisonOp::Le;
-                    } else {
-                        cmp_op = ComparisonOp::Ge;
-                    }
-                }
-                ComparisonOp::Ge => {
-                    if coef_cert > 0.0 {
-                        cmp_op = ComparisonOp::Ge;
-                    } else {
-                        cmp_op = ComparisonOp::Le;
-                    }
-                }
-                ComparisonOp::Eq => {}
-            }
-
-            bound += coef_cert * self.constraints[const_i].2;
-
-            for (var_i, coef_var) in self.constraints[const_i].0.iter() {
-                expr[var_i] += coef_cert * coef_var;
-            }
-        }
-
-        match cmp_op {
-            ComparisonOp::Ge => {
-                let max_expr = self.calculate_max_expr(&expr);
-                max_expr < bound //+ Self::TOL
-            }
-            ComparisonOp::Le => {
-                let min_expr = self.calculate_min_expr(&expr);
-                min_expr > bound //- Self::TOL
-            }
-            ComparisonOp::Eq => {
-                let min_expr = self.calculate_min_expr(&expr);
-                let max_expr = self.calculate_max_expr(&expr);
-
-                // println!("max: {max_expr}, min: {min_expr}, bound: {bound}");
-
-                max_expr < bound /*+ Self::TOL*/ || min_expr > bound //- Self::TOL
-            }
         }
     }
 
@@ -507,7 +389,6 @@ impl Problem {
 
 /// Used to select the bound we want to modify when using set_bound
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Bound {
     /// Lower bound
     Lower,
@@ -525,6 +406,8 @@ pub enum Bound {
 pub struct Solution<'solver> {
     direction: OptimizationDirection,
     num_vars: usize,
+    /// The dual multipliers of the optimal basis: an optimality certificate.
+    optimality_certificate: Certificate,
     solver: &'solver solver::Solver,
 }
 
@@ -547,6 +430,16 @@ impl<'solver> Solution<'solver> {
             OptimizationDirection::Minimize => self.solver.cur_obj_val,
             OptimizationDirection::Maximize => -self.solver.cur_obj_val,
         }
+    }
+
+    /// The optimality certificate of this solution: the dual multipliers of the optimal
+    /// basis, proving that the reported objective value cannot be improved upon.
+    ///
+    /// The certificate is verified by the solver before the solution is handed out (see
+    /// the `validation` module); the multipliers are available for independent
+    /// verification (e.g. with exact arithmetic).
+    pub fn optimality_certificate(&self) -> &Certificate {
+        &self.optimality_certificate
     }
 
     /// Value of the variable at optimum.
@@ -862,7 +755,7 @@ mod tests {
             lit_vec.push(Lit { bound, var: s, val });
         }
 
-        test_incremental_constraints(problem, lit_vec, 10, false, true);
+        test_incremental_constraints(problem, lit_vec, false, true);
     }
 
     fn get_nb_x(sparse_proportion: f32, rng: &mut SmallRng, nb_var: usize) -> usize {
@@ -922,20 +815,8 @@ mod tests {
         (problem, lit_vec)
     }
 
-    fn test_incremental_constraints(
-        problem: Problem,
-        lit_vec: Vec<Lit>,
-        nb_const: usize,
-        verbose: bool,
-        assert_on: bool,
-    ) -> (usize, usize, usize, usize) {
+    fn test_incremental_constraints(problem: Problem, lit_vec: Vec<Lit>, verbose: bool, assert_on: bool) {
         let mut lp = Lp::from(problem);
-
-        let mut nb_cert_gen_const = 0;
-        let mut nb_val_cert_const = 0;
-
-        let mut nb_cert_gen_feas = 0;
-        let mut nb_val_cert_feas = 0;
 
         for (i, lit) in lit_vec.iter().enumerate() {
             // problem with the added constraint
@@ -949,36 +830,11 @@ mod tests {
                 lp.check_feasibility().unwrap()
             };
 
-            let problem = lp.problem.clone();
             let incremental = {
                 let mut lp = lp.clone();
                 lp.check_feasibility().unwrap()
             };
             let incremental_solve = { lp.solve().unwrap() };
-
-            use results::FeasibilityStatus::*;
-            use results::InfeasibilityReason::*;
-
-            if let Infeasible(Certified(cert)) = &from_scratch {
-                let is_certif_valid = problem.is_certificate_valid(&cert[..nb_const]);
-                println!("Is certificate valid add_const: {}", is_certif_valid);
-                nb_cert_gen_const += 1;
-                nb_val_cert_const += is_certif_valid as usize;
-            }
-
-            if let SolveStatus::Infeasible(Certified(cert)) = &incremental_solve {
-                let is_certif_valid = problem.is_certificate_valid(cert);
-                println!("Is certificate valid set_bound: {}", is_certif_valid);
-                nb_cert_gen_feas += 1;
-                nb_val_cert_feas += is_certif_valid as usize;
-            }
-
-            if let Infeasible(Certified(cert)) = &incremental {
-                let is_certif_valid = problem.is_certificate_valid(cert);
-                println!("Is certificate valid cheak_feas: {}", is_certif_valid);
-                nb_cert_gen_feas += 1;
-                nb_val_cert_feas += is_certif_valid as usize;
-            }
 
             if from_scratch.infeasible() != incremental.infeasible()
                 || from_scratch.infeasible() != incremental_solve.infeasible()
@@ -1001,8 +857,6 @@ mod tests {
                 break;
             }
         }
-
-        (nb_val_cert_const, nb_cert_gen_const, nb_val_cert_feas, nb_cert_gen_feas)
     }
 
     #[test]
@@ -1032,31 +886,12 @@ mod tests {
         sparse_proportion: f32,
         assert_on: bool,
     ) {
-        let mut nb_cert_gen_const = 0;
-        let mut nb_val_cert_const = 0;
-
-        let mut nb_cert_gen_feas = 0;
-        let mut nb_val_cert_feas = 0;
-
         for seed in first_seed..last_seed {
             println!("Seed: {seed}");
 
             let (problem, lit_vec) = gen_problem(nb_var, nb_const, min, max, sparse_proportion, seed);
-
-            let (nb_val_cert_const_tmp, nb_cert_gen_const_tmp, nb_val_cert_feas_tmp, nb_cert_gen_feas_tmp) =
-                test_incremental_constraints(problem, lit_vec, nb_const, false, assert_on);
-            nb_cert_gen_feas += nb_cert_gen_feas_tmp;
-            nb_val_cert_feas += nb_val_cert_feas_tmp;
-
-            nb_cert_gen_const += nb_cert_gen_const_tmp;
-            nb_val_cert_const += nb_val_cert_const_tmp;
+            test_incremental_constraints(problem, lit_vec, false, assert_on);
         }
-
-        println!(
-            "Proportion valid certificate feas checker: {}, add const: {}",
-            nb_val_cert_feas as f32 / nb_cert_gen_feas as f32,
-            nb_val_cert_const as f32 / nb_cert_gen_const as f32,
-        );
     }
 
     #[test]
@@ -1092,8 +927,9 @@ mod tests {
 
             let sol = problem.solve();
 
+            // The certificate was validated by the solver before being reported.
             if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 2);
             } else {
                 panic!()
             }
@@ -1107,8 +943,9 @@ mod tests {
             problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 9.0);
 
             let sol = problem.solve();
+            // The certificate was validated by the solver before being reported.
             if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 2);
             } else {
                 panic!()
             }
@@ -1122,10 +959,158 @@ mod tests {
             problem.add_constraint([(x1, -1.0), (x2, 1.0)], ComparisonOp::Ge, 2.0);
 
             let sol = problem.solve();
+            // The certificate was validated by the solver before being reported.
             if let Ok(SolveStatus::Infeasible(InfeasibilityReason::Certified(cert))) = sol {
-                assert!(problem.is_certificate_valid(&cert));
+                assert_eq!(cert.as_multipliers().len(), 2);
             } else {
                 panic!()
+            }
+        }
+    }
+
+    #[test]
+    fn feasibility_check_preserves_exact_optimum() {
+        // Feasibility restoration perturbs the objective coefficients to break ties in the
+        // dual ratio test; a subsequent solve must discard them entirely and report the
+        // exact optimum of the true objective.
+        let mut problem = Lp::new(OptimizationDirection::Minimize);
+        let x1 = problem.add_var(1.0, (0.0, 1.0));
+        let x2 = problem.add_var(1.0, (0.0, 1.0));
+        problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 2.0);
+
+        assert!(problem.check_feasibility().unwrap().feasible());
+
+        let sol = problem.solve().unwrap().solution().unwrap();
+        assert_eq!(sol[x1] + sol[x2], 2.0);
+        assert_eq!(sol.objective(), 2.0);
+    }
+
+    #[test]
+    fn infeasibility_certificate_after_bound_flips() {
+        // x1 + x2 >= 3 with both vars in [0, 1]: only after flipping both vars to their
+        // upper bound does the ratio test prove that the constraint cannot be satisfied.
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
+        let x1 = problem.add_var(0.0, (0.0, 1.0));
+        let x2 = problem.add_var(0.0, (0.0, 1.0));
+        problem.add_constraint([(x1, 1.0), (x2, 1.0)], ComparisonOp::Ge, 3.0);
+
+        // The certificate was validated by the solver before being reported.
+        match problem.check_feasibility().unwrap() {
+            FeasibilityStatus::Infeasible(InfeasibilityReason::Certified(cert)) => {
+                assert_eq!(cert.as_multipliers().len(), 1);
+            }
+            status => panic!("expected a certified infeasibility, got {status:?}"),
+        }
+    }
+
+    /// Builds a degenerate feasibility-only LP (zero objective, duplicated equality
+    /// rows) together with the order in which its variables must be fixed to a hidden
+    /// satisfying assignment — the usage pattern of the CP solver's LP reasoner.
+    fn degenerate_problem_and_fixing_order(seed: u64) -> (Lp, Vec<Variable>, Vec<usize>) {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let num_vars = 10 + rng.gen_range(0, 10);
+        let num_cons = num_vars * 2 + rng.gen_range(0, num_vars);
+        const HIDDEN: f64 = 2.0; // the assignment all vars will be fixed to
+
+        let mut problem = Lp::new(OptimizationDirection::Minimize);
+        let vars: Vec<Variable> = (0..num_vars).map(|_| problem.add_var(0.0, (0.0, 4.0))).collect();
+
+        // Equalities satisfied by the hidden assignment; duplicated rows make the
+        // instance highly degenerate (many rows are linear combinations of others).
+        for _ in 0..num_cons {
+            let nnz = 2 + rng.gen_range(0, 3);
+            let mut terms: Vec<(Variable, f64)> = vec![];
+            for _ in 0..nnz {
+                let v = vars[rng.gen_range(0, num_vars)];
+                let c = 1.0 + rng.gen_range(0, 2) as f64;
+                match terms.iter_mut().find(|(t, _)| *t == v) {
+                    Some(entry) => entry.1 += c,
+                    None => terms.push((v, c)),
+                }
+            }
+            terms.sort_by_key(|(v, _)| v.idx());
+            let rhs = HIDDEN * terms.iter().map(|(_, c)| *c).sum::<f64>();
+            problem.add_constraint(terms, ComparisonOp::Eq, rhs);
+        }
+
+        let mut order: Vec<usize> = (0..num_vars).collect();
+        for i in (1..order.len()).rev() {
+            order.swap(i, rng.gen_range(0, i + 1));
+        }
+        (problem, vars, order)
+    }
+
+    #[test]
+    fn optimality_certificates_are_validated() {
+        // A maximization problem with optimum 68 at (12, 8). The solver verifies the
+        // solution and its optimality certificate before reporting them (see the
+        // `validation` module): solving successfully is the validation passing.
+        let mut problem = Lp::new(OptimizationDirection::Maximize);
+        let v1 = problem.add_var(3.0, (0.0, 12.0));
+        let v2 = problem.add_var(4.0, (0.0, f64::INFINITY));
+        problem.add_constraint([(v1, 1.0), (v2, 1.0)], ComparisonOp::Le, 20.0);
+        problem.add_constraint([(v2, -4.0), (v1, 1.0)], ComparisonOp::Ge, -20.0);
+
+        let solution = problem.solve().unwrap().solution().unwrap();
+        assert_eq!(solution.objective(), 68.0);
+
+        // The solution carries the verified optimality certificate: the dual
+        // multipliers, one per constraint, available for independent verification.
+        let cert = solution.optimality_certificate();
+        assert_eq!(cert.as_multipliers().len(), 2);
+    }
+
+    #[test]
+    fn degenerate_feasibility_checks_conclude() {
+        // Feasibility-only usage (zero objective) on highly degenerate instances, with
+        // variables progressively fixed to a hidden satisfying assignment — the pattern
+        // of the CP solver's LP reasoner, and the worst case for the dual simplex: all
+        // reduced costs are zero at all times, so without anti-cycling measures the dual
+        // ratio test is fully degenerate and can cycle. Every check must conclude within
+        // a generous pivot budget.
+        for seed in 1..=20u64 {
+            let (mut problem, vars, order) = degenerate_problem_and_fixing_order(seed);
+            for &v in &order {
+                problem.set_bound(vars[v], Bound::Lower, 2.0).unwrap();
+                problem.set_bound(vars[v], Bound::Upper, 2.0).unwrap();
+                let res = problem
+                    .check_feasibility_with_deadline(Deadline::NumPivots(10_000))
+                    .unwrap();
+                assert!(res.feasible(), "seed {seed}: fixing var {v} must stay feasible");
+            }
+        }
+    }
+
+    #[test]
+    fn feasibility_checks_conclude_under_tight_pivot_budgets() {
+        // Mimics the LP reasoner's default rhythm: the pivot budget starts at zero and
+        // grows by a fraction of a pivot per decision, so each check performs at most a
+        // handful of pivots — sometimes none — and the restoration of feasibility is
+        // spread over many calls. Interrupted checks must leave a consistent resumable
+        // state, and the final verdict must be correct.
+        for budget_increment in [0usize, 1, 3] {
+            for seed in 1..=10u64 {
+                let (mut problem, vars, order) = degenerate_problem_and_fixing_order(seed);
+                for &v in &order {
+                    problem.set_bound(vars[v], Bound::Lower, 2.0).unwrap();
+                    problem.set_bound(vars[v], Bound::Upper, 2.0).unwrap();
+
+                    // Whatever budget is left, plus a small increment.
+                    let max_pivots = problem.solver_stats().num_pivots + budget_increment;
+                    match problem.check_feasibility_with_deadline(Deadline::NumPivots(max_pivots)) {
+                        Ok(FeasibilityStatus::Feasible) | Err(SolverFailure::Timeout) => {}
+                        other => panic!("seed {seed}, budget +{budget_increment}: unexpected result {other:?}"),
+                    }
+                }
+                // Once the search is over, a check with a generous budget must conclude.
+                let res = problem
+                    .check_feasibility_with_deadline(Deadline::NumPivots(10_000))
+                    .unwrap();
+                assert!(
+                    res.feasible(),
+                    "seed {seed}, budget +{budget_increment}: must be feasible in the end"
+                );
+                assert!(problem.solver_stats().num_pivots < 10_000);
             }
         }
     }

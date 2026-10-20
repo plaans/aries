@@ -53,10 +53,11 @@ enum Status {
 
 /// Adds to `lp` the constraint `c`.
 ///
-/// The constraint's right-hand side is already folded into the constant of its expression,
-/// hence the comparison against `0.0`.
+/// The canonical form is used, in which the right-hand side is already folded
+/// into the constant of the expression, hence the comparison against `0.0`.
 fn add_to_lp(lp: &mut Lp, c: &Constraint) {
-    lp.add_constraint(c.expr().clone(), c.comp_op(), 0.0);
+    let canonical = c.canonical();
+    lp.add_constraint(canonical.expr().clone(), canonical.comp_op(), 0.0);
 }
 
 /// Builds a fresh LP with all the model's variables and its `nb_constraints` first constraints.
@@ -158,12 +159,13 @@ fn assert_solution_valid(
     );
 }
 
-/// Evaluates the constraint's expression at `values` and checks the comparison to zero.
+/// Evaluates the canonical expression of the constraint at `values` and checks the comparison to zero.
 fn is_satisfied(constraint: &Constraint, values: &[f64]) -> bool {
-    let expr = constraint.expr();
+    let canonical = constraint.canonical();
+    let expr = canonical.expr();
     let lhs: f64 = expr.iter().map(|(var, factor)| factor * values[var.idx()]).sum();
     let lhs = lhs + expr.constant();
-    match constraint.comp_op() {
+    match canonical.comp_op() {
         LEQ => lhs <= TOL,
         GEQ => lhs >= -TOL,
         EQ => lhs.abs() <= TOL,

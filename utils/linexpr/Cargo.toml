@@ -1,0 +1,16 @@
+
+[package]
+name = "aries-linexpr"
+version = "0.1.0"
+authors = ["Arthur Bit-Monnot <abitmonnot@laas.fr"]
+edition = "2024"
+license = "Apache-2.0"
+description = "Building linear expressions."
+repository = "https://github.com/plaans/aries"
+readme = "README.md"
+keywords = ["linear-programming"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+num-traits = { workspace = true }
+smallvec = { workspace = true }
