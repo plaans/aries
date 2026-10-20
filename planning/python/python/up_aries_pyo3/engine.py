@@ -151,12 +151,14 @@ def _value(problem: "up.model.AbstractProblem", value: Union[bool, int, Fraction
 
 
 def _schedule(problem, data: Dict[str, Any]) -> Schedule:
-    activities = [problem.get_activity(name) for name in data["activities"]]
+    # `problem.get_activity` is a linear search, quadratic over a whole schedule
+    by_name = {activity.name: activity for activity in problem.activities}
+    activities = [by_name[name] for name in data["activities"]]
     assignment = {}
     for var, val in data["variable_assignments"].items():
         if "." in var:
             activity_name, parameter_name = var.split(".")
-            activity = problem.get_activity(activity_name)
+            activity = by_name[activity_name]
             if parameter_name == "start":
                 param = activity.start
             elif parameter_name == "end":
