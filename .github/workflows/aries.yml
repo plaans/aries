@@ -162,6 +162,28 @@ jobs:
       - name: Validator tests
         run: just ci-up-val
 
+  unified-planning-pyo3:
+    name: UP Integration Tests (PyO3)
+    runs-on: ubuntu-24.04
+    env:
+      PYTHONPATH: planning/unified/plugin:planning/unified/deps/unified-planning/up_test_cases:planning/unified/deps/unified-planning
+      UP_ARIES_DEV: true # plans are checked with the aries-val validator of the gRPC integration
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Submodules initialization
+        run: git submodule update --init # get our own copy of unified-planing repos
+      - name: Install python dependencies
+        run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2" ./planning/python
+      - name: Register the engines
+        run: |
+          printf '[engine aries-pyo3]\nmodule_name: up_aries_pyo3\nclass_name: AriesPyO3\n\n[engine aries-pyo3-opt]\nmodule_name: up_aries_pyo3\nclass_name: AriesPyO3Opt\n' > ~/.up.ini
+      - name: Solver tests
+        # ignore invalid problem `robot_with_variable_duration`, as in `just ci-up-solve`
+        run: python3 planning/unified/deps/unified-planning/up_test_cases/report.py aries-pyo3 aries-pyo3-opt -e up_aries_tests -b robot_with_variable_duration
+      - name: Engine tests
+        run: python3 -m pytest planning/python/tests -v
+
   ipc-tests:
     name: IPC Tests
     runs-on: ubuntu-24.04
@@ -220,6 +242,7 @@ jobs:
         minizinc-tests,
         unified-planning-api,
         unified-planning-integration,
+        unified-planning-pyo3,
         ipc-tests,
         warm-up-tests,
         pddl-tests,
