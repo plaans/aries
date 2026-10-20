@@ -29,10 +29,13 @@ pub const GEQ: ComparisonOp = ComparisonOp::Ge;
 /// `=` Comparison operator.
 pub const EQ: ComparisonOp = ComparisonOp::Eq;
 
+/// A `var * coeff` term.
 #[derive(Debug, Clone, Copy)]
 pub struct VarCoeff<Var, Num> {
-    var: Var,
-    coeff: Num,
+    /// Variable of this term.
+    pub var: Var,
+    /// Coefficient of the variable.
+    pub coeff: Num,
 }
 
 impl<Var, Num> VarCoeff<Var, Num> {
@@ -45,16 +48,6 @@ impl<Var, Num> VarCoeff<Var, Num> {
         Num: One,
     {
         Self::new(var, Num::one())
-    }
-
-    /// The variable of this term.
-    pub fn var(&self) -> &Var {
-        &self.var
-    }
-
-    /// The coefficient of this term.
-    pub fn coeff(&self) -> &Num {
-        &self.coeff
     }
 
     /// Splits this term into its `(variable, coefficient)` parts.

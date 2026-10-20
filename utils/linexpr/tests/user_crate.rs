@@ -25,10 +25,10 @@ fn basic_ops_f64() {
 
     // scaling, both directions
     let t: VarCoeff<Var, f64> = x * 2.0;
-    assert_eq!(t.var(), &x);
-    assert_eq!(t.coeff(), &2.0);
+    assert_eq!(t.var, x);
+    assert_eq!(t.coeff, 2.0);
     let t: VarCoeff<Var, f64> = 2.0 * x;
-    assert_eq!(t.var(), &x);
+    assert_eq!(t.var, x);
 
     // expression building
     let e = 2.0 * x + 3.0 * y - 1.0;
@@ -145,9 +145,9 @@ fn iterable_constructors_f64() {
     assert_eq!(eval_f64(&e, &[1.0, 1.0]), 3.0);
 
     let t: VarCoeff<Var, f64> = (x, 3.0).into();
-    assert_eq!(t.coeff(), &3.0);
+    assert_eq!(t.coeff, 3.0);
     let t: VarCoeff<Var, f64> = (&(x, 3.0)).into();
-    assert_eq!(t.coeff(), &3.0);
+    assert_eq!(t.coeff, 3.0);
 }
 
 #[test]
