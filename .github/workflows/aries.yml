@@ -174,7 +174,8 @@ jobs:
       - name: Submodules initialization
         run: git submodule update --init # get our own copy of unified-planing repos
       - name: Install python dependencies
-        run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2" ./planning/python
+        # unified-planning from the submodule: the package requires a development release, which pip may not select from PyPI
+        run: python3 -m pip install -r planning/unified/requirements.txt "numpy<2" ./planning/unified/deps/unified-planning ./planning/python
       - name: Register the engines
         run: |
           printf '[engine aries-pyo3]\nmodule_name: up_aries_pyo3\nclass_name: AriesPyO3\n\n[engine aries-pyo3-opt]\nmodule_name: up_aries_pyo3\nclass_name: AriesPyO3Opt\n' > ~/.up.ini

@@ -20,6 +20,8 @@ Building the package requires a Rust toolchain.
 pip install ./planning/python
 ```
 
+The package requires a development release of unified-planning. If pip does not select one, install unified-planning first, either from the submodule (`pip install ./planning/unified/deps/unified-planning`) or with `pip install --pre unified-planning`.
+
 For development, `maturin develop --profile python` (run from `planning/python`) builds the module and installs the package in editable mode in the current virtual environment.
 
 ## Usage
