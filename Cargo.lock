@@ -153,6 +153,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aries-linexpr"
+version = "0.1.0"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "aries-lp"
 version = "0.1.0"
 dependencies = [
