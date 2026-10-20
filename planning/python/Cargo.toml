@@ -1,0 +1,19 @@
+[package]
+name = "up_aries_pyo3"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_aries"
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = { workspace = true }
+aries-solver = { path = "../../solver" }
+aries_planners = { path = "../planners" }
+aries_planning = { path = "../planning" }
+aries-env-param = { path = "../../utils/env_param" }
+itertools = { workspace = true }
+num-rational = { workspace = true }
+pyo3 = { version = "0.29", features = ["abi3-py310", "anyhow", "num-rational"] }
+regex = { workspace = true }

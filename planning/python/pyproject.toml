@@ -1,0 +1,25 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "up_aries_pyo3"
+version = "0.1.0"
+description = "Aries planner for the unified-planning library, running in-process through PyO3"
+requires-python = ">=3.10"
+license = "MIT OR Apache-2.0"
+dependencies = ["unified-planning"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+
+[project.urls]
+Homepage = "https://github.com/plaans/aries"
+
+[tool.maturin]
+python-source = "python"
+module-name = "up_aries_pyo3._aries"
+profile = "python"
+features = ["pyo3/extension-module"]

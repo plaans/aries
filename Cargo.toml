@@ -14,6 +14,7 @@ members = [
     "planning/planners",
     "planning/grpc/api",
     "planning/grpc/server",
+    "planning/python",
     "aries_fzn",
     "examples/sat",
     "examples/scheduling",
@@ -86,6 +87,11 @@ debug = false     # No debug symbols to keep executables small
 lto = "thin"
 opt-level = 3
 panic = "abort"
+
+# A profile for the Python bindings (planning/python), where panics must unwind to be raised as Python exceptions.
+[profile.python]
+inherits = "release"
+panic = "unwind"
 
 # A profile meant for usage in CI, provide reasonable build/execution times. Also enables debug assertions and symbols.
 [profile.ci]
