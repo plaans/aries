@@ -6,6 +6,9 @@ edition = "2021"
 [lib]
 name = "_aries"
 crate-type = ["cdylib"]
+# tests are in Python (`tests/`), a Rust test harness would need to link libpython
+test = false
+doctest = false
 
 [dependencies]
 anyhow = { workspace = true }
