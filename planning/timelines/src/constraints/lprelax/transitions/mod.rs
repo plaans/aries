@@ -7,7 +7,8 @@
 //!   - their source (container action instance),
 //!   - presence literal,
 //!   - their state variable name (state function),
-//!   - and their state variable parameter-variables (arguments).
+//!   - their state variable parameter-variables (arguments),
+//!   - the end time of the condition and the start time of the effect.
 //!
 //! The module allows collecting and manipulating transitions. More specifically:
 //! - The "unambiguous" (i.e. non-"nonsimple") transitions in a scheduling problem can be collected into the [`Transitions`] structure.
@@ -47,7 +48,8 @@ pub enum Transition {
     /// - their source (container action instance),
     /// - presence literal,
     /// - their state variable name (state function),
-    /// - and their state variable parameter-variables (arguments).
+    /// - their state variable parameter-variables (arguments),
+    /// - the end time of the condition and the start time of the effect.
     CondEff(CondId, EffectId),
 }
 impl Transition {
@@ -271,13 +273,17 @@ impl Transitions {
                 // can be merged into a CondEff ONLY when they are the only candidates !
                 // For example, in an ambiguous situation where two conditions could be merged into
                 // a CondEff with the same one effect, no merge should be performed.
-                let matches_effect = |state_var: &StateVar, prez: Lit| *state_var == e.state_var && prez == e.prez;
+                let matches_effect = |state_var: &StateVar, prez: Lit, time: crate::Time| {
+                    *state_var == e.state_var && prez == e.prez && time == e.transition_start
+                };
                 // (No CondEff pattern allowed for the empty source.)
                 let paired_cond_id = source.and(conditions.get(source)).and_then(|cs| {
-                    let mut conds = cs.iter().filter(|(_, c)| matches_effect(&c.state_var, c.prez));
+                    let mut conds = cs
+                        .iter()
+                        .filter(|(_, c)| matches_effect(&c.state_var, c.prez, c.timepoint));
                     let num_effs = es
                         .iter()
-                        .filter(|(_, other)| matches_effect(&other.state_var, other.prez))
+                        .filter(|(_, other)| matches_effect(&other.state_var, other.prez, other.transition_start))
                         .count();
                     match (conds.next(), conds.next(), num_effs) {
                         (Some(&(cond_id, _)), None, 1) => Some(cond_id),
