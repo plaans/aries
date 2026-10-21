@@ -607,7 +607,7 @@ impl TransitionsGroundingsInfo {
     }
 }
 
-/// A ground support between two transitions, which only depends on the state variable grounding and on the value handed over.
+/// Identifies a ground support between two transitions, which only depends on the state variable grounding and on the value handed over.
 ///
 /// Every grounding of the out-transition with that state variable grounding and `op_assignment` (whatever its `val_assignment`)
 /// can support every grounding of the in-transition with that state variable grounding and `val_assignment`

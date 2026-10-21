@@ -14,12 +14,21 @@ use crate::lprelax::transitions::{
 };
 use crate::{IntTerm, SchedEncoder, Task};
 
+/// Allows building the LP relaxation problem ([`LpRelaxProblem`]) of a scheduling problem, in two steps:
+/// - [`Self::with_transitions_from`] collects the (lifted) transitions and the potential supports between them;
+/// - [`Self::encode`] grounds the sources, interning the groundings of their transitions and terms as well as the ground supports,
+///   then encodes the lifted and ground rows.
 #[derive(Clone)]
 pub(crate) struct LpRelaxEncoder {
-    pub(crate) transitions: Transitions,
-    pub(crate) supports: Supports,
+    pub(super) transitions: Transitions,
+    /// The potential lifted supports between transitions.
+    pub(super) supports: Supports,
+    /// Sorted view on supports. Needed for efficient construction of rows / constraints relevant on ground supports.
+    /// As such, should ideally be built once, after the ground sources have been interned.
     supports_sorted: Option<SupportsSorted>,
 
+    /// The groundings of the sources, of their transitions and terms, and of the supports,
+    /// interned as part of (or right before) encoding.
     ground: ground::GroundingsInfo,
 }
 
@@ -41,7 +50,9 @@ impl LpRelaxEncoder {
 
     fn sort(&mut self) {
         let time = std::time::Instant::now();
+
         self.supports_sorted = Some(self.supports.sort());
+
         lprelax_log!("Sorted lifted supports in {}", time.elapsed().as_secs_f64());
 
         self.ground.sort(self.supports_sorted.as_ref().unwrap());
@@ -67,12 +78,15 @@ impl LpRelaxEncoder {
     fn ground(&mut self, ctx: &SchedEncoder) {
         let time = std::time::Instant::now();
 
-        let binding = ground_all_tasks(ctx);
-        let sources_groundings = [(None, binding.empty_source_groundings().to_vec())].into_iter().chain(
-            binding
-                .all_task_groundings()
-                .map(|(task, gs)| (Some(task), gs.to_vec())),
-        );
+        let groundings = ground_all_tasks(ctx);
+
+        let sources_groundings = [(None, groundings.empty_source_groundings().to_vec())]
+            .into_iter()
+            .chain(
+                groundings
+                    .all_task_groundings()
+                    .map(|(task, gs)| (Some(task), gs.to_vec())),
+            );
 
         lprelax_log!("Ran grounder in {}", time.elapsed().as_secs_f64(),);
 
@@ -81,6 +95,7 @@ impl LpRelaxEncoder {
         let mut n = 0;
         for (source, source_groundings) in sources_groundings {
             let source_terms = self.get_source_terms(source, ctx);
+
             for source_grounding in source_groundings {
                 self.ground
                     .post_ground_source(source, source_terms, &source_grounding, &self.transitions, ctx);
@@ -93,18 +108,22 @@ impl LpRelaxEncoder {
         self.sort();
     }
 
-    /// Grounds the sources Encodes the problem's rows (after having computed and interned source groundings).
+    /// Grounds the sources (see [`Self::ground`]), then encodes the problem's lifted and ground rows.
     pub fn encode(&mut self, ctx: &SchedEncoder) -> LpRelaxProblem {
         self.ground(ctx);
 
         let mut problem = LpRelaxProblem::default();
 
         let time = std::time::Instant::now();
+
         encode::encode_problem_lifted(self, ctx, &mut problem);
+
         lprelax_log!("Collected lifted rows in {}", time.elapsed().as_secs_f64());
 
         let time = std::time::Instant::now();
+
         encode::encode_problem_ground(self, ctx, &mut problem);
+
         lprelax_log!("Collected ground rows in {}", time.elapsed().as_secs_f64());
 
         problem

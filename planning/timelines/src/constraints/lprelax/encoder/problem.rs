@@ -14,7 +14,7 @@ use crate::{Domains, IntTerm, SchedEncoder};
 use super::LpRelaxEncoder;
 use super::ground::{SourceGroundingId, StateVarGroundingId, SupportGroundingId, TransitionGroundingId};
 
-/// Represents a variable / column
+/// Represents a variable / column of the LP relaxation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum ColTag {
     /// Presence of a source: lifted (`None`), or of one of its groundings (`Some`).
@@ -22,10 +22,10 @@ pub enum ColTag {
     /// Presence of a transition: lifted (`None`), or of one of its groundings (`Some`).
     PresenceTransition(TransitionId, Option<TransitionGroundingId>),
     /// Support from a transition to another:
-    /// lifted (`None`), or ground (`Some`, for a given ground state variable and a given handed-over value).
+    /// lifted (`None`), or ground (`Some`, for a given ground state variable and handed-over value).
     Support(TransitionId, TransitionId, Option<SupportGroundingId>),
     /// Support of an effect by the initial state of a ground state variable grounding (when `Some`), or of any of them (lifted, when `None`).
-    /// On each ground state variable, the initial state supports at most one effect (whatever its source).
+    /// On each ground state variable, the initial state supports at most one effect.
     SupportFromInitialState(Option<StateVarGroundingId>, TransitionId),
     /// Whether a term is assigned a value (ground).
     TermGround(IntTerm, IntCst),
@@ -37,12 +37,12 @@ impl ColTag {
             ColTag::PresenceSource(_, grounding) => grounding.is_none(),
             ColTag::PresenceTransition(_, grounding) => grounding.is_none(),
             ColTag::Support(_, _, grounding) => grounding.is_none(),
-            ColTag::SupportFromInitialState(state_var_grounding, _) => state_var_grounding.is_none(),
+            ColTag::SupportFromInitialState(grounding, _) => grounding.is_none(),
             ColTag::TermGround(_, _) => true,
         }
     }
 
-    /// The upper bound of the column (`None` if it has none). Every column has 0 as lower bound.
+    /// The upper bound of the column (`None` if it has none / if it is infinite).
     pub fn upper_bound(&self) -> Option<IntCst> {
         match self {
             ColTag::PresenceSource(..)
@@ -52,25 +52,29 @@ impl ColTag {
             | ColTag::TermGround(..) => Some(1),
         }
     }
+
+    pub fn lower_bound(&self) -> IntCst {
+        0
+    }
 }
 
 aries_linexpr::impl_linear_ops!(ColTag, IntCst);
 
 /// A weighted sum of columns (designated by `C`), plus a constant.
-pub type LinExpr<C = ColTag> = aries_linexpr::LinExpr<C, IntCst>;
+type LinExpr<C = ColTag> = aries_linexpr::LinExpr<C, IntCst>;
 
 /// A row of the form `lhs cmp rhs`, where `cmp` can be `=`, `<=`, or `>=`, and `lhs` and `rhs` are [`LinExpr`]s.
-pub type RowExpr<C = ColTag> = aries_linexpr::Constraint<C, IntCst>;
+type RowExpr<C = ColTag> = aries_linexpr::Constraint<C, IntCst>;
 
 /// The sum of the given columns (each with coefficient 1).
-pub fn sum<C>(cols: impl IntoIterator<Item = C>) -> LinExpr<C> {
+pub(super) fn sum<C>(cols: impl IntoIterator<Item = C>) -> LinExpr<C> {
     cols.into_iter().map(|col| (col, 1)).collect()
 }
 
 /// Represents a problem: its rows, over columns designated by `C`.
 #[derive(Clone)]
 pub struct LpRelaxProblem<C = ColTag> {
-    /// One entry per LP column (`Some` only once simplified or sealed).
+    /// One entry per LP column (`Some` only once sealed).
     cols: Option<Vec<C>>,
     /// Maps every column tag appearing in the rows to the index, in `cols`, of the column it resolves to.
     col_index: Option<HashMap<C, usize>>,
@@ -117,7 +121,7 @@ impl<C: Copy + Eq + Hash> LpRelaxProblem<C> {
 
     /// Numbers the columns of the rows as they are, without simplifying anything: every tag is its own column.
     ///
-    /// Afterwards, [`Self::cols`] and [`Self::col_index`] are available just as after [`Self::simplify`].
+    /// Afterwards, [`Self::cols`] and [`Self::col_index`] are available just as after [`Self::seal_simplified`].
     pub fn seal(&mut self) {
         self.number_cols(std::iter::empty());
     }
@@ -152,15 +156,15 @@ impl LpRelaxProblem {
     /// Simplifies the problem, given what the domains already fix:
     ///
     /// - a column whose value is known is replaced by that value in every row;
-    /// - a row sitting at one of its bounds pins all of its columns (e.g. `x + y = 0`, or a single-term `x = 1`) -- which in turn feeds the point above;
+    /// - a row sitting at one of its bounds pins all of its columns (e.g. `x + y = 0`, or a single-term `x = 1`) -- which can lead to the point above being triggered;
     /// - rows that became empty are dropped, and a row that became contradictory turns the whole problem into a single trivially infeasible one;
     /// - when `merge_equal_columns` is set, a row of the form `c*x - c*y = 0` merges the two columns into a single one,
-    ///   (represented by a "lifted" column tag when possible).
+    ///   (represented by a "lifted" column tag when possible, to preserve tight binding to the main model).
     ///
     /// Afterwards, [`Self::cols`] holds one entry per remaining LP column.
     ///
     /// See [`Self::seal`] to get a usable problem without simplifying anything.
-    pub fn simplify(
+    pub fn seal_simplified(
         &mut self,
         encoder: &LpRelaxEncoder,
         ctx: &SchedEncoder,
@@ -185,7 +189,6 @@ impl LpRelaxProblem {
 
     /// Replaces the problem by two rows over a single column, `x <= 0` and `x >= 1`:
     /// infeasible whatever the column's bounds, while each row on its own has consistent bounds
-    /// (a row with inconsistent bounds makes HiGHS crash).
     fn make_infeasible(&mut self) {
         let col_tag = ColTag::PresenceSource(None, None);
 

@@ -89,7 +89,7 @@ impl LpRelaxIncr {
         let base_decision_level = base_doms.current_decision_level();
 
         let mut problem = encoder.encode(&self.ctx);
-        problem.simplify(encoder, &self.ctx, base_doms, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get());
+        problem.seal_simplified(encoder, &self.ctx, base_doms, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get());
 
         let vars = post_variables_and_rows(&problem, base_doms, &mut self.lp);
         post_bindings(&vars, encoder, &self.ctx, base_doms, &mut self.lp);
