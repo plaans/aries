@@ -1,3 +1,4 @@
+pub mod bindings;
 mod encode;
 mod ground;
 pub mod problem;

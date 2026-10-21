@@ -33,7 +33,7 @@ fn try_simplify_inner(
     let mut times = vec![];
 
     let time = std::time::Instant::now();
-    seed_known_values(pb, classes, encoder, ctx, doms)?;
+    seed_known_values(classes, encoder, ctx, doms)?;
     times.push(time.elapsed());
 
     // The columns are interned once: the rounds below only deal with their classes.
@@ -112,76 +112,19 @@ fn try_simplify_inner(
     Ok(())
 }
 
-/// Records the values that the domains already fix for the lifted presence and support columns, and for the term grounding columns.
+/// Records the values that the bindings to the main model already fix, given the domains (see [`LpRelaxEncoder::bindings`]).
 fn seed_known_values(
-    pb: &LpRelaxProblem,
     classes: &mut EquivClasses,
     encoder: &LpRelaxEncoder,
     ctx: &SchedEncoder,
     doms: &Domains,
 ) -> Result<(), Infeasible> {
-    let lifted_presences = encoder.iter_sources().flat_map(|(source, trans_ids)| {
-        std::iter::once((
-            ColTag::PresenceSource(source, None),
-            encoder.get_source_prez(source, ctx),
-        ))
-        .chain(trans_ids.iter().map(|&trans_id| {
-            (
-                ColTag::PresenceTransition(trans_id, None),
-                encoder.transitions.get_prez(trans_id, ctx),
-            )
-        }))
-    });
-    let lifted_supports = encoder
-        .supports_sorted
-        .as_ref()
-        .unwrap()
-        .sorted_out()
-        .iter()
-        .filter_map(|&((out_trans_id, in_trans_id), active)| {
-            active.map(|active| (ColTag::Support(out_trans_id, in_trans_id, None), active))
-        });
-
-    // A column is 1 when its literal is true and present, and 0 when it is false or absent.
-    for (col_tag, lit) in lifted_presences.chain(lifted_supports) {
-        let value = if doms.entails(!lit) || doms.entails(!doms.presence(lit)) {
-            0
-        } else if doms.entails(lit) && doms.entails(doms.presence(lit)) {
-            1
-        } else {
-            continue;
-        };
-
-        // With conditions as out-transitions, an effect supports at most one condition in the LP
-        // (but possibly several in the main model): setting all its active causal links to 1 would be unsound.
-        if value == 1 && matches!(col_tag, ColTag::Support(..)) && encoder.supports.with_condition_out_transitions {
-            continue;
-        }
-
-        let class = classes.intern(col_tag);
-        classes.set_value(class, value)?;
-    }
-
-    // A term grounding column is 0 when its value is out of the term's bounds (or the term absent),
-    // and 1 when the term is present and fixed to that value.
-    for row in &pb.rows {
-        for (col_tag, _) in row.lhs.iter().chain(row.rhs.iter()) {
-            let ColTag::TermGround(term, value) = col_tag else {
-                continue;
-            };
-            let known = if doms.entails(!doms.presence(term)) || value < doms.lb(term) || doms.ub(term) < value {
-                0
-            } else if doms.entails(doms.presence(term)) && doms.lb(term) == doms.ub(term) {
-                1
-            } else {
-                continue;
-            };
-
-            let class = classes.intern(col_tag);
-            classes.set_value(class, known)?;
+    for binding in encoder.bindings(ctx) {
+        if binding.trigger.iter().all(|&lit| doms.entails(lit)) {
+            let class = classes.intern(binding.tag);
+            classes.set_value(class, binding.value)?;
         }
     }
-
     Ok(())
 }
 
