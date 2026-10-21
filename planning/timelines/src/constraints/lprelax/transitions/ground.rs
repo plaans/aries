@@ -31,10 +31,8 @@ impl TransitionTermsEvaluation {
                 debug_assert!(term.is_cst());
                 Some(term.constant)
             }
-            EffectOp::Step(term) => {
-                debug_assert!(term.is_cst());
-                Some(term.constant)
-            } // EffectOp::Erase => None, // TODO ?
+            EffectOp::Step(_) => todo!("step effects (relaxed as nonsimple for now)"),
+            // EffectOp::Erase => None, // TODO ?
         }
     }
 }
@@ -70,7 +68,7 @@ impl Transitions {
         let post_op_value = IntTerm::int_cst(values.pop().unwrap());
         let post_op = match view.post_op {
             EffectOp::Assign(_) => EffectOp::Assign(post_op_value),
-            EffectOp::Step(_) => EffectOp::Step(post_op_value),
+            EffectOp::Step(_) => todo!("step effects (relaxed as nonsimple for now)"),
         };
         let pre_val = if view.pre_val.is_some() { values.pop() } else { None };
 

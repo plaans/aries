@@ -117,7 +117,8 @@ impl<'a> TransitionView<'a> {
     /// the arguments of its state variable, its pre-value (if any), and the term of its post-operation.
     fn terms(self) -> impl Iterator<Item = IntTerm> + 'a {
         let post_op_term = match self.post_op {
-            EffectOp::Assign(term) | EffectOp::Step(term) => term,
+            EffectOp::Assign(term) => term,
+            EffectOp::Step(_) => todo!("step effects (relaxed as nonsimple for now)"),
         };
         self.state_var
             .args
