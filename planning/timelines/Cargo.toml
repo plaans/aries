@@ -12,6 +12,7 @@ tracing = { workspace = true }
 aries-solver = { path = "../../solver" }
 aries-datalog = { path = "../../utils/datalog" }
 aries-env-param = { path = "../../utils/env_param" }
+aries-linexpr = { path = "../../utils/linexpr" }
 idmap = { workspace = true }
 smallvec = { workspace = true }
 num-rational = { workspace = true }

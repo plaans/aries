@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 
+use aries_linexpr::ComparisonOp;
 use aries_solver::backtrack::{Backtrack, DecLvl};
 use aries_solver::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
 use aries_solver::core::{INT_CST_MAX, IntCst, Lit, Var, views::Term};
@@ -12,7 +13,7 @@ use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpOptions, LpSum, LpVar}
 
 use crate::lprelax::ARIES_LPRELAX_MERGE_EQUAL_COLUMNS;
 use crate::lprelax::encoder::LpRelaxEncoder;
-use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem, RowExprType};
+use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem};
 use crate::{IntTerm, SchedEncoder};
 
 /// Wrapper over the incremental LP reasoner, specifically for the LP relaxation problem.
@@ -208,31 +209,29 @@ fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp
 
     debug_assert!(
         problem.rows().iter().all(|row| {
-            row.lhs()
+            row.lhs
                 .iter()
-                .chain(row.rhs())
-                .map(|&(_, tag)| vars[&tag])
+                .chain(row.rhs.iter())
+                .map(|(tag, _)| vars[&tag])
                 .all_unique()
         }),
         "a row uses the same LP variable twice: its coefficients should have been summed",
     );
 
     for row in problem.rows() {
-        let sum = LpSum::new(
-            row.lhs()
-                .iter()
-                .map(|&(coef, tag)| (vars[&tag], coef))
-                .chain(row.rhs().iter().map(|&(coef, tag)| (vars[&tag], -coef))),
-        );
+        // `lhs cmp rhs` reads as `sum + cst cmp 0`.
+        let row = row.canonical();
+        let sum = LpSum::new(row.expr().iter().map(|(tag, coef)| (vars[&tag], coef)));
+        let cst = row.expr().constant();
 
-        match row.tpe {
-            // `sum <= cst`
-            RowExprType::Leq => lp.add_linear_leq_constraint(sum, -row.cst(), Lit::TRUE, doms),
-            // `sum >= cst`, i.e. `-sum + cst <= 0`
-            RowExprType::Geq => lp.add_linear_leq_constraint(negated(&sum), row.cst(), Lit::TRUE, doms),
-            RowExprType::Eq => {
-                lp.add_linear_leq_constraint(negated(&sum), row.cst(), Lit::TRUE, doms);
-                lp.add_linear_leq_constraint(sum, -row.cst(), Lit::TRUE, doms);
+        match row.comp_op() {
+            // `sum + cst <= 0`
+            ComparisonOp::Le => lp.add_linear_leq_constraint(sum, cst, Lit::TRUE, doms),
+            // `sum + cst >= 0`, i.e. `-sum - cst <= 0`
+            ComparisonOp::Ge => lp.add_linear_leq_constraint(negated(&sum), -cst, Lit::TRUE, doms),
+            ComparisonOp::Eq => {
+                lp.add_linear_leq_constraint(negated(&sum), -cst, Lit::TRUE, doms);
+                lp.add_linear_leq_constraint(sum, cst, Lit::TRUE, doms);
             }
         }
     }

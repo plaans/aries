@@ -1,3 +1,4 @@
+use aries_linexpr::IntoLinExpr;
 use aries_solver::core::views::Dom;
 use itertools::Itertools;
 
@@ -5,7 +6,7 @@ use crate::SchedEncoder;
 use crate::lprelax::transitions::TransitionType;
 
 use super::LpRelaxEncoder;
-use super::problem::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
+use super::problem::{ColTag, LpRelaxProblem, sum};
 
 /// Pushes the "lifted rows": (lifted) presences of sources and transitions, as well as (lifted) supports between transitions.
 pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
@@ -13,12 +14,7 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 
     // [Lifted] A source is present if(f) its transitions are (and the empty source is present).
     {
-        problem.push_row(RowExpr::new(
-            RowExprType::Eq,
-            vec![(1, ColTag::PresenceSource(None, None))],
-            1,
-            1,
-        ));
+        problem.push_row(ColTag::PresenceSource(None, None).into_linexpr().eq(1));
 
         for (source, trans_ids) in encoder.iter_sources() {
             for &trans_id in trans_ids {
@@ -36,14 +32,12 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 );
 
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
-                let terms = vec![
-                    (1, ColTag::PresenceTransition(trans_id, None)),
-                    (1, ColTag::PresenceSource(source, None)),
-                ];
+                let presence = ColTag::PresenceTransition(trans_id, None).into_linexpr();
+                let source_presence = ColTag::PresenceSource(source, None);
                 problem.push_row(if presences_equivalent {
-                    RowExpr::new_eq_single_lhs(terms)
+                    presence.eq(source_presence)
                 } else {
-                    RowExpr::new_leq_single_lhs(terms)
+                    presence.leq(source_presence)
                 });
             }
         }
@@ -55,10 +49,9 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     if !encoder.supports.with_condition_out_transitions {
         for &((out_trans_id, in_trans_id), _) in encoder.supports.unsorted_out() {
             if encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond {
-                problem.push_row(RowExpr::new_leq_single_lhs(vec![
-                    (1, ColTag::Support(out_trans_id, in_trans_id, None)),
-                    (1, ColTag::PresenceTransition(out_trans_id, None)),
-                ]));
+                let support = ColTag::Support(out_trans_id, in_trans_id, None);
+                let presence = ColTag::PresenceTransition(out_trans_id, None);
+                problem.push_row(support.into_linexpr().leq(presence));
             }
         }
     }
@@ -76,19 +69,18 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         for (&in_trans_id, out_trans_ids) in &chunkby {
             let is_pure_effect = encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff;
             let support_from_initial_state = (with_initial_state_supports && is_pure_effect)
-                .then_some((1, ColTag::SupportFromInitialState(None, in_trans_id)));
+                .then_some(ColTag::SupportFromInitialState(None, in_trans_id));
 
-            let terms = std::iter::once((1, ColTag::PresenceTransition(in_trans_id, None)))
-                .chain(out_trans_ids.map(|&(_, out_trans_id)| (1, ColTag::Support(out_trans_id, in_trans_id, None))))
-                .chain(support_from_initial_state)
-                .collect::<Vec<_>>();
-            debug_assert!(terms.len() >= 2);
+            let presence = ColTag::PresenceTransition(in_trans_id, None).into_linexpr();
+            let supports = out_trans_ids.map(|&(_, out_trans_id)| ColTag::Support(out_trans_id, in_trans_id, None));
+            let supports = sum(supports.chain(support_from_initial_state));
+            debug_assert!(!supports.terms().is_empty());
 
             // Without supports from the initial state, a pure effect need not be supported (it may be the first on its timeline).
             problem.push_row(if !with_initial_state_supports && is_pure_effect {
-                RowExpr::new_geq_single_lhs(terms)
+                presence.geq(supports)
             } else {
-                RowExpr::new_eq_single_lhs(terms)
+                presence.eq(supports)
             });
         }
     }
@@ -101,20 +93,18 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             .iter()
             .chunk_by(|&((out_trans_id, _), _)| out_trans_id);
 
-        for (&out_trans_id, supports) in &chunkby {
-            let terms = std::iter::once((1, ColTag::PresenceTransition(out_trans_id, None)))
-                .chain(
-                    supports
-                        .filter(|&&((_, in_trans_id), _)| {
-                            encoder.supports.with_condition_out_transitions
-                                || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
-                        })
-                        .map(|&((_, in_trans_id), _)| (1, ColTag::Support(out_trans_id, in_trans_id, None))),
-                )
-                .collect::<Vec<_>>();
+        for (&out_trans_id, entries) in &chunkby {
+            let supports = entries
+                .filter(|&&((_, in_trans_id), _)| {
+                    encoder.supports.with_condition_out_transitions
+                        || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+                })
+                .map(|&((_, in_trans_id), _)| ColTag::Support(out_trans_id, in_trans_id, None));
+            let supports = sum(supports);
 
-            if terms.len() >= 2 {
-                problem.push_row(RowExpr::new_geq_single_lhs(terms));
+            if !supports.terms().is_empty() {
+                let presence = ColTag::PresenceTransition(out_trans_id, None);
+                problem.push_row(presence.into_linexpr().geq(supports));
             }
         }
     }
@@ -134,14 +124,10 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             // ? WARNING ? related to incomplete / partial groundings. [TODO]
             continue;
         }
-        let terms = std::iter::once((1, ColTag::PresenceSource(source, None)))
-            .chain(
-                source_groundings
-                    .iter()
-                    .map(|&g| (1, ColTag::PresenceSource(source, Some(g)))),
-            )
-            .collect::<Vec<_>>();
-        problem.push_row(RowExpr::new_eq_single_lhs(terms));
+        let groundings = source_groundings
+            .iter()
+            .map(|&g| ColTag::PresenceSource(source, Some(g)));
+        problem.push_row(ColTag::PresenceSource(source, None).into_linexpr().eq(sum(groundings)));
     }
 
     // [Lifted-Ground] A transition is present iff one of its groundings is.
@@ -151,10 +137,8 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             .chunk_by(|&(trans_id, _)| trans_id);
 
         for (trans_id, groundings) in &chunkby {
-            let terms = std::iter::once((1, ColTag::PresenceTransition(trans_id, None)))
-                .chain(groundings.map(|(_, g)| (1, ColTag::PresenceTransition(trans_id, Some(g)))))
-                .collect::<Vec<_>>();
-            problem.push_row(RowExpr::new_eq_single_lhs(terms));
+            let groundings = sum(groundings.map(|(_, g)| ColTag::PresenceTransition(trans_id, Some(g))));
+            problem.push_row(ColTag::PresenceTransition(trans_id, None).into_linexpr().eq(groundings));
         }
     }
 
@@ -163,9 +147,8 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         let chunkby = entries.chunk_by(|&&(trans_id, trans_grounding_id, _)| (trans_id, trans_grounding_id));
 
         for ((trans_id, trans_grounding_id), source_groundings) in &chunkby {
-            let terms = std::iter::once((1, ColTag::PresenceTransition(trans_id, Some(trans_grounding_id))))
-                .chain(source_groundings.map(|&(_, _, g)| (1, ColTag::PresenceSource(source, Some(g)))))
-                .collect::<Vec<_>>();
+            let presence = ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)).into_linexpr();
+            let source_presences = sum(source_groundings.map(|&(_, _, g)| ColTag::PresenceSource(source, Some(g))));
 
             // Same as for the lifted rows: the transition's presence literal must always imply the source's,
             // and we can enforce equality only when they are equivalent.
@@ -178,9 +161,9 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 encoder.transitions.get_prez(trans_id, ctx),
             );
             problem.push_row(if presences_equivalent {
-                RowExpr::new_eq_single_lhs(terms)
+                presence.eq(source_presences)
             } else {
-                RowExpr::new_leq_single_lhs(terms)
+                presence.leq(source_presences)
             });
         }
     }
@@ -188,18 +171,12 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     // [Ground] A support implies the presence of its out-transition (see the corresponding lifted rows).
     if !encoder.supports.with_condition_out_transitions {
         for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
-            let presences = groundings
-                .map(|g| (1, ColTag::PresenceTransition(out_trans_id, Some(g))))
-                .collect::<Vec<_>>();
+            let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
 
             for in_trans_id in in_trans_ids {
                 if encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond {
-                    let support = (
-                        1,
-                        ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
-                    );
-                    let terms = std::iter::once(support).chain(presences.iter().copied()).collect();
-                    problem.push_row(RowExpr::new_leq_single_lhs(terms));
+                    let support = ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id));
+                    problem.push_row(support.into_linexpr().leq(presences.clone()));
                 }
             }
         }
@@ -212,12 +189,11 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             .chunk_by(|&&(out_trans_id, in_trans_id, _)| (out_trans_id, in_trans_id));
 
         for ((out_trans_id, in_trans_id), entries) in &chunkby {
-            let terms = std::iter::once((1, ColTag::Support(out_trans_id, in_trans_id, None)))
-                .chain(entries.filter_map(|&(_, _, support_grounding_id)| {
-                    support_grounding_id.map(|g| (1, ColTag::Support(out_trans_id, in_trans_id, Some(g))))
-                }))
-                .collect::<Vec<_>>();
-            problem.push_row(RowExpr::new_eq_single_lhs(terms));
+            let ground_supports = entries.filter_map(|&(_, _, support_grounding_id)| {
+                support_grounding_id.map(|g| ColTag::Support(out_trans_id, in_trans_id, Some(g)))
+            });
+            let support = ColTag::Support(out_trans_id, in_trans_id, None);
+            problem.push_row(support.into_linexpr().eq(sum(ground_supports)));
         }
     }
 
@@ -229,30 +205,23 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         {
             let is_pure_effect = val_assignment.is_none();
 
-            let presences = groundings.map(|g| (1, ColTag::PresenceTransition(in_trans_id, Some(g))));
+            let presences = sum(groundings.map(|g| ColTag::PresenceTransition(in_trans_id, Some(g))));
             let supports = supports.map(|(out_trans_id, support_grounding_id)| {
-                (
-                    1,
-                    ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
-                )
+                ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id))
             });
 
             // An effect may be supported by the initial state.
-            let support_from_initial_state = (with_initial_state_supports && is_pure_effect).then_some((
-                1,
+            let support_from_initial_state = (with_initial_state_supports && is_pure_effect).then_some(
                 ColTag::SupportFromInitialState(Some(state_var_grounding_id), in_trans_id),
-            ));
-
-            let separator = presences.len();
-            let terms = presences.chain(supports).chain(support_from_initial_state).collect();
+            );
+            let supports = sum(supports.chain(support_from_initial_state));
 
             // Without supports from the initial state, a pure effect need not be supported (it may be the first on its timeline).
-            let tpe = if !with_initial_state_supports && is_pure_effect {
-                RowExprType::Geq
+            problem.push_row(if !with_initial_state_supports && is_pure_effect {
+                presences.geq(supports)
             } else {
-                RowExprType::Eq
-            };
-            problem.push_row(RowExpr::new(tpe, terms, separator, 0));
+                presences.eq(supports)
+            });
         }
     }
 
@@ -263,17 +232,10 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             if pure_effects.len() <= 1 {
                 continue;
             }
-            let terms = pure_effects
+            let supports = pure_effects
                 .iter()
-                .map(|&trans_id| {
-                    (
-                        1,
-                        ColTag::SupportFromInitialState(Some(state_var_grounding_id), trans_id),
-                    )
-                })
-                .chain([(1, ColTag::PresenceSource(None, None))])
-                .collect();
-            problem.push_row(RowExpr::new(RowExprType::Leq, terms, pure_effects.len(), 0));
+                .map(|&trans_id| ColTag::SupportFromInitialState(Some(state_var_grounding_id), trans_id));
+            problem.push_row(ColTag::PresenceSource(None, None).into_linexpr().geq(sum(supports)));
         }
     }
 
@@ -288,19 +250,11 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             .filter(|&trans_id| encoder.transitions.get(trans_id).tpe() == TransitionType::Eff);
 
         for trans_id in lifted_effects {
-            let terms = std::iter::once((1, ColTag::SupportFromInitialState(None, trans_id)))
-                .chain(
-                    ground
-                        .iter_ground_state_vars_of(trans_id)
-                        .map(|state_var_grounding_id| {
-                            (
-                                1,
-                                ColTag::SupportFromInitialState(Some(state_var_grounding_id), trans_id),
-                            )
-                        }),
-                )
-                .collect::<Vec<_>>();
-            problem.push_row(RowExpr::new_eq_single_lhs(terms));
+            let ground_supports = ground
+                .iter_ground_state_vars_of(trans_id)
+                .map(|state_var_grounding_id| ColTag::SupportFromInitialState(Some(state_var_grounding_id), trans_id));
+            let support = ColTag::SupportFromInitialState(None, trans_id);
+            problem.push_row(support.into_linexpr().eq(sum(ground_supports)));
         }
     }
 
@@ -312,21 +266,14 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 encoder.supports.with_condition_out_transitions
                     || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
             })
-            .map(|in_trans_id| {
-                (
-                    1,
-                    ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)),
-                )
-            })
-            .collect::<Vec<_>>();
-        if supports.is_empty() {
+            .map(|in_trans_id| ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)));
+        let supports = sum(supports);
+        if supports.terms().is_empty() {
             continue;
         }
 
-        let presences = groundings.map(|g| (1, ColTag::PresenceTransition(out_trans_id, Some(g))));
-        let separator = presences.len();
-        let terms = presences.chain(supports).collect();
-        problem.push_row(RowExpr::new(RowExprType::Geq, terms, separator, 0));
+        let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
+        problem.push_row(presences.geq(supports));
     }
 
     // [Ground] At most one of a term's groundings can be active
@@ -335,11 +282,9 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         let chunkby = ground.iter_distinct_term_assignments().chunk_by(|&(term, _)| term);
 
         for (term, values) in &chunkby {
-            let terms = values
-                .map(|(_, value)| (1, ColTag::TermGround(term, value)))
-                .collect::<Vec<_>>();
-            debug_assert!(!terms.is_empty());
-            problem.push_row(RowExpr::new_leq_1(terms));
+            let groundings = sum(values.map(|(_, value)| ColTag::TermGround(term, value)));
+            debug_assert!(!groundings.terms().is_empty());
+            problem.push_row(groundings.leq(1));
         }
     }
 
@@ -351,9 +296,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             .chunk_by(|&&(term, value, source, _)| (term, value, source));
 
         for ((term, value, source), entries) in &chunkby {
-            let terms = std::iter::once((1, ColTag::TermGround(term, value)))
-                .chain(entries.map(|&(_, _, _, g)| (1, ColTag::PresenceSource(source, Some(g)))))
-                .collect::<Vec<_>>();
+            let source_presences = sum(entries.map(|&(_, _, _, g)| ColTag::PresenceSource(source, Some(g))));
 
             debug_assert!(
                 ctx.store
@@ -364,7 +307,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                         .state
                         .implies(ctx.store.presence(term), encoder.get_source_prez(source, ctx))
             );
-            problem.push_row(RowExpr::new_eq_single_lhs(terms));
+            problem.push_row(ColTag::TermGround(term, value).into_linexpr().eq(source_presences));
         }
     }
 }

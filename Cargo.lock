@@ -217,6 +217,7 @@ version = "0.1.0"
 dependencies = [
  "aries-datalog",
  "aries-env-param",
+ "aries-linexpr",
  "aries-solver",
  "hashbrown 0.16.1",
  "idmap",

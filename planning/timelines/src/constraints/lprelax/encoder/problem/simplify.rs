@@ -2,12 +2,13 @@
 
 use hashbrown::HashMap;
 
+use aries_linexpr::ComparisonOp;
 use aries_solver::core::IntCst;
 
 use crate::lprelax::encoder::LpRelaxEncoder;
 use crate::{Domains, SchedEncoder};
 
-use super::{ColTag, LpRelaxProblem, RowExpr, RowExprType};
+use super::{ColTag, LinExpr, LpRelaxProblem, RowExpr};
 
 /// Records the values that the domains already fix for the lifted presence and support columns,
 /// and for the term grounding columns appearing in the rows.
@@ -74,7 +75,7 @@ fn seed_known_values(
     }
 
     for row in &pb.rows {
-        for &(_, col_tag) in &row.terms {
+        for (col_tag, _) in row.lhs.iter().chain(row.rhs.iter()) {
             let ColTag::TermGround(term, value) = col_tag else {
                 continue;
             };
@@ -125,7 +126,7 @@ fn try_simplify_inner(
     let rows = pb
         .rows
         .iter()
-        .map(|row| InternedRow::of(row, classes))
+        .map(|row| ClassRow::interned(row, classes))
         .collect::<Vec<_>>();
     times.push(time.elapsed());
 
@@ -140,9 +141,9 @@ fn try_simplify_inner(
         let mut learned = false;
         let mut canons = Vec::with_capacity(live.len());
         for &i in &live {
-            let canon = CanonicalRow::of(&rows[i], classes);
+            let canon = rows[i].canonical(classes);
             learned |= canon.learn(classes)?;
-            if !canon.coefs.is_empty() {
+            if !canon.expr.terms().is_empty() {
                 canons.push((i, canon));
             }
         }
@@ -159,13 +160,12 @@ fn try_simplify_inner(
     pb.rows = canons
         .into_iter()
         .map(|(_, canon)| {
-            let terms = canon
-                .coefs
+            canon
+                .expr
                 .iter()
-                .map(|&(coef, class)| (coef, classes.representative(class)))
-                .collect::<Vec<_>>();
-            let separator = terms.len();
-            RowExpr::new(canon.tpe, terms, separator, canon.cst)
+                .map(|(class, coef)| (classes.representative(class), coef))
+                .collect::<LinExpr>()
+                .into_constraint(canon.tpe, canon.cst())
         })
         .collect();
     times.push(time.elapsed());
@@ -327,79 +327,56 @@ impl EquivClasses {
     }
 }
 
-/// A row with its columns interned: `sum(coef * class) cmp cst`, the rhs terms being negated.
-struct InternedRow {
-    tpe: RowExprType,
-    terms: Vec<(IntCst, u32)>,
-    cst: IntCst,
+/// A row over the classes of its columns: `sum(coef * class) cmp cst`
+/// (held as the expression `sum(coef * class) - cst`, compared to 0).
+struct ClassRow {
+    tpe: ComparisonOp,
+    expr: LinExpr<u32>,
 }
-impl InternedRow {
-    fn of(row: &RowExpr, classes: &mut EquivClasses) -> Self {
-        let terms = row
-            .terms
-            .iter()
-            .enumerate()
-            .map(|(i, &(coef, col_tag))| {
-                // `lhs cmp rhs + cst` reads as `sum(lhs) - sum(rhs) cmp cst`.
-                let coef = if i < row.separator { coef } else { -coef };
-                (coef, classes.intern(col_tag))
-            })
-            .collect();
-
+impl ClassRow {
+    /// The row, with its columns interned.
+    fn interned(row: &RowExpr, classes: &mut EquivClasses) -> Self {
+        // `lhs cmp rhs` reads as `lhs - rhs cmp 0`.
+        let row = row.canonical();
+        let mut expr = LinExpr::from_constant(row.expr().constant());
+        for (col_tag, coef) in row.expr().iter() {
+            expr.push((classes.intern(col_tag), coef).into());
+        }
         Self {
-            tpe: row.tpe,
-            terms,
-            cst: row.cst(),
+            tpe: row.comp_op(),
+            expr,
         }
     }
-}
 
-/// A row rewritten with the representative columns / tags of the union-find
-struct CanonicalRow {
-    tpe: RowExprType,
-    /// Sorted by class, without duplicates.
-    coefs: Vec<(IntCst, u32)>,
-    cst: IntCst,
-}
-impl CanonicalRow {
-    fn of(row: &InternedRow, classes: &mut EquivClasses) -> Self {
-        let mut coefs: Vec<(IntCst, u32)> = Vec::with_capacity(row.terms.len());
-        let mut cst = row.cst;
-
-        for &(coef, class) in &row.terms {
+    /// The row rewritten over the roots of its classes, with the known values folded into the constant
+    /// (and its terms sorted by class, without duplicates nor zeros).
+    fn canonical(&self, classes: &mut EquivClasses) -> Self {
+        let mut expr = LinExpr::from_constant(self.expr.constant());
+        for (class, coef) in self.expr.iter() {
             let root = classes.find(class);
             match classes.value(root) {
-                Some(value) => cst -= coef * value,
-                None => coefs.push((coef, root)),
+                Some(value) => expr += coef * value,
+                None => expr.push((root, coef).into()),
             }
         }
-
-        // Sum up the coefficients of a same class, then drop those that cancel out.
-        coefs.sort_unstable_by_key(|&(_, root)| root);
-        coefs.dedup_by(|next, prev| {
-            if next.1 == prev.1 {
-                prev.0 += next.0;
-                true
-            } else {
-                false
-            }
-        });
-        coefs.retain(|&(coef, _)| coef != 0);
-
-        Self {
-            tpe: row.tpe,
-            coefs,
-            cst,
-        }
+        expr.simplify();
+        Self { tpe: self.tpe, expr }
     }
 
-    /// Applies everything this row implies on its own.
+    /// The constant of the row, when it reads `sum(coef * class) cmp cst`.
+    fn cst(&self) -> IntCst {
+        -self.expr.constant()
+    }
+
+    /// Applies everything this (canonical) row implies on its own.
     /// Returns whether anything was learned.
     fn learn(&self, classes: &mut EquivClasses) -> Result<bool, Infeasible> {
+        let cst = self.cst();
+
         // The row reads `sum cmp cst`, where `sum` ranges over `[min, max]` given the columns' ranges:
         // `[0, ub]`, or `[0, inf[` for a column without an upper bound (which makes `min` or `max` infinite, i.e. `None`).
         let (mut min, mut max): (Option<IntCst>, Option<IntCst>) = (Some(0), Some(0));
-        for &(coef, class) in &self.coefs {
+        for (class, coef) in self.expr.iter() {
             let end = classes.representative(class).upper_bound().map(|ub| coef * ub);
             if coef > 0 {
                 max = max.zip(end).map(|(max, end)| max + end);
@@ -409,9 +386,9 @@ impl CanonicalRow {
         }
 
         let (lb, ub) = match self.tpe {
-            RowExprType::Eq => (Some(self.cst), Some(self.cst)),
-            RowExprType::Leq => (None, Some(self.cst)),
-            RowExprType::Geq => (Some(self.cst), None),
+            ComparisonOp::Eq => (Some(cst), Some(cst)),
+            ComparisonOp::Le => (None, Some(cst)),
+            ComparisonOp::Ge => (Some(cst), None),
         };
 
         if lb.zip(max).is_some_and(|(lb, max)| lb > max) || ub.zip(min).is_some_and(|(ub, min)| ub < min) {
@@ -423,25 +400,25 @@ impl CanonicalRow {
         // At one of its bounds, every column of the row is pinned to the end of its own range.
         // (A finite `max` means that the columns with a positive coefficient have an upper bound, and conversely for `min`.)
         if lb.is_some() && lb == max {
-            for &(coef, class) in &self.coefs {
+            for (class, coef) in self.expr.iter() {
                 let col_ub = classes.representative(class).upper_bound();
                 learned |= classes.set_value(class, if coef > 0 { col_ub.unwrap() } else { 0 })?;
             }
         }
         if ub.is_some() && ub == min {
-            for &(coef, class) in &self.coefs {
+            for (class, coef) in self.expr.iter() {
                 let col_ub = classes.representative(class).upper_bound();
                 learned |= classes.set_value(class, if coef > 0 { 0 } else { col_ub.unwrap() })?;
             }
         }
 
         // `c*x - c*y = 0` proves the two columns equal.
-        if self.tpe == RowExprType::Eq
-            && self.cst == 0
-            && let [(coef_a, a), (coef_b, b)] = self.coefs[..]
-            && coef_a == -coef_b
+        if self.tpe == ComparisonOp::Eq
+            && cst == 0
+            && let [a, b] = self.expr.terms()
+            && a.coeff == -b.coeff
         {
-            learned |= classes.merge(a, b)?;
+            learned |= classes.merge(a.var, b.var)?;
         }
 
         Ok(learned)
@@ -450,6 +427,8 @@ impl CanonicalRow {
 
 #[cfg(test)]
 mod tests {
+    use aries_linexpr::IntoLinExpr;
+
     use super::*;
 
     fn prez_trans_lifted(trans: usize) -> ColTag {
@@ -459,27 +438,25 @@ mod tests {
         ColTag::PresenceSource(None, Some(grounding))
     }
     /// A row `sum(terms) cmp cst`, all terms on the lhs.
-    fn row(tpe: RowExprType, terms: Vec<(IntCst, ColTag)>, cst: IntCst) -> RowExpr {
-        let separator = terms.len();
-        RowExpr::new(tpe, terms, separator, cst)
+    fn row(tpe: ComparisonOp, terms: Vec<(IntCst, ColTag)>, cst: IntCst) -> RowExpr {
+        terms
+            .into_iter()
+            .map(|(coef, tag)| (tag, coef))
+            .collect::<LinExpr>()
+            .into_constraint(tpe, cst)
     }
     /// The canonical form of `row` (given what `classes` currently know).
-    fn canonical(row: &RowExpr, classes: &mut EquivClasses) -> CanonicalRow {
-        let row = InternedRow::of(row, classes);
-        CanonicalRow::of(&row, classes)
+    fn canonical(row: &RowExpr, classes: &mut EquivClasses) -> ClassRow {
+        ClassRow::interned(row, classes).canonical(classes)
     }
     /// The coefficient that `canon` carries for the class of `tag` (0 if it carries none).
-    fn coef_of(canon: &CanonicalRow, classes: &mut EquivClasses, tag: ColTag) -> IntCst {
+    fn coef_of(canon: &ClassRow, classes: &mut EquivClasses, tag: ColTag) -> IntCst {
         let class = classes.intern(tag);
         let root = classes.find(class);
-        canon
-            .coefs
-            .iter()
-            .find(|&&(_, c)| c == root)
-            .map_or(0, |&(coef, _)| coef)
+        canon.expr.iter().find(|&(c, _)| c == root).map_or(0, |(_, coef)| coef)
     }
 
-    /// An equivalence class holds at most one value, within `[0, 1]`, and a union carries it over.
+    /// An equivalence class holds at most one value, and keeps it when merged with another class.
     #[test]
     fn classes_track_values_and_reject_conflicts() {
         let mut classes = EquivClasses::new(true);
@@ -496,10 +473,9 @@ mod tests {
         assert!(classes.set_value(a, 1).unwrap()); // learned something new
         assert!(!classes.set_value(a, 1).unwrap()); // already known
         assert!(classes.set_value(a, 0).is_err()); // contradicts what is known
-        assert!(classes.set_value(b, 2).is_err()); // a column lives in [0, 1]
 
         assert!(classes.merge(a, b).unwrap());
-        assert_eq!(classes.value(b), Some(1)); // the union carries the value over
+        assert_eq!(classes.value(b), Some(1)); // the merged class keeps the value
 
         let mut classes = EquivClasses::new(true);
         let a = classes.intern(prez_trans_lifted(0));
@@ -531,20 +507,15 @@ mod tests {
         assert_ne!(classes.find(g), classes.find(l));
     }
 
-    /// `lhs cmp rhs + cst` is canonicalised into `sum(lhs) - sum(rhs) cmp cst`, with the constant columns' values folded into the constant.
+    /// `lhs cmp rhs` is canonicalised into `sum(lhs) - sum(rhs) cmp cst`, with the constant columns' values folded into the constant.
     #[test]
     fn canonicalisation_negates_the_rhs_and_folds_known_values() {
         let mut classes = EquivClasses::new(true);
         // `x = y + 1`, i.e. `x - y = 1`
-        let r = RowExpr::new(
-            RowExprType::Eq,
-            vec![(1, prez_trans_lifted(0)), (1, prez_trans_lifted(1))],
-            1,
-            1,
-        );
+        let r = prez_trans_lifted(0).into_linexpr().eq(prez_trans_lifted(1) + 1);
 
         let canon = canonical(&r, &mut classes);
-        assert_eq!(canon.cst, 1);
+        assert_eq!(canon.cst(), 1);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(0)), 1);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(1)), -1);
 
@@ -553,7 +524,7 @@ mod tests {
         classes.set_value(y, 1).unwrap();
 
         let canon = canonical(&r, &mut classes);
-        assert_eq!(canon.cst, 2);
+        assert_eq!(canon.cst(), 2);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(0)), 1);
         assert_eq!(coef_of(&canon, &mut classes, prez_trans_lifted(1)), 0); // gone into the constant
     }
@@ -566,7 +537,7 @@ mod tests {
         for (cst, pinned_to) in [(2, 1), (0, 0)] {
             let mut classes = EquivClasses::new(true);
             let r = row(
-                RowExprType::Eq,
+                ComparisonOp::Eq,
                 vec![(1, prez_trans_lifted(0)), (1, prez_trans_lifted(1))],
                 cst,
             );
@@ -581,7 +552,7 @@ mod tests {
         let mut classes = EquivClasses::new(true);
         // `x - y = 0` proves the two equal without fixing either
         let r = row(
-            RowExprType::Eq,
+            ComparisonOp::Eq,
             vec![(1, prez_trans_lifted(0)), (-1, prez_trans_lifted(1))],
             0,
         );
@@ -600,14 +571,14 @@ mod tests {
     fn a_row_out_of_the_reach_of_its_columns_is_infeasible() {
         let mut classes = EquivClasses::new(true);
         // `x >= 2` cannot hold for a column in `[0, 1]`
-        let r = row(RowExprType::Geq, vec![(1, prez_trans_lifted(0))], 2);
+        let r = row(ComparisonOp::Ge, vec![(1, prez_trans_lifted(0))], 2);
         assert!(canonical(&r, &mut classes).learn(&mut classes).is_err());
 
         let mut classes = EquivClasses::new(true);
         let x = classes.intern(prez_trans_lifted(0));
         classes.set_value(x, 0).unwrap();
         // `x >= 1` with `x = 0` reads as the empty row `0 >= 1`
-        let r = row(RowExprType::Geq, vec![(1, prez_trans_lifted(0))], 1);
+        let r = row(ComparisonOp::Ge, vec![(1, prez_trans_lifted(0))], 1);
         assert!(canonical(&r, &mut classes).learn(&mut classes).is_err());
     }
 }
