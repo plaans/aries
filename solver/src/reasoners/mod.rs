@@ -73,6 +73,8 @@ pub trait Theory: Backtrack + Send {
     fn print_stats(&self);
 
     fn clone_box(&self) -> Box<dyn Theory>;
+
+    fn on_search_start(&mut self) {}
 }
 
 #[derive(Debug)]
@@ -265,6 +267,12 @@ impl Reasoners {
 
     pub fn iter(&self) -> impl Iterator<Item = (ReasonerId, &dyn Theory)> + '_ {
         self.writers.get().iter().map(|w| (*w, self.theories.get(*w)))
+    }
+
+    pub(crate) fn on_search_start(&mut self) {
+        for &w in self.writers.get() {
+            self.theories.get_mut(w).on_search_start();
+        }
     }
 }
 

@@ -634,6 +634,8 @@ impl<Lbl: Label> Solver<Lbl> {
         assert!(self.all_constraints_posted());
         // make sure brancher has knowledge of all variables.
         self.brancher.import_vars(&self.model);
+        // let the reasoners know, before the first propagation of the search
+        self.reasoners.on_search_start();
 
         let start_time = Instant::now();
         let start_cycles = StartCycleCount::now();
