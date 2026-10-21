@@ -39,13 +39,11 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 // When the transition's and source's presence literals are truly equivalent, we can enforce equality.
                 // Otherwise, we can only enforce one side (leq).
 
-                problem.push_row(
-                    if presences_equivalent {
-                        trans_presence.eq(source_presence)
-                    } else {
-                        trans_presence.leq(source_presence)
-                    }
-                );
+                problem.push_row(if presences_equivalent {
+                    trans_presence.eq(source_presence)
+                } else {
+                    trans_presence.leq(source_presence)
+                });
             }
         }
     }
@@ -61,7 +59,11 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             let presence = ColTag::PresenceTransition(in_trans_id, None).into_linexpr();
             let supports = sum(out_trans_ids.map(|out_trans_id| ColTag::Support(out_trans_id, in_trans_id, None)));
 
-            problem.push_row(if is_eff { presence.geq(supports) } else { presence.eq(supports) });
+            problem.push_row(if is_eff {
+                presence.geq(supports)
+            } else {
+                presence.eq(supports)
+            });
         }
     }
 
@@ -122,7 +124,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 .iter()
                 .map(|&g| ColTag::PresenceSource(source, Some(g)));
 
-                problem.push_row(ColTag::PresenceSource(source, None).into_linexpr().eq(sum(groundings)));
+            problem.push_row(ColTag::PresenceSource(source, None).into_linexpr().eq(sum(groundings)));
         }
     }
 
@@ -137,7 +139,9 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 
     // "A ground transition's presence equals the total presence of its source's compatible groundings"
     {
-        for (trans_id, trans_grounding_id, source, source_groundings) in ground.iter_transition_groundings_with_sources() {
+        for (trans_id, trans_grounding_id, source, source_groundings) in
+            ground.iter_transition_groundings_with_sources()
+        {
             let presence = ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)).into_linexpr();
             let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
 
@@ -153,13 +157,11 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             // Same as for the lifted rows: the transition's presence literal must always imply the source's,
             // and we can enforce equality only when they are equivalent.
 
-            problem.push_row(
-                if presences_equivalent {
-                    presence.eq(source_presences)
-                } else {
-                    presence.leq(source_presences)
-                }
-            );
+            problem.push_row(if presences_equivalent {
+                presence.eq(source_presences)
+            } else {
+                presence.leq(source_presences)
+            });
         }
     }
 
@@ -172,7 +174,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             problem.push_row(support.into_linexpr().eq(sum(ground_supports)));
         }
     }
- 
+
     // In-support: "The total presence of a transition's groundings with a same ground state variable and pre-value
     //              equals the total ground support they receive"
     //
@@ -190,18 +192,15 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             });
 
             // An eff may be supported by the initial state.
-            let support_from_initial_state = (with_initial_state_supports && is_eff).then_some(
-                ColTag::SupportFromInitialState(state_var_grounding_id, in_trans_id),
-            );
+            let support_from_initial_state = (with_initial_state_supports && is_eff)
+                .then_some(ColTag::SupportFromInitialState(state_var_grounding_id, in_trans_id));
             let supports = sum(supports.chain(support_from_initial_state));
 
-            problem.push_row(
-                if !with_initial_state_supports && is_eff {
-                    presences.geq(supports)
-                } else {
-                    presences.eq(supports)
-                }
-            );
+            problem.push_row(if !with_initial_state_supports && is_eff {
+                presences.geq(supports)
+            } else {
+                presences.eq(supports)
+            });
         }
     }
 

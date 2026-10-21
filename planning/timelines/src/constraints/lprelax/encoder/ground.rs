@@ -235,9 +235,9 @@ struct SourcesGroundingsInfo {
 }
 impl SourcesGroundingsInfo {
     /// Interns a grounding of a source (which must be new: checked in debug mode).
-    fn post_ground_source(&mut self, source: Source, source_grounding: &SourceGrounding) -> SourceGroundingId {
+    fn post_ground_source(&mut self, source: Source, _source_grounding: &SourceGrounding) -> SourceGroundingId {
         #[cfg(debug_assertions)]
-        debug_assert!(!self.groundings.contains_key(&(source, source_grounding.clone())));
+        debug_assert!(!self.groundings.contains_key(&(source, _source_grounding.clone())));
 
         let source_grounding_id = self.num_groundings;
         self.num_groundings += 1;
@@ -245,7 +245,7 @@ impl SourcesGroundingsInfo {
         #[cfg(debug_assertions)]
         {
             self.groundings
-                .insert((source, source_grounding.clone()), source_grounding_id);
+                .insert((source, _source_grounding.clone()), source_grounding_id);
         }
 
         self.entries.get_mut_or_default(source).push(source_grounding_id);
