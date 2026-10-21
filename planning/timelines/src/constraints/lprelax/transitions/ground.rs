@@ -5,39 +5,28 @@ use super::{TransitionId, Transitions};
 use crate::analysis::grounding::ParametersAssignment;
 use crate::{EffectOp, IntTerm, SchedEncoder};
 
+/// Encapsulates the evaluation of a transition's terms (assignment to constant).
+/// Effectively corresponds to the transition's grounding.
+///
+/// Mirrors the structure of [`super::TransitionView`].
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TransitionTermsEvaluation {
-    // tpe: TransitionType,
-    args: smallvec::SmallVec<[IntCst; 4]>,
-    val: Option<IntCst>,
-    op: EffectOp,
+    state_var_args: smallvec::SmallVec<[IntCst; 4]>,
+    pre_val: Option<IntCst>,
+    post_op: EffectOp,
 }
 impl TransitionTermsEvaluation {
-    pub fn new(args: impl Into<smallvec::SmallVec<[IntCst; 4]>>, val: Option<IntCst>, op: EffectOp) -> Self {
-        assert!(match op {
-            EffectOp::Assign(term) => term.is_cst(),
-            EffectOp::Step(_) => todo!(),
-        });
-        Self {
-            /*tpe,*/ args: args.into(),
-            val,
-            op,
-        }
+    /// See [`super::TransitionView::state_var`]
+    pub fn state_var_args_eval(&self) -> &[IntCst] {
+        &self.state_var_args
     }
-    // pub fn tpe(&self) -> TransitionType {
-    //     self.tpe
-    // }
-    pub fn args_evaluated(&self) -> &[IntCst] {
-        &self.args
+    /// See [`super::TransitionView::pre_val`]
+    pub fn pre_val_eval(&self) -> Option<IntCst> {
+        self.pre_val
     }
-    pub fn val_evaluated(&self) -> Option<IntCst> {
-        self.val
-    }
-    // pub fn op(&self) -> &EffectOp {
-    //     &self.op
-    // }
-    pub fn op_evaluated(&self) -> Option<IntCst> {
-        match &self.op {
+    /// See [`super::TransitionView::post_op`]
+    pub fn post_op_eval(&self) -> Option<IntCst> {
+        match &self.post_op {
             EffectOp::Assign(term) => {
                 debug_assert!(term.is_cst());
                 Some(term.constant)
@@ -45,91 +34,61 @@ impl TransitionTermsEvaluation {
             EffectOp::Step(term) => {
                 debug_assert!(term.is_cst());
                 Some(term.constant)
-            } // EffectOp::Erase => None, // IN THE FUTURE ?
-        }
-    }
-    pub fn op_evaluated_as_assign(&self) -> IntCst {
-        match &self.op {
-            EffectOp::Assign(term) => {
-                debug_assert!(term.is_cst());
-                term.constant
-            }
-            _ => panic!("effect operation expected to be an assign"),
+            } // EffectOp::Erase => None, // TODO ?
         }
     }
 }
 
 impl Transitions {
-    pub fn evaluate_terms<'a>(
-        &'a self,
+    /// Evaluates each term of a transition (see [`super::TransitionView::terms`]) against a grounding of its source.
+    fn iter_evaluated_terms(
+        &self,
         trans_id: TransitionId,
         source_grounding: &ParametersAssignment,
-        ctx: &'a SchedEncoder,
-    ) -> TransitionTermsEvaluation {
-        let terms = self.get_terms(trans_id, ctx);
-
-        let args = self.transition_terms_indices_in_source[trans_id]
-            .args
-            .iter()
-            .enumerate()
-            .map(|(j, i)| i.map_or(terms.args[j].constant, |i| source_grounding[i.into()]))
-            .collect::<smallvec::SmallVec<_>>();
-
-        let val = self.transition_terms_indices_in_source[trans_id]
-            .val
-            .map(|i| i.map_or(terms.val.unwrap().constant, |i| source_grounding[i.into()]));
-
-        let op = self.transition_terms_indices_in_source[trans_id].op.map_or(
-            match terms.op {
-                EffectOp::Assign(term) => EffectOp::Assign(IntTerm::int_cst(term.constant)),
-                EffectOp::Step(_) => todo!(),
-            },
-            |i| match terms.op {
-                EffectOp::Assign(_) => EffectOp::Assign(IntTerm::int_cst(source_grounding[i.into()])),
-                EffectOp::Step(_) => todo!(),
-            },
-        );
-
-        TransitionTermsEvaluation::new(args, val, op)
-    }
-    pub fn iter_evaluated_non_constant_terms<'a>(
-        &'a self,
-        trans_id: TransitionId,
-        source_grounding: &ParametersAssignment,
-        ctx: &'a SchedEncoder,
+        ctx: &SchedEncoder,
     ) -> impl Iterator<Item = (IntTerm, IntCst)> {
-        let terms = self.get_terms(trans_id, ctx);
+        self.get_view(trans_id, ctx)
+            .terms()
+            .zip(&self.transition_terms_indices_in_source[trans_id])
+            .map(|(term, index)| (term, index.map_or(term.constant, |i| source_grounding[i])))
+    }
 
-        let val = self.transition_terms_indices_in_source[trans_id].val.map(|i| {
-            (
-                terms.val.unwrap(),
-                i.map_or(terms.val.unwrap().constant, |i| source_grounding[i.into()]),
-            )
-        });
+    /// Evaluates the terms of a transition (effectively returning its grounding).
+    pub fn evaluate_terms(
+        &self,
+        trans_id: TransitionId,
+        source_grounding: &ParametersAssignment,
+        ctx: &SchedEncoder,
+    ) -> TransitionTermsEvaluation {
+        let view = self.get_view(trans_id, ctx);
+        let mut values: smallvec::SmallVec<[IntCst; 4]> = self
+            .iter_evaluated_terms(trans_id, source_grounding, ctx)
+            .map(|(_, value)| value)
+            .collect();
 
-        let op = self.transition_terms_indices_in_source[trans_id].op.map_or(
-            match terms.op {
-                EffectOp::Assign(term) => (term, term.constant),
-                EffectOp::Step(_) => todo!(),
-            },
-            |i| match terms.op {
-                EffectOp::Assign(term) => (term, source_grounding[i.into()]),
-                EffectOp::Step(_) => todo!(),
-            },
-        );
+        // The terms end with the pre-value (if any) and the post-operation's term.
+        let post_op_value = IntTerm::int_cst(values.pop().unwrap());
+        let post_op = match view.post_op {
+            EffectOp::Assign(_) => EffectOp::Assign(post_op_value),
+            EffectOp::Step(_) => EffectOp::Step(post_op_value),
+        };
+        let pre_val = if view.pre_val.is_some() { values.pop() } else { None };
 
-        self.transition_terms_indices_in_source[trans_id]
-            .args
-            .iter()
-            .enumerate()
-            .map(|(j, i)| {
-                (
-                    terms.args[j],
-                    i.map_or(terms.args[j].constant, |i| source_grounding[i.into()]),
-                )
-            })
-            .chain(val)
-            .chain([op])
+        TransitionTermsEvaluation {
+            state_var_args: values,
+            pre_val,
+            post_op,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn iter_evaluated_non_constant_terms(
+        &self,
+        trans_id: TransitionId,
+        source_grounding: &ParametersAssignment,
+        ctx: &SchedEncoder,
+    ) -> impl Iterator<Item = (IntTerm, IntCst)> {
+        self.iter_evaluated_terms(trans_id, source_grounding, ctx)
             .filter(|(term, _)| !term.is_cst())
     }
 }

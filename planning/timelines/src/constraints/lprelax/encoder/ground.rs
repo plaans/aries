@@ -27,8 +27,8 @@ pub type StateVarGroundingId = usize;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TransitionGroundingId {
     pub(super) state_var_grounding_id: StateVarGroundingId,
-    pub(super) val_assignment: Option<IntCst>,
-    pub(super) op_assignment: Option<IntCst>,
+    pub(super) pre_val_assignment: Option<IntCst>,
+    pub(super) post_op_assignment: Option<IntCst>,
 }
 
 #[derive(Clone, Default)]
@@ -71,10 +71,10 @@ impl GroundingsInfo {
             let trans_grounding_id = TransitionGroundingId {
                 state_var_grounding_id: self.state_vars.post_ground_state_var(
                     &transitions.get_state_var(trans_id, ctx).fluent,
-                    trans_grounding.args_evaluated(),
+                    trans_grounding.state_var_args_eval(),
                 ),
-                val_assignment: trans_grounding.val_evaluated(),
-                op_assignment: trans_grounding.op_evaluated(),
+                pre_val_assignment: trans_grounding.pre_val_eval(),
+                post_op_assignment: trans_grounding.post_op_eval(),
             };
 
             // for (term, value) in transitions.iter_evaluated_non_constant_terms(trans_id, source_grounding, ctx) {
@@ -150,7 +150,7 @@ impl GroundingsInfo {
                 // (The effects come first, as they read no value.)
                 let effects = entries
                     .iter()
-                    .take_while(|(trans_grounding_id, _)| trans_grounding_id.val_assignment.is_none())
+                    .take_while(|(trans_grounding_id, _)| trans_grounding_id.pre_val_assignment.is_none())
                     .map(|&(_, trans_id)| trans_id)
                     .sorted_unstable()
                     .dedup()
@@ -670,7 +670,7 @@ impl SupportsGroundingsInfo {
                     trans_id,
                     (
                         trans_grounding_id.state_var_grounding_id,
-                        trans_grounding_id.val_assignment,
+                        trans_grounding_id.pre_val_assignment,
                     ),
                     GroupEntry::Grounding(trans_grounding_id),
                 )
@@ -704,7 +704,7 @@ impl SupportsGroundingsInfo {
                     .map(|&(_, trans_grounding_id, _)| {
                         let support_grounding_id: SupportGroundingId = (
                             trans_grounding_id.state_var_grounding_id,
-                            trans_grounding_id.op_assignment.unwrap(),
+                            trans_grounding_id.post_op_assignment.unwrap(),
                         );
                         (
                             out_trans_id,

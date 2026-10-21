@@ -1,34 +1,28 @@
-//! This module allows collecting and manipulating "transitions", which can be:
-//! - conditions (or condition-transitions),
-//! - effects (or effect-transitions),
-//! - pure transitions, i.e. pairs (condition, effect) where the condition and effect share:
+//! NOTE: Although this module is contained in the [`lprelax`] module -- since that's the only one using it -- it is completely independent of [`lprelax`].
+//!
+//! This module allows defines "transitions", which can be:
+//! - condition-transitions (or simply conditions),
+//! - effect-transitions (or simply effects),
+//! - condeff-transitions (or pure transitions), i.e. pairs (condition, effect) where the condition and effect share:
 //!   - their source (container action instance),
 //!   - presence literal,
 //!   - their state variable name (state function),
 //!   - and their state variable parameter-variables (arguments).
 //!
-//! The module allows:
-//! - collecting the transitions in a low-level planning model (i.e. SchedEncoder), over "unambiguous" state functions
-//!   (see [`crate::analysis::nonsimple::collect_nonsimple_conditions_and_effects_to_relax`]),
-//! - evaluating a transition's terms given a grounding of its source (i.e. an assignment to its container action's parameters),
-//! - collecting the possible lifted support links between transitions.
-//!
-//! Note that although this module is contained in the [`lprelax`] model,
-//! it is completely independent of the rest of it of it.
+//! The module allows collecting and manipulating transitions. More specifically:
+//! - The "unambiguous" (i.e. non-"nonsimple") transitions in a scheduling problem can be collected into the [`Transitions`] structure.
+//! - Some helper functions are provided, for example to allow evaluating a transition's terms against a
+//!   grounding of its source (i.e. an assignment to its container action's parameters).
+//! - Potential lifted support links between transitions can be collected into the [`supports::Supports`] structure.
+//!   In addition to the effect-to-condition causal support links of the main model, these links are defined for all types of transitions.
 
-mod closed_world_default;
 pub mod ground;
 pub mod supports;
 
-use closed_world_default::ClosedWorldDefaultEffects;
-
 use crate::analysis::{Source, collect_nonsimple_conditions_and_effects_to_relax};
-use crate::{EffectId, EffectOp, IntTerm, SchedEncoder, StateVar, TaskId, constraints::HasValueAt, encoder::CondId};
+use crate::{EffectId, EffectOp, IntTerm, SchedEncoder, StateVar, TaskId, encoder::CondId};
 
-use aries_solver::{
-    core::{IntCst, views::Dom},
-    lang::Lit,
-};
+use aries_solver::core::{Lit, views::Dom};
 use idmap::DirectIdMap;
 
 pub type TransitionId = usize;
@@ -42,9 +36,15 @@ pub enum TransitionType {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Transition {
+    /// A condition-transition (or simply condition).
     Cond(CondId),
+    /// An effect-transition (or simply effect).
     Eff(EffectId),
-    /// A condition and effect sharing the same source, presence literal, and state variable.
+    /// A condeff-transition (or pure transition), i.e. a pair (condition, effect) where the condition and effect share:
+    /// - their source (container action instance),
+    /// - presence literal,
+    /// - their state variable name (state function),
+    /// - and their state variable parameter-variables (arguments).
     CondEff(CondId, EffectId),
 }
 impl Transition {
@@ -55,91 +55,83 @@ impl Transition {
             Transition::CondEff(_, _) => TransitionType::CondEff,
         }
     }
-}
 
-/// Invariant: condition transitionss' `op` must be `EffectOp::Assign(val.unwrap())`.
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct TransitionTermsView<'a> {
-    // tpe: TransitionType,
-    args: &'a [IntTerm],
-    val: Option<IntTerm>,
-    op: EffectOp,
-}
-impl<'a> TransitionTermsView<'a> {
-    // pub fn tpe(&self) -> TransitionType {
-    //     self.tpe
-    // }
-    pub fn args(&'a self) -> &'a [IntTerm] {
-        self.args
-    }
-    pub fn val(&self) -> Option<IntTerm> {
-        self.val
-    }
-    pub fn op(&self) -> &EffectOp {
-        &self.op
-    }
-    #[allow(dead_code)]
-    pub fn op_assign(&self) -> IntTerm {
-        match &self.op {
-            EffectOp::Assign(term) => *term,
-            _ => panic!("effect operation must be an assign"),
+    /// Resolves the transition from its condition and/or effect part.
+    fn view(self, ctx: &SchedEncoder) -> TransitionView<'_> {
+        match self {
+            Transition::Cond(cond_id) => {
+                let c = ctx.causal_links.conditions.get(cond_id);
+                TransitionView {
+                    source: c.source,
+                    prez: c.prez,
+                    state_var: &c.state_var,
+                    pre_val: Some(c.value),
+                    post_op: EffectOp::Assign(c.value),
+                }
+            }
+            Transition::Eff(eff_id) => {
+                let e = ctx.sched.effects.get(eff_id);
+                TransitionView {
+                    source: e.source,
+                    prez: e.prez,
+                    state_var: &e.state_var,
+                    pre_val: None,
+                    post_op: e.operation.clone(),
+                }
+            }
+            Transition::CondEff(cond_id, eff_id) => {
+                let c = ctx.causal_links.conditions.get(cond_id);
+                let e = ctx.sched.effects.get(eff_id);
+                debug_assert!(c.source == e.source && c.prez == e.prez && c.state_var == e.state_var);
+                TransitionView {
+                    source: e.source,
+                    prez: e.prez,
+                    state_var: &e.state_var,
+                    pre_val: Some(c.value),
+                    post_op: e.operation.clone(),
+                }
+            }
         }
     }
 }
 
-/// An `None` value means the corresponding transition term doesn't actually appear in its source's terms
-/// (e.g. because it's a constant, see [`collect_nonsimple_conditions_and_effects_to_relax`]).
-#[derive(Clone)]
-struct TransitionTermsIndicesInSource {
-    pub args: smallvec::SmallVec<[Option<u16>; 4]>,
-    pub val: Option<Option<u16>>,
-    pub op: Option<u16>,
-}
-
-struct EffectBasicInfoView<'a> {
+struct TransitionView<'a> {
     source: Source,
     prez: Lit,
     state_var: &'a StateVar,
-    op: &'a EffectOp,
+    /// The "pre-value" of the transition (i.e. value the transition's state variable had at the transition's start).
+    /// For a [`Transition::Cond`] or [`Transition::CondEff`], corresponds to the value of the condition part (`Some`),
+    /// and to `None` for a [`Transition::Eff`].
+    pre_val: Option<IntTerm>,
+    /// The "post-operation" (or "post-op" / "post-value") of the transition
+    /// (i.e. the operation that is applied to (alternatively, the value that is given to) the transition's state variable at the transition's end).
+    /// For a [`Transition::Eff`] or [`Transition::CondEff`], corresponds to the operation of the effect part,
+    /// and, for a [`Transition::Cond`] to an operation assigning the condition's value.
+    post_op: EffectOp,
 }
-impl crate::Effect {
-    fn view<'a>(&'a self) -> EffectBasicInfoView<'a> {
-        EffectBasicInfoView {
-            source: self.source,
-            prez: self.prez,
-            state_var: &self.state_var,
-            op: &self.operation,
-        }
-    }
-}
-#[derive(Clone)]
-struct EffectBasicInfo {
-    source: Source,
-    prez: Lit,
-    state_var: StateVar,
-    operation: EffectOp,
-}
-impl EffectBasicInfo {
-    fn view<'a>(&'a self) -> EffectBasicInfoView<'a> {
-        EffectBasicInfoView {
-            source: self.source,
-            prez: self.prez,
-            state_var: &self.state_var,
-            op: &self.operation,
-        }
+impl<'a> TransitionView<'a> {
+    /// The terms of the transition, in this order:
+    /// the arguments of its state variable, its pre-value (if any), and the term of its post-operation.
+    fn terms(self) -> impl Iterator<Item = IntTerm> + 'a {
+        let post_op_term = match self.post_op {
+            EffectOp::Assign(term) | EffectOp::Step(term) => term,
+        };
+        self.state_var
+            .args
+            .iter()
+            .copied()
+            .chain(self.pre_val)
+            .chain([post_op_term])
     }
 }
 
 #[derive(Clone)]
 pub(crate) struct Transitions {
-    /// Stores "unambiguous" transitions (i.e. not "nonsimple" ones, see [`collect_nonsimple_conditions_and_effects_to_relax`]).
     store: Vec<Transition>,
-    /// For each transition, stores the indices of its terms in its source's terms.
-    /// This is needed to evaluate a transition's grounding given a grounding of its source.
-    /// (Reminder: one of the requirements of an "unambiguous" transition is that its terms are either constant or appear in its source's terms / arguments).
-    transition_terms_indices_in_source: Vec<TransitionTermsIndicesInSource>,
 
-    recovered_closed_world_defaults: ClosedWorldDefaultEffects,
+    /// For each transition, the index of each of its terms (see [`TransitionView::terms`]) in its source's terms (`None` for a constant term).
+    /// This is needed to facilitate evaluating a transition's terms against a an assignment of its source's terms.
+    transition_terms_indices_in_source: Vec<smallvec::SmallVec<[Option<usize>; 4]>>,
 
     of_condition: DirectIdMap<CondId, TransitionId>,
     of_effect: DirectIdMap<EffectId, TransitionId>,
@@ -149,15 +141,23 @@ pub(crate) struct Transitions {
 
 impl Transitions {
     #[allow(dead_code)]
+    pub fn contains(&self, trans_id: TransitionId) -> bool {
+        trans_id < self.store.len()
+    }
     pub fn get(&self, trans_id: TransitionId) -> Transition {
         self.store[trans_id]
     }
+    /// Returns the id of the transition in which a condition appears
+    /// (which could be a [`Transition::Cond`] OR a [`Transition::CondEff`] !)
     pub fn of_condition(&self, cond_id: CondId) -> Option<TransitionId> {
         self.of_condition.get(cond_id).copied()
     }
+    /// Returns the id of the transition in which an effect appears
+    /// (which could be a [`Transition::Effect`] OR a [`Transition::CondEff`] !)
     pub fn of_effect(&self, eff_id: EffectId) -> Option<TransitionId> {
         self.of_effect.get(eff_id).copied()
     }
+    /// Returns the ids of transitions defined in a source
     pub fn of_source(&self, source: Source) -> &[TransitionId] {
         if let Some(task_id) = source {
             self.of_concrete_source
@@ -189,66 +189,22 @@ impl Transitions {
         )
     }
 
-    pub fn get_condition<'a>(&self, trans_id: TransitionId, ctx: &'a SchedEncoder) -> Option<(CondId, &'a HasValueAt)> {
-        match self.store[trans_id] {
-            Transition::Cond(cond_id) | Transition::CondEff(cond_id, _) => {
-                Some((cond_id, ctx.causal_links.conditions.get(cond_id)))
-            }
-            Transition::Eff(_) => None,
-        }
-    }
-    fn get_effect_info<'a>(
-        &'a self,
-        trans_id: TransitionId,
-        ctx: &'a SchedEncoder,
-    ) -> Option<(EffectId, EffectBasicInfoView<'a>)> {
-        match self.store[trans_id] {
-            Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => {
-                let info_view: EffectBasicInfoView<'_> = if self.recovered_closed_world_defaults.contains(eff_id) {
-                    self.recovered_closed_world_defaults.get(eff_id).view()
-                } else {
-                    ctx.sched.effects.get(eff_id).view()
-                };
-                Some((eff_id, info_view))
-            }
-            Transition::Cond(_) => None,
-        }
+    /// Resolves a transition from its condition and / or effect part.
+    fn get_view<'a>(&self, trans_id: TransitionId, ctx: &'a SchedEncoder) -> TransitionView<'a> {
+        self.store[trans_id].view(ctx)
     }
     pub fn get_prez(&self, trans_id: TransitionId, ctx: &SchedEncoder) -> Lit {
-        match self.store[trans_id].tpe() {
-            TransitionType::Cond => self.get_condition(trans_id, ctx).unwrap().1.prez,
-            TransitionType::Eff => self.get_effect_info(trans_id, ctx).unwrap().1.prez,
-            TransitionType::CondEff => {
-                let res = self.get_effect_info(trans_id, ctx).unwrap().1.prez;
-                debug_assert!(res == self.get_condition(trans_id, ctx).unwrap().1.prez);
-                res
-            }
-        }
+        self.get_view(trans_id, ctx).prez
     }
     pub fn get_source(&self, trans_id: TransitionId, ctx: &SchedEncoder) -> Source {
-        match self.store[trans_id].tpe() {
-            TransitionType::Cond => self.get_condition(trans_id, ctx).unwrap().1.source,
-            TransitionType::Eff => self.get_effect_info(trans_id, ctx).unwrap().1.source,
-            TransitionType::CondEff => {
-                let res = self.get_effect_info(trans_id, ctx).unwrap().1.source;
-                debug_assert!(res == self.get_condition(trans_id, ctx).unwrap().1.source);
-                res
-            }
-        }
+        self.get_view(trans_id, ctx).source
     }
-    pub fn get_state_var<'a>(&'a self, trans_id: TransitionId, ctx: &'a SchedEncoder) -> &'a StateVar {
-        match self.store[trans_id].tpe() {
-            TransitionType::Cond => &self.get_condition(trans_id, ctx).unwrap().1.state_var,
-            TransitionType::Eff => self.get_effect_info(trans_id, ctx).unwrap().1.state_var,
-            TransitionType::CondEff => {
-                let res = self.get_effect_info(trans_id, ctx).unwrap().1.state_var;
-                debug_assert!(*res == self.get_condition(trans_id, ctx).unwrap().1.state_var);
-                res
-            }
-        }
+    pub fn get_state_var<'a>(&self, trans_id: TransitionId, ctx: &'a SchedEncoder) -> &'a StateVar {
+        self.get_view(trans_id, ctx).state_var
     }
 
-    /// Whether the transition necessarily ends before the other one starts (given the bounds of their time points, as per `ctx`).
+    /// Whether the transition necessarily ends before the other one starts
+    /// (given the bounds of their time points, as per `ctx`).
     pub fn necessarily_precedes(
         &self,
         trans_id: TransitionId,
@@ -257,25 +213,19 @@ impl Transitions {
     ) -> bool {
         let effect_span = |eff_id: EffectId| {
             let eff = ctx.sched.effects.get(eff_id);
-            (ctx.lb(eff.transition_start), ctx.ub(eff.transition_end))
+            (ctx.lb(eff.transition_start), ctx.ub(eff.mutex_end))
         };
         let condition_span = |cond_id: CondId| {
             let timepoint = ctx.causal_links.conditions.get(cond_id).timepoint;
             (ctx.lb(timepoint), ctx.ub(timepoint))
         };
-        let time_span_bounds = |tr_id| {
-            match self.store[tr_id] {
-                // A recovered closed-world default is considered to be before everything (except another one).
-                Transition::Eff(eff_id) if self.recovered_closed_world_defaults.contains(eff_id) => {
-                    (IntCst::MIN, IntCst::MIN)
-                }
-                Transition::Eff(eff_id) => effect_span(eff_id),
-                Transition::Cond(cond_id) => condition_span(cond_id),
-                Transition::CondEff(cond_id, eff_id) => {
-                    let (cond_start, cond_end) = condition_span(cond_id);
-                    let (eff_start, eff_end) = effect_span(eff_id);
-                    (cond_start.min(eff_start), cond_end.max(eff_end))
-                }
+        let time_span_bounds = |tr_id| match self.store[tr_id] {
+            Transition::Eff(eff_id) => effect_span(eff_id),
+            Transition::Cond(cond_id) => condition_span(cond_id),
+            Transition::CondEff(cond_id, eff_id) => {
+                let (cond_start, cond_end) = condition_span(cond_id);
+                let (eff_start, eff_end) = effect_span(eff_id);
+                (cond_start.min(eff_start), cond_end.max(eff_end))
             }
         };
         let (_, latest_end) = time_span_bounds(trans_id);
@@ -283,43 +233,8 @@ impl Transitions {
         latest_end < earliest_start
     }
 
-    pub(self) fn get_terms<'a>(&'a self, trans_id: TransitionId, ctx: &'a SchedEncoder) -> TransitionTermsView<'a> {
-        let args = self.get_state_var(trans_id, ctx).args.as_slice();
-        match self.store[trans_id].tpe() {
-            TransitionType::Cond => {
-                let val = self.get_condition(trans_id, ctx).unwrap().1.value;
-                TransitionTermsView {
-                    args,
-                    val: Some(val),
-                    op: EffectOp::Assign(val),
-                }
-            }
-            TransitionType::Eff => {
-                let op = self.get_effect_info(trans_id, ctx).unwrap().1.op.clone();
-                TransitionTermsView { args, val: None, op }
-            }
-            TransitionType::CondEff => {
-                let val = self.get_condition(trans_id, ctx).unwrap().1.value;
-                let op = self.get_effect_info(trans_id, ctx).unwrap().1.op.clone();
-                TransitionTermsView {
-                    args,
-                    val: Some(val),
-                    op,
-                }
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn is_recovered_closed_world_default(&self, eff_id: EffectId) -> bool {
-        self.recovered_closed_world_defaults.contains(eff_id)
-    }
-    pub fn are_recovered_closed_world_default_effects_empty(&self) -> bool {
-        self.recovered_closed_world_defaults.is_empty()
-    }
-
-    /// Collects transitions from "unambiguous" conditions and effects (i.e. filtering out "nonsimple" ones)
-    pub fn new_unambiguous(ctx: &SchedEncoder, recover_closed_world_defaults: bool) -> Self {
+    /// Collects transitions from "unambiguous" (non-"nonsimple") conditions and effects.
+    pub fn new_unambiguous(ctx: &SchedEncoder) -> Self {
         // Collects nonsimple transitions to ignore / relax.
         let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(ctx);
 
@@ -359,12 +274,9 @@ impl Transitions {
 
         // First, iterate over conditions (grouped by sources) and introduce corresponding Cond transitions.
         // Then, iterate over effects (grouped by sources) and the conditions for those sources.
-        // When a compatible condition and effect are found, a corresponding CondEff transition is introduced,
-        // modifying the previously inserted Cond transition.
-        // If no compatible condition is found, a Eff transition is introduced.
-        //
-        // If a ground initial (empty source) Eff transition is introduced, remember that grounding.
-        // This is needed to avoid overriding it later when recovering "missing" closed world default initial effects.
+        // When there is *exactly one* compatible (condition, effect) candidate pair for merging into a CondEff,
+        // then a corresponding CondEff transition is introduced, modifying the previously inserted Cond transition.
+        // Otherwise, an Eff transition is introduced.
 
         let mut store = vec![];
 
@@ -372,9 +284,6 @@ impl Transitions {
         let mut of_effect = DirectIdMap::default();
         let mut of_empty_source = vec![];
         let mut of_concrete_source = DirectIdMap::default();
-
-        let mut initial_effects_ground_args =
-            std::collections::HashMap::<crate::Sym, Vec<smallvec::SmallVec<[IntCst; 4]>>>::new();
 
         let source_conds_iter = std::iter::chain(
             [(None, &empty_source_conditions)],
@@ -413,33 +322,33 @@ impl Transitions {
                 of_concrete_source.insert(task_id, vec![]);
             }
             for &(eff_id, e) in es {
-                let mut compatible_conds_found = 0;
-
-                // No CondEff pattern allowed for empty source.
-                if source.is_some() {
-                    let cs = if let Some(task_id) = source {
-                        concrete_source_conditions.get(task_id)
-                    } else {
-                        Some(&empty_source_conditions)
+                // A condition and an effect sharing their presence and state variable
+                // can be merged into a CondEff ONLY when they are the only candidates !
+                // For example, in an ambiguous situation where two conditions could be merged into
+                // a CondEff with the same one effect, no merge should be performed.
+                let matches_effect = |state_var: &StateVar, prez: Lit| *state_var == e.state_var && prez == e.prez;
+                let paired_cond_id = source.and_then(|task_id| {
+                    let mut conds = concrete_source_conditions
+                        .get(task_id)?
+                        .iter()
+                        .filter(|(_, c)| matches_effect(&c.state_var, c.prez));
+                    let num_effs = es
+                        .iter()
+                        .filter(|(_, other)| matches_effect(&other.state_var, other.prez))
+                        .count();
+                    match (conds.next(), conds.next(), num_effs) {
+                        (Some(&(cond_id, _)), None, 1) => Some(cond_id),
+                        _ => None,
                     }
-                    .into_iter()
-                    .flatten();
+                });
 
-                    for &(cond_id, c) in cs {
-                        if e.state_var == c.state_var && e.prez == c.prez {
-                            // Change the previously inserted Cond transition into a CondEff
-                            let trans_id = *of_condition.get(cond_id).unwrap();
-                            of_effect.insert(eff_id, trans_id);
-                            store[trans_id] = Transition::CondEff(cond_id, eff_id);
-
-                            compatible_conds_found += 1;
-                        }
-                    }
-                    debug_assert!(compatible_conds_found <= 1);
-                }
-
-                // Add a new Eff transition if the effect doesn't correspond to a CondEff
-                if compatible_conds_found == 0 {
+                if let Some(cond_id) = paired_cond_id {
+                    // Change the previously inserted Cond transition into a CondEff
+                    let trans_id = *of_condition.get(cond_id).unwrap();
+                    of_effect.insert(eff_id, trans_id);
+                    store[trans_id] = Transition::CondEff(cond_id, eff_id);
+                } else {
+                    // Add a new Eff transition
                     let trans_id = store.len();
                     of_effect.insert(eff_id, trans_id);
                     if let Some(task_id) = source {
@@ -449,76 +358,12 @@ impl Transitions {
                     }
                     store.push(Transition::Eff(eff_id));
                 }
-
-                // Remember the args groundings of ground initial effects
-                if recover_closed_world_defaults
-                    && source.is_none()
-                    && e.state_var.args.iter().all(|term| term.is_cst())
-                {
-                    let ground_args = e.state_var.args.iter().map(|term| term.constant).collect();
-                    initial_effects_ground_args
-                        .entry(e.state_var.fluent.to_string())
-                        .or_default()
-                        .push(ground_args);
-                    debug_assert!({
-                        use itertools::Itertools;
-                        initial_effects_ground_args
-                            .get(&e.state_var.fluent)
-                            .unwrap()
-                            .iter()
-                            .all_unique()
-                    });
-                }
             }
         }
 
-        // Loop over fluents and their parameter types' ground values.
-        // For each such grounding, introduce a default-valued initial effect (closed world default),
-        // if there wasn't already an effect with the same ground parameters encountered earlier
-        // (among the "explicit" known initial effects accessible from `ctx`).
-
-        let recovered_closed_world_defaults = if !recover_closed_world_defaults {
-            ClosedWorldDefaultEffects::default()
-        } else {
-            let mut recovered_closed_world_defaults = ClosedWorldDefaultEffects::new(
-                ctx,
-                effects_to_ignore,
-                conditions_to_ignore,
-                initial_effects_ground_args,
-            );
-
-            for (sym, params, _) in ctx.sched.fluents.iter() {
-                if recovered_closed_world_defaults.ignored_fluents.contains(sym) {
-                    continue;
-                }
-
-                let args = crate::boxes::BBox::new(params.iter().map(|p| p.range).collect::<Vec<_>>());
-                let mut grs = args.as_ref().points();
-                while let Some(gr) = streaming_iterator::StreamingIterator::next(&mut grs) {
-                    let args_ground = Vec::from_iter(gr.iter().copied());
-
-                    if let Ok(eff_id) = recovered_closed_world_defaults.add(
-                        sym.to_string(),
-                        args_ground,
-                        ctx.sched.fluents.get_return(sym).unwrap().range.first,
-                    ) {
-                        let tr_id = store.len();
-                        of_effect.insert(eff_id, tr_id);
-                        of_empty_source.push(tr_id);
-                        store.push(Transition::Eff(eff_id));
-                    } else {
-                        // Ignored (not added) as there already in an initial effect with these ground args.
-                    };
-                }
-            }
-
-            recovered_closed_world_defaults
-        };
-
-        // For each transition, collect its terms' (args and values) indices in the list of its source's args.
-        //
-        // Note that currently, transitions whose terms contain auxiliary or reification variables
-        // that do not appearing in the the source's args are ignored anyway (filtered out as "nonsimple")
+        // For each transition, collect its variable terms' indices in the list of its source's variable terms.
+        // Note that since we're filtering out "nonsimple" transitions, they MUST appear in them.
+        // (this does not apply to constant terms of course, only to variable ones).
 
         let mut transition_terms_indices_in_source = Vec::with_capacity(store.len());
 
@@ -529,73 +374,25 @@ impl Transitions {
                 &ctx.sched.global_args
             }
         };
-        let get_effect_info = |eff_id| {
-            if recovered_closed_world_defaults.contains(eff_id) {
-                recovered_closed_world_defaults.get(eff_id).view()
-            } else {
-                ctx.sched.effects.get(eff_id).view()
-            }
-        };
-        let get_source = |transition| match transition {
-            Transition::Cond(cond_id) => ctx.causal_links.conditions.get(cond_id).source,
-            Transition::Eff(eff_id) => get_effect_info(eff_id).source,
-            Transition::CondEff(cond_id, eff_id) => {
-                let res = ctx.causal_links.conditions.get(cond_id).source;
-                debug_assert!(res == get_effect_info(eff_id).source);
-                debug_assert!(!recovered_closed_world_defaults.contains(eff_id));
-                res
-            }
-        };
-        let get_transition_terms = |transition| match transition {
-            Transition::Cond(cond_id) => TransitionTermsView {
-                args: &ctx.causal_links.conditions.get(cond_id).state_var.args,
-                val: Some(ctx.causal_links.conditions.get(cond_id).value),
-                op: EffectOp::Assign(ctx.causal_links.conditions.get(cond_id).value),
-            },
-            Transition::Eff(eff_id) => TransitionTermsView {
-                args: &get_effect_info(eff_id).state_var.args,
-                val: None,
-                op: get_effect_info(eff_id).op.clone(),
-            },
-            Transition::CondEff(cond_id, eff_id) => {
-                debug_assert!(!recovered_closed_world_defaults.contains(eff_id));
-                TransitionTermsView {
-                    args: &ctx.causal_links.conditions.get(cond_id).state_var.args,
-                    val: Some(ctx.causal_links.conditions.get(cond_id).value),
-                    op: get_effect_info(eff_id).op.clone(),
-                }
-            }
-        };
 
         for transition in store.iter() {
-            let source_terms = get_source_terms(get_source(*transition));
-            let transition_terms = get_transition_terms(*transition);
+            let view = transition.view(ctx);
+            let source_terms = get_source_terms(view.source);
 
-            let index_in_source = |term: IntTerm| -> Option<u16> {
+            let index_in_source = |term: IntTerm| -> Option<usize> {
                 if term.is_cst() {
                     return None;
                 }
                 let idx = source_terms.iter().position(|&t| t == term);
                 debug_assert!(
                     idx.is_some(),
-                    "non-constant transition term absent from its source's args (such transitions are 'nonsimple' and must have been filtered out)"
+                    "non-constant transition term absent from its source's args
+                    (such transitions are 'nonsimple' and must have been filtered out)"
                 );
-                idx.map(|idx| idx as u16)
+                idx
             };
 
-            let transition_args_indices_in_source =
-                transition_terms.args().iter().copied().map(index_in_source).collect();
-            let transition_val_index_in_source = transition_terms.val().map(index_in_source);
-            let transition_op_index_in_source = match transition_terms.op() {
-                EffectOp::Assign(term) => index_in_source(*term),
-                EffectOp::Step(_) => todo!(),
-            };
-
-            transition_terms_indices_in_source.push(TransitionTermsIndicesInSource {
-                args: transition_args_indices_in_source,
-                val: transition_val_index_in_source,
-                op: transition_op_index_in_source,
-            });
+            transition_terms_indices_in_source.push(view.terms().map(index_in_source).collect());
         }
 
         Self {
@@ -605,7 +402,6 @@ impl Transitions {
             of_effect,
             of_empty_source,
             of_concrete_source,
-            recovered_closed_world_defaults,
         }
     }
 }
@@ -626,14 +422,14 @@ mod tests {
             false,
         );
 
-        let transitions = Transitions::new_unambiguous(&encoder, true);
+        let transitions = Transitions::new_unambiguous(&encoder);
 
         assert!({
             let (conditions_to_ignore, effects_to_ignore) = collect_nonsimple_conditions_and_effects_to_relax(&encoder);
             conditions_to_ignore.is_empty() && effects_to_ignore.is_empty()
         });
 
-        assert_eq!(transitions.iter().count(), 56);
+        assert_eq!(transitions.iter().count(), 31);
         assert_eq!(
             transitions
                 .iter()
@@ -646,7 +442,7 @@ mod tests {
                 .iter()
                 .filter(|(_, tr)| tr.tpe() == TransitionType::Eff)
                 .count(),
-            43
+            18
         );
         assert_eq!(
             transitions
@@ -654,14 +450,6 @@ mod tests {
                 .filter(|(_, tr)| tr.tpe() == TransitionType::CondEff)
                 .count(),
             4
-        );
-
-        assert_eq!(
-            transitions
-                .iter_of_effects()
-                .filter(|&(eff_id, _)| transitions.is_recovered_closed_world_default(eff_id))
-                .count(),
-            25
         );
     }
 }

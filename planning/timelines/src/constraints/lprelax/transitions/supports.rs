@@ -1,17 +1,36 @@
 use aries_solver::lang::Lit;
 
 use super::{TransitionId, TransitionType, Transitions};
-use crate::SchedEncoder;
+use crate::{IntTerm, SchedEncoder};
 
+/// Whether two sequences of terms may be equal, i.e. differ at no position where both terms are constants.
+fn may_be_equal(terms: impl IntoIterator<Item = IntTerm>, other_terms: impl IntoIterator<Item = IntTerm>) -> bool {
+    terms
+        .into_iter()
+        .zip(other_terms)
+        .all(|(term, other)| !(term.is_cst() && other.is_cst() && term.constant != other.constant))
+}
+
+/// Stores (generalized) potential lifted supports (or support links) between transitions.
+///
+/// This generalized notion of support builds up on effect-condition causal link / causal support and extends it to all types of transitions.
+///
+/// A support `(out, in)` encodes the possibility for out-transition (or supporter transition) `out` to
+/// hand over the value of its state variable to the in-transition (or supportee/supported transition ) `in`,
+/// i.e. for `out` to be transition right before `in` on their (common, ground) state variable.
+///
+/// The support is said to be "active" when this actually holds.
+/// And when we say that "`out` supports `in`" we usually mean that the support link between them is active.
 #[derive(Clone, Default)]
 pub(crate) struct Supports {
+    /// Whether condition-transitions are allowed to play the role of out-transition / supporter transition.
     pub with_condition_out_transitions: bool,
     unsorted_out: Vec<((TransitionId, TransitionId), Option<Lit>)>,
 }
 
 impl Supports {
     pub fn from(transitions: &Transitions, ctx: &SchedEncoder, with_condition_out_transitions: bool) -> Self {
-        // Support due to the causal links in the main encoding.
+        // Supports due to the causal links in the main encoding.
         let supports_causal_links = ctx.causal_links.get_links().filter_map(|cl| {
             let out_trans_id = transitions.of_effect(cl.eff_id)?;
             let in_trans_id = transitions.of_condition(cl.cond_id)?;
@@ -24,111 +43,48 @@ impl Supports {
                 .then_some(((out_trans_id, in_trans_id), Some(cl.active)))
         });
 
-        // Supports from effects to other effects
+        let effects = || transitions.iter_of_effects().map(|(_, trans_id)| trans_id);
+        let conditions = || transitions.iter_of_conditions().map(|(_, trans_id)| trans_id);
 
-        let iter_effects_info = || {
-            transitions
-                .iter_of_effects()
-                .map(|(_, trans_id)| transitions.get_effect_info(trans_id, ctx).unwrap())
+        // Whether a transition may support another (as far as their constant terms and time bounds tell)
+        let may_support = move |out_trans_id: TransitionId, in_trans_id: TransitionId| {
+            let out_state_var = transitions.get_state_var(out_trans_id, ctx);
+            let in_state_var = transitions.get_state_var(in_trans_id, ctx);
+            out_trans_id != in_trans_id
+                && out_state_var.fluent == in_state_var.fluent
+                && may_be_equal(out_state_var.args.iter().copied(), in_state_var.args.iter().copied())
+                && !transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
         };
-        let supports_from_effects_to_others = iter_effects_info().flat_map(move |(out_eff_id, _)| {
-            let out_trans_id = transitions.of_effect(out_eff_id).unwrap();
+        let is_cond_eff = move |trans_id: TransitionId| transitions.get(trans_id).tpe() == TransitionType::CondEff;
 
-            iter_effects_info().flat_map(move |(in_eff_id, _)| {
-                let in_trans_id = transitions.of_effect(in_eff_id).unwrap();
-
-                if out_trans_id == in_trans_id
-                    || transitions.get(in_trans_id).tpe() == TransitionType::CondEff
-                    || transitions.get_state_var(out_trans_id, ctx).fluent
-                        != transitions.get_state_var(in_trans_id, ctx).fluent
-                    || transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
-                {
-                    return None;
-                }
-
-                let out_terms = transitions.get_terms(out_trans_id, ctx);
-                let in_terms = transitions.get_terms(in_trans_id, ctx);
-
-                let incompatible_args = out_terms.args().iter().zip(in_terms.args()).any(|(out_term, in_term)| {
-                    out_term.is_cst() && in_term.is_cst() && out_term.constant != in_term.constant
-                });
-
-                (!incompatible_args).then_some(((out_trans_id, in_trans_id), None::<Lit>))
-            })
+        // Supports from effects to other effects
+        let supports_from_effects_to_others = effects().flat_map(move |out_trans_id| {
+            effects()
+                .filter(move |&in_trans_id| !is_cond_eff(in_trans_id) && may_support(out_trans_id, in_trans_id))
+                .map(move |in_trans_id| ((out_trans_id, in_trans_id), None::<Lit>))
         });
 
         // Supports from conditions to other conditions and to effects (if desired, see `with_condition_out_transitions` flag)
-
-        let iter_conditions = || {
-            transitions
-                .iter_of_conditions()
-                .map(|(_, trans_id)| transitions.get_condition(trans_id, ctx).unwrap())
-        };
         let supports_from_conditions = with_condition_out_transitions
             .then(|| {
-                iter_conditions().flat_map(move |(out_cond_id, _)| {
-                    let out_trans_id = transitions.of_condition(out_cond_id).unwrap();
-
+                conditions()
                     // out-transition must not be a cond-eff (these are already included in the original causal link supports)
-                    (transitions.get(out_trans_id).tpe() != TransitionType::CondEff)
-                        .then(|| {
-                            let to_effects = iter_effects_info().flat_map(move |(in_eff_id, _)| {
-                                let in_trans_id = transitions.of_effect(in_eff_id).unwrap();
-
-                                if out_trans_id == in_trans_id
-                                    || transitions.get(in_trans_id).tpe() == TransitionType::CondEff
-                                    || transitions.get_state_var(out_trans_id, ctx).fluent
-                                        != transitions.get_state_var(in_trans_id, ctx).fluent
-                                    || transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
-                                {
-                                    return None;
-                                }
-
-                                let out_terms = transitions.get_terms(out_trans_id, ctx);
-                                let in_terms = transitions.get_terms(in_trans_id, ctx);
-
-                                let incompatible_args =
-                                    out_terms.args().iter().zip(in_terms.args()).any(|(out_term, in_term)| {
-                                        out_term.is_cst() && in_term.is_cst() && out_term.constant != in_term.constant
-                                    });
-
-                                (!incompatible_args).then_some(((out_trans_id, in_trans_id), None::<Lit>))
-                            });
-                            let to_conditions = iter_conditions().flat_map(move |(in_cond_id, _)| {
-                                let in_trans_id = transitions.of_condition(in_cond_id).unwrap();
-
-                                if out_trans_id == in_trans_id
-                                    || transitions.get_state_var(out_trans_id, ctx).fluent
-                                        != transitions.get_state_var(in_trans_id, ctx).fluent
-                                    || transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
-                                {
-                                    return None;
-                                }
-
-                                let out_terms = transitions.get_terms(out_trans_id, ctx);
-                                let in_terms = transitions.get_terms(in_trans_id, ctx);
-
-                                let incompatible_args =
-                                    out_terms.args().iter().zip(in_terms.args()).any(|(out_term, in_term)| {
-                                        out_term.is_cst() && in_term.is_cst() && out_term.constant != in_term.constant
-                                    });
-
-                                let incompatible_vals = match (out_terms.val(), in_terms.val()) {
-                                    (Some(out_val), Some(in_val)) => {
-                                        out_val.is_cst() && in_val.is_cst() && out_val.constant != in_val.constant
-                                    }
-                                    _ => false,
-                                };
-
-                                (!incompatible_args && !incompatible_vals)
-                                    .then_some(((out_trans_id, in_trans_id), None::<Lit>))
-                            });
-
-                            to_effects.chain(to_conditions)
-                        })
-                        .into_iter()
-                        .flatten()
-                })
+                    .filter(move |&out_trans_id| !is_cond_eff(out_trans_id))
+                    .flat_map(move |out_trans_id| {
+                        let to_effects = effects().filter(move |&in_trans_id| {
+                            !is_cond_eff(in_trans_id) && may_support(out_trans_id, in_trans_id)
+                        });
+                        let to_conditions = conditions().filter(move |&in_trans_id| {
+                            may_support(out_trans_id, in_trans_id)
+                                && may_be_equal(
+                                    transitions.get_view(out_trans_id, ctx).pre_val,
+                                    transitions.get_view(in_trans_id, ctx).pre_val,
+                                )
+                        });
+                        to_effects
+                            .chain(to_conditions)
+                            .map(move |in_trans_id| ((out_trans_id, in_trans_id), None::<Lit>))
+                    })
             })
             .into_iter()
             .flatten();
@@ -152,6 +108,9 @@ impl Supports {
         }
     }
 
+    /// Iterator over potential supports, with a corresponding activation literal if there is one / if it is known.
+    ///
+    /// (Unchunkable linearly because unsorted)
     pub fn unsorted_out(&self) -> &[((TransitionId, TransitionId), Option<Lit>)] {
         &self.unsorted_out
     }
@@ -171,6 +130,7 @@ impl Supports {
     }
 }
 
+/// Offers sorted views of (potential) supports between transitions (see [`Supports`]), allowing direct chunking.
 #[derive(Clone, Default)]
 pub(crate) struct SupportsSorted {
     sorted_out: Vec<((TransitionId, TransitionId), Option<Lit>)>,
@@ -178,9 +138,14 @@ pub(crate) struct SupportsSorted {
 }
 
 impl SupportsSorted {
+    /// Sorted (and thus directly chunkable) iterator over potential supports
+    /// (with a corresponding activation literal if there is one / if it is known)
+    /// following the (`out`,`in`) shape (first transition is the out-transition, second one is in-transition).
     pub fn sorted_out(&self) -> &[((TransitionId, TransitionId), Option<Lit>)] {
         &self.sorted_out
     }
+    /// Sorted (and thus directly chunkable) iterator over potential supports
+    /// following the (`in`,`out`) shape (first transition is the in-transition, second one is out-transition).
     pub fn sorted_in(&self) -> &[(TransitionId, TransitionId)] {
         &self.sorted_in
     }
@@ -206,7 +171,7 @@ mod tests {
             false,
         );
 
-        let transitions = Transitions::new_unambiguous(&encoder, true);
+        let transitions = Transitions::new_unambiguous(&encoder);
 
         let supports_without_conditions_out_transitions = Supports::from(&transitions, &encoder, false);
         for &((out_trans_id, in_trans_id), active) in supports_without_conditions_out_transitions.unsorted_out() {
@@ -251,14 +216,6 @@ mod tests {
                     Transition::Cond(_) | Transition::CondEff(_, _),
                 )
             ));
-
-            if transitions
-                .get_effect_info(out_trans_id, encoder)
-                .is_some_and(|(out_eff_id, _)| transitions.is_recovered_closed_world_default(out_eff_id))
-            {
-                assert!(transitions.get(out_trans_id).tpe() == TransitionType::Eff);
-                assert!(transitions.get_source(out_trans_id, encoder).is_none());
-            }
         }
     }
 }

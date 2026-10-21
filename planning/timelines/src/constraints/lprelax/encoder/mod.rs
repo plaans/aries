@@ -25,7 +25,7 @@ pub(crate) struct LpRelaxEncoder {
 
 impl LpRelaxEncoder {
     pub fn with_transitions_from(ctx: &SchedEncoder) -> Self {
-        let transitions = Transitions::new_unambiguous(ctx, super::ARIES_LPRELAX_RECOVER_CLOSED_WORLD_DEFAULTS.get());
+        let transitions = Transitions::new_unambiguous(ctx);
         let supports = Supports::from(
             &transitions,
             ctx,
