@@ -6,7 +6,6 @@ use aries_linexpr::ComparisonOp;
 use aries_solver::backtrack::{Backtrack, DecLvl};
 use aries_solver::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
 use aries_solver::core::{INT_CST_MAX, IntCst, Lit, Var, views::Term};
-use aries_solver::prelude::Conjunction;
 use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
 use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpOptions, LpSum, LpVar};
@@ -216,28 +215,20 @@ fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp
     );
 
     for row in problem.rows() {
-        // `lhs cmp rhs` reads as `sum + cst cmp 0`.
+        // `lhs cmp rhs` reads as `expr cmp 0`, posted as `sign * expr <= 0` for each sign `cmp` calls for.
         let row = row.canonical();
-        let sum = LpSum::new(row.expr().iter().map(|(tag, coef)| (vars[&tag], coef)));
-        let cst = row.expr().constant();
-
-        match row.comp_op() {
-            // `sum + cst <= 0`
-            ComparisonOp::Le => lp.add_linear_leq_constraint(sum, cst, Lit::TRUE, doms),
-            // `sum + cst >= 0`, i.e. `-sum - cst <= 0`
-            ComparisonOp::Ge => lp.add_linear_leq_constraint(negated(&sum), -cst, Lit::TRUE, doms),
-            ComparisonOp::Eq => {
-                lp.add_linear_leq_constraint(negated(&sum), -cst, Lit::TRUE, doms);
-                lp.add_linear_leq_constraint(sum, cst, Lit::TRUE, doms);
-            }
+        let signs: &[IntCst] = match row.comp_op() {
+            ComparisonOp::Le => &[1],
+            ComparisonOp::Ge => &[-1],
+            ComparisonOp::Eq => &[1, -1],
+        };
+        for &sign in signs {
+            let sum = LpSum::new(row.expr().iter().map(|(tag, coef)| (vars[&tag], sign * coef)));
+            lp.add_linear_leq_constraint(sum, sign * row.expr().constant(), Lit::TRUE, doms);
         }
     }
 
     vars
-}
-
-fn negated(sum: &LpSum) -> LpSum {
-    LpSum::new(sum.iter().map(|(var, coef)| (var, -coef)))
 }
 
 /// Ties the lifted columns (as well as term grounding columns) of the LP to the literals of the main model that decide them.
@@ -251,85 +242,64 @@ fn post_bindings(
     doms: &Domains,
     lp: &mut Lp,
 ) {
-    // Bind lifted presence variables of the LP with corresponding literals in the main CSP.
+    // Bind lifted presence variables of the LP with corresponding literals in the main CSP:
+    // a column is 1 when its literal is true (and present), and 0 when it is false.
+    // (A tautological literal's trigger is entailed at the root, while an absurd literal's never fires.)
 
-    let presence_lits_and_vars = {
-        let mut res = HashMap::<Lit, Vec<LpVar>>::new();
-
-        for (source, transitions) in encoder.iter_sources() {
-            for &trans_id in transitions {
-                let Some(&var) = vars.get(&ColTag::PresenceTransition(trans_id, None)) else {
-                    continue;
-                };
-                res.entry(encoder.transitions.get_prez(trans_id, ctx))
-                    .or_default()
-                    .push(var);
-            }
-            let Some(&var) = vars.get(&ColTag::PresenceSource(source, None)) else {
-                continue;
-            };
-            res.entry(encoder.get_source_prez(source, ctx)).or_default().push(var);
-        }
-        res
-    };
-
-    for (lit, lit_vars) in presence_lits_and_vars {
-        for &var in &lit_vars {
-            if lit.tautological() {
-                lp.add_bound_update_trigger(Conjunction::tautology(), BoundRestriction::geq(var, 1), doms);
-            } else if lit.absurd() {
-                lp.add_bound_update_trigger(Conjunction::tautology(), BoundRestriction::leq(var, 0), doms);
-            } else {
-                let p = lit.variable();
-                debug_assert!(p != Var::ZERO && lit == p.geq(1));
-
-                lp.add_bound_update_trigger([doms.presence(p), lit].into(), BoundRestriction::geq(var, 1), doms);
-                lp.add_bound_update_trigger((!lit).into(), BoundRestriction::leq(var, 0), doms);
-            }
-        }
+    let lifted_presences = encoder.iter_sources().flat_map(|(source, trans_ids)| {
+        std::iter::once((
+            ColTag::PresenceSource(source, None),
+            encoder.get_source_prez(source, ctx),
+        ))
+        .chain(trans_ids.iter().map(|&trans_id| {
+            (
+                ColTag::PresenceTransition(trans_id, None),
+                encoder.transitions.get_prez(trans_id, ctx),
+            )
+        }))
+    });
+    for (tag, lit) in lifted_presences {
+        let Some(&var) = vars.get(&tag) else { continue };
+        lp.add_bound_update_trigger([doms.presence(lit), lit].into(), BoundRestriction::geq(var, 1), doms);
+        lp.add_bound_update_trigger((!lit).into(), BoundRestriction::leq(var, 0), doms);
     }
 
-    // Bind term grounding variables of the LP with corresponding literals in the main CSP.
+    // Bind term grounding variables of the LP with corresponding literals in the main CSP:
+    // a column is 0 as soon as the term's variable cannot take the value `x` making the term equal to the grounding's value.
 
     for (term, value) in encoder.iter_distinct_term_assignments() {
-        debug_assert!(!term.is_cst());
         let Some(&col_var) = vars.get(&ColTag::TermGround(term, value)) else {
             continue;
         };
         let var = term.variable();
-        assert!(var != Var::ZERO);
+        debug_assert!(!term.is_cst() && var != Var::ZERO);
 
-        let Some(x) = var_value_of(term, value) else {
+        let excluding_lits = match var_value_of(term, value) {
+            Some(x) => [
+                x.checked_add(1).map(|above| var.geq(above)),
+                x.checked_sub(1).map(|below| var.leq(below)),
+            ],
             // There exists no `x` value that `var` could ever take such that `term = value`
-            lp.add_bound_update_trigger(Conjunction::tautology(), BoundRestriction::leq(col_var, 0), doms);
-            continue;
+            None => [Some(Lit::TRUE), None],
         };
-
-        // The column is pinned to 0 as soon as we're sure the variable cannot take the value `x`
-        if let Some(above) = x.checked_add(1) {
-            lp.add_bound_update_trigger(var.geq(above).into(), BoundRestriction::leq(col_var, 0), doms);
-        }
-        if let Some(below) = x.checked_sub(1) {
-            lp.add_bound_update_trigger(var.leq(below).into(), BoundRestriction::leq(col_var, 0), doms);
+        for lit in excluding_lits.into_iter().flatten() {
+            lp.add_bound_update_trigger(lit.into(), BoundRestriction::leq(col_var, 0), doms);
         }
     }
 
     // Bind lifted support variables of the LP with corresponding literals in the main CSP.
 
     for &((out_trans_id, in_trans_id), active) in encoder.supports.unsorted_out() {
-        let Some(lit) = active else { continue };
-        let Some(&var) = vars.get(&ColTag::Support(out_trans_id, in_trans_id, None)) else {
+        // (`active`: causal link literal)
+        let (Some(lit), Some(&var)) = (active, vars.get(&ColTag::Support(out_trans_id, in_trans_id, None))) else {
             continue;
         };
-        // (causal link literal)
-        debug_assert!(lit.variable() != Var::ZERO);
-
         lp.add_bound_update_trigger((!lit).into(), BoundRestriction::leq(var, 0), doms);
 
         // NOTE: the converse half-binding, raising the column's lower bound to 1 on an *active* link, is deliberately absent by default !!
         // Indeed, it is *unsound* if condition transitions are allowed to support other transitions (i.e. act as out-transitions).
         // See [`ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS`].
-        // This is because we bound the "out-flow" of a support by 1, but the main model lets one effect support several conditions,
+        // This is because we bound the "out-support" of a support by 1, but the main model lets one effect support several conditions,
         // so forcing two of those columns to 1 would make the LP relaxation report a contradiction that the main model does not have.
         //
         // // lp.add_bound_update_trigger([doms.presence(lit), lit], BoundConstraint::geq(col_var, 1), doms);
