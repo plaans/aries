@@ -151,6 +151,7 @@ impl GroundingsInfo {
             })
     }
 
+    #[allow(dead_code)]
     /// The distinct ground state variables of the groundings of the transition (sorted).
     pub fn iter_ground_state_vars_of(&self, trans_id: TransitionId) -> impl Iterator<Item = StateVarGroundingId> {
         // (The groundings of a transition are sorted by ground state variable first.)

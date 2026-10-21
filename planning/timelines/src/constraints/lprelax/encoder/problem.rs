@@ -24,9 +24,9 @@ pub enum ColTag {
     /// Support from a transition to another:
     /// lifted (`None`), or ground (`Some`, for a given ground state variable and handed-over value).
     Support(TransitionId, TransitionId, Option<SupportGroundingId>),
-    /// Support of an effect by the initial state of a ground state variable grounding (when `Some`), or of any of them (lifted, when `None`).
-    /// On each ground state variable, the initial state supports at most one effect.
-    SupportFromInitialState(Option<StateVarGroundingId>, TransitionId),
+    /// Support of an eff by the initial state of a ground state variable (ground only).
+    /// On each ground state variable, the initial state supports at most one eff.
+    SupportFromInitialState(StateVarGroundingId, TransitionId),
     /// Whether a term is assigned a value (ground).
     TermGround(IntTerm, IntCst),
 }
@@ -37,7 +37,7 @@ impl ColTag {
             ColTag::PresenceSource(_, grounding) => grounding.is_none(),
             ColTag::PresenceTransition(_, grounding) => grounding.is_none(),
             ColTag::Support(_, _, grounding) => grounding.is_none(),
-            ColTag::SupportFromInitialState(grounding, _) => grounding.is_none(),
+            ColTag::SupportFromInitialState(..) => false,
             ColTag::TermGround(_, _) => true,
         }
     }

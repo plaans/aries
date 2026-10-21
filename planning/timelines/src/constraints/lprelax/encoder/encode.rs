@@ -11,14 +11,17 @@ use super::problem::{ColTag, LpRelaxProblem, sum};
 pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     let supports_sorted = encoder.supports_sorted.as_ref().unwrap();
 
-    // [Lifted] A source is present if(f) its transitions are (and the empty source is present).
-    {
-        problem.push_row(ColTag::PresenceSource(None, None).into_linexpr().eq(1));
+    // "The empty source must be present"
+    problem.push_row(ColTag::PresenceSource(None, None).into_linexpr().eq(1));
 
+    // "A transition's presence is equal (or sometimes leq) to its source's presence"
+    {
         for (source, trans_ids) in encoder.iter_sources() {
             for &trans_id in trans_ids {
                 // It is possible that sometimes the presence literal of the transition differs from that of the source
-                // (in particular, as a result of complying with pddl set semantics, if the transition presence literal was replaced with a more specific one than the source's).
+                // (in particular, as a result of complying with pddl set semantics,
+                // if the transition presence literal was replaced with a more specific one than the source's).
+                //
                 // However, the transition's presence literal must always imply the source's.
 
                 debug_assert!(ctx.store.state.implies(
@@ -30,143 +33,151 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                     encoder.transitions.get_prez(trans_id, ctx),
                 );
 
-                // When the transition's and source's presence literals are truly equivalent, we can enforce equality. Otherwise, we can only enforce one side.
-                let presence = ColTag::PresenceTransition(trans_id, None).into_linexpr();
+                let trans_presence = ColTag::PresenceTransition(trans_id, None).into_linexpr();
                 let source_presence = ColTag::PresenceSource(source, None);
-                problem.push_row(if presences_equivalent {
-                    presence.eq(source_presence)
-                } else {
-                    presence.leq(source_presence)
-                });
+
+                // When the transition's and source's presence literals are truly equivalent, we can enforce equality.
+                // Otherwise, we can only enforce one side (leq).
+
+                problem.push_row(
+                    if presences_equivalent {
+                        trans_presence.eq(source_presence)
+                    } else {
+                        trans_presence.leq(source_presence)
+                    }
+                );
             }
         }
     }
 
-    // [Lifted] A support implies the presence of its out-transition.
-    // Only needed for supports into conds, and only when conditions are disallowed from being supporters / out-transitions.
-    // Indeed, these constraints are otherwise implied by the out-support constraints (when conditions are included in their sums).
+    // In-support: "The presence of a transition equals the total support it receives / into it"
+    //
+    // NOTE: For effs, the equality becomes a geq, as they may also be supported by the initial state,
+    //       which is only modeled at the ground level (see the ground in-support rows).
+    {
+        for (in_trans_id, out_trans_ids) in supports_sorted.iter_by_in() {
+            let is_eff = encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff;
+
+            let presence = ColTag::PresenceTransition(in_trans_id, None).into_linexpr();
+            let supports = sum(out_trans_ids.map(|out_trans_id| ColTag::Support(out_trans_id, in_trans_id, None)));
+
+            problem.push_row(if is_eff { presence.geq(supports) } else { presence.eq(supports) });
+        }
+    }
+
+    // Out-support: "The presence of a transition is at least the total support it sends / hands over / from it"
+    //
+    // NOTE: When conds aren't allowed to be out-transitions / supporters, this total out-going support
+    //       *must not* include support into conds. Indeed, without that, some effs could need to support multiple conds,
+    //       which would be forbidden with support into conds included in the sum.
+    {
+        for (out_trans_id, in_trans_ids) in supports_sorted.iter_by_out() {
+            let supports = in_trans_ids
+                .filter(|&(in_trans_id, _)| {
+                    encoder.supports.with_condition_out_transitions
+                        || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+                })
+                .map(|(in_trans_id, _)| ColTag::Support(out_trans_id, in_trans_id, None));
+            let supports = sum(supports);
+
+            if !supports.terms().is_empty() {
+                let presence = ColTag::PresenceTransition(out_trans_id, None);
+
+                problem.push_row(presence.into_linexpr().geq(supports));
+            }
+        }
+    }
+
+    // "A support implies (i.e. is leq to) the presence of its out-transition"
+    //
+    // NOTE: This constraint is explicitly needed *only when* conds aren't allowed to be out-transitions / supporters.
+    //       Indeed, the out-support constraints would otherwise imply them.
     if !encoder.supports.with_condition_out_transitions {
         for &((out_trans_id, in_trans_id), _) in encoder.supports.unsorted_out() {
             if encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond {
                 let support = ColTag::Support(out_trans_id, in_trans_id, None);
                 let presence = ColTag::PresenceTransition(out_trans_id, None);
+
                 problem.push_row(support.into_linexpr().leq(presence));
             }
-        }
-    }
-
-    // [Lifted] In-supports: the presence of a transition equals the total support it receives
-    // (for the case of effs, including those of the initial state / empty source, see [`ColTag::SupportFromInitialState`]).
-    {
-        let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
-
-        for (in_trans_id, out_trans_ids) in supports_sorted.iter_by_in() {
-            let is_eff = encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff;
-            let support_from_initial_state =
-                (with_initial_state_supports && is_eff).then_some(ColTag::SupportFromInitialState(None, in_trans_id));
-
-            let presence = ColTag::PresenceTransition(in_trans_id, None).into_linexpr();
-            let supports = out_trans_ids.map(|out_trans_id| ColTag::Support(out_trans_id, in_trans_id, None));
-            let supports = sum(supports.chain(support_from_initial_state));
-            debug_assert!(!supports.terms().is_empty());
-
-            // Without supports from the initial state, an eff need not be supported (it may be the first on its timeline).
-            problem.push_row(if !with_initial_state_supports && is_eff {
-                presence.geq(supports)
-            } else {
-                presence.eq(supports)
-            });
-        }
-    }
-
-    // [Lifted] Out-supports: the presence of a transition is at least the total support it hands over
-    // (leaving out supports into conds when conditions are disallowed from being supporters / out-transitions).
-    for (out_trans_id, in_trans_ids) in supports_sorted.iter_by_out() {
-        let supports = in_trans_ids
-            .filter(|&(in_trans_id, _)| {
-                encoder.supports.with_condition_out_transitions
-                    || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
-            })
-            .map(|(in_trans_id, _)| ColTag::Support(out_trans_id, in_trans_id, None));
-        let supports = sum(supports);
-
-        if !supports.terms().is_empty() {
-            let presence = ColTag::PresenceTransition(out_trans_id, None);
-            problem.push_row(presence.into_linexpr().geq(supports));
         }
     }
 }
 
 /// Pushes the "lifted-ground" or "ground rows"
 pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
-    let supports_sorted = encoder.supports_sorted.as_ref().unwrap();
     let ground = &encoder.ground;
     let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
 
-    // [Lifted-Ground] A source is present iff one of its groundings is.
-    for (source, _) in encoder.iter_sources() {
-        let source_groundings = ground.source_groundings(source);
-        if source_groundings.is_empty() {
-            // ? WARNING ? related to incomplete / partial groundings. [TODO]
-            continue;
-        }
-        let groundings = source_groundings
-            .iter()
-            .map(|&g| ColTag::PresenceSource(source, Some(g)));
-        problem.push_row(ColTag::PresenceSource(source, None).into_linexpr().eq(sum(groundings)));
-    }
-
-    // [Lifted-Ground] A transition is present iff one of its groundings is.
-    for (trans_id, groundings) in ground.iter_transition_groundings() {
-        let groundings = sum(groundings.map(|g| ColTag::PresenceTransition(trans_id, Some(g))));
-        problem.push_row(ColTag::PresenceTransition(trans_id, None).into_linexpr().eq(groundings));
-    }
-
-    // [Lifted-Ground] A ground transition is present if(f) one of the groundings of its source it comes from is.
-    for (trans_id, trans_grounding_id, source, source_groundings) in ground.iter_transition_groundings_with_sources() {
-        let presence = ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)).into_linexpr();
-        let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
-
-        // Same as for the lifted rows: the transition's presence literal must always imply the source's,
-        // and we can enforce equality only when they are equivalent.
-        debug_assert!(ctx.store.state.implies(
-            encoder.transitions.get_prez(trans_id, ctx),
-            encoder.get_source_prez(source, ctx)
-        ));
-        let presences_equivalent = ctx.store.state.implies(
-            encoder.get_source_prez(source, ctx),
-            encoder.transitions.get_prez(trans_id, ctx),
-        );
-        problem.push_row(if presences_equivalent {
-            presence.eq(source_presences)
-        } else {
-            presence.leq(source_presences)
-        });
-    }
-
-    // [Ground] A support implies the presence of its out-transition (see the corresponding lifted rows).
-    if !encoder.supports.with_condition_out_transitions {
-        for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
-            let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
-
-            for in_trans_id in in_trans_ids {
-                if encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond {
-                    let support = ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id));
-                    problem.push_row(support.into_linexpr().leq(presences.clone()));
-                }
+    // Ground decomposition: "A source's presence equals the total presence of its groundings".
+    {
+        for (source, _) in encoder.iter_sources() {
+            let source_groundings = ground.source_groundings(source);
+            if source_groundings.is_empty() {
+                // No grounding: the source can't be present (the main model restricts its parameters to its groundings),
+                // which is left to the main model here. (To revisit with partial groundings.)
+                continue;
             }
+            let groundings = source_groundings
+                .iter()
+                .map(|&g| ColTag::PresenceSource(source, Some(g)));
+
+                problem.push_row(ColTag::PresenceSource(source, None).into_linexpr().eq(sum(groundings)));
         }
     }
 
-    // [Lifted-Ground] A support is active iff one of its ground supports is.
-    for (out_trans_id, in_trans_id, support_groundings) in ground.iter_support_groundings() {
-        let ground_supports = support_groundings.map(|g| ColTag::Support(out_trans_id, in_trans_id, Some(g)));
-        let support = ColTag::Support(out_trans_id, in_trans_id, None);
-        problem.push_row(support.into_linexpr().eq(sum(ground_supports)));
+    // Ground decomposition: "A transition's presence equals the total presence of its groundings".
+    {
+        for (trans_id, groundings) in ground.iter_transition_groundings() {
+            let groundings = sum(groundings.map(|g| ColTag::PresenceTransition(trans_id, Some(g))));
+
+            problem.push_row(ColTag::PresenceTransition(trans_id, None).into_linexpr().eq(groundings));
+        }
     }
 
-    // [Ground] In-supports: the presence of a group of groundings of a transition equals the total ground support it receives
-    // (for an eff, including that of the initial state / empty source, see [`ColTag::SupportFromInitialState`]).
+    // "A ground transition's presence equals the total presence of its source's compatible groundings"
+    {
+        for (trans_id, trans_grounding_id, source, source_groundings) in ground.iter_transition_groundings_with_sources() {
+            let presence = ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)).into_linexpr();
+            let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
+
+            debug_assert!(ctx.store.state.implies(
+                encoder.transitions.get_prez(trans_id, ctx),
+                encoder.get_source_prez(source, ctx)
+            ));
+            let presences_equivalent = ctx.store.state.implies(
+                encoder.get_source_prez(source, ctx),
+                encoder.transitions.get_prez(trans_id, ctx),
+            );
+
+            // Same as for the lifted rows: the transition's presence literal must always imply the source's,
+            // and we can enforce equality only when they are equivalent.
+
+            problem.push_row(
+                if presences_equivalent {
+                    presence.eq(source_presences)
+                } else {
+                    presence.leq(source_presences)
+                }
+            );
+        }
+    }
+
+    // Ground decomposition: "A support is equal to the total support of its groundings"
+    {
+        for (out_trans_id, in_trans_id, support_groundings) in ground.iter_support_groundings() {
+            let ground_supports = support_groundings.map(|g| ColTag::Support(out_trans_id, in_trans_id, Some(g)));
+            let support = ColTag::Support(out_trans_id, in_trans_id, None);
+
+            problem.push_row(support.into_linexpr().eq(sum(ground_supports)));
+        }
+    }
+ 
+    // In-support: "The total presence of a transition's groundings with a same ground state variable and pre-value
+    //              equals the total ground support they receive"
+    //
+    // NOTE: For effs, this includes the support from the initial state of the ground state variable
+    //       (or, when it isn't modeled, the equality becomes a geq).
     {
         for (in_trans_id, (state_var_grounding_id, val_assignment), groundings, supports) in
             ground.iter_support_in_groups()
@@ -178,80 +189,94 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id))
             });
 
-            // An effect may be supported by the initial state.
+            // An eff may be supported by the initial state.
             let support_from_initial_state = (with_initial_state_supports && is_eff).then_some(
-                ColTag::SupportFromInitialState(Some(state_var_grounding_id), in_trans_id),
+                ColTag::SupportFromInitialState(state_var_grounding_id, in_trans_id),
             );
             let supports = sum(supports.chain(support_from_initial_state));
 
-            // Without supports from the initial state, an eff need not be supported (it may be the first on its timeline).
-            problem.push_row(if !with_initial_state_supports && is_eff {
-                presences.geq(supports)
-            } else {
-                presences.eq(supports)
-            });
+            problem.push_row(
+                if !with_initial_state_supports && is_eff {
+                    presences.geq(supports)
+                } else {
+                    presences.eq(supports)
+                }
+            );
         }
     }
 
-    // [Ground] The initial state of a ground state variable supports at most one effect.
-    // (When a single eff is concerned, implied by the column being defined on [0,1])
+    // "The initial state of a ground state variable supports at most one eff"
     if with_initial_state_supports {
         for (state_var_grounding_id, effs) in ground.iter_effects_by_state_var() {
+            // Implied by the column's bounds when a single eff is concerned.
             if effs.len() <= 1 {
                 continue;
             }
             let supports = effs
                 .iter()
-                .map(|&trans_id| ColTag::SupportFromInitialState(Some(state_var_grounding_id), trans_id));
+                .map(|&trans_id| ColTag::SupportFromInitialState(state_var_grounding_id, trans_id));
+
             problem.push_row(ColTag::PresenceSource(None, None).into_linexpr().geq(sum(supports)));
         }
     }
 
-    // [Lifted-Ground] A support from the initial state is the total of its ground ones
-    // (for the effects whose lifted in-support includes it).
-    if with_initial_state_supports {
-        let lifted_effects = supports_sorted
-            .iter_by_in()
-            .map(|(in_trans_id, _)| in_trans_id)
-            .filter(|&trans_id| encoder.transitions.get(trans_id).tpe() == TransitionType::Eff);
+    // Out-support: "The total presence of a transition's groundings handing over a same value on a same ground state variable
+    //               is at least the total ground support they hand over"
+    //
+    // NOTE: Same as for the lifted rows: support into conds is left out when conds aren't allowed to be out-transitions / supporters.
+    {
+        for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
+            let supports = in_trans_ids
+                .filter(|&in_trans_id| {
+                    encoder.supports.with_condition_out_transitions
+                        || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+                })
+                .map(|in_trans_id| ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)));
+            let supports = sum(supports);
 
-        for trans_id in lifted_effects {
-            let ground_supports = ground
-                .iter_ground_state_vars_of(trans_id)
-                .map(|state_var_grounding_id| ColTag::SupportFromInitialState(Some(state_var_grounding_id), trans_id));
-            let support = ColTag::SupportFromInitialState(None, trans_id);
-            problem.push_row(support.into_linexpr().eq(sum(ground_supports)));
+            if supports.terms().is_empty() {
+                continue;
+            }
+            let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
+
+            problem.push_row(presences.geq(supports));
         }
     }
 
-    // [Ground] Out-supports: the presence of a group of groundings of a transition is at least the total ground support it hands over
-    // (leaving out supports into conds when conditions are disallowed from being supporters / out-transitions).
-    for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
-        let supports = in_trans_ids
-            .filter(|&in_trans_id| {
-                encoder.supports.with_condition_out_transitions
-                    || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
-            })
-            .map(|in_trans_id| ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id)));
-        let supports = sum(supports);
-        if supports.terms().is_empty() {
-            continue;
-        }
+    // "A ground support implies (i.e. is leq to) the total presence of the out-transition's groundings it can come from"
+    //
+    // NOTE: Same as for the lifted rows: only needed when conds aren't allowed to be out-transitions / supporters.
+    if !encoder.supports.with_condition_out_transitions {
+        for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
+            let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
 
-        let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
-        problem.push_row(presences.geq(supports));
+            for in_trans_id in in_trans_ids {
+                if encoder.transitions.get(in_trans_id).tpe() == TransitionType::Cond {
+                    let support = ColTag::Support(out_trans_id, in_trans_id, Some(support_grounding_id));
+
+                    problem.push_row(support.into_linexpr().leq(presences.clone()));
+                }
+            }
+        }
     }
 
-    // [Ground] At most one of a term's groundings can be active
-    // (implied for the terms appearing in a single source).
+    // "A term takes at most one value (i.e. at most one of its groundings is active)"
+    //
+    // TODO: remove for single-source terms (implied)
+    //
+    // NOTE: Implied for a term appearing in a single source (by the rows below and the source's ground decomposition).
     for (term, values) in ground.iter_term_values() {
         let groundings = sum(values.map(|value| ColTag::TermGround(term, value)));
         debug_assert!(!groundings.terms().is_empty());
+
         problem.push_row(groundings.leq(1));
     }
 
-    // [Ground] A grounding of a term is active iff a ground source using it is active
-    // (also needed for the terms appearing in a single source, for the binding of term groundings to the main model).
+    // "A term grounding is active iff one of the groundings (with that value) of a source using the term is"
+    //
+    // TODO: remove for single-source terms (implied)
+    //       However, even if implied, would be useful for grounding.
+    //       But should still remove and use other bindings, in tandem with reification literals from `TasksUnifyWithGrounding` constraint ?)
     for (term, value, source, source_groundings) in ground.iter_term_assignments_with_sources() {
         let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
 
