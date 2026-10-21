@@ -748,19 +748,8 @@ fn parse_preference_gen<T>(
 
 /// Parse a number number ("32", "-3", "3.14", -323.3")
 fn parse_number(decimal_str: &str) -> Option<RealValue> {
-    if let Ok(i) = decimal_str.parse::<IntValue>() {
-        Some(RealValue::new(i, 1))
-    } else {
-        let (lhs, rhs) = decimal_str.split_once(".")?;
-        let num_digits = rhs.len() as u32;
-        let denom = 10i64.pow(num_digits);
-        let lhs: i64 = if lhs.is_empty() { 0 } else { lhs.parse().ok()? };
-        let rhs: u64 = if rhs.is_empty() { 0 } else { rhs.parse().ok()? };
-        let rhs = rhs as i64;
-        debug_assert!(rhs < denom);
-        let numer = lhs * denom + rhs;
-        Some(RealValue::new(numer, denom))
-    }
+    use num_rational_parse::RationalParse;
+    RealValue::from_str_flex(decimal_str).ok()
 }
 
 fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {
