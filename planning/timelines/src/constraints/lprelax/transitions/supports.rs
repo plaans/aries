@@ -39,7 +39,9 @@ impl Supports {
                 transitions.get_state_var(out_trans_id, ctx).fluent,
                 transitions.get_state_var(in_trans_id, ctx).fluent,
             );
-            (!transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx))
+            // A cond-eff's eff must not support its own cond (which is checked before the transition),
+            // even though the main encoding may still hold a (never active) causal link between them.
+            (out_trans_id != in_trans_id && !transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx))
                 .then_some(((out_trans_id, in_trans_id), Some(cl.active)))
         });
 
