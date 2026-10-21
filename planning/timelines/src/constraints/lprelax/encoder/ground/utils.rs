@@ -67,62 +67,9 @@ fn gallop_run_end<T>(s: &[T], start: usize, pred: impl Fn(&T) -> bool) -> usize 
     lo + 1 + s[lo + 1..hi].partition_point(&pred)
 }
 
-/// Assuming `a` and `b` are sorted w.r.t the given comparison function,
-/// merges `a` into `b`, replacing `b` and draining `a`.
-/// *Consecutive* duplicate elements are ignored (i.e. exactly equal ones, not those 'equivalent' according to the comparison function).
-/// But !! WARNING !! this means that if the comparison function is not a total order,
-/// and the entries were sorted with an unstable sorted,
-/// then some duplicate elements could end up not one after the other, and thus could be left in !!!
-pub fn merge_dedup_into<T: PartialEq>(a: &mut Vec<T>, b: &mut Vec<T>, cmp: impl Fn(&T, &T) -> Ordering) {
-    if a.is_empty() {
-        return;
-    }
-
-    if b.is_empty() {
-        std::mem::swap(b, a);
-        return;
-    }
-
-    // Save the capacity before draining `a`.
-    let capacity = a.len() + b.len();
-
-    let old_b = std::mem::take(b);
-    let mut a_iter = a.drain(..);
-    let mut b_iter = old_b.into_iter();
-
-    let mut result = Vec::with_capacity(capacity);
-
-    while let (Some(a_ref), Some(b_ref)) = (a_iter.as_slice().first(), b_iter.as_slice().first()) {
-        match cmp(a_ref, b_ref) {
-            Ordering::Less => {
-                result.push(a_iter.next().unwrap());
-            }
-            Ordering::Greater => {
-                result.push(b_iter.next().unwrap());
-            }
-            Ordering::Equal => {
-                let a_elem = a_iter.next().unwrap();
-                let b_elem = b_iter.next().unwrap();
-
-                if a_elem == b_elem {
-                    result.push(a_elem);
-                } else {
-                    result.push(a_elem);
-                    result.push(b_elem);
-                }
-            }
-        }
-    }
-
-    result.extend(a_iter);
-    result.extend(b_iter);
-
-    *b = result;
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{binary_search_range_by, merge_dedup_into, merge_join_chunks_by_key};
+    use super::{binary_search_range_by, merge_join_chunks_by_key};
 
     #[test]
     fn test_binary_search_range_by() {
@@ -150,63 +97,6 @@ mod tests {
         assert_eq!(binary_search_range_by(&entries, |elt| elt.0.cmp(&20)), None);
 
         assert_eq!(binary_search_range_by(&[] as &[(i32, i32)], |elt| elt.0.cmp(&6)), None);
-    }
-
-    #[test]
-    fn equal_sort_keys_are_both_retained() {
-        type Entry = (i32, i32, i32, i32);
-
-        let cmp = |a: &Entry, b: &Entry| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)).then_with(|| a.2.cmp(&b.2));
-
-        let mut a = vec![(1, 10, 20, 100), (2, 10, 20, 200)];
-
-        let mut b = vec![(1, 10, 20, 101), (2, 10, 10, 100), (2, 10, 20, 200), (3, 10, 20, 300)];
-
-        merge_dedup_into(&mut a, &mut b, cmp);
-
-        assert!(a.is_empty());
-        assert!({
-            let cand1 = vec![
-                (1, 10, 20, 101),
-                (1, 10, 20, 100),
-                (2, 10, 10, 100),
-                (2, 10, 20, 200),
-                (3, 10, 20, 300),
-            ];
-            let cand2 = vec![
-                (1, 10, 20, 100),
-                (1, 10, 20, 101),
-                (2, 10, 10, 100),
-                (2, 10, 20, 200),
-                (3, 10, 20, 300),
-            ];
-            b == cand1 || b == cand2
-        });
-    }
-
-    #[test]
-    fn remaining_nonconsecutive_duplicates_with_partial_order() {
-        type Entry = (i32, i32, i32, i32);
-        let cmp = |a: &Entry, b: &Entry| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)).then_with(|| a.2.cmp(&b.2));
-
-        let mut a = vec![(1, 1, 1, 1), (1, 1, 1, 2), (1, 1, 1, 3), (1, 1, 1, 4)];
-        let mut b = vec![(1, 1, 1, 0), (1, 1, 1, 1), (1, 1, 1, 2), (1, 1, 1, 3)];
-
-        merge_dedup_into(&mut a, &mut b, cmp);
-
-        assert_eq!(
-            b,
-            vec![
-                (1, 1, 1, 1),
-                (1, 1, 1, 0),
-                (1, 1, 1, 2),
-                (1, 1, 1, 1), // dup of index 0
-                (1, 1, 1, 3),
-                (1, 1, 1, 2), // dup of index 2
-                (1, 1, 1, 4),
-                (1, 1, 1, 3), // dup of index 4
-            ]
-        );
     }
 
     #[test]

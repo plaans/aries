@@ -1,6 +1,6 @@
 mod utils;
 
-use utils::{binary_search_range_by, merge_dedup_into};
+use utils::binary_search_range_by;
 
 use hashbrown::HashMap;
 
@@ -9,6 +9,7 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 use crate::analysis::Source;
+use crate::lprelax::BySource;
 use crate::lprelax::transitions::supports::SupportsSorted;
 use crate::lprelax::transitions::{TransitionId, Transitions};
 use crate::{IntTerm, SchedEncoder};
@@ -18,12 +19,9 @@ pub type SourceGrounding = crate::analysis::grounding::ParametersAssignment;
 pub type SourceGroundingId = usize;
 pub type StateVarGroundingId = usize;
 
-/// An id for transition groundings, consisting of:
-/// the id of its ground state variable,
-/// the value it reads (`val_assignment`, `None` for a pure effect),
-/// and the value it hands over (`op_assignment`: the value written, or for a condition, the value read).
-///
-/// Sorts by state variable grounding id first.
+/// The id of a transition grounding: its ground state variable (by which it sorts first),
+/// the value it reads (`pre_val_assignment`, `None` for an eff),
+/// and the value it hands over (`post_op_assignment`).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TransitionGroundingId {
     pub(super) state_var_grounding_id: StateVarGroundingId,
@@ -52,8 +50,7 @@ impl GroundingsInfo {
     ) {
         let source_grounding_id = self.sources.post_ground_source(source, source_grounding);
 
-        // Intern each of the variable assignments in the source grounding,
-        // marking each of them as appearing in it.
+        // Intern the assignments of the source's (non-constant) terms.
         for (i, &term) in source_terms.iter().enumerate() {
             let value = source_grounding[i];
             if !term.is_cst() {
@@ -62,9 +59,7 @@ impl GroundingsInfo {
             }
         }
 
-        // For each transition of the source, intern the corresponding grounding,
-        // marking each of them as being appearing in the source grounding.
-        // (Commented out: Also mark each of the variable assignments as appearing in the corresponding transition groundings.)
+        // Intern the groundings of the source's transitions.
         for &trans_id in transitions.of_source(source) {
             let trans_grounding = transitions.evaluate_terms(trans_id, source_grounding, ctx);
 
@@ -76,13 +71,6 @@ impl GroundingsInfo {
                 pre_val_assignment: trans_grounding.pre_val_eval(),
                 post_op_assignment: trans_grounding.post_op_eval(),
             };
-
-            // for (term, value) in transitions.iter_evaluated_non_constant_terms(trans_id, source_grounding, ctx) {
-            //     debug_assert!(!term.is_cst());
-            //
-            //     self.terms
-            //         .post_for_ground_transition(term, value, trans_id, trans_grounding_id);
-            // }
 
             self.transitions
                 .post_ground_transition(trans_id, trans_grounding_id, source, source_grounding_id);
@@ -119,21 +107,25 @@ impl GroundingsInfo {
         self.sources.get(source)
     }
 
-    /// Each distinct ground transition once (chunked by transition, but not necessarily sorted).
-    pub fn iter_distinct_transition_groundings(&self) -> impl Iterator<Item = (TransitionId, TransitionGroundingId)> {
-        self.transitions.iter_distinct()
+    /// For each transition, its distinct groundings.
+    pub fn iter_transition_groundings(
+        &self,
+    ) -> impl Iterator<Item = (TransitionId, impl Iterator<Item = TransitionGroundingId>)> {
+        self.transitions.iter_by_transition()
     }
 
-    /// For each source, the ground transitions with the source groundings they come from (sorted, so can be chunked).
-    pub fn iter_transition_groundings_by_source(
+    /// For each ground transition, its source and this source's compatible groundings.
+    pub fn iter_transition_groundings_with_sources(
         &self,
     ) -> impl Iterator<
         Item = (
+            TransitionId,
+            TransitionGroundingId,
             Source,
-            impl Iterator<Item = &(TransitionId, TransitionGroundingId, SourceGroundingId)>,
+            impl ExactSizeIterator<Item = SourceGroundingId>,
         ),
     > {
-        self.transitions.iter_by_source()
+        self.transitions.iter_with_sources()
     }
 
     /// The distinct ground transitions of each ground state variable (sorted, so can be chunked).
@@ -169,11 +161,11 @@ impl GroundingsInfo {
             .dedup()
     }
 
-    /// The ground supports of each (lifted) support, or `None` if it has none (sorted, so can be chunked).
+    /// For each (lifted) support, its ground supports (possibly none).
     pub fn iter_support_groundings(
         &self,
-    ) -> impl Iterator<Item = &(TransitionId, TransitionId, Option<SupportGroundingId>)> {
-        self.supports.iter_all()
+    ) -> impl Iterator<Item = (TransitionId, TransitionId, impl Iterator<Item = SupportGroundingId>)> {
+        self.supports.iter_by_support()
     }
 
     /// The groups of the outgoing view of the ground supports (see [`SupportsGroundingsInfo::iter_out_groups`]).
@@ -204,26 +196,36 @@ impl GroundingsInfo {
         self.supports.iter_in_groups()
     }
 
-    /// The distinct assignments of (non-constant) terms to values (sorted, so can be chunked).
+    /// The distinct assignments of (non-constant) terms to values.
     pub fn iter_distinct_term_assignments(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
         self.terms.iter_distinct()
     }
 
-    /// The assignments of (non-constant) terms to values, one entry per ground source in which they appear
-    /// (sorted, so can be chunked).
+    /// For each (non-constant) term, its distinct values.
+    pub fn iter_term_values(&self) -> impl Iterator<Item = (IntTerm, impl Iterator<Item = IntCst>)> {
+        self.terms.iter_values()
+    }
+
+    /// For each assignment of a (non-constant) term to a value, and each source using the term,
+    /// the groundings of the source with that assignment.
     pub fn iter_term_assignments_with_sources(
         &self,
-    ) -> impl Iterator<Item = &(IntTerm, IntCst, Source, SourceGroundingId)> {
+    ) -> impl Iterator<
+        Item = (
+            IntTerm,
+            IntCst,
+            Source,
+            impl ExactSizeIterator<Item = SourceGroundingId>,
+        ),
+    > {
         self.terms.iter_with_sources()
     }
 }
 
 #[derive(Clone, Default)]
 struct SourcesGroundingsInfo {
-    /// The (unique) groundings of the "empty source" (i.e. groundings corresponding to the "initial/final" action)
-    entries_empty_source: Vec<SourceGroundingId>,
-    /// The (unique) groundings of each "concrete source" (action/task)
-    entries_concrete_sources: DirectIdMap<crate::TaskId, Vec<SourceGroundingId>>,
+    /// The (unique) groundings of each source.
+    entries: BySource<Vec<SourceGroundingId>>,
     /// Number of source groundings interned so far (i.e. id of the next one)
     num_groundings: usize,
 
@@ -231,10 +233,7 @@ struct SourcesGroundingsInfo {
     groundings: HashMap<(Source, SourceGrounding), SourceGroundingId>,
 }
 impl SourcesGroundingsInfo {
-    /// Interns a grounding of a source.
-    /// WARNING: adding duplicate groundings (for the same source) will result in a panic (in debug mode).
-    ///
-    /// Does not do anything relating to ground supports.
+    /// Interns a grounding of a source (which must be new: checked in debug mode).
     fn post_ground_source(&mut self, source: Source, source_grounding: &SourceGrounding) -> SourceGroundingId {
         #[cfg(debug_assertions)]
         debug_assert!(!self.groundings.contains_key(&(source, source_grounding.clone())));
@@ -248,32 +247,18 @@ impl SourcesGroundingsInfo {
                 .insert((source, source_grounding.clone()), source_grounding_id);
         }
 
-        if let Some(task_id) = source {
-            if !self.entries_concrete_sources.contains_key(task_id) {
-                self.entries_concrete_sources.insert(task_id, vec![]);
-            }
-            self.entries_concrete_sources[task_id].push(source_grounding_id);
-        } else {
-            self.entries_empty_source.push(source_grounding_id);
-        }
+        self.entries.get_mut_or_default(source).push(source_grounding_id);
         source_grounding_id
     }
 
     fn get(&self, source: Source) -> &[SourceGroundingId] {
-        if let Some(task_id) = source {
-            debug_assert!(
-                self.entries_concrete_sources
-                    .get(task_id)
-                    .is_none_or(|entries| entries.iter().all_unique())
-            );
-            self.entries_concrete_sources
-                .get(task_id)
-                .map(|entries| entries.as_slice())
-                .unwrap_or_default()
-        } else {
-            debug_assert!(self.entries_empty_source.iter().all_unique());
-            &self.entries_empty_source
-        }
+        let entries = self
+            .entries
+            .get(source)
+            .map(|entries| entries.as_slice())
+            .unwrap_or_default();
+        debug_assert!(entries.iter().all_unique());
+        entries
     }
 }
 
@@ -299,23 +284,17 @@ impl<'a> std::hash::Hash for StateVarGroundingLookup<'a> {
 #[derive(Clone, Default)]
 struct StateVarsGroundingsInfo {
     fluents_ids: HashMap<crate::Sym, FluentId>,
-    /// Stores ids of state variable groundings (they are used in transition grounding ids as the first element of the triple)
+    /// The ids of the ground state variables.
     entries: HashMap<(FluentId, StateVarGrounding), StateVarGroundingId>,
 
     #[cfg(debug_assertions)]
     groundings: Vec<(FluentId, StateVarGrounding)>,
 }
 impl StateVarsGroundingsInfo {
-    /// NOTE: will *not* panic if an already known grounding is given (unlike when interning source groundings).
-    /// To the contrary, this is used to retrieve the id of the given state variable grounding, if it was interned.
+    /// The id of the given ground state variable, interning it if new.
     fn post_ground_state_var(&mut self, fluent: &crate::Sym, state_var_grounding: &[IntCst]) -> StateVarGroundingId {
-        let fluent_id = if self.fluents_ids.contains_key(fluent) {
-            *self.fluents_ids.get(fluent).unwrap()
-        } else {
-            let fluent_id = self.fluents_ids.len();
-            self.fluents_ids.insert(fluent.into(), fluent_id);
-            fluent_id
-        };
+        let num_fluents = self.fluents_ids.len();
+        let fluent_id = *self.fluents_ids.entry_ref(fluent).or_insert(num_fluents);
 
         let lookup = StateVarGroundingLookup {
             fluent_id,
@@ -340,39 +319,11 @@ impl StateVarsGroundingsInfo {
 
 #[derive(Clone, Default)]
 struct TermsGroundingsInfo {
-    // /// Flat storage of term assignments with the ground transitions in which they appear.
-    // entries_merged_transitions: Vec<(IntTerm, IntCst, TransitionId, TransitionGroundingId)>,
-    /// Flat storage of term assignments with the ground sources in which they appear.
-    entries_merged_sources: Vec<(IntTerm, IntCst, Source, SourceGroundingId)>,
-
-    // /// Same as for sources.
-    // entries_pending_transitions: Vec<(IntTerm, IntCst, TransitionId, TransitionGroundingId)>,
-    /// A buffer into which the entries are pushed before being deduped, sorted, and merged into the
-    /// corresponding "merged" field (see above [`entries_merged_sources`]).
-    /// This could allow a more efficient incremental interning of new entries,
-    /// via interleaved sorting then merging, rather than global merging every time.
-    entries_pending_sources: Vec<(IntTerm, IntCst, Source, SourceGroundingId)>,
+    /// The assignments of (non-constant) terms to values, with the ground sources in which they appear.
+    /// Sorted (and deduplicated) once all are posted.
+    entries: Vec<(IntTerm, IntCst, Source, SourceGroundingId)>,
 }
 impl TermsGroundingsInfo {
-    // /// Records that a (non-constant) term is assigned a value in a ground transition.
-    // pub fn post_for_ground_transition(
-    //     &mut self,
-    //     term: IntTerm,
-    //     value: IntCst,
-    //     trans_id: TransitionId,
-    //     trans_grounding_id: TransitionGroundingId,
-    // ) {
-    //     assert!(!term.is_cst());
-    //     debug_assert!(
-    //         !self
-    //             .entries_merged_transitions
-    //             .contains(&(term, value, trans_id, trans_grounding_id))
-    //     );
-    //
-    //     self.entries_pending_transitions
-    //         .push((term, value, trans_id, trans_grounding_id));
-    // }
-
     /// Records that a (non-constant) term is assigned a value in a ground source.
     fn post_for_ground_source(
         &mut self,
@@ -382,91 +333,52 @@ impl TermsGroundingsInfo {
         source_grounding_id: SourceGroundingId,
     ) {
         assert!(!term.is_cst());
-        debug_assert!(
-            !self
-                .entries_merged_sources
-                .contains(&(term, value, source, source_grounding_id))
-        );
-
-        self.entries_pending_sources
-            .push((term, value, source, source_grounding_id));
-    }
-
-    // fn cmp_trs(
-    //     x: &(IntTerm, IntCst, TransitionId, TransitionGroundingId),
-    //     y: &(IntTerm, IntCst, TransitionId, TransitionGroundingId),
-    // ) -> std::cmp::Ordering {
-    //     x.cmp(y)
-    // }
-    fn cmp_src(
-        x: &(IntTerm, IntCst, Source, SourceGroundingId),
-        y: &(IntTerm, IntCst, Source, SourceGroundingId),
-    ) -> std::cmp::Ordering {
-        x.cmp(y)
+        self.entries.push((term, value, source, source_grounding_id));
     }
 
     fn sort(&mut self) {
-        // self.sort_and_merge_pending_transitions();
-        self.sort_and_merge_pending_sources();
+        self.entries.sort_unstable();
+        self.entries.dedup();
     }
 
-    // fn sort_and_merge_pending_transitions(&mut self) {
-    //     self.entries_pending_transitions.sort_unstable();
-    //     self.entries_pending_transitions.dedup();
-    //     merge_dedup_into(
-    //         &mut self.entries_pending_transitions,
-    //         &mut self.entries_merged_transitions,
-    //         Self::cmp_trs,
-    //     );
-    //     debug_assert!(self.entries_pending_transitions.is_empty());
-    //     debug_assert!(self.entries_merged_transitions.is_sorted());
-    // }
-    fn sort_and_merge_pending_sources(&mut self) {
-        self.entries_pending_sources.sort_unstable();
-        self.entries_pending_sources.dedup();
-        merge_dedup_into(
-            &mut self.entries_pending_sources,
-            &mut self.entries_merged_sources,
-            Self::cmp_src,
-        );
-        debug_assert!(self.entries_pending_sources.is_empty());
-        debug_assert!(self.entries_merged_sources.is_sorted());
-    }
-
-    // fn debug_check_valid_for_transitions(&self) -> bool {
-    //     debug_assert!(self.entries_pending_transitions.is_empty());
-    //     debug_assert!(is_sorted_and_no_dupes(self.entries_merged_transitions.iter()));
-    //     true
-    // }
-    fn debug_check_valid_for_sources(&self) -> bool {
-        debug_assert!(self.entries_pending_sources.is_empty());
-        debug_assert!(is_sorted_and_no_dupes(self.entries_merged_sources.iter()));
+    fn debug_check_valid(&self) -> bool {
+        debug_assert!(is_sorted_and_no_dupes(self.entries.iter()));
         true
     }
 
-    // /// Sorted, meaning the iterator can be chunked (without extra allocations).
-    // pub fn iter_sorted_all_for_transitions(
-    //     &self,
-    // ) -> impl Iterator<Item = &(IntTerm, IntCst, TransitionId, TransitionGroundingId)> {
-    //     debug_assert!(self.debug_check_valid_for_transitions());
-    //     self.entries_merged_transitions.iter()
-    // }
-
-    /// The assignments of (non-constant) terms to values, one entry per ground source in which they appear.
-    /// Sorted, so can be chunked
-    fn iter_with_sources(&self) -> impl Iterator<Item = &(IntTerm, IntCst, Source, SourceGroundingId)> {
-        debug_assert!(self.debug_check_valid_for_sources());
-        self.entries_merged_sources.iter()
+    /// The distinct assignments of (non-constant) terms to values.
+    fn iter_distinct(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
+        debug_assert!(self.debug_check_valid());
+        self.entries.iter().map(|&(term, value, _, _)| (term, value)).dedup()
     }
 
-    /// The distinct assignments of (non-constant) terms to values.
-    /// Sorted, so can be chunked.
-    fn iter_distinct(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
-        debug_assert!(self.debug_check_valid_for_sources());
-        self.entries_merged_sources
-            .iter()
-            .map(|(term, value, _, _)| (*term, *value))
-            .dedup()
+    /// For each (non-constant) term, its distinct values.
+    fn iter_values(&self) -> impl Iterator<Item = (IntTerm, impl Iterator<Item = IntCst>)> {
+        debug_assert!(self.debug_check_valid());
+        self.entries
+            .chunk_by(|a, b| a.0 == b.0)
+            .map(|chunk| (chunk[0].0, chunk.iter().map(|&(_, value, _, _)| value).dedup()))
+    }
+
+    /// For each assignment of a (non-constant) term to a value, and each source using the term,
+    /// the groundings of the source with that assignment.
+    fn iter_with_sources(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            IntTerm,
+            IntCst,
+            Source,
+            impl ExactSizeIterator<Item = SourceGroundingId>,
+        ),
+    > {
+        debug_assert!(self.debug_check_valid());
+        self.entries
+            .chunk_by(|a, b| (a.0, a.1, a.2) == (b.0, b.1, b.2))
+            .map(|chunk| {
+                let (term, value, source, _) = chunk[0];
+                (term, value, source, chunk.iter().map(|&(_, _, _, g)| g))
+            })
     }
 }
 
@@ -474,13 +386,8 @@ impl TermsGroundingsInfo {
 struct TransitionsGroundingsInfo {
     sources_of: DirectIdMap<TransitionId, Source>,
 
-    /// The groundings of the empty source's transitions, one entry per source grounding they come from.
-    /// Sorted, so can be chunked.
-    entries_empty_source: Vec<(TransitionId, TransitionGroundingId, SourceGroundingId)>,
-    /// The groundings of the each concrete source's transitions, one entry per source grounding they come from.
-    /// Sorted, so can be chunked.
-    /// Different ground sources may contain the same ground transition (if they only differ on parameters the transition doesn't use).
-    entries_concrete_sources: DirectIdMap<crate::TaskId, Vec<(TransitionId, TransitionGroundingId, SourceGroundingId)>>,
+    /// The groundings of each source's transitions, one entry per source grounding they come from (sorted).
+    entries: BySource<Vec<(TransitionId, TransitionGroundingId, SourceGroundingId)>>,
 
     /// The distinct groundings of all transitions (one entry each, whatever source groundings they come from).
     /// Sorted, so by ground state variable first (see [`Self::iter_by_state_var`]).
@@ -500,37 +407,23 @@ impl TransitionsGroundingsInfo {
             assert!(self.sources_of[trans_id] == source);
         }
 
-        if let Some(task_id) = source {
-            if !self.entries_concrete_sources.contains_key(task_id) {
-                self.entries_concrete_sources.insert(task_id, vec![]);
-            }
-            debug_assert!(!self.entries_concrete_sources[task_id].contains(&(
-                trans_id,
-                trans_grounding_id,
-                source_grounding_id
-            )));
-            self.entries_concrete_sources[task_id].push((trans_id, trans_grounding_id, source_grounding_id));
-        } else {
-            debug_assert!(
-                !self
-                    .entries_empty_source
-                    .contains(&(trans_id, trans_grounding_id, source_grounding_id))
-            );
-            self.entries_empty_source
-                .push((trans_id, trans_grounding_id, source_grounding_id));
-        }
+        let entries = self.entries.get_mut_or_default(source);
+        debug_assert!(!entries.contains(&(trans_id, trans_grounding_id, source_grounding_id)));
+        entries.push((trans_id, trans_grounding_id, source_grounding_id));
     }
 
     fn debug_check_valid(&self) -> bool {
-        debug_assert!(is_sorted_and_no_dupes(self.entries_empty_source.iter()));
-        debug_assert!(is_sorted_and_no_dupes(self.entries_concrete_sources.iter()));
+        debug_assert!(
+            self.entries
+                .iter()
+                .all(|(_, entries)| is_sorted_and_no_dupes(entries.iter()))
+        );
         true
     }
 
     /// Sorts the groundings, then indexes them by ground state variable (see [`Self::iter_by_state_var`]).
     fn sort_for_all(&mut self) {
-        self.entries_empty_source.sort_unstable();
-        for (_, entries) in self.entries_concrete_sources.iter_mut() {
+        for entries in self.entries.values_mut() {
             entries.sort_unstable();
         }
 
@@ -542,8 +435,8 @@ impl TransitionsGroundingsInfo {
         debug_assert!(is_sorted_and_no_dupes(self.entries_by_state_var.iter()));
     }
 
-    /// The distinct ground transitions of each ground state variable.
-    /// They are sorted -- as [`TransitionGroundingId`] is (by `val_assignment`, then `op_assignment`) -- so they can be chunked.
+    /// The distinct ground transitions of each ground state variable
+    /// (sorted, as [`TransitionGroundingId`] is: by `pre_val_assignment`, then `post_op_assignment`).
     fn iter_by_state_var(
         &self,
     ) -> impl Iterator<Item = (StateVarGroundingId, &[(TransitionGroundingId, TransitionId)])> {
@@ -552,74 +445,72 @@ impl TransitionsGroundingsInfo {
             .map(|chunk| (chunk[0].0.state_var_grounding_id, chunk))
     }
 
-    /// Each ground transition with the source groundings it comes from.
-    /// Sorted, so can be chunked.
-    fn iter_by_source(
+    /// The (sorted) groundings of each source's transitions, empty source first.
+    fn iter_entries_by_source(
+        &self,
+    ) -> impl Iterator<Item = (Source, &[(TransitionId, TransitionGroundingId, SourceGroundingId)])> {
+        debug_assert!(self.debug_check_valid());
+        self.entries
+            .iter()
+            .map(|(source, entries)| (source, entries.as_slice()))
+    }
+
+    /// For each transition, its distinct groundings.
+    fn iter_by_transition(&self) -> impl Iterator<Item = (TransitionId, impl Iterator<Item = TransitionGroundingId>)> {
+        // (A transition belongs to a single source.)
+        self.iter_entries_by_source().flat_map(|(_, entries)| {
+            entries
+                .chunk_by(|a, b| a.0 == b.0)
+                .map(|chunk| (chunk[0].0, chunk.iter().map(|&(_, g, _)| g).dedup()))
+        })
+    }
+
+    /// For each ground transition, its source and the groundings of its source it comes from.
+    fn iter_with_sources(
         &self,
     ) -> impl Iterator<
         Item = (
+            TransitionId,
+            TransitionGroundingId,
             Source,
-            impl Iterator<Item = &(TransitionId, TransitionGroundingId, SourceGroundingId)>,
+            impl ExactSizeIterator<Item = SourceGroundingId>,
         ),
     > {
-        debug_assert!(self.debug_check_valid());
-        std::iter::chain(
-            [(None, self.entries_empty_source.iter())],
-            self.entries_concrete_sources
-                .iter()
-                .map(|(source, entries)| (Some(source), entries.iter())),
-        )
+        self.iter_entries_by_source().flat_map(|(source, entries)| {
+            entries
+                .chunk_by(|a, b| (a.0, a.1) == (b.0, b.1))
+                .map(move |chunk| (chunk[0].0, chunk[0].1, source, chunk.iter().map(|&(_, _, g)| g)))
+        })
     }
 
-    /// Each distinct ground transition once (i.e. without the source groundings it comes from).
-    ///
-    /// WARNING: although the iterator can be chunked (without extra allocations) by transition, it may not necessarily be *sorted* !!
+    /// Each distinct ground transition once (grouped by transition, but not sorted).
     fn iter_distinct(&self) -> impl Iterator<Item = (TransitionId, TransitionGroundingId)> {
-        debug_assert!(self.debug_check_valid());
-        // result is not necessarily sorted, but chunked because a transition is "owned" only by a single source
-        std::iter::chain(
-            self.entries_empty_source
-                .iter()
-                .map(|(trans_id, trans_grounding_id, _)| (*trans_id, *trans_grounding_id)),
-            self.entries_concrete_sources.iter().flat_map(|(_, entries)| {
-                entries
-                    .iter()
-                    .map(|(trans_id, trans_grounding_id, _)| (*trans_id, *trans_grounding_id))
-            }),
-        )
-        .dedup()
+        self.iter_by_transition()
+            .flat_map(|(trans_id, groundings)| groundings.map(move |g| (trans_id, g)))
     }
 
     /// The groundings of the given transition (sorted, so they can be chunked).
     fn groundings_of(&self, trans_id: TransitionId) -> &[(TransitionId, TransitionGroundingId, SourceGroundingId)] {
         debug_assert!(self.debug_check_valid());
 
-        let Some(&source) = self.sources_of.get(trans_id) else {
+        let Some(entries) = self
+            .sources_of
+            .get(trans_id)
+            .and_then(|&source| self.entries.get(source))
+        else {
             return [].as_slice();
-        };
-        let entries = if let Some(task_id) = source {
-            &self.entries_concrete_sources[task_id]
-        } else {
-            &self.entries_empty_source
         };
         binary_search_range_by(entries, |(trans_id_, _, _)| (*trans_id_).cmp(&trans_id))
             .map_or_else(|| [].as_slice(), |(i, j)| &entries[i..j])
     }
 }
 
-/// Identifies a ground support between two transitions, which only depends on the state variable grounding and on the value handed over.
-///
-/// Every grounding of the out-transition with that state variable grounding and `op_assignment` (whatever its `val_assignment`)
-/// can support every grounding of the in-transition with that state variable grounding and `val_assignment`
-/// (whatever its `op_assignment`, and also, for a pure effect, whatever its `val_assignment`):
-///
-/// The carried / handed over value is that of the out-transition's `op_assignment`.
+/// A ground support (between two transitions): the ground state variable, and the value handed over
+/// (the `post_op_assignment` of the out-transition's groundings).
 pub type SupportGroundingId = (StateVarGroundingId, IntCst);
 
-/// A group of groundings of an in-transition that can receive the same ground supports:
-/// those sharing a state variable grounding and a `val_assignment` (whatever their `op_assignment`).
-///
-/// A ground support into the group hands over that `val_assignment` value, or any value if it is `None` (pure effect).
+/// The groundings of an in-transition that receive the same ground supports:
+/// those with this ground state variable and `pre_val_assignment` (`None`, for an eff, receives any value).
 pub type InGroupKey = (StateVarGroundingId, Option<IntCst>);
 
 /// An entry of a group of groundings (of a same transition) in the outgoing / incoming views of [`SupportsGroundingsInfo`].
@@ -649,15 +540,13 @@ struct SupportsGroundingsInfo {
 }
 
 impl SupportsGroundingsInfo {
-    /// Grounds the given (lifted) supports, and stores them in three views (see fields).
+    /// Grounds the given (lifted) supports into the three views (see the fields).
     ///
-    /// A lifted support gives a ground support for each pair (state variable grounding id, value) that a
-    /// grounding of its out-transition hands over and that a grounding of its in-transition can receive (see [`SupportGroundingId`] and [`InGroupKey`]).
-    /// If there is no such ground support, the "neutral" view ([`Self::entries`]) is to contain a `None` element instead.
+    /// A lifted support gets a ground support for each (ground state variable, value) that its out-transition's groundings hand over
+    /// and its in-transition's groundings can receive, or else a `None` entry in [`Self::entries`].
+    /// The incoming view also holds the groundings that nothing supports.
     ///
-    /// The incoming view ([`Self::in_`]) groups the groundings of every transition, even if nothing can support them
-    ///
-    /// Expects the transitions groundings to be sorted (see [`TransitionsGroundingsInfo::sort_for_all`]).
+    /// Expects the transitions groundings to be sorted.
     fn from(supports_sorted: &SupportsSorted, transitions_groundings: &TransitionsGroundingsInfo) -> Self {
         debug_assert!(transitions_groundings.debug_check_valid());
 
@@ -734,8 +623,7 @@ impl SupportsGroundingsInfo {
 
                 let entries_len_before_search = entries.len();
 
-                let mut push_support = |(state_var_grounding_id, value): InGroupKey, in_group_key: InGroupKey| {
-                    let support_grounding_id: SupportGroundingId = (state_var_grounding_id, value.unwrap());
+                for_each_ground_support(&out_keys, &in_keys, |support_grounding_id, in_group_key| {
                     out.push((out_trans_id, support_grounding_id, GroupEntry::Support(in_trans_id)));
                     in_.push((
                         in_trans_id,
@@ -743,34 +631,10 @@ impl SupportsGroundingsInfo {
                         GroupEntry::Support((out_trans_id, support_grounding_id)),
                     ));
                     entries.push((out_trans_id, in_trans_id, Some(support_grounding_id)));
-                };
-
-                let in_trans_is_pure_eff = in_keys
-                    .first()
-                    .is_some_and(|&(_, val_assignment)| val_assignment.is_none());
-
-                if in_trans_is_pure_eff {
-                    // A pure effect needs no value: any value handed over on its state variable grounding supports it.
-                    for (out_chunk_same_sv, in_chunk_same_sv) in
-                        merge_join_chunks_by_key(&out_keys, &in_keys, |&(state_var_grounding_id, _)| {
-                            state_var_grounding_id
-                        })
-                    {
-                        debug_assert_eq!(in_chunk_same_sv.len(), 1);
-                        for &out_key in out_chunk_same_sv {
-                            push_support(out_key, in_chunk_same_sv[0]);
-                        }
-                    }
-                } else {
-                    // Any other in-transition needs the value handed over to be its `val_assignment`.
-                    for (out_chunk_matching, _) in merge_join_chunks_by_key(&out_keys, &in_keys, |&key| key) {
-                        debug_assert_eq!(out_chunk_matching.len(), 1);
-                        push_support(out_chunk_matching[0], out_chunk_matching[0]);
-                    }
-                }
+                });
 
                 if entries.len() == entries_len_before_search {
-                    // Nothing was added: it means there no compatible groundings were found
+                    // No compatible groundings
                     entries.push((out_trans_id, in_trans_id, None));
                 }
             }
@@ -794,8 +658,13 @@ impl SupportsGroundingsInfo {
         Self { out, in_, entries }
     }
 
-    fn iter_all(&self) -> impl Iterator<Item = &(TransitionId, TransitionId, Option<SupportGroundingId>)> {
-        self.entries.iter()
+    /// For each (lifted) support, its ground supports (possibly none).
+    fn iter_by_support(
+        &self,
+    ) -> impl Iterator<Item = (TransitionId, TransitionId, impl Iterator<Item = SupportGroundingId>)> {
+        self.entries
+            .chunk_by(|a, b| (a.0, a.1) == (b.0, b.1))
+            .map(|chunk| (chunk[0].0, chunk[0].1, chunk.iter().filter_map(|&(_, _, g)| g)))
     }
     /// The groups of the outgoing view:
     /// (
@@ -834,6 +703,34 @@ impl SupportsGroundingsInfo {
         ),
     > {
         iter_support_groups(&self.in_)
+    }
+}
+
+/// Calls `f` on each ground support from an out-transition to an in-transition, with the group of the in-transition receiving it,
+/// given the (sorted) keys of the values the out-transition hands over and the (sorted) groups of the in-transition.
+fn for_each_ground_support(
+    out_keys: &[InGroupKey],
+    in_keys: &[InGroupKey],
+    mut f: impl FnMut(SupportGroundingId, InGroupKey),
+) {
+    let in_is_eff = in_keys.first().is_some_and(|&(_, pre_val)| pre_val.is_none());
+    if in_is_eff {
+        // An eff needs no value: any value handed over on its ground state variable supports it.
+        for (outs, ins) in
+            merge_join_chunks_by_key(out_keys, in_keys, |&(state_var_grounding_id, _)| state_var_grounding_id)
+        {
+            debug_assert_eq!(ins.len(), 1);
+            for &(state_var_grounding_id, value) in outs {
+                f((state_var_grounding_id, value.unwrap()), ins[0]);
+            }
+        }
+    } else {
+        // Any other in-transition needs the value handed over to be its `pre_val_assignment`.
+        for (outs, _) in merge_join_chunks_by_key(out_keys, in_keys, |&key| key) {
+            debug_assert_eq!(outs.len(), 1);
+            let (state_var_grounding_id, value) = outs[0];
+            f((state_var_grounding_id, value.unwrap()), outs[0]);
+        }
     }
 }
 
@@ -895,15 +792,9 @@ mod tests {
         sources_groundings.post_ground_source(Some(TaskId::from_int(0)), &SourceGrounding::from(vec![2, 10, 400, 301]));
         sources_groundings.post_ground_source(Some(TaskId::from_int(0)), &SourceGrounding::from(vec![2, 10, 401, 301]));
 
-        assert_eq!(sources_groundings.entries_empty_source, vec![3]);
-        assert!(
-            sources_groundings.entries_concrete_sources == {
-                let mut res = DirectIdMap::new();
-                res.insert(TaskId::from_int(0), vec![2, 4, 5, 6]);
-                res.insert(TaskId::from_int(1), vec![0, 1]);
-                res
-            }
-        );
+        assert_eq!(sources_groundings.get(None), &[3]);
+        assert_eq!(sources_groundings.get(Some(TaskId::from_int(0))), &[2, 4, 5, 6]);
+        assert_eq!(sources_groundings.get(Some(TaskId::from_int(1))), &[0, 1]);
     }
 
     #[test]

@@ -23,7 +23,7 @@ fn may_be_equal(terms: impl IntoIterator<Item = IntTerm>, other_terms: impl Into
 /// And when we say that "`out` supports `in`" we usually mean that the support link between them is active.
 #[derive(Clone, Default)]
 pub(crate) struct Supports {
-    /// Whether condition-transitions are allowed to play the role of out-transition / supporter transition.
+    /// Whether cond-transitions are allowed to play the role of out-transition / supporter transition.
     pub with_condition_out_transitions: bool,
     unsorted_out: Vec<((TransitionId, TransitionId), Option<Lit>)>,
 }

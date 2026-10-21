@@ -1,8 +1,8 @@
 //! NOTE: Although this module is contained in the [`lprelax`] module -- since that's the only one using it -- it is completely independent of [`lprelax`].
 //!
 //! This module allows defines "transitions", which can be:
-//! - condition-transitions (or simply conditions),
-//! - effect-transitions (or simply effects),
+//! - cond-transitions (or simply conditions),
+//! - eff-transitions (or simply effects),
 //! - condeff-transitions (or pure transitions), i.e. pairs (condition, effect) where the condition and effect share:
 //!   - their source (container action instance),
 //!   - presence literal,
@@ -16,11 +16,13 @@
 //! - Potential lifted support links between transitions can be collected into the [`supports::Supports`] structure.
 //!   In addition to the effect-to-condition causal support links of the main model, these links are defined for all types of transitions.
 
+pub mod by_source;
 pub mod ground;
 pub mod supports;
 
+use by_source::BySource;
 use crate::analysis::{Source, collect_nonsimple_conditions_and_effects_to_relax};
-use crate::{EffectId, EffectOp, IntTerm, SchedEncoder, StateVar, TaskId, encoder::CondId};
+use crate::{EffectId, EffectOp, IntTerm, SchedEncoder, StateVar, encoder::CondId};
 
 use aries_solver::core::{Lit, views::Dom};
 use idmap::DirectIdMap;
@@ -36,9 +38,9 @@ pub enum TransitionType {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Transition {
-    /// A condition-transition (or simply condition).
+    /// A cond-transition (or simply condition).
     Cond(CondId),
-    /// An effect-transition (or simply effect).
+    /// An eff-transition (or simply effect).
     Eff(EffectId),
     /// A condeff-transition (or pure transition), i.e. a pair (condition, effect) where the condition and effect share:
     /// - their source (container action instance),
@@ -135,8 +137,7 @@ pub(crate) struct Transitions {
 
     of_condition: DirectIdMap<CondId, TransitionId>,
     of_effect: DirectIdMap<EffectId, TransitionId>,
-    of_concrete_source: DirectIdMap<TaskId, Vec<TransitionId>>,
-    of_empty_source: Vec<TransitionId>,
+    of_source: BySource<Vec<TransitionId>>,
 }
 
 impl Transitions {
@@ -159,14 +160,7 @@ impl Transitions {
     }
     /// Returns the ids of transitions defined in a source
     pub fn of_source(&self, source: Source) -> &[TransitionId] {
-        if let Some(task_id) = source {
-            self.of_concrete_source
-                .get(task_id)
-                .map(|trs| trs.as_slice())
-                .unwrap_or_default()
-        } else {
-            &self.of_empty_source
-        }
+        self.of_source.get(source).map(|trs| trs.as_slice()).unwrap_or_default()
     }
 
     #[allow(dead_code)]
@@ -181,12 +175,7 @@ impl Transitions {
         self.of_effect.iter().map(|(eff_id, &trans_id)| (eff_id, trans_id))
     }
     pub fn iter_of_sources(&self) -> impl Iterator<Item = (Source, &Vec<TransitionId>)> {
-        std::iter::chain(
-            [(None, &self.of_empty_source)],
-            self.of_concrete_source
-                .iter()
-                .map(|(task_id, trans_ids)| (Some(task_id), trans_ids)),
-        )
+        self.of_source.iter()
     }
 
     /// Resolves a transition from its condition and / or effect part.
@@ -240,35 +229,16 @@ impl Transitions {
 
         // Group conditions and effects by sources
 
-        let mut empty_source_conditions = vec![];
-        let mut concrete_source_conditions = DirectIdMap::default();
-        let mut empty_source_effects = vec![];
-        let mut concrete_source_effects = DirectIdMap::default();
-
+        let mut conditions: BySource<Vec<_>> = BySource::default();
         for (cond_id, c) in ctx.causal_links.conditions.iter().enumerate() {
-            if conditions_to_ignore.contains(&cond_id) {
-                continue;
-            }
-            if let Some(task_id) = c.source {
-                if !concrete_source_conditions.contains_key(task_id) {
-                    concrete_source_conditions.insert(task_id, vec![]);
-                }
-                concrete_source_conditions.get_mut(task_id).unwrap().push((cond_id, c));
-            } else {
-                empty_source_conditions.push((cond_id, c));
+            if !conditions_to_ignore.contains(&cond_id) {
+                conditions.get_mut_or_default(c.source).push((cond_id, c));
             }
         }
+        let mut effects: BySource<Vec<_>> = BySource::default();
         for (eff_id, e) in ctx.sched.effects.iter().enumerate() {
-            if effects_to_ignore.contains(&eff_id) {
-                continue;
-            }
-            if let Some(task_id) = e.source {
-                if !concrete_source_effects.contains_key(task_id) {
-                    concrete_source_effects.insert(task_id, vec![]);
-                }
-                concrete_source_effects.get_mut(task_id).unwrap().push((eff_id, e));
-            } else {
-                empty_source_effects.push((eff_id, e));
+            if !effects_to_ignore.contains(&eff_id) {
+                effects.get_mut_or_default(e.source).push((eff_id, e));
             }
         }
 
@@ -282,56 +252,26 @@ impl Transitions {
 
         let mut of_condition = DirectIdMap::default();
         let mut of_effect = DirectIdMap::default();
-        let mut of_empty_source = vec![];
-        let mut of_concrete_source = DirectIdMap::default();
+        let mut of_source: BySource<Vec<TransitionId>> = BySource::default();
 
-        let source_conds_iter = std::iter::chain(
-            [(None, &empty_source_conditions)],
-            concrete_source_conditions
-                .iter()
-                .map(|(task_id, conds)| (Some(task_id), conds)),
-        );
-        let source_effs_iter = std::iter::chain(
-            [(None, &empty_source_effects)],
-            concrete_source_effects
-                .iter()
-                .map(|(task_id, effs)| (Some(task_id), effs)),
-        );
-
-        for (source, cs) in source_conds_iter {
-            if let Some(task_id) = source
-                && !of_concrete_source.contains_key(task_id)
-            {
-                of_concrete_source.insert(task_id, vec![]);
-            }
+        for (source, cs) in conditions.iter() {
             for &(cond_id, _) in cs {
                 let trans_id = store.len();
                 of_condition.insert(cond_id, trans_id);
-                if let Some(task_id) = source {
-                    of_concrete_source.get_mut(task_id).unwrap().push(trans_id);
-                } else {
-                    of_empty_source.push(trans_id);
-                }
+                of_source.get_mut_or_default(source).push(trans_id);
                 store.push(Transition::Cond(cond_id));
             }
         }
-        for (source, es) in source_effs_iter {
-            if let Some(task_id) = source
-                && !of_concrete_source.contains_key(task_id)
-            {
-                of_concrete_source.insert(task_id, vec![]);
-            }
+        for (source, es) in effects.iter() {
             for &(eff_id, e) in es {
                 // A condition and an effect sharing their presence and state variable
                 // can be merged into a CondEff ONLY when they are the only candidates !
                 // For example, in an ambiguous situation where two conditions could be merged into
                 // a CondEff with the same one effect, no merge should be performed.
                 let matches_effect = |state_var: &StateVar, prez: Lit| *state_var == e.state_var && prez == e.prez;
-                let paired_cond_id = source.and_then(|task_id| {
-                    let mut conds = concrete_source_conditions
-                        .get(task_id)?
-                        .iter()
-                        .filter(|(_, c)| matches_effect(&c.state_var, c.prez));
+                // (No CondEff pattern allowed for the empty source.)
+                let paired_cond_id = source.and(conditions.get(source)).and_then(|cs| {
+                    let mut conds = cs.iter().filter(|(_, c)| matches_effect(&c.state_var, c.prez));
                     let num_effs = es
                         .iter()
                         .filter(|(_, other)| matches_effect(&other.state_var, other.prez))
@@ -351,11 +291,7 @@ impl Transitions {
                     // Add a new Eff transition
                     let trans_id = store.len();
                     of_effect.insert(eff_id, trans_id);
-                    if let Some(task_id) = source {
-                        of_concrete_source.get_mut(task_id).unwrap().push(trans_id);
-                    } else {
-                        of_empty_source.push(trans_id);
-                    }
+                    of_source.get_mut_or_default(source).push(trans_id);
                     store.push(Transition::Eff(eff_id));
                 }
             }
@@ -400,8 +336,7 @@ impl Transitions {
             transition_terms_indices_in_source,
             of_condition,
             of_effect,
-            of_empty_source,
-            of_concrete_source,
+            of_source,
         }
     }
 }

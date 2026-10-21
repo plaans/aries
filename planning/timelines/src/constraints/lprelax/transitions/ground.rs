@@ -80,15 +80,4 @@ impl Transitions {
             post_op,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn iter_evaluated_non_constant_terms(
-        &self,
-        trans_id: TransitionId,
-        source_grounding: &ParametersAssignment,
-        ctx: &SchedEncoder,
-    ) -> impl Iterator<Item = (IntTerm, IntCst)> {
-        self.iter_evaluated_terms(trans_id, source_grounding, ctx)
-            .filter(|(term, _)| !term.is_cst())
-    }
 }

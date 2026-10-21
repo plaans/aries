@@ -21,3 +21,5 @@ mod transitions;
 pub(crate) mod wrappers;
 
 use aries_env_param::EnvParam;
+
+pub(crate) use transitions::by_source::BySource;
