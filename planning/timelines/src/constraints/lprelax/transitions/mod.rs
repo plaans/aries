@@ -20,9 +20,10 @@ pub mod by_source;
 pub mod ground;
 pub mod supports;
 
-use by_source::BySource;
 use crate::analysis::{Source, collect_nonsimple_conditions_and_effects_to_relax};
 use crate::{EffectId, EffectOp, IntTerm, SchedEncoder, StateVar, encoder::CondId};
+
+use by_source::BySource;
 
 use aries_solver::core::{Lit, views::Dom};
 use idmap::DirectIdMap;

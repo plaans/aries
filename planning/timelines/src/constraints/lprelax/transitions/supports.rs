@@ -138,16 +138,22 @@ pub(crate) struct SupportsSorted {
 }
 
 impl SupportsSorted {
-    /// Sorted (and thus directly chunkable) iterator over potential supports
-    /// (with a corresponding activation literal if there is one / if it is known)
-    /// following the (`out`,`in`) shape (first transition is the out-transition, second one is in-transition).
-    pub fn sorted_out(&self) -> &[((TransitionId, TransitionId), Option<Lit>)] {
-        &self.sorted_out
+    /// For each out-transition, the in-transitions it may support (with the activation literal of the support, if known).
+    pub fn iter_by_out(
+        &self,
+    ) -> impl Iterator<Item = (TransitionId, impl Iterator<Item = (TransitionId, Option<Lit>)>)> {
+        self.sorted_out.chunk_by(|a, b| a.0.0 == b.0.0).map(|chunk| {
+            let out_trans_id = chunk[0].0.0;
+            let in_trans_ids = chunk.iter().map(|&((_, in_trans_id), active)| (in_trans_id, active));
+            (out_trans_id, in_trans_ids)
+        })
     }
-    /// Sorted (and thus directly chunkable) iterator over potential supports
-    /// following the (`in`,`out`) shape (first transition is the in-transition, second one is out-transition).
-    pub fn sorted_in(&self) -> &[(TransitionId, TransitionId)] {
-        &self.sorted_in
+    /// For each in-transition, the out-transitions that may support it.
+    pub fn iter_by_in(&self) -> impl Iterator<Item = (TransitionId, impl Iterator<Item = TransitionId>)> {
+        self.sorted_in.chunk_by(|a, b| a.0 == b.0).map(|chunk| {
+            let in_trans_id = chunk[0].0;
+            (in_trans_id, chunk.iter().map(|&(_, out_trans_id)| out_trans_id))
+        })
     }
 }
 

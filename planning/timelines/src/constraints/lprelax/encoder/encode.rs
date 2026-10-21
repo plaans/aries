@@ -1,6 +1,5 @@
 use aries_linexpr::IntoLinExpr;
 use aries_solver::core::views::Dom;
-use itertools::Itertools;
 
 use crate::SchedEncoder;
 use crate::lprelax::transitions::TransitionType;
@@ -8,7 +7,7 @@ use crate::lprelax::transitions::TransitionType;
 use super::LpRelaxEncoder;
 use super::problem::{ColTag, LpRelaxProblem, sum};
 
-/// Pushes the "lifted rows": (lifted) presences of sources and transitions, as well as (lifted) supports between transitions.
+/// Pushes the "lifted rows"
 pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     let supports_sorted = encoder.supports_sorted.as_ref().unwrap();
 
@@ -61,18 +60,13 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     {
         let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
 
-        let chunkby = supports_sorted
-            .sorted_in()
-            .iter()
-            .chunk_by(|(in_trans_id, _)| in_trans_id);
-
-        for (&in_trans_id, out_trans_ids) in &chunkby {
+        for (in_trans_id, out_trans_ids) in supports_sorted.iter_by_in() {
             let is_eff = encoder.transitions.get(in_trans_id).tpe() == TransitionType::Eff;
             let support_from_initial_state =
                 (with_initial_state_supports && is_eff).then_some(ColTag::SupportFromInitialState(None, in_trans_id));
 
             let presence = ColTag::PresenceTransition(in_trans_id, None).into_linexpr();
-            let supports = out_trans_ids.map(|&(_, out_trans_id)| ColTag::Support(out_trans_id, in_trans_id, None));
+            let supports = out_trans_ids.map(|out_trans_id| ColTag::Support(out_trans_id, in_trans_id, None));
             let supports = sum(supports.chain(support_from_initial_state));
             debug_assert!(!supports.terms().is_empty());
 
@@ -87,31 +81,23 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 
     // [Lifted] Out-supports: the presence of a transition is at least the total support it hands over
     // (leaving out supports into conds when conditions are disallowed from being supporters / out-transitions).
-    {
-        let chunkby = supports_sorted
-            .sorted_out()
-            .iter()
-            .chunk_by(|&((out_trans_id, _), _)| out_trans_id);
+    for (out_trans_id, in_trans_ids) in supports_sorted.iter_by_out() {
+        let supports = in_trans_ids
+            .filter(|&(in_trans_id, _)| {
+                encoder.supports.with_condition_out_transitions
+                    || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
+            })
+            .map(|(in_trans_id, _)| ColTag::Support(out_trans_id, in_trans_id, None));
+        let supports = sum(supports);
 
-        for (&out_trans_id, entries) in &chunkby {
-            let supports = entries
-                .filter(|&&((_, in_trans_id), _)| {
-                    encoder.supports.with_condition_out_transitions
-                        || encoder.transitions.get(in_trans_id).tpe() != TransitionType::Cond
-                })
-                .map(|&((_, in_trans_id), _)| ColTag::Support(out_trans_id, in_trans_id, None));
-            let supports = sum(supports);
-
-            if !supports.terms().is_empty() {
-                let presence = ColTag::PresenceTransition(out_trans_id, None);
-                problem.push_row(presence.into_linexpr().geq(supports));
-            }
+        if !supports.terms().is_empty() {
+            let presence = ColTag::PresenceTransition(out_trans_id, None);
+            problem.push_row(presence.into_linexpr().geq(supports));
         }
     }
 }
 
-/// Pushes the "ground rows": (ground) presences of sources and transitions, as well as (ground) supports between transitions,
-/// and the rows decomposing the lifted columns into ground ones.
+/// Pushes the "lifted-ground" or "ground rows"
 pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     let supports_sorted = encoder.supports_sorted.as_ref().unwrap();
     let ground = &encoder.ground;
@@ -225,10 +211,8 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     // (for the effects whose lifted in-support includes it).
     if with_initial_state_supports {
         let lifted_effects = supports_sorted
-            .sorted_in()
-            .iter()
-            .map(|&(in_trans_id, _)| in_trans_id)
-            .dedup()
+            .iter_by_in()
+            .map(|(in_trans_id, _)| in_trans_id)
             .filter(|&trans_id| encoder.transitions.get(trans_id).tpe() == TransitionType::Eff);
 
         for trans_id in lifted_effects {

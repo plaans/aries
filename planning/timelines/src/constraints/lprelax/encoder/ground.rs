@@ -578,12 +578,7 @@ impl SupportsGroundingsInfo {
         let mut entries = vec![];
 
         // Main loop
-        let chunkby = supports_sorted
-            .sorted_out()
-            .iter()
-            .chunk_by(|&&((out_trans_id, _), _)| out_trans_id);
-
-        for (out_trans_id, lifted_supports) in &chunkby {
+        for (out_trans_id, in_trans_ids) in supports_sorted.iter_by_out() {
             // The groundings of the out-transition, grouped by the ground support they can hand over.
             let out_len_before = out.len();
             out.extend(
@@ -613,7 +608,7 @@ impl SupportsGroundingsInfo {
                 .dedup()
                 .collect::<Vec<_>>();
 
-            for &((_, in_trans_id), _) in lifted_supports {
+            for (in_trans_id, _) in in_trans_ids {
                 let in_keys: Vec<InGroupKey> =
                     binary_search_range_by(&in_groups, |(trans_id, _)| trans_id.cmp(&in_trans_id))
                         .map_or(&[][..], |(i, j)| &in_groups[i..j])
