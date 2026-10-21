@@ -30,7 +30,7 @@ mod tests {
         {
             println!("Sat instance with lprelax (lprelax mustn't deem it unsat)");
 
-            let reasoner = LpRelaxIncr::new(encoder, 0, unlimited_pivots());
+            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots());
             let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
             assert!(
@@ -59,7 +59,7 @@ mod tests {
             );
             assert!(solver.stats.num_decisions > 0);
 
-            let reasoner = LpRelaxIncr::new(encoder, 0, unlimited_pivots());
+            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots());
 
             println!("Unsat instance with lprelax (num decisions must be = 0, thanks to lprelax)");
 

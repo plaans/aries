@@ -19,60 +19,58 @@ use crate::{IntTerm, SchedEncoder};
 /// Wrapper over the incremental LP reasoner, specifically for the LP relaxation problem.
 ///
 /// For efficiency, the LP relaxation problem is posted to the reasoner after two steps:
-/// - 1st, at the root level (but after the initial propagation), the [`LpRelaxEncoder`] is built,
-///   together with a copy / cache of the domains at that level.
-/// - 2nd, after all assumptions have been propagated, the [`LpRelaxEncoder`] builds the LP relaxation problem,
+/// - 1st, at the root level (but after the initial propagation),
+///   the [`LpRelaxEncoder`] is built, together with a copy / cache of the domains at that level.
+/// - 2nd, once the search starts (i.e. after all assumptions have been propagated),
+///   the [`LpRelaxEncoder`] builds the LP relaxation problem,
 ///   and simplifies it, notably using the cached propagated domains from the root level (*NOT* the domains after the propagation of assumptions).
 ///   It then binds the reasoner (the LP's columns) to the main model (events on its literals).
 ///
 /// This 2-stage approach allows to build the encoder more efficiently (as it will be done after the first propagation)
-/// and to avoid building and solving the LP if it can be detected as unsatisfiable without it, after all assumptions are propagated.
+/// and to avoid building and solving the LP if the main model can be proven unsatisfiable before search without it
 ///
-/// Once posted, the LP is checked at every propagation by the reasoner itself, which syncs its bounds
-/// and limits its own effort (see the pivot budget in [`LpOptions`]).
+/// Once posted, the LP is updated and incrementally checked at every propagation by the reasoner itself,
+/// with limited effort (see the pivot budget in [`LpOptions`]).
 #[derive(Clone)]
 pub(crate) struct LpRelaxIncr {
     lp: Lp,
     ctx: SchedEncoder,
 
-    /// Number of assumption levels to wait for before building the relaxed problem.
-    num_assumptions: usize,
-
     /// The encoder of stage 1, with the domains it was built against. `None` until then.
     encoder: Option<(LpRelaxEncoder, Domains)>,
+    /// Whether the search has started, i.e. all assumptions are posted. The relaxed problem is only built afterwards.
+    search_started: bool,
     /// Whether stage 2 has run.
-    posted: bool,
+    lp_posted: bool,
 
     num_events: u32,
-    propagation_calls: usize,
 }
 
 impl LpRelaxIncr {
-    pub(crate) fn new(ctx: SchedEncoder, num_assumptions: usize, lp_options: LpOptions) -> Self {
+    pub(crate) fn new(ctx: SchedEncoder, lp_options: LpOptions) -> Self {
         let mut lp = Lp::new(lp_options);
         lp.activate();
 
         Self {
             lp,
             ctx,
-            num_assumptions,
             encoder: None,
-            posted: false,
+            search_started: false,
+            lp_posted: false,
             num_events: 0,
-            propagation_calls: 0,
         }
     }
 
     /// Stage 1: collect the transitions and their supports. Must be done at the root level.
     fn build_encoder(&mut self, doms: &Domains) {
-        debug_assert!(self.encoder.is_none() && !self.posted);
+        debug_assert!(self.encoder.is_none() && !self.lp_posted);
+
         let time = std::time::Instant::now();
 
         let encoder = LpRelaxEncoder::with_transitions_from(&self.ctx);
 
         lprelax_log!(
-            "Built LpRelaxEncoder after {} propagation calls (decision level {:?}, num events: {}) in {}",
-            self.propagation_calls,
+            "Built LpRelaxEncoder at decision level {:?} (num events: {}) in {}",
             doms.current_decision_level(),
             doms.num_events(),
             time.elapsed().as_secs_f64(),
@@ -83,7 +81,8 @@ impl LpRelaxIncr {
 
     /// Stage 2: ground and encode the problem, simplify it, and hand both it and its bindings to the reasoner.
     fn post_relaxation(&mut self, doms: &Domains) {
-        debug_assert!(!self.posted);
+        debug_assert!(!self.lp_posted);
+
         let Some((encoder, base_doms)) = self.encoder.as_mut() else {
             unreachable!("stage 2 only runs once stage 1 has")
         };
@@ -96,13 +95,12 @@ impl LpRelaxIncr {
         let vars = post_variables_and_rows(&problem, base_doms, &mut self.lp);
         post_bindings(&vars, encoder, &self.ctx, base_doms, &mut self.lp);
 
-        self.posted = true;
+        self.lp_posted = true;
 
         lprelax_log!(
-            "Posted LpRelaxProblem ({} variables, {} rows) after {} propagation calls (decision level {:?}, num events: {}) from the model at level {:?} in {}",
+            "Posted LpRelaxProblem ({} variables, {} rows) at decision level {:?} (num events: {}) from the model at level {:?} in {}",
             problem.cols().unwrap().len(),
             problem.rows().len(),
-            self.propagation_calls,
             doms.current_decision_level(),
             doms.num_events(),
             base_decision_level,
@@ -117,8 +115,6 @@ impl Theory for LpRelaxIncr {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        self.propagation_calls += 1;
-
         // Quiescence: the reasoners preceding this one (in propagation order) have inferred all they could.
         let quiescent = {
             let num_events = model.trail().num_events();
@@ -131,15 +127,12 @@ impl Theory for LpRelaxIncr {
             if self.encoder.is_none() && model.current_decision_level() == DecLvl::ROOT {
                 self.build_encoder(model);
             }
-            if self.encoder.is_some()
-                && !self.posted
-                && self.current_decision_level().to_int() as usize >= self.num_assumptions
-            {
+            if self.encoder.is_some() && !self.lp_posted && self.search_started {
                 self.post_relaxation(model);
             }
         }
 
-        if !self.posted {
+        if !self.lp_posted {
             return Ok(());
         }
 
@@ -162,6 +155,10 @@ impl Theory for LpRelaxIncr {
 
     fn clone_box(&self) -> Box<dyn Theory> {
         Box::new(self.clone())
+    }
+
+    fn on_search_start(&mut self) {
+        self.search_started = true;
     }
 }
 
