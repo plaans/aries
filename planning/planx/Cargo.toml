@@ -11,6 +11,7 @@ itertools = { workspace = true }
 hashbrown = { workspace = true }
 regex = { workspace = true }
 num-rational = { workspace = true }
+num-integer = { workspace = true }
 derive_more = { workspace = true }
 thiserror = { workspace = true }
 annotate-snippets = { workspace = true }
