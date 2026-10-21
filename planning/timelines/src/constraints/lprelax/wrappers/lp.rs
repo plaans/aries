@@ -184,7 +184,7 @@ fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp
 
     let lp_vars = problem_cols
         .iter()
-        .map(|tag| lp.create_auxiliary_variable(0, tag.upper_bound().unwrap_or(INT_CST_MAX)))
+        .map(|tag| lp.create_auxiliary_variable(tag.lower_bound(), tag.upper_bound().unwrap_or(INT_CST_MAX)))
         .collect::<Vec<_>>();
     let mut vars: HashMap<ColTag, LpVar> = problem
         .col_index()
@@ -196,12 +196,13 @@ fn post_variables_and_rows(problem: &LpRelaxProblem, doms: &Domains, lp: &mut Lp
     // A tag whose value the simplification knows doesn't correspond to a column anymore,
     // but a binding on it may still contradict that value.
     // The fix is for the bindings to go to a column fixed to that value (one per value, outside of any row).
-    let fixed = [lp.create_auxiliary_variable(0, 0), lp.create_auxiliary_variable(1, 1)];
-    vars.extend(
-        problem
-            .col_known_values()
-            .map(|(tag, value)| (tag, fixed[value as usize])),
-    );
+    let mut fixed: HashMap<IntCst, LpVar> = HashMap::new();
+    for (tag, value) in problem.col_known_values() {
+        let var = *fixed
+            .entry(value)
+            .or_insert_with(|| lp.create_auxiliary_variable(value, value));
+        vars.insert(tag, var);
+    }
 
     debug_assert!(
         problem.rows().iter().all(|row| {

@@ -158,8 +158,8 @@ impl LpRelaxProblem {
     /// - a column whose value is known is replaced by that value in every row;
     /// - a row sitting at one of its bounds pins all of its columns (e.g. `x + y = 0`, or a single-term `x = 1`) -- which can lead to the point above being triggered;
     /// - rows that became empty are dropped, and a row that became contradictory turns the whole problem into a single trivially infeasible one;
-    /// - when `merge_equal_columns` is set, a row of the form `c*x - c*y = 0` merges the two columns into a single one,
-    ///   (represented by a "lifted" column tag when possible, to preserve tight binding to the main model).
+    /// - when `merge_equal_columns` is set, a row of the form `c*x - c*y = 0` merges the two columns into a single one
+    ///   if they have the same lower bound (represented by the tag with the tightest upper bound, then by a "lifted" one when possible).
     ///
     /// Afterwards, [`Self::cols`] holds one entry per remaining LP column.
     ///

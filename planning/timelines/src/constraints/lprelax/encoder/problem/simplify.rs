@@ -6,6 +6,7 @@ use aries_linexpr::ComparisonOp;
 use aries_solver::core::IntCst;
 
 use crate::lprelax::encoder::LpRelaxEncoder;
+use crate::lprelax::encoder::bindings::BoundKind;
 use crate::{Domains, SchedEncoder};
 
 use super::{ColTag, LinExpr, LpRelaxProblem, RowExpr};
@@ -120,7 +121,12 @@ fn seed_known_values(
     doms: &Domains,
 ) -> Result<(), Infeasible> {
     for binding in encoder.bindings(ctx) {
-        if binding.trigger.iter().all(|&lit| doms.entails(lit)) {
+        // A binding fixes the value of its column only when it sets it to the column's other bound (e.g. `x <= 0` for `x` in `[0, ub]`).
+        let fixes_value = match binding.bound {
+            BoundKind::Lower => binding.tag.upper_bound() == Some(binding.value),
+            BoundKind::Upper => binding.tag.lower_bound() == binding.value,
+        };
+        if fixes_value && binding.trigger.iter().all(|&lit| doms.entails(lit)) {
             let class = classes.intern(binding.tag);
             classes.set_value(class, binding.value)?;
         }
@@ -187,7 +193,7 @@ impl EquivClasses {
         self.values[root as usize]
     }
 
-    /// The tag that the class of `i` is represented by (a lifted one whenever the class holds one).
+    /// The tag that the class of `i` is represented by, whose bounds are those of the class (see [`Self::merge`]).
     fn representative(&mut self, i: u32) -> ColTag {
         let root = self.find(i);
         self.tags[self.representative[root as usize] as usize]
@@ -195,7 +201,8 @@ impl EquivClasses {
 
     /// Records that the class of `i` takes value `v`. Returns whether that was new.
     fn set_value(&mut self, i: u32, v: IntCst) -> Result<bool, Infeasible> {
-        if v < 0 || self.representative(i).upper_bound().is_some_and(|ub| v > ub) {
+        let tag = self.representative(i);
+        if v < tag.lower_bound() || tag.upper_bound().is_some_and(|ub| v > ub) {
             return Err(()); // out of the column's range
         }
         let root = self.find(i);
@@ -210,12 +217,15 @@ impl EquivClasses {
     }
 
     /// Merges the classes of `a` and `b` (when merging is enabled). Returns whether that was new.
+    ///
+    /// A class takes the bounds of its representative: so only classes with the same lower bound are merged,
+    /// and the representative is picked with the tightest upper bound.
     fn merge(&mut self, a: u32, b: u32) -> Result<bool, Infeasible> {
         if !self.merging {
             return Ok(false);
         }
         let (mut kept, mut merged) = (self.find(a), self.find(b));
-        if kept == merged {
+        if kept == merged || self.representative(kept).lower_bound() != self.representative(merged).lower_bound() {
             return Ok(false);
         }
         let value = match (self.values[kept as usize], self.values[merged as usize]) {
@@ -231,10 +241,11 @@ impl EquivClasses {
         self.size[kept as usize] += self.size[merged as usize];
         self.values[kept as usize] = value;
 
-        // Prefer a lifted source presence, then any lifted tag (ties broken by the tags' order).
+        // Prefer the tightest upper bound, then a lifted source presence, then any lifted tag (ties broken by the tags' order).
         let key = |i: u32| {
             let tag = self.tags[i as usize];
             (
+                tag.upper_bound().unwrap_or(IntCst::MAX),
                 !matches!(tag, ColTag::PresenceSource(_, None)),
                 !tag.is_lifted_or_term_grounding(),
                 tag,
@@ -288,15 +299,19 @@ impl ClassRow {
     fn learn(&self, classes: &mut EquivClasses) -> Result<bool, Infeasible> {
         let cst = self.cst();
 
+        // The values of a column minimizing and maximizing its term `coef * x` (`None` for an unbounded one).
+        let extremes = |classes: &mut EquivClasses, class: u32, coef: IntCst| {
+            let tag = classes.representative(class);
+            let (col_lb, col_ub) = (Some(tag.lower_bound()), tag.upper_bound());
+            if coef > 0 { (col_lb, col_ub) } else { (col_ub, col_lb) }
+        };
+
         // Range `[min, max]` of the row's sum (`None` for an unbounded end).
         let (mut min, mut max) = (Some(0), Some(0));
         for (class, coef) in self.expr.iter() {
-            let end = classes.representative(class).upper_bound().map(|ub| coef * ub);
-            if coef > 0 {
-                max = max.zip(end).map(|(max, end)| max + end);
-            } else {
-                min = min.zip(end).map(|(min, end)| min + end);
-            }
+            let (x_min, x_max) = extremes(classes, class, coef);
+            min = min.zip(x_min).map(|(min, x)| min + coef * x);
+            max = max.zip(x_max).map(|(max, x)| max + coef * x);
         }
 
         let (lb, ub) = match self.tpe {
@@ -310,17 +325,17 @@ impl ClassRow {
 
         let mut learned = false;
 
-        // At one end of its range, the sum pins each of its columns to their corresponding ends.
+        // At one end of its range, the sum pins each of its columns to their corresponding values.
         if lb.is_some() && lb == max {
             for (class, coef) in self.expr.iter() {
-                let col_ub = classes.representative(class).upper_bound();
-                learned |= classes.set_value(class, if coef > 0 { col_ub.unwrap() } else { 0 })?;
+                let (_, x_max) = extremes(classes, class, coef);
+                learned |= classes.set_value(class, x_max.unwrap())?;
             }
         }
         if ub.is_some() && ub == min {
             for (class, coef) in self.expr.iter() {
-                let col_ub = classes.representative(class).upper_bound();
-                learned |= classes.set_value(class, if coef > 0 { 0 } else { col_ub.unwrap() })?;
+                let (x_min, _) = extremes(classes, class, coef);
+                learned |= classes.set_value(class, x_min.unwrap())?;
             }
         }
 
