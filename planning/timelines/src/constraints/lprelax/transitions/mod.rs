@@ -194,20 +194,21 @@ impl Transitions {
     }
 
     /// Whether the transition necessarily ends before the other one starts
-    /// (given the bounds of their time points, as per `ctx`).
+    /// (given the bounds of their time points in `dom`).
     pub fn necessarily_precedes(
         &self,
         trans_id: TransitionId,
         other_trans_id: TransitionId,
         ctx: &SchedEncoder,
+        dom: &impl Dom,
     ) -> bool {
         let effect_span = |eff_id: EffectId| {
             let eff = ctx.sched.effects.get(eff_id);
-            (ctx.lb(eff.transition_start), ctx.ub(eff.mutex_end))
+            (dom.lb(eff.transition_start), dom.ub(eff.mutex_end))
         };
         let condition_span = |cond_id: CondId| {
             let timepoint = ctx.causal_links.conditions.get(cond_id).timepoint;
-            (ctx.lb(timepoint), ctx.ub(timepoint))
+            (dom.lb(timepoint), dom.ub(timepoint))
         };
         let time_span_bounds = |tr_id| match self.store[tr_id] {
             Transition::Eff(eff_id) => effect_span(eff_id),

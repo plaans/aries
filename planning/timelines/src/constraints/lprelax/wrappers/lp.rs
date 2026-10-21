@@ -60,13 +60,13 @@ impl LpRelaxIncr {
         }
     }
 
-    /// Stage 1: collect the transitions and their supports. Must be done at the root level.
+    /// Stage 1: collect the transitions and their supports (pruned with the root domains). Must be done at the root level.
     fn build_encoder(&mut self, doms: &Domains) {
         debug_assert!(self.encoder.is_none() && !self.lp_posted);
 
         let time = std::time::Instant::now();
 
-        let encoder = LpRelaxEncoder::with_transitions_from(&self.ctx);
+        let encoder = LpRelaxEncoder::with_transitions_from(&self.ctx, doms);
 
         lprelax_log!(
             "Built LpRelaxEncoder at decision level {:?} (num events: {}) in {}",

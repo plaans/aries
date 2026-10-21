@@ -1,3 +1,4 @@
+use aries_solver::core::views::Dom;
 use aries_solver::lang::Lit;
 
 use super::{TransitionId, TransitionType, Transitions};
@@ -29,7 +30,13 @@ pub(crate) struct Supports {
 }
 
 impl Supports {
-    pub fn from(transitions: &Transitions, ctx: &SchedEncoder, with_condition_out_transitions: bool) -> Self {
+    /// Collects the potential supports, leaving out those that the bounds of `dom` make temporally impossible.
+    pub fn from(
+        transitions: &Transitions,
+        ctx: &SchedEncoder,
+        dom: &impl Dom,
+        with_condition_out_transitions: bool,
+    ) -> Self {
         // Supports due to the causal links in the main encoding.
         let supports_causal_links = ctx.causal_links.get_links().filter_map(|cl| {
             let out_trans_id = transitions.of_effect(cl.eff_id)?;
@@ -41,7 +48,7 @@ impl Supports {
             );
             // A cond-eff's eff must not support its own cond (which is checked before the transition),
             // even though the main encoding may still hold a (never active) causal link between them.
-            (out_trans_id != in_trans_id && !transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx))
+            (out_trans_id != in_trans_id && !transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx, dom))
                 .then_some(((out_trans_id, in_trans_id), Some(cl.active)))
         });
 
@@ -55,7 +62,7 @@ impl Supports {
             out_trans_id != in_trans_id
                 && out_state_var.fluent == in_state_var.fluent
                 && may_be_equal(out_state_var.args.iter().copied(), in_state_var.args.iter().copied())
-                && !transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx)
+                && !transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx, dom)
         };
         let is_cond_eff = move |trans_id: TransitionId| transitions.get(trans_id).tpe() == TransitionType::CondEff;
 
@@ -96,7 +103,7 @@ impl Supports {
             .chain(supports_from_conditions))
         .inspect(|&((out_trans_id, in_trans_id), _)| {
             debug_assert!(out_trans_id != in_trans_id);
-            debug_assert!(!transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx));
+            debug_assert!(!transitions.necessarily_precedes(in_trans_id, out_trans_id, ctx, dom));
             debug_assert!(
                 transitions.get(out_trans_id).tpe() != TransitionType::CondEff
                     || transitions.get_source(out_trans_id, ctx).is_some()
@@ -181,12 +188,12 @@ mod tests {
 
         let transitions = Transitions::new_unambiguous(&encoder);
 
-        let supports_without_conditions_out_transitions = Supports::from(&transitions, &encoder, false);
+        let supports_without_conditions_out_transitions = Supports::from(&transitions, &encoder, &encoder, false);
         for &((out_trans_id, in_trans_id), active) in supports_without_conditions_out_transitions.unsorted_out() {
             test_supports_aux(&transitions, &encoder, out_trans_id, in_trans_id, active);
         }
 
-        let supports_with_conditions_out_transitions = Supports::from(&transitions, &encoder, true);
+        let supports_with_conditions_out_transitions = Supports::from(&transitions, &encoder, &encoder, true);
         for &((out_trans_id, in_trans_id), active) in supports_with_conditions_out_transitions.unsorted_out() {
             test_supports_aux(&transitions, &encoder, out_trans_id, in_trans_id, active);
         }

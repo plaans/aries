@@ -16,7 +16,8 @@ use crate::lprelax::transitions::{
 use crate::{IntTerm, SchedEncoder, Task};
 
 /// Allows building the LP relaxation problem ([`LpRelaxProblem`]) of a scheduling problem, in two steps:
-/// - [`Self::with_transitions_from`] collects the (lifted) transitions and the potential supports between them;
+/// - [`Self::with_transitions_from`] collects the (lifted) transitions and the potential supports between them
+///   (leaving out those that the given domains make temporally impossible);
 /// - [`Self::encode`] grounds the sources, interning the groundings of their transitions and terms as well as the ground supports,
 ///   then encodes the lifted and ground rows.
 #[derive(Clone)]
@@ -34,11 +35,12 @@ pub(crate) struct LpRelaxEncoder {
 }
 
 impl LpRelaxEncoder {
-    pub fn with_transitions_from(ctx: &SchedEncoder) -> Self {
+    pub fn with_transitions_from(ctx: &SchedEncoder, dom: &impl Dom) -> Self {
         let transitions = Transitions::new_unambiguous(ctx);
         let supports = Supports::from(
             &transitions,
             ctx,
+            dom,
             super::ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS.get(),
         );
         Self {
