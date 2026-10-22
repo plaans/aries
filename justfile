@@ -98,19 +98,22 @@ ci-ape-solve timeout="5":
 ci-ape-solve-lprelax-incr timeout="60":
     #!/usr/bin/env bash
     set -e
-    for init in false true; do
-        for cond_out in false true; do
-            for flows in none valgraph supgraph; do
-                for merge in false true; do
-                    echo "lprelax incr: WITH_INITIAL_STATE_SUPPORTS=$init WITH_CONDITION_OUT_TRANSITIONS=$cond_out WITH_FLOW_CONSTRS=$flows MERGE_EQUAL_COLUMNS=$merge"
+    for merge in false true; do
+        for init in false true; do
+            for cond_out in false true; do
+                for flows in none valgraph supgraph; do
+                    for achievers in false true; do
+                        echo "lprelax incr: MERGE_EQUAL_COLUMNS=$merge WITH_INITIAL_STATE_SUPPORTS=$init WITH_CONDITION_OUT_TRANSITIONS=$cond_out WITH_FLOW_CONSTRS=$flows WITH_ACHIEVERS=$achievers"
 
-                    ARIES_LP_INITIALLY_ALLOWED_PIVOTS=0.0 ARIES_LP_PIVOTS_PER_DECISION=0.1 \
-                    ARIES_LPRELAX_USE=incr \
-                    ARIES_LPRELAX_WITH_FLOW_CONSTRS=$flows \
-                    ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS=$init \
-                    ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=$cond_out \
-                    ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=$merge \
-                        uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
+                        ARIES_LPRELAX_USE=incr \
+                        ARIES_LP_INITIALLY_ALLOWED_PIVOTS=0.0 ARIES_LP_PIVOTS_PER_DECISION=0.1 \
+                        ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=$merge \
+                        ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS=$init \
+                        ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=$cond_out \
+                        ARIES_LPRELAX_WITH_FLOW_CONSTRS=$flows \
+                        ARIES_LPRELAX_WITH_ACHIEVERS=$achievers \
+                            uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
+                    done
                 done
             done
         done

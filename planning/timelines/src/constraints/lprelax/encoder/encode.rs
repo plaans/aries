@@ -112,6 +112,7 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     let ground = &encoder.ground;
     let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
+    let with_achievers = crate::lprelax::ARIES_LPRELAX_WITH_ACHIEVERS.get();
     let (with_value_graph_flow, with_support_graph_flow) =
         match crate::lprelax::ARIES_LPRELAX_WITH_FLOW_CONSTRS.get_ref().as_str() {
             "none" => (false, false),
@@ -476,6 +477,63 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 
                 problem.push_row(row.eq(0));
             }
+        }
+    }
+
+    // Achievers: "The total presence of the ground transitions 'entering' a value on a ground state variable
+    //             is at least the total presence of each transition's groundings with that pre-value (on that ground state variable, and for every transition)"
+    //
+    // NOTE: A ground transition "enters" a value `v` if it has it as post-value, but not as pre-value
+    //       (i.e. the ground transitions must be of the form eff := `v` or condeff : `v'` -> `v` (with `v'` != `v`)).
+    //       In a plan, a present ground transition's pre-value must be entered by a present ground transition.
+    //       So these rows rule out cycles of ground transitions passing on a value that no ground transition enters,
+    //       even when it's entered by a small fraction of a ground transition's presence let through due to the big-M of flow capacity rows !
+    if with_achievers {
+        // The presences of the ground transitions entering each value: ((ground state variable, value), presence).
+        let mut entering = vec![];
+        for (state_var_grounding_id, entries) in ground.iter_transition_groundings_by_state_var() {
+            for &(g, trans_id) in entries {
+                if let Some(post_val) = g.post_op_assignment
+                    && g.pre_val_assignment != Some(post_val)
+                {
+                    entering.push((
+                        (state_var_grounding_id, post_val),
+                        ColTag::PresenceTransition(trans_id, Some(g)),
+                    ));
+                }
+            }
+        }
+        entering.sort_unstable_by_key(|&(key, _)| key);
+
+        // The values that are pre-values (on each ground state variable).
+        let mut pre_vals = vec![];
+
+        for (in_trans_id, (state_var_grounding_id, pre_val), groundings, _) in ground.iter_support_in_groups() {
+            // (An eff has no pre-value.)
+            let Some(pre_val) = pre_val else {
+                continue;
+            };
+            pre_vals.push((state_var_grounding_id, pre_val));
+
+            let achievers = ColTag::AuxAchievers(state_var_grounding_id, pre_val);
+            let presences = sum(groundings.map(|g| ColTag::PresenceTransition(in_trans_id, Some(g))));
+
+            problem.push_row(achievers.into_linexpr().geq(presences));
+        }
+
+        // "A value's achievers column is the total presence of the ground transitions entering it"
+        pre_vals.sort_unstable();
+        pre_vals.dedup();
+        for key in pre_vals {
+            let start = entering.partition_point(|&(k, _)| k < key);
+            let presences = entering[start..]
+                .iter()
+                .take_while(|&&(k, _)| k == key)
+                .map(|&(_, presence)| presence);
+            let (state_var_grounding_id, pre_val) = key;
+            let achievers = ColTag::AuxAchievers(state_var_grounding_id, pre_val);
+
+            problem.push_row(achievers.into_linexpr().eq(sum(presences)));
         }
     }
 }

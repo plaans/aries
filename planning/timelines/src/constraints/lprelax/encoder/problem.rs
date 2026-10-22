@@ -35,6 +35,12 @@ pub enum ColTag {
     /// The flow along the value change made by the ground transitions with this grounding:
     /// on their ground state variable, from their pre-value (which is `None` for effs) to their post-value.
     ValueGraphFlow(TransitionGroundingId),
+    /// The total presence of the ground transitions "entering" a given post-value on a ground state variable
+    /// (i.e. the post-value's "achiever" ground transitions).
+    /// A ground transition "enters" a value `v` if it has it as post-value, but not as pre-value
+    /// (i.e. the ground transitions must be of the form eff := `v` or condeff : `v'` -> `v` (with `v'` != `v`)).
+    /// (auxiliary: it stands in for a sum in the achiever rows).
+    AuxAchievers(StateVarGroundingId, IntCst),
 }
 impl ColTag {
     /// Whether this column tag is lifted -- i.e. isn't specific to a grounding -- or is a term grounding.
@@ -43,7 +49,10 @@ impl ColTag {
             ColTag::PresenceSource(_, grounding) => grounding.is_none(),
             ColTag::PresenceTransition(_, grounding) => grounding.is_none(),
             ColTag::Support(_, _, grounding) => grounding.is_none(),
-            ColTag::SupportFromInitialState(..) | ColTag::SupportGraphFlow(..) | ColTag::ValueGraphFlow(..) => false,
+            ColTag::SupportFromInitialState(..)
+            | ColTag::SupportGraphFlow(..)
+            | ColTag::ValueGraphFlow(..)
+            | ColTag::AuxAchievers(..) => false,
             ColTag::TermGround(..) => true,
         }
     }
@@ -56,7 +65,7 @@ impl ColTag {
             | ColTag::Support(..)
             | ColTag::SupportFromInitialState(..)
             | ColTag::TermGround(..) => Some(1),
-            ColTag::SupportGraphFlow(..) | ColTag::ValueGraphFlow(..) => None,
+            ColTag::SupportGraphFlow(..) | ColTag::ValueGraphFlow(..) | ColTag::AuxAchievers(..) => None,
         }
     }
 
