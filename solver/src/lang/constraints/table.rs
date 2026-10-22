@@ -68,10 +68,9 @@ impl InTable {
             value_tuples: allowed_assignments,
         }
     }
-}
 
-impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
-    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+    /// Enforces the constraint and returns the literal of each line (in order): when true, the variables take the values of that line.
+    pub fn enforce_if_with_line_lits<Ctx: ModelView>(&self, implicant: Lit, ctx: &mut Ctx) -> Vec<Lit> {
         let mut supported_by_a_line: Vec<Lit> = Vec::with_capacity(256);
 
         let vars = &self.variables;
@@ -139,6 +138,14 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
                 model.enforce_if(implicant, or(le_clause));
             }
         }
+
+        lines.into_iter().map(|(support, _)| support).collect()
+    }
+}
+
+impl<Ctx: ModelView> BoolExpr<Ctx> for InTable {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+        self.enforce_if_with_line_lits(implicant, ctx);
     }
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {

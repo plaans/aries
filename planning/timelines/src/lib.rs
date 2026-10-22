@@ -184,6 +184,7 @@ impl Sched {
             sched: Arc::new(self),
             store,
             causal_links: CausalLinks::default(),
+            grounding_tables: None,
         }
     }
 

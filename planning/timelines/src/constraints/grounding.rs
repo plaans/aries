@@ -40,6 +40,7 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
         // ground the problem
         // NOTE: potentially very expensive (and memory intensive)
         let groundings = crate::analysis::grounding::ground_all_tasks(ctx);
+        let mut line_lits = idmap::DirectIdMap::<crate::TaskId, Vec<Lit>>::default();
 
         for (task, groundings) in groundings.all_task_groundings() {
             // for each task, we impose that its parameters must match one of its grounding
@@ -55,7 +56,7 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
             // presence of the task
             let task_prez = ctx.sched.tasks[task].presence;
             // arguments of the task
-            let task_args = &ctx.sched.tasks[task].args;
+            let task_args = ctx.sched.tasks[task].args.clone();
 
             if task_args.is_empty() {
                 continue;
@@ -69,11 +70,18 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
                 table.push_line(grounding.get());
             }
 
-            // post the constraint, which is forced to have the same scope as the task
-            in_table(task_args.clone(), Arc::new(table))
-                .scoped(task_prez)
-                .opt_enforce_if(implicant, ctx);
+            // post the constraint, enforced when the task is present (and `implicant` holds),
+            // and record the literal of each line (see `GroundingTables`)
+            let table_implicant = and([task_prez, implicant]).reified(ctx);
+            let lits = in_table(task_args, Arc::new(table)).enforce_if_with_line_lits(table_implicant, ctx);
+            line_lits.insert(task, lits);
         }
+
+        ctx.grounding_tables = Some(crate::encoder::GroundingTables {
+            groundings,
+            table_line_lits: line_lits,
+            enforced_if: implicant,
+        });
     }
 
     fn conj_scope(&self, _ctx: &SchedEncoder) -> aries_solver::prelude::Conjunction {
