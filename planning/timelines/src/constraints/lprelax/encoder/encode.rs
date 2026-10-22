@@ -1,11 +1,13 @@
 use aries_linexpr::IntoLinExpr;
+use aries_solver::core::IntCst;
 use aries_solver::core::views::Dom;
+use itertools::Itertools;
 
 use crate::SchedEncoder;
 use crate::lprelax::transitions::TransitionType;
 
 use super::LpRelaxEncoder;
-use super::problem::{ColTag, LpRelaxProblem, sum};
+use super::problem::{ColTag, LinExpr, LpRelaxProblem, sum};
 
 /// Pushes the "lifted rows"
 pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
@@ -110,6 +112,7 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     let ground = &encoder.ground;
     let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
+    let with_value_graph_flow = crate::lprelax::ARIES_LPRELAX_WITH_VALUE_GRAPH_FLOW.get();
 
     // Ground decomposition: "A source's presence equals the total presence of its groundings".
     {
@@ -288,6 +291,83 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                     .state
                     .implies(ctx.store.presence(term), encoder.get_source_prez(source, ctx))
         );
+
         problem.push_row(ColTag::TermGround(term, value).into_linexpr().eq(source_presences));
+    }
+
+    // Value graph flow: "A present ground transition's pre-value should be reachable from `None` (i.e. from an eff), through value changes made by present ground transitions"
+    //
+    // NOTE: These constraints correspond to a single-commodity flow formulation over the "value graph" of each ground state variable.
+    //       Its nodes are the state variable's values and `None`, and its arcs are the value changes made by ground transitions,
+    //       from their pre-value (`None` for effs) to their post-value.
+    //       This value graph is similar to a domain transition graph (DTG), which uses (ground) actions as arcs instead of transition groundings.
+    //
+    //       The constraints are of two types: capacity and balance.
+    //       - Capacity: the flow along an arc is at most big-M times the total presence of the ground transitions corresponding to the arc
+    //         (so this flow is 0 unless one of these ground transitions is present).
+    //         Big-M is -- for a given ground state variable -- the number of transitions that have a concrete pre-value (so just non-eff transitions),
+    //         i.e. the maximum total flow that could pass through an arc (for the considered ground state variable).
+    //       - Balance: the flow into a value (node) minus the flow out of it equals the total presence of the ground transitions with that (pre-)value.
+    //         In other words, this difference is the amount of flow these ground transitions consume (whether they actually change the value or not).
+    //
+    //       As flow only enters the graph at the `None` node (which only effs have as their pre-value),
+    //       whatever is consumed at a concrete value must come from effs through value changes of present ground transitions.
+    //       These constraints (with the fact that flow is non-negative) help rule out cycles of transitions involving values into which no flow enters,
+    //       by forcing the flow (and thus the "consumption budget" of presences) to "monotonically decrease" along the way.
+    //       However, with big-M, a small fraction of a ground transition's presence can carry a lot of flow, so fractional cycles may still slip through.
+    if with_value_graph_flow {
+        for (_, entries) in ground.iter_transition_groundings_by_state_var() {
+            // The big-M of the capacities:
+            // the number of transitions with a concrete pre-value on the state variable,
+            // each taking in at most 1 (presence upper bound) unit of flow (as a transition's groundings are mutually exclusive).
+            let big_m = entries
+                .iter()
+                .filter(|(g, _)| g.pre_val_assignment.is_some())
+                .map(|&(_, trans_id)| trans_id)
+                .unique()
+                .count() as IntCst;
+            if big_m == 0 {
+                continue;
+            }
+
+            // The terms of the balance rows (see below): (value, column, coefficient).
+            let mut balance_terms = vec![];
+
+            // (The entries come sorted by grounding, i.e. by arc: ground state variable, pre-value and post-value.)
+            for arc_entries in entries.chunk_by(|a, b| a.0 == b.0) {
+                let g = arc_entries[0].0;
+                let presences = arc_entries
+                    .iter()
+                    .map(|&(g, trans_id)| ColTag::PresenceTransition(trans_id, Some(g)));
+
+                if let Some(pre_val) = g.pre_val_assignment {
+                    balance_terms.extend(presences.clone().map(|presence| (pre_val, presence, -1)));
+                }
+                if g.pre_val_assignment == g.post_op_assignment {
+                    continue; // (ground condeff-transition doesn't actually change the value)
+                }
+                let flow = ColTag::ValueGraphFlow(g);
+
+                balance_terms.extend(g.pre_val_assignment.map(|pre_val| (pre_val, flow, -1)));
+                balance_terms.extend(g.post_op_assignment.map(|post_val| (post_val, flow, 1)));
+
+                // Capacity: "An arc's flow is at most big-M times the total presence of the ground transitions corresponding to that arc"
+                let capacity = presences.map(|presence| (presence, big_m)).collect::<LinExpr>();
+
+                problem.push_row(flow.into_linexpr().leq(capacity));
+            }
+
+            // Balance: "The flow into a value minus the flow out of it equals the total presence of the ground transitions with that (pre-)value"
+            //          (written with everything moved to the left-hand side)
+            balance_terms.sort_unstable_by_key(|&(value, _, _)| value);
+            for value_terms in balance_terms.chunk_by(|a, b| a.0 == b.0) {
+                let row = value_terms
+                    .iter()
+                    .map(|&(_, col, coef)| (col, coef))
+                    .collect::<LinExpr>();
+
+                problem.push_row(row.eq(0));
+            }
+        }
     }
 }

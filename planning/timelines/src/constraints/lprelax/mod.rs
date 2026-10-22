@@ -6,6 +6,8 @@ pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "true");
 pub static ARIES_LPRELAX_MERGE_EQUAL_COLUMNS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_MERGE_EQUAL_COLUMNS", "true");
+pub static ARIES_LPRELAX_WITH_VALUE_GRAPH_FLOW: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_VALUE_GRAPH_FLOW", "true");
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {

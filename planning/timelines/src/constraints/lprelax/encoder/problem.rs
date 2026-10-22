@@ -29,6 +29,9 @@ pub enum ColTag {
     SupportFromInitialState(StateVarGroundingId, TransitionId),
     /// Whether a term is assigned a value (ground).
     TermGround(IntTerm, IntCst),
+    /// The flow along the value change made by the ground transitions with this grounding:
+    /// on their ground state variable, from their pre-value (which is `None` for effs) to their post-value
+    ValueGraphFlow(TransitionGroundingId),
 }
 impl ColTag {
     /// Whether this column tag is lifted -- i.e. isn't specific to a grounding -- or is a term grounding.
@@ -37,7 +40,7 @@ impl ColTag {
             ColTag::PresenceSource(_, grounding) => grounding.is_none(),
             ColTag::PresenceTransition(_, grounding) => grounding.is_none(),
             ColTag::Support(_, _, grounding) => grounding.is_none(),
-            ColTag::SupportFromInitialState(..) => false,
+            ColTag::SupportFromInitialState(..) | ColTag::ValueGraphFlow(..) => false,
             ColTag::TermGround(_, _) => true,
         }
     }
@@ -50,6 +53,7 @@ impl ColTag {
             | ColTag::Support(..)
             | ColTag::SupportFromInitialState(..)
             | ColTag::TermGround(..) => Some(1),
+            ColTag::ValueGraphFlow(..) => None,
         }
     }
 
@@ -61,7 +65,7 @@ impl ColTag {
 aries_linexpr::impl_linear_ops!(ColTag, IntCst);
 
 /// A weighted sum of columns (designated by `C`), plus a constant.
-type LinExpr<C = ColTag> = aries_linexpr::LinExpr<C, IntCst>;
+pub(super) type LinExpr<C = ColTag> = aries_linexpr::LinExpr<C, IntCst>;
 
 /// A row of the form `lhs cmp rhs`, where `cmp` can be `=`, `<=`, or `>=`, and `lhs` and `rhs` are [`LinExpr`]s.
 type RowExpr<C = ColTag> = aries_linexpr::Constraint<C, IntCst>;
