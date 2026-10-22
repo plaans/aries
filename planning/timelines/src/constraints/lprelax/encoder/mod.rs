@@ -79,9 +79,19 @@ impl LpRelaxEncoder {
     /// Grounds the sources, then interns their groundings, those of their transitions and terms,
     /// and the ground supports between transitions.
     fn ground(&mut self, ctx: &SchedEncoder) {
-        let time = std::time::Instant::now();
-
-        let groundings = ground_all_tasks(ctx);
+        // Reusing those of `TasksUnifyWithGrounding` if it was enforced
+        let groundings = match &ctx.grounding_tables {
+            Some(tables) => {
+                lprelax_log!("Reusing groundings used by the TasksUnifyWithGrounding constraint");
+                tables.groundings.clone()
+            }
+            None => {
+                let time = std::time::Instant::now();
+                let res = ground_all_tasks(ctx);
+                lprelax_log!("Got groundings in {}", time.elapsed().as_secs_f64(),);
+                res
+            }
+        };
 
         let sources_groundings = [(None, groundings.empty_source_groundings().to_vec())]
             .into_iter()
@@ -91,17 +101,28 @@ impl LpRelaxEncoder {
                     .map(|(task, gs)| (Some(task), gs.to_vec())),
             );
 
-        lprelax_log!("Ran grounder in {}", time.elapsed().as_secs_f64(),);
-
         let time = std::time::Instant::now();
 
         let mut n = 0;
         for (source, source_groundings) in sources_groundings {
             let source_terms = self.get_source_terms(source, ctx);
+            // The literals of the lines of the source's table, if any (one per grounding, at the same index).
+            // (Only when the tables are enforced unconditionally, see `encode_problem_ground`.)
+            let table_line_lits = source.and_then(|task| {
+                let tables = ctx.grounding_tables.as_ref()?;
+                (tables.enforced_if == Lit::TRUE).then_some(tables.table_line_lits.get(task)?)
+            });
 
-            for source_grounding in source_groundings {
-                self.ground
-                    .post_ground_source(source, source_terms, &source_grounding, &self.transitions, ctx);
+            for (i, source_grounding) in source_groundings.into_iter().enumerate() {
+                let table_line_lit = table_line_lits.map(|table_line_lits| table_line_lits[i]);
+                self.ground.post_ground_source(
+                    source,
+                    source_terms,
+                    &source_grounding,
+                    table_line_lit,
+                    &self.transitions,
+                    ctx,
+                );
                 n += 1;
             }
         }

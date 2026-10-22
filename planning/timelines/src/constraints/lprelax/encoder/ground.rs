@@ -36,19 +36,27 @@ pub(super) struct GroundingsInfo {
     transitions: TransitionsGroundingsInfo,
     terms: TermsGroundingsInfo,
     supports: SupportsGroundingsInfo,
+
+    /// Contains literals of table lines of ground sources (when there is one such table line / lit)
+    pub(super) table_line_lits: Vec<(Source, SourceGroundingId, aries_solver::core::Lit)>,
 }
 impl GroundingsInfo {
-    /// Interns a grounding of a source, and those of its terms and transitions.
+    /// Interns a grounding of a source (with the literal of its table line, if any), and those of its terms and transitions.
     /// Will panic (in debug mode) if the ground source has already been interned.
     pub fn post_ground_source(
         &mut self,
         source: Source,
         source_terms: &[IntTerm],
         source_grounding: &SourceGrounding,
+        table_line_lit: Option<aries_solver::core::Lit>,
         transitions: &Transitions,
         ctx: &SchedEncoder,
     ) {
         let source_grounding_id = self.sources.post_ground_source(source, source_grounding);
+
+        if let Some(lit) = table_line_lit {
+            self.table_line_lits.push((source, source_grounding_id, lit));
+        }
 
         // Intern the assignments of the source's (non-constant) terms.
         for (i, &term) in source_terms.iter().enumerate() {
@@ -207,6 +215,11 @@ impl GroundingsInfo {
         self.terms.iter_values()
     }
 
+    /// The source of the (non-constant) term, if it is used by a single source.
+    pub fn term_single_source(&self, term: IntTerm) -> Option<Source> {
+        self.terms.single_source(term)
+    }
+
     /// For each assignment of a (non-constant) term to a value, and each source using the term,
     /// the groundings of the source with that assignment.
     pub fn iter_term_assignments_with_sources(
@@ -323,6 +336,8 @@ struct TermsGroundingsInfo {
     /// The assignments of (non-constant) terms to values, with the ground sources in which they appear.
     /// Sorted (and deduplicated) once all are posted.
     entries: Vec<(IntTerm, IntCst, Source, SourceGroundingId)>,
+    /// Stores the single source of each term, when it is indeed its single source. Filled when sorting.
+    single_source: HashMap<IntTerm, Source>,
 }
 impl TermsGroundingsInfo {
     /// Records that a (non-constant) term is assigned a value in a ground source.
@@ -340,6 +355,13 @@ impl TermsGroundingsInfo {
     fn sort(&mut self) {
         self.entries.sort_unstable();
         self.entries.dedup();
+
+        self.single_source = self
+            .entries
+            .chunk_by(|a, b| a.0 == b.0)
+            .filter(|chunk| chunk.iter().all(|&(_, _, source, _)| source == chunk[0].2))
+            .map(|chunk| (chunk[0].0, chunk[0].2))
+            .collect();
     }
 
     /// Whether the entries are sorted, without duplicates (see [`Self::sort`]).
@@ -359,6 +381,11 @@ impl TermsGroundingsInfo {
         self.entries
             .chunk_by(|a, b| a.0 == b.0)
             .map(|chunk| (chunk[0].0, chunk.iter().map(|&(_, value, _, _)| value).dedup()))
+    }
+
+    /// The source of the term, when it is indeed used by a single source.
+    fn single_source(&self, term: IntTerm) -> Option<Source> {
+        self.single_source.get(&term).copied()
     }
 
     /// For each assignment of a (non-constant) term to a value, and each source using the term,

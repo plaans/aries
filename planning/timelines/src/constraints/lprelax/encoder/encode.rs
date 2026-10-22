@@ -269,12 +269,22 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         }
     }
 
+    // For terms used by a single source, with table constraints for its groundings, the term rows below are left out (as well as their bindings).
+    // (Only when the tables are enforced unconditionally: otherwise, the line literals of a present source may all be false.)
+    let bound_by_table = |term| match (&ctx.grounding_tables, ground.term_single_source(term)) {
+        (Some(tables), Some(Some(task))) if tables.enforced_if == aries_solver::core::Lit::TRUE => {
+            tables.table_line_lits.contains_key(task)
+        }
+        _ => false,
+    };
+
     // "A term takes at most one value (i.e. at most one of its groundings is active)"
-    //
-    // TODO: remove for single-source terms (implied)
     //
     // NOTE: Implied for a term appearing in a single source (by the rows below and the source's ground decomposition).
     for (term, values) in ground.iter_term_values() {
+        if bound_by_table(term) {
+            continue;
+        }
         let groundings = sum(values.map(|value| ColTag::TermGround(term, value)));
         debug_assert!(!groundings.terms().is_empty());
 
@@ -282,11 +292,10 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     }
 
     // "A term grounding is active iff one of the groundings (with that value) of a source using the term is"
-    //
-    // TODO: remove for single-source terms (implied)
-    //       However, even if implied, would be useful for grounding.
-    //       But should still remove and use other bindings, in tandem with reification literals from `TasksUnifyWithGrounding` constraint ?)
     for (term, value, source, source_groundings) in ground.iter_term_assignments_with_sources() {
+        if bound_by_table(term) {
+            continue;
+        }
         let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
 
         debug_assert!(

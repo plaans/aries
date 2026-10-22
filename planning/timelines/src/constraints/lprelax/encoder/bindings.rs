@@ -60,7 +60,18 @@ impl LpRelaxEncoder {
         //
         // 0 when the term's variable can't take the value `x` (or is absent),
         // and 1 when it is present and fixed to `x`.
+        //
+        // (Left out for the terms used by a single source with table constraints for its groundings, see below)
         for (term, value) in self.iter_distinct_term_assignments() {
+            let bound_by_table = match (&ctx.grounding_tables, self.ground.term_single_source(term)) {
+                (Some(tables), Some(Some(task))) if tables.enforced_if == Lit::TRUE => {
+                    tables.table_line_lits.contains_key(task)
+                }
+                _ => false,
+            };
+            if bound_by_table {
+                continue;
+            }
             let tag = ColTag::TermGround(term, value);
             let var = term.variable();
             debug_assert!(!term.is_cst() && var != Var::ZERO);
@@ -103,6 +114,15 @@ impl LpRelaxEncoder {
                 value: 1,
                 bound: BoundKind::Lower,
             });
+        }
+
+        // Ground presences of the sources with table constraints for their groundings
+        //
+        // 0 when the literal of the grounding's table line is false (or the source is absent),
+        // and 1 when it is true and the source present.
+        for &(source, source_grounding_id, lit) in &self.ground.table_line_lits {
+            let tag = ColTag::PresenceSource(source, Some(source_grounding_id));
+            bind_to_lit(&mut bindings, tag, lit, self.get_source_prez(source, ctx), true);
         }
 
         bindings
