@@ -23,7 +23,6 @@ impl VisitAllLine {
     }
 }
 
-#[allow(dead_code)]
 pub fn build_and_encode_visitall_line(pb: &VisitAllLine, print: bool) -> SchedEncoder {
     let (sched, _) = build_visitall_line(pb);
 

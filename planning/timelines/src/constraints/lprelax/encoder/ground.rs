@@ -342,20 +342,20 @@ impl TermsGroundingsInfo {
         self.entries.dedup();
     }
 
-    fn debug_check_valid(&self) -> bool {
-        debug_assert!(is_sorted_and_no_dupes(self.entries.iter()));
-        true
+    /// Whether the entries are sorted, without duplicates (see [`Self::sort`]).
+    fn is_sorted(&self) -> bool {
+        is_sorted_and_no_dupes(self.entries.iter())
     }
 
     /// The distinct assignments of (non-constant) terms to values.
     fn iter_distinct(&self) -> impl Iterator<Item = (IntTerm, IntCst)> {
-        debug_assert!(self.debug_check_valid());
+        debug_assert!(self.is_sorted());
         self.entries.iter().map(|&(term, value, _, _)| (term, value)).dedup()
     }
 
     /// For each (non-constant) term, its distinct values.
     fn iter_values(&self) -> impl Iterator<Item = (IntTerm, impl Iterator<Item = IntCst>)> {
-        debug_assert!(self.debug_check_valid());
+        debug_assert!(self.is_sorted());
         self.entries
             .chunk_by(|a, b| a.0 == b.0)
             .map(|chunk| (chunk[0].0, chunk.iter().map(|&(_, value, _, _)| value).dedup()))
@@ -373,7 +373,7 @@ impl TermsGroundingsInfo {
             impl ExactSizeIterator<Item = SourceGroundingId>,
         ),
     > {
-        debug_assert!(self.debug_check_valid());
+        debug_assert!(self.is_sorted());
         self.entries
             .chunk_by(|a, b| (a.0, a.1, a.2) == (b.0, b.1, b.2))
             .map(|chunk| {
@@ -408,18 +408,16 @@ impl TransitionsGroundingsInfo {
             assert!(self.sources_of[trans_id] == source);
         }
 
+        // (Duplicates are caught by `is_sorted`, once sorted.)
         let entries = self.entries.get_mut_or_default(source);
-        debug_assert!(!entries.contains(&(trans_id, trans_grounding_id, source_grounding_id)));
         entries.push((trans_id, trans_grounding_id, source_grounding_id));
     }
 
-    fn debug_check_valid(&self) -> bool {
-        debug_assert!(
-            self.entries
-                .iter()
-                .all(|(_, entries)| is_sorted_and_no_dupes(entries.iter()))
-        );
-        true
+    /// Whether each source's entries are sorted, without duplicates (see [`Self::sort_for_all`]).
+    fn is_sorted(&self) -> bool {
+        self.entries
+            .iter()
+            .all(|(_, entries)| is_sorted_and_no_dupes(entries.iter()))
     }
 
     /// Sorts the groundings, then indexes them by ground state variable (see [`Self::iter_by_state_var`]).
@@ -450,7 +448,7 @@ impl TransitionsGroundingsInfo {
     fn iter_entries_by_source(
         &self,
     ) -> impl Iterator<Item = (Source, &[(TransitionId, TransitionGroundingId, SourceGroundingId)])> {
-        debug_assert!(self.debug_check_valid());
+        debug_assert!(self.is_sorted());
         self.entries
             .iter()
             .map(|(source, entries)| (source, entries.as_slice()))
@@ -492,7 +490,7 @@ impl TransitionsGroundingsInfo {
 
     /// The groundings of the given transition (sorted, so they can be chunked).
     fn groundings_of(&self, trans_id: TransitionId) -> &[(TransitionId, TransitionGroundingId, SourceGroundingId)] {
-        debug_assert!(self.debug_check_valid());
+        debug_assert!(self.is_sorted());
 
         let Some(entries) = self
             .sources_of
@@ -549,7 +547,7 @@ impl SupportsGroundingsInfo {
     ///
     /// Expects the transitions groundings to be sorted.
     fn from(supports_sorted: &SupportsSorted, transitions_groundings: &TransitionsGroundingsInfo) -> Self {
-        debug_assert!(transitions_groundings.debug_check_valid());
+        debug_assert!(transitions_groundings.is_sorted());
 
         // The groundings of all the transitions, grouped by the ground supports they can receive.
         // A group that nothing can support is left with only these entries.

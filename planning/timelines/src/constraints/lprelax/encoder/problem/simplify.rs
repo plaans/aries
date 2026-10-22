@@ -34,27 +34,34 @@ fn try_simplify_inner(
     let mut times = vec![];
 
     let time = std::time::Instant::now();
+
     seed_known_values(classes, encoder, ctx, doms)?;
+
     times.push(time.elapsed());
 
     // The columns are interned once: the rounds below only deal with their classes.
     let time = std::time::Instant::now();
+
     let rows = pb
         .rows
         .iter()
         .map(|row| ClassRow::interned(row, classes))
         .collect::<Vec<_>>();
+
     times.push(time.elapsed());
 
     // Learn from the rows until nothing new comes out.
     // A row whose columns all have a known value is done for good, and left out of the next rounds.
     let time = std::time::Instant::now();
+
     let mut rounds = 0;
     let mut live = (0..rows.len()).collect::<Vec<_>>();
+
     let canons = loop {
         rounds += 1;
         let mut learned = false;
         let mut canons = Vec::with_capacity(live.len());
+
         for &i in &live {
             let canon = rows[i].canonical(classes);
             learned |= canon.learn(classes)?;
@@ -65,6 +72,7 @@ fn try_simplify_inner(
         if !learned {
             break canons;
         }
+
         live = canons.into_iter().map(|(i, _)| i).collect();
     };
     times.push(time.elapsed());
@@ -72,6 +80,7 @@ fn try_simplify_inner(
     // Nothing was learned in the last round, the canonical rows from last round are final.
     // Duplicates are dropped (e.g. a lifted row and a ground one that became the same once their columns were merged).
     let time = std::time::Instant::now();
+
     let mut keys = HashSet::new();
     pb.rows.clear();
 
@@ -91,8 +100,10 @@ fn try_simplify_inner(
 
     // A tag resolves to the column of its class' representative, or to its known value.
     let time = std::time::Instant::now();
+
     let mut aliases = vec![];
     pb.col_known_value.clear();
+
     for (tag, class) in classes.interned() {
         match classes.value(class) {
             Some(value) => {
@@ -102,6 +113,7 @@ fn try_simplify_inner(
         }
     }
     pb.number_cols(aliases);
+
     times.push(time.elapsed());
 
     lprelax_log!(

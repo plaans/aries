@@ -20,6 +20,7 @@ macro_rules! lprelax_log {
 }
 
 pub(crate) mod encoder;
+#[cfg(test)]
 mod tests;
 mod transitions;
 pub(crate) mod wrappers;

@@ -171,7 +171,6 @@ impl Transitions {
     pub fn iter(&self) -> impl Iterator<Item = (TransitionId, Transition)> {
         self.store.iter().copied().enumerate()
     }
-    #[allow(dead_code)]
     pub fn iter_of_conditions(&self) -> impl Iterator<Item = (CondId, TransitionId)> {
         self.of_condition.iter().map(|(cond_id, &trans_id)| (cond_id, trans_id))
     }
