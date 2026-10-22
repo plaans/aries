@@ -11,9 +11,10 @@ mod tests {
     use crate::lprelax::wrappers::LpRelaxIncr;
 
     /// No limit on the pivots of the LP, so that it can conclude at the root.
-    fn unlimited_pivots() -> LpOptions {
+    fn unlimited_pivots_only_at_root() -> LpOptions {
         LpOptions {
             initially_allowed_pivots: f64::INFINITY,
+            pivots_per_decision: 0.0,
             ..Default::default()
         }
     }
@@ -30,7 +31,7 @@ mod tests {
         {
             println!("Sat instance with lprelax (lprelax mustn't deem it unsat)");
 
-            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots());
+            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots_only_at_root());
             let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
             assert!(
@@ -59,7 +60,7 @@ mod tests {
             );
             assert!(solver.stats.num_decisions > 0);
 
-            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots());
+            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots_only_at_root());
 
             println!("Unsat instance with lprelax (num decisions must be = 0, thanks to lprelax)");
 
@@ -98,7 +99,7 @@ mod tests {
             .flat_map(|(var, value)| [var.geq(value), var.leq(value)])
             .collect::<Vec<_>>();
 
-        let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots());
+        let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots_only_at_root());
         let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
         assert!(
