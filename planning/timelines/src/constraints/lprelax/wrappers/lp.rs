@@ -95,15 +95,22 @@ impl LpRelaxIncr {
         post_bindings(&vars, encoder, &self.ctx, base_doms, &mut self.lp);
 
         self.lp_posted = true;
+        let elapsed = time.elapsed().as_secs_f64();
 
         lprelax_log!(
-            "Posted LpRelaxProblem ({} variables, {} rows) at decision level {:?} (num events: {}) from the model at level {:?} in {}",
+            "Posted LpRelaxProblem ({} variables, {} rows, {} nonzeros) at decision level {:?} (num events: {}) from the model at level {:?} in {}",
             problem.cols().unwrap().len(),
             problem.rows().len(),
+            // (An equality row counts once, though it is posted as two inequalities.)
+            problem
+                .rows()
+                .iter()
+                .map(|row| row.canonical().expr().terms().len())
+                .sum::<usize>(),
             doms.current_decision_level(),
             doms.num_events(),
             base_decision_level,
-            time.elapsed().as_secs_f64(),
+            elapsed,
         );
     }
 }
