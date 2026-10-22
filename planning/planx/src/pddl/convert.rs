@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, str::FromStr};
 
 use errors::*;
 use itertools::Itertools;
@@ -748,8 +748,7 @@ fn parse_preference_gen<T>(
 
 /// Parse a number number ("32", "-3", "3.14", -323.3")
 fn parse_number(decimal_str: &str) -> Option<RealValue> {
-    use num_rational_parse::RationalParse;
-    RealValue::from_str_flex(decimal_str).ok()
+    RealValue::from_str(decimal_str).ok()
 }
 
 fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {

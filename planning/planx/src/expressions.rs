@@ -10,8 +10,10 @@ use crate::{
     *,
 };
 
+mod real;
+
 pub type IntValue = i64;
-pub type RealValue = Rational64;
+pub type RealValue = real::RealValue;
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Clone, Copy)]
 pub struct ExprId(pub(crate) u32);
