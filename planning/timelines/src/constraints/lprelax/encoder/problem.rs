@@ -29,8 +29,11 @@ pub enum ColTag {
     SupportFromInitialState(StateVarGroundingId, TransitionId),
     /// Whether a term is assigned a value (ground).
     TermGround(IntTerm, IntCst),
+    /// The flow along the support from a transition (or from the initial state, if `None`) to another,
+    /// on a ground state variable.
+    SupportGraphFlow(Option<TransitionId>, TransitionId, StateVarGroundingId),
     /// The flow along the value change made by the ground transitions with this grounding:
-    /// on their ground state variable, from their pre-value (which is `None` for effs) to their post-value
+    /// on their ground state variable, from their pre-value (which is `None` for effs) to their post-value.
     ValueGraphFlow(TransitionGroundingId),
 }
 impl ColTag {
@@ -40,8 +43,8 @@ impl ColTag {
             ColTag::PresenceSource(_, grounding) => grounding.is_none(),
             ColTag::PresenceTransition(_, grounding) => grounding.is_none(),
             ColTag::Support(_, _, grounding) => grounding.is_none(),
-            ColTag::SupportFromInitialState(..) | ColTag::ValueGraphFlow(..) => false,
-            ColTag::TermGround(_, _) => true,
+            ColTag::SupportFromInitialState(..) | ColTag::SupportGraphFlow(..) | ColTag::ValueGraphFlow(..) => false,
+            ColTag::TermGround(..) => true,
         }
     }
 
@@ -53,7 +56,7 @@ impl ColTag {
             | ColTag::Support(..)
             | ColTag::SupportFromInitialState(..)
             | ColTag::TermGround(..) => Some(1),
-            ColTag::ValueGraphFlow(..) => None,
+            ColTag::SupportGraphFlow(..) | ColTag::ValueGraphFlow(..) => None,
         }
     }
 

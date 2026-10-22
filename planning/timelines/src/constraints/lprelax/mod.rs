@@ -6,8 +6,9 @@ pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "true");
 pub static ARIES_LPRELAX_MERGE_EQUAL_COLUMNS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_MERGE_EQUAL_COLUMNS", "true");
-pub static ARIES_LPRELAX_WITH_VALUE_GRAPH_FLOW: EnvParam<bool> =
-    EnvParam::new("ARIES_LPRELAX_WITH_VALUE_GRAPH_FLOW", "true");
+/// The flow constraints of the LP relaxation: "none", "valgraph" (value graph) or "supgraph" (support graph).
+pub static ARIES_LPRELAX_WITH_FLOW_CONSTRS: EnvParam<String> =
+    EnvParam::new("ARIES_LPRELAX_WITH_FLOW_CONSTRS", "valgraph");
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {

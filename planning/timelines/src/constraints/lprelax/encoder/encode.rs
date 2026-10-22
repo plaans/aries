@@ -112,7 +112,13 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
     let ground = &encoder.ground;
     let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
-    let with_value_graph_flow = crate::lprelax::ARIES_LPRELAX_WITH_VALUE_GRAPH_FLOW.get();
+    let (with_value_graph_flow, with_support_graph_flow) =
+        match crate::lprelax::ARIES_LPRELAX_WITH_FLOW_CONSTRS.get_ref().as_str() {
+            "none" => (false, false),
+            "valgraph" => (true, false),
+            "supgraph" => (false, true),
+            other => panic!("unknown ARIES_LPRELAX_WITH_FLOW_CONSTRS: {other} (expected none, valgraph or supgraph)"),
+        };
 
     // Ground decomposition: "A source's presence equals the total presence of its groundings".
     {
@@ -293,6 +299,108 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         );
 
         problem.push_row(ColTag::TermGround(term, value).into_linexpr().eq(source_presences));
+    }
+
+    // Support graph flow: "A present ground transition must be reachable from the initial state (for its ground state variable), through active ground supports"
+    //
+    // NOTE: These constraints correspond to a single-commodity flow formulation over the "support graph" of each ground state variable:
+    //       its nodes are the ground transitions, plus the initial state for each ground state variable,
+    //       and its arcs are the (ground) supports between them (arcs / supports from the initial state only enter nodes corresponding to eff-transitions).
+    //
+    //       The constraints are of two types: capacity and balance.
+    //       - Capacity: the flow along an arc is at most big-M times the total of its ground supports
+    //         (so this flow is 0 unless one of them is active).
+    //         Big-M is -- for a given ground state variable -- the number of transitions that can be grounded to it,
+    //         i.e. the maximum total flow they may consume (as a transition's groundings are mutually exclusive).
+    //       - Balance: the flow into a transition (node) minus the flow out of it equals the total presence of its groundings
+    //         (on that ground state variable), i.e. the amount of flow this transition consumes.
+    //
+    //       As flow only enters the graph at the initial state, it must reach every present transition through active supports,
+    //       which rules out cycles of supports. However, with big-M, fractional cycles may still slip through.
+    //
+    // NOTE: Without initial-state supports, effs may be unsupported,
+    //       so they would need to become the flow's sources instead of the initial state (they get no balance row).
+    //       This would weaken these constraints a bit, as cycles of supports through an eff wouldn't be tackled.
+    if with_support_graph_flow {
+        // The big-M of each ground state variable (see above), by id (as the ids are contiguous, from 0).
+        let big_ms = ground
+            .iter_transition_groundings_by_state_var()
+            .enumerate()
+            .map(|(i, (state_var_grounding_id, entries))| {
+                debug_assert_eq!(i, state_var_grounding_id);
+                entries.iter().map(|&(_, trans_id)| trans_id).unique().count() as IntCst
+            })
+            .collect::<Vec<_>>();
+
+        // The terms of the balance rows (see below): ((transition, ground state variable), column, coefficient).
+        let mut balance_terms = vec![];
+
+        // The flow consumed by the transitions: the presences of their groundings on each ground state variable.
+        for (state_var_grounding_id, entries) in ground.iter_transition_groundings_by_state_var() {
+            for &(g, trans_id) in entries {
+                balance_terms.push((
+                    (trans_id, state_var_grounding_id),
+                    ColTag::PresenceTransition(trans_id, Some(g)),
+                    -1,
+                ));
+            }
+        }
+
+        // The arcs of the supports between transitions, on each ground state variable.
+        for (out_trans_id, in_trans_id, support_groundings) in ground.iter_support_groundings() {
+            // (The ground supports come sorted by ground state variable, then by value.)
+            let support_groundings = support_groundings.collect::<Vec<_>>();
+            for supports in support_groundings.chunk_by(|a, b| a.0 == b.0) {
+                let state_var_grounding_id = supports[0].0;
+                let flow = ColTag::SupportGraphFlow(Some(out_trans_id), in_trans_id, state_var_grounding_id);
+
+                balance_terms.push(((out_trans_id, state_var_grounding_id), flow, -1));
+                balance_terms.push(((in_trans_id, state_var_grounding_id), flow, 1));
+
+                // Capacity: "A support's flow is at most big-M times the total of its ground supports"
+                let capacity = supports
+                    .iter()
+                    .map(|&g| {
+                        (
+                            ColTag::Support(out_trans_id, in_trans_id, Some(g)),
+                            big_ms[state_var_grounding_id],
+                        )
+                    })
+                    .collect::<LinExpr>();
+
+                problem.push_row(flow.into_linexpr().leq(capacity));
+            }
+        }
+
+        // The arcs from the initial state of each ground state variable, into its effs.
+        if with_initial_state_supports {
+            for (state_var_grounding_id, effs) in ground.iter_effects_by_state_var() {
+                for trans_id in effs {
+                    let flow = ColTag::SupportGraphFlow(None, trans_id, state_var_grounding_id);
+
+                    balance_terms.push(((trans_id, state_var_grounding_id), flow, 1));
+
+                    // Capacity: "The flow from the initial state into an eff is at most big-M times the support between them"
+                    let capacity = ColTag::SupportFromInitialState(state_var_grounding_id, trans_id)
+                        * big_ms[state_var_grounding_id];
+
+                    problem.push_row(flow.into_linexpr().leq(capacity));
+                }
+            }
+        }
+
+        // Balance: "The flow into a (ground) transition minus the flow out of it equals the total presence of its groundings on the ground state variable"
+        //          (written with everything moved to the left-hand side)
+        balance_terms.sort_unstable_by_key(|&(key, _, _)| key);
+        for terms in balance_terms.chunk_by(|a, b| a.0 == b.0) {
+            let (trans_id, _) = terms[0].0;
+            if !with_initial_state_supports && encoder.transitions.get(trans_id).tpe() == TransitionType::Eff {
+                continue; // (an eff is then a source of the flow, see above)
+            }
+            let row = terms.iter().map(|&(_, col, coef)| (col, coef)).collect::<LinExpr>();
+
+            problem.push_row(row.eq(0));
+        }
     }
 
     // Value graph flow: "A present ground transition's pre-value should be reachable from `None` (i.e. from an eff), through value changes made by present ground transitions"
