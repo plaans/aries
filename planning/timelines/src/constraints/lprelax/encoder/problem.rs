@@ -175,7 +175,8 @@ impl LpRelaxProblem {
     /// - a row sitting at one of its bounds pins all of its columns (e.g. `x + y = 0`, or a single-term `x = 1`) -- which can lead to the point above being triggered;
     /// - rows that became empty are dropped, and a row that became contradictory turns the whole problem into a single trivially infeasible one;
     /// - when `merge_equal_columns` is set, a row of the form `c*x - c*y = 0` merges the two columns into a single one
-    ///   if they have the same lower bound (represented by the tag with the tightest upper bound, then by a "lifted" one when possible).
+    ///   if they have the same lower bound (represented by the tag with the tightest upper bound, then by a "lifted" one when possible);
+    /// - rows that became identical (e.g. a lifted row and a ground one, once their columns were merged) are kept only once.
     ///
     /// Afterwards, [`Self::cols`] holds one entry per remaining LP column.
     ///

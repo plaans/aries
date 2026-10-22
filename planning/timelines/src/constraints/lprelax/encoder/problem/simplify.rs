@@ -1,6 +1,6 @@
 //! The simplification of an [`LpRelaxProblem`].
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 
 use aries_linexpr::ComparisonOp;
 use aries_solver::core::IntCst;
@@ -70,18 +70,23 @@ fn try_simplify_inner(
     times.push(time.elapsed());
 
     // Nothing was learned in the last round, the canonical rows from last round are final.
+    // Duplicates are dropped (e.g. a lifted row and a ground one that became the same once their columns were merged).
     let time = std::time::Instant::now();
-    pb.rows = canons
-        .into_iter()
-        .map(|(_, canon)| {
-            canon
+    let mut keys = HashSet::new();
+    pb.rows.clear();
+
+    for (_, canon) in canons {
+        // only include when no duplicate already included
+        if keys.insert(canon.key()) {
+            let expr = canon
                 .expr
                 .iter()
                 .map(|(class, coef)| (classes.representative(class), coef))
-                .collect::<LinExpr>()
-                .into_constraint(canon.tpe, canon.cst())
-        })
-        .collect();
+                .collect::<LinExpr>();
+
+            pb.rows.push(expr.into_constraint(canon.tpe, canon.cst()));
+        }
+    }
     times.push(time.elapsed());
 
     // A tag resolves to the column of its class' representative, or to its known value.
@@ -295,6 +300,11 @@ impl ClassRow {
         -self.expr.constant()
     }
 
+    /// What identifies this (canonical) row, to spot duplicates (its terms being sorted by their representative).
+    fn key(&self) -> (ComparisonOp, IntCst, Vec<(u32, IntCst)>) {
+        (self.tpe, self.expr.constant(), self.expr.iter().collect())
+    }
+
     /// Learns what this (canonical) row implies on its own. Returns whether anything was learned.
     fn learn(&self, classes: &mut EquivClasses) -> Result<bool, Infeasible> {
         let cst = self.cst();
@@ -498,5 +508,20 @@ mod tests {
         // `x >= 1` with `x = 0`, i.e. `0 >= 1`
         let r = row(ComparisonOp::Ge, vec![(1, prez_trans_lifted(0))], 1);
         assert!(canonical(&r, &mut classes).learn(&mut classes).is_err());
+    }
+
+    /// Once canonical, rows with the same comparison, constant and terms (in any order) have the same key.
+    #[test]
+    fn identical_rows_have_the_same_key() {
+        let mut classes = EquivClasses::new(true);
+        let (x, y) = (prez_trans_lifted(0), prez_trans_lifted(1));
+        // `x - y >= 0`, written in two orders, and `x - y = 0`
+        let r1 = row(ComparisonOp::Ge, vec![(1, x), (-1, y)], 0);
+        let r2 = row(ComparisonOp::Ge, vec![(-1, y), (1, x)], 0);
+        let r3 = row(ComparisonOp::Eq, vec![(1, x), (-1, y)], 0);
+
+        let key = |r: &RowExpr, classes: &mut EquivClasses| canonical(r, classes).key();
+        assert_eq!(key(&r1, &mut classes), key(&r2, &mut classes));
+        assert_ne!(key(&r1, &mut classes), key(&r3, &mut classes));
     }
 }
