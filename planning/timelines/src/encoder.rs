@@ -6,6 +6,7 @@ use crate::*;
 
 /// Structure that provide all the context for encoding the scheduling problem
 /// into a CSP.
+#[derive(Clone)]
 pub struct SchedEncoder {
     /// Scheduling problem that is being encoded
     pub sched: Arc<Sched>,
@@ -101,7 +102,7 @@ pub struct CausalLink {
 /// Accumulates the set of all [`CausalLink`]s in an encoding problem.
 ///
 /// These are accumulated when encoding [`HasValueAt`] constraints.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct CausalLinks {
     /// Debug util: this is used to make sure all causal links have been added before any read.
     /// If a new causal link is added *after* a read access, the corresponding method will panic.
