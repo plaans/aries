@@ -1,0 +1,5 @@
+(define (problem method-param-type-1)
+  (:domain method-param-type)
+  (:objects g - grinder s - sprayer)
+  (:htn :parameters (?m - machine) :subtasks (and (t0 (paint ?m))))
+  (:init))

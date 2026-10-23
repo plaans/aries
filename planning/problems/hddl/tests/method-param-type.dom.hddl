@@ -1,0 +1,15 @@
+; The only method for (paint ?m), where ?m is any machine, takes a sprayer: the
+; task parameter must be bound to a sprayer, not a grinder.
+(define (domain method-param-type)
+  (:requirements :hierarchy :typing)
+  (:types grinder sprayer - machine machine)
+  (:predicates (painted))
+  (:task paint :parameters (?m - machine))
+  (:method paint-with-sprayer
+    :parameters (?m - sprayer)
+    :task (paint ?m)
+    :subtasks (spray ?m))
+  (:action spray
+    :parameters (?s - sprayer)
+    :precondition (and)
+    :effect (painted)))
