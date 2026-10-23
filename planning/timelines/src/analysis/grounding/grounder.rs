@@ -58,7 +58,7 @@ impl Grounder {
             .collect();
 
         // all concrete sources by default
-        let concrete_sources = ctx.sched.tasks.task_ids().collect_vec();
+        let concrete_sources = ctx.sched.tasks.task_ids().collect::<Vec<_>>();
 
         let mut program = GrounderProgram::new_empty();
 
@@ -230,19 +230,9 @@ impl Grounder {
     ) {
         let (conditions_to_ignore, effects_to_ignore) = conditions_and_effects_to_ignore;
 
-        let mut task_conditions = DirectIdMap::new();
         let mut task_effects = DirectIdMap::new();
-        for (cond_id, c) in ctx.causal_links.conditions.iter().enumerate() {
-            if let Some(task_id) = c.source.map(|task_id| task_id.to_int() as usize) {
-                if conditions_to_ignore.contains(&cond_id) {
-                    continue;
-                }
-                if !task_conditions.contains_key(task_id) {
-                    task_conditions.insert(task_id, vec![]);
-                }
-                task_conditions[task_id].push((cond_id, c));
-            }
-        }
+        let mut task_conditions = DirectIdMap::new();
+
         for (eff_id, e) in ctx.sched.effects.iter().enumerate() {
             if let Some(task_id) = e.source.map(|task_id| task_id.to_int() as usize) {
                 if effects_to_ignore.contains(&eff_id) {
@@ -254,30 +244,45 @@ impl Grounder {
                 task_effects[task_id].push((eff_id, e));
             }
         }
+        for (cond_id, c) in ctx.causal_links.conditions.iter().enumerate() {
+            if let Some(task_id) = c.source.map(|task_id| task_id.to_int() as usize) {
+                if conditions_to_ignore.contains(&cond_id) {
+                    continue;
+                }
+                // ignore conditions that may start after the start of an effect of the task
+                // (i.e. only keep those that start necessarily before all of them)
+                // this relaxation is needed to ensure soundness when facing temporal action models (which may have (post-)conditions after effects)
+                let c_may_start_after_an_eff = !task_effects
+                    .get(task_id)
+                    .into_iter()
+                    .flatten()
+                    .all(|&(_, eff)| necessarily_before(c.timepoint, eff.transition_end, ctx));
+                if c_may_start_after_an_eff {
+                    continue;
+                }
+                if !task_conditions.contains_key(task_id) {
+                    task_conditions.insert(task_id, vec![]);
+                }
+                task_conditions[task_id].push((cond_id, c));
+            }
+        }
 
         for &task_id in tasks {
-            let (conditions, effects) = {
-                let task_id = usize::try_from(task_id.to_int()).unwrap();
-
-                let conditions = if task_conditions.contains_key(task_id) {
-                    task_conditions[task_id].as_slice()
-                } else {
-                    [].as_slice()
-                };
-                let effects = if task_effects.contains_key(task_id) {
-                    task_effects[task_id].as_slice()
-                } else {
-                    [].as_slice()
-                };
-                (conditions, effects)
-            };
+            let task_conditions = task_conditions
+                .get(task_id.to_int() as usize)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let task_effects = task_effects
+                .get(task_id.to_int() as usize)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
 
             Self::add_action_applicability_and_effects_rules(
                 program,
                 (task_id, &ctx.sched.tasks[task_id]),
-                conditions,
-                effects,
-                (conditions_to_ignore, effects_to_ignore),
+                task_conditions,
+                task_effects,
+                conditions_and_effects_to_ignore,
                 ctx,
                 cache_seen_doms,
             )
@@ -289,12 +294,20 @@ impl Grounder {
         task: (TaskId, &Task),
         conditions: &[(CondId, &HasValueAt)],
         effects: &[(EffectId, &Effect)],
-        conditions_and_effects_to_ignore: (&HashSet<CondId>, &HashSet<EffectId>),
+        _conditions_and_effects_to_ignore: (&HashSet<CondId>, &HashSet<EffectId>),
         ctx: &SchedEncoder,
         cache_seen_doms: &mut HashSet<VarDom>,
     ) {
         let (task_id, task) = task;
-        let (conditions_to_ignore, effects_to_ignore) = conditions_and_effects_to_ignore;
+
+        // check that the considered conditions necessarily start before all considered effects
+        // this relaxation is needed to ensure soundness when facing temporal action models (which may have (post-)conditions after effects)
+        debug_assert!(
+            conditions
+                .iter()
+                .cartesian_product(effects.iter())
+                .all(|((_, cond), (_, eff))| necessarily_before(cond.timepoint, eff.transition_end, ctx))
+        );
 
         // collection of terms that, if all true, implies that the task is applicable
         let mut applicability_rule_body = vec![];
@@ -324,7 +337,7 @@ impl Grounder {
                         var
                     }
                 })
-                .collect_vec(),
+                .collect::<Vec<_>>(),
         );
 
         // translates all conditions to datalog terms and add them to the applicability conditions
@@ -332,7 +345,7 @@ impl Grounder {
         applicability_rule_body.extend(
             conditions
                 .iter()
-                .filter(|(cond_id, _)| !conditions_to_ignore.contains(cond_id))
+                .inspect(|(cond_id, _)| debug_assert!(!_conditions_and_effects_to_ignore.0.contains(cond_id)))
                 .map(|(_, cond)| {
                     let Ok(terms) = collect_condition_datalog_terms(cond) else {
                         unreachable!()
@@ -348,7 +361,10 @@ impl Grounder {
         program.add_rule(applicability_rule_head, &applicability_rule_body);
 
         // for each effect that a rule that enables the fact when the action is applicable
-        for (_, eff) in effects.iter().filter(|(eff_id, _)| !effects_to_ignore.contains(eff_id)) {
+        for (_, eff) in effects
+            .iter()
+            .inspect(|(eff_id, _)| debug_assert!(!_conditions_and_effects_to_ignore.1.contains(eff_id)))
+        {
             let effect_rule_head = {
                 let terms = collect_effect_datalog_terms(eff).unwrap();
                 (&GrounderPredicateId::Fluent(eff.state_var.fluent.clone()), terms)
@@ -384,4 +400,11 @@ fn collect_effect_datalog_terms(eff: &Effect) -> Result<Vec<GrounderTerm>, ()> {
             GrounderTerm::Var(term)
         }
     })))
+}
+fn necessarily_before(t1: crate::Time, t2: crate::Time, ctx: &SchedEncoder) -> bool {
+    if t1.var == t2.var {
+        t1.shift <= t2.shift
+    } else {
+        ctx.ub(t1) <= ctx.lb(t2)
+    }
 }
