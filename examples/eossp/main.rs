@@ -49,7 +49,6 @@ pub struct EnergyDelta {
 }
 
 impl EnergyDelta {
-    /// TODO: detect unecessary constraints
     pub fn enforce_if(
         &self,
         model: &mut Model,
@@ -58,17 +57,25 @@ impl EnergyDelta {
         energy_at_end: Var,
         energy_max: IntCst,
     ) {
-        // enabler -> energy_at_start + delta >= energy_at_start_j
-        model.enforce_if(enabler, geq(energy_at_start + self.delta, energy_at_end));
+        // If delta is bigger than energy max there is no constraint
+        // Otherwise: enabler -> energy_at_start + delta >= energy_at_start_j
+        if self.delta < energy_max {
+            model.enforce_if(enabler, geq(energy_at_start + self.delta, energy_at_end));
+        }
 
-        // enabler -> energy_at_start >= delta_min
-        model.enforce_if(enabler, geq(energy_at_start, self.min));
+        // Delta min constraint is implied by delta constraint if delta_min <= -delta
+        // Otherwise: enabler -> energy_at_start >= delta_min
+        if self.min > 0 && self.min > -self.delta {
+            model.enforce_if(enabler, geq(energy_at_start, self.min));
+        }
 
-        // enabler -> energy_at_start <= delta_max
-        model.enforce_if(enabler, leq(energy_at_end, energy_max - self.max));
+        // Delta max constraint is implied by delta constraint if delta_max <= -delta
+        // Otherwise: enabler -> energy_at_start <= delta_max
+        if self.min > 0 && self.max > -self.delta {
+            model.enforce_if(enabler, leq(energy_at_end, energy_max - self.max));
+        }
     }
 
-    /// TODO: detect unecessary constraints
     pub fn enforce_scoped(
         &self,
         model: &mut Model,
@@ -77,14 +84,23 @@ impl EnergyDelta {
         energy_at_end: Var,
         energy_max: IntCst,
     ) {
-        // enabler -> energy_at_start + delta >= energy_at_start_j
-        model.enforce_scoped(geq(energy_at_start + self.delta, energy_at_end), scope.clone());
+        // If delta is bigger than energy max there is no constraint
+        // Otherwise: enabler -> energy_at_start + delta >= energy_at_start_j
+        if self.delta < energy_max {
+            model.enforce_scoped(geq(energy_at_start + self.delta, energy_at_end), scope.clone());
+        }
 
-        // enabler -> energy_at_start >= delta_min
-        model.enforce_scoped(geq(energy_at_start, self.min), scope.clone());
+        // Delta min constraint is implied by delta constraint if delta_min <= -delta
+        // Otherwise: enabler -> energy_at_start >= delta_min
+        if self.min > 0 && self.min > -self.delta {
+            model.enforce_scoped(geq(energy_at_start, self.min), scope.clone());
+        }
 
-        // enabler -> energy_at_start <= delta_max
-        model.enforce_scoped(leq(energy_at_end, energy_max - self.max), scope);
+        // Delta max constraint is implied by delta constraint if delta_max <= -delta
+        // Otherwise: enabler -> energy_at_start <= delta_max
+        if self.max > 0 && self.max > -self.delta {
+            model.enforce_scoped(leq(energy_at_end, energy_max - self.max), scope);
+        }
     }
 }
 
@@ -341,7 +357,6 @@ fn main() -> anyhow::Result<()> {
     let result = solver.maximize(objective, SearchLimit::None);
 
     let (objective, solution) = result.expect("error while solving").expect("unsat");
-    
 
     for task_var in &task_vars {
         let present = solution.entails(task_var.presence);
@@ -365,7 +380,7 @@ fn main() -> anyhow::Result<()> {
 
     println!("----------");
     println!("Objective: {objective}");
-    println!("Duration: {}", solver.stats.solve_time.as_secs_f32());
+    println!("Duration: {}", solver.stats.solve_time.as_secs_f64());
 
     Ok(())
 }
