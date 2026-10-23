@@ -1,6 +1,6 @@
 use std::{
     fmt::{Debug, Display},
-    ops::{Add, Mul, Neg, Sub},
+    ops::{Add, DivAssign, Mul, Neg, Sub},
     str::FromStr,
 };
 
@@ -111,6 +111,15 @@ impl Display for RealValue {
 impl Debug for RealValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
+    }
+}
+
+impl<T> DivAssign<T> for RealValue
+where
+    Rational64: DivAssign<T>,
+{
+    fn div_assign(&mut self, rhs: T) {
+        self.0 /= rhs
     }
 }
 

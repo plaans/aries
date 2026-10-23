@@ -661,6 +661,8 @@ pub fn reify_expression(
             };
             Ok(sum)
         }
+        planx::Expr::PlanLength => Ok(sched.num_actions.into()),
+        planx::Expr::Makespan => Ok(sched.makespan.into()),
         _ => e.todo(format!("not supported [{e}]")).failed(),
     }
 }

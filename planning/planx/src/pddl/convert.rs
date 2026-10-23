@@ -147,12 +147,12 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
     }
     if let Some(metric) = &prob.metric {
         match metric {
-            pddl::Metric::Maximize(max) => {
-                model.metric = Some(Metric::Maximize(parse(max, &mut model.env, &bindings)?))
-            }
-            pddl::Metric::Minimize(min) => {
-                model.metric = Some(Metric::Minimize(parse(min, &mut model.env, &bindings)?))
-            }
+            pddl::Metric::Maximize(max) => model
+                .metrics
+                .push(Metric::Maximize(parse(max, &mut model.env, &bindings)?)),
+            pddl::Metric::Minimize(min) => model
+                .metrics
+                .push(Metric::Minimize(parse(min, &mut model.env, &bindings)?)),
         }
     }
 

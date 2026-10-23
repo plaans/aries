@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
+use itertools::Itertools;
 use num_integer::lcm;
 use smallvec::smallvec;
 
-use crate::*;
+use crate::{preprocessing::Transformation, *};
 
 type SvPrecisions = RequiredScaling;
 type Scaling = u64;
@@ -65,6 +66,7 @@ impl From<RealValue> for ReachableValues {
     }
 }
 
+#[derive(Default)]
 struct RequiredScaling {
     fluents: BTreeMap<FluentId, ReachableValues>,
     time: ReachableValues,
@@ -92,14 +94,6 @@ impl RequiredScaling {
 
     fn precision_of_fluent(&self, fluent: FluentId) -> Option<u64> {
         self.fluents.get(&fluent).map(|s| s.denom_lcm)
-    }
-}
-impl Default for RequiredScaling {
-    fn default() -> Self {
-        Self {
-            fluents: Default::default(),
-            time: ReachableValues::default(),
-        }
     }
 }
 
@@ -160,7 +154,42 @@ fn build_new_model(base: &Model, scaling_factors: &SvPrecisions) -> Res<Model> {
         normalize(e, &mut model.env, scaling_factors)?;
     }
 
+    let mut objective_scalings = Vec::with_capacity(model.metrics.len());
+    for metric in &model.metrics {
+        let expr = match metric {
+            Metric::Maximize(e) => *e,
+            Metric::Minimize(e) => *e,
+        };
+        let prec = precision_of_expression(expr, &model.env, scaling_factors)?.denom_lcm;
+        apply_scaling(expr, prec, &mut model.env, scaling_factors)?;
+        objective_scalings.push(prec);
+    }
+    model
+        .transformations
+        .push(Arc::new(IntifyTransformation { objective_scalings }));
+
     Ok(model)
+}
+
+/// Denotes the intification transformation (converting all reals to ints).
+struct IntifyTransformation {
+    objective_scalings: Vec<u64>,
+}
+impl Transformation for IntifyTransformation {
+    fn describe(&self) -> String {
+        format!(
+            "Scaling reals into integers, objectives scaled by: {}",
+            self.objective_scalings.iter().format(" -- ")
+        )
+    }
+
+    fn revert(&self, mut plan: SolutionPlan) -> SolutionPlan {
+        // reestablish the objectives to the values they had before the scaling was applied.
+        for (metric, scaling) in plan.metrics.iter_mut().zip_eq(self.objective_scalings.iter()) {
+            *metric /= *scaling as i64
+        }
+        plan
+    }
 }
 
 /// Returns a collection of all top-level expressions in the model that we should scale.
@@ -219,7 +248,7 @@ fn precision_of_expression(expr_id: ExprId, env: &Environment, scalings: &SvPrec
     match expr.expr() {
         Expr::Real(ratio) => Ok(ReachableValues::from_constant(*ratio)),
         Expr::StateVariable(fluent_id, _) => scalings.get(*fluent_id).ok_or(expr.invalid("Not numeric?")),
-        Expr::ViolationCount(_) => Ok(ReachableValues::INTEGER),
+        Expr::ViolationCount(_) | Expr::PlanLength => Ok(ReachableValues::INTEGER),
         Expr::App(Mul, args) => {
             let mut acc = ReachableValues::default();
             for &arg in args {
@@ -279,6 +308,9 @@ fn apply_scaling_to_effect(eff: &Effect, env: &mut Environment, scalings: &SvPre
 ///
 /// The `scalings` parameter indicates the scaling already applied to each fluent.
 fn apply_scaling(expr_id: ExprId, scaling_factor: u64, env: &mut Environment, scalings: &SvPrecisions) -> Res<()> {
+    if scaling_factor == 1 {
+        return Ok(());
+    }
     use Fun::*;
     let expr = env.node(expr_id);
     // depending on the type of the expression,
@@ -318,6 +350,7 @@ fn apply_scaling(expr_id: ExprId, scaling_factor: u64, env: &mut Environment, sc
             }
         }
         Expr::ViolationCount(_) => todo!(),
+        Expr::PlanLength => todo!(),
         Expr::App(Mul, args) => {
             // for scaling a multiplication, we need to determine wy how much which should
             // scale each of its arguments
@@ -378,7 +411,7 @@ fn normalize(expr_id: ExprId, env: &mut Environment, scalings: &SvPrecisions) ->
     let expr = env.node(expr_id);
     assert!(!expr.tpe().is_numeric());
     match expr.expr() {
-        Expr::StateVariable(_, _) | Expr::ViolationCount(_) | Expr::Bool(_) | Expr::Object(_) | Expr::Param(_) => {
+        Expr::StateVariable(_, _) | Expr::Bool(_) | Expr::Object(_) | Expr::Param(_) => {
             // nothing to scale in these expressions
         }
         Expr::App(Lt | Gt | Geq | Leq | Eq, args) => {
@@ -416,6 +449,7 @@ fn normalize(expr_id: ExprId, env: &mut Environment, scalings: &SvPrecisions) ->
         Expr::Real(_) => unreachable!(),
         Expr::Instant(_) | Expr::Duration | Expr::Makespan => unreachable!(),
         Expr::App(Plus | Minus | Mul | Div, _) => unreachable!(),
+        Expr::ViolationCount(_) | Expr::PlanLength => unreachable!(),
     };
     Ok(())
 }

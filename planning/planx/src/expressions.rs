@@ -1,6 +1,5 @@
 use errors::Spanned;
 use itertools::Itertools;
-use num_rational::Rational64;
 use smallvec::SmallVec;
 
 use crate::{
@@ -61,6 +60,7 @@ impl<'a> TExpr<'a> {
             | Expr::Instant(_)
             | Expr::Duration
             | Expr::Makespan
+            | Expr::PlanLength
             | Expr::ViolationCount(_) => false,
         }
     }
@@ -103,7 +103,10 @@ pub enum Expr {
     Forall(Vars, ExprId),
     Instant(Timestamp),
     Duration,
+    /// End time of the latest action
     Makespan,
+    /// Total number of actions in the plan
+    PlanLength,
     ViolationCount(RefId),
 }
 
@@ -129,6 +132,7 @@ impl<'a> Display for TExpr<'a> {
             }
             Expr::Duration => write!(f, "?duration"),
             Expr::Makespan => write!(f, "?makespan"),
+            Expr::PlanLength => write!(f, "?plan-length"),
             Expr::ViolationCount(ref_id) => write!(f, "violations({ref_id})"),
             Expr::Exists(params, expr_id) => {
                 write!(f, "(exists {} {})", params.iter().join(", "), self.env / *expr_id)
@@ -159,7 +163,7 @@ impl Expr {
             Expr::Param(p) => Ok(p.tpe().clone()),
             Expr::Exists(_, x) | Expr::Forall(_, x) => Ok(env.node(*x).tpe().clone()),
             Expr::Duration | Expr::Makespan => Ok(Type::Real),
-            Expr::ViolationCount(_) => Ok(Type::Int(IntInterval::at_least(0))),
+            Expr::ViolationCount(_) | Expr::PlanLength => Ok(Type::Int(IntInterval::at_least(0))),
             Expr::Instant(_) => Ok(Type::Real),
         }
     }
