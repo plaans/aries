@@ -9,9 +9,12 @@ use crate::{preprocessing::Transformation, *};
 type SvPrecisions = RequiredScaling;
 type Scaling = u64;
 
+/// Denotes the reachable values of an numeric expression in rational form.
 #[derive(Debug, Copy, Clone)]
 struct ReachableValues {
+    /// Least common multiplier for the numerator (or None if we have no idea)
     numer_lcm: Option<u64>,
+    /// Least common multiplier for the denominator
     denom_lcm: u64,
 }
 impl ReachableValues {
@@ -95,13 +98,54 @@ impl RequiredScaling {
     fn precision_of_fluent(&self, fluent: FluentId) -> Option<u64> {
         self.fluents.get(&fluent).map(|s| s.denom_lcm)
     }
+
+    /// True if no required scaling is required for fluents or time.
+    /// Some expression may still need it though (e.g. a goal `x <= 1.7`)
+    fn fix_point(&self) -> bool {
+        self.fluent_precisions().all(|(_fluent, scaling)| scaling == 1) && self.time.denom_lcm == 1
+    }
 }
 
 pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
-    println!("==== Original Model ====");
-    println!("{model}");
-    println!("Converting...");
+    // println!("==== Original Model ====");
+    // println!("{model}");
+    println!("Converting reals to int...");
 
+    let mut model = model.clone();
+
+    let mut iter = 0;
+    loop {
+        // compute by how much fluents need to be scaled to be integer
+        // This initially assumes other fluents are integer, which is why we may need severals rounds to get a fix point
+        let scalings = compute_required_fluent_scalings(&model)?;
+
+        for (fid, prec) in scalings.fluent_precisions() {
+            if prec != 1 {
+                println!("  {} *= {}", model.env.fluents.get(fid).name(), prec);
+            }
+        }
+        if scalings.fix_point() && iter > 0 {
+            // only break after a full path because reals may appear in e.g. goals and still need to be eliminated
+            break;
+        } else if iter > 3 {
+            return Message::error("Could not remove all non-integer value in model.").failed();
+        }
+        // build a new model with everything scaled
+        model = build_new_model(model, &scalings)?;
+        iter += 1;
+    }
+
+    // todo: we could update the type of all fluents to integer but are missing the PAI to do so
+
+    let int_model = model;
+
+    // println!("{}", int_model);
+
+    Ok(int_model)
+}
+
+/// Looks at all values assigned/added to each numeric fluent to find out what values it can get.
+fn compute_required_fluent_scalings(model: &Model) -> Res<SvPrecisions> {
     // initialize scaling to default value
     let mut scalings: SvPrecisions = Default::default();
     for (fid, f) in model.env.fluents.iter_with_id() {
@@ -111,7 +155,6 @@ pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
             }
             _ => continue,
         }
-        println!("  {f:?}");
     }
 
     // characterize the range of values that can be reached by fluents
@@ -125,22 +168,10 @@ pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
             update_precision_required_by_effect(eff, model, &mut scalings)?;
         }
     }
-    for (fid, prec) in scalings.fluent_precisions() {
-        println!("{} : {}", model.env.fluents.get(fid).name(), prec);
-    }
-
-    // build a new model that assumes everything has been scaled
-    let int_model = build_new_model(model, &scalings)?;
-
-    // TODO: repeat until fix point
-
-    println!("{}", int_model);
-
-    Ok(int_model)
+    Ok(scalings)
 }
 
-fn build_new_model(base: &Model, scaling_factors: &SvPrecisions) -> Res<Model> {
-    let mut model = base.clone();
+fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Model> {
     for eff in &model.init {
         apply_scaling_to_effect(eff, &mut model.env, scaling_factors)?;
     }
@@ -212,8 +243,10 @@ fn get_expr_to_scale(model: &Model) -> Vec<ExprId> {
         for c in &a.conditions {
             exprs.push(c.cond);
         }
+        for e in &a.effects {
+            e.effect_expression.condition.iter().for_each(|c| exprs.push(*c));
+        }
     }
-    // TODO: add the conditions of conditional effects
     exprs
 }
 
@@ -286,7 +319,6 @@ fn precision_of_expression(expr_id: ExprId, env: &Environment, scalings: &SvPrec
 }
 
 fn apply_scaling_to_effect(eff: &Effect, env: &mut Environment, scalings: &SvPrecisions) -> Res<()> {
-    // TODO: scale conditions as well
     let eff = &eff.effect_expression;
     let fluent = eff.state_variable.fluent;
     if let Some(scaling_factor) = scalings.precision_of_fluent(fluent)
