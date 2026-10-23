@@ -636,6 +636,21 @@ pub fn reify_expression(
             };
             Ok(expr)
         }
+        planx::Expr::App(Fun::Div, args) if args.len() == 2 => {
+            // numer / denom
+            let numer = reify_expression(args[0], time, model, sched, binding, encoding)?;
+            let denom = reify_expression(args[1], time, model, sched, binding, encoding)?;
+            if let Ok(cst_denom) = IntCst::try_from(denom.clone())
+                && let Some(expr) = numer.try_divide(cst_denom)
+            {
+                // denom is a constant and numer is a linear expression that can be divided exactly
+                // while keeping everything integer.
+                Ok(expr)
+            } else {
+                e.todo("Division cannot be simplified").failed()
+            }
+        }
+
         planx::Expr::ViolationCount(x) => {
             let sum = if let Some(values) = encoding.preferences.get(x.as_str()) {
                 values

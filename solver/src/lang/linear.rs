@@ -1,4 +1,4 @@
-use num_integer::{div_ceil, div_floor};
+use num_integer::{Integer, div_ceil, div_floor};
 use smallvec::SmallVec;
 
 use crate::core::state::Evaluable;
@@ -391,6 +391,18 @@ impl LinSum {
         self.constant *= factor;
         self.vars.iter_mut().for_each(|sv| sv.factor *= factor);
         self.simplify();
+    }
+
+    /// If the linear expression is a multiple of `n`, then returns the result of `self / n`.
+    pub fn try_divide(mut self, n: IntCst) -> Option<Self> {
+        if self.constant.is_multiple_of(&n) && self.terms().all(|t| t.factor.is_multiple_of(&n)) {
+            self.constant /= n;
+            self.vars.iter_mut().for_each(|sv| sv.factor /= n);
+            self.simplify();
+            Some(self)
+        } else {
+            None
+        }
     }
 }
 
