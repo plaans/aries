@@ -340,7 +340,14 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
     let (dom, pb) = command.pb.parse()?;
 
     // processed model (from planx)
-    let model = pddl::build_model(&dom, &pb)?;
+    let mut model = pddl::build_model(&dom, &pb)?;
+    if !command.options.objectives.is_empty() {
+        // override provided metrics
+        set_metric(&mut model, &command.options.objectives)?;
+    } else if model.metrics.is_empty() {
+        // set default metric to plan length
+        set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
+    }
     let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
     let model = planx::preprocessing::convert_reals_to_int(&model)?;
