@@ -71,7 +71,7 @@ impl EnergyDelta {
 
         // Delta max constraint is implied by delta constraint if delta_max <= -delta
         // Otherwise: enabler -> energy_at_start <= delta_max
-        if self.min > 0 && self.max > -self.delta {
+        if self.max > 0 && self.max > -self.delta {
             model.enforce_if(enabler, leq(energy_at_end, energy_max - self.max));
         }
     }
@@ -85,19 +85,19 @@ impl EnergyDelta {
         energy_max: IntCst,
     ) {
         // If delta is bigger than energy max there is no constraint
-        // Otherwise: enabler -> energy_at_start + delta >= energy_at_start_j
+        // Otherwise: scope -> energy_at_start + delta >= energy_at_start_j
         if self.delta < energy_max {
             model.enforce_scoped(geq(energy_at_start + self.delta, energy_at_end), scope.clone());
         }
 
         // Delta min constraint is implied by delta constraint if delta_min <= -delta
-        // Otherwise: enabler -> energy_at_start >= delta_min
+        // Otherwise: scope -> energy_at_start >= delta_min
         if self.min > 0 && self.min > -self.delta {
             model.enforce_scoped(geq(energy_at_start, self.min), scope.clone());
         }
 
         // Delta max constraint is implied by delta constraint if delta_max <= -delta
-        // Otherwise: enabler -> energy_at_start <= delta_max
+        // Otherwise: scope -> energy_at_start <= delta_max
         if self.max > 0 && self.max > -self.delta {
             model.enforce_scoped(leq(energy_at_end, energy_max - self.max), scope);
         }
