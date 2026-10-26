@@ -65,6 +65,17 @@ fn user_types(dom: &Domain) -> Result<UserTypes, Message> {
             }
         }
     }
+    // parent types without an explicit parent of their own are set to be children of object
+    for parent in dom.types.iter().flat_map(|t| &t.tpe) {
+        if parent != UserTypes::TOP_TYPE_NAME
+            && parent != UserTypes::OBJECT_TYPE_NAME
+            && !dom.types.iter().any(|t| &t.symbol == parent)
+        {
+            types
+                .add_type(parent, Some(&Sym::from(UserTypes::OBJECT_TYPE_NAME)))
+                .map_err(|e| e.to_message())?;
+        }
+    }
     Ok(types)
 }
 
