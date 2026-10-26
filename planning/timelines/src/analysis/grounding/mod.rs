@@ -57,6 +57,11 @@ impl Groundings {
             .iter()
             .filter_map(|(k, v)| k.map(|task_id| (task_id, v.as_slice())))
     }
+
+    /// Groundings of the empty source. Since it is usually fully ground (no variables involved), there is usually exactly one, empty assignment.
+    pub fn empty_source_groundings(&self) -> &[ParametersAssignment] {
+        self.groundings.get(&None).map(|v| v.as_slice()).unwrap_or(&[])
+    }
 }
 
 /// Ground all tasks appear in this problem.

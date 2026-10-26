@@ -17,7 +17,7 @@ pub use ops::IntoLinExpr;
 use smallvec::{SmallVec, smallvec};
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ComparisonOp {
     /// The == operator (equal to)
     Eq,
