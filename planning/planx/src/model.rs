@@ -1,8 +1,11 @@
-use crate::{env::Environment, *};
+use std::sync::Arc;
+
+use crate::{env::Environment, preprocessing::Transformation, *};
 
 mod conditions;
 pub use conditions::*;
 
+#[derive(Clone)]
 pub struct Model {
     pub env: Environment,
     pub actions: Actions,
@@ -11,8 +14,11 @@ pub struct Model {
     pub init: Vec<Effect>,
     pub goals: Vec<Goal>,
     pub preferences: Preferences<Goal>,
-    pub metric: Option<Metric>,
+    pub metrics: Vec<Metric>,
     pub task_network: Option<TaskNet>,
+    /// List of transformations that have been applied to the model.
+    /// Each transformation provides a way to revert its effect on a plan.
+    pub transformations: Vec<Arc<dyn Transformation>>,
 }
 
 impl Model {
@@ -23,8 +29,9 @@ impl Model {
             init: Default::default(),
             goals: Default::default(),
             preferences: Default::default(),
-            metric: Default::default(),
+            metrics: Default::default(),
             task_network: None,
+            transformations: Default::default(),
         }
     }
 }
@@ -37,7 +44,7 @@ impl Display for Model {
         fstop(f, "Init:", false, &self.init, &self.env)?;
         fstop(f, "Goals:", false, &self.goals, &self.env)?;
         fstop(f, "Preferences:", false, self.preferences.iter(), &self.env)?;
-        fstop(f, "Metric:", false, self.metric.iter(), &self.env)?;
+        fstop(f, "Metrics:", false, self.metrics.iter(), &self.env)?;
 
         if let Some(tn) = &self.task_network {
             fstop(f, "Variables:", false, &tn.variables, &self.env)?;

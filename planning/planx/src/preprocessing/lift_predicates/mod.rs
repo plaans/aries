@@ -559,6 +559,7 @@ where
         | Expr::Instant(_)
         | Expr::Duration
         | Expr::Makespan
+        | Expr::PlanLength
         | Expr::ViolationCount(_) => (),
     }
     Ok(())
@@ -585,6 +586,7 @@ where
         | Expr::Instant(_)
         | Expr::Duration
         | Expr::Makespan
+        | Expr::PlanLength
         | Expr::ViolationCount(_) => (),
     }
     Ok(())
@@ -611,6 +613,7 @@ where
         | Expr::Instant(_)
         | Expr::Duration
         | Expr::Makespan
+        | Expr::PlanLength
         | Expr::ViolationCount(_) => (),
     }
     Ok(())

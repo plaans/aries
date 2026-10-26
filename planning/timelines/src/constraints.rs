@@ -39,6 +39,30 @@ impl BoolExpr<SchedEncoder> for MakespanIsMaxTaskEnd {
     }
 }
 
+/// Constraint that enforces the [`Sched::num_actions`] variable to be equal to the number of actions present.
+///
+/// Enforced by default in [`Sched`]
+#[derive(Debug)]
+pub(crate) struct NumActionsIsActionCount;
+impl BoolExpr<SchedEncoder> for NumActionsIsActionCount {
+    fn enforce_if(&self, l: Lit, ctx: &mut SchedEncoder) {
+        let _span = tracing::debug_span!("ActionsCounting");
+        let _span = _span.enter();
+
+        let actions_presence = ctx.sched.tasks.iter().map(|t| t.presence).collect_vec();
+        let mut sum = LinSum::zero();
+        for t in actions_presence {
+            sum += bool2int(t, ctx);
+        }
+        eq(ctx.sched.num_actions, sum).enforce_if(l, ctx);
+    }
+
+    fn conj_scope(&self, _ctx: &SchedEncoder) -> Conjunction {
+        // constraint is always valid (scope of num_actions variable)
+        Conjunction::tautology()
+    }
+}
+
 pub struct NoOverlap(Vec<TaskId>);
 impl NoOverlap {
     pub fn new(tasks: Vec<TaskId>) -> Self {
