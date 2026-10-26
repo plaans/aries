@@ -18,7 +18,7 @@ pub enum ActionsError {
 /// Collection of actions and tasks in the problem.
 ///
 /// An action may contain conditions, effects and subtasks, unifying the normal PDDL actions and the methods of HTN planning.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Actions {
     tasks: BTreeMap<TaskRef, Task>,
     actions: BTreeMap<ActionRef, Action>,
@@ -112,9 +112,9 @@ pub enum Duration {
 
 pub type ActionPreferences = Preferences<Condition>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Action {
-    /// Name of the action templage (e.g. "move")
+    /// Name of the action template (e.g. "move")
     pub name: ActionRef,
     /// Typed parameters of the action (e.g. [?r: Robot, ?l: Location])
     pub parameters: Vec<Param>,

@@ -52,7 +52,7 @@ impl UserTypeDeclarationError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Types {
     user_types: Arc<UserTypes>,
 }
@@ -394,6 +394,13 @@ impl Type {
 
     /// Unbounded real type
     pub const REAL: Type = Type::Real;
+
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            Int(_) | Real => true,
+            User(_) | Bool => false,
+        }
+    }
 
     pub fn is_subtype_of(&self, other: &Type) -> bool {
         match (self, other) {

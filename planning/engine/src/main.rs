@@ -2,6 +2,7 @@ pub(crate) mod ctags;
 mod export;
 mod generate;
 pub(crate) mod optimize_plan;
+mod preprocessing;
 mod repair;
 mod validate;
 
@@ -10,13 +11,16 @@ use std::{io::IsTerminal, path::PathBuf};
 use aries_plan_engine::plans::lifted_plan;
 use clap::*;
 use planx::{
-    Message, Res,
+    Message, RealValue, Res,
     errors::*,
     pddl::{self, input::Input},
 };
-use timelines::IntCst;
 
-use crate::{export::ReportMetadata, repair::RepairOptions};
+use crate::{
+    export::ReportMetadata,
+    preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess},
+    repair::RepairOptions,
+};
 
 /// Aries Planning Engine (APE)
 #[derive(Parser, Debug)]
@@ -112,7 +116,7 @@ pub struct Validate {
     ///
     /// This is primarily intended to enable testing (e.g. that the validator reproduces reference results).
     #[arg(short, long)]
-    expected_objective: Option<IntCst>,
+    expected_objective: Option<RealValue>,
     #[command(flatten)]
     options: validate::Options,
 }
@@ -246,11 +250,30 @@ fn find_problem(command: &FindProblem) -> Res<()> {
     }
 }
 
+/// Overrides the metrics of the model.
+fn set_metric(model: &mut planx::Model, metrics: &[optimize_plan::Objective]) -> Res<()> {
+    model.metrics.clear();
+    for obj in metrics {
+        let expr = match obj {
+            optimize_plan::Objective::PlanLength => planx::Expr::PlanLength,
+            optimize_plan::Objective::Makespan => planx::Expr::Makespan,
+        };
+        let expr = model.env.intern(expr, None)?;
+        model.metrics.push(planx::Metric::Minimize(expr));
+    }
+    Ok(())
+}
+
 fn validate_plan(command: &Validate) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
     // processed model (from planx)
-    let model = pddl::build_model(&dom, &pb)?;
+    let mut model = pddl::build_model(&dom, &pb)?;
+    if model.metrics.is_empty() {
+        set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
+    }
+    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     if command.verbose {
         println!("\n===== Model ====\n\n{model}\n");
@@ -258,13 +281,13 @@ fn validate_plan(command: &Validate) -> Res<()> {
     }
 
     match validate::validate(&model, &plan, &command.options)? {
-        validate::ValidationResult::Valid { objective_value } => {
+        validate::ValidationResult::Valid { validated_plan } => {
             println!("VALID");
             if command.invalid {
                 std::process::exit(1);
             }
             if let Some(expected) = command.expected_objective
-                && expected != objective_value
+                && Some(&expected) != validated_plan.metrics.first()
             {
                 return Message::error(format!("expected an objective value of {expected}")).failed();
             }
@@ -282,7 +305,16 @@ fn validate_plan(command: &Validate) -> Res<()> {
 fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
-    let model = pddl::build_model(&dom, &pb)?;
+    let mut model = pddl::build_model(&dom, &pb)?;
+    if !command.options.objectives.is_empty() {
+        // override provided metrics
+        set_metric(&mut model, &command.options.objectives)?;
+    } else if model.metrics.is_empty() {
+        // set default metric to plan length
+        set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
+    }
+    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+
     let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
     println!("\n===== Plan ====\n\n{plan}\n");
@@ -300,14 +332,25 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         Some(path) => Some(path.clone()),
     };
 
-    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref())
+    optimize_plan::optimize_plan(&model, &plan, &command.options, resolved_output.as_deref())?;
+    Ok(())
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
     let (dom, pb) = command.pb.parse()?;
 
     // processed model (from planx)
-    let model = pddl::build_model(&dom, &pb)?;
+    let mut model = pddl::build_model(&dom, &pb)?;
+    if !command.options.objectives.is_empty() {
+        // override provided metrics
+        set_metric(&mut model, &command.options.objectives)?;
+    } else if model.metrics.is_empty() {
+        // set default metric to plan length
+        set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
+    }
+    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+
+    let model = planx::preprocessing::convert_reals_to_int(&model)?;
     println!("{model}");
 
     let result = generate::solve_finite_planning_problem(&model, &command.options)?;

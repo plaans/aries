@@ -1,6 +1,5 @@
 use errors::Spanned;
 use itertools::Itertools;
-use num_rational::Rational64;
 use smallvec::SmallVec;
 
 use crate::{
@@ -10,8 +9,10 @@ use crate::{
     *,
 };
 
+mod real;
+
 pub type IntValue = i64;
-pub type RealValue = Rational64;
+pub type RealValue = real::RealValue;
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Clone, Copy)]
 pub struct ExprId(pub(crate) u32);
@@ -22,6 +23,7 @@ impl idmap::intid::IntegerId for ExprId {
     idmap::intid::impl_newtype_id_body!(for ExprId(u32));
 }
 
+#[derive(Clone)]
 pub(crate) struct ExprNode {
     expr: Expr,
     tpe: Type,
@@ -58,6 +60,7 @@ impl<'a> TExpr<'a> {
             | Expr::Instant(_)
             | Expr::Duration
             | Expr::Makespan
+            | Expr::PlanLength
             | Expr::ViolationCount(_) => false,
         }
     }
@@ -100,7 +103,10 @@ pub enum Expr {
     Forall(Vars, ExprId),
     Instant(Timestamp),
     Duration,
+    /// End time of the latest action
     Makespan,
+    /// Total number of actions in the plan
+    PlanLength,
     ViolationCount(RefId),
 }
 
@@ -126,6 +132,7 @@ impl<'a> Display for TExpr<'a> {
             }
             Expr::Duration => write!(f, "?duration"),
             Expr::Makespan => write!(f, "?makespan"),
+            Expr::PlanLength => write!(f, "?plan-length"),
             Expr::ViolationCount(ref_id) => write!(f, "violations({ref_id})"),
             Expr::Exists(params, expr_id) => {
                 write!(f, "(exists {} {})", params.iter().join(", "), self.env / *expr_id)
@@ -156,7 +163,7 @@ impl Expr {
             Expr::Param(p) => Ok(p.tpe().clone()),
             Expr::Exists(_, x) | Expr::Forall(_, x) => Ok(env.node(*x).tpe().clone()),
             Expr::Duration | Expr::Makespan => Ok(Type::Real),
-            Expr::ViolationCount(_) => Ok(Type::Int(IntInterval::at_least(0))),
+            Expr::ViolationCount(_) | Expr::PlanLength => Ok(Type::Int(IntInterval::at_least(0))),
             Expr::Instant(_) => Ok(Type::Real),
         }
     }

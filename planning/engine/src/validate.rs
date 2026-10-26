@@ -1,14 +1,14 @@
 use aries_plan_engine::{encode::tags::format_culprit_set, plans::lifted_plan::LiftedPlan};
-use aries_solver::core::state::Evaluable;
+use itertools::Itertools;
 use planx::{Message, Model, Res};
 
-use crate::optimize_plan::{self, encode_plan_optimization_problem};
+use crate::optimize_plan::encode_plan_optimization_problem;
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct Options {}
 
 pub enum ValidationResult {
-    Valid { objective_value: timelines::IntCst },
+    Valid { validated_plan: planx::SolutionPlan },
     Invalid,
 }
 
@@ -17,18 +17,18 @@ pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<Val
     // hence the solver is forced to reproduce the plan
     let opt_options = crate::optimize_plan::Options {
         relaxation: vec![], // no relaxation
-        objectives: vec![optimize_plan::Objective::Original],
+        objectives: vec![], // unused
     };
     let (mut solver, encoding, _sched) =
         encode_plan_optimization_problem(model, plan, Default::default(), &opt_options, true)?;
 
     if let Some(solution) = solver.check_satisfiability() {
         println!("> Plan is valid");
-        let objective = encoding.objectives.first().copied().unwrap();
-        let objective_value = objective.evaluate(&solution).unwrap();
-        println!("> Objective: {objective_value}");
+        let plan = encoding.plan(&solution);
+        let plan = plan.export(model)?;
+        println!("> Objective: {}", plan.metrics.iter().format(" -- "));
         // _sched.print(&solution);
-        Ok(ValidationResult::Valid { objective_value })
+        Ok(ValidationResult::Valid { validated_plan: plan })
     } else {
         println!("Plan is INVALID!!!!");
         for mus in solver.muses() {

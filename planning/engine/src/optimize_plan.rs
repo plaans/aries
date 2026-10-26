@@ -15,15 +15,15 @@ use aries_plan_engine::{
 };
 use aries_solver::{
     core::{state::Evaluable, views::Boundable},
-    lang::{IntExpr, ModelView},
+    lang::ModelView,
     prelude::*,
 };
 use derive_more::derive::Display;
 use itertools::Itertools;
 
-use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, Sym, Type, errors::*};
+use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use std::path::Path;
-use timelines::{ConstraintID, IntExp, IntTerm, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
+use timelines::{ConstraintID, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
 
 pub type RelaxableConstraint = Tag;
 
@@ -32,7 +32,7 @@ pub struct Options {
     #[arg(short, long, num_args(1..))]
     pub relaxation: Vec<Relaxation>,
 
-    #[arg(short, long, num_args(1..), default_values(["original"]))]
+    #[arg(short, long, num_args(0..))]
     pub objectives: Vec<Objective>,
 }
 
@@ -44,15 +44,18 @@ pub enum Relaxation {
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Objective {
-    /// The objective value defined in the domain
-    Original,
     /// Number of actions in the plan
     PlanLength,
     /// End time of the latest action
     Makespan,
 }
 
-pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>) -> Res<()> {
+pub fn optimize_plan(
+    model: &Model,
+    plan: &LiftedPlan,
+    options: &Options,
+    output_plan: Option<&Path>,
+) -> Res<Option<SolutionPlan>> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, _sched) =
@@ -83,7 +86,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
                 let msg = format_culprit_set(Message::error("Invalid in all relaxation"), &mus, model, plan);
                 println!("\n{msg}\n");
             }
-            return Ok(());
+            return Ok(None);
         };
 
         // Pin objective == opt_val for subsequent phases (upper + lower bound)
@@ -98,41 +101,28 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
         print_plan(&solution);
         let plan = encoding.plan(&solution);
         plan.write_to_file(output_plan)?;
-    }
 
-    Ok(())
+        Ok(Some(plan.export(model)?))
+    } else {
+        Ok(None)
+    }
 }
 
 fn build_objective(
-    objective: &Objective,
+    objective: &planx::Metric,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
     encoding: &mut Encoding,
 ) -> Res<LinTerm> {
-    Ok(match objective {
-        Objective::Original if model.metric.is_some() => {
-            // TODO: use if let guard when stabilized
-            let metric = model.metric.unwrap();
-            match metric {
-                planx::Metric::Minimize(expr_id) => {
-                    let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, sched, bindings, encoding)?;
-                    flatten_expression(lin_obj, sched, bindings)
-                }
-                planx::Metric::Maximize(_) => {
-                    return Message::error("unsupported maximization metric").failed();
-                }
-            }
+    Ok(match *objective {
+        planx::Metric::Minimize(expr_id) => {
+            let lin_obj = reify_expression(expr_id, Some(sched.horizon), model, sched, bindings, encoding)?;
+            flatten_expression(lin_obj, sched, bindings)
         }
-        // Fall back to plan length when no metric is defined in the domain
-        Objective::PlanLength | Objective::Original => {
-            let mut sum = LinSum::zero();
-            for t in sched.tasks.iter() {
-                sum += bool2int(t.presence, &mut sched.model);
-            }
-            reify_sum(sum, sched)
+        planx::Metric::Maximize(_) => {
+            return Message::error("unsupported maximization metric").failed();
         }
-        Objective::Makespan => sched.makespan.into(),
     })
 }
 
@@ -429,7 +419,7 @@ pub fn encode_plan_optimization_problem(
     }
 
     // Build all objectives
-    for obj in &options.objectives {
+    for obj in &model.metrics {
         let obj = build_objective(obj, model, &mut sched, &global_scope, &mut encoding)?;
         encoding.add_objective(obj);
     }
@@ -474,10 +464,6 @@ pub fn encode_plan_optimization_problem(
         }
     };
     Ok((sched.explainable_solver(relaxations), encoding, sched))
-}
-
-fn reify_sum(sum: IntExp, model: &mut Sched) -> IntTerm {
-    sum.reify(sum.conj_scope(&model), &mut model.model)
 }
 
 /// Parses a goal (possibly quantified) into an equivalent expression
