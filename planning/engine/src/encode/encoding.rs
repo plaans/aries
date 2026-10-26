@@ -3,8 +3,8 @@ use std::{collections::BTreeMap, fmt::Display, path::Path};
 
 use aries_solver::{core::state::Evaluable, prelude::*};
 use itertools::Itertools;
-use planx::Res;
 use planx::{ActionRef, Message, errors::Ctx};
+use planx::{RealValue, Res};
 use timelines::{ConstraintID, IntTerm, Sym, Time, symbols::ObjectDecoder};
 
 use crate::{
@@ -77,6 +77,46 @@ impl<'a> Plan<'a> {
                 .title(format!("Cannot write output file {}", path.display()))?;
         }
         Ok(())
+    }
+
+    /// Export a solution plan for the original model (before any transformation was applied to it).
+    pub fn export(&self, model: &planx::Model) -> Res<planx::SolutionPlan> {
+        let mut operations = Vec::new();
+        for a in &self.encoding.actions {
+            let Some(a) = a.evaluate(self.solution) else {
+                continue;
+            };
+            let mut arguments = Vec::with_capacity(a.arguments.len());
+            for arg in a.arguments {
+                let arg = model.env.objects.get(arg.as_str())?;
+                arguments.push(arg);
+            }
+            let op = planx::Operation {
+                start: RealValue::from_integer(a.start as i64),
+                duration: RealValue::from_integer(a.duration as i64),
+                action_ref: a.action_ref,
+                arguments,
+            };
+            operations.push(op);
+        }
+        operations.sort_by_key(|o| o.start);
+        let mut plan = planx::SolutionPlan {
+            operations,
+            metrics: self
+                .encoding
+                .objectives
+                .iter()
+                .map(|obj| RealValue::from_integer(obj.evaluate(self.solution).unwrap() as i64))
+                .collect_vec(),
+        };
+
+        // we have the plan for the model as it is now. We need to revert all transforamtion
+        // to get a valid original plan.
+        for transformation in model.transformations.iter().rev() {
+            plan = transformation.revert(plan);
+        }
+
+        Ok(plan)
     }
 }
 

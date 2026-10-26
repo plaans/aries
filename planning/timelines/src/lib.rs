@@ -127,6 +127,7 @@ pub struct Sched {
     pub horizon: Time,
     pub(crate) global_args: Vec<IntTerm>, // TODO: PLACEHOLDER
     pub makespan: Time,
+    pub num_actions: VarCst,
     pub tasks: Tasks,
     pub effects: Effects,
     constraints: Vec<Constraint>,
@@ -139,6 +140,7 @@ impl Sched {
         let origin = Time::ZERO;
         let horizon = model.new_ivar(0, INT_CST_MAX, "horizon").into();
         let makespan = model.new_ivar(0, INT_CST_MAX, "makespan").into();
+        let num_actions = model.new_ivar(0, INT_CST_MAX, "num-actions").into();
         Sched {
             model,
             objects,
@@ -147,11 +149,16 @@ impl Sched {
             epsilon: 1,
             origin,
             horizon,
+            num_actions,
             global_args: Default::default(),
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
-            constraints: vec![Arc::new(MakespanIsMaxTaskEnd), Arc::new(EffectCoherence)],
+            constraints: vec![
+                Arc::new(MakespanIsMaxTaskEnd),
+                Arc::new(NumActionsIsActionCount),
+                Arc::new(EffectCoherence),
+            ],
         }
     }
 

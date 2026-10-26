@@ -25,8 +25,8 @@ pub struct Options {
     pub max_instances: u32,
 
     /// Defines the objective to be minimized
-    #[arg(short, long, default_value("original"))]
-    pub objective: Objective,
+    #[arg(short, long, num_args(0..))]
+    pub objectives: Vec<Objective>,
 
     /// If set, the planner will try to find the optimal solution
     #[arg(long)]
@@ -128,7 +128,7 @@ fn encode_finite_planning_problem(
                 optimize_plan::Relaxation::ActionPresence,
                 optimize_plan::Relaxation::StartTime,
             ],
-            objectives: vec![options.objective],
+            objectives: vec![], // unused, TODO: remove from parameters
         },
         false,
     )

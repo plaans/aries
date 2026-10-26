@@ -1,4 +1,4 @@
-use num_integer::{div_ceil, div_floor};
+use num_integer::{Integer, div_ceil, div_floor};
 use smallvec::SmallVec;
 
 use crate::core::state::Evaluable;
@@ -86,12 +86,12 @@ impl VarView for ScaledVarImpl {
 
     fn upper_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom._upper_bound(self.var) * self.factor
+        cst_long_to_int_clamped(dom._upper_bound(self.var) as LongCst * self.factor as LongCst)
     }
 
     fn lower_bound(&self, dom: impl Dom) -> Self::Value {
         debug_assert!(self.factor > 0);
-        dom._lower_bound(self.var) * self.factor
+        cst_long_to_int_clamped(dom._lower_bound(self.var) as LongCst * self.factor as LongCst)
     }
 }
 
@@ -126,7 +126,7 @@ impl ScaledVarImpl {
 }
 
 impl VarView for ScaledVar {
-    type Value = IntCst; // TODO: this should be LongCst to avoid possible overflows
+    type Value = IntCst;
 
     fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
         ScaledVarImpl::from(*self).upper_bound(dom)
@@ -391,6 +391,18 @@ impl LinSum {
         self.constant *= factor;
         self.vars.iter_mut().for_each(|sv| sv.factor *= factor);
         self.simplify();
+    }
+
+    /// If the linear expression is a multiple of `n`, then returns the result of `self / n`.
+    pub fn try_divide(mut self, n: IntCst) -> Option<Self> {
+        if self.constant.is_multiple_of(&n) && self.terms().all(|t| t.factor.is_multiple_of(&n)) {
+            self.constant /= n;
+            self.vars.iter_mut().for_each(|sv| sv.factor /= n);
+            self.simplify();
+            Some(self)
+        } else {
+            None
+        }
     }
 }
 

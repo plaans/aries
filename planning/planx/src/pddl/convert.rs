@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{rc::Rc, str::FromStr};
 
 use errors::*;
 use itertools::Itertools;
@@ -147,12 +147,12 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
     }
     if let Some(metric) = &prob.metric {
         match metric {
-            pddl::Metric::Maximize(max) => {
-                model.metric = Some(Metric::Maximize(parse(max, &mut model.env, &bindings)?))
-            }
-            pddl::Metric::Minimize(min) => {
-                model.metric = Some(Metric::Minimize(parse(min, &mut model.env, &bindings)?))
-            }
+            pddl::Metric::Maximize(max) => model
+                .metrics
+                .push(Metric::Maximize(parse(max, &mut model.env, &bindings)?)),
+            pddl::Metric::Minimize(min) => model
+                .metrics
+                .push(Metric::Minimize(parse(min, &mut model.env, &bindings)?)),
         }
     }
 
@@ -748,19 +748,7 @@ fn parse_preference_gen<T>(
 
 /// Parse a number number ("32", "-3", "3.14", -323.3")
 fn parse_number(decimal_str: &str) -> Option<RealValue> {
-    if let Ok(i) = decimal_str.parse::<IntValue>() {
-        Some(RealValue::new(i, 1))
-    } else {
-        let (lhs, rhs) = decimal_str.split_once(".")?;
-        let num_digits = rhs.len() as u32;
-        let denom = 10i64.pow(num_digits);
-        let lhs: i64 = if lhs.is_empty() { 0 } else { lhs.parse().ok()? };
-        let rhs: u64 = if rhs.is_empty() { 0 } else { rhs.parse().ok()? };
-        let rhs = rhs as i64;
-        debug_assert!(rhs < denom);
-        let numer = lhs * denom + rhs;
-        Some(RealValue::new(numer, denom))
-    }
+    RealValue::from_str(decimal_str).ok()
 }
 
 fn parse_number_sexpr(num: &SExpr) -> Result<RealValue, Message> {

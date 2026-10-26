@@ -2,6 +2,7 @@ use idmap::DirectIdMap;
 
 use crate::{Expr, ExprId, ExprNode, Fluents, Message, Objects, Types, errors::Span};
 
+#[derive(Clone)]
 pub struct Environment {
     pub types: Types,
     pub objects: Objects,
