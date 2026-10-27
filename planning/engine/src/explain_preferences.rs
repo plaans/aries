@@ -659,7 +659,7 @@ pub(crate) fn compute_still_violated(
 /// Flow overview:
 ///   1. Classify all preferences as satisfied/violated in the optimal plan.
 ///   2. Display them as a numbered list and prompt the user to select violated ones to enforce.
-///   3. Check joint feasibility of the selection (ignoring cost bound).
+///   3. Check joint feasibility of the selection within the cost bound (all enablers assumed).
 ///      - If infeasible: run MUS/MCS analysis, show conflicts & resolutions, let user drop
 ///        preferences, and loop back to the feasibility check.
 ///      - If feasible: proceed to Phase 1.
