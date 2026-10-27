@@ -58,7 +58,16 @@ pub enum Explanation {
     InteractiveEnforcePreferences,
 }
 
-pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output_plan: Option<&Path>, explanations: &[Explanation], simulate: Option<crate::simulate_preferences::Strategy>, stop_threshold: Option<i64>, user_weights: Option<&std::collections::BTreeMap<String, i64>>, user_model: crate::simulate_preferences::UserModel) -> Res<()> {
+/// Optimizes the plan and runs the requested explanations. `simulation`, when
+/// given, replaces the interactive preference enforcement with a simulated user.
+pub fn optimize_plan(
+    model: &Model,
+    plan: &LiftedPlan,
+    options: &Options,
+    output_plan: Option<&Path>,
+    explanations: &[Explanation],
+    simulation: Option<&crate::simulate_preferences::Simulation>,
+) -> Res<()> {
     let start = Instant::now();
     // Encode the planning problem into a constraint satisfaction problem
     let (mut solver, encoding, sched, plan_cost_obj) = encode_plan_optimization_problem(model, plan, Default::default(), options)?;
@@ -116,7 +125,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
         for explanation in explanations {
             match explanation {
                 Explanation::InteractiveEnforcePreferences => {
-                    if let Some(strategy) = simulate {
+                    if let Some(simulation) = simulation {
                         crate::simulate_preferences::simulate_preference_enforcement(
                             &mut solver.clone(),
                             &encoding,
@@ -125,10 +134,7 @@ pub fn optimize_plan(model: &Model, plan: &LiftedPlan, options: &Options, output
                             &solution,
                             &prior_phase_assumptions,
                             plan_cost_obj,
-                            strategy,
-                            stop_threshold,
-                            user_weights,
-                            user_model,
+                            simulation,
                         );
                     } else {
                         crate::explain_preferences::interactive_preference_enforcement(

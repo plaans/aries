@@ -30,11 +30,12 @@
 //! final plan.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 use aries::prelude::*;
 use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
 
-use planx::{Expr, ExprId, Fun, Metric, Model};
+use planx::{Expr, ExprId, Fun, Message, Metric, Model, Res, pddl::{self, input::Input}};
 use timelines::{IntTerm, Sched, explain::ExplainableSolver};
 
 use crate::explain_preferences::{
@@ -87,6 +88,89 @@ impl std::fmt::Display for UserModel {
             UserModel::Reactive => write!(f, "reactive"),
         }
     }
+}
+
+// =====================================================================
+// CLI options (flattened into `optimize-plan`, like `optimize_plan::Options`)
+// and the settings resolved from them.
+// =====================================================================
+
+/// Command-line options of the simulated preference enforcement.
+#[derive(clap::Args, Debug, Clone)]
+pub(crate) struct SimulationOptions {
+    /// Replace interactive input with an automated simulation strategy.
+    /// Requires -e interactive-enforce-preferences.
+    #[arg(long)]
+    pub simulate: Option<Strategy>,
+    /// Stop simulation early when objective reaches this threshold.
+    /// Disabled by default; pass a value to enable (e.g. --stop-threshold 6).
+    #[arg(long)]
+    pub stop_threshold: Option<i64>,
+    /// PDDL problem file whose metric gives the utilities of the SIMULATED USER
+    /// (hidden from the planner, which keeps optimizing the metric of --problem).
+    /// Preference names must match those of --problem. Requires --simulate.
+    #[arg(long)]
+    pub user_utilities: Option<PathBuf>,
+    /// What the simulated user asks for: `original` (only violated preferences),
+    /// `protective` (all preferences, pinning the satisfied ones) or `reactive`
+    /// (violated ones, re-requesting any preference sacrificed by a solve).
+    #[arg(long, default_value = "original")]
+    pub user_model: UserModel,
+}
+
+/// Settings of one simulated enforcement, resolved from [`SimulationOptions`].
+pub(crate) struct Simulation {
+    pub strategy: Strategy,
+    pub stop_threshold: Option<i64>,
+    /// Utilities of the simulated user (from `--user-utilities`). If `None`,
+    /// the user shares the planner's metric weights (original behaviour).
+    pub user_weights: Option<BTreeMap<String, i64>>,
+    pub user_model: UserModel,
+}
+
+impl SimulationOptions {
+    /// Resolves the options into a [`Simulation`], parsing the hidden-utilities
+    /// problem (same domain as the planner's) when one is given.
+    /// Returns `None` when no `--simulate` strategy was requested.
+    pub(crate) fn resolve(&self, dom: &pddl::Domain) -> Res<Option<Simulation>> {
+        let Some(strategy) = self.simulate else {
+            if self.user_utilities.is_some() {
+                return Err(Message::error("--user-utilities requires --simulate".to_string()));
+            }
+            return Ok(None);
+        };
+        let user_weights = match &self.user_utilities {
+            Some(path) => {
+                println!("> User utilities: {}", path.display());
+                let user_pb = pddl::parse_pddl_problem(Input::from_file(path)?)?;
+                let user_model = pddl::build_model(dom, &user_pb)?;
+                Some(extract_preference_weights(&user_model))
+            }
+            None => None,
+        };
+        Ok(Some(Simulation {
+            strategy,
+            stop_threshold: self.stop_threshold,
+            user_weights,
+            user_model: self.user_model,
+        }))
+    }
+}
+
+/// Read-only context shared by the enforcement loops: the encoded problem,
+/// the preferences, the baseline of the planner's optimum and the user model.
+#[derive(Clone, Copy)]
+struct SimContext<'a> {
+    encoding: &'a Encoding,
+    model: &'a Model,
+    sched: &'a Sched,
+    entries: &'a [PreferenceEntry],
+    plan_cost_obj: Option<IntTerm>,
+    optimal_obj_val: IntCst,
+    optimal_plan_cost: Option<IntCst>,
+    /// Utilities driving the simulated user's decisions (ordering, drops).
+    weights: &'a BTreeMap<String, i64>,
+    user_model: UserModel,
 }
 
 // =====================================================================
@@ -236,13 +320,8 @@ struct PathResult {
 
 fn run_one_by_one(
     solver: &mut ExplainableSolver<Tag>,
-    encoding: &Encoding,
-    model: &Model,
-    sched: &Sched,
-    entries: &[PreferenceEntry],
-    plan_cost_obj: Option<IntTerm>,
-    optimal_obj_val: IntCst,
-    optimal_plan_cost: Option<IntCst>,
+    ctx: &SimContext,
+    timers: &mut SimTimers,
     stop_threshold: Option<IntCst>,
     initial_set: &[usize],
     initial_steps: usize,
@@ -251,13 +330,11 @@ fn run_one_by_one(
     // Blind mode: no MUS analysis; on conflict drop the lowest-`weights`
     // preference of the whole selection and retry the same request.
     blind: bool,
-    weights: &BTreeMap<String, i64>,
-    timers: &mut SimTimers,
-    user_model: UserModel,
     // Preferences satisfied before this loop started (planner's optimum, or the
     // last known solution); used by the Reactive model to detect sacrifices.
     baseline_satisfied: &BTreeSet<String>,
 ) -> PathResult {
+    let SimContext { encoding, model, sched, entries, plan_cost_obj, optimal_obj_val, optimal_plan_cost, weights, user_model } = *ctx;
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = initial_set.to_vec();
     let mut steps: usize = initial_steps;
@@ -411,20 +488,13 @@ struct PruneResult {
 
 fn run_prune(
     solver: &mut ExplainableSolver<Tag>,
-    encoding: &Encoding,
-    model: &Model,
-    sched: &Sched,
-    entries: &[PreferenceEntry],
-    weights: &BTreeMap<String, i64>,
-    plan_cost_obj: Option<IntTerm>,
-    optimal_obj_val: IntCst,
-    optimal_plan_cost: Option<IntCst>,
+    ctx: &SimContext,
+    timers: &mut SimTimers,
     violated_sorted: &[usize],
     path_label: &str,
-    timers: &mut SimTimers,
-    user_model: UserModel,
     baseline_satisfied: &BTreeSet<String>,
 ) -> PruneResult {
+    let SimContext { encoding, model, sched, entries, plan_cost_obj, optimal_obj_val, optimal_plan_cost, weights, user_model } = *ctx;
     let obj = encoding.objectives[0];
     let mut selected_indices: Vec<usize> = violated_sorted.to_vec();
     let mut steps: usize = 1;
@@ -492,10 +562,9 @@ fn run_prune(
         println!("\n[SIM][{}] Re-add phase: attempting to recover [{}]", path_label, readd_str);
 
         let readd_result = run_one_by_one(
-            solver, encoding, model, sched, entries,
-            plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+            solver, ctx, timers,
             None, &selected_indices, steps, &readd_ordering, path_label,
-            false, weights, timers, user_model, baseline_satisfied,
+            false, baseline_satisfied,
         );
         steps = readd_result.steps;
         selected_indices = readd_result.enforced;
@@ -540,10 +609,9 @@ fn run_prune(
                     println!("\n[SIM][{}] Sacrificed by the solver, re-requesting: [{}]", path_label,
                         sacrificed.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", "));
                     let react = run_one_by_one(
-                        solver, encoding, model, sched, entries,
-                        plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                        solver, ctx, timers,
                         None, &selected_indices, steps, &sacrificed, path_label,
-                        false, weights, timers, user_model, sat,
+                        false, sat,
                     );
                     steps = react.steps;
                     selected_indices = react.enforced;
@@ -590,14 +658,14 @@ pub(crate) fn simulate_preference_enforcement(
     optimal_solution: &Solution,
     phase_assumptions: &[Lit],
     plan_cost_obj: Option<IntTerm>,
-    strategy: Strategy,
-    cli_stop_threshold: Option<i64>,
-    // Utilities of the simulated user (from --user-utilities). If None, the
-    // user shares the planner's metric weights (original behaviour).
-    user_weights: Option<&BTreeMap<String, i64>>,
-    user_model: UserModel,
+    simulation: &Simulation,
 ) {
     if encoding.preferences.is_empty() { return; }
+
+    let strategy = simulation.strategy;
+    let user_model = simulation.user_model;
+    let cli_stop_threshold = simulation.stop_threshold;
+    let user_weights = simulation.user_weights.as_ref();
 
     println!("\nSimulation strategy: {}", strategy);
     println!("[SIM] User model: {}", user_model);
@@ -678,6 +746,12 @@ pub(crate) fn simulate_preference_enforcement(
         UserModel::Original | UserModel::Reactive => violated_indices.clone(),
     };
 
+    let ctx = SimContext {
+        encoding, model, sched, entries: &entries,
+        plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+        weights: &weights, user_model,
+    };
+
     match strategy {
         Strategy::Greedy | Strategy::Blind => {
             // Enforce highest-utility candidates first.
@@ -685,10 +759,9 @@ pub(crate) fn simulate_preference_enforcement(
             let label = if blind { "blind" } else { "greedy" };
             let ordering = build_greedy_ordering(&candidate_indices, &entries, &weights);
             let result = run_one_by_one(
-                &mut solver.clone(), encoding, model, sched, &entries,
-                plan_cost_obj, optimal_obj_val, optimal_plan_cost,
+                &mut solver.clone(), &ctx, &mut timers,
                 stop_threshold, &[], 0, &ordering, label,
-                blind, &weights, &mut timers, user_model, &baseline_satisfied,
+                blind, &baseline_satisfied,
             );
             let _metrics = SimulationMetrics { steps: result.steps, outcome: result.outcome };
             let enforced_str = result.enforced.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
@@ -706,9 +779,8 @@ pub(crate) fn simulate_preference_enforcement(
             let ordering = build_greedy_ordering(&candidate_indices, &entries, &weights);
 
             let prune = run_prune(
-                &mut solver.clone(), encoding, model, sched, &entries, &weights,
-                plan_cost_obj, optimal_obj_val, optimal_plan_cost,
-                &ordering, "all-at-once", &mut timers, user_model, &baseline_satisfied,
+                &mut solver.clone(), &ctx, &mut timers,
+                &ordering, "all-at-once", &baseline_satisfied,
             );
 
             let enforced_str = prune.selected.iter().map(|&i| entries[i].name.as_str()).collect::<Vec<_>>().join(", ");
