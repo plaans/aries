@@ -1381,30 +1381,58 @@ impl Solver {
                 slope: coeff.abs() * (flipped_val - self.nb_var_vals[c]).abs(),
             });
         }
-        breakpoints.sort_by(|bp1, bp2| bp1.step.total_cmp(&bp2.step));
-
         // Amount by which the leaving variable must still change to reach its bound.
         let mut infeasibility = (self.basic_var_vals[row] - leaving_new_val).abs();
-        // Number of breakpoints passed so far: their vars will be flipped.
+        // Number of breakpoints passed so far, moved to the front of `breakpoints`: their vars will be flipped.
         let mut num_flips = 0;
-        // Index of the blocking breakpoint, if any: the first one whose flip would absorb
-        // the remaining infeasibility.
-        let mut blocking = None;
 
-        for (i, bp) in breakpoints.iter().enumerate() {
-            // Pass the breakpoint only if the flip leaves some infeasibility (beyond the
-            // tolerance: a remaining infeasibility within EPS is noise and must not lead
-            // to a certificate of infeasibility).
-            if infeasibility - bp.slope > EPS {
-                infeasibility -= bp.slope;
-                num_flips = i + 1;
-            } else {
-                blocking = Some(i);
-                break;
+        // The breakpoints are passed by groups of ties: the remaining ones whose step is within
+        // the tolerance of the smallest one (Harris-style). A group is passed if flipping all its
+        // vars leaves some infeasibility (beyond the tolerance for the last group: a remaining
+        // infeasibility within EPS is noise and must not lead to a certificate of infeasibility).
+        // Otherwise the group is blocking, and the entering var is the one of the group with the
+        // biggest pivot coefficient, which gives the most numerically stable basis.
+        //
+        // See e.g. Gill, P. E., Murray, W., Saunders, M. A., & Wright, M. H. (1989).
+        // A practical anti-cycling procedure for linearly constrained optimization.
+        // Mathematical Programming, 45(1-3), 437-474.
+        let entering = loop {
+            let rest = &mut breakpoints[num_flips..];
+            if rest.is_empty() {
+                break None;
             }
-        }
+            let max_step = rest
+                .iter()
+                .map(|bp| bp.step + EPS / bp.coeff.abs())
+                .fold(f64::INFINITY, f64::min);
+            let in_group = |bp: &Breakpoint| bp.step <= max_step;
 
-        let Some(blocking) = blocking else {
+            let (group_len, group_slope) = rest
+                .iter()
+                .filter(|bp| in_group(bp))
+                .fold((0, 0.0), |(len, sum), bp| (len + 1, sum + bp.slope));
+            let threshold = if group_len == rest.len() { EPS } else { 0.0 };
+            if infeasibility - group_slope > threshold {
+                infeasibility -= group_slope;
+                let mut passed = 0;
+                for i in 0..rest.len() {
+                    if in_group(&rest[i]) {
+                        rest.swap(passed, i);
+                        passed += 1;
+                    }
+                }
+                num_flips += passed;
+                continue;
+            }
+
+            break rest
+                .iter()
+                .filter(|bp| in_group(bp))
+                .reduce(|best, bp| if bp.coeff.abs() > best.coeff.abs() { bp } else { best })
+                .map(|bp| (bp.col, bp.coeff));
+        };
+
+        let Some((col, pivot_coeff)) = entering else {
             // All breakpoints can be passed and the leaving variable is still infeasible
             // beyond the tolerance: no assignment of the non-basic vars within their
             // bounds satisfies the pivot row.
@@ -1427,24 +1455,6 @@ impl Solver {
                 Err(Error::Unstable)
             };
         };
-
-        // Harris-style tie-breaking among the breakpoints that were not passed: the
-        // candidates are those whose step ties (within the tolerance) with the blocking
-        // one and that could not have been flipped either — entering with a flippable
-        // var would push it beyond its opposite bound. Among the candidates the biggest
-        // pivot coefficient gives the most numerically stable basis, at the price of a
-        // slight dual infeasibility within the tolerance.
-        //
-        // See e.g. Gill, P. E., Murray, W., Saunders, M. A., & Wright, M. H. (1989).
-        // A practical anti-cycling procedure for linearly constrained optimization.
-        // Mathematical Programming, 45(1-3), 437-474.
-        let max_step = breakpoints[blocking].step + EPS / breakpoints[blocking].coeff.abs();
-        let entering = breakpoints[blocking..]
-            .iter()
-            .filter(|bp| bp.step <= max_step && infeasibility - bp.slope <= EPS)
-            .max_by(|bp1, bp2| bp1.coeff.abs().total_cmp(&bp2.coeff.abs()))
-            .expect("the blocking breakpoint is itself a candidate");
-        let (col, pivot_coeff) = (entering.col, entering.coeff);
 
         // The Harris tolerance can select an entering var whose reduced cost is slightly
         // on the wrong side of zero; using it as-is would make the dual step go
@@ -1478,9 +1488,9 @@ impl Solver {
             }
         }
 
-        // The entering var takes care of the infeasibility left after the flips, so its
-        // new value stays within its bounds (the blocking condition guarantees that its
-        // own bound range covers the remaining infeasibility, up to the tolerance).
+        // The entering var takes care of the infeasibility left after the flips.
+        // If its own bound range doesn't cover it (only the whole blocking group's does),
+        // its new value passes its opposite bound: it becomes an infeasible basic var, for the next pivots to fix.
         let entering_diff = (self.basic_var_vals[row] - leaving_new_val) / pivot_coeff;
         let entering_new_val = self.nb_var_vals[col] + entering_diff;
 
