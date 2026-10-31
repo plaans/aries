@@ -6,7 +6,6 @@ of the integer problem. In parallel, an exact integer version of the problem is 
 to allow the exact validation of unsat certificates (`Solver::check_certificate()`), thereby guaranteeing soundness whenever
 infeasibility is detected.
 
-
 Its entry point is the function [`Lp::add_linear_leq_constraint()`], which is used to post
 [`crate::lang::CoreExpr::LinearLeq`] constraints to the reasoner.
 It is the responsibility of the caller to linearize other types of constraints before posting
@@ -14,8 +13,7 @@ them to the LP.
 
 The reasoner uses an underlying LP solver, using a dual-revised simplex algorithm. In many problems,
 the LP relaxation can detect early that entire subtrees are infeasible. However, solving the LP (even just for feasibility)
-is typically much slower than a typical propagation budget and many terribly slow down the solver
-(sometime for no benefit).
+is typically much slower than a typical propagation budget and many terribly slow down the solver (sometime for no benefit).
 To limit the downsides (while keeping the upsides), the LP reasoner operates on computational budget,
 expressed as a number of pivot operations per decision of the solver.
 Each time a decision is made (as witnessed by a save_state call), the LP is given a number additional pivots allowance.
@@ -27,9 +25,9 @@ decision level that the LP will proceed to the next.
 The consequences are thus that the LP solver as a budget that is proportional to the number of decisions.
 Hence the LP is typically lagging behind the CP solver, and may detect unsatisfiability of a subtree that the
 CP solver has already spent many decisions/conflict in.
-THis however generally a good trade-off because the if the subtree that could be cut is very large, the LP
-will eventually get enough budget to prune it (just with some delay). On the other hand, if the small tree,
-is small, the CP solver will close with limited time lost on the LP solver.
+This, however, is generally a good trade-off because if the subtree that could be cut is very large, the LP
+will eventually get enough budget to prune it (just with some delay).
+On the other hand, if the tree is small, the CP solver will close with limited time lost on the LP solver.
 
 
 > **Important:** This reasoner is **disabled by default**.
@@ -88,8 +86,8 @@ pub struct LpOptions {
     pub is_explanation_refined: bool,
     /// Number of pivots allowed for each decision.
     ///
-    /// THe default value is controlled by [`LP_PIVOTS_PER_DECISION`].
-    /// THe best value is very problem-dependent and the default is typically very small (~0.1).
+    /// The default value is controlled by [`LP_PIVOTS_PER_DECISION`].
+    /// The best value is very problem-dependent and the default is typically very small (~0.1).
     pub pivots_per_decision: f64,
 }
 
@@ -158,7 +156,25 @@ impl From<BoundConstraintId> for usize {
     }
 }
 
-type BoundConstraintsStore = RefVec<BoundConstraintId, (Conjunction, BoundRestriction)>;
+#[derive(Clone, Default)]
+struct BoundConstraintsStore {
+    store: RefVec<BoundConstraintId, (Conjunction, BoundRestriction)>,
+    by_var: Vec<Vec<BoundConstraintId>>,
+    watches: Watches<BoundConstraintId>,
+}
+impl BoundConstraintsStore {
+    fn push(&mut self, trigger: Conjunction, bound_update: BoundRestriction) -> BoundConstraintId {
+        let id = self.store.push((trigger, bound_update));
+
+        let var = bound_update.var.idx();
+        if self.by_var.len() <= var {
+            self.by_var.resize(var + 1, vec![]);
+        }
+        self.by_var[var].push(id);
+
+        id
+    }
+}
 
 /// Store all the necessary information for backtracking after modifying a bound
 ///
@@ -257,8 +273,6 @@ pub struct Lp {
     /// Maps var from aries solver with their corresponding variable in minilp (if they appear in the post constraints)
     memory_x_main: RefMap<Var, Variable>,
     model_events: ObsTrailCursor<Event>,
-    /// The watcher corresponds to an index in `bound_constrs_lit_vec`
-    watches: Watches<BoundConstraintId>,
     /// History of changes made to the LP with all information necessary to undo them.
     ///
     /// The trail may have less saved states as the CP solver we evolve in because the reasoner is typically lagging behind due to
@@ -292,7 +306,7 @@ impl Default for Lp {
 impl Lp {
     pub fn new(options: LpOptions) -> Self {
         Self {
-            id: ReasonerId::Cp,
+            id: ReasonerId::Lp,
             solver: Solver::new(options.is_explanation_refined),
 
             bound_constrs: Default::default(),
@@ -303,7 +317,6 @@ impl Lp {
             memory_x_main: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
-            watches: Default::default(),
             trail: Default::default(),
             cp_decision_level: DecisionLevelTracker::new(),
 
@@ -499,7 +512,7 @@ impl Lp {
         // use domains that mirror the state at the LP level.
         let domains = DomainsSnapshot::up_to(domains, self.lp_level());
 
-        let id = self.bound_constrs.next_key();
+        let id = self.bound_constrs.store.next_key();
 
         // check if the trigger is already entailed and in which case, enqueue for immediate propagation.
         // This is necessary because watches would only trigger for future events.
@@ -514,10 +527,10 @@ impl Lp {
             // but this would complicate the implementation and unlikely to be useful in practice as the the vast majority of case should involve only one/two
             // literals in the conjunction.
             for l in &trigger {
-                self.watches.add_watch(id, l);
+                self.bound_constrs.watches.add_watch(id, l);
             }
         }
-        let actual_id = self.bound_constrs.push((trigger, bound_update));
+        let actual_id = self.bound_constrs.push(trigger, bound_update);
         debug_assert!(id == actual_id);
     }
 
@@ -529,7 +542,7 @@ impl Lp {
         }
 
         while let Some(index) = self.pending_bound_constrs.pop() {
-            let (cause, bound_constr) = &self.bound_constrs[index];
+            let (cause, bound_constr) = &self.bound_constrs.store[index];
 
             let entailed = cause.iter().all(|l| domains.entails(l));
 
@@ -670,9 +683,9 @@ impl Theory for Lp {
                 debug_assert!(cp_domains.entailing_level(lit) <= self.lp_level());
 
                 // We first set the bounds associated with the active lit triggered by the newly inferred lit
-                let watchers: Vec<BoundConstraintId> = self.watches.watches_on(lit).collect(); // TODO: remove allocation
+                let watchers: Vec<BoundConstraintId> = self.bound_constrs.watches.watches_on(lit).collect(); // TODO: remove allocation
                 for watcher in watchers {
-                    let (cause, bound_constr) = &self.bound_constrs[watcher];
+                    let (cause, bound_constr) = &self.bound_constrs.store[watcher];
 
                     // the fact that we got triggered means at least one literal became true.
                     // If they are all true we can proceed to enforce the bound
@@ -819,7 +832,7 @@ impl Backtrack for Lp {
                 // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
                 // We reset them all as pending again.
                 self.pending_bound_constrs.clear();
-                self.pending_bound_constrs.extend(self.bound_constrs.keys());
+                self.pending_bound_constrs.extend(self.bound_constrs.store.keys());
                 self.pending_bound_constrs_applied_at = None;
             }
             debug_assert_eq!(self.solver_lvl(), self.lp_level());
@@ -1157,7 +1170,7 @@ mod tests {
         d.set(a, Cause::Decision).unwrap();
         d.set(b, Cause::Decision).unwrap();
         assert!(lp.propagate(&mut d).is_ok());
-        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 2);
+        assert_eq!(lp.solver.bounds.current[lp_x.idx()].upper, 2);
 
         // backtracking restores the initial bound together with its justification
         lp.restore_last();
@@ -1169,7 +1182,7 @@ mod tests {
         lp.save_state();
         d.set(a, Cause::Decision).unwrap();
         assert!(lp.propagate(&mut d).is_ok());
-        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 5);
+        assert_eq!(lp.solver.bounds.current[lp_x.idx()].upper, 5);
         lp.restore_last();
         d.restore_last();
         assert!(lp.solver == init_solver);
@@ -1180,7 +1193,7 @@ mod tests {
         d.set(a, Cause::Decision).unwrap();
         d.set(x.leq(3), Cause::Decision).unwrap();
         assert!(lp.propagate(&mut d).is_ok());
-        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 3);
+        assert_eq!(lp.solver.bounds.current[lp_x.idx()].upper, 3);
         lp.restore_last();
         d.restore_last();
         assert!(lp.solver == init_solver);

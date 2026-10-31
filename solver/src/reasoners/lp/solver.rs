@@ -43,7 +43,7 @@ impl BoundJustification {
         match self {
             BoundJustification::Unconditional => {}
             BoundJustification::CpModel(lit) => explanation.push(lit),
-            BoundJustification::Trigger(bc) => explanation.extend(&bc_store[bc].0),
+            BoundJustification::Trigger(bc) => explanation.extend(&bc_store.store[bc].0),
         }
     }
 }
@@ -62,6 +62,29 @@ impl fmt::Debug for IntBounds {
     }
 }
 
+#[derive(Clone, Default)]
+pub(super) struct Bounds {
+    pub(super) current: Vec<IntBounds>,
+    /// The bounds that hold permanently / unconditionally (i.e. at root).
+    /// So either equal to initial, or stronger (if determined).
+    pub(super) unconditional: Vec<(LongCst, LongCst)>,
+    /// The initial bounds with which a variable was added.
+    init: Vec<(LongCst, LongCst)>,
+}
+impl Bounds {
+    fn push(&mut self, lb: LongCst, ub: LongCst) {
+        self.unconditional.push((lb, ub));
+        self.init.push((lb, ub));
+        self.current.push(IntBounds {
+            lower: lb,
+            upper: ub,
+            // the initial bounds of a variable hold unconditionally
+            lower_justification: BoundJustification::Unconditional,
+            upper_justification: BoundJustification::Unconditional,
+        });
+    }
+}
+
 /// Stores a constraint of our lp with integer coefficients, necessary to verify the certificate
 ///
 /// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
@@ -71,9 +94,8 @@ pub type IntegerConstraint = super::LpSum;
 #[derive(Clone)]
 pub struct Solver {
     pub(super) lp: Lp,
-    pub init_bounds: Vec<(LongCst, LongCst)>,
-    /// Used to store an exact version of our original problem with integers
-    pub(super) bounds: Vec<IntBounds>,
+
+    pub(super) bounds: Bounds,
     pub(super) constraints: Vec<IntegerConstraint>,
 
     /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
@@ -87,7 +109,7 @@ pub struct Solver {
 
 impl PartialEq for Solver {
     fn eq(&self, other: &Self) -> bool {
-        self.bounds == other.bounds && self.constraints == other.constraints && self.lp == other.lp
+        self.bounds.current == other.bounds.current && self.constraints == other.constraints && self.lp == other.lp
     }
 }
 
@@ -95,8 +117,7 @@ impl Solver {
     pub fn new(is_explanation_refined: bool) -> Self {
         Solver {
             lp: Lp::new(OptimizationDirection::Maximize),
-            init_bounds: Vec::new(),
-            bounds: Vec::new(),
+            bounds: Default::default(),
             constraints: Vec::new(),
             is_explanation_refined,
             map_lp_to_aries: RefMap::default(),
@@ -119,26 +140,18 @@ impl Solver {
                 var.idx()
             );
         }
+        self.bounds.push(lb, ub);
+        debug_assert_eq!(var.idx(), self.bounds.current.len() - 1);
 
         stats.num_variables += 1;
 
-        debug_assert_eq!(var.idx(), self.bounds.len());
-
-        self.init_bounds.push((lb, ub));
-        self.bounds.push(IntBounds {
-            lower: lb,
-            upper: ub,
-            // the initial bounds of a variable hold unconditionally
-            lower_justification: BoundJustification::Unconditional,
-            upper_justification: BoundJustification::Unconditional,
-        });
         var
     }
 
     /// Returns always valid bounds for `var * factor`
     pub fn get_init_bounds(&self, factor: IntCst, var: Variable) -> (LongCst, LongCst) {
         let factor = cst_int_to_long(factor);
-        let (lb, ub) = self.init_bounds[var.idx()];
+        let (lb, ub) = self.bounds.init[var.idx()];
         if factor >= 0 {
             (factor * lb, factor * ub)
         } else {
@@ -160,16 +173,16 @@ impl Solver {
         val: LongCst,
         justification: BoundJustification,
     ) -> Result<(), InfeasibilityReason> {
-        debug_assert!(var.idx() < self.bounds.len());
+        debug_assert!(var.idx() < self.bounds.current.len());
 
         match bound {
             Bound::Lower => {
-                self.bounds[var.idx()].lower = val;
-                self.bounds[var.idx()].lower_justification = justification;
+                self.bounds.current[var.idx()].lower = val;
+                self.bounds.current[var.idx()].lower_justification = justification;
             }
             Bound::Upper => {
-                self.bounds[var.idx()].upper = val;
-                self.bounds[var.idx()].upper_justification = justification;
+                self.bounds.current[var.idx()].upper = val;
+                self.bounds.current[var.idx()].upper_justification = justification;
             }
         }
 
@@ -186,10 +199,15 @@ impl Solver {
     /// Will return an error if the problem is immediately detected as infeasible.
     pub fn set_bound_restrict_permanent(&mut self, c: &BoundRestriction) -> Result<bool, InfeasibilityReason> {
         let restricts = match c.bound {
-            Bound::Lower => c.val > self.bounds[c.var.idx()].lower,
-            Bound::Upper => c.val < self.bounds[c.var.idx()].upper,
+            Bound::Lower => c.val > self.bounds.current[c.var.idx()].lower,
+            Bound::Upper => c.val < self.bounds.current[c.var.idx()].upper,
         };
         if restricts {
+            let unconditional = &mut self.bounds.unconditional[c.var.idx()];
+            match c.bound {
+                Bound::Lower => unconditional.0 = unconditional.0.max(c.val),
+                Bound::Upper => unconditional.1 = unconditional.1.min(c.val),
+            }
             self.set_bound(c.var, c.bound, c.val, BoundJustification::Unconditional)?;
         }
         Ok(restricts)
@@ -209,8 +227,8 @@ impl Solver {
     ) -> Result<bool, InfeasibilityReason> {
         match c.bound {
             Bound::Lower => {
-                let old_val = self.bounds[c.var.idx()].lower;
-                let old_justification = self.bounds[c.var.idx()].lower_justification;
+                let old_val = self.bounds.current[c.var.idx()].lower;
+                let old_justification = self.bounds.current[c.var.idx()].lower_justification;
                 if c.val > old_val {
                     trail.push(LpEvent {
                         var: c.var,
@@ -224,8 +242,8 @@ impl Solver {
                 }
             }
             Bound::Upper => {
-                let old_val = self.bounds[c.var.idx()].upper;
-                let old_justification = self.bounds[c.var.idx()].upper_justification;
+                let old_val = self.bounds.current[c.var.idx()].upper;
+                let old_justification = self.bounds.current[c.var.idx()].upper_justification;
 
                 if c.val < old_val {
                     trail.push(LpEvent {
@@ -268,9 +286,9 @@ impl Solver {
                 Some(acc)
             } else {
                 let bound = if coeff < 0 {
-                    self.bounds[i].lower as i128
+                    self.bounds.current[i].lower as i128
                 } else {
-                    self.bounds[i].upper as i128
+                    self.bounds.current[i].upper as i128
                 };
 
                 let prod = bound.checked_mul(coeff)?;
@@ -287,9 +305,9 @@ impl Solver {
                 Some(acc)
             } else {
                 let bound = if coeff > 0 {
-                    self.bounds[i].lower as i128
+                    self.bounds.current[i].lower as i128
                 } else {
-                    self.bounds[i].upper as i128
+                    self.bounds.current[i].upper as i128
                 };
 
                 let prod = bound.checked_mul(coeff)?;
@@ -318,7 +336,7 @@ impl Solver {
     ) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
 
-        let mut lin_sum: Vec<i128> = vec![0; self.bounds.len()];
+        let mut lin_sum: Vec<i128> = vec![0; self.bounds.current.len()];
 
         let cert_i128 = Solver::convert_certificate_i128(cert);
 
@@ -430,10 +448,10 @@ impl Solver {
             // (lower bound for a positive coefficient, upper bound for a negative one)
             // together with the justification recorded when it was set.
             let (bound, justification) = if coef > 0 {
-                let b = &self.bounds[idx];
+                let b = &self.bounds.current[idx];
                 (b.lower, b.lower_justification)
             } else {
-                let b = &self.bounds[idx];
+                let b = &self.bounds.current[idx];
                 (b.upper, b.upper_justification)
             };
 
@@ -563,9 +581,9 @@ impl Solver {
                 continue;
             }
             let justification = if coeff < 0 {
-                self.bounds[i].upper_justification
+                self.bounds.current[i].upper_justification
             } else {
-                self.bounds[i].lower_justification
+                self.bounds.current[i].lower_justification
             };
             justification.push_to(&mut explanation, bc_store);
         }
@@ -584,7 +602,7 @@ impl Solver {
     pub fn explain_infeasible_var(&self, var: Variable, bc_store: &BoundConstraintsStore) -> Explanation {
         let mut explanation = Explanation::new();
 
-        let int_bound = &self.bounds[var.idx()];
+        let int_bound = &self.bounds.current[var.idx()];
 
         for justification in [int_bound.upper_justification, int_bound.lower_justification] {
             justification.push_to(&mut explanation, bc_store);
