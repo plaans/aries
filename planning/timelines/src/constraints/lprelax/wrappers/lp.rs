@@ -48,7 +48,7 @@ pub(crate) struct LpRelaxIncr {
 impl LpRelaxIncr {
     pub(crate) fn new(ctx: SchedEncoder, lp_options: LpOptions) -> Self {
         let mut lp = Lp::new(lp_options);
-        lp.activate();
+        lp.enable();
 
         Self {
             lp,

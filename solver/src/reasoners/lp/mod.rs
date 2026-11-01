@@ -6,31 +6,35 @@ of the integer problem. In parallel, an exact integer version of the problem is 
 to allow the exact validation of unsat certificates (`Solver::check_certificate()`), thereby guaranteeing soundness whenever
 infeasibility is detected.
 
-
 Its entry point is the function [`Lp::add_linear_leq_constraint()`], which is used to post
 [`crate::lang::CoreExpr::LinearLeq`] constraints to the reasoner.
 It is the responsibility of the caller to linearize other types of constraints before posting
 them to the LP.
 
-The reasoner uses an underlying LP solver, using a dual-revised simplex algorithm. In many problems,
+The reasoner uses an underlying LP solver, with a revised dual simplex algorithm. In many problems,
 the LP relaxation can detect early that entire subtrees are infeasible. However, solving the LP (even just for feasibility)
-is typically much slower than a typical propagation budget and many terribly slow down the solver
-(sometime for no benefit).
-To limit the downsides (while keeping the upsides), the LP reasoner operates on computational budget,
+is typically much slower than a typical propagation, and may slow down the solver a lot (sometimes for no benefit).
+To limit the downsides (while keeping the upsides), the LP reasoner operates on a computational budget,
 expressed as a number of pivot operations per decision of the solver.
-Each time a decision is made (as witnessed by a save_state call), the LP is given a number additional pivots allowance.
+Each time a decision is made (as witnessed by a save_state call), the LP is allowed a number of additional pivots.
 When this number is small, the LP checker might not be able to provide a conclusion on the feasibility of the LP.
 When that is the case, the LP will not be updated when the solver takes a new decision and the next propagate will
 keep trying to determine feasibility at the previous level. It is only when the simplex establishes feasibility of a given
 decision level that the LP will proceed to the next.
 
-The consequences are thus that the LP solver as a budget that is proportional to the number of decisions.
+As a consequence, the LP solver has a budget that is proportional to the number of decisions.
 Hence the LP is typically lagging behind the CP solver, and may detect unsatisfiability of a subtree that the
-CP solver has already spent many decisions/conflict in.
-THis however generally a good trade-off because the if the subtree that could be cut is very large, the LP
-will eventually get enough budget to prune it (just with some delay). On the other hand, if the small tree,
-is small, the CP solver will close with limited time lost on the LP solver.
+CP solver has already spent many decisions/conflicts in.
+This, however, is generally a good trade-off because if the subtree that could be cut is very large, the LP
+will eventually get enough budget to prune it (just with some delay).
+On the other hand, if the tree is small, the CP solver will close with limited time lost on the LP solver.
 
+Besides checking the LP, the reasoner learns from each validated certificate of infeasibility:
+the certificate's multipliers combine the LP constraints into an equation that holds in every state,
+whose two sides are kept as learned constraints (see the `learned` module).
+They are checked at every propagation, in the current state of the solver and without the simplex: a violated one gives a contradiction,
+and the bound constraints that would violate one are deactivated (the last unset literal of their trigger is set false).
+This lets a certificate prune other parts of the search, even while the LP lags behind or has no pivots left.
 
 > **Important:** This reasoner is **disabled by default**.
 > To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
@@ -39,7 +43,9 @@ is small, the CP solver will close with limited time lost on the LP solver.
 */
 
 mod explanation_utils;
+mod learned;
 mod solver;
+mod store;
 mod sum;
 
 pub use sum::LpSum;
@@ -47,19 +53,17 @@ pub use sum::LpSum;
 use std::collections::HashMap;
 
 use aries_env_param::EnvParam;
-#[allow(unused_imports)]
-use itertools::Itertools;
+use learned::{CertAggregateConstraint, LearnedConstraints};
 use solver::{BoundJustification, Solver};
+use store::BoundConstraintsStore;
 
 use crate::prelude::*;
 use aries_lp::prelude::*;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, DecisionLevelTracker, ObsTrailCursor, Trail},
-    collections::ref_store::{RefMap, RefVec},
     core::{
         IntCst, Lit, LongCst, Var, cst_int_to_long,
-        literals::Watches,
         state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
     },
     lang::linear::LinSum,
@@ -69,48 +73,71 @@ use crate::{
 
 /// Contains all the options available for the Lp reasoner
 ///
-/// It can be passed when creating the reasoner or modified through following methods:
-/// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
+/// It is passed when creating the reasoner; [`Lp::enable`] and [`Lp::disable`] change `enabled` afterwards.
 #[derive(Debug, Clone, Copy)]
 pub struct LpOptions {
-    /// Used to activate/deactivate the propagation of the reasoner
+    /// Used to enable/disable the reasoner (constraints registration and propagation)
     ///
-    /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
-    pub propagation_active: bool,
-    /// Used to enable/disable the reasoner
-    ///
-    /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
-    /// or after the creation with [`Lp::activate`] and [`Lp::deactivate`]
-    pub enable: bool,
-    /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
-    ///
-    ///Can be controlled with the following methods: [`Lp::activate_refined_explanation`], [`Lp::deactivate_refined_explanation`]
+    /// Can be controlled through the environment variable `ARIES_LP_ENABLE`
+    /// or after the creation with [`Lp::enable`] and [`Lp::disable`]
+    pub enabled: bool,
+    /// If true, explanations are refined: minimized as in [`crate::reasoners::cp::linear`]
     pub is_explanation_refined: bool,
     /// Number of pivots allowed for each decision.
     ///
-    /// THe default value is controlled by [`LP_PIVOTS_PER_DECISION`].
-    /// THe best value is very problem-dependent and the default is typically very small (~0.1).
+    /// The default value is controlled by [`LP_PIVOTS_PER_DECISION`].
+    /// The best value is very problem-dependent and the default is typically very small (~0.1).
     pub pivots_per_decision: f64,
     /// Number of pivots allowed before any decision is taken.
     ///
     /// The default value is controlled by [`LP_INITIALLY_ALLOWED_PIVOTS`].
-    /// `f64::INFINITY` removes any limit on the pivots (useful for testing).
     pub initially_allowed_pivots: f64,
+    /// If true, after a backtrack, the LP goes back up to the level it had reached by its last feasible check
+    /// (the "catch-up level"), or to the model's level if lower, without checking the levels in between.
+    ///
+    /// This is a bet: the feasibility of these skipped levels is unknown, but we bet on most of the checks to be feasible.
+    /// Without catch-up, the LP may end up spending a lot of effort and pivots at these levels without pruning anything if they're feasible,
+    /// making it lag behind the search even more than it already does.
+    ///
+    /// If a skipped level is infeasible, the infeasibility will still be found by the check at the catch-up level.
+    ///
+    /// The default value is controlled by [`LP_CATCH_UP`].
+    pub catch_up: bool,
+    /// Gap filter: the minimum number of levels that the clause of an LP contradiction must backjump for the contradiction to be reported
+    /// (the gap between the two highest levels of its literals).
+    /// The others are ignored (and their certificates aren't learned): the LP then stays at its level, until the model backtracks below it.
+    ///
+    /// The contradictions of the learned constraints are always reported.
+    ///
+    /// Each reported contradiction disturbs the search, so reporting fewer of them can help,
+    /// all the more when they would only backjump a few levels.
+    ///
+    /// The default value is controlled by [`LP_BACKJUMP_GAP_FILTER`]. Set to 0 to disable.
+    pub backjump_gap_filter: u32,
+    /// If true, the LP is only checked at quiescence: i.e. once the other reasoners have inferred all they could
+    /// (no event since the previous propagation). The learned constraints are still propagated at every propagation.
+    ///
+    /// Otherwise, the LP's contradictions mostly preempt the ones that the other, cheaper reasoners would find at the same node.
+    ///
+    /// The default value is controlled by [`LP_CHECK_AT_QUIESCENCE`].
+    pub check_at_quiescence: bool,
 }
 
 impl Default for LpOptions {
     fn default() -> Self {
         Self {
-            propagation_active: true,
-            enable: LP_ENABLE.get(),
+            enabled: LP_ENABLE.get(),
             is_explanation_refined: true,
             pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
             initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
+            catch_up: LP_CATCH_UP.get(),
+            backjump_gap_filter: LP_BACKJUMP_GAP_FILTER.get(),
+            check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
         }
     }
 }
 
-/// Used to enable/disable the lp reasoner
+/// Used to enable/disable the LP reasoner
 ///
 /// Can be set either from the env variable **`ARIES_LP_ENABLE`**
 /// or within the code with: `LP_ENABLE.set(true/false)`
@@ -121,6 +148,15 @@ pub static LP_PIVOTS_PER_DECISION: EnvParam<f64> = EnvParam::new("ARIES_LP_PIVOT
 
 /// Number of initially allowed pivots, before any decision is taken.
 pub static LP_INITIALLY_ALLOWED_PIVOTS: EnvParam<f64> = EnvParam::new("ARIES_LP_INITIALLY_ALLOWED_PIVOTS", "0");
+
+/// Whether the LP catches up after a backtrack (see [`LpOptions::catch_up`]).
+pub static LP_CATCH_UP: EnvParam<bool> = EnvParam::new("ARIES_LP_CATCH_UP", "false");
+
+/// The minimum backjump gap of a reported LP contradiction (see [`LpOptions::backjump_gap_filter`]).
+pub static LP_BACKJUMP_GAP_FILTER: EnvParam<u32> = EnvParam::new("ARIES_LP_BACKJUMP_GAP_FILTER", "0");
+
+/// Whether the LP is only checked at quiescence (see [`LpOptions::check_at_quiescence`]).
+pub static LP_CHECK_AT_QUIESCENCE: EnvParam<bool> = EnvParam::new("ARIES_LP_CHECK_AT_QUIESCENCE", "false");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -164,24 +200,21 @@ impl From<BoundConstraintId> for usize {
     }
 }
 
-type BoundConstraintsStore = RefVec<BoundConstraintId, (Conjunction, BoundRestriction)>;
-
-/// Store all the necessary information for backtracking after modifying a bound
-///
-/// The old value and justification are necessary as they will overwrite the current ones
+/// A change of a bound of an LP variable, with what is needed to undo it on backtrack
+/// (notably the old value and justification, which then overwrite the current ones).
 #[derive(Clone)]
 struct LpEvent {
-    /// variable affected by the bound change
+    /// The variable whose bound changed
     var: Variable,
-    /// bound modified
+    /// The bound that changed
     bound: Bound,
-    /// Old value for the bound that needs to overwrite the new one when backtracking
+    /// The old value of the bound, restored on backtrack
     old_val: LongCst,
-    /// Justification associated with this bound and value
+    /// The old justification of the bound, restored on backtrack
     old_justification: BoundJustification,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Stats {
     /// Number of propagations where the solver returned `Feasible`
     num_feasible: usize,
@@ -197,31 +230,15 @@ struct Stats {
     num_val_certif: usize,
     /// Number of overflows detected during the certificate verification
     num_overflow: usize,
-    /// Number of proven infeasibility
+    /// Number of contradictions (proven infeasibilities)
     num_contradictions: usize,
-    /// Number of timeouts
+    /// Number of checks that ran out of pivots
     num_check_timeouts: usize,
     /// Number of times the LP reported a numerical instability error.
     num_unstable: usize,
-}
-
-impl Stats {
-    fn new() -> Self {
-        Self {
-            num_feasible: 0,
-            num_propagate: 0,
-
-            num_constraints: 0,
-            num_variables: 0,
-
-            num_certif: 0,
-            num_val_certif: 0,
-            num_overflow: 0,
-            num_contradictions: 0,
-            num_check_timeouts: 0,
-            num_unstable: 0,
-        }
-    }
+    /// Number of contradictions ignored,
+    /// as their clause would backjump fewer than [`LpOptions::backjump_gap_filter`] levels.
+    num_ignored: usize,
 }
 
 /// A variable of the LP solver.
@@ -237,44 +254,44 @@ enum Signed<T> {
 
 /// Struct that implements the [`Theory`] trait (reasoner).
 ///
-/// It encapsulates all the necessary information to run the lp solver on the posted constraints.
+/// It encapsulates all the necessary information to run the LP solver on the posted constraints.
 ///
-/// The propagation can be dynamically activated / deactivated through the following methods: [`Lp::activate()`] and [`Lp::deactivate()`].
-/// This can be useful to avoid an overhead of the lp reasoner over the others if its not relevant.
+/// The propagation can be dynamically enabled / disabled through the following methods: [`Lp::enable()`] and [`Lp::disable()`].
+/// This can be useful to avoid the overhead of the LP reasoner when it is not relevant.
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
-    /// Encapsulates both float and integer versions of our constraints and an instance of the aries-lp solver
+    /// The aries-lp solver, with an exact integer copy of its constraints and bounds (to validate its certificates)
     solver: Solver,
-    /// Associates each bound constraint identifiers with a trigger (conjunction of CP literals) and a corresponding bound restriction.
-    /// the constraint is applied to the LP as soon as all the literals of its trigger are entailed.
+    /// The bound constraints: each one has a trigger (a conjunction of model literals) and a bound restriction,
+    /// which is applied to the LP as soon as all the literals of the trigger are entailed.
     bound_constrs: BoundConstraintsStore,
-    /// Indices in `bound_constrs` of the constraints whose cause was already entailed when
-    /// they were registered, and that are thus waiting to be applied at the next propagation.
-    pending_bound_constrs: Vec<BoundConstraintId>,
-    /// Decision level at which the pending constraints were last applied. No watch can trigger them
-    /// again, so backtracking below it makes them all pending anew.
-    pending_bound_constrs_applied_at: Option<DecLvl>,
-    /// Associates linear sums with its corresponding reifying variable in the aries-lp solver.
-    /// The sums are simplified, i.e. their terms are sorted those sharing the same var are merged.
+    /// The constraints learned from the infeasibility certificates, for theory propagation at the model's level.
+    /// Without them, a certificate only gives the clause of its contradiction as an explanation,
+    /// which covers just one, weak combination of literals to forbid.
+    /// This can lead the search to re-enter the same infeasible region repeatedly,
+    /// through other combinations of literals, which will be repeatedly refuted.
+    /// "Learning" the constraints from infeasibility certificates allows us to catch this early:
+    /// the learned constraints detect every state of the region (one of them is violated there),
+    /// and set (propagate) as false the literals that would lead into the region.
+    learned: LearnedConstraints,
+    /// Associates linear sums with their reification variable in the LP.
+    /// The sums are normalized: their terms are sorted, and those sharing a variable are merged.
     ///
     /// Used to avoid duplicate variables for the same sum (or its opposite).
     reifications: HashMap<LpSum, Variable>,
-    /// Maps var from aries solver with their corresponding variable in minilp (if they appear in the post constraints)
-    memory_x_main: RefMap<Var, Variable>,
+
+    /// The events of the model not read yet.
     model_events: ObsTrailCursor<Event>,
-    /// The watcher corresponds to an index in `bound_constrs_lit_vec`
-    watches: Watches<BoundConstraintId>,
     /// History of changes made to the LP with all information necessary to undo them.
     ///
-    /// The trail may have less saved states as the CP solver we evolve in because the reasoner is typically lagging behind due to
-    /// a bounded computational effort.
+    /// It may have fewer saved levels than the model, as the LP typically lags behind it due to its bounded computational effort.
     trail: Trail<LpEvent>,
-    /// Mirrors the decision level of the CP solver. Incremented/decremented each time a save/restore is invoked.
+    /// Mirrors the decision level of the model. Incremented/decremented each time a save/restore is invoked.
     ///
     /// It differs from the logical decision level ([`Self::lp_level`]) of this reasoner (`self.trail.current_decision_level`) because we only go to the next decision level
     /// once we have determined that the LP relaxation is feasible.
-    cp_decision_level: DecisionLevelTracker,
+    model_decision_level: DecisionLevelTracker,
     /// Running statistics of the solver (number of propagations, conflicts, ...)
     stats: Stats,
     /// Contains all the customizable options for the reasoner
@@ -284,9 +301,15 @@ pub struct Lp {
     ///
     /// It is incremented by [`LpOptions::pivots_per_decision`] on each decision (we assume 1 decision per save_state call)
     ///
-    /// Setting this `INFINITY` will remove any limit on the pivots (useful for testing).
-    /// Setting it `-INFINITY` will disallow any pivot operation.
+    /// Setting it to `INFINITY` removes any limit on the pivots (useful for testing).
+    /// Setting it to `-INFINITY` disallows any pivot operation.
     total_allowed_pivots: f64,
+    /// The level that the LP reached after its last feasible check.
+    /// With [`LpOptions::catch_up`], the LP goes back up to it after a backtrack, without checking the levels below it (until it's reached again).
+    catch_up_level: DecLvl,
+    /// The number of events of the model at the previous propagation, to detect quiescence (no event since).
+    /// `None` after a decision or a backtrack, where the number of events alone can't tell.
+    num_events_at_last_propagation: Option<u32>,
 }
 
 impl Default for Lp {
@@ -298,95 +321,71 @@ impl Default for Lp {
 impl Lp {
     pub fn new(options: LpOptions) -> Self {
         Self {
-            id: ReasonerId::Cp,
+            id: ReasonerId::Lp,
             solver: Solver::new(options.is_explanation_refined),
 
             bound_constrs: Default::default(),
-            pending_bound_constrs: Vec::new(),
-            pending_bound_constrs_applied_at: None,
-
+            learned: Default::default(),
             reifications: HashMap::new(),
-            memory_x_main: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
-            watches: Default::default(),
             trail: Default::default(),
-            cp_decision_level: DecisionLevelTracker::new(),
+            model_decision_level: DecisionLevelTracker::new(),
+            catch_up_level: DecLvl::ROOT,
+            num_events_at_last_propagation: None,
 
-            stats: Stats::new(),
+            stats: Stats::default(),
 
-            options,
             total_allowed_pivots: options.initially_allowed_pivots,
+            options,
         }
     }
-    /// Activate propagation and constraints registration of the LP
+    /// Enables propagation and constraints registration of the LP
     ///
-    /// All constraints registered before the activation of the LP will be ignored
-    pub fn activate(&mut self) {
-        self.options.propagation_active = true;
-        self.options.enable = true;
+    /// All constraints registered before the LP is enabled will be ignored
+    pub fn enable(&mut self) {
+        self.options.enabled = true;
     }
 
-    /// Deactivate propagation and constraints registration of the LP
-    pub fn deactivate(&mut self) {
-        self.options.propagation_active = false;
-        self.options.enable = false;
+    /// Disables propagation and constraints registration of the LP
+    pub fn disable(&mut self) {
+        self.options.enabled = false;
     }
 
-    /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
-    pub fn deactivate_propagation(&mut self) {
-        self.options.propagation_active = false;
-    }
-
-    /// Activate refined explanation using minimization based on [`crate::reasoners::cp::linear`]
+    /// Creates a new variable in the LP that directly mirrors the given model variable.
     ///
-    /// Explanations will be smaller in general therefore more useful but take more time to compute
-    pub fn activate_refined_explanation(&mut self) {
-        self.options.is_explanation_refined = true;
-        self.solver.is_explanation_refined = true;
-    }
-
-    /// Deactivate refined explanation
-    pub fn deactivate_refined_explanation(&mut self) {
-        self.options.is_explanation_refined = false;
-        self.solver.is_explanation_refined = false;
-    }
-
-    /// Creates a new variable in the LP that directly mirrors the given CP variable.
+    /// Any bound change to the model variable will be reflected in the LP.
+    /// If the model variable is already bound to an LP variable, this one is returned (no new LP variable is created in this case).
     ///
-    /// Any bound change to the CP variable will be reflected in the LP.
-    /// If the CP variable is already bound to an LP variable, this one is returned (no new LP variable is created in this case.).
-    pub fn bind_cp_var(&mut self, solver_var: Var, doms: &Domains) -> LpVar {
-        debug_assert_eq!(
-            doms.current_decision_level(),
-            DecLvl::ROOT,
-            "the variable bounds may have evolved since root"
-        );
-        if let Some(lp_var) = self.memory_x_main.get(solver_var) {
+    /// Only allowed at the root, to keep it simple: there, the model variable's current bounds hold in every state,
+    /// so they can be the LP variable's initial bounds.
+    pub fn bind_cp_var(&mut self, model_var: Var, doms: &Domains) -> LpVar {
+        assert_eq!(doms.current_decision_level(), DecLvl::ROOT);
+        if let Some(lp_var) = self.solver.model_to_lp.get(model_var) {
             *lp_var
         } else {
             let lp_var = self.solver.create_variable(
-                cst_int_to_long(doms.lb(solver_var)),
-                cst_int_to_long(doms.ub(solver_var)),
+                cst_int_to_long(doms.lb(model_var)),
+                cst_int_to_long(doms.ub(model_var)),
                 &mut self.stats,
             );
-            self.memory_x_main.insert(solver_var, lp_var);
-            self.solver.map_lp_to_aries.insert(lp_var.idx(), solver_var);
+            self.solver.model_to_lp.insert(model_var, lp_var);
+            self.solver.lp_to_model.insert(lp_var.idx(), model_var);
             lp_var
         }
     }
 
-    /// Creates a variable in the LP that is independent of any variable in the CP solver.
+    /// Creates a variable in the LP that is independent of any model variable (i.e. variable of the solver).
     pub fn create_auxiliary_variable(&mut self, lb: IntCst, ub: IntCst) -> LpVar {
         self.solver
             .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats)
     }
 
-    /// Retrieve a single variable `s` that is constrained to always be equals to the given linear `sum`.
+    /// Returns a single variable `s` that is constrained to always be equal to the given linear `sum`.
     ///
-    /// In the general case, this means creating a new LP variable `s` and impose a constraint `sum = s` in the LP.
+    /// In the general case, this means creating a new LP variable `s` and imposing a constraint `sum = s` in the LP.
     ///
-    /// The function returns the `{+,-}s` variable where the sign is required to avoid duplicated reification variables.
+    /// It returns `+s` or `-s`: the sign lets a sum and its opposite share the same reification variable.
     fn reify_sum(&mut self, sum: LpSum) -> Signed<LpVar> {
         // if the sum is exactly one variable, with factor +/-1, no need for a new variable to reify.
         if let Some((var, 1)) = sum.as_single_term() {
@@ -396,7 +395,7 @@ impl Lp {
             return Signed::Minus(var);
         }
 
-        // if already have this sum in our cache, just reuse the reification variable.
+        // if we already have this sum in our cache, just reuse the reification variable.
         if let Some(reif) = self.reifications.get(&sum) {
             return Signed::Plus(*reif);
         }
@@ -405,21 +404,17 @@ impl Lp {
             return Signed::Minus(*reif);
         }
 
-        let mut constraint = vec![];
-
         let mut lb: LongCst = 0;
         let mut ub: LongCst = 0;
 
         for (var, factor) in sum.iter() {
-            let (elem_lb, elem_ub) = self.solver.get_init_bounds(factor, var);
+            let (elem_lb, elem_ub) = self.solver.init_range_of_term(factor, var);
             ub = ub.saturating_add(elem_ub);
             lb = lb.saturating_add(elem_lb);
-
-            constraint.push((var, factor));
         }
 
-        // Create a variable `s` that we will constraint to be equal to `sum`.
-        // Its bounds corresponds to the min/max value that the sum can take.
+        // Create a variable `s` that we will constrain to be equal to `sum`.
+        // Its bounds correspond to the min/max values that the sum can take.
         let s = self.solver.create_variable(lb, ub, &mut self.stats);
 
         // create a constraint such that `sum = s`
@@ -436,12 +431,12 @@ impl Lp {
     }
 
     /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`, where `sum` is a linear sum
-    /// on CP variables and a constant term.
+    /// on model variables and a constant term.
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true` and present.
     ///
-    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on CP variables.
-    /// It will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
+    /// This method is a convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on model variables.
+    /// It will first bind any model variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
     pub fn add_cp_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
         let sum_terms = LpSum::new(
@@ -454,7 +449,7 @@ impl Lp {
 
     /// Adds an `active => sum_terms + sum_cst <= 0` constraint, where `sum_terms` consists only of LP variables.
     ///
-    /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from CP variables) or with
+    /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from model variables) or with
     /// [`Self::create_auxiliary_variable`] (independent variable).
     pub fn add_linear_leq_constraint(
         &mut self,
@@ -464,14 +459,14 @@ impl Lp {
         doms: &Domains,
     ) {
         let sum_terms = sum_terms.into();
-        if !self.options.enable {
+        if !self.options.enabled {
             return;
         }
 
         let bound_val = cst_int_to_long(-sum_cst);
 
         // create a bound constraint (i.e. on a single variable) that is equivalent to this constraint.
-        // We dot this by reifying the sum into a single variable and determine the appropriate bound on this one.
+        // We do this by reifying the sum into a single variable and determining the appropriate bound on this one.
         let bound_constr = match self.reify_sum(sum_terms) {
             Signed::Plus(reif) => {
                 // sum_terms = reif
@@ -487,15 +482,15 @@ impl Lp {
             }
         };
 
-        // this constraint should be activated when `active is entailed and present
+        // this constraint should be activated when `active` is entailed and present
         let trigger = Conjunction::from([active, doms.presence(active)]);
         self.add_bound_update_trigger(trigger, bound_constr, doms);
     }
 
-    /// Adds a new bound-restriction trigger of the form `l1 & ... & ln => var {<=,>=} bound` where each `li` is a CP literal, `variable is an
-    /// LP variable, and `bound` is an integer value denoting  a new upper/lower bound of `variable`.
+    /// Adds a new bound constraint of the form `l1 & ... & ln => var {<=,>=} bound`, where each `li` is a model literal (the trigger),
+    /// `var` is an LP variable, and `bound` is an integer value: a new upper/lower bound of `var`.
     ///
-    /// This provides an additional mechanism for synchronizing the bounds of the LP variables to the domains in the CP solver.
+    /// This provides an additional mechanism for synchronizing the bounds of the LP variables to the domains of the model.
     pub fn add_bound_update_trigger(
         &mut self,
         trigger: Conjunction,
@@ -504,38 +499,20 @@ impl Lp {
     ) {
         // use domains that mirror the state at the LP level.
         let domains = DomainsSnapshot::up_to(domains, self.lp_level());
+        let at_root = self.current_decision_level() == DecLvl::ROOT;
+        self.bound_constrs.add(trigger, bound_update, &domains, at_root);
 
-        let id = self.bound_constrs.next_key();
-
-        // check if the trigger is already entailed and in which case, enqueue for immediate propagation.
-        // This is necessary because watches would only trigger for future events.
-        let entailed = trigger.iter().all(|l| domains.entails(l));
-        if entailed {
-            self.pending_bound_constrs.push(id);
-        }
-        if !entailed || self.current_decision_level() != DecLvl::ROOT {
-            // unless we are at ROOT AND the trigger is entailed, we place watch to we can check the trigger if one of its literals becomes true
-            //
-            // Note: if this becomes performance critical, we could use a single watch, always placed on an undecided literal
-            // but this would complicate the implementation and unlikely to be useful in practice as the the vast majority of case should involve only one/two
-            // literals in the conjunction.
-            for l in &trigger {
-                self.watches.add_watch(id, l);
-            }
-        }
-        let actual_id = self.bound_constrs.push((trigger, bound_update));
-        debug_assert!(id == actual_id);
+        // A new bound constraint can tighten a bound in the learned constraints (when its trigger already holds)
+        // or become a threat to them, with no event to make them pending.
+        // Thus they're all marked pending so that they are all checked on the next propagation.
+        self.learned.mark_pending_all();
     }
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
     fn apply_pending_bound_constrs(&mut self, domains: &DomainsSnapshot) -> Result<(), Contradiction> {
-        if !self.pending_bound_constrs.is_empty() {
-            debug_assert!(self.pending_bound_constrs_applied_at.is_none());
-            self.pending_bound_constrs_applied_at = Some(self.current_decision_level());
-        }
-
-        while let Some(index) = self.pending_bound_constrs.pop() {
-            let (cause, bound_constr) = &self.bound_constrs[index];
+        while let Some(index) = self.bound_constrs.pop_pending() {
+            let (cause, bound_constr) = &self.bound_constrs.store[index];
+            let bound_constr = *bound_constr;
 
             let entailed = cause.iter().all(|l| domains.entails(l));
 
@@ -544,14 +521,18 @@ impl Lp {
                 // The watches will trigger the constraint again if its cause becomes entailed anew.
                 continue;
             }
+            let at_root = cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT);
 
-            let res = if cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT) {
+            // (applied above the root, its bound can be lost on a backtrack: undone, or overwritten by an undone older bound)
+            self.bound_constrs.record_applied_pending(index, self.lp_level());
+
+            let res = if at_root {
                 // A cause entailed at the root can never be undone,
                 // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                self.solver.set_bound_restrict_permanent(bound_constr)
+                self.solver.set_bound_restrict_permanent(&bound_constr)
             } else {
                 self.solver
-                    .set_bound_restrict(bound_constr, BoundJustification::Trigger(index), &mut self.trail)
+                    .set_bound_restrict(&bound_constr, BoundJustification::Trigger(index), &mut self.trail)
             };
 
             if let Err(infeasible) = res {
@@ -561,70 +542,114 @@ impl Lp {
         Ok(())
     }
 
+    /// Applies the bound constraints whose trigger was completed by the newly inferred `lit`.
+    fn apply_triggered_bound_constrs(&mut self, lit: Lit, lp_doms: &DomainsSnapshot) -> Result<(), Contradiction> {
+        // (an infeasibility is explained after the loop, which borrows the bound constraints)
+        let mut infeasible = None;
+        for id in self.bound_constrs.triggered_by(lit, lp_doms) {
+            let bound_constr = self.bound_constrs.store[id].1;
+            let res = self
+                .solver
+                .set_bound_restrict(&bound_constr, BoundJustification::Trigger(id), &mut self.trail);
+            if let Err(e) = res {
+                infeasible = Some(e);
+                break;
+            }
+        }
+        match infeasible {
+            Some(infeasible) => self.explain_infeasibility(&infeasible, lp_doms),
+            None => Ok(()),
+        }
+    }
+
+    /// Applies the bound set by an event of the model to the corresponding LP variable (if there is one).
+    fn apply_model_bound(&mut self, event: &Event, lp_doms: &DomainsSnapshot) -> Result<(), Contradiction> {
+        let Some(&lp_var) = self.solver.model_to_lp.get(event.affected_bound.variable()) else {
+            return Ok(());
+        };
+        // the bound holds because this very literal was inferred in the model
+        let justification = BoundJustification::CpModel(event.new_literal());
+        // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
+        let bound = if event.affected_bound.is_plus() {
+            BoundRestriction::leq(lp_var, cst_int_to_long(event.new_upper_bound))
+        } else {
+            BoundRestriction::geq(lp_var, cst_int_to_long(-event.new_upper_bound))
+        };
+        match self.solver.set_bound_restrict(&bound, justification, &mut self.trail) {
+            Err(infeasible) => self.explain_infeasibility(&infeasible, lp_doms),
+            Ok(_) => Ok(()),
+        }
+    }
+
     /// Attempts to derive a contradiction from a LP infeasibility and returns it as an error (to facilitate the propagation of the contradiction).
     ///
-    /// In theory, any LP infeasibility lead to a contradiction in the solver because the LP is a relaxation of the CP model.
-    /// However, the LP' simplex is using floating point arithmetic and it might the case that it hands out an incorrect result.
+    /// In theory, any LP infeasibility leads to a contradiction in the solver because the LP is a relaxation of the model.
+    /// However, the LP's simplex uses floating point arithmetic, and it might hand out an incorrect result.
     ///
     /// To isolate such errors from the solver, we validate the infeasibility justification from the LP with exact integer arithmetic.
     /// This may fail when 1) the LP's output was erroneous or 2) our conversion into integers lost some precision and invalidated the certificate.
     ///
-    /// In both cases (which should exceptional), we ignore the infeasibility and report that there is nothing to see.
+    /// In both cases (which should be exceptional), we ignore the infeasibility and report that there is nothing to see.
+    ///
+    /// A validated certificate is also learned (see [`LearnedConstraints`]).
     fn explain_infeasibility(
         &mut self,
         cause: &InfeasibilityReason,
         domains: &DomainsSnapshot,
     ) -> Result<(), Contradiction> {
-        match cause {
+        let (aggregate, explanation) = match cause {
             InfeasibilityReason::Certified(cert) => {
                 self.stats.num_certif += 1;
-                // The certificate was already verified by the LP solver itself (with
-                // floating point arithmetic); it is cross-checked here with exact
-                // integer arithmetic over the CP model.
+                // The certificate was already verified by the LP solver itself (with floating point arithmetic);
+                // it is cross-checked here with exact integer arithmetic over the model.
                 match self.solver.check_certificate(
                     cert.as_multipliers(),
                     domains,
                     &mut self.stats,
                     &self.bound_constrs,
                 ) {
-                    Some(explanation) => {
+                    Some((aggregate, explanation)) => {
                         self.stats.num_val_certif += 1;
-                        self.stats.num_contradictions += 1;
-                        Err(Contradiction::Explanation(explanation))
+                        (Some(aggregate), explanation)
                     }
                     None => {
                         // We could not validate this certificate, so we ignore this LP infeasibility
                         // as we are lacking a proof that it is a real UNSAT and not an internal error due to, e.g.,
                         // floating point errors.
                         self.stats.num_unstable += 1;
-                        Ok(())
+                        return Ok(());
                     }
                 }
             }
             InfeasibilityReason::IncompatibleBounds(var) => {
-                let explanation = self.solver.explain_infeasible_var(*var, &self.bound_constrs);
-                self.stats.num_contradictions += 1;
-                Err(Contradiction::Explanation(explanation))
+                (None, self.solver.explain_infeasible_var(*var, &self.bound_constrs))
             }
+        };
+        if backjump_gap(&explanation, domains) < self.options.backjump_gap_filter {
+            self.stats.num_ignored += 1;
+            return Ok(());
         }
+        self.stats.num_contradictions += 1;
+        if let Some(aggregate) = aggregate {
+            self.learned.learn(&aggregate, &self.solver);
+        }
+        Err(Contradiction::Explanation(explanation))
     }
 
-    /// Decision level that LP mirrors.
-    /// Cannot be greater than the solver's level.
+    /// The decision level that the LP mirrors. It cannot be greater than the model's level.
     fn lp_level(&self) -> DecLvl {
         self.trail.current_decision_level()
     }
 
-    /// Decision level at which the CP solver is currently at.
-    fn solver_lvl(&self) -> DecLvl {
-        self.cp_decision_level.current_decision_level()
+    /// Current decision level of the model.
+    fn model_level(&self) -> DecLvl {
+        self.model_decision_level.current_decision_level()
     }
 
-    /// Determines the deadline which an LP solver call must finish.
+    /// The deadline by which an LP solver call must finish.
     ///
-    /// Note that the deadline is expressed in a maximum number of pivots over the entire
-    /// lifetime of the reasoner.
-    fn lp_dealine(&self) -> aries_lp::Deadline {
+    /// Note that the deadline is expressed in a maximum number of pivots over the entire lifetime of the reasoner.
+    fn lp_deadline(&self) -> aries_lp::Deadline {
         let max_pivots = if self.total_allowed_pivots == f64::INFINITY {
             usize::MAX
         } else if self.total_allowed_pivots <= 0.0 {
@@ -641,100 +666,93 @@ impl Theory for Lp {
         self.id
     }
 
-    fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.options.propagation_active || !self.options.enable {
+    fn propagate(&mut self, model_doms: &mut Domains) -> Result<(), Contradiction> {
+        if !self.options.enabled {
             return Ok(());
         }
 
-        // the domains in the CP solver. We are not allowed to operate on them but
-        // must instead operate on the domains as they were on the LP level.
-        let cp_domains = domains;
+        // `model_doms` are the domains of the model, at its current level.
+        // The LP is not allowed to operate on them but must instead
+        // operate on the domains as they were at the LP level (`lp_doms` below).
+
+        // quiescence: no event since the previous propagation, so the other reasoners have inferred all they could
+        let num_events = model_doms.trail().num_events();
+        let quiescent = self.num_events_at_last_propagation == Some(num_events);
+        self.num_events_at_last_propagation = Some(num_events);
+
+        // theory propagation:
+        // propagate constraints learned from the past certificates, at the model's level and before the LP
+        if self
+            .learned
+            .propagate(model_doms, self.id, &self.solver, &self.bound_constrs)?
+        {
+            // Not required, but cheaper:
+            // the solver will propagate the literals set and call us again on the propagation loop's next iteration,
+            // so we avoid synchronizing the LP on a state that is about to change anyway.
+            return Ok(());
+        }
+
+        if self.options.check_at_quiescence && !quiescent {
+            // the solver will call us again once the other reasoners have inferred all they could
+            return Ok(());
+        }
 
         // marker for whether we bump the LP level in the propagation.
         // Initially true to kickstart at least one propagation loop
         let mut increased_level = true;
 
-        // run a loop, that will be allowed to restart if be concluded feasibility of the
+        // run a loop, which restarts whenever it concludes the feasibility of the
         // current LP level (which is thus bumped to the next).
         while increased_level {
             increased_level = false;
             self.stats.num_propagate += 1;
 
             // mirror the domains of the LP level.
-            let domains = DomainsSnapshot::up_to(cp_domains, self.lp_level());
+            let lp_doms = DomainsSnapshot::up_to(model_doms, self.lp_level());
 
             // Constraints registered with an already entailed cause are not triggered by any watch
-            self.apply_pending_bound_constrs(&domains)?;
+            self.apply_pending_bound_constrs(&lp_doms)?;
 
             // We process all the newly inferred literals since last propagation and
             // up to the current decision level.
             while let Some(&event) = self
                 .model_events
-                .pop_up_to(self.trail.current_decision_level(), cp_domains.trail())
+                .pop_up_to(self.trail.current_decision_level(), model_doms.trail())
             {
                 let lit = event.new_literal();
-                debug_assert!(cp_domains.entailing_level(lit) <= self.lp_level());
+                debug_assert!(model_doms.entailing_level(lit) <= self.lp_level());
 
-                // We first set the bounds associated with the active lit triggered by the newly inferred lit
-                let watchers: Vec<BoundConstraintId> = self.watches.watches_on(lit).collect(); // TODO: remove allocation
-                for watcher in watchers {
-                    let (cause, bound_constr) = &self.bound_constrs[watcher];
-
-                    // the fact that we got triggered means at least one literal became true.
-                    // If they are all true we can proceed to enforce the bound
-                    let entailed = cause.iter().all(|l| domains.entails(l));
-                    if !entailed {
-                        continue;
-                    }
-
-                    if let Err(infeasible) = self.solver.set_bound_restrict(
-                        bound_constr,
-                        BoundJustification::Trigger(watcher),
-                        &mut self.trail,
-                    ) {
-                        self.explain_infeasibility(&infeasible, &domains)?;
-                    }
-                }
-
-                let var = event.affected_bound.variable();
-
-                // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
-                if let Some(&x_var) = self.memory_x_main.get(var) {
-                    // the bound holds because this very literal was inferred in the main model
-                    let justification = BoundJustification::CpModel(lit);
-                    let res =
-                    // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
-                    if event.affected_bound.is_plus() {
-                        self.solver
-                            .set_bound_restrict(&BoundRestriction::leq(x_var, cst_int_to_long(event.new_upper_bound)), justification, &mut self.trail)
-                    } else {
-                        self.solver
-                            .set_bound_restrict(&BoundRestriction::geq(x_var, cst_int_to_long(-event.new_upper_bound)), justification, &mut self.trail)
-                    };
-
-                    if let Err(infeasible) = res {
-                        self.explain_infeasibility(&infeasible, &domains)?;
-                    }
-                }
+                // We first set the bounds of the constraints whose trigger was activated by the newly inferred lit,
+                // then the bound of the corresponding variable of the lit in the LP (if there is one)
+                self.apply_triggered_bound_constrs(lit, &lp_doms)?;
+                self.apply_model_bound(&event, &lp_doms)?;
             }
 
-            // check feasibility with a maximum number of pivot operation.
-            let feas_result = self.solver.check_feasibility(self.lp_dealine());
+            // with catch-up, the levels since the backtrack are added without being checked (see `LpOptions::catch_up`)
+            if self.options.catch_up && self.lp_level() < self.catch_up_level.min(self.model_level()) {
+                self.trail.save_state(); // bump LP level
+                increased_level = true;
+                continue;
+            }
+
+            // check feasibility with a maximum number of pivot operations.
+            let feas_result = self.solver.check_feasibility(self.lp_deadline());
 
             match feas_result {
                 Ok(FeasibilityStatus::Feasible) => {
                     // we proved feasibility \o/
                     // we are allowed to go to next level (if there is already one)
-                    if self.solver_lvl() > self.lp_level() {
+                    if self.model_level() > self.lp_level() {
                         self.trail.save_state(); // bump LP level
+                        self.catch_up_level = self.lp_level();
                         increased_level = true // enable a new round of propagation
                     }
-                    debug_assert!(self.lp_level() <= self.solver_lvl());
+                    debug_assert!(self.lp_level() <= self.model_level());
                     self.stats.num_feasible += 1;
                 }
                 Ok(FeasibilityStatus::Infeasible(cause)) => {
-                    // infeasibility in the LP, compute a contraction and short-circuit
-                    self.explain_infeasibility(&cause, &domains)?;
+                    // infeasibility in the LP, compute a contradiction and short-circuit
+                    self.explain_infeasibility(&cause, &lp_doms)?;
                     // if we are here, it means we could not validate the infeasibility T_T
                     // TODO: right now we do nothing but we may want to take some measure
                     // to improve numerical stability or decrease the computational effort
@@ -754,19 +772,31 @@ impl Theory for Lp {
         Ok(())
     }
 
-    // Should not be called as this reasoner never infers new lit, it only gives contradictions
+    // Only the literals set by past certificates are explained: the LP itself only gives contradictions
     fn explain(
         &mut self,
-        _literal: Lit,
-        _context: InferenceCause,
-        _state: &DomainsSnapshot,
-        _out_explanation: &mut Explanation,
+        literal: Lit,
+        context: InferenceCause,
+        state: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
     ) {
-        unreachable!()
+        let start = out_explanation.literals().len();
+        self.learned.explain_deactivation(
+            literal,
+            context.payload,
+            state,
+            out_explanation,
+            &self.solver,
+            &self.bound_constrs,
+        );
+        debug_assert!(
+            out_explanation.literals()[start..].iter().all(|&l| state.entails(l)),
+            "explanation of {literal:?} not entailed"
+        );
     }
 
     fn print_stats(&self) {
-        if self.options.enable {
+        if self.options.enabled {
             println!("# propagations: {}", self.stats.num_propagate);
             println!("# contradictions: {}", self.stats.num_contradictions);
             println!("# constraints: {}", self.stats.num_constraints);
@@ -778,6 +808,8 @@ impl Theory for Lp {
             println!("# pivots: {}", self.solver.lp.solver_stats().num_pivots);
             println!("# timeouts: {}", self.stats.num_check_timeouts);
             println!("# unstable: {}", self.stats.num_unstable);
+            println!("# ignored contradictions (backjump gap): {}", self.stats.num_ignored);
+            self.learned.print_stats();
         } else {
             println!("DISABLED");
         }
@@ -792,23 +824,27 @@ impl Backtrack for Lp {
     fn save_state(&mut self) -> DecLvl {
         // bump number of allowed pivots
         self.total_allowed_pivots += self.options.pivots_per_decision;
+        self.num_events_at_last_propagation = None;
 
         // track solver level
-        self.cp_decision_level.save_state()
+        self.model_decision_level.save_state()
     }
 
     fn num_saved(&self) -> u32 {
-        // use the CP level as this is what should be externally visible.
-        self.cp_decision_level.num_saved()
+        // use the model's level as this is what should be externally visible.
+        self.model_decision_level.num_saved()
     }
 
     fn restore_last(&mut self) {
         // track solver state
-        self.cp_decision_level.restore_last();
+        self.model_decision_level.restore_last();
+        self.num_events_at_last_propagation = None;
 
-        // if the solver backtracked past the current LP level, we need to backtrack
-        // on it too.
-        if self.solver_lvl() < self.lp_level() {
+        // (the constraints learned at a deeper level were never checked at the level backtracked to)
+        self.learned.mark_pending_all();
+
+        // if the solver backtracked past the current LP level, we need to backtrack on it too.
+        if self.model_level() < self.lp_level() {
             self.trail.restore_last_with(|lp_event| {
                 let _ = self.solver.set_bound(
                     lp_event.var,
@@ -817,19 +853,24 @@ impl Backtrack for Lp {
                     lp_event.old_justification,
                 );
             });
-
-            if self
-                .pending_bound_constrs_applied_at
-                .is_some_and(|lvl| lvl > self.lp_level())
-            {
-                // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
-                // We reset them all as pending again.
-                self.pending_bound_constrs.clear();
-                self.pending_bound_constrs.extend(self.bound_constrs.keys());
-                self.pending_bound_constrs_applied_at = None;
-            }
-            debug_assert_eq!(self.solver_lvl(), self.lp_level());
+            self.bound_constrs.backtrack_to(self.lp_level());
+            debug_assert_eq!(self.model_level(), self.lp_level());
         }
+    }
+}
+
+/// The backjump gap of an explanation: the number of levels that its clause would make us backjump,
+/// from the highest level of its literals to the next highest one (to the root if there is no other).
+fn backjump_gap(explanation: &Explanation, domains: &DomainsSnapshot) -> u32 {
+    let mut levels: Vec<u32> = (explanation.literals().iter())
+        .map(|&l| domains.entailing_level(l).to_int())
+        .collect();
+    levels.sort_unstable();
+    levels.dedup();
+    match levels[..] {
+        [.., next_highest, highest] => highest - next_highest,
+        [highest] => highest,
+        [] => 0,
     }
 }
 
@@ -868,8 +909,8 @@ mod tests {
         sparse_proportion: f32,
         seed: u64,
     ) -> (Lp, Domains) {
-        let mut lp_reasonner = Lp::default();
-        lp_reasonner.activate();
+        let mut lp_reasoner = Lp::default();
+        lp_reasoner.enable();
 
         let mut d = Domains::new();
 
@@ -900,10 +941,10 @@ mod tests {
 
             // println!("active var: {:?}, constraint: {:?}", active, sum);
 
-            lp_reasonner.add_cp_linear_leq_constraint(&sum, active, &d);
+            lp_reasoner.add_cp_linear_leq_constraint(&sum, active, &d);
         }
 
-        (lp_reasonner, d)
+        (lp_reasoner, d)
     }
 
     /// Adapted from testing.rs in cp reasoner
@@ -915,7 +956,7 @@ mod tests {
     fn test_explanations(d: &Domains, lp: &mut Lp) {
         let mut decisions_rng = SmallRng::seed_from_u64(0);
         // function that returns a given number of decisions to be applied later
-        // it use the RNG above to drive its random choices
+        // it uses the RNG above to drive its random choices
         // new rng for local use
         let mut rng = SmallRng::seed_from_u64(0);
 
@@ -951,7 +992,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(&mut d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
+                Ok(()) => {} // no contradiction: nothing to check, as these tests only check the explanations of contradictions
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
@@ -964,7 +1005,7 @@ mod tests {
                     let mut d = d.clone();
                     d.reset();
                     // get the conjunction and shuffle it
-                    //note that we do not check minimality here
+                    // note that we do not check minimality here
                     let mut conjuncts = explanation.lits;
                     conjuncts.shuffle(&mut rng);
                     for &conjunct in &conjuncts {
@@ -994,7 +1035,7 @@ mod tests {
     fn backtracking_single(d: &mut Domains, lp: &mut Lp) {
         let mut decisions_rng = SmallRng::seed_from_u64(0);
         // function that returns a given number of decisions to be applied later
-        // it use the RNG above to drive its random choices
+        // it uses the RNG above to drive its random choices
         // new rng for local use
         let mut rng = SmallRng::seed_from_u64(0);
 
@@ -1025,7 +1066,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
+                Ok(()) => {} // no contradiction: nothing to check, as these tests only check the explanations of contradictions
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
@@ -1039,7 +1080,7 @@ mod tests {
                     d.save_state();
 
                     // get the conjunction and shuffle it
-                    //note that we do not check minimality here
+                    // note that we do not check minimality here
                     let mut conjuncts = explanation.lits;
                     conjuncts.shuffle(&mut rng);
                     for &conjunct in &conjuncts {
@@ -1071,7 +1112,7 @@ mod tests {
         }
     }
 
-    /// A conflict that a binding took part in must be explained by that binding's literals.
+    /// A conflict that a bound constraint took part in must be explained by the literals of its trigger.
     ///
     /// Reporting an empty explanation instead would read as "infeasible whatever was decided", and
     /// the solver would conclude that the whole problem is unsatisfiable.
@@ -1085,7 +1126,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1104,10 +1145,10 @@ mod tests {
         assert!(expl.literals().contains(&q.leq(0)), "{:?}", expl.literals());
     }
 
-    /// A bound-update trigger can restrict an LP variable that is mapped to a CP variable
-    /// (here through the -1 shortcut of `reify_sum`), without any counterpart event in the main model.
+    /// A bound-update trigger can restrict an LP variable that is mapped to a model variable
+    /// (here through the -1 shortcut of `reify_sum`), without any counterpart event in the model.
     /// A conflict such a bound takes part in must be explained by the trigger's literals:
-    /// the main model alone does not entail the bound.
+    /// the model alone does not entail the bound.
     #[test]
     fn test_mapped_var_bound_trigger_explains_conflict() {
         let mut d = Domains::new();
@@ -1117,7 +1158,7 @@ mod tests {
 
         let mut lp = Lp::default();
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
-        lp.activate();
+        lp.enable();
 
         let lp_x = lp.bind_cp_var(x, &d);
         // s = 97 * x, with s <= 87 when `a`
@@ -1137,7 +1178,7 @@ mod tests {
         assert!(expl.literals().contains(&c), "{:?}", expl.literals());
     }
 
-    /// Several bound updates may target the same LP variable, from triggers and from the main-model
+    /// Several bound updates may target the same LP variable, from triggers and from the model's
     /// synchronization alike. Each restricting update is trailed with the previous value and
     /// justification of the bound, so backtracking must restore the exact prior state.
     #[test]
@@ -1148,7 +1189,7 @@ mod tests {
         let b = d.new_var(-1, 1).geq(0);
 
         let mut lp = Lp::default();
-        lp.activate();
+        lp.enable();
         let lp_x = lp.bind_cp_var(x, &d);
 
         // two triggers restricting the same upper bound
@@ -1163,7 +1204,7 @@ mod tests {
         d.set(a, Cause::Decision).unwrap();
         d.set(b, Cause::Decision).unwrap();
         assert!(lp.propagate(&mut d).is_ok());
-        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 2);
+        assert_eq!(lp.solver.bounds.current[lp_x.idx()].upper, 2);
 
         // backtracking restores the initial bound together with its justification
         lp.restore_last();
@@ -1175,25 +1216,25 @@ mod tests {
         lp.save_state();
         d.set(a, Cause::Decision).unwrap();
         assert!(lp.propagate(&mut d).is_ok());
-        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 5);
+        assert_eq!(lp.solver.bounds.current[lp_x.idx()].upper, 5);
         lp.restore_last();
         d.restore_last();
         assert!(lp.solver == init_solver);
 
-        // a trigger interleaved with a synchronization from the main model
+        // a trigger interleaved with a synchronization from the model
         d.save_state();
         lp.save_state();
         d.set(a, Cause::Decision).unwrap();
         d.set(x.leq(3), Cause::Decision).unwrap();
         assert!(lp.propagate(&mut d).is_ok());
-        assert_eq!(lp.solver.bounds[lp_x.idx()].upper, 3);
+        assert_eq!(lp.solver.bounds.current[lp_x.idx()].upper, 3);
         lp.restore_last();
         d.restore_last();
         assert!(lp.solver == init_solver);
     }
 
-    /// A bound pushed by a binding does not outlive the cause that justified it: backtracking past that cause releases the bound.
-    /// The binding itself of course stays registered, and pushes it again if its cause becomes entailed again.
+    /// A bound pushed by a bound constraint does not outlive the cause that justified it: backtracking past that cause releases the bound.
+    /// The bound constraint itself of course stays registered, and pushes it again if its cause becomes entailed again.
     #[test]
     fn test_aux_var_bound_is_released_after_backtrack() {
         let mut d = Domains::new();
@@ -1204,7 +1245,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1222,11 +1263,11 @@ mod tests {
 
         assert!(
             lp.propagate(&mut d).is_ok(),
-            "the bindings no longer hold, so the columns should be free again"
+            "the bound constraints no longer hold, so the columns should be free again"
         );
     }
 
-    /// A binding registered when its cause is already entailed pushes its bound above the level of that cause.
+    /// A bound constraint registered when its cause is already entailed pushes its bound above the level of that cause.
     /// Backtracking to in-between releases the bound while the cause still holds, so it has to be pushed again, or there will be no watch to fire it.
     #[test]
     fn test_aux_var_bound_is_repushed_after_backtrack() {
@@ -1239,11 +1280,11 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
-        // level 1: the causes of both bindings become entailed here
+        // level 1: the causes of both bound constraints become entailed here
         d.save_state();
         lp.save_state();
         d.set(p.leq(0), Cause::Decision).unwrap();
@@ -1254,7 +1295,7 @@ mod tests {
         lp.save_state();
         d.set(unrelated.leq(0), Cause::Decision).unwrap();
 
-        // level 3: the bindings are only registered now, long after their causes started holding
+        // level 3: the bound constraints are only registered now, long after their causes started holding
         d.save_state();
         lp.save_state();
 
@@ -1272,7 +1313,7 @@ mod tests {
         );
     }
 
-    /// A binding does not apply while its scope is unknown, and applies once it becomes entailed —
+    /// A bound constraint does not apply while its scope is unknown, and applies once it becomes entailed —
     /// even though the event is then on the scope rather than on the trigger.
     #[test]
     fn test_aux_binding_scope() {
@@ -1285,7 +1326,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1298,7 +1339,7 @@ mod tests {
         d.set(q.leq(0), Cause::Decision).unwrap();
         assert!(
             lp.propagate(&mut d).is_ok(),
-            "the second binding is out of scope, so its column is still free"
+            "the second bound constraint is out of scope, so its column is still free"
         );
 
         d.save_state();
@@ -1317,7 +1358,7 @@ mod tests {
         let mut d = Domains::new();
         let mut lp = Lp::default();
         let aux_a = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
 
         d.save_state();
         lp.save_state();
@@ -1335,6 +1376,104 @@ mod tests {
         assert!(
             lp.propagate(&mut d).is_err(),
             "a bound justified at the root must not be undone by a backtrack"
+        );
+    }
+
+    /// The constraints learned from a certificate are kept after a backtrack: with `p <= -1`, they set `q >= 0`
+    /// (as `q <= -1` would make the LP infeasible again), and with both they give a contradiction, without the simplex.
+    #[test]
+    fn test_past_certificate_reused() {
+        let mut d = Domains::new();
+        let p = d.new_var(-5, 5);
+        let q = d.new_var(-5, 5);
+
+        let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
+
+        let aux_a = lp.create_auxiliary_variable(0, 1);
+        let aux_b = lp.create_auxiliary_variable(0, 1);
+        lp.enable();
+        // `-a - b + 1 <= 0`
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
+        lp.add_bound_update_trigger(p.leq(-1).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(-1).into(), BoundRestriction::leq(aux_b, 0), &d);
+
+        // the LP gives a certificate that `p <= -1 & q <= -1` is infeasible
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        d.set(q.leq(-1), Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_err());
+        assert_eq!(lp.learned.num_constrs(), 2);
+        lp.restore_last();
+        d.restore_last();
+
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_ok());
+        assert!(d.entails(q.geq(0)));
+
+        // explained by `p <= -1`, as is any weaker literal (the solver may ask for one)
+        let cause = d
+            .get_event(d.implying_event(q.geq(0)).unwrap())
+            .cause
+            .as_external_inference()
+            .unwrap();
+        assert_eq!(cause.writer, ReasonerId::Lp);
+        for l in [q.geq(0), q.geq(-3)] {
+            let mut expl = Explanation::new();
+            lp.explain(l, cause, &DomainsSnapshot::preceding(&d, q.geq(0)), &mut expl);
+            assert_eq!(expl.literals(), &[p.leq(-1)]);
+        }
+        lp.restore_last();
+        d.restore_last();
+
+        lp.total_allowed_pivots = f64::NEG_INFINITY; // no simplex
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        d.set(q.leq(-1), Cause::Decision).unwrap();
+        let Err(Contradiction::Explanation(expl)) = lp.propagate(&mut d) else {
+            panic!("a constraint learned from the certificate is violated");
+        };
+        assert!(expl.literals().contains(&p.leq(-1)), "{:?}", expl.literals());
+        assert!(expl.literals().contains(&q.leq(-1)), "{:?}", expl.literals());
+        assert_eq!(lp.learned.num_contradictions, 1);
+    }
+
+    /// With `check_at_quiescence`, the LP is only checked once a propagation follows another with no event in between.
+    #[test]
+    fn test_check_at_quiescence() {
+        let mut d = Domains::new();
+        let p = d.new_var(-5, 5);
+        let q = d.new_var(-5, 5);
+
+        let mut lp = Lp::new(LpOptions {
+            check_at_quiescence: true,
+            ..LpOptions::default()
+        });
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
+
+        let aux_a = lp.create_auxiliary_variable(0, 1);
+        let aux_b = lp.create_auxiliary_variable(0, 1);
+        lp.enable();
+        // `-a - b + 1 <= 0`
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
+        lp.add_bound_update_trigger(p.leq(-1).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(-1).into(), BoundRestriction::leq(aux_b, 0), &d);
+
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        d.set(q.leq(-1), Cause::Decision).unwrap();
+        assert!(
+            lp.propagate(&mut d).is_ok(),
+            "new events: not quiescent, the LP isn't checked"
+        );
+        assert!(
+            lp.propagate(&mut d).is_err(),
+            "no event since: quiescent, the LP is checked"
         );
     }
 }
