@@ -96,6 +96,10 @@ pub(crate) struct Solver {
     // Updated on each pivot
     /// For each var: whether it is basic/non-basic and the corresponding index.
     var_states: Vec<VarState>,
+    /// For each var: its non-basic index, or `u32::MAX` if it is basic.
+    /// A compact copy of `var_states`, faster to read when computing a row of coefficients.
+    /// Empty when outdated, rebuilt on demand.
+    nb_index: Vec<u32>,
     basis_solver: BasisSolver,
 
     /// First constraint row not yet processed by the basis solver, if any.
@@ -438,6 +442,7 @@ impl Solver {
             stalled_pivots: 0,
             perturb_round: 0,
             var_states,
+            nb_index: vec![],
             basis_solver: BasisSolver {
                 lu_factors,
                 lu_factors_transp,
@@ -872,6 +877,7 @@ impl Solver {
 
         let nb_idx = self.nb_vars.len();
         self.var_states.insert(new_var_idx, VarState::NonBasic(nb_idx));
+        self.nb_index.clear();
 
         self.nb_vars.push(new_var_idx);
         self.nb_var_vals.push(init_val);
@@ -933,6 +939,7 @@ impl Solver {
         self.orig_var_mins.push(slack_var_min);
         self.orig_var_maxs.push(slack_var_max);
         self.var_states.push(VarState::Basic(new_row));
+        self.nb_index.clear();
         self.basic_vars.push(slack_var);
         self.basic_var_mins.push(slack_var_min);
         self.basic_var_maxs.push(slack_var_max);
@@ -1027,10 +1034,19 @@ impl Solver {
             .to_sparse_vec(&mut self.inv_basis_row_coeffs);
 
         self.row_coeffs.clear_and_resize(self.nb_vars.len());
+        if self.nb_index.is_empty() {
+            self.nb_index = (self.var_states.iter())
+                .map(|state| match state {
+                    VarState::Basic(_) => u32::MAX,
+                    VarState::NonBasic(idx) => *idx as u32,
+                })
+                .collect();
+        }
         for (r, &coeff) in self.inv_basis_row_coeffs.iter() {
             for (v, &val) in self.orig_constraints.outer_view(r).unwrap().iter() {
-                if let VarState::NonBasic(idx) = self.var_states[v] {
-                    *self.row_coeffs.get_mut(idx) += val * coeff;
+                let idx = self.nb_index[v];
+                if idx != u32::MAX {
+                    *self.row_coeffs.get_mut(idx as usize) += val * coeff;
                 }
             }
         }
@@ -1593,6 +1609,10 @@ impl Solver {
         self.var_states[entering_var] = VarState::Basic(pivot_elem.row);
         self.nb_vars[pivot_info.col] = leaving_var;
         self.var_states[leaving_var] = VarState::NonBasic(pivot_info.col);
+        if !self.nb_index.is_empty() {
+            self.nb_index[entering_var] = u32::MAX;
+            self.nb_index[leaving_var] = pivot_info.col as u32;
+        }
 
         // A simple heuristic to choose when to recompute LU factorization.
         // Note: a possible failure mode is that the LU factorization accidentally
