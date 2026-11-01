@@ -16,7 +16,7 @@ use itertools::Itertools;
 
 /// How the current value of a bound was established, i.e. what justifies it in an explanation.
 ///
-/// It is recorded in the bound history ([`IntBounds`]) whenever the bound is updated and restored on backtrack.
+/// It is stored with the bound in [`IntBounds`] whenever the bound is updated, and restored with it on backtrack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundJustification {
     /// The bound holds unconditionally: initial bound of the variable,
@@ -43,7 +43,7 @@ impl BoundJustification {
         }
     }
 }
-/// Used to store the bounds of our variable and the justification of each of them (useful for explanations)
+/// The current bounds of an LP variable, each with its justification (for explanations).
 #[derive(Clone, PartialEq)]
 pub(super) struct IntBounds {
     pub(super) lower: LongCst,
@@ -58,11 +58,13 @@ impl fmt::Debug for IntBounds {
     }
 }
 
+/// The bounds of the LP variables, by [`Variable::idx`].
 #[derive(Clone, Default)]
 pub(super) struct Bounds {
+    /// The current bounds, with their justifications.
     pub(super) current: Vec<IntBounds>,
-    /// The bounds that hold permanently / unconditionally (i.e. at root).
-    /// So either equal to initial, or stronger (if determined).
+    /// The bounds that hold unconditionally (at the root): the initial ones,
+    /// or tighter ones from bound constraints whose trigger holds at the root.
     pub(super) unconditional: Vec<(LongCst, LongCst)>,
     /// The initial bounds with which a variable was added.
     init: Vec<(LongCst, LongCst)>,
@@ -81,12 +83,12 @@ impl Bounds {
     }
 }
 
-/// Stores a constraint of our lp with integer coefficients, necessary to verify the certificate
+/// A constraint of the LP with integer coefficients, to validate the certificates exactly.
 ///
-/// No need to store a bound or an operator as all of our constraints are equalities between an s variable and linear sum of x variables
+/// All the constraints are equalities between a reification variable and a linear sum (`sum = 0`), so neither a bound nor an operator is stored.
 pub type IntegerConstraint = super::LpSum;
 
-/// Interface with the aries-lp solver, also used to verify its certificates
+/// The aries-lp solver, with an exact integer copy of its constraints and bounds, to validate and explain its certificates.
 #[derive(Clone)]
 pub struct Solver {
     pub(super) lp: Lp,
@@ -94,14 +96,14 @@ pub struct Solver {
     pub(super) bounds: Bounds,
     pub(super) constraints: Vec<IntegerConstraint>,
 
-    /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
+    /// If true, explanations are refined (see [`Solver::explain_leq`]) using a minimization based on [`crate::reasoners::cp::linear`].
     pub(super) is_explanation_refined: bool,
 
-    /// Maps aries-lp [`Variable`] with their corresponding [`Var`] in the model (therefore slack variables do not appear)
+    /// Maps the LP variables to the model variables they mirror (auxiliary and reification variables have none).
     ///
-    /// Variable can't be used directly as the key, therefore we use their associated index: [`Variable::idx()`]
+    /// Keyed by [`Variable::idx()`], as [`Variable`] can't be used directly as a key.
     pub(super) lp_to_model: RefMap<usize, Var>,
-    /// Maps [`Var`] in the model with their corresponding variable in aries-lp [`Variable`]. (If they appear in posted constraints).
+    /// Maps the model variables to the LP variables that mirror them (for those in posted constraints).
     pub(super) model_to_lp: RefMap<Var, Variable>,
 }
 
@@ -123,16 +125,16 @@ impl Solver {
         }
     }
 
-    /// Create a new solver variable both for Problem and the mirror of our problem
+    /// Creates an LP variable, both in the LP and in its exact integer copy.
     pub fn create_variable(&mut self, lb: LongCst, ub: LongCst, stats: &mut Stats) -> Variable {
         let var = self.lp.add_var(0.0, (lb as f64, ub as f64));
 
-        const TRESHOLD_WARNING: i128 = 1_i128 << 40; // Experimentally computed
+        const THRESHOLD_WARNING: i128 = 1_i128 << 40; // Experimentally computed
 
-        if (lb as i128) > TRESHOLD_WARNING
-            || (lb as i128) < -TRESHOLD_WARNING
-            || (ub as i128) > TRESHOLD_WARNING
-            || (ub as i128) < -TRESHOLD_WARNING
+        if (lb as i128) > THRESHOLD_WARNING
+            || (lb as i128) < -THRESHOLD_WARNING
+            || (ub as i128) > THRESHOLD_WARNING
+            || (ub as i128) < -THRESHOLD_WARNING
         {
             tracing::warn!(
                 "Variable {} in the LP has important bounds, may compromise LP stability",
@@ -158,7 +160,7 @@ impl Solver {
         }
     }
 
-    /// Set a new Upper/Lower bound for the given variable
+    /// Sets a new upper or lower bound of the given variable.
     ///
     /// `justification` tells how the new bound was established (and it will be used to build the explanations involving it).
     ///
@@ -212,12 +214,12 @@ impl Solver {
         Ok(restricts)
     }
 
-    /// Set a new Upper/Lower bound for the given variable if it is more restrictive than the old bound
-    /// Returns true/false whether if the bound was effectively modified or not
+    /// Sets a new upper or lower bound of the given variable, if it is tighter than the current one (trailed: undone on backtrack).
+    /// Returns whether the bound was modified.
     ///
     /// # Errors
     ///
-    /// Will return an error if the problem is immediatly detected as infeasible.
+    /// Will return an error if the problem is immediately detected as infeasible.
     pub fn set_bound_restrict(
         &mut self,
         c: &BoundRestriction,
@@ -242,7 +244,7 @@ impl Solver {
         Ok(true)
     }
 
-    /// Checks whether the current LP is feasible, with given time budget.
+    /// Checks whether the current LP is feasible, within the given budget.
     pub fn check_feasibility(
         &mut self,
         deadline: Deadline,
@@ -250,7 +252,7 @@ impl Solver {
         self.lp.check_feasibility_with_deadline(deadline)
     }
 
-    /// Add a new constraint in both float and integer problems
+    /// Adds a constraint `lin_sum = 0`, both to the LP and to its exact integer copy.
     pub fn add_constraint(&mut self, lin_sum: LpSum) {
         let float_lin_sum: Vec<(Variable, f64)> = lin_sum.iter().map(|(var, coef)| (var, coef as f64)).collect();
 
@@ -259,7 +261,7 @@ impl Solver {
         self.constraints.push(lin_sum);
     }
 
-    /// Return the maximum value that the given linear sum can take to respect to its variable bounds
+    /// The maximum of a linear sum (one coefficient per variable) over the current bounds, None on overflow.
     fn max_lin_sum(&self, lin_sum: &[i128]) -> Option<i128> {
         lin_sum.iter().enumerate().try_fold(0i128, |acc, (i, &coeff)| {
             if coeff == 0 {
@@ -278,7 +280,7 @@ impl Solver {
         })
     }
 
-    /// Return the minimum value that the given linear sum can take respect to its bounds
+    /// The minimum of a linear sum (one coefficient per variable) over the current bounds, None on overflow.
     fn min_lin_sum(&self, lin_sum: &[i128]) -> Option<i128> {
         lin_sum.iter().enumerate().try_fold(0i128, |acc, (i, &coeff)| {
             if coeff == 0 {
@@ -297,7 +299,7 @@ impl Solver {
         })
     }
 
-    /// Convert a certificate with f64 coefficients in an a equivalent i128 certificate
+    /// Converts a certificate's f64 multipliers into i128 ones (scaled by 2^52, then truncated).
     fn convert_certificate_i128(cert: &[f64]) -> Vec<i128> {
         let coef = 2.0_f64.powi(52); // 52
 
@@ -305,7 +307,7 @@ impl Solver {
     }
 
     /// Applies a certificate (i.e. its multipliers) to the solver's constraints (all of the form `sum = 0`).
-    /// The returns are the resulting sum's coefficients (for each variable), as well its minimum and maximum for the current bounds.
+    /// Returns the resulting sum's coefficients (for each variable), as well as its minimum and maximum over the current bounds.
     /// None on overflow.
     fn combine_constraints(&self, multipliers: &[i128]) -> Option<(Vec<i128>, i128, i128)> {
         let mut lin_sum: Vec<i128> = vec![0; self.bounds.current.len()];
@@ -323,9 +325,9 @@ impl Solver {
         Some((lin_sum, min, max))
     }
 
-    /// Verify the certificate of unsatisfiability
+    /// Validates a certificate of infeasibility, with exact integer arithmetic.
     ///
-    /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
+    /// Returns None if the certificate isn't valid, otherwise the explanation of the infeasibility
     pub fn check_certificate(
         &self,
         cert: &[f64],
@@ -367,36 +369,21 @@ impl Solver {
         None
     }
 
-    /// Return a minimal [`Explanation`] inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint `<lin_sum, variables> <= 0`
+    /// Explains why the current bounds of the LP violate `sum_j lin_sum[j] * x_j <= 0`,
+    /// with one coefficient per LP variable in `lin_sum` (0 for the variables not actually in the sum).
     ///
-    /// lin_sum contains the coefficients for every lp [`Variable`] in the constraint (including null coefficients).
-    /// The coefficient at index 0 is associated with the [`Variable`] of [`Variable::idx`] 0 and so on
+    /// The sum's minimum is above 0: each term `lin_sum[j] * x_j` takes the bound of `x_j` that minimizes it
+    /// (its lower bound for a positive coefficient, its upper bound for a negative one).
     ///
-    /// As some of the aries-lp [`Variable`] are slack variables, they do not appear in the aries solver, therefore
-    /// we start be canceling their contribution to the ub and we update the [`Explanation`] to take into account the activation
-    /// [`Lit`] that are responsible of the bounds of the slack [`Variable`]
+    /// The explanation is made of the literals that justify these bounds (see [`BoundJustification`]):
+    /// - A bound from the model is justified by a literal of the model.
+    ///   When refined, this literal is weakened as long as the minimum stays above 0, as in [`crate::reasoners::cp::linear`]:
+    ///   e.g. `x <= 8` rather than the current `x <= 5`, if `x <= 8` already suffices.
+    ///   This takes a bit more time, but results in a more general clause.
+    /// - A bound from a bound constraint is justified by the literals of its trigger.
+    ///   This is how the LP variables without a model variable (auxiliary and reification variables) contribute to the explanation.
     ///
-    /// How each variable is treated depends on the [`BoundJustification`] recorded in its bound history:
-    /// - a bound pushed by the synchronization with the main model can only appear on a variable mapped with a [`Var`]
-    ///   of the aries solver: the events of the main model's history justify it and are added to the culprits list.
-    /// - any other bound (initial bound, or bound pushed by a bound-update trigger) contributes the literals
-    ///   recorded with it and cancels its contribution to the ub.
-    ///
-    /// The last step consists of eliminating the culprits that are not necessary to explain the infeasibility
-    /// and iterate in the past bound events to have an [`Explanation`] as minimal as possible.
-    ///
-    /// As an example, if the last bound event on x was `x <= 5` but `x <= 8` which was the previous bound event is sufficient for infeasibility,
-    /// we add `x <= 8` to the [`Explanation`]
-    ///
-    /// This minimization takes more time to compute that basic explanations but in most of the cases, the clause learnt is stronger, allowing
-    /// a better backtracking and pruning.
-    ///
-    /// Note that an auxiliary x variable never contributes a literal *of its own*:
-    /// having no counterpart in the main model, no literal denotes its bounds.
-    /// What it contributes are the literals of the [`BoundJustification`] recorded when a bound on it was set
-    /// (which is what makes the bound valid in the first place).
-    ///
-    /// An auxiliary variable still holding its initial bounds contributes nothing, as they hold unconditionally.
+    /// Unconditional bounds (initial, or from a trigger that holds at the root) do not need to participate in the explanation.
     fn explain_leq(
         &self,
         lin_sum: &[i128],
@@ -423,13 +410,10 @@ impl Solver {
         self.explain_violation(terms, domains, bc_store)
     }
 
-    /// Explains why `sum_j a_j x_j <= 0` is violated, i.e. why the sum is strictly above 0.
-    /// Each term is given as `(j, a_j, bound)`, where `bound` is the bound of `x_j` that minimizes `a_j x_j` and its justification.
+    /// Explains why `sum_j a_j x_j <= 0` is violated, i.e. why `sum_j a_j x_j` is strictly above 0.
+    /// Each term is given as `(j, a_j, bound)`, where `bound` is the bound of `x_j` that minimizes `a_j x_j`, with its justification.
     ///
-    /// When refined, each bound that comes from the model is relaxed to the weakest bound its variable had on the model's trail that
-    /// still keeps the sum above 0 (as in [`crate::reasoners::cp::linear`]):
-    /// the explanation will use literals that were established earlier, hence a more general clause.
-    /// Otherwise, the explanation has the justification of every bound.
+    /// The literals are chosen from the justifications as described for [`Self::explain_leq`].
     fn explain_violation(
         &self,
         terms: impl IntoIterator<Item = (usize, i128, (LongCst, BoundJustification))>,
@@ -470,8 +454,8 @@ impl Solver {
                         // there is a lower bound event on this element, add it to the set of culprits for later processing
                         culprits.push(event)
                     } else {
-                        // no event associated to the element, which means its value is entailed at the ROOT
-                        // Hence it does need to be present in the explanation, but should cancel its contribution to the UB
+                        // no event associated to the element, which means its value is entailed at the ROOT.
+                        // Hence it does not need to be in the explanation, but its contribution cancels from the UB
                         let elem_var_lb = domains.lb(sum_elem.var);
                         debug_assert_eq!(
                             domains.entailing_level(Lit::geq(sum_elem.var, elem_var_lb as IntCst)),
@@ -535,7 +519,7 @@ impl Solver {
                     culprits_lb += prev_lb;
                     // println!("  > to prev")
                 } else {
-                    // there was no previous event (ie the previous lower bound always holds)
+                    // there was no previous event (i.e. the previous lower bound always holds)
                     debug_assert_eq!(
                         domains.entailing_level(domains.get_event(event_idx).previous_literal()),
                         DecLvl::ROOT
@@ -555,7 +539,7 @@ impl Solver {
         explanation
     }
 
-    /// Return an explanation containing the upper and lower lit associated with a var, used to explain trivial errors (with no certificate)
+    /// Explains the incompatible bounds of a variable (its lower bound above its upper bound): the justifications of both.
     pub fn explain_infeasible_var(&self, var: Variable, bc_store: &BoundConstraintsStore) -> Explanation {
         let mut explanation = Explanation::new();
 

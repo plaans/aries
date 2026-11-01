@@ -45,9 +45,9 @@ impl LpSum {
     /// Simplify the terms of the expression, into a normalized expression that satisfies
     /// all our invariants.
     ///
-    /// Note that it should be an invariant that the `LinSum` is always in its normal form.
+    /// Note that it should be an invariant that the `LpSum` is always in its normal form.
     ///
-    /// This is private because no-one outside this module should be able to hold a `LinSum` that is not normalized already.
+    /// This is private because no-one outside this module should be able to hold an `LpSum` that is not normalized already.
     fn simplify(&mut self) {
         self.terms.sort_unstable_by_key(|sv| sv.var);
         self.terms.dedup_by(|second, first| {
