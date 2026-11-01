@@ -114,6 +114,13 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_BACKJUMP_GAP_FILTER`]. Set to 0 to disable.
     pub backjump_gap_filter: u32,
+    /// If true, the LP is only checked at quiescence: i.e. once the other reasoners have inferred all they could
+    /// (no event since the previous propagation). The learned constraints are still propagated at every propagation.
+    ///
+    /// Otherwise, the LP's contradictions mostly preempt the ones that the other, cheaper reasoners would find at the same node.
+    ///
+    /// The default value is controlled by [`LP_CHECK_AT_QUIESCENCE`].
+    pub check_at_quiescence: bool,
 }
 
 impl Default for LpOptions {
@@ -125,6 +132,7 @@ impl Default for LpOptions {
             initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
             catch_up: LP_CATCH_UP.get(),
             backjump_gap_filter: LP_BACKJUMP_GAP_FILTER.get(),
+            check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
         }
     }
 }
@@ -146,6 +154,9 @@ pub static LP_CATCH_UP: EnvParam<bool> = EnvParam::new("ARIES_LP_CATCH_UP", "fal
 
 /// The minimum backjump gap of a reported LP contradiction (see [`LpOptions::backjump_gap_filter`]).
 pub static LP_BACKJUMP_GAP_FILTER: EnvParam<u32> = EnvParam::new("ARIES_LP_BACKJUMP_GAP_FILTER", "0");
+
+/// Whether the LP is only checked at quiescence (see [`LpOptions::check_at_quiescence`]).
+pub static LP_CHECK_AT_QUIESCENCE: EnvParam<bool> = EnvParam::new("ARIES_LP_CHECK_AT_QUIESCENCE", "false");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -296,6 +307,9 @@ pub struct Lp {
     /// The level that the LP reached after its last feasible check.
     /// With [`LpOptions::catch_up`], the LP goes back up to it after a backtrack, without checking the levels below it (until it's reached again).
     catch_up_level: DecLvl,
+    /// The number of events of the model at the previous propagation, to detect quiescence (no event since).
+    /// `None` after a decision or a backtrack, where the number of events alone can't tell.
+    num_events_at_last_propagation: Option<u32>,
 }
 
 impl Default for Lp {
@@ -318,6 +332,7 @@ impl Lp {
             trail: Default::default(),
             model_decision_level: DecisionLevelTracker::new(),
             catch_up_level: DecLvl::ROOT,
+            num_events_at_last_propagation: None,
 
             stats: Stats::default(),
 
@@ -660,6 +675,11 @@ impl Theory for Lp {
         // The LP is not allowed to operate on them but must instead
         // operate on the domains as they were at the LP level (`lp_doms` below).
 
+        // quiescence: no event since the previous propagation, so the other reasoners have inferred all they could
+        let num_events = model_doms.trail().num_events();
+        let quiescent = self.num_events_at_last_propagation == Some(num_events);
+        self.num_events_at_last_propagation = Some(num_events);
+
         // theory propagation:
         // propagate constraints learned from the past certificates, at the model's level and before the LP
         if self
@@ -669,6 +689,11 @@ impl Theory for Lp {
             // Not required, but cheaper:
             // the solver will propagate the literals set and call us again on the propagation loop's next iteration,
             // so we avoid synchronizing the LP on a state that is about to change anyway.
+            return Ok(());
+        }
+
+        if self.options.check_at_quiescence && !quiescent {
+            // the solver will call us again once the other reasoners have inferred all they could
             return Ok(());
         }
 
@@ -799,6 +824,7 @@ impl Backtrack for Lp {
     fn save_state(&mut self) -> DecLvl {
         // bump number of allowed pivots
         self.total_allowed_pivots += self.options.pivots_per_decision;
+        self.num_events_at_last_propagation = None;
 
         // track solver level
         self.model_decision_level.save_state()
@@ -812,6 +838,7 @@ impl Backtrack for Lp {
     fn restore_last(&mut self) {
         // track solver state
         self.model_decision_level.restore_last();
+        self.num_events_at_last_propagation = None;
 
         // (the constraints learned at a deeper level were never checked at the level backtracked to)
         self.learned.mark_pending_all();
@@ -1413,5 +1440,40 @@ mod tests {
         assert!(expl.literals().contains(&p.leq(-1)), "{:?}", expl.literals());
         assert!(expl.literals().contains(&q.leq(-1)), "{:?}", expl.literals());
         assert_eq!(lp.learned.num_contradictions, 1);
+    }
+
+    /// With `check_at_quiescence`, the LP is only checked once a propagation follows another with no event in between.
+    #[test]
+    fn test_check_at_quiescence() {
+        let mut d = Domains::new();
+        let p = d.new_var(-5, 5);
+        let q = d.new_var(-5, 5);
+
+        let mut lp = Lp::new(LpOptions {
+            check_at_quiescence: true,
+            ..LpOptions::default()
+        });
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
+
+        let aux_a = lp.create_auxiliary_variable(0, 1);
+        let aux_b = lp.create_auxiliary_variable(0, 1);
+        lp.enable();
+        // `-a - b + 1 <= 0`
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
+        lp.add_bound_update_trigger(p.leq(-1).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(-1).into(), BoundRestriction::leq(aux_b, 0), &d);
+
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        d.set(q.leq(-1), Cause::Decision).unwrap();
+        assert!(
+            lp.propagate(&mut d).is_ok(),
+            "new events: not quiescent, the LP isn't checked"
+        );
+        assert!(
+            lp.propagate(&mut d).is_err(),
+            "no event since: quiescent, the LP is checked"
+        );
     }
 }
