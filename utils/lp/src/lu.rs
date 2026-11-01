@@ -1,3 +1,5 @@
+use std::cell::Cell;
+
 use crate::{
     results::NumericalErrors,
     sparse::{Perm, ScatteredVec, SparseMat, TriangleMat},
@@ -9,7 +11,16 @@ pub struct LUFactors {
     upper: TriangleMat,
     row_perm: Option<Perm>,
     col_perm: Option<Perm>,
+    /// Moving average of the density of the results of the dense solves of [`Self::solve`].
+    /// While it stays above [`DENSE_SOLVE_THRESHOLD`], the next solves are to be dense too.
+    result_density: Cell<f64>,
 }
+
+/// The density (of the right-hand side, or of the recent results) above which [`LUFactors::solve`] solves densely.
+///
+/// A sparse solve first searches which entries of the result are nonzero and computes them afterwards.
+/// But when many of them are, this search makes the sparse solve cost more than a dense solve (which computes all the entries directly).
+const DENSE_SOLVE_THRESHOLD: f64 = 0.05;
 
 #[derive(Clone, Debug)]
 pub struct ScratchSpace {
@@ -80,6 +91,16 @@ impl LUFactors {
     }
 
     pub fn solve(&self, rhs: &mut ScatteredVec, scratch: &mut ScratchSpace) {
+        let n = rhs.len();
+        if rhs.nonzero.len() as f64 > DENSE_SOLVE_THRESHOLD * n as f64
+            || self.result_density.get() > DENSE_SOLVE_THRESHOLD
+        {
+            self.solve_scattered_densely(rhs, scratch);
+            let density = rhs.nonzero.len() as f64 / n.max(1) as f64;
+            self.result_density.set(0.9 * self.result_density.get() + 0.1 * density);
+            return;
+        }
+
         if let Some(row_perm) = &self.row_perm {
             scratch.rhs.clear();
             for &i in &rhs.nonzero {
@@ -108,12 +129,36 @@ impl LUFactors {
         }
     }
 
+    /// Solves like [`Self::solve`], but with dense triangular solves.
+    fn solve_scattered_densely(&self, rhs: &mut ScatteredVec, scratch: &mut ScratchSpace) {
+        scratch.dense_rhs.clear();
+        scratch.dense_rhs.resize(rhs.len(), 0.0);
+        for &i in &rhs.nonzero {
+            let new_i = self.row_perm.as_ref().map_or(i, |p| p.orig2new[i]);
+            scratch.dense_rhs[new_i] = rhs.values[i];
+        }
+
+        tri_solve_dense(&self.lower, Triangle::Lower, &mut scratch.dense_rhs);
+        tri_solve_dense(&self.upper, Triangle::Upper, &mut scratch.dense_rhs);
+
+        rhs.clear();
+        for (i, &val) in scratch.dense_rhs.iter().enumerate() {
+            if val != 0.0 {
+                let orig_i = self.col_perm.as_ref().map_or(i, |p| p.new2orig[i]);
+                rhs.values[orig_i] = val;
+                rhs.is_nonzero[orig_i] = true;
+                rhs.nonzero.push(orig_i);
+            }
+        }
+    }
+
     pub fn transpose(&self) -> LUFactors {
         LUFactors {
             lower: self.upper.transpose(),
             upper: self.lower.transpose(),
             row_perm: self.col_perm.clone(),
             col_perm: self.row_perm.clone(),
+            result_density: Cell::new(0.0),
         }
     }
 }
@@ -302,6 +347,7 @@ pub fn lu_factorize<'a>(
             new2orig: new2orig_row,
         }),
         col_perm: Some(col_perm),
+        result_density: Cell::new(0.0),
     };
 
     Ok(res)
@@ -457,6 +503,10 @@ fn tri_solve_process_col(tri_mat: &TriangleMat, col: usize, rhs: &mut [f64]) {
     };
 
     rhs[col] = x_val;
+    if x_val == 0.0 {
+        // nothing to eliminate (frequent in the dense solves)
+        return;
+    }
     for (r, &coeff) in tri_mat.nondiag.col_iter(col) {
         rhs[r] -= x_val * coeff;
     }
