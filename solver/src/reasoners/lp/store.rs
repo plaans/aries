@@ -14,9 +14,9 @@ pub(super) struct BoundConstraintsStore {
     /// The constraints whose cause was already entailed when they were registered,
     /// and that are thus waiting to be applied at the next propagation.
     pending: Vec<BoundConstraintId>,
-    /// Decision level at which the pending constraints were last applied.
-    /// No watch can trigger them again, so backtracking below it makes them all pending anew.
-    pending_applied_at: Option<DecLvl>,
+    /// The pending constraints applied above the root, with the LP level they were applied at (increasing).
+    /// No watch can trigger them again, so backtracking below that level makes them pending again.
+    applied_pending: Vec<(DecLvl, BoundConstraintId)>,
 
     by_var: Vec<Vec<BoundConstraintId>>,
     watches: Watches<BoundConstraintId>,
@@ -70,25 +70,26 @@ impl BoundConstraintsStore {
             .filter(|&id| self.store[id].0.iter().all(|l| domains.entails(l)))
     }
 
-    /// Mark the pending constraints as applied at decision level `lvl` (without popping them).
-    pub(super) fn mark_pending_applied(&mut self, lvl: DecLvl) {
-        if !self.pending.is_empty() {
-            debug_assert!(self.pending_applied_at.is_none());
-            self.pending_applied_at = Some(lvl);
-        }
-    }
-
     pub(super) fn pop_pending(&mut self) -> Option<BoundConstraintId> {
         self.pending.pop()
     }
 
-    /// After a backtrack of the LP to `lvl`: if it went below the level the pending constraints were applied at,
-    /// their bounds are undone while their causes may still be entailed, so they are all marked pending again.
+    /// Records that a pending constraint was applied at LP level `lvl`.
+    pub(super) fn record_applied_pending(&mut self, id: BoundConstraintId, lvl: DecLvl) {
+        if lvl > DecLvl::ROOT {
+            self.applied_pending.push((lvl, id));
+        }
+    }
+
+    /// After a backtrack of the LP to `lvl`: the pending constraints applied above it have their bound undone
+    /// (or overwritten by an undone older bound), while their causes may still be entailed, so they are pending again.
     pub(super) fn backtrack_to(&mut self, lvl: DecLvl) {
-        if self.pending_applied_at.is_some_and(|applied_at| applied_at > lvl) {
-            self.pending.clear();
-            self.pending.extend(self.store.keys());
-            self.pending_applied_at = None;
+        while let Some(&(applied_at, id)) = self.applied_pending.last() {
+            if applied_at <= lvl {
+                break;
+            }
+            self.applied_pending.pop();
+            self.pending.push(id);
         }
     }
 }

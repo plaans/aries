@@ -286,12 +286,11 @@ impl Lp {
     ///
     /// Any bound change to the model variable will be reflected in the LP.
     /// If the model variable is already bound to an LP variable, this one is returned (no new LP variable is created in this case).
+    ///
+    /// Only allowed at the root, to keep it simple: there, the model variable's current bounds hold in every state,
+    /// so they can be the LP variable's initial bounds.
     pub fn bind_cp_var(&mut self, model_var: Var, doms: &Domains) -> LpVar {
-        debug_assert_eq!(
-            doms.current_decision_level(),
-            DecLvl::ROOT,
-            "the variable bounds may have evolved since root"
-        );
+        assert_eq!(doms.current_decision_level(), DecLvl::ROOT);
         if let Some(lp_var) = self.solver.model_to_lp.get(model_var) {
             *lp_var
         } else {
@@ -436,10 +435,9 @@ impl Lp {
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
     fn apply_pending_bound_constrs(&mut self, domains: &DomainsSnapshot) -> Result<(), Contradiction> {
-        self.bound_constrs.mark_pending_applied(self.current_decision_level());
-
         while let Some(index) = self.bound_constrs.pop_pending() {
             let (cause, bound_constr) = &self.bound_constrs.store[index];
+            let bound_constr = *bound_constr;
 
             let entailed = cause.iter().all(|l| domains.entails(l));
 
@@ -448,14 +446,18 @@ impl Lp {
                 // The watches will trigger the constraint again if its cause becomes entailed anew.
                 continue;
             }
+            let at_root = cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT);
 
-            let res = if cause.iter().all(|l| domains.entailing_level(l) == DecLvl::ROOT) {
+            // (applied above the root, its bound can be lost on a backtrack: undone, or overwritten by an undone older bound)
+            self.bound_constrs.record_applied_pending(index, self.lp_level());
+
+            let res = if at_root {
                 // A cause entailed at the root can never be undone,
                 // so the bound is set permanently instead of being trailed and lost on the first backtrack below the current level.
-                self.solver.set_bound_restrict_permanent(bound_constr)
+                self.solver.set_bound_restrict_permanent(&bound_constr)
             } else {
                 self.solver
-                    .set_bound_restrict(bound_constr, BoundJustification::Trigger(index), &mut self.trail)
+                    .set_bound_restrict(&bound_constr, BoundJustification::Trigger(index), &mut self.trail)
             };
 
             if let Err(infeasible) = res {
