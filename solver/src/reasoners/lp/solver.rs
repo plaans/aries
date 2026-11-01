@@ -1,20 +1,16 @@
 use std::{collections::BinaryHeap, fmt};
 
-use crate::prelude::*;
 use aries_lp::prelude::*;
 
-use crate::{
-    backtrack::{DecLvl, Trail},
-    collections::ref_store::RefMap,
-    core::{
-        LongCst, cst_int_to_long,
-        state::{DomainsSnapshot, Explanation},
-    },
-    reasoners::lp::{
-        BoundConstraintId, BoundConstraintsStore, BoundRestriction, LpEvent, LpSum, Stats,
-        explanation_utils::{LbBoundEvent, SumElem},
-    },
+use crate::backtrack::{DecLvl, Trail};
+use crate::collections::ref_store::RefMap;
+use crate::core::{
+    LongCst, cst_int_to_long,
+    state::{DomainsSnapshot, Explanation},
 };
+use crate::prelude::*;
+use crate::reasoners::lp::explanation_utils::{LbBoundEvent, SumElem};
+use crate::reasoners::lp::{BoundConstraintId, BoundConstraintsStore, BoundRestriction, LpEvent, LpSum, Stats};
 
 use itertools::Itertools;
 
@@ -101,10 +97,12 @@ pub struct Solver {
     /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
     pub(super) is_explanation_refined: bool,
 
-    /// Maps aries-lp [`Variable`] with their corresponding [`Var`] in aries solver (therefore slack variables do not appear)
+    /// Maps aries-lp [`Variable`] with their corresponding [`Var`] in the model (therefore slack variables do not appear)
     ///
     /// Variable can't be used directly as the key, therefore we use their associated index: [`Variable::idx()`]
-    pub(super) map_lp_to_aries: RefMap<usize, Var>,
+    pub(super) lp_to_model: RefMap<usize, Var>,
+    /// Maps [`Var`] in the model with their corresponding variable in aries-lp [`Variable`]. (If they appear in posted constraints).
+    pub(super) model_to_lp: RefMap<Var, Variable>,
 }
 
 impl PartialEq for Solver {
@@ -120,7 +118,8 @@ impl Solver {
             bounds: Default::default(),
             constraints: Vec::new(),
             is_explanation_refined,
-            map_lp_to_aries: RefMap::default(),
+            lp_to_model: RefMap::default(),
+            model_to_lp: RefMap::default(),
         }
     }
 
@@ -148,8 +147,8 @@ impl Solver {
         var
     }
 
-    /// Returns always valid bounds for `var * factor`
-    pub fn get_init_bounds(&self, factor: IntCst, var: Variable) -> (LongCst, LongCst) {
+    /// The range of the term `factor * var` over the initial bounds of `var` (which always hold)
+    pub fn init_range_of_term(&self, factor: IntCst, var: Variable) -> (LongCst, LongCst) {
         let factor = cst_int_to_long(factor);
         let (lb, ub) = self.bounds.init[var.idx()];
         if factor >= 0 {
@@ -225,41 +224,22 @@ impl Solver {
         justification: BoundJustification,
         trail: &mut Trail<LpEvent>,
     ) -> Result<bool, InfeasibilityReason> {
-        match c.bound {
-            Bound::Lower => {
-                let old_val = self.bounds.current[c.var.idx()].lower;
-                let old_justification = self.bounds.current[c.var.idx()].lower_justification;
-                if c.val > old_val {
-                    trail.push(LpEvent {
-                        var: c.var,
-                        bound: c.bound,
-                        old_val,
-                        old_justification,
-                    });
-                    self.set_bound(c.var, c.bound, c.val, justification)?;
-
-                    return Ok(true);
-                }
-            }
-            Bound::Upper => {
-                let old_val = self.bounds.current[c.var.idx()].upper;
-                let old_justification = self.bounds.current[c.var.idx()].upper_justification;
-
-                if c.val < old_val {
-                    trail.push(LpEvent {
-                        var: c.var,
-                        bound: c.bound,
-                        old_val,
-                        old_justification,
-                    });
-                    self.set_bound(c.var, c.bound, c.val, justification)?;
-
-                    return Ok(true);
-                }
-            }
+        let b = &self.bounds.current[c.var.idx()];
+        let (old_val, old_justification, restricts) = match c.bound {
+            Bound::Lower => (b.lower, b.lower_justification, c.val > b.lower),
+            Bound::Upper => (b.upper, b.upper_justification, c.val < b.upper),
+        };
+        if !restricts {
+            return Ok(false);
         }
-
-        Ok(false)
+        trail.push(LpEvent {
+            var: c.var,
+            bound: c.bound,
+            old_val,
+            old_justification,
+        });
+        self.set_bound(c.var, c.bound, c.val, justification)?;
+        Ok(true)
     }
 
     /// Checks whether the current LP is feasible, with given time budget.
@@ -324,56 +304,52 @@ impl Solver {
         cert.iter().map(|x| (x * coef).trunc() as i128).collect()
     }
 
+    /// Applies a certificate (i.e. its multipliers) to the solver's constraints (all of the form `sum = 0`).
+    /// The returns are the resulting sum's coefficients (for each variable), as well its minimum and maximum for the current bounds.
+    /// None on overflow.
+    fn combine_constraints(&self, multipliers: &[i128]) -> Option<(Vec<i128>, i128, i128)> {
+        let mut lin_sum: Vec<i128> = vec![0; self.bounds.current.len()];
+        for (constraint, &mult) in self.constraints.iter().zip(multipliers) {
+            if mult == 0 {
+                continue;
+            }
+            for (var, coef) in constraint.iter() {
+                let prod = mult.checked_mul(coef as i128)?;
+                lin_sum[var.idx()] = lin_sum[var.idx()].checked_add(prod)?;
+            }
+        }
+        let min = self.min_lin_sum(&lin_sum)?;
+        let max = self.max_lin_sum(&lin_sum)?;
+        Some((lin_sum, min, max))
+    }
+
     /// Verify the certificate of unsatisfiability
     ///
     /// Returns None if the certificate isn't valid, otherwise returns the Explanation of unsatisfiability
     pub fn check_certificate(
-        &mut self,
+        &self,
         cert: &[f64],
         domains: &DomainsSnapshot,
         stats: &mut Stats,
         bc_store: &BoundConstraintsStore,
     ) -> Option<Explanation> {
         debug_assert_eq!(cert.len(), self.constraints.len());
-
-        let mut lin_sum: Vec<i128> = vec![0; self.bounds.current.len()];
-
         let cert_i128 = Solver::convert_certificate_i128(cert);
 
-        stats.num_overflow += 1;
+        // This linear sum should be equal to 0: this is the certificate's corresponding aggregate constraint.
+        // (As such, when this sum does not equal 0, it means we are at an infeasibility).
+        let Some((lin_sum, min_lin_sum, max_lin_sum)) = self.combine_constraints(&cert_i128) else {
+            stats.num_overflow += 1;
+            return None;
+        };
 
-        // We build the constraint that should be infeasible based on the certificate, it's only a linear sum as our constraints are equalities
-        for (const_i, &coef_cert) in cert_i128.iter().enumerate() {
-            if coef_cert == 0 {
-                continue;
-            }
-
-            for (var_i, coef_var) in self.constraints[const_i].iter() {
-                let prod = coef_cert.checked_mul(coef_var as i128)?;
-                lin_sum[var_i.idx()] = lin_sum[var_i.idx()].checked_add(prod)?;
-            }
-        }
-
-        let min_lin_sum = self.min_lin_sum(&lin_sum)?;
-        let max_lin_sum = self.max_lin_sum(&lin_sum)?;
-
-        stats.num_overflow -= 1;
-
-        // To detect the infeasibility, we check if 0 is in the range [min, max] as our linear sum should be equal to 0
+        // To detect the infeasibility, we check whether 0 is outside the [min, max] range, as our linear sum should be equal to 0 (see above).
         if max_lin_sum < 0 {
-            if self.is_explanation_refined {
-                return Some(self.explain_geq(&lin_sum, domains, bc_store));
-            } else {
-                return Some(self.explain_geq_basic(&lin_sum, bc_store));
-            }
+            let opposite = lin_sum.iter().map(|&coef| -coef).collect_vec();
+            return Some(self.explain_leq(&opposite, domains, bc_store));
         }
-
         if min_lin_sum > 0 {
-            if self.is_explanation_refined {
-                return Some(self.explain_leq(&lin_sum, domains, bc_store));
-            } else {
-                return Some(self.explain_leq_basic(&lin_sum, bc_store));
-            }
+            return Some(self.explain_leq(&lin_sum, domains, bc_store));
         }
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
@@ -427,7 +403,47 @@ impl Solver {
         domains: &DomainsSnapshot,
         bc_store: &BoundConstraintsStore,
     ) -> Explanation {
+        // We iterate over the lin_sum to eliminate variables with a null coef
+        // Variables that are really present in the constraint (coef != 0) are then treated separately
+        // depending on how their minimizing bound was established, as recorded in its justification.
+        let terms = lin_sum.iter().enumerate().filter_map(|(idx, &coef)| {
+            // Bound of the LP variable in the direction that minimizes the sum
+            // (lower bound for a positive coefficient, upper bound for a negative one)
+            // together with the justification recorded when it was set.
+            let b = &self.bounds.current[idx];
+            let bound = if coef > 0 {
+                (b.lower, b.lower_justification)
+            } else if coef < 0 {
+                (b.upper, b.upper_justification)
+            } else {
+                return None;
+            };
+            Some((idx, coef, bound))
+        });
+        self.explain_violation(terms, domains, bc_store)
+    }
+
+    /// Explains why `sum_j a_j x_j <= 0` is violated, i.e. why the sum is strictly above 0.
+    /// Each term is given as `(j, a_j, bound)`, where `bound` is the bound of `x_j` that minimizes `a_j x_j` and its justification.
+    ///
+    /// When refined, each bound that comes from the model is relaxed to the weakest bound its variable had on the model's trail that
+    /// still keeps the sum above 0 (as in [`crate::reasoners::cp::linear`]):
+    /// the explanation will use literals that were established earlier, hence a more general clause.
+    /// Otherwise, the explanation has the justification of every bound.
+    fn explain_violation(
+        &self,
+        terms: impl IntoIterator<Item = (usize, i128, (LongCst, BoundJustification))>,
+        domains: &DomainsSnapshot,
+        bc_store: &BoundConstraintsStore,
+    ) -> Explanation {
         let mut explanation = Explanation::new();
+
+        if !self.is_explanation_refined {
+            for (_, _, (_, justification)) in terms {
+                justification.push_to(&mut explanation, bc_store);
+            }
+            return explanation;
+        }
 
         // We always explain a contradiction, i.e. lower bounds summing to *strictly* more than 0,
         // so the budget is raised by one to match the non-strict comparisons used below.
@@ -436,24 +452,8 @@ impl Solver {
 
         let mut culprits = BinaryHeap::new();
 
-        // We iterate over the lin_sum to eliminate variables with a null coef
-        // Variables that are really present in the constraint (coef != 0) are then treated separately
-        // depending on how their minimizing bound was established, as recorded in its justification.
-        for (idx, &coef) in lin_sum.iter().enumerate() {
-            if coef == 0 {
-                continue;
-            }
-
-            // Bound of the LP variable in the direction that minimizes the sum
-            // (lower bound for a positive coefficient, upper bound for a negative one)
-            // together with the justification recorded when it was set.
-            let (bound, justification) = if coef > 0 {
-                let b = &self.bounds.current[idx];
-                (b.lower, b.lower_justification)
-            } else {
-                let b = &self.bounds.current[idx];
-                (b.upper, b.upper_justification)
-            };
+        for (idx, coef, (bound, justification)) in terms {
+            debug_assert!(coef != 0);
 
             match justification {
                 // The bound was pushed by the synchronization with the main model, which entails it:
@@ -461,7 +461,7 @@ impl Solver {
                 // The synchronization only concerns variables that are mapped to a var in aries solver.
                 BoundJustification::CpModel(_) => {
                     let &var = self
-                        .map_lp_to_aries
+                        .lp_to_model
                         .get(idx)
                         .expect("a bound entailed by the main model can only be set on a variable mapped to it");
                     let sum_elem = SumElem::new(coef, var);
@@ -553,49 +553,6 @@ impl Solver {
         }
 
         explanation
-    }
-
-    /// Return a minimal explanation inspired by [`crate::reasoners::cp::linear`] for the infeasible constraint `<lin_sum, variables> => 0`
-    ///
-    /// Check [`Solver::explain_leq`] for more details on how these [`Explanation`] are generated
-    fn explain_geq(
-        &self,
-        lin_sum: &[i128],
-        domains: &DomainsSnapshot,
-        bc_store: &BoundConstraintsStore,
-    ) -> Explanation {
-        let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
-
-        self.explain_leq(opp_constraint, domains, bc_store)
-    }
-
-    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> <= 0`
-    ///
-    /// lin_sum contains the coefficients for every lp [`Variable`] in the constraint (including null coefficients).
-    /// The coefficient at index 0 is associated with the [`Variable`] of [`Variable::idx`] 0 and so on
-    fn explain_leq_basic(&self, lin_sum: &[i128], bc_store: &BoundConstraintsStore) -> Explanation {
-        let mut explanation = Explanation::new();
-
-        for (i, &coeff) in lin_sum.iter().enumerate() {
-            if coeff == 0 {
-                continue;
-            }
-            let justification = if coeff < 0 {
-                self.bounds.current[i].upper_justification
-            } else {
-                self.bounds.current[i].lower_justification
-            };
-            justification.push_to(&mut explanation, bc_store);
-        }
-
-        explanation
-    }
-
-    /// Return a basic explanation containing all the [`Lit`] associated with each variable + bound present in the constraint `<lin_sum, variables> >= 0`
-    fn explain_geq_basic(&self, lin_sum: &[i128], bc_store: &BoundConstraintsStore) -> Explanation {
-        let opp_constraint = &lin_sum.iter().map(|&coef| -coef).collect_vec();
-
-        self.explain_leq_basic(opp_constraint, bc_store)
     }
 
     /// Return an explanation containing the upper and lower lit associated with a var, used to explain trivial errors (with no certificate)

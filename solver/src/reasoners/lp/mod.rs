@@ -29,7 +29,6 @@ This, however, is generally a good trade-off because if the subtree that could b
 will eventually get enough budget to prune it (just with some delay).
 On the other hand, if the tree is small, the CP solver will close with limited time lost on the LP solver.
 
-
 > **Important:** This reasoner is **disabled by default**.
 > To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
 
@@ -38,6 +37,7 @@ On the other hand, if the tree is small, the CP solver will close with limited t
 
 mod explanation_utils;
 mod solver;
+mod store;
 mod sum;
 
 pub use sum::LpSum;
@@ -45,19 +45,16 @@ pub use sum::LpSum;
 use std::collections::HashMap;
 
 use aries_env_param::EnvParam;
-#[allow(unused_imports)]
-use itertools::Itertools;
 use solver::{BoundJustification, Solver};
+use store::BoundConstraintsStore;
 
 use crate::prelude::*;
 use aries_lp::prelude::*;
 
 use crate::{
     backtrack::{Backtrack, DecLvl, DecisionLevelTracker, ObsTrailCursor, Trail},
-    collections::ref_store::{RefMap, RefVec},
     core::{
         IntCst, Lit, LongCst, Var, cst_int_to_long,
-        literals::Watches,
         state::{Domains, DomainsSnapshot, Event, Explanation, InferenceCause},
     },
     lang::linear::LinSum,
@@ -67,37 +64,34 @@ use crate::{
 
 /// Contains all the options available for the Lp reasoner
 ///
-/// It can be passed when creating the reasoner or modified through following methods:
-/// [`Lp::activate`], [`Lp::deactivate`], [`Lp::deactivate_propagation`], [`Lp::activate_refined_explanation`] and [`Lp::deactivate_refined_explanation`]
+/// It is passed when creating the reasoner; [`Lp::enable`] and [`Lp::disable`] change `enabled` afterwards.
 #[derive(Debug, Clone, Copy)]
 pub struct LpOptions {
-    /// Used to activate/deactivate the propagation of the reasoner
-    ///
-    /// Can be controlled with the following methods: [`Lp::activate`], [`Lp::deactivate`] and [`Lp::deactivate_propagation`]
-    pub propagation_active: bool,
-    /// Used to enable/disable the reasoner
+    /// Used to enable/disable the reasoner (constraints registration and propagation)
     ///
     /// Can be controlled trough the following environment variable: ARIES_LP_ENABLE
-    /// or after the creation with [`Lp::activate`] and [`Lp::deactivate`]
-    pub enable: bool,
+    /// or after the creation with [`Lp::enable`] and [`Lp::disable`]
+    pub enabled: bool,
     /// If true, refined explanation are used with minimization based on [`crate::reasoners::cp::linear`]
-    ///
-    ///Can be controlled with the following methods: [`Lp::activate_refined_explanation`], [`Lp::deactivate_refined_explanation`]
     pub is_explanation_refined: bool,
     /// Number of pivots allowed for each decision.
     ///
     /// The default value is controlled by [`LP_PIVOTS_PER_DECISION`].
     /// The best value is very problem-dependent and the default is typically very small (~0.1).
     pub pivots_per_decision: f64,
+    /// Number of pivots allowed before any decision is taken.
+    ///
+    /// The default value is controlled by [`LP_INITIALLY_ALLOWED_PIVOTS`].
+    pub initially_allowed_pivots: f64,
 }
 
 impl Default for LpOptions {
     fn default() -> Self {
         Self {
-            propagation_active: true,
-            enable: LP_ENABLE.get(),
+            enabled: LP_ENABLE.get(),
             is_explanation_refined: true,
             pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
+            initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
         }
     }
 }
@@ -156,26 +150,6 @@ impl From<BoundConstraintId> for usize {
     }
 }
 
-#[derive(Clone, Default)]
-struct BoundConstraintsStore {
-    store: RefVec<BoundConstraintId, (Conjunction, BoundRestriction)>,
-    by_var: Vec<Vec<BoundConstraintId>>,
-    watches: Watches<BoundConstraintId>,
-}
-impl BoundConstraintsStore {
-    fn push(&mut self, trigger: Conjunction, bound_update: BoundRestriction) -> BoundConstraintId {
-        let id = self.store.push((trigger, bound_update));
-
-        let var = bound_update.var.idx();
-        if self.by_var.len() <= var {
-            self.by_var.resize(var + 1, vec![]);
-        }
-        self.by_var[var].push(id);
-
-        id
-    }
-}
-
 /// Store all the necessary information for backtracking after modifying a bound
 ///
 /// The old value and justification are necessary as they will overwrite the current ones
@@ -191,7 +165,7 @@ struct LpEvent {
     old_justification: BoundJustification,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Stats {
     /// Number of propagations where the solver returned `Feasible`
     num_feasible: usize,
@@ -215,25 +189,6 @@ struct Stats {
     num_unstable: usize,
 }
 
-impl Stats {
-    fn new() -> Self {
-        Self {
-            num_feasible: 0,
-            num_propagate: 0,
-
-            num_constraints: 0,
-            num_variables: 0,
-
-            num_certif: 0,
-            num_val_certif: 0,
-            num_overflow: 0,
-            num_contradictions: 0,
-            num_check_timeouts: 0,
-            num_unstable: 0,
-        }
-    }
-}
-
 /// A variable of the LP solver.
 pub type LpVar = aries_lp::Variable;
 
@@ -249,40 +204,33 @@ enum Signed<T> {
 ///
 /// It encapsulates all the necessary information to run the lp solver on the posted constraints.
 ///
-/// The propagation can be dynamically activated / deactivated through the following methods: [`Lp::activate()`] and [`Lp::deactivate()`].
+/// The propagation can be dynamically enabled / disabled through the following methods: [`Lp::enable()`] and [`Lp::disable()`].
 /// This can be useful to avoid an overhead of the lp reasoner over the others if its not relevant.
 #[derive(Clone)]
 pub struct Lp {
     id: ReasonerId,
     /// Encapsulates both float and integer versions of our constraints and an instance of the aries-lp solver
     solver: Solver,
-    /// Associates each bound constraint identifiers with a trigger (conjunction of CP literals) and a corresponding bound restriction.
+    /// Associates each bound constraint identifiers with a trigger (conjunction of model literals) and a corresponding bound restriction.
     /// the constraint is applied to the LP as soon as all the literals of its trigger are entailed.
     bound_constrs: BoundConstraintsStore,
-    /// Indices in `bound_constrs` of the constraints whose cause was already entailed when
-    /// they were registered, and that are thus waiting to be applied at the next propagation.
-    pending_bound_constrs: Vec<BoundConstraintId>,
-    /// Decision level at which the pending constraints were last applied. No watch can trigger them
-    /// again, so backtracking below it makes them all pending anew.
-    pending_bound_constrs_applied_at: Option<DecLvl>,
     /// Associates linear sums with its corresponding reifying variable in the aries-lp solver.
     /// The sums are simplified, i.e. their terms are sorted those sharing the same var are merged.
     ///
     /// Used to avoid duplicate variables for the same sum (or its opposite).
     reifications: HashMap<LpSum, Variable>,
-    /// Maps var from aries solver with their corresponding variable in minilp (if they appear in the post constraints)
-    memory_x_main: RefMap<Var, Variable>,
+
     model_events: ObsTrailCursor<Event>,
     /// History of changes made to the LP with all information necessary to undo them.
     ///
-    /// The trail may have less saved states as the CP solver we evolve in because the reasoner is typically lagging behind due to
+    /// The trail may have less saved states as the solver we evolve in because the reasoner is typically lagging behind due to
     /// a bounded computational effort.
     trail: Trail<LpEvent>,
-    /// Mirrors the decision level of the CP solver. Incremented/decremented each time a save/restore is invoked.
+    /// Mirrors the decision level of the model. Incremented/decremented each time a save/restore is invoked.
     ///
     /// It differs from the logical decision level ([`Self::lp_level`]) of this reasoner (`self.trail.current_decision_level`) because we only go to the next decision level
     /// once we have determined that the LP relaxation is feasible.
-    cp_decision_level: DecisionLevelTracker,
+    model_decision_level: DecisionLevelTracker,
     /// Running statistics of the solver (number of propagations, conflicts, ...)
     stats: Stats,
     /// Contains all the customizable options for the reasoner
@@ -310,80 +258,55 @@ impl Lp {
             solver: Solver::new(options.is_explanation_refined),
 
             bound_constrs: Default::default(),
-            pending_bound_constrs: Vec::new(),
-            pending_bound_constrs_applied_at: None,
-
             reifications: HashMap::new(),
-            memory_x_main: RefMap::default(),
 
             model_events: ObsTrailCursor::new(),
             trail: Default::default(),
-            cp_decision_level: DecisionLevelTracker::new(),
+            model_decision_level: DecisionLevelTracker::new(),
 
-            stats: Stats::new(),
+            stats: Stats::default(),
 
+            total_allowed_pivots: options.initially_allowed_pivots,
             options,
-            total_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
         }
     }
-    /// Activate propagation and constraints registration of the LP
+    /// Enables propagation and constraints registration of the LP
     ///
-    /// All constraints registered before the activation of the LP will be ignored
-    pub fn activate(&mut self) {
-        self.options.propagation_active = true;
-        self.options.enable = true;
+    /// All constraints registered before the LP is enabled will be ignored
+    pub fn enable(&mut self) {
+        self.options.enabled = true;
     }
 
-    /// Deactivate propagation and constraints registration of the LP
-    pub fn deactivate(&mut self) {
-        self.options.propagation_active = false;
-        self.options.enable = false;
+    /// Disables propagation and constraints registration of the LP
+    pub fn disable(&mut self) {
+        self.options.enabled = false;
     }
 
-    /// Deactivate propagation of the LP, new constraints and variables will still be registered and used when reactivated
-    pub fn deactivate_propagation(&mut self) {
-        self.options.propagation_active = false;
-    }
-
-    /// Activate refined explanation using minimization based on [`crate::reasoners::cp::linear`]
+    /// Creates a new variable in the LP that directly mirrors the given model variable.
     ///
-    /// Explanations will be smaller in general therefore more useful but take more time to compute
-    pub fn activate_refined_explanation(&mut self) {
-        self.options.is_explanation_refined = true;
-        self.solver.is_explanation_refined = true;
-    }
-
-    /// Deactivate refined explanation
-    pub fn deactivate_refined_explanation(&mut self) {
-        self.options.is_explanation_refined = false;
-        self.solver.is_explanation_refined = false;
-    }
-
-    /// Creates a new variable in the LP that directly mirrors the given CP variable.
-    ///
-    /// Any bound change to the CP variable will be reflected in the LP.
-    /// If the CP variable is already bound to an LP variable, this one is returned (no new LP variable is created in this case.).
-    pub fn bind_cp_var(&mut self, solver_var: Var, doms: &Domains) -> LpVar {
+    /// Any bound change to the model variable will be reflected in the LP.
+    /// If the model variable is already bound to an LP variable, this one is returned (no new LP variable is created in this case).
+    pub fn bind_cp_var(&mut self, model_var: Var, doms: &Domains) -> LpVar {
         debug_assert_eq!(
             doms.current_decision_level(),
             DecLvl::ROOT,
             "the variable bounds may have evolved since root"
         );
-        if let Some(lp_var) = self.memory_x_main.get(solver_var) {
+        if let Some(lp_var) = self.solver.model_to_lp.get(model_var) {
             *lp_var
         } else {
             let lp_var = self.solver.create_variable(
-                cst_int_to_long(doms.lb(solver_var)),
-                cst_int_to_long(doms.ub(solver_var)),
+                cst_int_to_long(doms.lb(model_var)),
+                cst_int_to_long(doms.ub(model_var)),
                 &mut self.stats,
             );
-            self.memory_x_main.insert(solver_var, lp_var);
-            self.solver.map_lp_to_aries.insert(lp_var.idx(), solver_var);
+            self.solver.model_to_lp.insert(model_var, lp_var);
+            self.solver.lp_to_model.insert(lp_var.idx(), model_var);
             lp_var
         }
     }
 
-    /// Creates a variable in the LP that is independent of any variable in the CP solver.
+    /// Creates a variable in the LP that is independent of any model variable (i.e. variable of the solver).
     pub fn create_auxiliary_variable(&mut self, lb: IntCst, ub: IntCst) -> LpVar {
         self.solver
             .create_variable(cst_int_to_long(lb), cst_int_to_long(ub), &mut self.stats)
@@ -412,17 +335,13 @@ impl Lp {
             return Signed::Minus(*reif);
         }
 
-        let mut constraint = vec![];
-
         let mut lb: LongCst = 0;
         let mut ub: LongCst = 0;
 
         for (var, factor) in sum.iter() {
-            let (elem_lb, elem_ub) = self.solver.get_init_bounds(factor, var);
+            let (elem_lb, elem_ub) = self.solver.init_range_of_term(factor, var);
             ub = ub.saturating_add(elem_ub);
             lb = lb.saturating_add(elem_lb);
-
-            constraint.push((var, factor));
         }
 
         // Create a variable `s` that we will constraint to be equal to `sum`.
@@ -443,12 +362,12 @@ impl Lp {
     }
 
     /// Adds a half-reified LinearLeq constraint of the form `active => sum <= 0`, where `sum` is a linear sum
-    /// on CP variables and a constant term.
+    /// on model variables and a constant term.
     ///
     /// `active` is the activation [`Lit`], the constraint is only active when it is evaluated to `true` and present.
     ///
-    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on CP variables.
-    /// It will first bind any CP variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
+    /// This method is convenience wrapper around [`Self::add_linear_leq_constraint`] which operates on model variables.
+    /// It will first bind any model variable in the constraint with [`Self::bind_cp_var`] to an LP variable (creating one if necessary).
     pub fn add_cp_linear_leq_constraint(&mut self, sum: &LinSum, active: Lit, doms: &Domains) {
         let sum_cst = sum.constant();
         let sum_terms = LpSum::new(
@@ -461,7 +380,7 @@ impl Lp {
 
     /// Adds an `active => sum_terms + sum_cst <= 0` constraint, where `sum_terms` consists only of LP variables.
     ///
-    /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from CP variables) or with
+    /// LP variables can be introduced either with [`Self::bind_cp_var`] (direct mapping from model variables) or with
     /// [`Self::create_auxiliary_variable`] (independent variable).
     pub fn add_linear_leq_constraint(
         &mut self,
@@ -471,7 +390,7 @@ impl Lp {
         doms: &Domains,
     ) {
         let sum_terms = sum_terms.into();
-        if !self.options.enable {
+        if !self.options.enabled {
             return;
         }
 
@@ -494,15 +413,15 @@ impl Lp {
             }
         };
 
-        // this constraint should be activated when `active is entailed and present
+        // this constraint should be activated when `active` is entailed and present
         let trigger = Conjunction::from([active, doms.presence(active)]);
         self.add_bound_update_trigger(trigger, bound_constr, doms);
     }
 
-    /// Adds a new bound-restriction trigger of the form `l1 & ... & ln => var {<=,>=} bound` where each `li` is a CP literal, `variable is an
+    /// Adds a new bound-restriction trigger of the form `l1 & ... & ln => var {<=,>=} bound` where each `li` is a model literal, `variable is an
     /// LP variable, and `bound` is an integer value denoting  a new upper/lower bound of `variable`.
     ///
-    /// This provides an additional mechanism for synchronizing the bounds of the LP variables to the domains in the CP solver.
+    /// This provides an additional mechanism for synchronizing the bounds of the LP variables to the domains of the model.
     pub fn add_bound_update_trigger(
         &mut self,
         trigger: Conjunction,
@@ -511,37 +430,15 @@ impl Lp {
     ) {
         // use domains that mirror the state at the LP level.
         let domains = DomainsSnapshot::up_to(domains, self.lp_level());
-
-        let id = self.bound_constrs.store.next_key();
-
-        // check if the trigger is already entailed and in which case, enqueue for immediate propagation.
-        // This is necessary because watches would only trigger for future events.
-        let entailed = trigger.iter().all(|l| domains.entails(l));
-        if entailed {
-            self.pending_bound_constrs.push(id);
-        }
-        if !entailed || self.current_decision_level() != DecLvl::ROOT {
-            // unless we are at ROOT AND the trigger is entailed, we place watch to we can check the trigger if one of its literals becomes true
-            //
-            // Note: if this becomes performance critical, we could use a single watch, always placed on an undecided literal
-            // but this would complicate the implementation and unlikely to be useful in practice as the the vast majority of case should involve only one/two
-            // literals in the conjunction.
-            for l in &trigger {
-                self.bound_constrs.watches.add_watch(id, l);
-            }
-        }
-        let actual_id = self.bound_constrs.push(trigger, bound_update);
-        debug_assert!(id == actual_id);
+        let at_root = self.current_decision_level() == DecLvl::ROOT;
+        self.bound_constrs.add(trigger, bound_update, &domains, at_root);
     }
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
     fn apply_pending_bound_constrs(&mut self, domains: &DomainsSnapshot) -> Result<(), Contradiction> {
-        if !self.pending_bound_constrs.is_empty() {
-            debug_assert!(self.pending_bound_constrs_applied_at.is_none());
-            self.pending_bound_constrs_applied_at = Some(self.current_decision_level());
-        }
+        self.bound_constrs.mark_pending_applied(self.current_decision_level());
 
-        while let Some(index) = self.pending_bound_constrs.pop() {
+        while let Some(index) = self.bound_constrs.pop_pending() {
             let (cause, bound_constr) = &self.bound_constrs.store[index];
 
             let entailed = cause.iter().all(|l| domains.entails(l));
@@ -570,7 +467,7 @@ impl Lp {
 
     /// Attempts to derive a contradiction from a LP infeasibility and returns it as an error (to facilitate the propagation of the contradiction).
     ///
-    /// In theory, any LP infeasibility lead to a contradiction in the solver because the LP is a relaxation of the CP model.
+    /// In theory, any LP infeasibility lead to a contradiction in the solver because the LP is a relaxation of the model.
     /// However, the LP' simplex is using floating point arithmetic and it might the case that it hands out an incorrect result.
     ///
     /// To isolate such errors from the solver, we validate the infeasibility justification from the LP with exact integer arithmetic.
@@ -585,9 +482,8 @@ impl Lp {
         match cause {
             InfeasibilityReason::Certified(cert) => {
                 self.stats.num_certif += 1;
-                // The certificate was already verified by the LP solver itself (with
-                // floating point arithmetic); it is cross-checked here with exact
-                // integer arithmetic over the CP model.
+                // The certificate was already verified by the LP solver itself (with floating point arithmetic);
+                // it is cross-checked here with exact integer arithmetic over the model.
                 match self.solver.check_certificate(
                     cert.as_multipliers(),
                     domains,
@@ -622,16 +518,16 @@ impl Lp {
         self.trail.current_decision_level()
     }
 
-    /// Decision level at which the CP solver is currently at.
-    fn solver_lvl(&self) -> DecLvl {
-        self.cp_decision_level.current_decision_level()
+    /// Current decision level of the model.
+    fn model_level(&self) -> DecLvl {
+        self.model_decision_level.current_decision_level()
     }
 
     /// Determines the deadline which an LP solver call must finish.
     ///
     /// Note that the deadline is expressed in a maximum number of pivots over the entire
     /// lifetime of the reasoner.
-    fn lp_dealine(&self) -> aries_lp::Deadline {
+    fn lp_deadline(&self) -> aries_lp::Deadline {
         let max_pivots = if self.total_allowed_pivots == f64::INFINITY {
             usize::MAX
         } else if self.total_allowed_pivots <= 0.0 {
@@ -648,14 +544,14 @@ impl Theory for Lp {
         self.id
     }
 
-    fn propagate(&mut self, domains: &mut Domains) -> Result<(), Contradiction> {
-        if !self.options.propagation_active || !self.options.enable {
+    fn propagate(&mut self, model_doms: &mut Domains) -> Result<(), Contradiction> {
+        if !self.options.enabled {
             return Ok(());
         }
 
-        // the domains in the CP solver. We are not allowed to operate on them but
-        // must instead operate on the domains as they were on the LP level.
-        let cp_domains = domains;
+        // `model_doms` are the domains of the model, at its current level.
+        // The LP is not allowed to operate on them but must instead
+        // operate on the domains as they were at the LP level (`lp_doms` below).
 
         // marker for whether we bump the LP level in the propagation.
         // Initially true to kickstart at least one propagation loop
@@ -668,46 +564,42 @@ impl Theory for Lp {
             self.stats.num_propagate += 1;
 
             // mirror the domains of the LP level.
-            let domains = DomainsSnapshot::up_to(cp_domains, self.lp_level());
+            let lp_doms = DomainsSnapshot::up_to(model_doms, self.lp_level());
 
             // Constraints registered with an already entailed cause are not triggered by any watch
-            self.apply_pending_bound_constrs(&domains)?;
+            self.apply_pending_bound_constrs(&lp_doms)?;
 
             // We process all the newly inferred literals since last propagation and
             // up to the current decision level.
             while let Some(&event) = self
                 .model_events
-                .pop_up_to(self.trail.current_decision_level(), cp_domains.trail())
+                .pop_up_to(self.trail.current_decision_level(), model_doms.trail())
             {
                 let lit = event.new_literal();
-                debug_assert!(cp_domains.entailing_level(lit) <= self.lp_level());
+                debug_assert!(model_doms.entailing_level(lit) <= self.lp_level());
 
-                // We first set the bounds associated with the active lit triggered by the newly inferred lit
-                let watchers: Vec<BoundConstraintId> = self.bound_constrs.watches.watches_on(lit).collect(); // TODO: remove allocation
-                for watcher in watchers {
-                    let (cause, bound_constr) = &self.bound_constrs.store[watcher];
-
-                    // the fact that we got triggered means at least one literal became true.
-                    // If they are all true we can proceed to enforce the bound
-                    let entailed = cause.iter().all(|l| domains.entails(l));
-                    if !entailed {
-                        continue;
+                // We first set the bounds of the constraints whose trigger was activated by the newly inferred lit
+                // (an infeasibility is explained after the loop, which borrows the bound constraints)
+                let mut infeasible = None;
+                for id in self.bound_constrs.triggered_by(lit, &lp_doms) {
+                    let bound_constr = self.bound_constrs.store[id].1;
+                    let res =
+                        self.solver
+                            .set_bound_restrict(&bound_constr, BoundJustification::Trigger(id), &mut self.trail);
+                    if let Err(e) = res {
+                        infeasible = Some(e);
+                        break;
                     }
-
-                    if let Err(infeasible) = self.solver.set_bound_restrict(
-                        bound_constr,
-                        BoundJustification::Trigger(watcher),
-                        &mut self.trail,
-                    ) {
-                        self.explain_infeasibility(&infeasible, &domains)?;
-                    }
+                }
+                if let Some(infeasible) = infeasible {
+                    self.explain_infeasibility(&infeasible, &lp_doms)?;
                 }
 
                 let var = event.affected_bound.variable();
 
                 // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
-                if let Some(&x_var) = self.memory_x_main.get(var) {
-                    // the bound holds because this very literal was inferred in the main model
+                if let Some(&x_var) = self.solver.model_to_lp.get(var) {
+                    // the bound holds because this very literal was inferred in the model
                     let justification = BoundJustification::CpModel(lit);
                     let res =
                     // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
@@ -720,28 +612,28 @@ impl Theory for Lp {
                     };
 
                     if let Err(infeasible) = res {
-                        self.explain_infeasibility(&infeasible, &domains)?;
+                        self.explain_infeasibility(&infeasible, &lp_doms)?;
                     }
                 }
             }
 
             // check feasibility with a maximum number of pivot operation.
-            let feas_result = self.solver.check_feasibility(self.lp_dealine());
+            let feas_result = self.solver.check_feasibility(self.lp_deadline());
 
             match feas_result {
                 Ok(FeasibilityStatus::Feasible) => {
                     // we proved feasibility \o/
                     // we are allowed to go to next level (if there is already one)
-                    if self.solver_lvl() > self.lp_level() {
+                    if self.model_level() > self.lp_level() {
                         self.trail.save_state(); // bump LP level
                         increased_level = true // enable a new round of propagation
                     }
-                    debug_assert!(self.lp_level() <= self.solver_lvl());
+                    debug_assert!(self.lp_level() <= self.model_level());
                     self.stats.num_feasible += 1;
                 }
                 Ok(FeasibilityStatus::Infeasible(cause)) => {
                     // infeasibility in the LP, compute a contraction and short-circuit
-                    self.explain_infeasibility(&cause, &domains)?;
+                    self.explain_infeasibility(&cause, &lp_doms)?;
                     // if we are here, it means we could not validate the infeasibility T_T
                     // TODO: right now we do nothing but we may want to take some measure
                     // to improve numerical stability or decrease the computational effort
@@ -773,7 +665,7 @@ impl Theory for Lp {
     }
 
     fn print_stats(&self) {
-        if self.options.enable {
+        if self.options.enabled {
             println!("# propagations: {}", self.stats.num_propagate);
             println!("# contradictions: {}", self.stats.num_contradictions);
             println!("# constraints: {}", self.stats.num_constraints);
@@ -801,21 +693,21 @@ impl Backtrack for Lp {
         self.total_allowed_pivots += self.options.pivots_per_decision;
 
         // track solver level
-        self.cp_decision_level.save_state()
+        self.model_decision_level.save_state()
     }
 
     fn num_saved(&self) -> u32 {
         // use the CP level as this is what should be externally visible.
-        self.cp_decision_level.num_saved()
+        self.model_decision_level.num_saved()
     }
 
     fn restore_last(&mut self) {
         // track solver state
-        self.cp_decision_level.restore_last();
+        self.model_decision_level.restore_last();
 
         // if the solver backtracked past the current LP level, we need to backtrack
         // on it too.
-        if self.solver_lvl() < self.lp_level() {
+        if self.model_level() < self.lp_level() {
             self.trail.restore_last_with(|lp_event| {
                 let _ = self.solver.set_bound(
                     lp_event.var,
@@ -824,18 +716,8 @@ impl Backtrack for Lp {
                     lp_event.old_justification,
                 );
             });
-
-            if self
-                .pending_bound_constrs_applied_at
-                .is_some_and(|lvl| lvl > self.lp_level())
-            {
-                // We backtracked below the level the pending constraints were applied at, so their bounds are undone while their causes may still be entailed.
-                // We reset them all as pending again.
-                self.pending_bound_constrs.clear();
-                self.pending_bound_constrs.extend(self.bound_constrs.store.keys());
-                self.pending_bound_constrs_applied_at = None;
-            }
-            debug_assert_eq!(self.solver_lvl(), self.lp_level());
+            self.bound_constrs.backtrack_to(self.lp_level());
+            debug_assert_eq!(self.model_level(), self.lp_level());
         }
     }
 }
@@ -876,7 +758,7 @@ mod tests {
         seed: u64,
     ) -> (Lp, Domains) {
         let mut lp_reasonner = Lp::default();
-        lp_reasonner.activate();
+        lp_reasonner.enable();
 
         let mut d = Domains::new();
 
@@ -1092,7 +974,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1111,10 +993,10 @@ mod tests {
         assert!(expl.literals().contains(&q.leq(0)), "{:?}", expl.literals());
     }
 
-    /// A bound-update trigger can restrict an LP variable that is mapped to a CP variable
-    /// (here through the -1 shortcut of `reify_sum`), without any counterpart event in the main model.
+    /// A bound-update trigger can restrict an LP variable that is mapped to a model variable
+    /// (here through the -1 shortcut of `reify_sum`), without any counterpart event in the model.
     /// A conflict such a bound takes part in must be explained by the trigger's literals:
-    /// the main model alone does not entail the bound.
+    /// the model alone does not entail the bound.
     #[test]
     fn test_mapped_var_bound_trigger_explains_conflict() {
         let mut d = Domains::new();
@@ -1124,7 +1006,7 @@ mod tests {
 
         let mut lp = Lp::default();
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
-        lp.activate();
+        lp.enable();
 
         let lp_x = lp.bind_cp_var(x, &d);
         // s = 97 * x, with s <= 87 when `a`
@@ -1144,7 +1026,7 @@ mod tests {
         assert!(expl.literals().contains(&c), "{:?}", expl.literals());
     }
 
-    /// Several bound updates may target the same LP variable, from triggers and from the main-model
+    /// Several bound updates may target the same LP variable, from triggers and from the model's
     /// synchronization alike. Each restricting update is trailed with the previous value and
     /// justification of the bound, so backtracking must restore the exact prior state.
     #[test]
@@ -1155,7 +1037,7 @@ mod tests {
         let b = d.new_var(-1, 1).geq(0);
 
         let mut lp = Lp::default();
-        lp.activate();
+        lp.enable();
         let lp_x = lp.bind_cp_var(x, &d);
 
         // two triggers restricting the same upper bound
@@ -1187,7 +1069,7 @@ mod tests {
         d.restore_last();
         assert!(lp.solver == init_solver);
 
-        // a trigger interleaved with a synchronization from the main model
+        // a trigger interleaved with a synchronization from the model
         d.save_state();
         lp.save_state();
         d.set(a, Cause::Decision).unwrap();
@@ -1211,7 +1093,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1246,7 +1128,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1292,7 +1174,7 @@ mod tests {
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
         // `-a - b + 1 <= 0`
         lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
 
@@ -1324,7 +1206,7 @@ mod tests {
         let mut d = Domains::new();
         let mut lp = Lp::default();
         let aux_a = lp.create_auxiliary_variable(0, 1);
-        lp.activate();
+        lp.enable();
 
         d.save_state();
         lp.save_state();
