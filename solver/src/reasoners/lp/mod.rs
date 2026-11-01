@@ -92,6 +92,17 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_INITIALLY_ALLOWED_PIVOTS`].
     pub initially_allowed_pivots: f64,
+    /// If true, after a backtrack, the LP goes back up to the level it had reached by its last feasible check
+    /// (the "catch-up level"), or to the model's level if lower, without checking the levels in between.
+    ///
+    /// This is a bet: the feasibility of these skipped levels is unknown, but we bet on most of the checks to be feasible.
+    /// Without catch-up, the LP may end up spending a lot of effort and pivots at these levels without pruning anything if they're feasible,
+    /// making it lag behind the search even more than it already does.
+    ///
+    /// If a skipped level is infeasible, the infeasibility will still be found by the check at the catch-up level.
+    ///
+    /// The default value is controlled by [`LP_CATCH_UP`].
+    pub catch_up: bool,
 }
 
 impl Default for LpOptions {
@@ -101,6 +112,7 @@ impl Default for LpOptions {
             is_explanation_refined: true,
             pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
             initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
+            catch_up: LP_CATCH_UP.get(),
         }
     }
 }
@@ -116,6 +128,9 @@ pub static LP_PIVOTS_PER_DECISION: EnvParam<f64> = EnvParam::new("ARIES_LP_PIVOT
 
 /// Number of initially allowed pivots, before any decision is taken.
 pub static LP_INITIALLY_ALLOWED_PIVOTS: EnvParam<f64> = EnvParam::new("ARIES_LP_INITIALLY_ALLOWED_PIVOTS", "0");
+
+/// Whether the LP catches up after a backtrack (see [`LpOptions::catch_up`]).
+pub static LP_CATCH_UP: EnvParam<bool> = EnvParam::new("ARIES_LP_CATCH_UP", "false");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -260,6 +275,9 @@ pub struct Lp {
     /// Setting it to `INFINITY` removes any limit on the pivots (useful for testing).
     /// Setting it to `-INFINITY` disallows any pivot operation.
     total_allowed_pivots: f64,
+    /// The level that the LP reached after its last feasible check.
+    /// With [`LpOptions::catch_up`], the LP goes back up to it after a backtrack, without checking the levels below it (until it's reached again).
+    catch_up_level: DecLvl,
 }
 
 impl Default for Lp {
@@ -281,6 +299,7 @@ impl Lp {
             model_events: ObsTrailCursor::new(),
             trail: Default::default(),
             model_decision_level: DecisionLevelTracker::new(),
+            catch_up_level: DecLvl::ROOT,
 
             stats: Stats::default(),
 
@@ -661,6 +680,13 @@ impl Theory for Lp {
                 self.apply_model_bound(&event, &lp_doms)?;
             }
 
+            // with catch-up, the levels since the backtrack are added without being checked (see `LpOptions::catch_up`)
+            if self.options.catch_up && self.lp_level() < self.catch_up_level.min(self.model_level()) {
+                self.trail.save_state(); // bump LP level
+                increased_level = true;
+                continue;
+            }
+
             // check feasibility with a maximum number of pivot operations.
             let feas_result = self.solver.check_feasibility(self.lp_deadline());
 
@@ -670,6 +696,7 @@ impl Theory for Lp {
                     // we are allowed to go to next level (if there is already one)
                     if self.model_level() > self.lp_level() {
                         self.trail.save_state(); // bump LP level
+                        self.catch_up_level = self.lp_level();
                         increased_level = true // enable a new round of propagation
                     }
                     debug_assert!(self.lp_level() <= self.model_level());
@@ -765,8 +792,7 @@ impl Backtrack for Lp {
         // (the constraints learned at a deeper level were never checked at the level backtracked to)
         self.learned.mark_pending_all();
 
-        // if the solver backtracked past the current LP level, we need to backtrack
-        // on it too.
+        // if the solver backtracked past the current LP level, we need to backtrack on it too.
         if self.model_level() < self.lp_level() {
             self.trail.restore_last_with(|lp_event| {
                 let _ = self.solver.set_bound(
