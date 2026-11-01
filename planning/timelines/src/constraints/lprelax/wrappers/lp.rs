@@ -43,8 +43,11 @@ pub(crate) struct LpRelaxIncr {
 }
 
 impl LpRelaxIncr {
+    /// The identity of the wrapper, also given to the LP reasoner so that the solver asks the wrapper for its explanations.
+    const IDENTITY: ReasonerId = ReasonerId::Extra(42);
+
     pub(crate) fn new(ctx: SchedEncoder, lp_options: LpOptions) -> Self {
-        let mut lp = Lp::new(lp_options);
+        let mut lp = Lp::new(Self::IDENTITY, lp_options);
         lp.enable();
 
         Self {
@@ -105,7 +108,7 @@ impl LpRelaxIncr {
 
 impl Theory for LpRelaxIncr {
     fn identity(&self) -> ReasonerId {
-        ReasonerId::Extra(42)
+        Self::IDENTITY
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {

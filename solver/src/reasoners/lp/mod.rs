@@ -314,14 +314,16 @@ pub struct Lp {
 
 impl Default for Lp {
     fn default() -> Self {
-        Self::new(LpOptions::default())
+        Self::new(ReasonerId::Lp, LpOptions::default())
     }
 }
 
 impl Lp {
-    pub fn new(options: LpOptions) -> Self {
+    /// Creates the reasoner, which sets literals under the identity `id`, for the solver to ask it for their explanations:
+    /// [`ReasonerId::Lp`] in the solver's reasoners, or the identity of a wrapper that forwards them to it.
+    pub fn new(id: ReasonerId, options: LpOptions) -> Self {
         Self {
-            id: ReasonerId::Lp,
+            id,
             solver: Solver::new(options.is_explanation_refined),
 
             bound_constrs: Default::default(),
@@ -1449,10 +1451,13 @@ mod tests {
         let p = d.new_var(-5, 5);
         let q = d.new_var(-5, 5);
 
-        let mut lp = Lp::new(LpOptions {
-            check_at_quiescence: true,
-            ..LpOptions::default()
-        });
+        let mut lp = Lp::new(
+            ReasonerId::Lp,
+            LpOptions {
+                check_at_quiescence: true,
+                ..LpOptions::default()
+            },
+        );
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
 
         let aux_a = lp.create_auxiliary_variable(0, 1);
