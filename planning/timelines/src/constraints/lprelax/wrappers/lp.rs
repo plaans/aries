@@ -17,16 +17,17 @@ use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem};
 
 /// Wrapper over the incremental LP reasoner, specifically for the LP relaxation problem.
 ///
-/// For efficiency, the LP relaxation problem is posted to the reasoner after two steps:
-/// - 1st, at the root level (but after the initial propagation),
-///   the [`LpRelaxEncoder`] is built, together with a copy / cache of the domains at that level.
-/// - 2nd, once the search starts (i.e. after all assumptions have been propagated),
-///   the [`LpRelaxEncoder`] builds the LP relaxation problem,
-///   and simplifies it, notably using the cached propagated domains from the root level (*NOT* the domains after the propagation of assumptions).
+/// The LP relaxation problem is posted to the reasoner
+/// once the search has started and the model is fully propagate (quiescence),
+/// i.e. before the first decision.
+///
+/// It is posted in two steps:
+/// - 1st, the [`LpRelaxEncoder`] is built against the domains of the root level,
+/// - 2nd, it builds the LP relaxation problem, and simplifies it with the same root domains
+///   (*NOT* the domains right before the first decision).
 ///   It then binds the reasoner (the LP's columns) to the main model (events on its literals).
 ///
-/// This 2-stage approach allows to build the encoder more efficiently (as it will be done after the first propagation)
-/// and to avoid building and solving the LP if the main model can be proven unsatisfiable before search without it
+/// This avoids building and solving the LP if the main model can be proven unsatisfiable (or solved) without search.
 ///
 /// Once posted, the LP is updated and incrementally checked at every propagation by the reasoner itself,
 /// with limited effort (see the pivot budget in [`LpOptions`]).
@@ -35,14 +36,10 @@ pub(crate) struct LpRelaxIncr {
     lp: Lp,
     ctx: SchedEncoder,
 
-    /// The encoder of stage 1, with the domains it was built against. `None` until then.
-    encoder: Option<(LpRelaxEncoder, Domains)>,
     /// Whether the search has started, i.e. all assumptions are posted. The relaxed problem is only built afterwards.
     search_started: bool,
-    /// Whether stage 2 has run.
-    lp_posted: bool,
-
-    num_events: u32,
+    /// The number of events of the model at the previous propagation, to detect quiescence before posting (`None` once posted).
+    num_events: Option<u32>,
 }
 
 impl LpRelaxIncr {
@@ -53,52 +50,44 @@ impl LpRelaxIncr {
         Self {
             lp,
             ctx,
-            encoder: None,
             search_started: false,
-            lp_posted: false,
-            num_events: 0,
+            num_events: Some(0),
         }
     }
 
-    /// Stage 1: collect the transitions and their supports (pruned with the root domains). Must be done at the root level.
-    fn build_encoder(&mut self, doms: &Domains) {
-        debug_assert!(self.encoder.is_none() && !self.lp_posted);
+    /// Stage 1: collect the transitions and their supports (pruned with the domains of the root level).
+    fn build_encoder(&self, root_doms: &Domains) -> LpRelaxEncoder {
+        debug_assert_eq!(root_doms.current_decision_level(), DecLvl::ROOT);
 
         let time = std::time::Instant::now();
 
-        let encoder = LpRelaxEncoder::with_transitions_from(&self.ctx, doms);
+        let encoder = LpRelaxEncoder::with_transitions_from(&self.ctx, root_doms);
 
         lprelax_log!(
             "Built LpRelaxEncoder at decision level {:?} (num events: {}) in {}",
-            doms.current_decision_level(),
-            doms.num_events(),
+            root_doms.current_decision_level(),
+            root_doms.num_events(),
             time.elapsed().as_secs_f64(),
         );
 
-        self.encoder = Some((encoder, doms.clone()));
+        encoder
     }
 
-    /// Stage 2: ground and encode the problem, simplify it, and hand both it and its bindings to the reasoner.
-    fn post_relaxation(&mut self, doms: &Domains) {
-        debug_assert!(!self.lp_posted);
-
-        let Some((encoder, base_doms)) = self.encoder.as_mut() else {
-            unreachable!("stage 2 only runs once stage 1 has")
-        };
+    /// Stage 2: ground and encode the problem, simplify it (with the domains of the root level),
+    /// and hand both it and its bindings to the reasoner.
+    fn post_relaxation(&mut self, encoder: &mut LpRelaxEncoder, root_doms: &Domains, doms: &Domains) {
         let time = std::time::Instant::now();
-        let base_decision_level = base_doms.current_decision_level();
 
         let mut problem = encoder.encode(&self.ctx);
-        problem.seal_simplified(encoder, &self.ctx, base_doms, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get());
+        problem.seal_simplified(encoder, &self.ctx, root_doms, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get());
 
-        let vars = post_variables_and_rows(&problem, base_doms, &mut self.lp);
-        post_bindings(&vars, encoder, &self.ctx, base_doms, &mut self.lp);
+        let vars = post_variables_and_rows(&problem, root_doms, &mut self.lp);
+        post_bindings(&vars, encoder, &self.ctx, root_doms, &mut self.lp);
 
-        self.lp_posted = true;
         let elapsed = time.elapsed().as_secs_f64();
 
         lprelax_log!(
-            "Posted LpRelaxProblem ({} variables, {} rows, {} nonzeros) at decision level {:?} (num events: {}) from the model at level {:?} in {}",
+            "Posted LpRelaxProblem ({} variables, {} rows, {} nonzeros) at decision level {:?} (num events: {}) from the root model in {}",
             problem.cols().unwrap().len(),
             problem.rows().len(),
             // (An equality row counts once, though it is posted as two inequalities.)
@@ -109,7 +98,6 @@ impl LpRelaxIncr {
                 .sum::<usize>(),
             doms.current_decision_level(),
             doms.num_events(),
-            base_decision_level,
             elapsed,
         );
     }
@@ -121,25 +109,23 @@ impl Theory for LpRelaxIncr {
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
-        // Quiescence: the reasoners preceding this one (in propagation order) have inferred all they could.
-        let quiescent = {
+        let lp_posted = self.num_events.is_none();
+        if !lp_posted {
+            // quiescence: no event since the previous propagation, so the reasoners preceding this one have inferred all they could
             let num_events = model.trail().num_events();
-            let quiescent = num_events == self.num_events;
-            self.num_events = num_events;
-            quiescent
-        };
-
-        if quiescent {
-            if self.encoder.is_none() && model.current_decision_level() == DecLvl::ROOT {
-                self.build_encoder(model);
+            let quiescent = self.num_events == Some(num_events);
+            self.num_events = Some(num_events);
+            if !(self.search_started && quiescent) {
+                return Ok(());
             }
-            if self.encoder.is_some() && !self.lp_posted && self.search_started {
-                self.post_relaxation(model);
-            }
-        }
 
-        if !self.lp_posted {
-            return Ok(());
+            // posted once, at the first quiescence on the search's start
+            self.num_events = None;
+            let mut root_doms = model.clone();
+            root_doms.restore(DecLvl::ROOT);
+
+            let mut encoder = self.build_encoder(&root_doms);
+            self.post_relaxation(&mut encoder, &root_doms, model);
         }
 
         self.lp.propagate(model)
