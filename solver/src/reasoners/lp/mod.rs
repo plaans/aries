@@ -466,6 +466,45 @@ impl Lp {
         Ok(())
     }
 
+    /// Applies the bound constraints whose trigger was completed by the newly inferred `lit`.
+    fn apply_triggered_bound_constrs(&mut self, lit: Lit, lp_doms: &DomainsSnapshot) -> Result<(), Contradiction> {
+        // (an infeasibility is explained after the loop, which borrows the bound constraints)
+        let mut infeasible = None;
+        for id in self.bound_constrs.triggered_by(lit, lp_doms) {
+            let bound_constr = self.bound_constrs.store[id].1;
+            let res = self
+                .solver
+                .set_bound_restrict(&bound_constr, BoundJustification::Trigger(id), &mut self.trail);
+            if let Err(e) = res {
+                infeasible = Some(e);
+                break;
+            }
+        }
+        match infeasible {
+            Some(infeasible) => self.explain_infeasibility(&infeasible, lp_doms),
+            None => Ok(()),
+        }
+    }
+
+    /// Applies the bound set by an event of the model to the corresponding LP variable (if there is one).
+    fn apply_model_bound(&mut self, event: &Event, lp_doms: &DomainsSnapshot) -> Result<(), Contradiction> {
+        let Some(&lp_var) = self.solver.model_to_lp.get(event.affected_bound.variable()) else {
+            return Ok(());
+        };
+        // the bound holds because this very literal was inferred in the model
+        let justification = BoundJustification::CpModel(event.new_literal());
+        // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
+        let bound = if event.affected_bound.is_plus() {
+            BoundRestriction::leq(lp_var, cst_int_to_long(event.new_upper_bound))
+        } else {
+            BoundRestriction::geq(lp_var, cst_int_to_long(-event.new_upper_bound))
+        };
+        match self.solver.set_bound_restrict(&bound, justification, &mut self.trail) {
+            Err(infeasible) => self.explain_infeasibility(&infeasible, lp_doms),
+            Ok(_) => Ok(()),
+        }
+    }
+
     /// Attempts to derive a contradiction from a LP infeasibility and returns it as an error (to facilitate the propagation of the contradiction).
     ///
     /// In theory, any LP infeasibility leads to a contradiction in the solver because the LP is a relaxation of the model.
@@ -577,43 +616,10 @@ impl Theory for Lp {
                 let lit = event.new_literal();
                 debug_assert!(model_doms.entailing_level(lit) <= self.lp_level());
 
-                // We first set the bounds of the constraints whose trigger was activated by the newly inferred lit
-                // (an infeasibility is explained after the loop, which borrows the bound constraints)
-                let mut infeasible = None;
-                for id in self.bound_constrs.triggered_by(lit, &lp_doms) {
-                    let bound_constr = self.bound_constrs.store[id].1;
-                    let res =
-                        self.solver
-                            .set_bound_restrict(&bound_constr, BoundJustification::Trigger(id), &mut self.trail);
-                    if let Err(e) = res {
-                        infeasible = Some(e);
-                        break;
-                    }
-                }
-                if let Some(infeasible) = infeasible {
-                    self.explain_infeasibility(&infeasible, &lp_doms)?;
-                }
-
-                let var = event.affected_bound.variable();
-
-                // We update the bound of the corresponding variable of the lit in the lp solver (if there is one)
-                if let Some(&x_var) = self.solver.model_to_lp.get(var) {
-                    // the bound holds because this very literal was inferred in the model
-                    let justification = BoundJustification::CpModel(lit);
-                    let res =
-                    // if we have is_plus, the constraint is of the form x <= b therefore it's an upper bound
-                    if event.affected_bound.is_plus() {
-                        self.solver
-                            .set_bound_restrict(&BoundRestriction::leq(x_var, cst_int_to_long(event.new_upper_bound)), justification, &mut self.trail)
-                    } else {
-                        self.solver
-                            .set_bound_restrict(&BoundRestriction::geq(x_var, cst_int_to_long(-event.new_upper_bound)), justification, &mut self.trail)
-                    };
-
-                    if let Err(infeasible) = res {
-                        self.explain_infeasibility(&infeasible, &lp_doms)?;
-                    }
-                }
+                // We first set the bounds of the constraints whose trigger was activated by the newly inferred lit,
+                // then the bound of the corresponding variable of the lit in the LP (if there is one)
+                self.apply_triggered_bound_constrs(lit, &lp_doms)?;
+                self.apply_model_bound(&event, &lp_doms)?;
             }
 
             // check feasibility with a maximum number of pivot operations.
