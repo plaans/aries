@@ -92,6 +92,14 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_INITIALLY_ALLOWED_PIVOTS`].
     pub initially_allowed_pivots: f64,
+    /// Factor by which the pivots allowed per decision are multiplied at each decision, as long as the LP finds no infeasibility:
+    /// the rate is reset to [`Self::pivots_per_decision`] whenever it finds one (reported or not). 1 keeps the rate constant.
+    ///
+    /// When the LP never concludes (e.g. its checks keep running out of pivots), its cost then stays bounded:
+    /// at most `pivots_per_decision / (1 - pivots_per_decision_decay)` pivots after the last infeasibility found.
+    ///
+    /// The default value is controlled by [`LP_PIVOTS_PER_DECISION_DECAY`].
+    pub pivots_per_decision_decay: f64,
     /// If true, after a backtrack, the LP goes back up to the level it had reached by its last feasible check
     /// (the "catch-up level"), or to the model's level if lower, without checking the levels in between.
     ///
@@ -131,6 +139,7 @@ impl Default for LpOptions {
             is_explanation_refined: true,
             pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
             initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
+            pivots_per_decision_decay: LP_PIVOTS_PER_DECISION_DECAY.get(),
             catch_up: LP_CATCH_UP.get(),
             backjump_gap_filter: LP_BACKJUMP_GAP_FILTER.get(),
             check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
@@ -146,6 +155,9 @@ pub static LP_ENABLE: EnvParam<bool> = EnvParam::new("ARIES_LP_ENABLE", "false")
 
 /// Default number of pivots per decision.
 pub static LP_PIVOTS_PER_DECISION: EnvParam<f64> = EnvParam::new("ARIES_LP_PIVOTS_PER_DECISION", "0.1");
+
+/// Decay of the pivots per decision while the LP finds no infeasibility (see [`LpOptions::pivots_per_decision_decay`]).
+pub static LP_PIVOTS_PER_DECISION_DECAY: EnvParam<f64> = EnvParam::new("ARIES_LP_PIVOTS_PER_DECISION_DECAY", "1");
 
 /// Number of initially allowed pivots, before any decision is taken.
 pub static LP_INITIALLY_ALLOWED_PIVOTS: EnvParam<f64> = EnvParam::new("ARIES_LP_INITIALLY_ALLOWED_PIVOTS", "0");
@@ -305,6 +317,9 @@ pub struct Lp {
     /// Setting it to `INFINITY` removes any limit on the pivots (useful for testing).
     /// Setting it to `-INFINITY` disallows any pivot operation.
     total_allowed_pivots: f64,
+    /// The pivots allowed for the next decision: [`LpOptions::pivots_per_decision`],
+    /// decayed by [`LpOptions::pivots_per_decision_decay`] at each decision since the last infeasibility found.
+    pivots_per_decision: f64,
     /// The level that the LP reached after its last feasible check.
     /// With [`LpOptions::catch_up`], the LP goes back up to it after a backtrack, without checking the levels below it (until it's reached again).
     catch_up_level: DecLvl,
@@ -336,6 +351,7 @@ impl Lp {
             stats: Stats::default(),
 
             total_allowed_pivots: options.initially_allowed_pivots,
+            pivots_per_decision: options.pivots_per_decision,
             options,
         }
     }
@@ -624,6 +640,9 @@ impl Lp {
                 (None, self.solver.explain_infeasible_var(*var, &self.bound_constrs))
             }
         };
+        // the LP finds infeasibilities: back to its full rate of pivots
+        self.pivots_per_decision = self.options.pivots_per_decision;
+
         if backjump_gap(&explanation, domains) < self.options.backjump_gap_filter {
             self.stats.num_ignored += 1;
             return Ok(());
@@ -816,7 +835,8 @@ impl Theory for Lp {
 impl Backtrack for Lp {
     fn save_state(&mut self) -> DecLvl {
         // bump number of allowed pivots
-        self.total_allowed_pivots += self.options.pivots_per_decision;
+        self.total_allowed_pivots += self.pivots_per_decision;
+        self.pivots_per_decision *= self.options.pivots_per_decision_decay;
 
         // track solver level
         self.model_decision_level.save_state()
