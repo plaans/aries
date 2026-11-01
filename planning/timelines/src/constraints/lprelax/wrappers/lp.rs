@@ -111,6 +111,10 @@ impl Theory for LpRelaxIncr {
         Self::IDENTITY
     }
 
+    fn propagate_at_quiescence_only(&self) -> bool {
+        self.lp.propagate_at_quiescence_only()
+    }
+
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         let lp_posted = self.num_events.is_none();
         if !lp_posted {
