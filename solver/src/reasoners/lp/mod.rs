@@ -103,6 +103,17 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_CATCH_UP`].
     pub catch_up: bool,
+    /// Gap filter: the minimum number of levels that the clause of an LP contradiction must backjump for the contradiction to be reported
+    /// (the gap between the two highest levels of its literals).
+    /// The others are ignored (and their certificates aren't learned): the LP then stays at its level, until the model backtracks below it.
+    ///
+    /// The contradictions of the learned constraints are always reported.
+    ///
+    /// Each reported contradiction disturbs the search, so reporting fewer of them can help,
+    /// all the more when they would only backjump a few levels.
+    ///
+    /// The default value is controlled by [`LP_BACKJUMP_GAP_FILTER`]. Set to 0 to disable.
+    pub backjump_gap_filter: u32,
 }
 
 impl Default for LpOptions {
@@ -113,6 +124,7 @@ impl Default for LpOptions {
             pivots_per_decision: LP_PIVOTS_PER_DECISION.get(),
             initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
             catch_up: LP_CATCH_UP.get(),
+            backjump_gap_filter: LP_BACKJUMP_GAP_FILTER.get(),
         }
     }
 }
@@ -131,6 +143,9 @@ pub static LP_INITIALLY_ALLOWED_PIVOTS: EnvParam<f64> = EnvParam::new("ARIES_LP_
 
 /// Whether the LP catches up after a backtrack (see [`LpOptions::catch_up`]).
 pub static LP_CATCH_UP: EnvParam<bool> = EnvParam::new("ARIES_LP_CATCH_UP", "false");
+
+/// The minimum backjump gap of a reported LP contradiction (see [`LpOptions::backjump_gap_filter`]).
+pub static LP_BACKJUMP_GAP_FILTER: EnvParam<u32> = EnvParam::new("ARIES_LP_BACKJUMP_GAP_FILTER", "0");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -210,6 +225,9 @@ struct Stats {
     num_check_timeouts: usize,
     /// Number of times the LP reported a numerical instability error.
     num_unstable: usize,
+    /// Number of contradictions ignored,
+    /// as their clause would backjump fewer than [`LpOptions::backjump_gap_filter`] levels.
+    num_ignored: usize,
 }
 
 /// A variable of the LP solver.
@@ -564,7 +582,7 @@ impl Lp {
         cause: &InfeasibilityReason,
         domains: &DomainsSnapshot,
     ) -> Result<(), Contradiction> {
-        match cause {
+        let (aggregate, explanation) = match cause {
             InfeasibilityReason::Certified(cert) => {
                 self.stats.num_certif += 1;
                 // The certificate was already verified by the LP solver itself (with floating point arithmetic);
@@ -577,25 +595,30 @@ impl Lp {
                 ) {
                     Some((aggregate, explanation)) => {
                         self.stats.num_val_certif += 1;
-                        self.stats.num_contradictions += 1;
-                        self.learned.learn(&aggregate, &self.solver);
-                        Err(Contradiction::Explanation(explanation))
+                        (Some(aggregate), explanation)
                     }
                     None => {
                         // We could not validate this certificate, so we ignore this LP infeasibility
                         // as we are lacking a proof that it is a real UNSAT and not an internal error due to, e.g.,
                         // floating point errors.
                         self.stats.num_unstable += 1;
-                        Ok(())
+                        return Ok(());
                     }
                 }
             }
             InfeasibilityReason::IncompatibleBounds(var) => {
-                let explanation = self.solver.explain_infeasible_var(*var, &self.bound_constrs);
-                self.stats.num_contradictions += 1;
-                Err(Contradiction::Explanation(explanation))
+                (None, self.solver.explain_infeasible_var(*var, &self.bound_constrs))
             }
+        };
+        if backjump_gap(&explanation, domains) < self.options.backjump_gap_filter {
+            self.stats.num_ignored += 1;
+            return Ok(());
         }
+        self.stats.num_contradictions += 1;
+        if let Some(aggregate) = aggregate {
+            self.learned.learn(&aggregate, &self.solver);
+        }
+        Err(Contradiction::Explanation(explanation))
     }
 
     /// The decision level that the LP mirrors. It cannot be greater than the model's level.
@@ -760,6 +783,7 @@ impl Theory for Lp {
             println!("# pivots: {}", self.solver.lp.solver_stats().num_pivots);
             println!("# timeouts: {}", self.stats.num_check_timeouts);
             println!("# unstable: {}", self.stats.num_unstable);
+            println!("# ignored contradictions (backjump gap): {}", self.stats.num_ignored);
             self.learned.print_stats();
         } else {
             println!("DISABLED");
@@ -805,6 +829,21 @@ impl Backtrack for Lp {
             self.bound_constrs.backtrack_to(self.lp_level());
             debug_assert_eq!(self.model_level(), self.lp_level());
         }
+    }
+}
+
+/// The backjump gap of an explanation: the number of levels that its clause would make us backjump,
+/// from the highest level of its literals to the next highest one (to the root if there is no other).
+fn backjump_gap(explanation: &Explanation, domains: &DomainsSnapshot) -> u32 {
+    let mut levels: Vec<u32> = (explanation.literals().iter())
+        .map(|&l| domains.entailing_level(l).to_int())
+        .collect();
+    levels.sort_unstable();
+    levels.dedup();
+    match levels[..] {
+        [.., next_highest, highest] => highest - next_highest,
+        [highest] => highest,
+        [] => 0,
     }
 }
 
