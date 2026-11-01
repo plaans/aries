@@ -443,6 +443,8 @@ pub fn encode_plan_optimization_problem(
     let equiv = equiv
         .values()
         .map(|class| BTreeSet::from_iter(class.iter().copied()))
+        // (the groups come from a hash map, in an order that changes from run to run)
+        .sorted_by_key(|class| class.first().copied())
         .collect_vec();
     // Add symmetry breaking constraint over the equivalent actions
     sched.add_constraint(timelines::constraints::symmetry::SymmetryBreaking::new(
