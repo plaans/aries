@@ -108,7 +108,9 @@ impl std::fmt::Debug for DecLvl {
 
 #[derive(Copy, Clone)]
 struct LastBacktrack {
+    /// Index of the first event removed.
     next_read: EventIndex,
+    /// Number of backtracks before this one.
     id: u64,
 }
 
@@ -173,7 +175,11 @@ pub struct ObsTrail<V> {
     events: Vec<V>,
     /// Maps each decision level [DecLvl] with the index of its first event.
     backtrack_points: Vec<EventIndex>,
-    last_backtrack: Option<LastBacktrack>,
+    /// Trail backtracks that cursors may need to be aware of.
+    last_backtracks_stack: Vec<LastBacktrack>,
+    /// Total number of backtracks that have ever been performed on the trail.
+    /// Needed for cursors synchronisation.
+    num_total_backtracks: u64,
 }
 impl<V> Default for ObsTrail<V> {
     fn default() -> Self {
@@ -185,7 +191,8 @@ impl<V> ObsTrail<V> {
         ObsTrail {
             events: Default::default(),
             backtrack_points: Default::default(),
-            last_backtrack: None,
+            last_backtracks_stack: Default::default(),
+            num_total_backtracks: 0,
         }
     }
     pub fn len(&self) -> usize {
@@ -215,7 +222,7 @@ impl<V> ObsTrail<V> {
     pub fn reader(&self) -> ObsTrailCursor<V> {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),
-            last_backtrack: None,
+            num_total_backtracks: 0,
             _phantom: Default::default(),
         }
     }
@@ -228,11 +235,29 @@ impl<V> ObsTrail<V> {
             f(ev)
         }
         self.events.drain(id..);
-        let bt_id = self.last_backtrack.as_ref().map_or(0, |bt| bt.id + 1);
-        self.last_backtrack = Some(LastBacktrack {
-            next_read: after_last,
-            id: bt_id,
+        self.record_backtrack(after_last);
+    }
+
+    /// Records that the events after (and including) `next_read` were removed.
+    fn record_backtrack(&mut self, next_read: EventIndex) {
+        while self
+            .last_backtracks_stack
+            .last()
+            .is_some_and(|bt| bt.next_read >= next_read)
+        {
+            self.last_backtracks_stack.pop();
+        }
+        self.last_backtracks_stack.push(LastBacktrack {
+            next_read,
+            id: self.num_total_backtracks,
         });
+        self.num_total_backtracks += 1;
+    }
+
+    /// Index of the earliest event removed by the backtracks numbered `id` or later, if any.
+    fn earliest_backtrack_since(&self, id: u64) -> Option<EventIndex> {
+        let i = self.last_backtracks_stack.partition_point(|bt| bt.id < id);
+        self.last_backtracks_stack.get(i).map(|bt| bt.next_read)
     }
 
     pub fn num_events(&self) -> u32 {
@@ -436,7 +461,8 @@ pub struct TrailEvent<'a, V> {
 #[derive(Clone)]
 pub struct ObsTrailCursor<V> {
     next_read: EventIndex,
-    last_backtrack: Option<u64>,
+    /// Total number of backtracks of the trail already accounted for by the cursor.
+    num_total_backtracks: u64,
     _phantom: PhantomData<V>,
 }
 
@@ -453,23 +479,17 @@ impl<V> ObsTrailCursor<V> {
     pub fn new() -> Self {
         ObsTrailCursor {
             next_read: EventIndex::from(0u32),
-            last_backtrack: None,
+            num_total_backtracks: 0,
             _phantom: Default::default(),
         }
     }
 
-    // TODO: check correctness if more than one backtrack occurred between two synchronisations
     fn sync_backtrack(&mut self, queue: &ObsTrail<V>) {
-        if let Some(x) = &queue.last_backtrack {
-            // a backtrack has already happened in the queue, check if we are in sync
-            if self.last_backtrack != Some(x.id) {
-                // we have not handled this backtrack, backtrack now if have have read some
-                // cancelled output
-                if self.next_read > x.next_read {
-                    self.next_read = x.next_read;
-                }
-                self.last_backtrack = Some(x.id);
+        if self.num_total_backtracks < queue.num_total_backtracks {
+            if let Some(earliest) = queue.earliest_backtrack_since(self.num_total_backtracks) {
+                self.next_read = self.next_read.min(earliest);
             }
+            self.num_total_backtracks = queue.num_total_backtracks;
         }
         debug_assert!(self.next_read <= queue.next_slot());
     }
@@ -593,6 +613,31 @@ mod tests {
         q.push(6);
         q.restore_last();
         assert_eq!(r.pop(&q), Some(&5));
+        assert_eq!(r.pop(&q), None);
+    }
+
+    #[test]
+    fn test_several_backtracks_between_syncs() {
+        let mut q = ObsTrail::new();
+        q.push(0);
+        q.save_state();
+        q.push(1);
+        q.save_state();
+        q.push(2);
+
+        let mut r = q.reader();
+        assert_eq!(r.pop(&q), Some(&0));
+        assert_eq!(r.pop(&q), Some(&1));
+        assert_eq!(r.pop(&q), Some(&2));
+
+        q.restore_last();
+        q.restore_last();
+        q.save_state();
+        q.push(10);
+        q.save_state();
+        q.push(11);
+        q.restore_last();
+        assert_eq!(r.pop(&q), Some(&10));
         assert_eq!(r.pop(&q), None);
     }
 
