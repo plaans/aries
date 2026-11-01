@@ -62,6 +62,10 @@ impl BoundConstraintsStore {
         id
     }
 
+    pub(super) fn constrs_on(&self, var: usize) -> &[BoundConstraintId] {
+        self.by_var.get(var).map_or(&[], Vec::as_slice)
+    }
+
     pub(super) fn watches_on(&self, lit: Lit) -> impl Iterator<Item = BoundConstraintId> {
         self.watches.watches_on(lit)
     }

@@ -29,6 +29,13 @@ This, however, is generally a good trade-off because if the subtree that could b
 will eventually get enough budget to prune it (just with some delay).
 On the other hand, if the tree is small, the CP solver will close with limited time lost on the LP solver.
 
+Besides checking the LP, the reasoner learns from each validated certificate of infeasibility:
+the certificate's multipliers combine the LP constraints into an equation that holds in every state,
+whose two sides are kept as learned constraints (see the `learned` module).
+They are checked at every propagation, in the current state of the solver and without the simplex: a violated one gives a contradiction,
+and the bound constraints that would violate one are deactivated (the last unset literal of their trigger is set false).
+This lets a certificate prune other parts of the search, even while the LP lags behind or has no pivots left.
+
 > **Important:** This reasoner is **disabled by default**.
 > To enable it, set the environment variable **`ARIES_LP_ENABLE=true`** or overwrite the EnvParam [`LP_ENABLE`] using [`EnvParam::set()`].
 
@@ -36,6 +43,7 @@ On the other hand, if the tree is small, the CP solver will close with limited t
 */
 
 mod explanation_utils;
+mod learned;
 mod solver;
 mod store;
 mod sum;
@@ -45,6 +53,7 @@ pub use sum::LpSum;
 use std::collections::HashMap;
 
 use aries_env_param::EnvParam;
+use learned::{CertAggregateConstraint, LearnedConstraints};
 use solver::{BoundJustification, Solver};
 use store::BoundConstraintsStore;
 
@@ -213,6 +222,15 @@ pub struct Lp {
     /// The bound constraints: each one has a trigger (a conjunction of model literals) and a bound restriction,
     /// which is applied to the LP as soon as all the literals of the trigger are entailed.
     bound_constrs: BoundConstraintsStore,
+    /// The constraints learned from the infeasibility certificates, for theory propagation at the model's level.
+    /// Without them, a certificate only gives the clause of its contradiction as an explanation,
+    /// which covers just one, weak combination of literals to forbid.
+    /// This can lead the search to re-enter the same infeasible region repeatedly,
+    /// through other combinations of literals, which will be repeatedly refuted.
+    /// "Learning" the constraints from infeasibility certificates allows us to catch this early:
+    /// the learned constraints detect every state of the region (one of them is violated there),
+    /// and set (propagate) as false the literals that would lead into the region.
+    learned: LearnedConstraints,
     /// Associates linear sums with their reification variable in the LP.
     /// The sums are normalized: their terms are sorted, and those sharing a variable are merged.
     ///
@@ -257,6 +275,7 @@ impl Lp {
             solver: Solver::new(options.is_explanation_refined),
 
             bound_constrs: Default::default(),
+            learned: Default::default(),
             reifications: HashMap::new(),
 
             model_events: ObsTrailCursor::new(),
@@ -430,6 +449,11 @@ impl Lp {
         let domains = DomainsSnapshot::up_to(domains, self.lp_level());
         let at_root = self.current_decision_level() == DecLvl::ROOT;
         self.bound_constrs.add(trigger, bound_update, &domains, at_root);
+
+        // A new bound constraint can tighten a bound in the learned constraints (when its trigger already holds)
+        // or become a threat to them, with no event to make them pending.
+        // Thus they're all marked pending so that they are all checked on the next propagation.
+        self.learned.mark_pending_all();
     }
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
@@ -514,6 +538,8 @@ impl Lp {
     /// This may fail when 1) the LP's output was erroneous or 2) our conversion into integers lost some precision and invalidated the certificate.
     ///
     /// In both cases (which should be exceptional), we ignore the infeasibility and report that there is nothing to see.
+    ///
+    /// A validated certificate is also learned (see [`LearnedConstraints`]).
     fn explain_infeasibility(
         &mut self,
         cause: &InfeasibilityReason,
@@ -530,9 +556,10 @@ impl Lp {
                     &mut self.stats,
                     &self.bound_constrs,
                 ) {
-                    Some(explanation) => {
+                    Some((aggregate, explanation)) => {
                         self.stats.num_val_certif += 1;
                         self.stats.num_contradictions += 1;
+                        self.learned.learn(&aggregate, &self.solver);
                         Err(Contradiction::Explanation(explanation))
                     }
                     None => {
@@ -590,6 +617,18 @@ impl Theory for Lp {
         // `model_doms` are the domains of the model, at its current level.
         // The LP is not allowed to operate on them but must instead
         // operate on the domains as they were at the LP level (`lp_doms` below).
+
+        // theory propagation:
+        // propagate constraints learned from the past certificates, at the model's level and before the LP
+        if self
+            .learned
+            .propagate(model_doms, self.id, &self.solver, &self.bound_constrs)?
+        {
+            // Not required, but cheaper:
+            // the solver will propagate the literals set and call us again on the propagation loop's next iteration,
+            // so we avoid synchronizing the LP on a state that is about to change anyway.
+            return Ok(());
+        }
 
         // marker for whether we bump the LP level in the propagation.
         // Initially true to kickstart at least one propagation loop
@@ -658,15 +697,27 @@ impl Theory for Lp {
         Ok(())
     }
 
-    // Should not be called as this reasoner never infers new lit, it only gives contradictions
+    // Only the literals set by past certificates are explained: the LP itself only gives contradictions
     fn explain(
         &mut self,
-        _literal: Lit,
-        _context: InferenceCause,
-        _state: &DomainsSnapshot,
-        _out_explanation: &mut Explanation,
+        literal: Lit,
+        context: InferenceCause,
+        state: &DomainsSnapshot,
+        out_explanation: &mut Explanation,
     ) {
-        unreachable!()
+        let start = out_explanation.literals().len();
+        self.learned.explain_deactivation(
+            literal,
+            context.payload,
+            state,
+            out_explanation,
+            &self.solver,
+            &self.bound_constrs,
+        );
+        debug_assert!(
+            out_explanation.literals()[start..].iter().all(|&l| state.entails(l)),
+            "explanation of {literal:?} not entailed"
+        );
     }
 
     fn print_stats(&self) {
@@ -682,6 +733,7 @@ impl Theory for Lp {
             println!("# pivots: {}", self.solver.lp.solver_stats().num_pivots);
             println!("# timeouts: {}", self.stats.num_check_timeouts);
             println!("# unstable: {}", self.stats.num_unstable);
+            self.learned.print_stats();
         } else {
             println!("DISABLED");
         }
@@ -709,6 +761,9 @@ impl Backtrack for Lp {
     fn restore_last(&mut self) {
         // track solver state
         self.model_decision_level.restore_last();
+
+        // (the constraints learned at a deeper level were never checked at the level backtracked to)
+        self.learned.mark_pending_all();
 
         // if the solver backtracked past the current LP level, we need to backtrack
         // on it too.
@@ -845,7 +900,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(&mut d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
+                Ok(()) => {} // no contradiction: nothing to check, as these tests only check the explanations of contradictions
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
@@ -919,7 +974,7 @@ mod tests {
             }
             // propagate
             match lp.propagate(d) {
-                Ok(()) => {} // Nothing to do if we do not have a contradiction as the lp reasoner can't infer new lit
+                Ok(()) => {} // no contradiction: nothing to check, as these tests only check the explanations of contradictions
                 Err(contradiction) => {
                     // propagation failure, check that the contradiction is a valid one
                     let explanation = match contradiction {
@@ -1230,5 +1285,68 @@ mod tests {
             lp.propagate(&mut d).is_err(),
             "a bound justified at the root must not be undone by a backtrack"
         );
+    }
+
+    /// The constraints learned from a certificate are kept after a backtrack: with `p <= -1`, they set `q >= 0`
+    /// (as `q <= -1` would make the LP infeasible again), and with both they give a contradiction, without the simplex.
+    #[test]
+    fn test_past_certificate_reused() {
+        let mut d = Domains::new();
+        let p = d.new_var(-5, 5);
+        let q = d.new_var(-5, 5);
+
+        let mut lp = Lp::default();
+        lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
+
+        let aux_a = lp.create_auxiliary_variable(0, 1);
+        let aux_b = lp.create_auxiliary_variable(0, 1);
+        lp.enable();
+        // `-a - b + 1 <= 0`
+        lp.add_linear_leq_constraint(vec![(aux_a, -1), (aux_b, -1)], 1, Lit::TRUE, &d);
+        lp.add_bound_update_trigger(p.leq(-1).into(), BoundRestriction::leq(aux_a, 0), &d);
+        lp.add_bound_update_trigger(q.leq(-1).into(), BoundRestriction::leq(aux_b, 0), &d);
+
+        // the LP gives a certificate that `p <= -1 & q <= -1` is infeasible
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        d.set(q.leq(-1), Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_err());
+        assert_eq!(lp.learned.num_constrs(), 2);
+        lp.restore_last();
+        d.restore_last();
+
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        assert!(lp.propagate(&mut d).is_ok());
+        assert!(d.entails(q.geq(0)));
+
+        // explained by `p <= -1`, as is any weaker literal (the solver may ask for one)
+        let cause = d
+            .get_event(d.implying_event(q.geq(0)).unwrap())
+            .cause
+            .as_external_inference()
+            .unwrap();
+        assert_eq!(cause.writer, ReasonerId::Lp);
+        for l in [q.geq(0), q.geq(-3)] {
+            let mut expl = Explanation::new();
+            lp.explain(l, cause, &DomainsSnapshot::preceding(&d, q.geq(0)), &mut expl);
+            assert_eq!(expl.literals(), &[p.leq(-1)]);
+        }
+        lp.restore_last();
+        d.restore_last();
+
+        lp.total_allowed_pivots = f64::NEG_INFINITY; // no simplex
+        d.save_state();
+        lp.save_state();
+        d.set(p.leq(-1), Cause::Decision).unwrap();
+        d.set(q.leq(-1), Cause::Decision).unwrap();
+        let Err(Contradiction::Explanation(expl)) = lp.propagate(&mut d) else {
+            panic!("a constraint learned from the certificate is violated");
+        };
+        assert!(expl.literals().contains(&p.leq(-1)), "{:?}", expl.literals());
+        assert!(expl.literals().contains(&q.leq(-1)), "{:?}", expl.literals());
+        assert_eq!(lp.learned.num_contradictions, 1);
     }
 }

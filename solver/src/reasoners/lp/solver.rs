@@ -10,7 +10,9 @@ use crate::core::{
 };
 use crate::prelude::*;
 use crate::reasoners::lp::explanation_utils::{LbBoundEvent, SumElem};
-use crate::reasoners::lp::{BoundConstraintId, BoundConstraintsStore, BoundRestriction, LpEvent, LpSum, Stats};
+use crate::reasoners::lp::{
+    BoundConstraintId, BoundConstraintsStore, BoundRestriction, CertAggregateConstraint, LpEvent, LpSum, Stats,
+};
 
 use itertools::Itertools;
 
@@ -67,7 +69,7 @@ pub(super) struct Bounds {
     /// or tighter ones from bound constraints whose trigger holds at the root.
     pub(super) unconditional: Vec<(LongCst, LongCst)>,
     /// The initial bounds with which a variable was added.
-    init: Vec<(LongCst, LongCst)>,
+    pub(super) init: Vec<(LongCst, LongCst)>,
 }
 impl Bounds {
     fn push(&mut self, lb: LongCst, ub: LongCst) {
@@ -327,14 +329,15 @@ impl Solver {
 
     /// Validates a certificate of infeasibility, with exact integer arithmetic.
     ///
-    /// Returns None if the certificate isn't valid, otherwise the explanation of the infeasibility
+    /// Returns None if the certificate isn't valid,
+    /// otherwise the certificate's corresponding aggregate constraint and the explanation of the infeasibility.
     pub fn check_certificate(
         &self,
         cert: &[f64],
         domains: &DomainsSnapshot,
         stats: &mut Stats,
         bc_store: &BoundConstraintsStore,
-    ) -> Option<Explanation> {
+    ) -> Option<(CertAggregateConstraint, Explanation)> {
         debug_assert_eq!(cert.len(), self.constraints.len());
         let cert_i128 = Solver::convert_certificate_i128(cert);
 
@@ -348,10 +351,16 @@ impl Solver {
         // To detect the infeasibility, we check whether 0 is outside the [min, max] range, as our linear sum should be equal to 0 (see above).
         if max_lin_sum < 0 {
             let opposite = lin_sum.iter().map(|&coef| -coef).collect_vec();
-            return Some(self.explain_leq(&opposite, domains, bc_store));
+            return Some((
+                CertAggregateConstraint::new(&lin_sum),
+                self.explain_leq(&opposite, domains, bc_store),
+            ));
         }
         if min_lin_sum > 0 {
-            return Some(self.explain_leq(&lin_sum, domains, bc_store));
+            return Some((
+                CertAggregateConstraint::new(&lin_sum),
+                self.explain_leq(&lin_sum, domains, bc_store),
+            ));
         }
 
         // println!("Int cert max: {max_lin_sum}, min: {min_lin_sum}");
@@ -407,16 +416,17 @@ impl Solver {
             };
             Some((idx, coef, bound))
         });
-        self.explain_violation(terms, domains, bc_store)
+        self.explain_violation(terms, 0, domains, bc_store)
     }
 
-    /// Explains why `sum_j a_j x_j <= 0` is violated, i.e. why `sum_j a_j x_j` is strictly above 0.
+    /// Explains why `sum_j a_j x_j + cst <= 0` is violated, i.e. why `sum_j a_j x_j` is strictly above `-cst`.
     /// Each term is given as `(j, a_j, bound)`, where `bound` is the bound of `x_j` that minimizes `a_j x_j`, with its justification.
     ///
     /// The literals are chosen from the justifications as described for [`Self::explain_leq`].
-    fn explain_violation(
+    pub(super) fn explain_violation(
         &self,
         terms: impl IntoIterator<Item = (usize, i128, (LongCst, BoundJustification))>,
+        cst: i128,
         domains: &DomainsSnapshot,
         bc_store: &BoundConstraintsStore,
     ) -> Explanation {
@@ -432,7 +442,7 @@ impl Solver {
         // We always explain a contradiction, i.e. lower bounds summing to *strictly* more than 0,
         // so the budget is raised by one to match the non-strict comparisons used below.
         // Same trick as in [`crate::reasoners::cp::linear::explain`].
-        let mut ub = 1;
+        let mut ub = 1 - cst;
 
         let mut culprits = BinaryHeap::new();
 
