@@ -223,6 +223,7 @@ name = "aries_eossp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aries-bench-data",
  "aries-solver",
  "clap 4.6.1",
  "serde",

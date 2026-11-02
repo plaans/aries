@@ -6,6 +6,7 @@ edition = "2024"
 
 [dependencies]
 aries-solver = { path = "../../solver" }
+aries-bench-data = { path = "../../bench/data" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
