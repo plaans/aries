@@ -115,6 +115,10 @@ impl Theory for LpRelaxIncr {
         self.lp.propagate_at_quiescence_only()
     }
 
+    fn backtrack_chronologically(&self) -> bool {
+        self.lp.backtrack_chronologically()
+    }
+
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         let lp_posted = self.num_events.is_none();
         if !lp_posted {

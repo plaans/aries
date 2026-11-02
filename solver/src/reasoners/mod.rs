@@ -81,6 +81,14 @@ pub trait Theory: Backtrack + Send {
     fn propagate_at_quiescence_only(&self) -> bool {
         false
     }
+
+    /// If true, after a conflict raised by this reasoner, the solver backtracks chronologically,
+    /// i.e. to level `h - 1` (where `h` is the deepest level among the literals of the learnt clause),
+    /// where the clause is still unit.
+    /// Otherwise, it backjumps to the clause's asserting level, which can undo many more levels.
+    fn backtrack_chronologically(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug)]

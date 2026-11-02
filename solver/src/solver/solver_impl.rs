@@ -121,6 +121,8 @@ pub struct Solver<Lbl> {
     /// A data structure with the various communication channels
     /// needed to receive/send updates and commands.
     sync: Synchro,
+    /// The reasoner that raised the last conflict (taken when the conflict is handled).
+    last_conflict_writer: Option<ReasonerId>,
 }
 impl<Lbl: Label> Solver<Lbl> {
     pub fn new(model: Model<Lbl>) -> Solver<Lbl> {
@@ -143,6 +145,7 @@ impl<Lbl: Label> Solver<Lbl> {
             last_assumption_level: DecLvl::ROOT,
             stats,
             sync: Synchro::new(),
+            last_conflict_writer: None,
         }
     }
 
@@ -1010,6 +1013,23 @@ impl<Lbl: Label> Solver<Lbl> {
         // }
         // println!();
         if let Some(dl) = self.backtrack_level_for_clause(expl.literals()) {
+            // chronological backtracking, if the reasoner that raised the conflict wants it:
+            // to level `h - 1`, `h` being the deepest level among the clause's literals
+            // (where the clause is still unit), but never to a shallower level than its asserting level `dl`
+            let chronological = self
+                .last_conflict_writer
+                .take()
+                .is_some_and(|w| self.reasoners.theories.get(w).backtrack_chronologically());
+            let dl = if chronological && expl.clause.len() > 1 {
+                let h = (expl.literals().iter())
+                    .filter_map(|&l| self.model.state.implying_event(!l))
+                    .map(|ev| self.model.state.trail().decision_level(ev))
+                    .max()
+                    .unwrap_or(DecLvl::ROOT);
+                DecLvl::from(h.to_int().saturating_sub(1)).max(dl)
+            } else {
+                dl
+            };
             // inform the brancher that we are in a conflict state
             self.brancher.conflict(expl, &self.model, &mut self.reasoners, dl);
             // backtrack
@@ -1128,6 +1148,7 @@ impl<Lbl: Label> Solver<Lbl> {
                 match th.propagate(&mut self.model.state) {
                     Ok(()) => (),
                     Err(contradiction) => {
+                        self.last_conflict_writer = Some(i);
                         // counting domain updates must be done immediately, as :w
                         let num_dom_updates = self.model.state.trail().len() as u64 - trail_size;
                         self.stats[i].dom_updates += num_dom_updates;
@@ -1241,6 +1262,7 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             last_assumption_level: self.last_assumption_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
+            last_conflict_writer: self.last_conflict_writer,
         }
     }
 }

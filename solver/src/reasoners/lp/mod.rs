@@ -130,6 +130,12 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_CHECK_AT_QUIESCENCE`].
     pub check_at_quiescence: bool,
+    /// If true, the solver backtracks chronologically after the LP's conflicts (see [`Theory::backtrack_chronologically`]):
+    /// it keeps the levels between the clause's asserting level and its deepest level, which a backjump would undo
+    /// (making the search redo their decisions).
+    ///
+    /// The default value is controlled by [`LP_CHRONO_BACKTRACK`].
+    pub chrono_backtrack: bool,
 }
 
 impl Default for LpOptions {
@@ -143,6 +149,7 @@ impl Default for LpOptions {
             catch_up: LP_CATCH_UP.get(),
             backjump_gap_filter: LP_BACKJUMP_GAP_FILTER.get(),
             check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
+            chrono_backtrack: LP_CHRONO_BACKTRACK.get(),
         }
     }
 }
@@ -170,6 +177,9 @@ pub static LP_BACKJUMP_GAP_FILTER: EnvParam<u32> = EnvParam::new("ARIES_LP_BACKJ
 
 /// Whether the LP is only checked at quiescence (see [`LpOptions::check_at_quiescence`]).
 pub static LP_CHECK_AT_QUIESCENCE: EnvParam<bool> = EnvParam::new("ARIES_LP_CHECK_AT_QUIESCENCE", "false");
+
+/// Whether the solver backtracks chronologically after the LP's conflicts (see [`LpOptions::chrono_backtrack`]).
+pub static LP_CHRONO_BACKTRACK: EnvParam<bool> = EnvParam::new("ARIES_LP_CHRONO_BACKTRACK", "false");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -686,6 +696,10 @@ impl Theory for Lp {
 
     fn propagate_at_quiescence_only(&self) -> bool {
         self.options.check_at_quiescence
+    }
+
+    fn backtrack_chronologically(&self) -> bool {
+        self.options.chrono_backtrack
     }
 
     fn propagate(&mut self, model_doms: &mut Domains) -> Result<(), Contradiction> {
