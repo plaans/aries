@@ -136,6 +136,12 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_CHRONO_BACKTRACK`].
     pub chrono_backtrack: bool,
+    /// If true, after each feasible check, the LP hints the brancher at the values of the unset booleans
+    /// whose literal alone forces an LP variable between 0 and 1 to 1.
+    /// The literal holds iff that variable is at 0.5 or more in the LP's solution (see [`Theory::take_value_hints`]).
+    ///
+    /// The default value is controlled by [`LP_BOOLEAN_VALUE_HINTS`].
+    pub boolean_value_hints: bool,
 }
 
 impl Default for LpOptions {
@@ -150,6 +156,7 @@ impl Default for LpOptions {
             backjump_gap_filter: LP_BACKJUMP_GAP_FILTER.get(),
             check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
             chrono_backtrack: LP_CHRONO_BACKTRACK.get(),
+            boolean_value_hints: LP_BOOLEAN_VALUE_HINTS.get(),
         }
     }
 }
@@ -180,6 +187,9 @@ pub static LP_CHECK_AT_QUIESCENCE: EnvParam<bool> = EnvParam::new("ARIES_LP_CHEC
 
 /// Whether the solver backtracks chronologically after the LP's conflicts (see [`LpOptions::chrono_backtrack`]).
 pub static LP_CHRONO_BACKTRACK: EnvParam<bool> = EnvParam::new("ARIES_LP_CHRONO_BACKTRACK", "false");
+
+/// Whether the LP hints the brancher at the values of booleans, from its solutions (see [`LpOptions::boolean_value_hints`]).
+pub static LP_BOOLEAN_VALUE_HINTS: EnvParam<bool> = EnvParam::new("ARIES_LP_BOOLEAN_VALUE_HINTS", "false");
 
 /// An upper or lower bound constraint on a single LP variable.
 #[derive(Debug, Clone, Copy)]
@@ -333,6 +343,10 @@ pub struct Lp {
     /// The level that the LP reached after its last feasible check.
     /// With [`LpOptions::catch_up`], the LP goes back up to it after a backtrack, without checking the levels below it (until it's reached again).
     catch_up_level: DecLvl,
+    /// With [`LpOptions::boolean_value_hints`]: the literals that alone force an LP variable (between 0 and 1) to 1,
+    /// and the hints at their values not given to the brancher yet.
+    boolean_hint_lits: Vec<(Lit, Variable)>,
+    boolean_value_hints: Vec<(Var, IntCst)>,
 }
 
 impl Default for Lp {
@@ -357,6 +371,8 @@ impl Lp {
             trail: Default::default(),
             model_decision_level: DecisionLevelTracker::new(),
             catch_up_level: DecLvl::ROOT,
+            boolean_hint_lits: Vec::new(),
+            boolean_value_hints: Vec::new(),
 
             stats: Stats::default(),
 
@@ -525,12 +541,41 @@ impl Lp {
         // use domains that mirror the state at the LP level.
         let domains = DomainsSnapshot::up_to(domains, self.lp_level());
         let at_root = self.current_decision_level() == DecLvl::ROOT;
+        if self.options.boolean_value_hints
+            && let [lit] = trigger.literals()
+            && matches!(bound_update.bound, Bound::Lower)
+            && bound_update.val >= 1
+        {
+            self.boolean_hint_lits.push((*lit, bound_update.var));
+        }
         self.bound_constrs.add(trigger, bound_update, &domains, at_root);
 
         // A new bound constraint can tighten a bound in the learned constraints (when its trigger already holds)
         // or become a threat to them, with no event to make them pending.
         // Thus they're all marked pending so that they are all checked on the next propagation.
         self.learned.mark_pending_all();
+    }
+
+    /// Hints at the values of the unset booleans whose literal alone forces an LP variable to 1 or more:
+    /// the literal holds iff that variable is at 0.5 or more in the LP's current solution.
+    fn add_boolean_value_hints(&mut self, domains: &Domains) {
+        for &(lit, lp_var) in &self.boolean_hint_lits {
+            let var = lit.variable();
+            if domains.lb(var) != 0 || domains.ub(var) != 1 {
+                continue;
+            }
+            let holds_at = if lit == Lit::geq(var, 1) {
+                1
+            } else if lit == Lit::leq(var, 0) {
+                0
+            } else {
+                continue;
+            };
+            if let Some(val) = self.solver.lp.current_value(lp_var) {
+                let value = if val >= 0.5 { holds_at } else { 1 - holds_at };
+                self.boolean_value_hints.push((var, value));
+            }
+        }
     }
 
     /// Applies the bound constraints whose cause was already entailed when they were registered.
@@ -702,6 +747,10 @@ impl Theory for Lp {
         self.options.chrono_backtrack
     }
 
+    fn take_value_hints(&mut self, out: &mut Vec<(Var, IntCst)>) {
+        out.append(&mut self.boolean_value_hints);
+    }
+
     fn propagate(&mut self, model_doms: &mut Domains) -> Result<(), Contradiction> {
         if !self.options.enabled {
             return Ok(());
@@ -775,6 +824,9 @@ impl Theory for Lp {
                     }
                     debug_assert!(self.lp_level() <= self.model_level());
                     self.stats.num_feasible += 1;
+                    if self.options.boolean_value_hints {
+                        self.add_boolean_value_hints(model_doms);
+                    }
                 }
                 Ok(FeasibilityStatus::Infeasible(cause)) => {
                     // infeasibility in the LP, compute a contradiction and short-circuit

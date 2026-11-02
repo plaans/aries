@@ -5,7 +5,7 @@ use itertools::Itertools;
 use aries_linexpr::ComparisonOp;
 use aries_solver::backtrack::{Backtrack, DecLvl};
 use aries_solver::core::state::{Domains, DomainsSnapshot, Explanation, InferenceCause};
-use aries_solver::core::{INT_CST_MAX, IntCst, Lit};
+use aries_solver::core::{INT_CST_MAX, IntCst, Lit, Var};
 use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 
 use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpOptions, LpSum, LpVar};
@@ -117,6 +117,10 @@ impl Theory for LpRelaxIncr {
 
     fn backtrack_chronologically(&self) -> bool {
         self.lp.backtrack_chronologically()
+    }
+
+    fn take_value_hints(&mut self, out: &mut Vec<(Var, IntCst)>) {
+        self.lp.take_value_hints(out);
     }
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {

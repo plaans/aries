@@ -123,6 +123,8 @@ pub struct Solver<Lbl> {
     sync: Synchro,
     /// The reasoner that raised the last conflict (taken when the conflict is handled).
     last_conflict_writer: Option<ReasonerId>,
+    /// The buffer of value hints from reasoners, on their way to the brancher (empty between decisions).
+    value_hints: Vec<(Var, IntCst)>,
 }
 impl<Lbl: Label> Solver<Lbl> {
     pub fn new(model: Model<Lbl>) -> Solver<Lbl> {
@@ -146,6 +148,7 @@ impl<Lbl: Label> Solver<Lbl> {
             stats,
             sync: Synchro::new(),
             last_conflict_writer: None,
+            value_hints: Vec::new(),
         }
     }
 
@@ -695,6 +698,15 @@ impl<Lbl: Label> Solver<Lbl> {
                 // at least one new redundant clause added, go back directly to propagation
                 // to handle it before taking a decision
                 continue;
+            }
+            for &i in self.reasoners.writers.get() {
+                self.reasoners
+                    .theories
+                    .get_mut(i)
+                    .take_value_hints(&mut self.value_hints);
+            }
+            for (var, value) in self.value_hints.drain(..) {
+                self.brancher.set_value_hint(var, value);
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -1263,6 +1275,7 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             stats: self.stats.clone(),
             sync: self.sync.clone(),
             last_conflict_writer: self.last_conflict_writer,
+            value_hints: self.value_hints.clone(),
         }
     }
 }

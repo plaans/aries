@@ -165,6 +165,11 @@ impl Lp {
         }
     }
 
+    /// The value of a variable in the solver's current basic solution (the last one it reached), if the solver exists.
+    pub fn current_value(&self, var: Variable) -> Option<f64> {
+        self.solver.as_ref().map(|s| *s.get_value(var.idx()))
+    }
+
     /// Returns solver statistics.
     pub fn solver_stats(&self) -> &Stats {
         self.solver.as_ref().map_or(&Stats::DEFAULT, |s| &s.stats)

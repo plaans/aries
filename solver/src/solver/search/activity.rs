@@ -61,6 +61,8 @@ pub struct ActivityBrancher<Lbl> {
     heuristic: Arc<dyn Heuristic<Lbl>>,
     heap: VarSelect,
     default_assignment: DefaultValues,
+    /// The values hinted by the reasoners (the last hint of each variable), tried before the default values.
+    value_hints: RefMap<Var, IntCst>,
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
     /// Associates presence literals to the optional variables
@@ -96,6 +98,7 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
             heuristic: Arc::new(h),
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
+            value_hints: Default::default(),
             conflicts_at_last_restart: 0,
             num_processed_var: 0,
             presences: Default::default(),
@@ -185,11 +188,8 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
                 let IntDomain { lb, ub } = model.var_domain(v);
                 debug_assert!(lb < ub);
 
-                let value = self
-                    .default_assignment
-                    .values
-                    .get(v)
-                    .copied()
+                let value = (self.value_hints.get(v).copied())
+                    .or_else(|| self.default_assignment.values.get(v).copied())
                     .unwrap_or(if self.params.prefer_min_value { lb } else { ub });
 
                 let literal = if value < lb || value > ub {
@@ -466,6 +466,10 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
 
     fn import_vars(&mut self, model: &Model<Lbl>) {
         self.import_vars(model)
+    }
+
+    fn set_value_hint(&mut self, var: Var, value: IntCst) {
+        self.value_hints.insert(var, value);
     }
 
     fn new_assignment_found(&mut self, objective: IntCst, assignment: &Solution) {
