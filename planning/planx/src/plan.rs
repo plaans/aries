@@ -1,3 +1,6 @@
+use std::fmt::Display;
+use itertools::Itertools;
+
 use crate::{ActionRef, Object, RealValue};
 
 type Instant = RealValue;
@@ -9,6 +12,20 @@ pub struct SolutionPlan {
     pub operations: Vec<Operation>,
     /// Values the plan has for the metrics defined in the model.
     pub metrics: Vec<RealValue>,
+}
+
+impl Display for SolutionPlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.operations.iter().sorted_by_key(|op| op.start).format("\n")
+        )?;
+        if !self.metrics.is_empty() {
+            write!(f, "\n; objective: {}", self.metrics.iter().format(" -- "))?;
+        }
+        Ok(())
+    }
 }
 
 /// An operation in a plan, typically a grounding of an action.
@@ -23,4 +40,18 @@ pub struct Operation {
     pub duration: Duration,
     pub action_ref: ActionRef,
     pub arguments: Vec<Object>,
+}
+
+impl Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:>4}: ({}{}{}) [{}]",
+            self.start,
+            self.action_ref,
+            if self.arguments.is_empty() { "" } else { " " },
+            self.arguments.iter().format(" "),
+            self.duration
+        )
+    }
 }
