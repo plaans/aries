@@ -7,6 +7,7 @@ use crate::SchedEncoder;
 use crate::lprelax::transitions::{Transition, TransitionId, TransitionType};
 
 use super::LpRelaxEncoder;
+use super::ground::{StateVarGroundingId, TransitionGroundingId};
 use super::problem::{ColTag, LinExpr, LpRelaxProblem, sum};
 
 /// Pushes the "lifted rows"
@@ -598,4 +599,221 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             }
         }
     }
+
+    if crate::lprelax::ARIES_LPRELAX_WITH_GOAL_COMMODITIES.get() {
+        encode_goal_commodities(encoder, ctx, problem);
+    }
+}
+
+// Goal commodities: "A goal's required value is reached from `None` (i.e. from an eff), through value changes made by present ground transitions"
+//
+// NOTE: One commodity per goal routes the goal's presence along the arcs of the value graphs (as for the value graph flow)
+//       of the ground state variables its groundings require values on, each arc carrying at most the total presence
+//       of its ground transitions (no big-M), into a virtual sink fed by the required value of each grounding,
+//       at most the grounding's presence. With a single grounding, the sink is left out: the goal's presence is
+//       the demand at its required value (the ground formulation).
+//
+//       A grounding's required value is its own value if its ground state variable is multi-valued (more than 2 values).
+//       Otherwise, it comes from an "achiever link": every supporter of the goal is in a source with an eff or condeff,
+//       on a single multi-valued ground state variable, whose post-value term is the supporter's state variable argument
+//       at a same position (as `visited(?n)` and `at := ?n` in visit-all's move): the grounding requires the value of
+//       its own state variable's argument at that position.
+//       A goal is skipped if one of its groundings has no required value (as the sink must be able to receive from each).
+//       Pure effs (other than the initial state's) let flow in at any value they assign, so they weaken these rows.
+fn encode_goal_commodities(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
+    use crate::EffectOp;
+    use aries_solver::core::Lit;
+    use hashbrown::HashMap;
+    use std::collections::BTreeMap;
+
+    let ground = &encoder.ground;
+
+    // The ground transitions of each ground state variable (sorted by grounding, i.e. by arc).
+    let by_state_var: HashMap<StateVarGroundingId, &[(TransitionGroundingId, TransitionId)]> =
+        ground.iter_transition_groundings_by_state_var().collect();
+    let num_values = |state_var: StateVarGroundingId| {
+        (by_state_var.get(&state_var).copied().unwrap_or_default().iter())
+            .flat_map(|(g, _)| [g.pre_val_assignment, g.post_op_assignment])
+            .flatten()
+            .unique()
+            .count()
+    };
+    let groundings: HashMap<TransitionId, Vec<TransitionGroundingId>> = (ground.iter_transition_groundings())
+        .map(|(trans_id, groundings)| (trans_id, groundings.collect()))
+        .collect();
+    // The ground state variable of all the groundings of a transition, if it's the same.
+    let single_state_var = |trans_id: TransitionId| {
+        (groundings.get(&trans_id)?.iter())
+            .map(|g| g.state_var_grounding_id)
+            .all_equal_value()
+            .ok()
+    };
+    let post_term = |trans_id: TransitionId| match encoder.transitions.get(trans_id) {
+        Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => match ctx.sched.effects.get(eff_id).operation {
+            EffectOp::Assign(term) => Some(term),
+            EffectOp::Step(_) => None,
+        },
+        Transition::Cond(_) => None,
+    };
+    let mut supporters: HashMap<TransitionId, Vec<TransitionId>> = HashMap::new();
+    for &((out_trans_id, in_trans_id), _) in encoder.supports.unsorted_out() {
+        supporters.entry(in_trans_id).or_default().push(out_trans_id);
+    }
+    // The achiever link of a goal, if any: the ground state variable, and the position of the goal's argument
+    // whose value is assigned there by the goal's supporters' sources.
+    let achiever_link = |goal: TransitionId| -> Result<(StateVarGroundingId, usize), &'static str> {
+        let goal_supporters = supporters.get(&goal).map(|s| s.as_slice()).unwrap_or_default();
+        if goal_supporters.is_empty() {
+            return Err("no supporter");
+        }
+        if (goal_supporters.iter()).any(|&s| encoder.transitions.get_source(s, ctx).is_none()) {
+            return Err("may be supported by the empty source (e.g. the initial state)");
+        }
+        let links = (goal_supporters.iter())
+            .map(|&supporter| {
+                let source = encoder.transitions.get_source(supporter, ctx);
+                let args = &encoder.transitions.get_state_var(supporter, ctx).args;
+                (encoder.transitions.of_source(source).iter())
+                    .filter(|&&t| {
+                        // (the transition must be present whenever the supporter is)
+                        t != supporter
+                            && ctx.store.state.implies(
+                                encoder.transitions.get_prez(supporter, ctx),
+                                encoder.transitions.get_prez(t, ctx),
+                            )
+                    })
+                    .find_map(|&t| {
+                        let term = post_term(t)?;
+                        let position = args.iter().position(|&arg| arg == term)?;
+                        let state_var = single_state_var(t)?;
+                        (num_values(state_var) > 2).then_some((state_var, position))
+                    })
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or("no achiever link")?;
+        links
+            .into_iter()
+            .all_equal_value()
+            .map_err(|_| "different achiever links")
+    };
+
+    // For each goal: its demand (its presence), and the required value of each of its groundings:
+    // (grounding, ground state variable, value).
+    let mut goals = vec![];
+    let mut skipped: BTreeMap<&str, usize> = BTreeMap::new();
+    for &goal in encoder.transitions.of_source(None) {
+        if encoder.transitions.get(goal).tpe() != TransitionType::Cond {
+            continue;
+        }
+        let Some(goal_groundings) = groundings.get(&goal).filter(|gs| !gs.is_empty()) else {
+            *skipped.entry("ungrounded goal").or_default() += 1;
+            continue;
+        };
+        let mut link = None;
+        let targets = (goal_groundings.iter())
+            .map(|&g| {
+                let (state_var, value) = (g.state_var_grounding_id, g.pre_val_assignment.unwrap());
+                if num_values(state_var) > 2 {
+                    return Ok((g, state_var, value));
+                }
+                let (link_state_var, position) = *link
+                    .get_or_insert_with(|| achiever_link(goal))
+                    .as_ref()
+                    .map_err(|&e| e)?;
+                Ok((g, link_state_var, ground.state_var_args(state_var)[position]))
+            })
+            .collect::<Result<Vec<_>, &str>>();
+        match targets {
+            Ok(targets) => goals.push((goal, targets)),
+            Err(reason) => *skipped.entry(reason).or_default() += 1,
+        }
+    }
+
+    let (mut num_cols, mut num_rows) = (0, 0);
+    for (goal, targets) in &goals {
+        let goal = *goal;
+        // The demand: the goal's presence (a constant 1 for a mandatory goal).
+        let demand = if encoder.transitions.get_prez(goal, ctx) == Lit::TRUE {
+            LinExpr::from_constant(1)
+        } else {
+            ColTag::PresenceTransition(goal, None).into_linexpr()
+        };
+        // The terms of the balance rows: ((ground state variable, value), column, coefficient).
+        let mut balance_terms = vec![];
+
+        for state_var in targets.iter().map(|&(_, state_var, _)| state_var).unique() {
+            let entries = by_state_var.get(&state_var).copied().unwrap_or_default();
+            for arc_entries in entries.chunk_by(|a, b| a.0 == b.0) {
+                let g = arc_entries[0].0;
+                let Some(post_val) = g.post_op_assignment else {
+                    continue;
+                };
+                if g.pre_val_assignment == Some(post_val) {
+                    continue; // (doesn't change the value)
+                }
+                let flow = ColTag::GoalCommodityFlow(goal, g);
+                let presences = sum(arc_entries
+                    .iter()
+                    .map(|&(g, trans_id)| ColTag::PresenceTransition(trans_id, Some(g))));
+
+                // Capacity: "An arc's flow is at most the total presence of the ground transitions corresponding to that arc"
+                problem.push_row(flow.into_linexpr().leq(presences));
+                num_cols += 1;
+                num_rows += 1;
+
+                balance_terms.push(((state_var, post_val), flow, 1));
+                balance_terms.extend(g.pre_val_assignment.map(|pre_val| ((state_var, pre_val), flow, -1)));
+            }
+        }
+
+        // With a single grounding, the goal's presence is the demand at its required value (see below).
+        // Otherwise, a sink receives it.
+        let single_target = if let [(_, state_var, value)] = targets[..] {
+            Some((state_var, value))
+        } else {
+            // Sink: "A grounding's sink arc carries at most the grounding's presence, and the sink receives the goal's presence"
+            let mut sink_inflow = vec![];
+            for &(g, state_var, value) in targets {
+                let sink = ColTag::GoalCommoditySink(goal, g);
+                problem.push_row(sink.into_linexpr().leq(ColTag::PresenceTransition(goal, Some(g))));
+                num_cols += 1;
+                num_rows += 1;
+                balance_terms.push(((state_var, value), sink, -1));
+                sink_inflow.push(sink);
+            }
+            problem.push_row(sum(sink_inflow).eq(demand.clone()));
+            num_rows += 1;
+            None
+        };
+
+        // Balance: "The flow into a value minus the flow out of it (including into the sink) is 0,
+        //           or the goal's presence at the required value of a single grounding"
+        balance_terms.sort_unstable_by_key(|&(node, _, _)| node);
+        if let Some(target) = single_target
+            && !balance_terms.iter().any(|&(node, _, _)| node == target)
+        {
+            // (no arc reaches the required value: the goal can't be present)
+            problem.push_row(LinExpr::zero().eq(demand.clone()));
+            num_rows += 1;
+        }
+        for node_terms in balance_terms.chunk_by(|a, b| a.0 == b.0) {
+            let row = node_terms
+                .iter()
+                .map(|&(_, col, coef)| (col, coef))
+                .collect::<LinExpr>();
+            let rhs = if Some(node_terms[0].0) == single_target {
+                demand.clone()
+            } else {
+                LinExpr::zero()
+            };
+            problem.push_row(row.eq(rhs));
+            num_rows += 1;
+        }
+    }
+
+    lprelax_log!(
+        "Goal commodities: {} goals routed ({num_cols} ground columns, {num_rows} ground rows), skipped: {:?}",
+        goals.len(),
+        skipped,
+    );
 }

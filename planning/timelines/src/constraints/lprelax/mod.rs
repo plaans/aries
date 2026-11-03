@@ -17,6 +17,10 @@ pub static ARIES_LPRELAX_WITH_GROUND_SUPPORTS: EnvParam<bool> =
 /// (minus 1 if it's the value of a goal at the horizon).
 pub static ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS", "true");
+/// The goal commodities: for each goal, its presence routed from `None` to its required value (that of one of its groundings),
+/// through value changes of present ground transitions (with exact capacities).
+pub static ARIES_LPRELAX_WITH_GOAL_COMMODITIES: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_GOAL_COMMODITIES", "false");
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {

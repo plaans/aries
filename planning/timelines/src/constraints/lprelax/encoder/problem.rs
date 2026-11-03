@@ -41,6 +41,12 @@ pub enum ColTag {
     /// (i.e. the ground transitions must be of the form eff := `v` or condeff : `v'` -> `v` (with `v'` != `v`)).
     /// (auxiliary: it stands in for a sum in the achiever rows).
     AuxAchievers(StateVarGroundingId, IntCst),
+    /// The flow of a goal's commodity along the value change made by the ground transitions with this grounding
+    /// (see the goal commodity rows).
+    GoalCommodityFlow(TransitionId, TransitionGroundingId),
+    /// The flow of a goal's commodity into its sink, from the required value of one of the goal's groundings
+    /// (see the goal commodity rows).
+    GoalCommoditySink(TransitionId, TransitionGroundingId),
 }
 impl ColTag {
     /// Whether this column tag is lifted -- i.e. isn't specific to a grounding -- or is a term grounding.
@@ -52,7 +58,9 @@ impl ColTag {
             ColTag::SupportFromInitialState(..)
             | ColTag::SupportGraphFlow(..)
             | ColTag::ValueGraphFlow(..)
-            | ColTag::AuxAchievers(..) => false,
+            | ColTag::AuxAchievers(..)
+            | ColTag::GoalCommodityFlow(..)
+            | ColTag::GoalCommoditySink(..) => false,
             ColTag::TermGround(..) => true,
         }
     }
@@ -65,7 +73,11 @@ impl ColTag {
             | ColTag::Support(..)
             | ColTag::SupportFromInitialState(..)
             | ColTag::TermGround(..) => Some(1),
-            ColTag::SupportGraphFlow(..) | ColTag::ValueGraphFlow(..) | ColTag::AuxAchievers(..) => None,
+            ColTag::SupportGraphFlow(..)
+            | ColTag::ValueGraphFlow(..)
+            | ColTag::AuxAchievers(..)
+            | ColTag::GoalCommodityFlow(..)
+            | ColTag::GoalCommoditySink(..) => None,
         }
     }
 

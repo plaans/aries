@@ -151,6 +151,11 @@ impl GroundingsInfo {
             })
     }
 
+    /// The arguments of a ground state variable.
+    pub fn state_var_args(&self, state_var: StateVarGroundingId) -> &[IntCst] {
+        &self.state_vars.groundings[state_var].1
+    }
+
     #[allow(dead_code)]
     /// The distinct ground state variables of the groundings of the transition (sorted).
     pub fn iter_ground_state_vars_of(&self, trans_id: TransitionId) -> impl Iterator<Item = StateVarGroundingId> {
@@ -287,8 +292,7 @@ struct StateVarsGroundingsInfo {
     fluents_ids: HashMap<crate::Sym, FluentId>,
     /// The ids of the ground state variables.
     entries: HashMap<(FluentId, StateVarGrounding), StateVarGroundingId>,
-
-    #[cfg(debug_assertions)]
+    /// The ground state variables, by id.
     groundings: Vec<(FluentId, StateVarGrounding)>,
 }
 impl StateVarsGroundingsInfo {
@@ -308,11 +312,8 @@ impl StateVarsGroundingsInfo {
             let state_var_grounding_id = self.entries.len();
             self.entries
                 .insert((fluent_id, state_var_grounding.into()), state_var_grounding_id);
-            #[cfg(debug_assertions)]
-            {
-                debug_assert!(state_var_grounding_id == self.groundings.len());
-                self.groundings.push((fluent_id, state_var_grounding.into()));
-            }
+            debug_assert!(state_var_grounding_id == self.groundings.len());
+            self.groundings.push((fluent_id, state_var_grounding.into()));
             state_var_grounding_id
         }
     }
