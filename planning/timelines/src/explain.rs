@@ -11,6 +11,11 @@ use itertools::Itertools;
 use crate::lprelax::wrappers::LpRelaxIncr;
 use crate::{ConstraintID, IntExp, Sched};
 
+/// Stops the search at its first decision, i.e. once the root has been propagated
+/// (to evaluate what the propagation at the root alone can prove).
+static ARIES_STOP_AT_ROOT: aries_env_param::EnvParam<bool> =
+    aries_env_param::EnvParam::new("ARIES_STOP_AT_ROOT", "false");
+
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
     enablers: BTreeMap<Lit, T>,
@@ -93,16 +98,23 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         for &enabler in self.enablers.keys() {
             assumptions.push(enabler);
         }
-        let res = self
-            .solver
-            .minimize_with_assumptions(
-                obj,
-                &assumptions,
-                aries_solver::solver::SearchLimit::None,
-                on_new_solution,
-            )
-            .unwrap();
+        let limit = if ARIES_STOP_AT_ROOT.get() {
+            // (the limit is checked before each propagation: allowing one decision lets the root be propagated)
+            aries_solver::solver::SearchLimit::NumDecisions(1)
+        } else {
+            aries_solver::solver::SearchLimit::None
+        };
+        let start = std::time::Instant::now();
+        let res = (self.solver).minimize_with_assumptions(obj, &assumptions, limit, on_new_solution);
         self.solver.print_stats();
+        if ARIES_STOP_AT_ROOT.get() {
+            // (the solver's stats don't count the time of a search stopped by its limit)
+            println!("Root time: {} s", start.elapsed().as_secs_f64());
+        }
+        let Ok(res) = res else {
+            println!("Stopped at the root (no conclusion)");
+            std::process::exit(0);
+        };
         self.solver.reset(); // TODO: this should not be needed
         res.ok()
     }
