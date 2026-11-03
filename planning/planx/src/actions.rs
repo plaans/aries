@@ -203,7 +203,14 @@ impl<'env> Display for Env<'env, &Action> {
                 .map(|p| format!("{}: {}", p.name(), p.tpe()))
                 .format(", ")
         )?;
-        write!(f, "\n        duration: {:?}", self.elem.duration)?;
+
+        write!(f, "\n        duration")?;
+        match self.elem.duration {
+            Duration::Instantaneous => write!(f, ": 0")?,
+            Duration::Fixed(x) => write!(f, ": {}", self.env.node(x))?,
+            Duration::Bounded(lb, ub) => write!(f, " in [{}, {}]", self.env.node(lb), self.env.node(ub))?,
+            Duration::Subtasks => write!(f, ": span of subtasks")?,
+        }
 
         fs(f, "conditions:", &self.elem.conditions, self.env)?;
         fs(f, "effects:", &self.elem.effects, self.env)?;
