@@ -15,6 +15,24 @@ pub static INITIALLY_ALLOWED_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_SMT
 pub static INCREASE_RATIO_FOR_ALLOWED_CONFLICTS: EnvParam<f32> =
     EnvParam::new("ARIES_SMT_INCREASE_RATIO_FOR_ALLOWED_CONFLICTS", "1.5");
 pub static USE_LNS: EnvParam<bool> = EnvParam::new("ARIES_ACTIVITY_USES_LNS", "true");
+/// Seed of a tiny perturbation of the initial priorities of the variables, which breaks their ties differently:
+/// runs with different seeds explore the search space differently (e.g. to measure the variance of results).
+/// 0 (the default) leaves the priorities as they are.
+pub static BRANCHING_SEED: EnvParam<u64> = EnvParam::new("ARIES_BRANCHING_SEED", "0");
+
+/// A pseudo-random value in [0, 1) for the variable `v`, from [`BRANCHING_SEED`] (`None` if it is 0).
+pub(crate) fn tie_breaking_noise(v: Var) -> Option<f64> {
+    let seed = BRANCHING_SEED.get();
+    if seed == 0 {
+        return None;
+    }
+    // (splitmix64-like mixing of the variable and the seed)
+    let mut x = (v.to_u32() as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ seed.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 31;
+    x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 29;
+    Some((x >> 11) as f64 / (1u64 << 53) as f64)
+}
 
 #[derive(Clone)]
 pub struct BranchingParams {
@@ -315,9 +333,11 @@ impl VarSelect {
     /// Variables with the lowest stage are considered first.
     pub fn declare_variable(&mut self, v: Var, stage: u8, initial_activity: Option<f32>) {
         debug_assert!(!self.is_declared(v));
-        let hvalue = BoolVarHeuristicValue {
-            activity: initial_activity.unwrap_or(self.params.var_inc),
-        };
+        let mut activity = initial_activity.unwrap_or(self.params.var_inc);
+        if let Some(noise) = tie_breaking_noise(v) {
+            activity *= 1.0 + 1e-3 * noise as f32;
+        }
+        let hvalue = BoolVarHeuristicValue { activity };
         let priority = stage as usize;
         while priority >= self.heaps.len() {
             self.heaps.push(IdxHeap::new());

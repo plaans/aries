@@ -430,7 +430,10 @@ impl VarSelect {
     /// Variables with the lowest stage are considered first.
     pub fn declare_variable(&mut self, v: Var, initial_priority: Option<f64>) {
         debug_assert!(!self.is_declared(v));
-        let priority = initial_priority.unwrap_or(0.0);
+        let mut priority = initial_priority.unwrap_or(0.0);
+        if let Some(noise) = crate::solver::search::activity::tie_breaking_noise(v) {
+            priority += 1e-9 * noise;
+        }
 
         self.heap.declare_element(v, priority);
         self.vars.insert(v);
