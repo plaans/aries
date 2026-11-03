@@ -75,7 +75,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             .solve_with_assumptions(&assumptions, aries_solver::solver::SearchLimit::None)
             .unwrap()
             .ok();
-        // self.solver.print_stats();
+        self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res
     }
@@ -102,7 +102,7 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 on_new_solution,
             )
             .unwrap();
-        // self.solver.print_stats();
+        self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res.ok()
     }
