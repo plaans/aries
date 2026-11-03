@@ -36,6 +36,7 @@ impl std::ops::Index<usize> for ParametersAssignment {
 /// may not be feasible, as the grounding process relies on a relaxation of the original problem.
 ///
 /// This structure is expected to be immutable and guarantees O(1) cloning.
+#[derive(Clone)]
 pub struct Groundings {
     /// Associates each task id to its set of grounding.
     /// `None` correspond to the groundings of the empty source (which may contain global variables).

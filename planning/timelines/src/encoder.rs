@@ -14,6 +14,8 @@ pub struct SchedEncoder {
     pub(crate) store: crate::Model,
     /// Accumulator for all causal links in the encoding.
     pub causal_links: CausalLinks,
+    /// Recorded when enforcing [`crate::constraints::grounding::TasksUnifyWithGrounding`].
+    pub grounding_tables: Option<GroundingTables>,
 }
 
 impl Dom for SchedEncoder {
@@ -134,4 +136,12 @@ impl CausalLinks {
         self.has_been_read.set(true);
         self.links.iter()
     }
+}
+
+#[derive(Clone)]
+pub struct GroundingTables {
+    pub groundings: crate::analysis::grounding::Groundings,
+    pub table_line_lits: idmap::DirectIdMap<TaskId, Vec<Lit>>,
+    /// The literal under which the tables are enforced (scoped in the presence of their task).
+    pub enforced_if: Lit,
 }

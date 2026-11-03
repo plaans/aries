@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use aries_solver::{
-    lang::{BoolExpr, Lit, constraints::Table},
+    lang::{
+        BoolExpr, Lit,
+        constraints::{InTable, Table},
+    },
     prelude::*,
 };
 
@@ -40,6 +43,7 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
         // ground the problem
         // NOTE: potentially very expensive (and memory intensive)
         let groundings = crate::analysis::grounding::ground_all_tasks(ctx);
+        let mut line_lits = idmap::DirectIdMap::<crate::TaskId, Vec<Lit>>::default();
 
         for (task, groundings) in groundings.all_task_groundings() {
             // for each task, we impose that its parameters must match one of its grounding
@@ -55,7 +59,7 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
             // presence of the task
             let task_prez = ctx.sched.tasks[task].presence;
             // arguments of the task
-            let task_args = &ctx.sched.tasks[task].args;
+            let task_args = ctx.sched.tasks[task].args.clone();
 
             if task_args.is_empty() {
                 continue;
@@ -70,14 +74,43 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
             }
 
             // post the constraint, which is forced to have the same scope as the task
-            in_table(task_args.clone(), Arc::new(table))
-                .scoped(task_prez)
-                .opt_enforce_if(implicant, ctx);
+            let task_line_lits = std::cell::RefCell::new(vec![]);
+            InTableWithLineLits {
+                table: in_table(task_args, Arc::new(table)),
+                line_lits: &task_line_lits,
+            }
+            .scoped(task_prez)
+            .opt_enforce_if(implicant, ctx);
+            line_lits.insert(task, task_line_lits.into_inner());
+        }
+
+        if crate::lprelax::ARIES_LPRELAX_WITH_TABLE_LITS.get() {
+            ctx.grounding_tables = Some(crate::encoder::GroundingTables {
+                groundings,
+                table_line_lits: line_lits,
+                enforced_if: implicant,
+            });
         }
     }
 
     fn conj_scope(&self, _ctx: &SchedEncoder) -> aries_solver::prelude::Conjunction {
         // the constraint is always valid (but will post several sub-constraints, scoped by each task)
         Lit::TRUE.into()
+    }
+}
+
+/// A table constraint, posted as such, that also keeps the literals of its lines when enforced.
+struct InTableWithLineLits<'a> {
+    table: InTable,
+    line_lits: &'a std::cell::RefCell<Vec<Lit>>,
+}
+
+impl<Ctx: ModelView> BoolExpr<Ctx> for InTableWithLineLits<'_> {
+    fn enforce_if(&self, implicant: Lit, ctx: &mut Ctx) {
+        *self.line_lits.borrow_mut() = self.table.enforce_if_with_line_lits(implicant, ctx);
+    }
+
+    fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
+        self.table.conj_scope(ctx)
     }
 }
