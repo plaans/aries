@@ -4,7 +4,7 @@ use aries_solver::core::views::Dom;
 use itertools::Itertools;
 
 use crate::SchedEncoder;
-use crate::lprelax::transitions::TransitionType;
+use crate::lprelax::transitions::{Transition, TransitionId, TransitionType};
 
 use super::LpRelaxEncoder;
 use super::problem::{ColTag, LinExpr, LpRelaxProblem, sum};
@@ -120,6 +120,12 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             "supgraph" => (false, true),
             other => panic!("unknown ARIES_LPRELAX_WITH_FLOW_CONSTRS: {other} (expected none, valgraph or supgraph)"),
         };
+    let with_ground_supports = crate::lprelax::ARIES_LPRELAX_WITH_GROUND_SUPPORTS.get();
+    let with_net_change_constrs = crate::lprelax::ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS.get();
+    assert!(
+        with_ground_supports || !with_support_graph_flow,
+        "the support graph flow (ARIES_LPRELAX_WITH_FLOW_CONSTRS=supgraph) needs the ground supports (ARIES_LPRELAX_WITH_GROUND_SUPPORTS=true)"
+    );
 
     // Ground decomposition: "A source's presence equals the total presence of its groundings".
     {
@@ -176,7 +182,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     }
 
     // Ground decomposition: "A support is equal to the total support of its groundings"
-    {
+    if with_ground_supports {
         for (out_trans_id, in_trans_id, support_groundings) in ground.iter_support_groundings() {
             let ground_supports = support_groundings.map(|g| ColTag::Support(out_trans_id, in_trans_id, Some(g)));
             let support = ColTag::Support(out_trans_id, in_trans_id, None);
@@ -190,7 +196,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     //
     // NOTE: For effs, this includes the support from the initial state of the ground state variable
     //       (or, when it isn't modeled, the equality becomes a geq).
-    {
+    if with_ground_supports {
         for (in_trans_id, (state_var_grounding_id, val_assignment), groundings, supports) in
             ground.iter_support_in_groups()
         {
@@ -215,7 +221,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     }
 
     // "The initial state of a ground state variable supports at most one eff"
-    if with_initial_state_supports {
+    if with_initial_state_supports && with_ground_supports {
         for (state_var_grounding_id, effs) in ground.iter_effects_by_state_var() {
             // Implied by the column's bounds when a single eff is concerned.
             if effs.len() <= 1 {
@@ -233,7 +239,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     //               is at least the total ground support they hand over"
     //
     // NOTE: Same as for the lifted rows: support into conds is left out when conds aren't allowed to be out-transitions / supporters.
-    {
+    if with_ground_supports {
         for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
             let supports = in_trans_ids
                 .filter(|&in_trans_id| {
@@ -255,7 +261,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     // "A ground support implies (i.e. is leq to) the total presence of the out-transition's groundings it can come from"
     //
     // NOTE: Same as for the lifted rows: only needed when conds aren't allowed to be out-transitions / supporters.
-    if !encoder.supports.with_condition_out_transitions {
+    if !encoder.supports.with_condition_out_transitions && with_ground_supports {
         for (out_trans_id, support_grounding_id, groundings, in_trans_ids) in ground.iter_support_out_groups() {
             let presences = sum(groundings.map(|g| ColTag::PresenceTransition(out_trans_id, Some(g))));
 
@@ -534,6 +540,62 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             let achievers = ColTag::AuxAchievers(state_var_grounding_id, pre_val);
 
             problem.push_row(achievers.into_linexpr().eq(sum(presences)));
+        }
+    }
+
+    // Net change: "On a ground state variable, the total presence of the ground transitions leaving a value
+    //              is at most the total presence of those entering it, minus 1 if it's the value of a goal (at the horizon)"
+    //
+    // NOTE: Each departure from a value needs its own earlier arrival, the initial state being an eff of the empty source.
+    //       A goal at the horizon also needs its own arrival, never left afterwards
+    //       (as the effects of actions take time (epsilon) and end before the horizon, every departure is before such a goal).
+    //       Two goals on a same value can share their arrival, so there is one row per goal.
+    //       (Corresponds to the net-change constraints of operator counting, with their goal term)
+    //
+    //       The goal term isn't valid for goals before the horizon: a departure after the goal can use up the goal's arrival.
+    //       Conditions of the empty source before the horizon are left as other conditions (i.e. out of these rows).
+    if with_net_change_constrs {
+        let is_goal_at_horizon = |trans_id: TransitionId| match encoder.transitions.get(trans_id) {
+            Transition::Cond(cond_id) => {
+                encoder.transitions.get_source(trans_id, ctx).is_none()
+                    && ctx.causal_links.conditions.get(cond_id).timepoint == ctx.sched.horizon
+            }
+            Transition::Eff(_) | Transition::CondEff(..) => false,
+        };
+        for (_, entries) in ground.iter_transition_groundings_by_state_var() {
+            // (value, goal, column, coefficient), with no goal for the arrivals and departures
+            let mut terms = vec![];
+            for &(g, trans_id) in entries {
+                let presence = ColTag::PresenceTransition(trans_id, Some(g));
+                if is_goal_at_horizon(trans_id) {
+                    terms.push((g.pre_val_assignment.unwrap(), Some(trans_id), presence, -1));
+                    continue;
+                }
+                let Some(post_val) = g.post_op_assignment else {
+                    continue;
+                };
+                if g.pre_val_assignment == Some(post_val) {
+                    continue; // (doesn't change the value)
+                }
+                terms.push((post_val, None, presence, 1));
+                terms.extend(g.pre_val_assignment.map(|pre_val| (pre_val, None, presence, -1)));
+            }
+            terms.sort_unstable_by_key(|&(value, goal, _, _)| (value, goal));
+            for value_terms in terms.chunk_by(|a, b| a.0 == b.0) {
+                let (changes, goal_terms) = value_terms.split_at(value_terms.partition_point(|t| t.1.is_none()));
+                let changes = changes.iter().map(|&(_, _, col, coef)| (col, coef));
+                if goal_terms.is_empty() {
+                    if changes.clone().all(|(_, coef)| coef > 0) {
+                        continue; // (never left)
+                    }
+                    problem.push_row(changes.clone().collect::<LinExpr>().geq(0));
+                }
+                for goal_terms in goal_terms.chunk_by(|a, b| a.1 == b.1) {
+                    let goal_terms = goal_terms.iter().map(|&(_, _, col, coef)| (col, coef));
+
+                    problem.push_row(changes.clone().chain(goal_terms).collect::<LinExpr>().geq(0));
+                }
+            }
         }
     }
 }

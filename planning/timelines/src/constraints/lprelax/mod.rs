@@ -10,6 +10,13 @@ pub static ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
 pub static ARIES_LPRELAX_WITH_FLOW_CONSTRS: EnvParam<String> =
     EnvParam::new("ARIES_LPRELAX_WITH_FLOW_CONSTRS", "valgraph");
 pub static ARIES_LPRELAX_WITH_ACHIEVERS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_ACHIEVERS", "true");
+/// The ground support rows and columns (the lifted supports are always there). Needed by the support graph flow.
+pub static ARIES_LPRELAX_WITH_GROUND_SUPPORTS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_GROUND_SUPPORTS", "false");
+/// The net-change rows: on a ground state variable, the number of (present) ground transitions leaving a value is at most the number of those entering it
+/// (minus 1 if it's the value of a goal at the horizon).
+pub static ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS", "true");
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {
