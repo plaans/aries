@@ -115,7 +115,7 @@ pub struct LpOptions {
     /// (the gap between the two highest levels of its literals).
     /// The others are ignored (and their certificates aren't learned): the LP then stays at its level, until the model backtracks below it.
     ///
-    /// The contradictions of the learned constraints are always reported.
+    /// The contradictions at the root (i.e. proving the problem infeasible) and those of the learned constraints are always reported.
     ///
     /// Each reported contradiction disturbs the search, so reporting fewer of them can help,
     /// all the more when they would only backjump a few levels.
@@ -946,8 +946,9 @@ fn backjump_gap(explanation: &Explanation, domains: &DomainsSnapshot) -> u32 {
     levels.dedup();
     match levels[..] {
         [.., next_highest, highest] => highest - next_highest,
+        // no literal above the root: the problem is infeasible
+        [] | [0] => u32::MAX,
         [highest] => highest,
-        [] => 0,
     }
 }
 
