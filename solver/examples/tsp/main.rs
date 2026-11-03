@@ -202,9 +202,9 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
     let mut solver = Solver::new(model);
 
     if args.no_lp {
-        solver.reasoners.lp.deactivate();
+        solver.reasoners.lp().deactivate();
     } else {
-        solver.reasoners.lp.activate();
+        solver.reasoners.lp().activate();
     }
 
     let solution_opt = match solver.minimize_with_callback(

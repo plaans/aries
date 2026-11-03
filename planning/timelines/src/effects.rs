@@ -36,7 +36,7 @@ pub struct Effect {
     /// (mutex conditions).
     pub source: Option<TaskId>,
 }
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub enum EffectOp {
     /// Sets the state variable to an absolute value
     Assign(IntTerm),

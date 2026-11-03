@@ -49,24 +49,33 @@ fn collect_nonsimple_effects(ctx: &SchedEncoder) -> HashSet<EffectId> {
 fn collect_nonsimple_conditions(nonsimple_effects: &mut HashSet<EffectId>, ctx: &SchedEncoder) -> HashSet<CondId> {
     let mut res = HashSet::new();
 
-    for cl in ctx.causal_links.get_links() {
-        if res.contains(&cl.cond_id) {
-            nonsimple_effects.insert(cl.eff_id);
-            continue;
-        }
-        let cond = &ctx.causal_links.conditions[cl.cond_id];
-
-        if nonsimple_effects.contains(&cl.eff_id)
-            || !all_nonconstant_terms_are_included_in_source_terms(
-                cond.state_var.args.iter().chain(&[cond.value]).copied(),
-                cond.source,
-                ctx,
-            )
-        {
-            nonsimple_effects.insert(cl.eff_id);
-            res.insert(cl.cond_id);
+    for (cond_id, cond) in ctx.causal_links.conditions.iter().enumerate() {
+        if !all_nonconstant_terms_are_included_in_source_terms(
+            cond.state_var.args.iter().chain(&[cond.value]).copied(),
+            cond.source,
+            ctx,
+        ) {
+            res.insert(cond_id);
         }
     }
+
+    // Propagate "nonsimple-ness":
+    // if a causal link uses an effect or condition marked as nonsimple, mark the other member (condition or effect) as nonsimple too.
+    for cl in ctx.causal_links.get_links() {
+        if nonsimple_effects.contains(&cl.eff_id) {
+            res.insert(cl.cond_id);
+        } else if res.contains(&cl.cond_id) {
+            nonsimple_effects.insert(cl.eff_id);
+        }
+    }
+
+    // A nonsimple effect / condition is such that for all its causal links, the other member is also nonsimple
+    debug_assert!(
+        ctx.causal_links
+            .get_links()
+            .all(|cl| nonsimple_effects.contains(&cl.eff_id) == res.contains(&cl.cond_id))
+    );
+
     res
 }
 
