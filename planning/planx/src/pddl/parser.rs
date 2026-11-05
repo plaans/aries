@@ -1,4 +1,5 @@
-#![allow(dead_code)] // TODO: remove once we exploit the code for HDDL
+use crate::RealValue;
+// TODO: remove once we exploit the code for HDDL
 use crate::Res;
 use crate::Sym;
 use crate::errors::*;
@@ -20,25 +21,72 @@ pub fn parse_pddl_problem(pb: Input) -> Res<Problem> {
     let expr = parse(pb.clone())?;
     read_problem(expr).title("Invalid problem: Syntax error")
 }
-pub fn parse_plan(plan: Input) -> Res<Plan> {
-    let expr = parse_many(plan)?;
-    let mut actions = Vec::with_capacity(expr.len());
-    for e in expr {
-        let mut elems = e
-            .as_list_iter()
-            .ok_or_else(|| e.invalid("expected a list with action name and parameters"))?;
-        let name = elems.pop_atom()?.clone();
-        let mut params = Vec::new();
-        while !elems.is_empty() {
-            let param = elems.pop_atom()?;
-            params.push(param.clone());
-        }
-        actions.push(ActionInstance {
-            name,
-            arguments: params,
-            span: e.loc(),
-        });
+
+fn parse_action(act: &SList) -> Res<ActionInstance> {
+    let mut elems = act.iter();
+    let name = elems.pop_atom()?.clone();
+    let mut params = Vec::new();
+    while !elems.is_empty() {
+        let param = elems.pop_atom()?;
+        params.push(param.clone());
     }
+    Ok(ActionInstance {
+        name,
+        arguments: params,
+        start: None,
+        duration: None,
+        span: act.loc(),
+    })
+}
+
+/// Parse a plan in the PDDL format.
+///
+/// A plan is a sequence of actions, which can optionally be annotated with start time and duration.
+pub fn parse_plan(plan: Input) -> Res<Plan> {
+    let mut exprs = parse_many(plan)?;
+    let mut actions = Vec::new();
+
+    exprs.reverse(); // reverse so that `pop()` removes the first element in O(1)
+    while let Some(first) = exprs.pop() {
+        match first {
+            SExpr::List(action) => {
+                let action = parse_action(&action)?;
+                actions.push(action);
+            }
+            SExpr::Atom(ref sym) => {
+                let sym = sym.as_str();
+                let Some(timestamp) = sym.strip_suffix(":").and_then(|num| RealValue::from_str(num).ok()) else {
+                    return first.invalid("Expected either an action or a timestamp").failed();
+                };
+                // we have successfully parsed a timestamp, no we necessarily have an action
+                let Some(second) = exprs.pop() else {
+                    return first.invalid("Expected an action AFTER this timestamp.").failed();
+                };
+
+                let Some(slist) = second.as_list() else {
+                    return second.invalid("Expected an action").failed();
+                };
+                let mut action = parse_action(slist)?;
+
+                let Some(third) = exprs.pop() else {
+                    return second.invalid("Expected a duration AFTER this operator.").failed();
+                };
+                let Some(dur) = third
+                    .as_atom()
+                    .map(|a| a.as_str())
+                    .and_then(|s| s.strip_prefix("["))
+                    .and_then(|s| s.strip_suffix("]"))
+                    .and_then(|s| RealValue::from_str(s).ok())
+                else {
+                    return third.invalid("Expected a duration").failed();
+                };
+                action.start = Some(timestamp);
+                action.duration = Some(dur);
+                actions.push(action);
+            }
+        }
+    }
+
     Ok(Plan::ActionSequence(actions))
 }
 
@@ -323,7 +371,7 @@ pub struct TaskNetwork {
 pub struct Ordering {
     pub first_task_id: TaskId,
     pub second_task_id: TaskId,
-    source: Option<Span>,
+    pub source: Option<Span>,
 }
 
 #[derive(Clone, Debug)]
@@ -372,6 +420,8 @@ pub enum Plan {
 pub struct ActionInstance {
     pub name: Sym,
     pub arguments: Vec<Sym>,
+    pub start: Option<RealValue>,
+    pub duration: Option<RealValue>,
     pub span: Span,
 }
 
