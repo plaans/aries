@@ -90,13 +90,26 @@ pub fn find_problem_of(plan_file: &std::path::Path) -> Res<PathBuf> {
         .to_str()
         .title("Could not convert file name to utf8")?;
 
+    let mut possible_problem_names = Vec::new();
     // if the plan file is of the form XXXXX.planYYYYYYYYY
     // then add XXXXX(.pb).Zddl to the candidate filenames
     let re = Regex::new("^(.+)\\.plan[^\\.]*$").unwrap();
     for m in re.captures_iter(plan_filename) {
-        let base_name = &m[1];
-        candidate_problem_files.push(format!("{base_name}.pb.pddl").into());
-        candidate_problem_files.push(format!("{base_name}.pddl").into());
+        let base_name = m[1].to_string();
+        possible_problem_names.push(base_name);
+    }
+    // if the plan file is of the form XXXXX.YYYYY.plan
+    // then add XXXXX(.pb).Zddl to the candidate filenames
+    let re = Regex::new("^(.+)(?:\\.[^\\.]+)\\.plan$").unwrap();
+    for m in re.captures_iter(plan_filename) {
+        let base_name = m[1].to_string();
+        possible_problem_names.push(base_name);
+    }
+    for pb_name in possible_problem_names {
+        candidate_problem_files.push(format!("{pb_name}.pb.pddl").into());
+        candidate_problem_files.push(format!("{pb_name}.pddl").into());
+        candidate_problem_files.push(format!("{pb_name}.pb.hddl").into());
+        candidate_problem_files.push(format!("{pb_name}.hddl").into());
     }
     candidate_problem_files.push(Path::new("problem.pddl").to_path_buf());
     candidate_problem_files.push(Path::new("problem.hddl").to_path_buf());
