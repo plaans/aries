@@ -360,6 +360,8 @@ pub fn encode_plan_optimization_problem(
                         },
                     },
                 );
+            } else {
+                panic!("Non-instantaneous condition: {c:?}");
             }
         }
     }

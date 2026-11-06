@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{env::Environment, preprocessing::Transformation, *};
+use crate::{env::Environment, precision::NumericPrecision, preprocessing::Transformation, *};
 
 mod conditions;
 pub use conditions::*;
@@ -16,6 +16,7 @@ pub struct Model {
     pub preferences: Preferences<Goal>,
     pub metrics: Vec<Metric>,
     pub task_network: Option<TaskNet>,
+    pub required_temporal_precision: NumericPrecision,
     /// List of transformations that have been applied to the model.
     /// Each transformation provides a way to revert its effect on a plan.
     pub transformations: Vec<Arc<dyn Transformation>>,
@@ -31,6 +32,7 @@ impl Model {
             preferences: Default::default(),
             metrics: Default::default(),
             task_network: None,
+            required_temporal_precision: NumericPrecision::INTEGER,
             transformations: Default::default(),
         }
     }
