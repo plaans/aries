@@ -456,7 +456,7 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
 
 pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<Time> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
-    if *t.delay.numer() == 0 {
+    if t.delay.numer() == 0 {
         Ok(tp)
     } else {
         Message::todo("unsupported non-zero delay").failed()
@@ -520,8 +520,8 @@ pub fn reify_expression(
     match e.expr() {
         Bool(true) => Ok(1.into()),
         Bool(false) => Ok(0.into()),
-        Real(r) if r.denom() == &1 => {
-            if let Ok(i) = IntCst::try_from(*r.numer()) {
+        Real(r) if r.denom() == 1 => {
+            if let Ok(i) = IntCst::try_from(r.numer()) {
                 Ok(i.into())
             } else {
                 e.todo(format!(
