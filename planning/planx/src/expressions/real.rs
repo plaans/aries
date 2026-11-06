@@ -28,17 +28,21 @@ impl RealValue {
         self.0.is_integer()
     }
 
-    pub fn numer(&self) -> &i64 {
-        self.0.numer()
+    pub fn as_integer(&self) -> Option<i64> {
+        self.is_integer().then_some(self.numer())
     }
-    pub fn denom(&self) -> &i64 {
-        self.0.denom()
+
+    pub fn numer(&self) -> i64 {
+        *self.0.numer()
+    }
+    pub fn denom(&self) -> i64 {
+        *self.0.denom()
     }
 }
 impl Display for RealValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut numer = *self.numer();
-        let mut denom = *self.denom();
+        let mut numer = self.numer();
+        let mut denom = self.denom();
 
         if denom == 1 {
             // happy fast path: just an integer
