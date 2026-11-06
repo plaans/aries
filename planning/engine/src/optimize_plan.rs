@@ -6,6 +6,7 @@ use std::{
 
 use aries_plan_engine::{
     encode::{
+        self,
         constraints::{ConditionConstraint, ReificationConstraint},
         encoding::{ActionInstance, Encoding, ObjectVar},
         tags::{ActionCondition, OperatorId, Tag, format_culprit_set},
@@ -23,7 +24,7 @@ use itertools::Itertools;
 
 use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use std::path::Path;
-use timelines::{ConstraintID, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
+use timelines::{ConstraintID, IntExp, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
 
 pub type RelaxableConstraint = Tag;
 
@@ -276,21 +277,47 @@ pub fn encode_plan_optimization_problem(
                 args.insert(param.name(), arg);
             }
             let start = sched.new_opt_timepoint(presence);
-            if a.duration != Duration::Instantaneous {
-                return a.name.todo("Unsupported non-instantaneous action").failed();
-            }
-            let end = start;
+            let task_id = sched.tasks.next_task_id();
+            let duration_evaluation_scope = Scope {
+                start,
+                end: start,
+                presence,
+                args: args.clone(),
+                source: Some(task_id),
+            };
+            let duration: IntExp = match a.duration {
+                Duration::Instantaneous => 0.into(),
+                Duration::Fixed(dur) => encode::reify_expression(
+                    dur,
+                    Some(start),
+                    model,
+                    &mut sched,
+                    &duration_evaluation_scope,
+                    &mut encoding,
+                )?,
+                _ => {
+                    return a.name.todo("Unsupported non-fixed-duration action").failed();
+                }
+            };
+            let end = if let Ok(cst_dur) = IntCst::try_from(duration.clone()) {
+                start + cst_dur
+            } else {
+                let end = sched.new_opt_timepoint(presence);
+                sched.add_constraint(eq(duration + start, end).scoped(presence));
+                end
+            };
 
             // record a task in `Sched` which
             //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
             //  - make the scheduler aware of the tasks when computing the makespan.
-            let task_id = sched.add_task(Task {
+            let task_id2 = sched.add_task(Task {
                 name: a.name.to_string(),
                 start,
                 end,
                 args: args.iter().map(|(_, &term)| term).collect(),
                 presence,
             });
+            debug_assert_eq!(task_id, task_id2);
             let bindings = Scope {
                 start,
                 end,
