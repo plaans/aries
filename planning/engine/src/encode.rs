@@ -457,11 +457,10 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
 
 pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<Time> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
-    if t.delay.numer() == 0 {
-        Ok(tp)
-    } else {
-        Message::todo("unsupported non-zero delay").failed()
-    }
+    let Some(delay) = t.delay.as_integer() else {
+        return Message::error("Non integer delay. Consider using the 'intify' transformation.").failed();
+    };
+    Ok(tp + delay)
 }
 pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<Time> {
     match t {
