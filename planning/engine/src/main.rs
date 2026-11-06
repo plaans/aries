@@ -1,14 +1,11 @@
-pub(crate) mod ctags;
 mod export;
 mod generate;
 pub(crate) mod optimize_plan;
 mod preprocessing;
-mod repair;
 mod validate;
 
 use std::{io::IsTerminal, path::PathBuf};
 
-use aries_plan_engine::plans::lifted_plan;
 use clap::*;
 use planx::{
     Message, RealValue, Res,
@@ -19,7 +16,6 @@ use planx::{
 use crate::{
     export::ReportMetadata,
     preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess},
-    repair::RepairOptions,
 };
 
 /// Aries Planning Engine (APE)
@@ -58,8 +54,6 @@ enum Commands {
     /// (Finite) planning problem solving (plan generation):
     /// find a solution plan using, at most, a given finite number of action instances for each template (schema).
     SolveFinite(SolveFiniteProblem),
-    /// Domain repair: proposing fixes of a domain based on a valid plan.
-    DomRepair(DomRepair),
     FindDomain(FindDomain),
     FindProblem(FindProblem),
 }
@@ -145,20 +139,6 @@ pub struct SolveFiniteProblem {
     options: generate::Options,
 }
 
-#[derive(Parser, Debug)]
-pub struct DomRepair {
-    /// Expanded to provide command line options to get the plan, problem and domain
-    #[command(flatten)]
-    plan_pb: PlanAndProblem,
-    #[command(flatten)]
-    options: RepairOptions,
-    /// If provided, we will check that the number of repairs found is the one given here.
-    /// If not, we will terminate the process with an error.
-    /// (mainly intended for automated verifications and integration tests)
-    #[arg(short, long)]
-    expected_repairs: Option<usize>,
-}
-
 fn main() -> Res<()> {
     let args = Args::parse();
     // set up logger
@@ -179,7 +159,6 @@ fn main() -> Res<()> {
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
         Commands::SolveFinite(command) => solve_finite_problem(command)?,
-        Commands::DomRepair(command) => repair(command)?,
     }
 
     Ok(())
@@ -372,36 +351,6 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
                 .with_flag("depth", command.options.max_instances),
         );
         export::export_report_to_dir(report_dir, report)?;
-    }
-
-    Ok(())
-}
-
-fn repair(command: &DomRepair) -> Res<()> {
-    let (dom, pb, plan) = command.plan_pb.parse()?;
-
-    // processed model (from planx)
-    let model = pddl::build_model(&dom, &pb)?;
-    let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
-    println!("{model}");
-    //println!("{plan:?}");
-
-    let report = repair::domain_repair(&model, &plan, &command.options)?;
-    println!(
-        "REPORT {:<90} {}    {:>4} (#actions)",
-        &command.plan_pb.plan.display(),
-        report,
-        plan.operations.len()
-    );
-    if let Some(expected) = command.expected_repairs {
-        match report.status {
-            repair::RepairStatus::ValidPlan => assert_eq!(expected, 0, "Expected a valid plan (no repairs)"),
-            repair::RepairStatus::SmallestFound(num_repairs) => assert_eq!(
-                num_repairs, expected,
-                "Got {num_repairs} instead of the expected {expected}"
-            ),
-            repair::RepairStatus::Unrepairable => panic!(),
-        }
     }
 
     Ok(())

@@ -10,7 +10,6 @@ The CLI tool currently proposes the following functionalities:
  - `parse-domain`: parsing of lone PDDL domain file
  - `validate` (WIP): validate a PDDL plan
  - `plan-optimization` (WIP): optimize a given PDDL plans, specifying the target metrics and allowed relaxations
- - `dom-repair`: Propose fixes of a broken PDDL domain so that a target plan is valid.
 
  ## Installation
  

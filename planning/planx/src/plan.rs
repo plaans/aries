@@ -18,6 +18,7 @@ pub struct SolutionPlan {
 }
 
 impl SolutionPlan {
+    /// Creates an empty plan.
     pub fn empty() -> Self {
         SolutionPlan {
             operations: vec![],
