@@ -805,7 +805,7 @@ fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
         }
         "over" => {
             items.pop_known_atom("all")?;
-            TimeInterval::closed(TimeRef::ActionStart, TimeRef::ActionEnd)
+            TimeInterval::open(TimeRef::ActionStart, TimeRef::ActionEnd)
         }
         _ => return Err(first.invalid("expected `at` or `over`")),
     };

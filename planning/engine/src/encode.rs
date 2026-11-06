@@ -473,10 +473,16 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
     }
 }
 pub fn reify_interval(t: TimeInterval, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<TimeItv> {
-    Ok(TimeItv {
-        start: reify_timing(t.start, model, sched, binding)?,
-        end: reify_timing(t.end, model, sched, binding)?,
-    })
+    match t {
+        TimeInterval::Closed { start, end } => Ok(TimeItv {
+            start: reify_timing(start, model, sched, binding)?,
+            end: reify_timing(end, model, sched, binding)?,
+        }),
+        TimeInterval::Open { start, end } => Ok(TimeItv {
+            start: reify_timing(start, model, sched, binding)? + 1,
+            end: reify_timing(end, model, sched, binding)? - 1,
+        }),
+    }
 }
 
 pub fn reify_sym(
