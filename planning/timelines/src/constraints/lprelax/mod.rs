@@ -17,6 +17,10 @@ pub static ARIES_LPRELAX_WITH_GROUND_SUPPORTS: EnvParam<bool> =
 /// (minus 1 if it's the value of a goal at the horizon).
 pub static ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS", "true");
+/// Only the net-change rows of the values of goals at the horizon (those with the goal term), without the others.
+/// Implied by [`ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS`].
+pub static ARIES_LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS", "false");
 /// Binds the ground presences of sources to the lines of their grounding tables, which removes the term rows and bindings of single-source terms.
 pub static ARIES_LPRELAX_WITH_TABLE_LITS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_TABLE_LITS", "false");
 /// The goal commodities: for each goal, its presence routed from `None` to its required value (that of one of its groundings),

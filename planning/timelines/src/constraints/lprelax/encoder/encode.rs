@@ -123,6 +123,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         };
     let with_ground_supports = crate::lprelax::ARIES_LPRELAX_WITH_GROUND_SUPPORTS.get();
     let with_net_change_constrs = crate::lprelax::ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS.get();
+    let with_goal_net_change_constrs = crate::lprelax::ARIES_LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS.get();
     assert!(
         with_ground_supports || !with_support_graph_flow,
         "the support graph flow (ARIES_LPRELAX_WITH_FLOW_CONSTRS=supgraph) needs the ground supports (ARIES_LPRELAX_WITH_GROUND_SUPPORTS=true)"
@@ -564,7 +565,9 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     //
     //       The goal term isn't valid for goals before the horizon: a departure after the goal can use up the goal's arrival.
     //       Conditions of the empty source before the horizon are left as other conditions (i.e. out of these rows).
-    if with_net_change_constrs {
+    //
+    //       With only the goal rows, the rows of values without goals are left out.
+    if with_net_change_constrs || with_goal_net_change_constrs {
         let is_goal_at_horizon = |trans_id: TransitionId| match encoder.transitions.get(trans_id) {
             Transition::Cond(cond_id) => {
                 encoder.transitions.get_source(trans_id, ctx).is_none()
@@ -594,7 +597,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             for value_terms in terms.chunk_by(|a, b| a.0 == b.0) {
                 let (changes, goal_terms) = value_terms.split_at(value_terms.partition_point(|t| t.1.is_none()));
                 let changes = changes.iter().map(|&(_, _, col, coef)| (col, coef));
-                if goal_terms.is_empty() {
+                if goal_terms.is_empty() && with_net_change_constrs {
                     if changes.clone().all(|(_, coef)| coef > 0) {
                         continue; // (never left)
                     }
