@@ -36,6 +36,21 @@ impl SolutionPlan {
         }
         prec
     }
+
+    /// Write the plan to a file if the option contains a file path.
+    /// This is no-op if the option is empty
+    pub fn write_to_file<File: AsRef<Path>>(&self, out_file: Option<File>) -> Res<()> {
+        if let Some(path) = out_file {
+            let path = path.as_ref();
+            let mut file = std::fs::File::create(path)
+                .map_err(Message::from)
+                .title(format!("Cannot create output file {}", path.display()))?;
+            writeln!(file, "{self}")
+                .map_err(Message::from)
+                .title(format!("Cannot write output file {}", path.display()))?;
+        }
+        Ok(())
+    }
 }
 
 impl Display for SolutionPlan {

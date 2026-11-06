@@ -72,7 +72,7 @@ pub fn optimize_plan(
                 .iter()
                 .map(move |o| o.evaluate(sol).unwrap())
                 .format(" / "),
-            encoding.plan(sol)
+            encoding.plan(sol).export(model).unwrap()
         );
     };
     // Solve objectives lexicographically: each phase fixes the previous optimal values
@@ -97,10 +97,10 @@ pub fn optimize_plan(
     if let Some(solution) = last_solution {
         println!("> Found optimal solution\n");
         print_plan(&solution);
-        let plan = encoding.plan(&solution);
+        let plan = encoding.plan(&solution).export(model)?;
         plan.write_to_file(output_plan)?;
 
-        Ok(Some(plan.export(model)?))
+        Ok(Some(plan))
     } else {
         Ok(None)
     }
