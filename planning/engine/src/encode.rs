@@ -14,7 +14,7 @@ use aries_solver::{
     prelude::*,
 };
 use itertools::Itertools;
-use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeInterval, TimeRef, Timestamp, Type, errors::Spanned};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeInterval, TimeRef, Timestamp, Type, errors::*};
 use smallvec::SmallVec;
 use timelines::{
     Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time, TimeItv,
@@ -49,9 +49,9 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
     for f in model.env.fluents.iter() {
         let params = {
             let mut ps = SmallVec::<[FluentParam; 6]>::new();
-            for tpe in f.parameters.iter().map(|p| p.tpe()) {
+            for p in f.parameters.iter() {
                 ps.push(FluentParam {
-                    range: type_range(tpe, objects)?,
+                    range: type_range(p.tpe(), objects).when_processing(p.name())?,
                 });
             }
             ps
