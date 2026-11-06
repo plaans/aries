@@ -278,12 +278,12 @@ fn validate_plan(command: &Validate) -> Res<()> {
 
     // processed model (from planx)
     let mut model = pddl::build_model(&dom, &pb)?;
+    let plan = pddl::build_plan(&plan, &model)?;
     if model.metrics.is_empty() {
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
     let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
-    let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     if command.verbose {
         println!("\n===== Model ====\n\n{model}\n");
         println!("\n===== Plan ====\n\n{plan}\n");
@@ -315,6 +315,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
     let mut model = pddl::build_model(&dom, &pb)?;
+    let plan = pddl::build_plan(&plan, &model)?;
     if !command.options.objectives.is_empty() {
         // override provided metrics
         set_metric(&mut model, &command.options.objectives)?;
@@ -324,7 +325,6 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     }
     let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
-    let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
     println!("\n===== Plan ====\n\n{plan}\n");
 

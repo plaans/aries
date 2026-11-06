@@ -4,15 +4,12 @@ use std::{
     time::Instant,
 };
 
-use aries_plan_engine::{
-    encode::{
-        self,
-        constraints::{ConditionConstraint, ReificationConstraint},
-        encoding::{ActionInstance, Encoding, ObjectVar},
-        tags::{ActionCondition, OperatorId, Tag, format_culprit_set},
-        *,
-    },
-    plans::lifted_plan::{self, LiftedPlan},
+use aries_plan_engine::encode::{
+    self,
+    constraints::{ConditionConstraint, ReificationConstraint},
+    encoding::{ActionInstance, Encoding, ObjectVar},
+    tags::{ActionCondition, OperatorId, Tag, format_culprit_set},
+    *,
 };
 use aries_solver::{
     core::{state::Evaluable, views::Boundable},
@@ -53,7 +50,7 @@ pub enum Objective {
 
 pub fn optimize_plan(
     model: &Model,
-    plan: &LiftedPlan,
+    plan: &SolutionPlan,
     options: &Options,
     output_plan: Option<&Path>,
 ) -> Res<Option<SolutionPlan>> {
@@ -156,7 +153,7 @@ fn create_param_variable(var_name: &Sym, var_type: &Type, scope: Lit, sched: &mu
 ///   of the problem substantially.
 pub fn encode_plan_optimization_problem(
     model: &Model,
-    lifted_plan: &LiftedPlan,
+    plan: &SolutionPlan,
     free_actions: BTreeMap<ActionRef, u32>,
     options: &Options,
     support_explanation: bool,
@@ -171,23 +168,13 @@ pub fn encode_plan_optimization_problem(
 
     let global_scope = Scope::global(&sched);
 
-    // associates each variable in the plan to a fresh variable.
-    // TODO: presence of the variable
-    let plan_variables: BTreeMap<&Sym, SymAtom> = lifted_plan
-        .variables
-        .iter()
-        .map(|(var_name, var_type)| {
-            create_param_variable(var_name, &var_type.clone().into(), Lit::TRUE, &mut sched).map(|var| (var_name, var))
-        })
-        .try_collect()?;
-
     // associates each operation of the plan to its scope (binding of parameters, start/end, ...)
-    let mut operations_scopes = Vec::with_capacity(lifted_plan.operations.len());
+    let mut operations_scopes = Vec::with_capacity(plan.operations.len());
 
     // initial processing of all operations in the plan
     // we create its scope (binding of timepoints, params, ...) and process its conditions
     // Effects are deferred to a later point
-    for (op_id, op) in lifted_plan.operations.iter().enumerate() {
+    for (op_id, op) in plan.operations.iter().enumerate() {
         // corresponding action in the model
         let a = model
             .actions
@@ -196,16 +183,12 @@ pub fn encode_plan_optimization_problem(
 
         // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
         let mut args = im::OrdMap::new();
-        for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
-            let arg = match arg {
-                // ground parameter, get the corresponding object constant
-                lifted_plan::ObjectOrVariable::Ground(object) => sched
-                    .objects
-                    .object_atom(object.name().as_str())
-                    .ok_or_else(|| object.name().invalid("unknown object"))?,
-                // variable parameter, retrieve the variable we created for it
-                lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
-            };
+        for (param, object) in a.parameters.iter().zip(op.arguments.iter()) {
+            // ground parameter, get the corresponding object constant
+            let arg = sched
+                .objects
+                .object_atom(object.name().as_str())
+                .ok_or_else(|| object.name().invalid("unknown object"))?;
 
             // add argument to the bindings
             args.insert(param.name(), arg);
@@ -217,11 +200,19 @@ pub fn encode_plan_optimization_problem(
         };
         let start = if options.relaxation.contains(&Relaxation::StartTime) {
             sched.new_opt_timepoint(presence)
+        } else if let Some(start) = op.start.as_integer() {
+            Time::from(start)
         } else {
-            Time::from(op.start)
+            return op
+                .invalid("Non-integer start time. Consider using 'intify' preprocessing step.")
+                .failed();
         };
-        assert_eq!(op.duration, 0, "we use the start as end");
-        let end = start;
+        let Some(duration) = op.duration.as_integer() else {
+            return op
+                .invalid("Non-integer duration. Consider using 'intify' preprocessing step.")
+                .failed();
+        };
+        let end = start + duration;
 
         // record a task in `Sched` which
         //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
