@@ -21,7 +21,7 @@ use itertools::Itertools;
 
 use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use std::path::Path;
-use timelines::{ConstraintID, IntExp, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
+use timelines::{ConstraintID, IntExp, Sched, SymAtom, Task, Time, TimeItv, explain::ExplainableSolver};
 
 pub type RelaxableConstraint = Tag;
 
@@ -280,7 +280,7 @@ pub fn encode_plan_optimization_problem(
                 Duration::Instantaneous => 0.into(),
                 Duration::Fixed(dur) => encode::reify_expression(
                     dur,
-                    Some(start),
+                    Some(TimeItv::at(start)),
                     model,
                     &mut sched,
                     &duration_evaluation_scope,
@@ -344,25 +344,21 @@ pub fn encode_plan_optimization_problem(
     for (a, bindings, op_id) in &operations_scopes {
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
-            if let Some(tp) = c.interval.as_timestamp() {
-                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, bindings, &mut encoding)?;
-                // update the required values if requested by caller
-                constraint.add_required_values(&mut encoding.required_values, model, &sched);
+            let constraint = condition_to_constraint(c.interval, c.cond, model, &mut sched, bindings, &mut encoding)?;
+            // update the required values if requested by caller
+            constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
-                let cid = sched.add_constraint(constraint);
-                encoding.constraints_tags.insert(
-                    cid,
-                    Tag::Support {
-                        operator_id: op_id.clone(),
-                        cond: ActionCondition {
-                            action: a.name.clone(),
-                            condition_id: cond_id,
-                        },
+            let cid = sched.add_constraint(constraint);
+            encoding.constraints_tags.insert(
+                cid,
+                Tag::Support {
+                    operator_id: op_id.clone(),
+                    cond: ActionCondition {
+                        action: a.name.clone(),
+                        condition_id: cond_id,
                     },
-                );
-            } else {
-                panic!("Non-instantaneous condition: {c:?}");
-            }
+                },
+            );
         }
     }
 
@@ -514,11 +510,7 @@ pub fn parse_simple_goal(
 ) -> Res<ConditionConstraint> {
     match goal {
         planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
-            if let Some(tp) = time_interval.as_timestamp() {
-                condition_to_constraint(tp, *expr_id, model, sched, bindings, encoding)
-            } else {
-                todo!("durative goal")
-            }
+            condition_to_constraint(*time_interval, *expr_id, model, sched, bindings, encoding)
         }
         _ => todo!("complex goal"),
     }
