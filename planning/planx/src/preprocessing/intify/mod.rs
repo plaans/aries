@@ -128,11 +128,11 @@ fn compute_required_fluent_scalings(model: &Model) -> Res<SvPrecisions> {
 }
 
 fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Model> {
-    for eff in &model.init {
+    for eff in &mut model.init {
         apply_scaling_to_effect(eff, &mut model.env, scaling_factors)?;
     }
-    for act in model.actions.iter() {
-        for eff in &act.effects {
+    for act in model.actions.iter_mut() {
+        for eff in &mut act.effects {
             apply_scaling_to_effect(eff, &mut model.env, scaling_factors)?;
         }
 
@@ -148,6 +148,21 @@ fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Mode
 
     for e in get_expr_to_scale(&model) {
         normalize(e, &mut model.env, scaling_factors)?;
+    }
+    // iterator over all goal expressions (from normal goals or in preferences)
+    let goals_expressions = model
+        .goals
+        .iter_mut()
+        .map(|g| &mut g.goal_expression)
+        .chain(model.preferences.iter_mut().map(|p| &mut p.goal.goal_expression));
+    for g in goals_expressions {
+        match g {
+            SimpleGoal::HoldsDuring(time_interval, ..)
+            | SimpleGoal::SometimeDuring(time_interval, ..)
+            | SimpleGoal::AtMostOnceDuring(time_interval, ..) => scale_interval(time_interval, scaling_factors),
+            SimpleGoal::SometimeBefore { .. } | SimpleGoal::SometimeAfter { .. } => {}
+            SimpleGoal::AlwaysWithin { delay, .. } => *delay *= scaling_factors.time.denom_lcm as i64,
+        }
     }
 
     let mut objective_scalings = Vec::with_capacity(model.metrics.len());
@@ -167,6 +182,18 @@ fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Mode
     }));
 
     Ok(model)
+}
+
+fn scale_interval(itv: &mut TimeInterval, scalings: &SvPrecisions) {
+    match itv {
+        TimeInterval::Closed { start, end } | TimeInterval::Open { start, end } => {
+            scale_time(start, scalings);
+            scale_time(end, scalings);
+        }
+    }
+}
+fn scale_time(t: &mut Timestamp, scalings: &SvPrecisions) {
+    t.delay *= scalings.time.denom_lcm as i64
 }
 
 /// Denotes the intification transformation (converting all reals to ints) that was applied.
@@ -267,6 +294,7 @@ fn update_precision_required_by_effect(eff: &Effect, model: &Model, scalings: &m
             }
         }
     }
+    scalings.add_possible_duration(eff.timing.delay);
 
     Ok(())
 }
@@ -315,9 +343,8 @@ fn precision_of_expression(expr_id: ExprId, env: &Environment, scalings: &SvPrec
     }
 }
 
-fn apply_scaling_to_effect(eff: &Effect, env: &mut Environment, scalings: &SvPrecisions) -> Res<()> {
-    // FIXME: scale application time (for TIL)
-    let eff = &eff.effect_expression;
+fn apply_scaling_to_effect(eff: &mut Effect, env: &mut Environment, scalings: &SvPrecisions) -> Res<()> {
+    let eff = &mut eff.effect_expression;
     let fluent = eff.state_variable.fluent;
     if let Some(scaling_factor) = scalings.precision_of_fluent(fluent)
         && scaling_factor != 1
@@ -331,6 +358,7 @@ fn apply_scaling_to_effect(eff: &Effect, env: &mut Environment, scalings: &SvPre
             }
         }
     }
+    eff.timing.delay *= scalings.time.denom_lcm as i64;
     Ok(())
 }
 

@@ -95,6 +95,9 @@ impl Actions {
     pub fn iter(&self) -> impl Iterator<Item = &Action> {
         self.actions.values()
     }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Action> {
+        self.actions.values_mut()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
