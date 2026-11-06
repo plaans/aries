@@ -203,7 +203,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
 pub struct HasValueAt {
     pub state_var: StateVar,
     pub value: IntTerm,
-    pub timepoint: Time,
+    pub period: TimeItv,
     /// Presence of the condition. Must imply the presence of all variables appearing in it.
     pub prez: Lit,
     /// Specifies if this condition originates from a particular task.
@@ -217,7 +217,7 @@ impl HasValueAt {
     /// Returns a box capturing when and what may be the value required by this condition.
     pub fn value_box(&self, dom: impl Dom) -> crate::boxes::BBox {
         let mut buff = Vec::with_capacity(self.state_var.args.len() + 2);
-        buff.push(Segment::from(dom.bounds(self.timepoint)));
+        buff.push(Segment::new(dom.lb(self.period.start), dom.ub(self.period.end)));
         for arg in &self.state_var.args {
             buff.push(Segment::from(dom.bounds(*arg)));
         }
@@ -271,8 +271,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
 
             let mut conjuncts = ConjunctionBuilder::new();
             conjuncts.push(eff.prez);
-            conjuncts.push(geq(self.timepoint, eff.effective_start()).reified(ctx));
-            conjuncts.push(leq(self.timepoint, eff.mutex_end).reified(ctx));
+            conjuncts.push(geq(self.period.start, eff.effective_start()).reified(ctx));
+            conjuncts.push(leq(self.period.end, eff.mutex_end).reified(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
                 conjuncts.push(eq(*arg1, *arg2).reified(ctx))
             }
@@ -301,8 +301,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             }
             let mut conjuncts = ConjunctionBuilder::new();
             conjuncts.push(eff.prez);
-            conjuncts.push(geq(self.timepoint, eff.effective_start()).implicant(ctx));
-            conjuncts.push(leq(self.timepoint, eff.mutex_end).implicant(ctx));
+            conjuncts.push(geq(self.period.start, eff.effective_start()).implicant(ctx));
+            conjuncts.push(leq(self.period.end, eff.mutex_end).implicant(ctx));
             for (arg1, arg2) in self.state_var.args.iter().zip_eq(eff.state_var.args.iter()) {
                 // note we use the conjunctive form with bot leq and geq to avoid reification of the equality
                 conjuncts.push(leq(*arg1, *arg2).implicant(ctx));
@@ -355,8 +355,8 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
             // for any effect `eff` with a different source
             let itv_cond = IntervalOnStateVariable {
                 state_var: &self.state_var,
-                start: self.timepoint,
-                end: self.timepoint,
+                start: self.period.start,
+                end: self.period.end,
                 presence: self.prez,
             };
             for eff_id in sched

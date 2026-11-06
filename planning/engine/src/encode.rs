@@ -14,10 +14,10 @@ use aries_solver::{
     prelude::*,
 };
 use itertools::Itertools;
-use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, Type, errors::Spanned};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeInterval, TimeRef, Timestamp, Type, errors::Spanned};
 use smallvec::SmallVec;
 use timelines::{
-    Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time, TimeItv,
     boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 
@@ -123,7 +123,7 @@ impl<'a> Scope<'a> {
 /// IMPORTANT: the expression may requires some values that should be identified with [`ConditionConstraint::add_required_values`] method.
 /// Failure to do so means that some effects may incorrectly be optimized away because they are deemed useless.
 pub fn condition_to_constraint(
-    tp: Timestamp,
+    tp: TimeInterval,
     expr: ExprId,
     model: &Model,
     sched: &mut Sched,
@@ -131,7 +131,7 @@ pub fn condition_to_constraint(
     encoding: &mut Encoding,
 ) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
-    let timepoint = reify_timing(tp, model, sched, bindings)?;
+    let timepoint = reify_interval(tp, model, sched, bindings)?;
     let constraint = match expr.expr() {
         planx::Expr::Bool(b) => if *b {
             ConditionExpression::LeqZero(LinSum::zero())
@@ -153,7 +153,7 @@ pub fn condition_to_constraint(
             let c = HasValueAt {
                 state_var,
                 value: IntTerm::TRUE,
-                timepoint,
+                period: timepoint,
                 prez: bindings.presence,
                 source: bindings.source,
             };
@@ -220,7 +220,7 @@ pub fn condition_to_constraint(
 }
 
 pub fn condition_to_constraint_eq(
-    timepoint: Time,
+    timepoint: TimeItv,
     lhs: ExprId,
     rhs: ExprId,
     model: &Model,
@@ -247,7 +247,7 @@ pub fn condition_to_constraint_eq(
                     state_var,
                     value: reify_expression(expr, Some(timepoint), model, sched, bindings, encoding)
                         .map(|arg_expr| flatten_expression(arg_expr, sched, bindings))?,
-                    timepoint,
+                    period: timepoint,
                     prez: bindings.presence,
                     source: bindings.source,
                 };
@@ -293,6 +293,7 @@ pub fn convert_effect(
     }
     let x = &effect.effect_expression;
     let t = reify_timing(x.timing, model, sched, bindings)?;
+    let i = TimeItv::at(t);
     let args: Vec<SymAtom> = x
         .state_variable
         .arguments
@@ -305,13 +306,13 @@ pub fn convert_effect(
     };
     let op = match x.operation {
         planx::EffectOp::Assign(v) => {
-            EffectOp::Assign(reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
+            EffectOp::Assign(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?)
         }
         planx::EffectOp::Increase(v) => {
-            EffectOp::Step(reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
+            EffectOp::Step(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?)
         }
         planx::EffectOp::Decrease(v) => {
-            EffectOp::Step(-reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
+            EffectOp::Step(-reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?)
         }
         planx::EffectOp::Erase => todo!("add EffectOp::Erase in timelines"),
     };
@@ -471,6 +472,12 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
         _ => Message::todo(format!("unsupported timeref {t:?}")).failed(),
     }
 }
+pub fn reify_interval(t: TimeInterval, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<TimeItv> {
+    Ok(TimeItv {
+        start: reify_timing(t.start, model, sched, binding)?,
+        end: reify_timing(t.end, model, sched, binding)?,
+    })
+}
 
 pub fn reify_sym(
     eid: ExprId,
@@ -479,7 +486,7 @@ pub fn reify_sym(
     binding: &Scope,
     encoding: &mut Encoding,
 ) -> Res<SymAtom> {
-    reify_expression(eid, None, model, sched, binding, encoding).map(|e| flatten_expression(e, sched, binding))
+    reify_expression_impl(eid, None, model, sched, binding, encoding).map(|e| flatten_expression(e, sched, binding))
 }
 
 pub fn reify_constant(
@@ -489,7 +496,7 @@ pub fn reify_constant(
     scope: &Scope,
     encoding: &mut Encoding,
 ) -> Res<IntCst> {
-    let reif = reify_expression(e, None, model, sched, scope, encoding)?;
+    let reif = reify_expression_impl(e, None, model, sched, scope, encoding)?;
     let reif = flatten_expression(reif, sched, scope);
     let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
     Ok(cst)
@@ -497,7 +504,7 @@ pub fn reify_constant(
 
 pub fn reify_expression_to_term(
     e: ExprId,
-    time: Option<Time>,
+    time: Option<TimeItv>,
     model: &Model,
     sched: &mut Sched,
     scope: &Scope,
@@ -507,9 +514,19 @@ pub fn reify_expression_to_term(
     Ok(flatten_expression(reif, sched, scope))
 }
 
-pub fn reify_expression(
+pub fn reify_expression<T: Into<TimeItv>>(
     e: ExprId,
-    time: Option<Time>,
+    time: Option<T>,
+    model: &Model,
+    sched: &mut Sched,
+    binding: &Scope,
+    encoding: &mut Encoding,
+) -> Res<IntExp> {
+    reify_expression_impl(e, time.map(|t| t.into()), model, sched, binding, encoding)
+}
+pub fn reify_expression_impl(
+    e: ExprId,
+    time: Option<TimeItv>,
     model: &Model,
     sched: &mut Sched,
     binding: &Scope,
@@ -569,7 +586,7 @@ pub fn reify_expression(
             let reif = HasValueAt {
                 state_var,
                 value: reified_var.into(),
-                timepoint: time,
+                period: time,
                 prez: binding.presence,
                 source: binding.source,
             };
