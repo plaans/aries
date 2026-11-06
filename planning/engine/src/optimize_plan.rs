@@ -498,7 +498,7 @@ pub fn parse_goal(
             .todo("Unsupported universal quantification")
             .failed();
     }
-    parse_simple_goal(&goal.goal_expression, model, sched, bindings, encoding)
+    parse_simple_goal(&goal.goal_expression, model, sched, bindings, encoding).when_processing(model.env.node(goal))
 }
 
 /// Parses a quantifier-free goal into an equivalent expression
@@ -513,6 +513,6 @@ pub fn parse_simple_goal(
         planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
             condition_to_constraint(*time_interval, *expr_id, model, sched, bindings, encoding)
         }
-        _ => todo!("complex goal"),
+        _ => Message::error("Unsupported complex goal").failed(),
     }
 }
