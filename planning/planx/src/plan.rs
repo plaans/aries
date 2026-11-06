@@ -1,7 +1,10 @@
 use itertools::Itertools;
 use std::fmt::Display;
 
-use crate::{ActionRef, Object, RealValue, errors::Span};
+use crate::{
+    ActionRef, Object, RealValue,
+    errors::{Span, Spanned},
+};
 
 type Instant = RealValue;
 type Duration = RealValue;
@@ -12,6 +15,15 @@ pub struct SolutionPlan {
     pub operations: Vec<Operation>,
     /// Values the plan has for the metrics defined in the model.
     pub metrics: Vec<RealValue>,
+}
+
+impl SolutionPlan {
+    pub fn empty() -> Self {
+        SolutionPlan {
+            operations: vec![],
+            metrics: vec![],
+        }
+    }
 }
 
 impl Display for SolutionPlan {
@@ -49,5 +61,11 @@ impl Display for Operation {
             self.arguments.iter().format(" "),
             self.duration
         )
+    }
+}
+
+impl Spanned for Operation {
+    fn span(&self) -> Option<&Span> {
+        self.span.as_ref()
     }
 }

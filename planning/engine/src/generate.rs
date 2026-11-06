@@ -1,11 +1,8 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
-use aries_plan_engine::{
-    encode::{encoding::Encoding, tags::Tag},
-    plans::lifted_plan::LiftedPlan,
-};
+use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
 use aries_solver::{core::state::Evaluable, prelude::*, solver::stats::Stats};
-use planx::{Model, Res};
+use planx::{Model, Res, SolutionPlan};
 use timelines::{Sched, explain::ExplainableSolver};
 
 use crate::{
@@ -55,7 +52,7 @@ pub struct PlanGenerationResult {
 pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<PlanGenerationResult> {
     // create a dummy plan with the appropriate number of actions
     // this is temporary a workaround to reuse the existing `optimize_plan` facilities
-    let plan = LiftedPlan::default();
+    let plan = SolutionPlan::empty();
 
     let start = Instant::now();
     let (mut solver, encoding, _sched) = encode_finite_planning_problem(model, &plan, options)?;
@@ -73,7 +70,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<Pl
 
     let print = |sol: &Solution| {
         println!("\n==== Plan (objective: {}) =====", objective.evaluate(sol).unwrap());
-        println!("{}\n", encoding.plan(sol));
+        println!("{}\n", encoding.plan(sol).export(model).unwrap());
     };
 
     let solution = solver.find_optimal(solver_objective, &print, []);
@@ -110,7 +107,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<Pl
 
 fn encode_finite_planning_problem(
     model: &Model,
-    lifted_plan: &LiftedPlan,
+    plan: &SolutionPlan,
     options: &Options,
 ) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
     // TODO: make specific function.
@@ -121,7 +118,7 @@ fn encode_finite_planning_problem(
 
     optimize_plan::encode_plan_optimization_problem(
         model,
-        lifted_plan,
+        plan,
         num_free_instances_per_action,
         &optimize_plan::Options {
             relaxation: vec![

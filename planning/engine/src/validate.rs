@@ -1,6 +1,6 @@
 use aries_plan_engine::{encode::tags::format_culprit_set, plans::lifted_plan::LiftedPlan};
 use itertools::Itertools;
-use planx::{Message, Model, Res};
+use planx::{Message, Model, Res, SolutionPlan};
 
 use crate::optimize_plan::encode_plan_optimization_problem;
 
@@ -12,7 +12,7 @@ pub enum ValidationResult {
     Invalid,
 }
 
-pub fn validate(model: &Model, plan: &LiftedPlan, _options: &Options) -> Res<ValidationResult> {
+pub fn validate(model: &Model, plan: &SolutionPlan, _options: &Options) -> Res<ValidationResult> {
     // we frame the problem as an optimization problem with no relaxation,
     // hence the solver is forced to reproduce the plan
     let opt_options = crate::optimize_plan::Options {
