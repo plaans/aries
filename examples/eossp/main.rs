@@ -339,7 +339,7 @@ impl Encoding {
                             instance.energy_max,
                         );
                     }
-                    None => model.enforce_if(before_ij, Lit::FALSE),
+                    None => model.enforce(!before_ij),
                 }
 
                 // TODO: clean this copy-paste
@@ -356,7 +356,7 @@ impl Encoding {
                             instance.energy_max,
                         );
                     }
-                    None => model.enforce_if(before_ji, Lit::FALSE),
+                    None => model.enforce(!before_ji),
                 }
             }
         }
