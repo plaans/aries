@@ -8,7 +8,7 @@
 //! ```
 
 pub use crate::{
-    Bound, ComparisonOp, Deadline, Lp, OptimizationDirection, Problem, Solution, Variable,
+    Bound, ComparisonOp, Deadline, Lp, OptimizationDirection, Problem, SimplexOptions, Solution, Variable,
     expr::{Constraint, LinExpr},
     results::{Certificate, FeasibilityStatus, InfeasibilityReason, SolveStatus, SolverFailure},
 };

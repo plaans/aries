@@ -216,11 +216,23 @@ impl std::fmt::Debug for Solver {
 }
 
 impl Solver {
+    /// Creates a solver with the default options (see [`Self::try_new`]).
+    #[cfg(test)]
+    pub(crate) fn try_new_default(
+        obj_coeffs: &[f64],
+        var_mins: &[f64],
+        var_maxs: &[f64],
+        constraints: &[(CsVec, ComparisonOp, f64)],
+    ) -> Result<Self, InfeasibilityReason> {
+        Self::try_new(obj_coeffs, var_mins, var_maxs, constraints, SimplexOptions::default())
+    }
+
     pub(crate) fn try_new(
         obj_coeffs: &[f64],
         var_mins: &[f64],
         var_maxs: &[f64],
         constraints: &[(CsVec, ComparisonOp, f64)],
+        options: SimplexOptions,
     ) -> Result<Self, InfeasibilityReason> {
         let enable_steepest_edge = true; // TODO: make user-settable.
 
@@ -343,6 +355,60 @@ impl Solver {
             basic_var_vals.push(rhs - lhs_val);
         }
 
+        // "Crash basis" (building the initial basis with a heuristic instead of keeping the basis of all slacks),
+        // with `options.crash_basis`:
+        //
+        // In each row, a zero-cost variable that appears in no other row is made basic instead of the row's slack,
+        // whenever the slack can then sit at one of its bounds. The variable takes the value that the slack compensated,
+        // so a row is infeasible only if this variable ends up outside its bounds.
+        // E.g. for a row `sum - s = 0` reifying a sum, `s` starts basic and equal to `sum` (not at a bound, with a violated row).
+        //
+        // The rows whose slack was swapped this way, each with the coefficient of the variable made basic instead,
+        // have their dual steepest edge norm set to `1 / coeff^2` rather than 1 (see `dual_edge_sq_norms` below).
+        let mut crashed_rows = vec![];
+        if options.crash_basis {
+            let mut col_counts = vec![0u32; num_vars];
+            for (coeffs, _, _) in constraints {
+                for (var, _) in coeffs.iter() {
+                    col_counts[var] += 1;
+                }
+            }
+            for (r, (coeffs, _, _)) in constraints.iter().enumerate() {
+                let slack_val = basic_var_vals[r];
+                let (slack_min, slack_max) = (basic_var_mins[r], basic_var_maxs[r]);
+                let slack_new_val = if slack_val < slack_min - EPS {
+                    slack_min
+                } else if slack_val > slack_max + EPS {
+                    slack_max
+                } else if slack_val == slack_min || slack_val == slack_max {
+                    slack_val
+                } else {
+                    continue;
+                };
+                let Some((var, &coeff)) = coeffs.iter().find(|&(v, _)| col_counts[v] == 1 && obj_coeffs[v] == 0.0)
+                else {
+                    continue;
+                };
+                let VarState::NonBasic(col) = var_states[var] else {
+                    unreachable!("a variable of a single row is only made basic for this row")
+                };
+                let slack_var = num_vars + r;
+                var_states[var] = VarState::Basic(r);
+                basic_vars[r] = var;
+                basic_var_vals[r] = nb_var_vals[col] + (slack_val - slack_new_val) / coeff;
+                basic_var_mins[r] = orig_var_mins[var];
+                basic_var_maxs[r] = orig_var_maxs[var];
+                var_states[slack_var] = VarState::NonBasic(col);
+                nb_vars[col] = slack_var;
+                nb_var_vals[col] = slack_new_val;
+                nb_var_states[col] = NonBasicVarState {
+                    at_min: slack_new_val == slack_min,
+                    at_max: slack_new_val == slack_max,
+                };
+                crashed_rows.push((r, coeff));
+            }
+        }
+
         let num_constraints = constraint_coeffs.len();
         let num_total_vars = num_vars + num_constraints;
 
@@ -367,7 +433,12 @@ impl Solver {
 
         let enable_dual_steepest_edge = enable_steepest_edge;
         let dual_edge_sq_norms = if enable_dual_steepest_edge {
-            vec![1.0; basic_vars.len()]
+            // the row of the basis inverse is a unit vector, scaled by the inverse of the coefficient of a crashed variable
+            let mut sq_norms = vec![1.0; basic_vars.len()];
+            for &(r, coeff) in &crashed_rows {
+                sq_norms[r] = 1.0 / (coeff * coeff);
+            }
+            sq_norms
         } else {
             vec![]
         };
@@ -2051,7 +2122,7 @@ mod tests {
 
     #[test]
     fn initialize() {
-        let sol = Solver::try_new(
+        let sol = Solver::try_new_default(
             &[2.0, 1.0],
             &[f64::NEG_INFINITY, 5.0],
             &[0.0, f64::INFINITY],
@@ -2103,7 +2174,7 @@ mod tests {
 
     #[test]
     fn initial_solve() {
-        let mut sol = Solver::try_new(
+        let mut sol = Solver::try_new_default(
             &[-3.0, -4.0],
             &[f64::NEG_INFINITY, 5.0],
             &[20.0, f64::INFINITY],
@@ -2125,7 +2196,7 @@ mod tests {
         assert_eq!(&sol.nb_var_obj_coeffs, &[3.2, 0.2]);
         assert_eq!(sol.cur_obj_val, -68.0);
 
-        let infeasible = Solver::try_new(
+        let infeasible = Solver::try_new_default(
             &[1.0, 1.0],
             &[0.0, 0.0],
             &[f64::INFINITY, f64::INFINITY],
@@ -2147,7 +2218,7 @@ mod tests {
         // The row x0 + x1 + x2 >= 30 is only satisfiable at x0 = x1 = x2 = 10.
         // Restoring feasibility must flip the first two vars to their upper bound and
         // pivot the third one in, with every variable staying within its bounds.
-        let mut sol = Solver::try_new(
+        let mut sol = Solver::try_new_default(
             &[0.0, 0.0, 0.0],
             &[0.0, 0.0, 0.0],
             &[10.0, 10.0, 10.0],
@@ -2177,7 +2248,7 @@ mod tests {
     fn infeasibility_detected_after_bound_flips() {
         // x0 + x1 >= 3 with both vars in [0, 1]: after flipping both to their upper
         // bound the row is still infeasible, which proves the problem infeasible.
-        let mut sol = Solver::try_new(
+        let mut sol = Solver::try_new_default(
             &[0.0, 0.0],
             &[0.0, 0.0],
             &[1.0, 1.0],
@@ -2198,7 +2269,7 @@ mod tests {
     /// infeasible), and the first constraint is violated (primal infeasible), so an
     /// artificial objective is engaged.
     fn adversarial_lp() -> Solver {
-        Solver::try_new(
+        Solver::try_new_default(
             &[-1.0, 2.0],
             &[0.0, 0.0],
             &[f64::INFINITY, 3.0],
@@ -2257,13 +2328,15 @@ mod tests {
         // zero and grows by a fraction of a pivot per decision: checks must be no-ops
         // when nothing is allowed, leave a resumable state when interrupted, and
         // conclude as soon as one spare pivot of budget is available.
-        let mut sol = Solver::try_new(
+        // (The third row, always satisfied, puts each variable in two rows: the initial basis isn't crashed.)
+        let mut sol = Solver::try_new_default(
             &[0.0, 0.0, 0.0],
             &[0.0, 0.0, 0.0],
             &[3.0, 3.0, 3.0],
             &[
                 (to_sparse(&[1.0, 1.0, 0.0]), ComparisonOp::Ge, 4.0),
                 (to_sparse(&[0.0, 0.0, 1.0]), ComparisonOp::Ge, 2.0),
+                (to_sparse(&[1.0, 1.0, 1.0]), ComparisonOp::Le, 9.0),
             ],
         )
         .unwrap();

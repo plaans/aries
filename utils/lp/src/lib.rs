@@ -18,6 +18,18 @@ use std::time::{Duration, Instant};
 
 use crate::{expr::Constraint, prelude::*, solver::Stats};
 
+/// Options of the simplex, taken into account when the solver is created (by the first check or solve of the LP).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SimplexOptions {
+    /// If true, the initial basis is a "crash basis": in each row, a zero-cost variable that appears in no other row
+    /// is made basic instead of the row's slack, whenever the slack can then sit at one of its bounds
+    /// (e.g. the variable `s` of a row `sum - s = 0` reifying a sum). Otherwise, all slacks are basic.
+    ///
+    /// It makes the checks of LPs with many such rows much faster, but on some LPs it makes the simplex
+    /// numerically unstable.
+    pub crash_basis: bool,
+}
+
 /// A Linear Program (LP), that can be use to construct the LP and solve it.
 #[derive(Clone, Debug)]
 pub struct Lp {
@@ -27,12 +39,18 @@ pub struct Lp {
     /// are kept in sync: any variable, constraint, bound restriction is added to both.
     /// The solver is typically constructed lazily on the first check.
     solver: Option<Box<Solver>>,
+    /// The options of the solver, when it is created.
+    options: SimplexOptions,
 }
 
 impl Lp {
     /// Creates the LP from a pre-existing [`Problem`]
     pub fn from(problem: Problem) -> Self {
-        Self { problem, solver: None }
+        Self {
+            problem,
+            solver: None,
+            options: SimplexOptions::default(),
+        }
     }
 
     /// Initialize an empty LP, specifying whether it is intended for minimization or maximization.
@@ -40,7 +58,14 @@ impl Lp {
         Self {
             problem: Problem::new(dir),
             solver: None,
+            options: SimplexOptions::default(),
         }
+    }
+
+    /// Sets the options of the simplex. They are only taken into account if the solver isn't created yet
+    /// (i.e. before the first check or solve of the LP).
+    pub fn set_simplex_options(&mut self, options: SimplexOptions) {
+        self.options = options;
     }
 
     /// Declare a new variable in the LP, with the given coefficient in the LP's objective expression as
@@ -87,6 +112,7 @@ impl Lp {
                 &self.problem.var_mins,
                 &self.problem.var_maxs,
                 &self.problem.constraints,
+                self.options,
             )?;
             self.solver = Some(Box::new(solver));
             // from this point on, every modification to the problem must be applied to the problem as well

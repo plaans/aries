@@ -93,8 +93,11 @@ impl PartialEq for Solver {
 
 impl Solver {
     pub fn new(is_explanation_refined: bool) -> Self {
+        let mut lp = Lp::new(OptimizationDirection::Maximize);
+        // (the crash basis suits the LP's rows, most of which reify a sum with a variable of their own)
+        lp.set_simplex_options(SimplexOptions { crash_basis: true });
         Solver {
-            lp: Lp::new(OptimizationDirection::Maximize),
+            lp,
             init_bounds: Vec::new(),
             bounds: Vec::new(),
             constraints: Vec::new(),

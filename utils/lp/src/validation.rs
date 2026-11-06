@@ -195,7 +195,7 @@ mod tests {
     /// Its optimum is -5 at (5, 0) (internal, minimized orientation). At creation the
     /// solver is neither primal nor dual feasible.
     fn adversarial_solver() -> Solver {
-        Solver::try_new(
+        Solver::try_new_default(
             &[-1.0, 2.0],
             &[0.0, 0.0],
             &[f64::INFINITY, 3.0],
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn infeasibility_certificates_are_validated() {
         // x0 + x1 >= 3 with both vars in [0, 1]: infeasible.
-        let mut solver = Solver::try_new(
+        let mut solver = Solver::try_new_default(
             &[0.0, 0.0],
             &[0.0, 0.0],
             &[1.0, 1.0],
@@ -256,7 +256,7 @@ mod tests {
         // formulation of this check only kept the comparison direction of the last
         // weighted row and accepted these multipliers, certifying the infeasibility of
         // this satisfiable problem.)
-        let solver = Solver::try_new(
+        let solver = Solver::try_new_default(
             &[0.0],
             &[0.0],
             &[1.5],
@@ -271,7 +271,7 @@ mod tests {
         // An infeasible problem: x <= 0 and x >= 2 with x in [0, 1]. The mixed
         // multipliers [1, 1] still prove nothing (the slacks compensate); the solver's
         // own certificate does.
-        let mut solver = Solver::try_new(
+        let mut solver = Solver::try_new_default(
             &[0.0],
             &[0.0],
             &[1.0],
