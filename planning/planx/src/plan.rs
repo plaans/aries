@@ -1,7 +1,7 @@
-use std::fmt::Display;
 use itertools::Itertools;
+use std::fmt::Display;
 
-use crate::{ActionRef, Object, RealValue};
+use crate::{ActionRef, Object, RealValue, errors::Span};
 
 type Instant = RealValue;
 type Duration = RealValue;
@@ -29,17 +29,13 @@ impl Display for SolutionPlan {
 }
 
 /// An operation in a plan, typically a grounding of an action.
-///
-/// The type of the action's arguments is generic to allow representing
-/// input plans and output plans.
-///
-/// Can be displayed in the PDDL plan format if `OperationArg: Display`
 #[derive(Debug, Clone)]
 pub struct Operation {
     pub start: Instant,
     pub duration: Duration,
     pub action_ref: ActionRef,
     pub arguments: Vec<Object>,
+    pub span: Option<Span>,
 }
 
 impl Display for Operation {

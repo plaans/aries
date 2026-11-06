@@ -96,6 +96,7 @@ impl<'a> Plan<'a> {
                 duration: RealValue::from_integer(a.duration as i64),
                 action_ref: a.action_ref,
                 arguments,
+                span: None,
             };
             operations.push(op);
         }
