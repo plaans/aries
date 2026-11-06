@@ -1,73 +1,14 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use itertools::Itertools;
-use num_integer::lcm;
 use smallvec::smallvec;
 
-use crate::{preprocessing::Transformation, *};
+use crate::{precision::NumericPrecision, preprocessing::Transformation, *};
 
 type SvPrecisions = RequiredScaling;
 type Scaling = u64;
 
-/// Denotes the reachable values of an numeric expression in rational form.
-#[derive(Debug, Copy, Clone)]
-struct ReachableValues {
-    /// Least common multiplier for the numerator (or None if we have no idea)
-    numer_lcm: Option<u64>,
-    /// Least common multiplier for the denominator
-    denom_lcm: u64,
-}
-impl ReachableValues {
-    pub const INTEGER: ReachableValues = ReachableValues {
-        numer_lcm: None,
-        denom_lcm: 1,
-    };
-    pub fn from_constant(value: RealValue) -> Self {
-        Self {
-            numer_lcm: Some(value.numer().unsigned_abs()),
-            denom_lcm: value.denom().unsigned_abs(),
-        }
-    }
-
-    pub fn union(&mut self, other: ReachableValues) {
-        self.numer_lcm = match (self.numer_lcm, other.numer_lcm) {
-            (Some(x), Some(y)) if x.next_power_of_two() + y.next_power_of_two() < 20 => Some(lcm(x, y)),
-            _ => None,
-        };
-        self.denom_lcm = lcm(self.denom_lcm, other.denom_lcm);
-    }
-    pub fn combine_additive(&mut self, other: ReachableValues) {
-        // we give up finding out what are the possible values there
-        self.numer_lcm = None;
-        self.denom_lcm = lcm(self.denom_lcm, other.denom_lcm);
-    }
-    pub fn combine_mul(&mut self, other: ReachableValues) {
-        self.numer_lcm = match (self.numer_lcm, other.numer_lcm) {
-            (Some(x), Some(y)) if x.next_power_of_two() + y.next_power_of_two() < 20 => Some(x * y),
-            _ => None,
-        };
-        self.denom_lcm *= other.denom_lcm;
-    }
-    fn invert(&self) -> Option<Self> {
-        self.numer_lcm.map(|self_numer_lcm| Self {
-            numer_lcm: Some(self.denom_lcm),
-            denom_lcm: self_numer_lcm,
-        })
-    }
-}
-impl Default for ReachableValues {
-    fn default() -> Self {
-        Self {
-            numer_lcm: Some(1),
-            denom_lcm: 1,
-        }
-    }
-}
-impl From<RealValue> for ReachableValues {
-    fn from(value: RealValue) -> Self {
-        Self::from_constant(value)
-    }
-}
+type ReachableValues = NumericPrecision;
 
 #[derive(Default)]
 struct RequiredScaling {
@@ -85,6 +26,9 @@ impl RequiredScaling {
     }
     fn add_possible_increase(&mut self, fluent: FluentId, value: impl Into<ReachableValues>) {
         self.fluents.get_mut(&fluent).unwrap().combine_additive(value.into());
+    }
+    fn add_possible_duration(&mut self, value: impl Into<ReachableValues>) {
+        self.time.combine_additive(value.into());
     }
 
     fn fluent_precisions(&self) -> impl Iterator<Item = (FluentId, Scaling)> {
@@ -113,29 +57,31 @@ pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
 
     let mut model = model.clone();
 
-    let mut iter = 0;
-    loop {
+    for iter in 0.. {
         // compute by how much fluents need to be scaled to be integer
-        // This initially assumes other fluents are integer, which is why we may need severals rounds to get a fix point
+        // This initially assumes other fluents are integer, which is why we may need several rounds to get a fix point
         let scalings = compute_required_fluent_scalings(&model)?;
 
+        if scalings.fix_point() && iter > 0 {
+            // only break after a full path because reals may appear in e.g. goals and still need to be eliminated
+            break;
+        }
         for (fid, prec) in scalings.fluent_precisions() {
             if prec != 1 {
                 println!("  {} *= {}", model.env.fluents.get(fid).name(), prec);
             }
         }
-        if scalings.fix_point() && iter > 0 {
-            // only break after a full path because reals may appear in e.g. goals and still need to be eliminated
-            break;
-        } else if iter > 3 {
-            return Message::error("Could not remove all non-integer value in model.").failed();
+        println!("  time-scale *= {}", scalings.time.denom_lcm);
+
+        if iter > 3 {
+            return Message::error("Could not remove all non-integer values in model.").failed();
         }
+
         // build a new model with everything scaled
         model = build_new_model(model, &scalings)?;
-        iter += 1;
     }
 
-    // todo: we could update the type of all fluents to integer but are missing the PAI to do so
+    // todo: we could update the type of all fluents to integer but are missing the API to do so
 
     let int_model = model;
 
@@ -148,6 +94,7 @@ pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
 fn compute_required_fluent_scalings(model: &Model) -> Res<SvPrecisions> {
     // initialize scaling to default value
     let mut scalings: SvPrecisions = Default::default();
+    scalings.time.union(model.required_temporal_precision);
     for (fid, f) in model.env.fluents.iter_with_id() {
         match f.return_type {
             Type::Real | Type::Int(_) => {
@@ -167,6 +114,15 @@ fn compute_required_fluent_scalings(model: &Model) -> Res<SvPrecisions> {
         for eff in &act.effects {
             update_precision_required_by_effect(eff, model, &mut scalings)?;
         }
+        let durations: &[ExprId] = match act.duration {
+            Duration::Fixed(dur) => &[dur],
+            Duration::Bounded(lb, ub) => &[lb, ub],
+            Duration::Instantaneous | Duration::Subtasks => &[],
+        };
+        for &dur in durations {
+            let prec = precision_of_expression(dur, &model.env, &scalings)?;
+            scalings.add_possible_duration(prec);
+        }
     }
     Ok(scalings)
 }
@@ -178,6 +134,15 @@ fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Mode
     for act in model.actions.iter() {
         for eff in &act.effects {
             apply_scaling_to_effect(eff, &mut model.env, scaling_factors)?;
+        }
+
+        let durs: &[ExprId] = match act.duration {
+            Duration::Instantaneous | Duration::Subtasks => &[],
+            Duration::Fixed(dur) => &[dur],
+            Duration::Bounded(lb, ub) => &[lb, ub],
+        };
+        for &dur in durs {
+            apply_scaling(dur, scaling_factors.time.denom_lcm, &mut model.env, scaling_factors)?;
         }
     }
 
@@ -195,39 +160,71 @@ fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Mode
         apply_scaling(expr, prec, &mut model.env, scaling_factors)?;
         objective_scalings.push(prec);
     }
-    model
-        .transformations
-        .push(Arc::new(IntifyTransformation { objective_scalings }));
+    model.required_temporal_precision = NumericPrecision::INTEGER; // TODO: sanity check
+    model.transformations.push(Arc::new(IntifyTransformation {
+        objective_scalings,
+        time_scaling: scaling_factors.time.denom_lcm,
+    }));
 
     Ok(model)
 }
 
-/// Denotes the intification transformation (converting all reals to ints).
+/// Denotes the intification transformation (converting all reals to ints) that was applied.
 struct IntifyTransformation {
     objective_scalings: Vec<u64>,
+    time_scaling: u64,
 }
 impl Transformation for IntifyTransformation {
     fn describe(&self) -> String {
         format!(
-            "Scaling reals into integers, objectives scaled by: {}",
+            "Scaling reals into integers. Time: scaled by: {}, objectives scaled by: {}",
+            self.time_scaling,
             self.objective_scalings.iter().format(" -- ")
         )
     }
 
-    fn revert(&self, mut plan: SolutionPlan) -> SolutionPlan {
+    fn revert(&self, mut plan: SolutionPlan) -> Res<SolutionPlan> {
+        if plan.metrics.len() != self.objective_scalings.len() {
+            return Message::error(format!(
+                "The plan has {} metrics but we expected {}",
+                plan.metrics.len(),
+                self.objective_scalings.len()
+            ))
+            .failed();
+        }
         // reestablish the objectives to the values they had before the scaling was applied.
         for (metric, scaling) in plan.metrics.iter_mut().zip_eq(self.objective_scalings.iter()) {
             *metric /= *scaling as i64
         }
-        plan
+        for op in &mut plan.operations {
+            op.start /= self.time_scaling as i64;
+            op.duration /= self.time_scaling as i64;
+        }
+        Ok(plan)
+    }
+
+    fn apply(&self, mut plan: SolutionPlan) -> Res<SolutionPlan> {
+        for (i, metric) in plan.metrics.iter_mut().enumerate() {
+            let Some(scaling) = self.objective_scalings.get(i) else {
+                return Message::error(format!("No scaling for the {i}-th metric.")).failed();
+            };
+            *metric *= *scaling as i64;
+        }
+        for op in &mut plan.operations {
+            op.start *= self.time_scaling as i64;
+            op.duration *= self.time_scaling as i64;
+        }
+        Ok(plan)
     }
 }
 
 /// Returns a collection of all top-level expressions in the model that we should scale.
 fn get_expr_to_scale(model: &Model) -> Vec<ExprId> {
     let mut exprs = Vec::with_capacity(64);
+
     for g in &model.goals {
         match g.goal_expression {
+            // FIXME: scale timings
             SimpleGoal::HoldsDuring(_, expr_id, ..)
             | SimpleGoal::SometimeDuring(_, expr_id, ..)
             | SimpleGoal::AtMostOnceDuring(_, expr_id, ..) => exprs.push(expr_id),
@@ -319,6 +316,7 @@ fn precision_of_expression(expr_id: ExprId, env: &Environment, scalings: &SvPrec
 }
 
 fn apply_scaling_to_effect(eff: &Effect, env: &mut Environment, scalings: &SvPrecisions) -> Res<()> {
+    // FIXME: scale application time (for TIL)
     let eff = &eff.effect_expression;
     let fluent = eff.state_variable.fluent;
     if let Some(scaling_factor) = scalings.precision_of_fluent(fluent)
@@ -429,7 +427,16 @@ fn apply_scaling(expr_id: ExprId, scaling_factor: u64, env: &mut Environment, sc
         | Expr::Forall(_, _) => {
             return Err(expr.invalid("Non numeric expression when applying scaling"));
         }
-        Expr::Instant(_) | Expr::Duration | Expr::Makespan => return Err(expr.todo("Normalize time")),
+        Expr::Instant(_) | Expr::Duration | Expr::Makespan => {
+            let time_scaling = scalings.time.denom_lcm;
+            assert!(scaling_factor.is_multiple_of(time_scaling));
+            let remaining_scaling = scaling_factor / time_scaling;
+            if remaining_scaling == 1 {
+                None
+            } else {
+                return Err(expr.todo("should multiply!"));
+            }
+        }
     };
     if let Some(replacement) = replacement {
         env.replace(expr_id, replacement, None)?;

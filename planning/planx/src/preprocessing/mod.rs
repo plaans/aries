@@ -14,9 +14,12 @@ pub trait Transformation {
     /// Human readable description of the transformation.
     fn describe(&self) -> String;
 
+    /// Applies the transformation to the given plan.
+    fn apply(&self, plan: SolutionPlan) -> Res<SolutionPlan>;
+
     /// Applies the inverse of the transformation to the plan, resulting in the plan that is valid in the model before this
     /// transformation was applied.
-    fn revert(&self, plan: SolutionPlan) -> SolutionPlan;
+    fn revert(&self, plan: SolutionPlan) -> Res<SolutionPlan>;
 }
 
 #[derive(Debug, Copy, Clone)]

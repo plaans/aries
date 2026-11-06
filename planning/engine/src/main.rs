@@ -15,7 +15,7 @@ use planx::{
 
 use crate::{
     export::ReportMetadata,
-    preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess},
+    preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess, preprocess_model},
 };
 
 /// Aries Planning Engine (APE)
@@ -252,7 +252,7 @@ fn validate_plan(command: &Validate) -> Res<()> {
     if model.metrics.is_empty() {
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
-    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let (model, plan) = preprocess(model, plan, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
     if command.verbose {
         println!("\n===== Model ====\n\n{model}\n");
@@ -293,7 +293,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         // set default metric to plan length
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
-    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let (model, plan) = preprocess(model, plan, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
     println!("{model}");
     println!("\n===== Plan ====\n\n{plan}\n");
@@ -327,7 +327,7 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
         // set default metric to plan length
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
-    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let model = preprocess_model(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
     let model = planx::preprocessing::convert_reals_to_int(&model)?;
     println!("{model}");

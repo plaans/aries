@@ -4,6 +4,7 @@ use std::fmt::Display;
 use crate::{
     ActionRef, Object, RealValue,
     errors::{Span, Spanned},
+    precision::NumericPrecision,
 };
 
 type Instant = RealValue;
@@ -24,6 +25,16 @@ impl SolutionPlan {
             operations: vec![],
             metrics: vec![],
         }
+    }
+
+    /// Returns the minimal required temporal precision for this plan.
+    pub fn required_time_precision(&self) -> NumericPrecision {
+        let mut prec = NumericPrecision::INTEGER;
+        for op in &self.operations {
+            prec.union(NumericPrecision::from_constant(op.start));
+            prec.union(NumericPrecision::from_constant(op.duration));
+        }
+        prec
     }
 }
 
