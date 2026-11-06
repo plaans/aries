@@ -395,7 +395,8 @@ pub fn encode_plan_optimization_problem(
 
     // enforce all elements of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
+        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)
+            .with_info(|| model.env.node(x).info("when processing"))?;
         sched.add_effect(eff);
     }
 
