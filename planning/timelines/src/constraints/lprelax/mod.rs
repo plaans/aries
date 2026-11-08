@@ -25,7 +25,7 @@ pub static ARIES_LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS: EnvParam<bool> =
 pub static ARIES_LPRELAX_WITH_SYMMETRY_BREAKING: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_SYMMETRY_BREAKING", "false");
 /// Binds the ground presences of sources to the lines of their grounding tables, which removes the term rows and bindings of single-source terms.
-pub static ARIES_LPRELAX_WITH_TABLE_LITS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_TABLE_LITS", "false");
+pub static ARIES_LPRELAX_WITH_TABLE_LITS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_TABLE_LITS", "true");
 /// The goal commodities: for each goal, its presence routed from `None` to its required value (that of one of its groundings),
 /// through value changes of present ground transitions (with exact capacities).
 pub static ARIES_LPRELAX_WITH_GOAL_COMMODITIES: EnvParam<bool> =
