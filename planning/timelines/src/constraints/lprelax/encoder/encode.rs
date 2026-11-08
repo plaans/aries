@@ -107,6 +107,66 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             }
         }
     }
+
+    if crate::lprelax::ARIES_LPRELAX_WITH_SYMMETRY_BREAKING.get() {
+        assert!(
+            !encoder.supports.with_condition_out_transitions,
+            "the symmetry breaking rows (ARIES_LPRELAX_WITH_SYMMETRY_BREAKING=true) need conds not as out-transitions (ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=false)"
+        );
+        encode_symmetry_breaking_rows(encoder, ctx, problem);
+    }
+}
+
+// Symmetry breaking: linearizes the causal-graph symmetry breaking of the main model (see `crate::constraints::symmetry`).
+//
+// NOTE: For two consecutive interchangeable tasks `b` and `a` (`b` coming first), the main model enforces, for each item `i`
+//       of their support signatures, the clause `a_i <= b_i or (a_j < b_j for some j < i)` (ECAI 25, eq. 5),
+//       where `a_j < b_j` is `b_j` when the two are exclusive (and implies it otherwise), and `a_i <= b_i` is `not a_i` when they are exclusive.
+//       So the clause implies the lifted row `a_i <= sum(b_j for j < i)` (`+ b_i` if not exclusive) over the support columns of the items.
+//
+//       The support columns are those of the causal links only when conds aren't out-transitions.
+fn encode_symmetry_breaking_rows(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
+    use crate::encoder::CausalLink;
+    use hashbrown::HashSet;
+
+    let causal_link_supports: HashSet<(TransitionId, TransitionId)> = (encoder.supports.unsorted_out().iter())
+        .filter(|(_, active)| active.is_some())
+        .map(|&(support, _)| support)
+        .collect();
+    // The support column of a causal link: `Some(None)` if the link can never be active (it has no column, i.e. it is 0),
+    // and `None` if the LP doesn't model the link (its value is unknown).
+    let support_col = |cl: &CausalLink| -> Option<Option<ColTag>> {
+        let out_trans_id = encoder.transitions.of_effect(cl.eff_id)?;
+        let in_trans_id = encoder.transitions.of_condition(cl.cond_id)?;
+        Some(
+            causal_link_supports
+                .contains(&(out_trans_id, in_trans_id))
+                .then_some(ColTag::Support(out_trans_id, in_trans_id, None)),
+        )
+    };
+
+    let mut num_rows = 0;
+    for signature in &ctx.symmetry_signatures {
+        // The support columns of the items of `b` so far
+        let mut b_cols = vec![];
+        for item in signature {
+            let b = support_col(&item.b);
+            if let Some(Some(a)) = support_col(&item.a) {
+                let b_term = if item.exclusive { Some(None) } else { b };
+                if let Some(b_term) = b_term {
+                    problem.push_row(a.into_linexpr().leq(sum(b_cols.iter().copied().chain(b_term))));
+                    num_rows += 1;
+                }
+            }
+            match b {
+                Some(b) => b_cols.extend(b),
+                // (the rows of the next items would need its unknown value)
+                None => break,
+            }
+        }
+    }
+
+    lprelax_log!("Symmetry breaking: {num_rows} lifted rows");
 }
 
 /// Pushes the "lifted-ground" or "ground rows"

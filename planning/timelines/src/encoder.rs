@@ -14,6 +14,8 @@ pub struct SchedEncoder {
     pub(crate) store: crate::Model,
     /// Accumulator for all causal links in the encoding.
     pub causal_links: CausalLinks,
+    /// The support signatures compared by the causal-graph symmetry breaking, when it's enforced unconditionally.
+    pub symmetry_signatures: Vec<Vec<crate::constraints::symmetry::SignatureItem>>,
     /// Recorded when enforcing [`crate::constraints::grounding::TasksUnifyWithGrounding`].
     pub grounding_tables: Option<GroundingTables>,
 }

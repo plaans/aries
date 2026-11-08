@@ -5,7 +5,10 @@ use aries_solver::{core::literals::DisjunctionBuilder, lang::BoolExpr};
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{TaskId, encoder::SchedEncoder};
+use crate::{
+    TaskId,
+    encoder::{CausalLink, SchedEncoder},
+};
 
 #[derive(Debug)]
 pub struct SymmetryBreaking {
@@ -20,6 +23,16 @@ impl SymmetryBreaking {
             equivalence_classes,
         }
     }
+}
+
+/// An item of the support signatures that the causal-graph symmetry breaking compares between two consecutive
+/// interchangeable tasks `b` and `a` (`b` coming first): the causal links from `a` and from `b` to the same condition,
+/// and whether they are exclusive (can't both be active).
+#[derive(Debug, Clone, Copy)]
+pub struct SignatureItem {
+    pub a: CausalLink,
+    pub b: CausalLink,
+    pub exclusive: bool,
 }
 
 /// Kind of symmetry breaking to enforce
@@ -86,7 +99,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                     links_per_action
                         .entry(task_of_effect)
                         .or_default()
-                        .push((cond_source, supports, is_exclusive));
+                        .push((cond_source, supports, is_exclusive, cl));
                 }
 
                 for equiv in &self.equivalence_classes {
@@ -136,6 +149,20 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                             .collect_vec();
                         let sym_break_constraint = LexLeq { items: lex_items };
                         sym_break_constraint.enforce_if(implicant, ctx);
+
+                        // (for the LP relaxation, which can only use them when they are enforced unconditionally)
+                        if implicant == Lit::TRUE {
+                            let signature = a_supports
+                                .iter()
+                                .zip_eq(b_supports.iter())
+                                .map(|(a, b)| SignatureItem {
+                                    a: a.3,
+                                    b: b.3,
+                                    exclusive: a.2,
+                                })
+                                .collect_vec();
+                            ctx.symmetry_signatures.push(signature);
+                        }
                     }
                 }
             }
