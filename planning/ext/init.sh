@@ -6,7 +6,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd $DIR
 
 git clone https://github.com/plaans/tyr-ipc-domains.git pddl
-cd pddl && git checkout be7e1a16928c28dd99f4e69d3f1a10c876cb838c
+cd pddl && git checkout 0ce84983997363df89b61a8c540b86ba290b1ca4
 
 cd $DIR
 git clone https://github.com/panda-planner-dev/ipc2020-domains.git hddl
