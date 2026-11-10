@@ -78,7 +78,10 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<Pl
     if let Some(solution) = solution.as_ref() {
         println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
         print(solution);
-        encoding.plan(solution).write_to_file(options.plan_file.as_ref())?;
+        encoding
+            .plan(solution)
+            .export(model)?
+            .write_to_file(options.plan_file.as_ref())?;
     } else {
         println!("No solution !!!!");
     }
