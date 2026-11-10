@@ -462,7 +462,16 @@ fn apply_scaling(expr_id: ExprId, scaling_factor: u64, env: &mut Environment, sc
             if remaining_scaling == 1 {
                 None
             } else {
-                return Err(expr.todo("should multiply!"));
+                // duplicate the node (we will place something else at its ID)
+                let new_node = expr.expr().clone();
+                let span = expr.span().cloned();
+                let dup = env.intern(new_node, span)?;
+
+                // constant node with factor to apply
+                let factor_node = env.intern(Expr::Real(RealValue::from_integer(remaining_scaling as i64)), None)?;
+
+                // replace the current node by this one that multiplies it by the remaining scaling factor
+                Some(Expr::App(Mul, smallvec![factor_node, dup]))
             }
         }
     };
