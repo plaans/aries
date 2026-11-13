@@ -79,6 +79,7 @@ impl BoolExpr<SchedEncoder> for SymmetryBreaking {
                     let is_exclusive = match &eff.operation {
                         crate::EffectOp::Assign(_) => true,
                         crate::EffectOp::Step(_) => false,
+                        &crate::EffectOp::Erase => unreachable!("An erase cannot be the source of a causal link."),
                     };
                     // create a new mandatory literal to capture whether the link is active (requiring also the condition to be present)
                     let supports = Conjunction::from_slice([cl.active, ctx.presence(cl.active)]).reified(ctx);

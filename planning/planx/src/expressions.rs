@@ -148,7 +148,7 @@ impl<'a> Display for TExpr<'a> {
 impl Expr {
     pub fn tpe(&self, env: &Environment) -> Result<Type, Message> {
         match self {
-            Expr::Real(i) if i.is_integer() => Ok(Type::Int(IntInterval::singleton(*i.numer()))),
+            Expr::Real(i) if i.is_integer() => Ok(Type::Int(IntInterval::singleton(i.numer()))),
             Expr::Real(_) => Ok(Type::Real),
             Expr::Bool(_) => Ok(Type::Bool),
             Expr::App(fun, args) => fun.return_type(args.as_slice(), env).msg(env),

@@ -61,13 +61,16 @@ impl<Ctx: ModelView> IntExpr<Ctx> for Element {
             .iter()
             .map(|e| ctx.lb(e.value))
             .min()
-            .unwrap_or(INT_CST_MAX);
+            .unwrap_or(INT_CST_MAX)
+            .clamp(INT_CST_MIN, INT_CST_MAX);
         let ub = self
             .options
             .iter()
             .map(|e| ctx.ub(e.value))
             .max()
-            .unwrap_or(INT_CST_MIN);
+            .unwrap_or(INT_CST_MIN)
+            .clamp(INT_CST_MIN, INT_CST_MAX);
+
         (lb, ub)
     }
 }

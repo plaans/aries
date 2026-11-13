@@ -4,14 +4,12 @@ use std::{
     time::Instant,
 };
 
-use aries_plan_engine::{
-    encode::{
-        constraints::{ConditionConstraint, ReificationConstraint},
-        encoding::{ActionInstance, Encoding, ObjectVar},
-        tags::{ActionCondition, OperatorId, Tag, format_culprit_set},
-        *,
-    },
-    plans::lifted_plan::{self, LiftedPlan},
+use aries_plan_engine::encode::{
+    self,
+    constraints::{ConditionConstraint, ReificationConstraint},
+    encoding::{ActionInstance, Encoding, ObjectVar},
+    tags::{ActionCondition, OperatorId, Tag, format_culprit_set},
+    *,
 };
 use aries_solver::{
     core::{state::Evaluable, views::Boundable},
@@ -23,7 +21,7 @@ use itertools::Itertools;
 
 use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use std::path::Path;
-use timelines::{ConstraintID, Sched, SymAtom, Task, Time, explain::ExplainableSolver};
+use timelines::{ConstraintID, IntExp, Sched, SymAtom, Task, Time, TimeItv, explain::ExplainableSolver};
 
 pub type RelaxableConstraint = Tag;
 
@@ -52,7 +50,7 @@ pub enum Objective {
 
 pub fn optimize_plan(
     model: &Model,
-    plan: &LiftedPlan,
+    plan: &SolutionPlan,
     options: &Options,
     output_plan: Option<&Path>,
 ) -> Res<Option<SolutionPlan>> {
@@ -74,7 +72,7 @@ pub fn optimize_plan(
                 .iter()
                 .map(move |o| o.evaluate(sol).unwrap())
                 .format(" / "),
-            encoding.plan(sol)
+            encoding.plan(sol).export(model).unwrap()
         );
     };
     // Solve objectives lexicographically: each phase fixes the previous optimal values
@@ -99,10 +97,10 @@ pub fn optimize_plan(
     if let Some(solution) = last_solution {
         println!("> Found optimal solution\n");
         print_plan(&solution);
-        let plan = encoding.plan(&solution);
+        let plan = encoding.plan(&solution).export(model)?;
         plan.write_to_file(output_plan)?;
 
-        Ok(Some(plan.export(model)?))
+        Ok(Some(plan))
     } else {
         Ok(None)
     }
@@ -155,7 +153,7 @@ fn create_param_variable(var_name: &Sym, var_type: &Type, scope: Lit, sched: &mu
 ///   of the problem substantially.
 pub fn encode_plan_optimization_problem(
     model: &Model,
-    lifted_plan: &LiftedPlan,
+    plan: &SolutionPlan,
     free_actions: BTreeMap<ActionRef, u32>,
     options: &Options,
     support_explanation: bool,
@@ -170,23 +168,13 @@ pub fn encode_plan_optimization_problem(
 
     let global_scope = Scope::global(&sched);
 
-    // associates each variable in the plan to a fresh variable.
-    // TODO: presence of the variable
-    let plan_variables: BTreeMap<&Sym, SymAtom> = lifted_plan
-        .variables
-        .iter()
-        .map(|(var_name, var_type)| {
-            create_param_variable(var_name, &var_type.clone().into(), Lit::TRUE, &mut sched).map(|var| (var_name, var))
-        })
-        .try_collect()?;
-
     // associates each operation of the plan to its scope (binding of parameters, start/end, ...)
-    let mut operations_scopes = Vec::with_capacity(lifted_plan.operations.len());
+    let mut operations_scopes = Vec::with_capacity(plan.operations.len());
 
     // initial processing of all operations in the plan
     // we create its scope (binding of timepoints, params, ...) and process its conditions
     // Effects are deferred to a later point
-    for (op_id, op) in lifted_plan.operations.iter().enumerate() {
+    for (op_id, op) in plan.operations.iter().enumerate() {
         // corresponding action in the model
         let a = model
             .actions
@@ -195,16 +183,12 @@ pub fn encode_plan_optimization_problem(
 
         // building a scope object so that downstream methods can find the value to replace the actions params/start/end/prez with
         let mut args = im::OrdMap::new();
-        for (param, arg) in a.parameters.iter().zip(op.arguments.iter()) {
-            let arg = match arg {
-                // ground parameter, get the corresponding object constant
-                lifted_plan::ObjectOrVariable::Ground(object) => sched
-                    .objects
-                    .object_atom(object.name().as_str())
-                    .ok_or_else(|| object.name().invalid("unknown object"))?,
-                // variable parameter, retrieve the variable we created for it
-                lifted_plan::ObjectOrVariable::Variable { name } => plan_variables[name],
-            };
+        for (param, object) in a.parameters.iter().zip(op.arguments.iter()) {
+            // ground parameter, get the corresponding object constant
+            let arg = sched
+                .objects
+                .object_atom(object.name().as_str())
+                .ok_or_else(|| object.name().invalid("unknown object"))?;
 
             // add argument to the bindings
             args.insert(param.name(), arg);
@@ -216,11 +200,19 @@ pub fn encode_plan_optimization_problem(
         };
         let start = if options.relaxation.contains(&Relaxation::StartTime) {
             sched.new_opt_timepoint(presence)
+        } else if let Some(start) = op.start.as_integer() {
+            Time::from(start)
         } else {
-            Time::from(op.start)
+            return op
+                .invalid("Non-integer start time. Consider using 'intify' preprocessing step.")
+                .failed();
         };
-        assert_eq!(op.duration, 0, "we use the start as end");
-        let end = start;
+        let Some(duration) = op.duration.as_integer() else {
+            return op
+                .invalid("Non-integer duration. Consider using 'intify' preprocessing step.")
+                .failed();
+        };
+        let end = start + duration;
 
         // record a task in `Sched` which
         //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
@@ -276,21 +268,47 @@ pub fn encode_plan_optimization_problem(
                 args.insert(param.name(), arg);
             }
             let start = sched.new_opt_timepoint(presence);
-            if a.duration != Duration::Instantaneous {
-                return a.name.todo("Unsupported non-instantaneous action").failed();
-            }
-            let end = start;
+            let task_id = sched.tasks.next_task_id();
+            let duration_evaluation_scope = Scope {
+                start,
+                end: start,
+                presence,
+                args: args.clone(),
+                source: Some(task_id),
+            };
+            let duration: IntExp = match a.duration {
+                Duration::Instantaneous => 0.into(),
+                Duration::Fixed(dur) => encode::reify_expression(
+                    dur,
+                    Some(TimeItv::at(start)),
+                    model,
+                    &mut sched,
+                    &duration_evaluation_scope,
+                    &mut encoding,
+                )?,
+                _ => {
+                    return a.name.todo("Unsupported non-fixed-duration action").failed();
+                }
+            };
+            let end = if let Ok(cst_dur) = IntCst::try_from(duration.clone()) {
+                start + cst_dur
+            } else {
+                let end = sched.new_opt_timepoint(presence);
+                sched.add_constraint(eq(duration + start, end).scoped(presence));
+                end
+            };
 
             // record a task in `Sched` which
             //  - gives a task id (use by the condition enforcement constraints to enforce mutex conditions)
             //  - make the scheduler aware of the tasks when computing the makespan.
-            let task_id = sched.add_task(Task {
+            let task_id2 = sched.add_task(Task {
                 name: a.name.to_string(),
                 start,
                 end,
                 args: args.iter().map(|(_, &term)| term).collect(),
                 presence,
             });
+            debug_assert_eq!(task_id, task_id2);
             let bindings = Scope {
                 start,
                 end,
@@ -326,23 +344,21 @@ pub fn encode_plan_optimization_problem(
     for (a, bindings, op_id) in &operations_scopes {
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
-            if let Some(tp) = c.interval.as_timestamp() {
-                let constraint = condition_to_constraint(tp, c.cond, model, &mut sched, bindings, &mut encoding)?;
-                // update the required values if requested by caller
-                constraint.add_required_values(&mut encoding.required_values, model, &sched);
+            let constraint = condition_to_constraint(c.interval, c.cond, model, &mut sched, bindings, &mut encoding)?;
+            // update the required values if requested by caller
+            constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
-                let cid = sched.add_constraint(constraint);
-                encoding.constraints_tags.insert(
-                    cid,
-                    Tag::Support {
-                        operator_id: op_id.clone(),
-                        cond: ActionCondition {
-                            action: a.name.clone(),
-                            condition_id: cond_id,
-                        },
+            let cid = sched.add_constraint(constraint);
+            encoding.constraints_tags.insert(
+                cid,
+                Tag::Support {
+                    operator_id: op_id.clone(),
+                    cond: ActionCondition {
+                        action: a.name.clone(),
+                        condition_id: cond_id,
                     },
-                );
-            }
+                },
+            );
         }
     }
 
@@ -379,7 +395,8 @@ pub fn encode_plan_optimization_problem(
 
     // enforce all elements of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)?;
+        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)
+            .with_info(|| model.env.node(x).info("when processing"))?;
         sched.add_effect(eff);
     }
 
@@ -481,7 +498,7 @@ pub fn parse_goal(
             .todo("Unsupported universal quantification")
             .failed();
     }
-    parse_simple_goal(&goal.goal_expression, model, sched, bindings, encoding)
+    parse_simple_goal(&goal.goal_expression, model, sched, bindings, encoding).when_processing(model.env.node(goal))
 }
 
 /// Parses a quantifier-free goal into an equivalent expression
@@ -494,12 +511,8 @@ pub fn parse_simple_goal(
 ) -> Res<ConditionConstraint> {
     match goal {
         planx::SimpleGoal::HoldsDuring(time_interval, expr_id) => {
-            if let Some(tp) = time_interval.as_timestamp() {
-                condition_to_constraint(tp, *expr_id, model, sched, bindings, encoding)
-            } else {
-                todo!("durative goal")
-            }
+            condition_to_constraint(*time_interval, *expr_id, model, sched, bindings, encoding)
         }
-        _ => todo!("complex goal"),
+        _ => Message::error("Unsupported complex goal").failed(),
     }
 }
