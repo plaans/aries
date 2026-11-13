@@ -189,7 +189,7 @@ fn parse(command: &Parse) -> Res<()> {
     let model = pddl::build_model(&domain, &problem)?;
 
     let model = if command.preprocess {
-        crate::preprocessing::preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?
+        crate::preprocessing::preprocess_model(model, DEFAULT_MODEL_TRANSFORMATIONS)?
     } else {
         model
     };
