@@ -72,6 +72,9 @@ pub struct Parse {
     /// If not specified, we will attempt to automatically infer it based on the plan file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
+    /// If set to true, the default preprocessing passes will be applied before printing the domain.
+    #[arg(short, long)]
+    preprocess: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -205,6 +208,12 @@ fn parse(command: &Parse) -> Res<()> {
     let problem = pddl::parse_pddl_problem(problem_file)?;
 
     let model = pddl::build_model(&domain, &problem)?;
+
+    let model = if command.preprocess {
+        crate::preprocessing::preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?
+    } else {
+        model
+    };
 
     println!("{model}");
     Ok(())
