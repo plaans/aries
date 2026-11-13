@@ -304,22 +304,27 @@ pub fn convert_effect(
         fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
         args,
     };
-    let op = match x.operation {
-        planx::EffectOp::Assign(v) => {
-            EffectOp::Assign(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?)
-        }
-        planx::EffectOp::Increase(v) => {
-            EffectOp::Step(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?)
-        }
-        planx::EffectOp::Decrease(v) => {
-            EffectOp::Step(-reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?)
-        }
-        planx::EffectOp::Erase => todo!("add EffectOp::Erase in timelines"),
+    let transition_start = if transition_time_after { t } else { t - sched.epsilon };
+    let transition_end = if transition_time_after { t + sched.epsilon } else { t };
+    let (op, mutex_end) = match x.operation {
+        planx::EffectOp::Assign(v) => (
+            EffectOp::Assign(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
+            sched.new_opt_timepoint(bindings.presence),
+        ),
+        planx::EffectOp::Increase(v) => (
+            EffectOp::Step(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
+            sched.new_opt_timepoint(bindings.presence),
+        ),
+        planx::EffectOp::Decrease(v) => (
+            EffectOp::Step(-reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
+            sched.new_opt_timepoint(bindings.presence),
+        ),
+        planx::EffectOp::Erase => (EffectOp::Erase, transition_end),
     };
     let eff = timelines::Effect {
-        transition_start: if transition_time_after { t } else { t - sched.epsilon },
-        transition_end: if transition_time_after { t + sched.epsilon } else { t },
-        mutex_end: sched.new_timepoint(),
+        transition_start,
+        transition_end,
+        mutex_end,
         state_var: sv,
         operation: op,
         prez: bindings.presence,

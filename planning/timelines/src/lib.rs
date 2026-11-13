@@ -261,6 +261,7 @@ impl Sched {
                 match e.operation {
                     EffectOp::Assign(v) => format!(":= {}", v.evaluate(sol).unwrap()),
                     EffectOp::Step(v) => format!("+= {}", v.evaluate(sol).unwrap()),
+                    EffectOp::Erase => ":= ∅".to_string(),
                 },
                 e.mutex_end.evaluate(sol).unwrap(),
             ));

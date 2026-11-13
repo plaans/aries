@@ -42,6 +42,8 @@ pub enum EffectOp {
     Assign(IntTerm),
     /// Increase the state variable by a given value (positive or negative)
     Step(IntTerm),
+    /// Sets the state variable to an undefined value.
+    Erase,
 }
 impl EffectOp {
     pub const TRUE_ASSIGNMENT: EffectOp = EffectOp::Assign(IntTerm::TRUE);
@@ -54,6 +56,7 @@ impl Debug for EffectOp {
                 write!(f, ":= {val:?}")
             }
             EffectOp::Step(v) => write!(f, "+= {v:?}"), // TODO: nicer print of negative constants
+            EffectOp::Erase => write!(f, ":= ∅"),
         }
     }
 }
@@ -102,6 +105,7 @@ impl Effect {
         buff.extend(self.args_segments(&dom));
         let value_segment = match self.operation {
             EffectOp::Assign(v) | EffectOp::Step(v) => Segment::from(dom.bounds(v)),
+            EffectOp::Erase => Segment::empty(),
         };
         buff.push(value_segment);
         crate::boxes::BBox::new(buff)
@@ -211,6 +215,7 @@ impl Effects {
         match eff.operation {
             EffectOp::Assign(_) => self.assignment_bounding_boxes.add_box(fluent, bbox.segments(), eff_id),
             EffectOp::Step(_) => self.steps_bounding_boxes.add_box(fluent, bbox.segments(), eff_id),
+            EffectOp::Erase => {}
         }
 
         // compute and store the achievable bounding boxes

@@ -129,25 +129,26 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
             let eff1 = &sched.effects[eff_id1];
             let eff2 = &sched.effects[eff_id2];
 
-            // this phase only concerns assignments
-            let EffectOp::Assign(_) = eff1.operation else {
-                continue;
+            // this phase only concerns assignments (and erase which is an assignment to an unreachable value)
+            let itv1 = match eff1.operation {
+                EffectOp::Assign(_) | EffectOp::Erase => IntervalOnStateVariable {
+                    state_var: &eff1.state_var,
+                    start: eff1.transition_start + ctx.sched.epsilon,
+                    end: eff1.mutex_end,
+                    presence: eff1.prez,
+                },
+                EffectOp::Step(_) => continue,
             };
-            let EffectOp::Assign(_) = eff2.operation else {
-                continue;
+            let itv2 = match eff2.operation {
+                EffectOp::Assign(_) | EffectOp::Erase => IntervalOnStateVariable {
+                    state_var: &eff2.state_var,
+                    start: eff2.transition_start + ctx.sched.epsilon,
+                    end: eff2.mutex_end,
+                    presence: eff2.prez,
+                },
+                EffectOp::Step(_) => continue,
             };
-            let itv1 = IntervalOnStateVariable {
-                state_var: &eff1.state_var,
-                start: eff1.transition_start + ctx.sched.epsilon,
-                end: eff1.mutex_end,
-                presence: eff1.prez,
-            };
-            let itv2 = IntervalOnStateVariable {
-                state_var: &eff2.state_var,
-                start: eff2.transition_start + ctx.sched.epsilon,
-                end: eff2.mutex_end,
-                presence: eff2.prez,
-            };
+
             let exclu = Exclusive { a: &itv1, b: &itv2 };
             exclu.opt_enforce_if(l, ctx);
         }
@@ -169,6 +170,7 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
                     match eff.operation {
                         EffectOp::Assign(_) => Some(eff),
                         EffectOp::Step(_) => None,
+                        EffectOp::Erase => None,
                     }
                 })
                 .collect_vec();
