@@ -343,18 +343,23 @@ fn transform_effect_exprs(
 
     for (k, (i, _)) in neg_effects {
         if let Some(&(j, _)) = pos_effects.get(&k) {
-            let Some(delay) = get_timings_delay_lower_bound(
+            let (delay_lb, delay_ub) = get_timings_delay_bounds(
                 effects[i].effect_expression.timing,
                 effects[j].effect_expression.timing,
                 container_duration_bounds,
-            ) else {
-                unreachable!()
-            };
-            // (t1 necessarily <= t2)
-            debug_assert!(delay >= 0.into());
+            );
+            // (t1 necessarily <= t2), as checked in `is_substitutable` (point 2.3)
+            debug_assert!(matches!(delay_lb, Some(d) if d >= 0.into()));
 
-            // (t1 necessarily < t2)
-            if delay == 0.into() {
+            // The two effects necessarily happen at the same timepoint.
+            // By convention ("delete-before-add"), the negative effect is then subsumed
+            // by the positive one and can simply be deleted.
+            // NOTE: a delay lower bound of zero does NOT imply this when the two effects are
+            // anchored at different time references (e.g. the start and end of an action)
+            // whose distance is not known to be exactly zero (e.g. an unknown duration):
+            // in that case the lower bound is zero but the effects may still be separated.
+            // There the negative effect must be kept to erase the lifted value in between.
+            if matches!((delay_lb, delay_ub), (Some(lb), Some(ub)) if lb == 0.into() && ub == 0.into()) {
                 neg_effects_to_del.push(i);
             } else if matches!(effects[i].effect_expression.operation, EffectOp::Erase) {
                 neg_effects_to_keep.push(i);

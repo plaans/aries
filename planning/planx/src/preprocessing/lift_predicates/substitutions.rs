@@ -618,11 +618,12 @@ impl SubstitutionGroup {
                 // ("delete-before-add")
 
                 // (t1 necessarily leq t2)
-                if get_timings_delay_lower_bound(
+                if get_timings_delay_bounds(
                     neg.effect_expression.timing,
                     pos.effect_expression.timing,
                     get_duration_lower_and_upper_bounds(&act.duration, &model.env),
                 )
+                .0
                 .is_some_and(|delay| delay >= 0.into())
                 {
                     // 2.3
@@ -657,22 +658,34 @@ pub(super) fn get_duration_lower_and_upper_bounds(
     }
 }
 
-/// Returns the lower bound on the delay between timesteps (i.e. lower bound of "t2 - t1").
-/// As such, t1 is necessarily before (or equal to) t2 when this lower bound is >= 0.
-pub(super) fn get_timings_delay_lower_bound(
+/// Returns the lower and upper bounds (both inclusive) on the delay between the two timestamps
+/// (i.e. on "t2 - t1"), given what is known about the duration of their containing action/task.
+///
+/// A bound of `None` means it could not be determined (i.e. it is unbounded).
+/// As such:
+/// - t1 is necessarily before (or equal to) t2 when the lower bound is >= 0;
+/// - t1 and t2 necessarily denote the same timepoint when both bounds are 0.
+pub(super) fn get_timings_delay_bounds(
     t1: Timestamp,
     t2: Timestamp,
     container_duration_bounds: (RealValue, Option<RealValue>),
-) -> Option<RealValue> {
+) -> (Option<RealValue>, Option<RealValue>) {
+    let (d_lb, d_ub) = container_duration_bounds;
     match (t1.reference, t2.reference) {
-        (tt1, tt2) if tt1 == tt2 => Some(t2.delay - t1.delay),
-        (TimeRef::ActionStart, TimeRef::ActionEnd) => {
-            let d_lb = container_duration_bounds.0;
-            Some(d_lb + t2.delay - t1.delay)
+        (tt1, tt2) if tt1 == tt2 => {
+            let delay = t2.delay - t1.delay;
+            (Some(delay), Some(delay))
         }
-        (TimeRef::ActionEnd, TimeRef::ActionStart) => {
-            container_duration_bounds.1.map(|d_ub| t1.delay - d_ub - t2.delay)
-        }
+        // t2 - t1 = duration + t2.delay - t1.delay
+        (TimeRef::ActionStart, TimeRef::ActionEnd) => (
+            Some(d_lb + t2.delay - t1.delay),
+            d_ub.map(|d_ub| d_ub + t2.delay - t1.delay),
+        ),
+        // t2 - t1 = -duration + t2.delay - t1.delay
+        (TimeRef::ActionEnd, TimeRef::ActionStart) => (
+            d_ub.map(|d_ub| t2.delay - t1.delay - d_ub),
+            Some(t2.delay - t1.delay - d_lb),
+        ),
         _ => unimplemented!(),
     }
 }
