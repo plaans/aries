@@ -117,3 +117,74 @@ pub fn init_atom(eff: &Effect, env: &Environment) -> Option<Vec<Term>> {
     let args = Term::all_of(&e.state_variable.arguments, env)?;
     (is_plain && args.iter().all(|a| matches!(a, Term::Object(_)))).then_some(args)
 }
+
+/// A static binary predicate `f(x₀, x₁)` seen as a partial function from its `input` argument to the other one:
+/// each object is related to at most one object (e.g. `(on_board ?instrument ?satellite)`).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StaticFunction {
+    pub fluent: FluentId,
+    /// Position of the input argument (0 or 1), the output being the other one.
+    pub input: usize,
+}
+
+impl StaticFunction {
+    pub fn output(&self) -> usize {
+        1 - self.input
+    }
+
+    /// If the arguments of an atom of this predicate have the given input, returns its output.
+    pub fn apply<T: PartialEq + Clone>(&self, atom_args: &[T], input: &T) -> Option<T> {
+        (atom_args[self.input] == *input).then(|| atom_args[self.output()].clone())
+    }
+}
+
+/// The static binary predicates that are functional in the problem, with their value tables.
+pub struct StaticFunctions {
+    tables: HashMap<StaticFunction, HashMap<Sym, Sym>>,
+}
+
+impl StaticFunctions {
+    pub fn new(model: &Model) -> Self {
+        let env = &model.env;
+        let modified = fluents_modified_by_actions(model);
+        let mut facts: HashMap<FluentId, Option<Vec<(Sym, Sym)>>> = env
+            .fluents
+            .iter_with_id()
+            .filter(|(id, f)| f.return_type == Type::Bool && f.parameters.len() == 2 && !modified.contains(id))
+            .map(|(id, _)| (id, Some(Vec::new())))
+            .collect();
+        for eff in &model.init {
+            let Some(pairs) = facts.get_mut(&eff.effect_expression.state_variable.fluent) else {
+                continue;
+            };
+            match (init_atom(eff, env).as_deref(), pairs.as_mut()) {
+                (Some([Term::Object(a), Term::Object(b)]), Some(pairs)) => pairs.push((a.clone(), b.clone())),
+                _ => *pairs = None,
+            }
+        }
+        let mut tables = HashMap::new();
+        for (fluent, pairs) in facts {
+            let Some(pairs) = pairs else { continue };
+            for input in [0, 1] {
+                let mut table = HashMap::new();
+                let functional = pairs.iter().all(|(a, b)| {
+                    let (x, y) = if input == 0 { (a, b) } else { (b, a) };
+                    table.insert(x.clone(), y.clone()).is_none_or(|prev| prev == *y)
+                });
+                if functional {
+                    tables.insert(StaticFunction { fluent, input }, table);
+                }
+            }
+        }
+        StaticFunctions { tables }
+    }
+
+    pub fn is_function(&self, f: &StaticFunction) -> bool {
+        self.tables.contains_key(f)
+    }
+
+    /// Value of the function for the given object (`None` if undefined).
+    pub fn eval(&self, f: &StaticFunction, input: &Sym) -> Option<&Sym> {
+        self.tables.get(f)?.get(input)
+    }
+}

@@ -55,7 +55,13 @@ fn satellite_time() -> Res<()> {
     )?;
     assert_eq!(
         lifted(&model),
-        ["calibration_target", "on_board", "pointing", "supports"]
+        [
+            "calibration_target",
+            "on_board",
+            "pointing",
+            "power_avail:power_on",
+            "supports"
+        ]
     );
 
     // pointing is deleted at start and added at end: erased at start, assigned at end
@@ -93,8 +99,10 @@ fn psr() -> Res<()> {
 #[test]
 fn rovers() -> Res<()> {
     let model = lift_files("upf/ipc2002-rovers-strips-automatic", "domain.pddl", "problem.pddl")?;
-    assert_eq!(lifted(&model).len(), 13);
+    assert_eq!(lifted(&model).len(), 15);
     assert!(lifted(&model).contains(&"empty:full".to_string()));
+    // a sample is either at its waypoint or analysed by a rover
+    assert!(lifted(&model).contains(&"have_rock_analysis:at_rock_sample".to_string()));
     assert!(lifted(&model).contains(&"at_".to_string()));
     Ok(())
 }
@@ -270,4 +278,51 @@ fn temporal_required_over_all_with_computed_duration() {
     let with_speed = |speed: &str| STORE_PB.replace("(empty s)", &format!("(empty s) (= (speed s) {speed})"));
     assert_eq!(lifted(&lift_str(&domain, &with_speed("4"))), ["empty:full"]);
     assert!(lifted(&lift_str(&domain, &with_speed("-4"))).is_empty());
+}
+
+fn power_domain(switch_on_pre: &str) -> String {
+    format!(
+        "(define (domain d) (:requirements :typing) (:types instrument satellite)
+           (:predicates (on_board ?i - instrument ?s - satellite) (power_avail ?s - satellite) (power_on ?i - instrument))
+           (:action switch_on :parameters (?i - instrument ?s - satellite)
+             :precondition (and {switch_on_pre} (power_avail ?s))
+             :effect (and (power_on ?i) (not (power_avail ?s))))
+           (:action switch_off :parameters (?i - instrument ?s - satellite)
+             :precondition (and (on_board ?i ?s) (power_on ?i))
+             :effect (and (not (power_on ?i)) (power_avail ?s))))"
+    )
+}
+
+fn power_pb(on_board: &str) -> String {
+    format!(
+        "(define (problem p) (:domain d) (:objects i1 i2 - instrument s1 s2 - satellite)
+           (:init {on_board} (power_avail s1) (power_avail s2)) (:goal (and (power_on i1) (power_on i2))))"
+    )
+}
+
+#[test]
+fn functional_key() {
+    // each instrument is on a single satellite: the key of `power_on(?i)` is the satellite of `?i`
+    let model = lift_str(
+        &power_domain("(on_board ?i ?s)"),
+        &power_pb("(on_board i1 s1) (on_board i2 s1)"),
+    );
+    assert!(lifted(&model).contains(&"power_avail:power_on".to_string()));
+}
+
+#[test]
+fn functional_key_not_a_function() {
+    // i1 is on two satellites: switching it on from s1 and from s2 makes it on twice
+    let model = lift_str(
+        &power_domain("(on_board ?i ?s)"),
+        &power_pb("(on_board i1 s1) (on_board i1 s2) (on_board i2 s1)"),
+    );
+    assert!(!lifted(&model).contains(&"power_avail:power_on".to_string()));
+}
+
+#[test]
+fn functional_key_unbound() {
+    // switch_on does not require the instrument to be on the satellite whose power it uses
+    let model = lift_str(&power_domain(""), &power_pb("(on_board i1 s1) (on_board i2 s1)"));
+    assert!(!lifted(&model).contains(&"power_avail:power_on".to_string()));
 }

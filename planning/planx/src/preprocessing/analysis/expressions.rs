@@ -14,9 +14,17 @@ pub enum ExprContext {
 ///
 /// Any expression of the model is either in this list or a sub-expression of an element of this list.
 pub fn expression_roots(model: &Model) -> Vec<(ExprId, ExprContext)> {
+    let mut roots = model_roots(model);
+    for action in model.actions.iter() {
+        roots.extend(action_roots(action));
+    }
+    roots
+}
+
+/// Root expressions of the model that are not part of an action.
+pub fn model_roots(model: &Model) -> Vec<(ExprId, ExprContext)> {
     use ExprContext::*;
     let mut roots = Vec::new();
-
     for goal in &model.goals {
         push_goal(&goal.goal_expression, false, &mut roots);
     }
@@ -34,21 +42,25 @@ pub fn expression_roots(model: &Model) -> Vec<(ExprId, ExprContext)> {
     if let Some(tn) = &model.task_network {
         push_task_network(tn, &mut roots);
     }
+    roots
+}
 
-    for action in model.actions.iter() {
-        match action.duration {
-            Duration::Instantaneous | Duration::Subtasks => {}
-            Duration::Fixed(e) => roots.push((e, Other)),
-            Duration::Bounded(lb, ub) => roots.extend([(lb, Other), (ub, Other)]),
-        }
-        roots.extend(action.achieved_task.args.iter().map(|&e| (e, Other)));
-        roots.extend(action.conditions.iter().map(|c| (c.cond, Requirement)));
-        roots.extend(action.preferences.iter().map(|p| (p.goal.cond, Other)));
-        for eff in &action.effects {
-            push_effect(eff, &mut roots);
-        }
-        push_task_network(&action.subtasks, &mut roots);
+/// Root expressions of an action.
+pub fn action_roots(action: &Action) -> Vec<(ExprId, ExprContext)> {
+    use ExprContext::*;
+    let mut roots = Vec::new();
+    match action.duration {
+        Duration::Instantaneous | Duration::Subtasks => {}
+        Duration::Fixed(e) => roots.push((e, Other)),
+        Duration::Bounded(lb, ub) => roots.extend([(lb, Other), (ub, Other)]),
     }
+    roots.extend(action.achieved_task.args.iter().map(|&e| (e, Other)));
+    roots.extend(action.conditions.iter().map(|c| (c.cond, Requirement)));
+    roots.extend(action.preferences.iter().map(|p| (p.goal.cond, Other)));
+    for eff in &action.effects {
+        push_effect(eff, &mut roots);
+    }
+    push_task_network(&action.subtasks, &mut roots);
     roots
 }
 
@@ -114,6 +126,19 @@ pub fn conjuncts(expr: ExprId, env: &Environment) -> Vec<ExprId> {
             Expr::App(Fun::And, args) => stack.extend(args.iter().rev()),
             _ => res.push(e),
         }
+    }
+    res
+}
+
+/// Returns all state variable expressions appearing in the expression (including itself).
+pub fn state_variables(expr: ExprId, env: &Environment) -> Vec<ExprId> {
+    let mut res = Vec::new();
+    let mut stack = vec![expr];
+    while let Some(e) = stack.pop() {
+        if matches!(env.node(e).expr(), Expr::StateVariable(..)) {
+            res.push(e);
+        }
+        stack.extend(children(e, env));
     }
     res
 }

@@ -12,20 +12,39 @@ use crate::*;
 /// Maximum number of predicates in a group. Bounds the search to a polynomial number of candidates.
 const MAX_GROUP_SIZE: usize = 4;
 
+/// A component of the key of an atom.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum KeyArg {
+    /// The i-th argument of the atom.
+    Arg(usize),
+    /// The image of the i-th argument of the atom by a static function (e.g. the satellite of an instrument).
+    Fun(StaticFunction, usize),
+}
+
 /// A predicate of a group, with the role of each of its parameters.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Member {
     pub fluent: FluentId,
-    /// Positions of the predicate's arguments forming the key, in the group's key order.
-    pub key: Vec<usize>,
+    /// Components of the key, in the group's key order.
+    pub key: Vec<KeyArg>,
     /// Position of the argument that is the value of the atom.
     /// If `None`, the predicate is represented by a dedicated helper value.
     pub value: Option<usize>,
 }
 
 impl Member {
-    pub fn key_of<T: Clone>(&self, args: &[T]) -> Vec<T> {
-        self.key.iter().map(|&i| args[i].clone()).collect()
+    /// Returns the key of the atom with the given arguments, `resolve` giving the value of static functions.
+    pub fn key_of<T: Clone>(
+        &self,
+        args: &[T],
+        mut resolve: impl FnMut(&StaticFunction, &T) -> Option<T>,
+    ) -> Option<Vec<T>> {
+        (self.key.iter())
+            .map(|k| match k {
+                KeyArg::Arg(i) => Some(args[*i].clone()),
+                KeyArg::Fun(f, i) => resolve(f, &args[*i]),
+            })
+            .collect()
     }
     pub fn value_of<T: Clone>(&self, args: &[T]) -> Option<T> {
         self.value.map(|i| args[i].clone())
@@ -54,9 +73,13 @@ impl Group {
         self.members.iter().find(|m| m.fluent == fluent)
     }
 
-    /// True if the atoms' values are taken from one of their arguments (rather than from helper objects).
+    /// True if the values of some atoms are taken from one of their arguments (rather than from helper objects).
     pub fn has_values(&self) -> bool {
-        self.members[0].value.is_some()
+        self.members.iter().any(|m| m.value.is_some())
+    }
+
+    fn has_functional_key(&self) -> bool {
+        (self.members.iter()).any(|m| m.key.iter().any(|k| matches!(k, KeyArg::Fun(..))))
     }
 }
 
@@ -179,6 +202,13 @@ impl<'a> ActionInfo<'a> {
         a.iter().zip(b).all(|(x, y)| self.may_unify(x, y))
     }
 
+    /// Value of a static function for the term, as given by a condition of the action.
+    fn resolve(&self, f: &StaticFunction, input: &Term) -> Option<Term> {
+        (self.requirements.iter())
+            .filter(|r| r.fluent == f.fluent)
+            .find_map(|r| f.apply(&r.args, input))
+    }
+
     /// Returns the requirement that ensures that `fluent(args)` is true at `t`.
     fn requirement(&self, fluent: FluentId, args: &[Term], t: Timestamp) -> Option<&Requirement> {
         self.requirements
@@ -197,10 +227,15 @@ pub struct Analyzer<'a> {
     /// For each fluent, the indices (in `actions`) of the actions having an effect on it.
     modifiers: HashMap<FluentId, Vec<usize>>,
     domains: ParamDomains<'a>,
+    functions: &'a StaticFunctions,
+    occurrences: HashMap<FluentId, Vec<Occurrence>>,
 }
 
+/// Occurrence of a fluent in an expression: the action it appears in (if any) and its arguments (if simple terms).
+type Occurrence = (Option<usize>, Option<Vec<Term>>);
+
 impl<'a> Analyzer<'a> {
-    pub fn new(model: &'a Model) -> Self {
+    pub fn new(model: &'a Model, functions: &'a StaticFunctions) -> Self {
         let env = &model.env;
         let mut init: HashMap<FluentId, Option<Vec<Vec<Term>>>> = HashMap::new();
         for eff in &model.init {
@@ -228,6 +263,19 @@ impl<'a> Analyzer<'a> {
                 }
             }
         }
+        let mut occurrences: HashMap<FluentId, Vec<_>> = HashMap::new();
+        let roots = (model_roots(model).into_iter().map(|r| (None, r))).chain(
+            (model.actions.iter().enumerate())
+                .flat_map(|(i, a)| action_roots(a).into_iter().map(move |r| (Some(i), r))),
+        );
+        for (action, (root, _)) in roots {
+            for sv in state_variables(root, env) {
+                if let Expr::StateVariable(fluent, args) = env.node(sv).expr() {
+                    let occurrence = (action, Term::all_of(args, env));
+                    occurrences.entry(*fluent).or_default().push(occurrence);
+                }
+            }
+        }
         Analyzer {
             model,
             non_positive: fluents_with_non_positive_occurrences(model),
@@ -235,6 +283,8 @@ impl<'a> Analyzer<'a> {
             actions,
             modifiers,
             domains: ParamDomains::new(model),
+            functions,
+            occurrences,
         }
     }
 
@@ -250,7 +300,7 @@ impl<'a> Analyzer<'a> {
             }
             let arity = f.parameters.len();
             for value in std::iter::once(None).chain((0..arity).map(Some)) {
-                let key = (0..arity).filter(|&i| Some(i) != value).collect();
+                let key = (0..arity).filter(|&i| Some(i) != value).map(KeyArg::Arg).collect();
                 queue.push_back(Group::new(vec![Member { fluent, key, value }]));
             }
         }
@@ -275,6 +325,32 @@ impl<'a> Analyzer<'a> {
             }
         }
         valid
+    }
+
+    /// Key of an atom of the member, in the context of an action (if any) to evaluate static functions.
+    fn key(&self, member: &Member, args: &[Term], action: Option<&ActionInfo>) -> Option<Vec<Term>> {
+        member.key_of(args, |f, input| match input {
+            Term::Object(o) => self.functions.eval(f, o).cloned().map(Term::Object),
+            Term::Param(_) => action?.resolve(f, input),
+        })
+    }
+
+    /// Number of ground keys of the group, i.e. of state variables of the lifted state function.
+    pub fn num_keys(&self, group: &Group) -> usize {
+        let env = &self.model.env;
+        let m = &group.members[0];
+        (m.key.iter())
+            .map(|k| {
+                let tpe = match *k {
+                    KeyArg::Arg(i) => env.fluents.get(m.fluent).parameters[i].tpe(),
+                    KeyArg::Fun(f, _) => env.fluents.get(f.fluent).parameters[f.output()].tpe(),
+                };
+                env.objects
+                    .iter()
+                    .filter(|o| Type::from(o.tpe()).is_subtype_of(tpe))
+                    .count()
+            })
+            .fold(1, usize::saturating_mul)
     }
 
     /// Actions having an effect on the fluent.
@@ -339,6 +415,10 @@ impl<'a> Analyzer<'a> {
     fn check_global(&self, group: &Group) -> Result<(), &'static str> {
         let fluents = &self.model.env.fluents;
         let param_type = |m: &Member, i: usize| fluents.get(m.fluent).parameters[i].tpe().clone();
+        let key_type = |m: &Member, k: usize| match m.key[k] {
+            KeyArg::Arg(i) => param_type(m, i),
+            KeyArg::Fun(f, _) => fluents.get(f.fluent).parameters[f.output()].tpe().clone(),
+        };
 
         for m in &group.members {
             if fluents.get(m.fluent).return_type != Type::Bool {
@@ -350,18 +430,27 @@ impl<'a> Analyzer<'a> {
             if self.init.get(&m.fluent).is_some_and(|atoms| atoms.is_none()) {
                 return Err("non-plain initial fact");
             }
-            if m.value.is_some() != group.has_values() {
-                return Err("mixed group (with and without value)");
-            }
         }
         for i in 0..group.members[0].key.len() {
-            supertype(group.members.iter().map(|m| param_type(m, m.key[i]))).ok_or("incompatible key types")?;
+            supertype(group.members.iter().map(|m| key_type(m, i))).ok_or("incompatible key types")?;
         }
+        let valued = || group.members.iter().filter(|m| m.value.is_some());
         if group.has_values() {
-            let tpe = supertype(group.members.iter().map(|m| param_type(m, m.value.unwrap())))
-                .ok_or("incompatible value types")?;
+            let tpe = supertype(valued().map(|m| param_type(m, m.value.unwrap()))).ok_or("incompatible value types")?;
             if !matches!(tpe, Type::User(_)) {
                 return Err("value is not an object");
+            }
+        }
+
+        // functional keys must be computable for every occurrence of the atoms
+        if group.has_functional_key() {
+            for m in &group.members {
+                for (action, args) in self.occurrences.get(&m.fluent).into_iter().flatten() {
+                    let action = action.map(|i| &self.actions[i]);
+                    if args.as_ref().and_then(|args| self.key(m, args, action)).is_none() {
+                        return Err("functional key not computable for an occurrence");
+                    }
+                }
             }
         }
 
@@ -370,7 +459,10 @@ impl<'a> Analyzer<'a> {
         for m in &group.members {
             for args in self.init.get(&m.fluent).into_iter().flatten().flatten() {
                 let atom = (m.fluent, m.value_of(args));
-                if *init_atoms.entry(m.key_of(args)).or_insert(atom.clone()) != atom {
+                let key = self
+                    .key(m, args, None)
+                    .ok_or("initial atom with undefined functional key")?;
+                if *init_atoms.entry(key).or_insert(atom.clone()) != atom {
                     return Err("several atoms of the same key in the initial state");
                 }
             }
@@ -378,7 +470,7 @@ impl<'a> Analyzer<'a> {
 
         // the values of distinct predicates must be distinct
         if group.has_values() && group.members.len() > 1 {
-            let values: Vec<HashSet<Sym>> = group.members.iter().map(|m| self.possible_values(m)).collect();
+            let values: Vec<HashSet<Sym>> = valued().map(|m| self.possible_values(m)).collect();
             for (i, vi) in values.iter().enumerate() {
                 if values[i + 1..].iter().any(|vj| !vi.is_disjoint(vj)) {
                     return Err("predicates may have the same value");
@@ -431,7 +523,7 @@ impl<'a> Analyzer<'a> {
                 return Err(Failure::Invalid("non-constant effect"));
             }
             let args = Term::all_of(&e.state_variable.arguments, env).ok_or(Failure::Invalid("non-simple args"))?;
-            let key = member.key_of(&args);
+            let key = (self.key(member, &args, Some(info))).ok_or(Failure::Invalid("functional key not computable"))?;
             let effect = GroupEffect {
                 idx,
                 member,
@@ -575,25 +667,46 @@ impl<'a> Analyzer<'a> {
             let Some(args) = Term::all_of(&e.state_variable.arguments, env) else {
                 continue;
             };
-            // each key term must appear exactly once in the atom, with at most one remaining argument (the value)
-            let positions: Option<Vec<usize>> = key
-                .iter()
-                .map(|k| args.iter().positions(|a| a == k).exactly_one().ok())
-                .collect();
-            let Some(key_positions) = positions else { continue };
-            let mut others = (0..args.len()).filter(|i| !key_positions.contains(i));
+            // each key term must be an argument of the atom (or the image of one by a static function),
+            // with at most one remaining argument: the value (which is the input of all static functions)
+            let components: Option<Vec<KeyArg>> = key.iter().map(|k| self.key_arg(info, &args, k)).collect();
+            let Some(components) = components else { continue };
+            let mut others = (0..args.len()).filter(|i| !components.contains(&KeyArg::Arg(*i)));
             let value = others.next();
+            let inputs_are_value = components.iter().all(|c| match c {
+                KeyArg::Arg(_) => true,
+                KeyArg::Fun(_, i) => Some(*i) == value,
+            });
             let required = info.requirement(fluent, &args, e.timing).is_some();
             let covering = !group.has_values() && value.is_none() && info.timing.eq(e.timing, t);
-            if others.next().is_none() && (required || covering) {
+            if others.next().is_none() && inputs_are_value && (required || covering) {
                 extensions.push(Member {
                     fluent,
-                    key: key_positions,
+                    key: components,
                     value,
                 });
             }
         }
         extensions
+    }
+
+    /// How the term `k` can be obtained from the arguments of an atom in the action: as an argument appearing exactly once,
+    /// or (if it is not an argument) as the image of an argument by a static function, given by a condition of the action.
+    fn key_arg(&self, info: &ActionInfo, args: &[Term], k: &Term) -> Option<KeyArg> {
+        match args.iter().positions(|a| a == k).at_most_one().ok()? {
+            Some(i) => Some(KeyArg::Arg(i)),
+            None => info.requirements.iter().filter(|r| r.args.len() == 2).find_map(|r| {
+                let f = [0, 1]
+                    .map(|input| StaticFunction {
+                        fluent: r.fluent,
+                        input,
+                    })
+                    .into_iter()
+                    .find(|f| &r.args[f.output()] == k && self.functions.is_function(f))?;
+                let i = args.iter().positions(|a| *a == r.args[f.input]).exactly_one().ok()?;
+                Some(KeyArg::Fun(f, i))
+            }),
+        }
     }
 }
 
