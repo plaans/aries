@@ -25,7 +25,8 @@
 //!   equivalent to `(= sv(κ) v)`, without relying on how the solver evaluates an undefined state variable.
 //! - **(G2) initial state**: it contains at most one atom of the group per key, as plain facts at the origin.
 //! - **(G3) values**: the values of distinct predicates of a group are distinct (helper objects, or values with
-//!   provably disjoint sets of possible objects), and have a common supertype.
+//!   provably disjoint sets of possible objects). The type of the state function is the most general of the value
+//!   types if any, and the top type otherwise.
 //!   An argument that is the input of a static function in the key is the value of the atom, so that the key and
 //!   value of an atom determine it.
 //! - **(G5) static functions**: the key of every atom of the group appearing in the model can be computed:

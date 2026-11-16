@@ -435,11 +435,8 @@ impl<'a> Analyzer<'a> {
             supertype(group.members.iter().map(|m| key_type(m, i))).ok_or("incompatible key types")?;
         }
         let valued = || group.members.iter().filter(|m| m.value.is_some());
-        if group.has_values() {
-            let tpe = supertype(valued().map(|m| param_type(m, m.value.unwrap()))).ok_or("incompatible value types")?;
-            if !matches!(tpe, Type::User(_)) {
-                return Err("value is not an object");
-            }
+        if valued().any(|m| !matches!(param_type(m, m.value.unwrap()), Type::User(_))) {
+            return Err("value is not an object");
         }
 
         // functional keys must be computable for every occurrence of the atoms

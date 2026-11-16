@@ -2,8 +2,11 @@ use planx::{Model, Res, SolutionPlan, preprocessing::ModelTransformation};
 
 /// Model transformations that are applied by default to any model
 /// that requires encoding into the solver (validation, optimization, solving, ...).
-pub const DEFAULT_MODEL_TRANSFORMATIONS: &[ModelTransformation] =
-    &[ModelTransformation::LiftPredicates, ModelTransformation::Intify];
+pub const DEFAULT_MODEL_TRANSFORMATIONS: &[ModelTransformation] = &[
+    ModelTransformation::SplitPredicates,
+    ModelTransformation::LiftPredicates,
+    ModelTransformation::Intify,
+];
 
 /// Applies a sequence of transformations to the model.
 pub fn preprocess_model(model: Model, transformations: &[ModelTransformation]) -> Res<Model> {

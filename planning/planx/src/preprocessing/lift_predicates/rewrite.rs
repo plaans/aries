@@ -42,7 +42,7 @@ impl LiftedGroup {
             .collect_vec();
         let mut helpers = Vec::new();
         let value_type = if group.members.iter().all(|m| m.value.is_some()) {
-            supertype(value_types).unwrap()
+            supertype(value_types).unwrap_or_else(|| Type::from(env.types.top_user_type()))
         } else {
             let tpe_name = format!("_help-tpe-{name}");
             env.types.add_top_type_child(tpe_name.as_str())?;

@@ -1,9 +1,11 @@
 pub mod analysis;
 mod intify;
 mod lift_predicates;
+mod split_predicates;
 
 pub use intify::convert_reals_to_int;
 pub use lift_predicates::lift_predicates_to_state_functions;
+pub use split_predicates::split_predicates;
 
 use crate::{Model, Res, SolutionPlan};
 
@@ -25,6 +27,8 @@ pub trait Transformation {
 
 #[derive(Debug, Copy, Clone)]
 pub enum ModelTransformation {
+    /// Splits predicates according to the types of their arguments. See [`split_predicates`].
+    SplitPredicates,
     /// Attempts to lift predicates into multi-valued state variables. See [`lift_predicates_to_state_functions`].
     LiftPredicates,
     /// Attempts to remove all non-integer numbers for the model. See [`convert_reals_to_int`].
@@ -34,6 +38,10 @@ pub enum ModelTransformation {
 /// Applies a built-in transformation to the model.
 pub fn apply_transformation(mut model: Model, transformation: ModelTransformation) -> Res<Model> {
     match transformation {
+        ModelTransformation::SplitPredicates => {
+            split_predicates(&mut model)?;
+            Ok(model)
+        }
         ModelTransformation::LiftPredicates => {
             lift_predicates_to_state_functions(&mut model)?;
             Ok(model)
