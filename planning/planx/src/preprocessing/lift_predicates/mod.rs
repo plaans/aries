@@ -105,7 +105,7 @@ use itertools::Itertools;
 
 use crate::preprocessing::analysis::StaticFunctions;
 use crate::{Model, Res};
-use groups::{Analyzer, Group, KeyArg};
+use groups::{Analyzer, Group, KeyArg, Member};
 use rewrite::LiftedGroup;
 
 /// Substitute groups of predicates by state functions where applicable (see the module documentation).
@@ -118,6 +118,17 @@ pub fn lift_predicates_to_state_functions(model: &mut Model) -> Res<()> {
     let mut candidates = analyzer.valid_groups();
     // nothing to gain if the predicate would remain boolean, or if it is never true
     candidates.retain(|g| (g.has_values() || g.members.len() > 1) && analyzer.may_be_true(g));
+    // a predicate that can be lifted alone with a value keeps this key/value split in any group:
+    // grouping should not re-key it (e.g. `robot-at(?r, ?t)` keyed by the robot rather than by the tile)
+    let alone: Vec<Member> = (candidates.iter())
+        .filter(|g| g.members.len() == 1 && g.has_values())
+        .map(|g| g.members[0].clone())
+        .collect();
+    candidates.retain(|g| {
+        g.members
+            .iter()
+            .all(|m| m.value.is_none() || alone.contains(m) || alone.iter().all(|other| other.fluent != m.fluent))
+    });
     // prefer larger groups, then fewer (thus larger) state variables, then static functions from their first
     // parameter to their last one, and values on the last parameters
     let inverse_functions = |g: &Group| {

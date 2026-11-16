@@ -326,3 +326,20 @@ fn functional_key_unbound() {
     let model = lift_str(&power_domain(""), &power_pb("(on_board i1 s1) (on_board i2 s1)"));
     assert!(!lifted(&model).contains(&"power_avail:power_on".to_string()));
 }
+
+#[test]
+fn no_rekeying() {
+    // `{robot-at(?r, ?t), clear(?t)}` keyed by the tile is valid, but `robot-at` can be lifted alone,
+    // keyed by the robot, which is kept
+    let domain = "(define (domain d) (:requirements :typing) (:types robot tile)
+        (:predicates (robot-at ?r - robot ?t - tile) (clear ?t - tile))
+        (:action move :parameters (?r - robot ?from ?to - tile)
+          :precondition (and (robot-at ?r ?from) (clear ?to))
+          :effect (and (robot-at ?r ?to) (not (robot-at ?r ?from)) (clear ?from) (not (clear ?to)))))";
+    let pb = "(define (problem p) (:domain d) (:objects r - robot t1 t2 t3 - tile)
+        (:init (robot-at r t1) (clear t2) (clear t3)) (:goal (robot-at r t2)))";
+    let model = lift_str(domain, pb);
+    assert_eq!(lifted(&model), ["robot-at"]);
+    let robot_at = model.env.fluents.iter().find(|f| f.name() == "robot-at").unwrap();
+    assert_eq!(robot_at.parameters[0].tpe().to_string(), "robot");
+}
