@@ -1789,6 +1789,7 @@ dependencies = [
  "num-integer",
  "num-rational",
  "num-rational-parse",
+ "num-traits",
  "regex",
  "smallvec",
  "thiserror 2.0.18",

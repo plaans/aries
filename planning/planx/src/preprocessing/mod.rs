@@ -1,3 +1,4 @@
+pub mod analysis;
 mod intify;
 mod lift_predicates;
 
