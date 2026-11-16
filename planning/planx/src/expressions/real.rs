@@ -1,10 +1,11 @@
 use std::{
     fmt::{Debug, Display},
-    ops::{Add, DivAssign, Mul, Neg, Sub},
+    ops::{Add, DivAssign, Mul, MulAssign, Neg, Sub},
     str::FromStr,
 };
 
 use num_rational::Rational64;
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul};
 use smallvec::{SmallVec, smallvec};
 
 /// A real-numbered value, internally represented as a rational.
@@ -28,17 +29,34 @@ impl RealValue {
         self.0.is_integer()
     }
 
-    pub fn numer(&self) -> &i64 {
-        self.0.numer()
+    pub fn as_integer(&self) -> Option<i64> {
+        self.is_integer().then_some(self.numer())
     }
-    pub fn denom(&self) -> &i64 {
-        self.0.denom()
+
+    pub fn numer(&self) -> i64 {
+        *self.0.numer()
+    }
+    pub fn denom(&self) -> i64 {
+        *self.0.denom()
+    }
+
+    /// Sum, or `None` on overflow.
+    pub fn checked_add(self, other: RealValue) -> Option<RealValue> {
+        self.0.checked_add(&other.0).map(RealValue)
+    }
+    /// Product, or `None` on overflow.
+    pub fn checked_mul(self, other: RealValue) -> Option<RealValue> {
+        self.0.checked_mul(&other.0).map(RealValue)
+    }
+    /// Quotient, or `None` on overflow or division by zero.
+    pub fn checked_div(self, other: RealValue) -> Option<RealValue> {
+        self.0.checked_div(&other.0).map(RealValue)
     }
 }
 impl Display for RealValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut numer = *self.numer();
-        let mut denom = *self.denom();
+        let mut numer = self.numer();
+        let mut denom = self.denom();
 
         if denom == 1 {
             // happy fast path: just an integer
@@ -111,6 +129,14 @@ impl Display for RealValue {
 impl Debug for RealValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
+    }
+}
+impl<T> MulAssign<T> for RealValue
+where
+    Rational64: MulAssign<T>,
+{
+    fn mul_assign(&mut self, rhs: T) {
+        self.0 *= rhs
     }
 }
 

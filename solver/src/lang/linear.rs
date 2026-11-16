@@ -3,7 +3,9 @@ use smallvec::SmallVec;
 
 use crate::core::state::Evaluable;
 use crate::core::views::{Boundable, Dom, Term, VarView};
-use crate::core::{IntCst, Lit, LongCst, SignedVar, Var, cst_int_to_long, cst_long_to_int_clamped};
+use crate::core::{
+    INT_CST_MAX, INT_CST_MIN, IntCst, Lit, LongCst, SignedVar, Var, cst_int_to_long, cst_long_to_int_clamped,
+};
 use crate::lang::{BoolExpr, CoreExpr, IntExpr, ModelView};
 use crate::prelude::Conjunction;
 use std::fmt::{Debug, Display};
@@ -212,11 +214,11 @@ impl VarView for LinTerm {
     type Value = IntCst;
 
     fn upper_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
-        self.scaled_var.upper_bound(dom) + self.constant
+        (self.scaled_var.upper_bound(dom) + self.constant).clamp(INT_CST_MIN, INT_CST_MAX)
     }
 
     fn lower_bound(&self, dom: impl crate::core::views::Dom) -> Self::Value {
-        self.scaled_var.lower_bound(dom) + self.constant
+        (self.scaled_var.lower_bound(dom) + self.constant).clamp(INT_CST_MIN, INT_CST_MAX)
     }
 }
 

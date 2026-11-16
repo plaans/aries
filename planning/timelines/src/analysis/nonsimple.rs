@@ -41,6 +41,9 @@ fn collect_nonsimple_effects(ctx: &SchedEncoder) -> HashSet<EffectId> {
             crate::EffectOp::Step(_term) => {
                 res.insert(eff_id);
             }
+            crate::EffectOp::Erase => {
+                res.insert(eff_id);
+            }
         }
     }
     res

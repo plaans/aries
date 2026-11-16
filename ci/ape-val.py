@@ -11,6 +11,18 @@ from pathlib import Path
 
 from aries_utils import ApeRunner, validate_plan
 
+IGNORE_LIST = [
+    "zenotravel-time-simple-automatic",  # union types
+    "satellite-complex-time-windows-strips",  # bad interaction overall/TIL (bug in VAL? want an overall condition to be enforced at start)
+    "satellite-time-time-windows-strips",  # same?
+    "pipesworld-preferences-complex",  # maximization metric
+    "storage-preferences-complex",  # union types
+    "ipc-2006/domains/storage-time",  # union type
+    "ipc-2006/domains/trucks-preferences-complex", # forall in cond
+    "ipc-2006/domains/trucks-time", # forall in cond
+    "ipc-2023/domains/sailing-numeric/"  # val is fails to parse domain
+]
+
 
 def main():
     # Path to validators (defaults)
@@ -30,6 +42,9 @@ def main():
     for plan_file in plan_files:
         print()
         print(f"Plan: {plan_file}")
+        if any(x in str(plan_file) for x in IGNORE_LIST):
+            print("  ignored...")
+            continue
 
         try:
             # Find problem and domain files using APE

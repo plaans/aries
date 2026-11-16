@@ -54,6 +54,11 @@ impl Tasks {
     pub fn task_ids(&self) -> impl Iterator<Item = TaskId> {
         self.tasks.iter().map(|(k, _v)| k)
     }
+
+    /// Returns the ID that will be given to the next task.
+    pub fn next_task_id(&self) -> TaskId {
+        TaskId(self.next_id)
+    }
 }
 
 impl Index<TaskId> for Tasks {

@@ -45,7 +45,7 @@ def validate_plan(
     Returns:
         ValidationResult with validity status and plan quality
     """
-    cmd = [val_path, str(domain_file), str(problem_file), str(plan_file)]
+    cmd = [val_path, "-t", "1e-6", str(domain_file), str(problem_file), str(plan_file)]
 
     result = subprocess.run(cmd, capture_output=True, text=True)
 

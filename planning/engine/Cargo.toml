@@ -8,7 +8,6 @@ edition = "2024"
 
 [dependencies]
 clap = { workspace = true }
-derivative = { workspace = true }
 derive_more = { workspace = true }
 itertools = { workspace = true }
 im = { workspace = true }

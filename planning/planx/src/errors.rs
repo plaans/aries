@@ -289,6 +289,11 @@ impl<T> ErrorMessageExt<T> for Result<T, Message> {
         self.map_err(|m| m.snippet(annot()))
     }
 
+    /// Adds a info message tagging the spanned element
+    fn when_processing(self, element: impl Spanned) -> Result<T, Message> {
+        self.with_info(|| element.info("when processing"))
+    }
+
     fn tag(self, tagged: impl Spanned, tag: impl ToString, visible: Option<&Span>) -> Result<T, Message> {
         let res = self.with_info(|| tagged.info(tag));
         if let Some(visible) = visible {
@@ -301,6 +306,7 @@ impl<T> ErrorMessageExt<T> for Result<T, Message> {
 
 pub trait ErrorMessageExt<T> {
     fn with_info(self, annot: impl FnOnce() -> Annot) -> Result<T, Message>;
+    fn when_processing(self, element: impl Spanned) -> Result<T, Message>;
     fn tag(self, tagged: impl Spanned, tag: impl ToString, visible: Option<&Span>) -> Result<T, Message>;
 }
 

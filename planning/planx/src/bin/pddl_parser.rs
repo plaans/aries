@@ -1,7 +1,11 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-use planx::{errors::*, pddl::*, preprocessing::lift_predicates_to_state_functions};
+use planx::{
+    errors::*,
+    pddl::*,
+    preprocessing::{lift_predicates_to_state_functions, split_predicates},
+};
 
 /// A simple parser for PDDL and its extension HDDL.
 ///
@@ -47,6 +51,7 @@ fn main() -> Res<()> {
     let model = {
         let mut res = build_model(&domain, &problem)?;
         if opt.lift {
+            split_predicates(&mut res)?;
             lift_predicates_to_state_functions(&mut res)?;
         }
         res

@@ -18,6 +18,8 @@ mod timing;
 mod types;
 pub(crate) mod utils;
 
+pub mod precision;
+
 use std::{
     fmt::{Debug, Display},
     hash::Hash,

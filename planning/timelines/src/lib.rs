@@ -37,6 +37,23 @@ pub type Sym = String;
 /// Type of timepoints
 pub type Time = VarCst;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TimeItv {
+    pub start: Time,
+    pub end: Time,
+}
+impl TimeItv {
+    pub fn at(tp: impl Into<Time>) -> Self {
+        let tp = tp.into();
+        Self { start: tp, end: tp }
+    }
+}
+impl From<Time> for TimeItv {
+    fn from(value: Time) -> Self {
+        Self::at(value)
+    }
+}
+
 /// Type of simple int expressions (composed of at most one variable)
 pub type IntTerm = aries_solver::prelude::LinTerm;
 
@@ -244,6 +261,7 @@ impl Sched {
                 match e.operation {
                     EffectOp::Assign(v) => format!(":= {}", v.evaluate(sol).unwrap()),
                     EffectOp::Step(v) => format!("+= {}", v.evaluate(sol).unwrap()),
+                    EffectOp::Erase => ":= ∅".to_string(),
                 },
                 e.mutex_end.evaluate(sol).unwrap(),
             ));

@@ -176,3 +176,219 @@ max_depth = 2
 name = "ipc2023-rover-numeric"
 path = "planning/problems/upf/ipc2023-rover-numeric/problem.pddl"
 max_depth = 1
+
+# Problems with known reference plans in planning/ext/pddl.
+# max_depth = maximum number of occurrences of any action in the plan.
+# Kept for CI: plans with fewer than 20 actions.
+
+[[problems]]
+name = "ipc-2002-depots-time-simple-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/depots-time-simple-automatic/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2002-driverlog-time-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/driverlog-time-automatic/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2002-driverlog-time-simple-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/driverlog-time-simple-automatic/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2002-rovers-time-simple-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/rovers-time-simple-automatic/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2002-satellite-complex-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/satellite-complex-automatic/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2002-satellite-time-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/satellite-time-automatic/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2002-satellite-time-simple-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/satellite-time-simple-automatic/instances/instance-1.pddl"
+max_depth = 4
+
+# union types
+# [[problems]]
+# name = "ipc-2002-zenotravel-time-simple-automatic"
+# path = "planning/ext/pddl/ipc-2002/domains/zenotravel-time-simple-automatic/instances/instance-1.pddl"
+# max_depth = 1
+
+# [[problems]]
+# name = "ipc-2004-pipesworld-no-tankage-temporal-deadlines-strips"
+# path = "planning/ext/pddl/ipc-2004/domains/pipesworld-no-tankage-temporal-deadlines-strips/instances/instance-1.pddl"
+# max_depth = 4
+#
+# [[problems]]
+# name = "ipc-2004-pipesworld-no-tankage-temporal-strips"
+# path = "planning/ext/pddl/ipc-2004/domains/pipesworld-no-tankage-temporal-strips/instances/instance-1.pddl"
+# max_depth = 4
+
+# [[problems]]
+# name = "ipc-2004-pipesworld-tankage-temporal-strips"
+# path = "planning/ext/pddl/ipc-2004/domains/pipesworld-tankage-temporal-strips/instances/instance-1.pddl"
+# max_depth = 4
+
+[[problems]]
+name = "ipc-2004-satellite-complex-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-complex-strips/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2004-satellite-time-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-time-strips/instances/instance-1.pddl"
+max_depth = 6
+
+# Problem (BUG?) with timed-initial-literals
+# [[problems]]
+# name = "ipc-2004-satellite-complex-time-windows-strips"
+# path = "planning/ext/pddl/ipc-2004/domains/satellite-complex-time-windows-strips/instances/instance-1.pddl"
+# max_depth = 6
+#
+# [[problems]]
+# name = "ipc-2004-satellite-time-time-windows-strips"
+# path = "planning/ext/pddl/ipc-2004/domains/satellite-time-time-windows-strips/instances/instance-1.pddl"
+# max_depth = 6
+
+# Division in duration
+# [[problems]]
+# name = "ipc-2006-pipesworld-metric-time"
+# path = "planning/ext/pddl/ipc-2006/domains/pipesworld-metric-time/instances/instance-1.pddl"
+# max_depth = 4
+#
+# [[problems]]
+# name = "ipc-2006-pipesworld-metric-time-constraints"
+# path = "planning/ext/pddl/ipc-2006/domains/pipesworld-metric-time-constraints/instances/instance-1.pddl"
+# max_depth = 5
+#
+# [[problems]]
+# name = "ipc-2006-pipesworld-preferences-complex"
+# path = "planning/ext/pddl/ipc-2006/domains/pipesworld-preferences-complex/instances/instance-1.pddl"
+# max_depth = 7
+
+# Union types
+# [[problems]]
+# name = "ipc-2006-storage-preferences-complex"
+# path = "planning/ext/pddl/ipc-2006/domains/storage-preferences-complex/instances/instance-1.pddl"
+# max_depth = 2
+#
+# [[problems]]
+# name = "ipc-2006-storage-time"
+# path = "planning/ext/pddl/ipc-2006/domains/storage-time/instances/instance-1.pddl"
+# max_depth = 1
+
+[[problems]]
+name = "ipc-2006-tpp-metric-time"
+path = "planning/ext/pddl/ipc-2006/domains/tpp-metric-time/instances/instance-1.pddl"
+max_depth = 2
+
+# 'for all' in conditions
+# [[problems]]
+# name = "ipc-2006-trucks-preferences-complex"
+# path = "planning/ext/pddl/ipc-2006/domains/trucks-preferences-complex/instances/instance-1.pddl"
+# max_depth = 6
+#
+# [[problems]]
+# name = "ipc-2006-trucks-time"
+# path = "planning/ext/pddl/ipc-2006/domains/trucks-time/instances/instance-1.pddl"
+# max_depth = 5
+#
+# [[problems]]
+# name = "ipc-2006-trucks-time-constraints"
+# path = "planning/ext/pddl/ipc-2006/domains/trucks-time-constraints/instances/instance-1.pddl"
+# max_depth = 6
+
+# [[problems]]
+# name = "ipc-2006-trucks-time-constraints-timed-initial-literals"
+# path = "planning/ext/pddl/ipc-2006/domains/trucks-time-constraints-timed-initial-literals/instances/instance-1.pddl"
+# max_depth = 4
+
+[[problems]]
+name = "ipc-2008-crew-planning-temporal-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/crew-planning-temporal-satisficing-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2008-peg-solitaire-temporal-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/peg-solitaire-temporal-satisficing-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2008-transport-temporal-satisficing-numeric-fluents"
+path = "planning/ext/pddl/ipc-2008/domains/transport-temporal-satisficing-numeric-fluents/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2008-woodworking-temporal-satisficing-numeric-fluents"
+path = "planning/ext/pddl/ipc-2008/domains/woodworking-temporal-satisficing-numeric-fluents/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2011-match-cellar-temporal-satisficing"
+path = "planning/ext/pddl/ipc-2011/domains/match-cellar-temporal-satisficing/instances/instance-1.pddl"
+max_depth = 6
+
+# Too hard for CI
+# [[problems]]
+# name = "ipc-2011-parking-temporal-satisficing"
+# path = "planning/ext/pddl/ipc-2011/domains/parking-temporal-satisficing/instances/instance-1.pddl"
+# max_depth = 8
+
+# Too hard
+# [[problems]]
+# name = "ipc-2011-peg-solitaire-temporal-satisficing"
+# path = "planning/ext/pddl/ipc-2011/domains/peg-solitaire-temporal-satisficing/instances/instance-1.pddl"
+# max_depth = 16
+
+[[problems]]
+name = "ipc-2018-cushing-temporal-satisficing"
+path = "planning/ext/pddl/ipc-2018/domains/cushing-temporal-satisficing/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2023-counters-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/counters-numeric/instances/instance-1.pddl"
+max_depth = 9
+
+[[problems]]
+name = "ipc-2023-delivery-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/delivery-numeric/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2023-drone-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/drone-numeric/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2023-fo-counters-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/fo-counters-numeric/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2023-mprime-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/mprime-numeric/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2023-pathways-metric-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/pathwaysmetric-numeric/instances/instance-1.pddl"
+max_depth = 8
+
+[[problems]]
+name = "ipc-2023-tpp-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/tpp-numeric/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2023-zenotravel-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/zenotravel-numeric/instances/instance-1.pddl"
+max_depth = 5

@@ -1,8 +1,6 @@
 use std::collections::BTreeSet;
 
-use planx::{ActionRef, Message, Model, errors::Spanned};
-
-use crate::plans::lifted_plan::LiftedPlan;
+use planx::{ActionRef, Message, Model, SolutionPlan, errors::Spanned};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum OperatorId {
@@ -33,7 +31,7 @@ pub struct ActionCondition {
 }
 
 /// Extends a base bessage to display all culprits in it.
-pub fn format_culprit_set(mut msg: Message, culprits: &BTreeSet<Tag>, model: &Model, plan: &LiftedPlan) -> Message {
+pub fn format_culprit_set(mut msg: Message, culprits: &BTreeSet<Tag>, model: &Model, plan: &SolutionPlan) -> Message {
     for culprit in culprits {
         match culprit {
             Tag::EnforceGoal(g) => {

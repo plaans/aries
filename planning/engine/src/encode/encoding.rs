@@ -96,6 +96,7 @@ impl<'a> Plan<'a> {
                 duration: RealValue::from_integer(a.duration as i64),
                 action_ref: a.action_ref,
                 arguments,
+                span: None,
             };
             operations.push(op);
         }
@@ -113,7 +114,7 @@ impl<'a> Plan<'a> {
         // we have the plan for the model as it is now. We need to revert all transforamtion
         // to get a valid original plan.
         for transformation in model.transformations.iter().rev() {
-            plan = transformation.revert(plan);
+            plan = transformation.revert(plan)?;
         }
 
         Ok(plan)

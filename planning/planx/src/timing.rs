@@ -60,39 +60,53 @@ impl From<RealValue> for Timestamp {
 
 /// Represents a temporal interval, composed of a start and end timestamps
 #[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Ord, Eq)]
-pub struct TimeInterval {
-    pub start: Timestamp,
-    pub end: Timestamp,
+pub enum TimeInterval {
+    Closed { start: Timestamp, end: Timestamp },
+    Open { start: Timestamp, end: Timestamp },
 }
 
 impl TimeInterval {
-    pub const FULL: TimeInterval = TimeInterval::new(Timestamp::ORIGIN, Timestamp::HORIZON);
-
-    pub const fn new(start: Timestamp, end: Timestamp) -> Self {
-        Self { start, end }
-    }
+    pub const FULL: TimeInterval = TimeInterval::Closed {
+        start: Timestamp::ORIGIN,
+        end: Timestamp::HORIZON,
+    };
 
     pub fn at(tp: impl Into<Timestamp>) -> Self {
         let tp = tp.into();
         TimeInterval::closed(tp, tp)
     }
+    pub fn open(start: impl Into<Timestamp>, end: impl Into<Timestamp>) -> Self {
+        TimeInterval::Open {
+            start: start.into(),
+            end: end.into(),
+        }
+    }
     pub fn closed(start: impl Into<Timestamp>, end: impl Into<Timestamp>) -> Self {
-        TimeInterval {
+        TimeInterval::Closed {
             start: start.into(),
             end: end.into(),
         }
     }
     pub fn as_timestamp(&self) -> Option<Timestamp> {
-        if self.start == self.end { Some(self.start) } else { None }
+        match self {
+            TimeInterval::Closed { start, end } if start == end => Some(*start),
+            _ => None,
+        }
     }
 }
 
 impl Display for TimeInterval {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.start == self.end {
-            write!(f, "[{}]", self.start)
-        } else {
-            write!(f, "[{}, {}]", self.start, self.end)
+        match self {
+            TimeInterval::Closed { start, end } if start == end => {
+                write!(f, "[{}]", start)
+            }
+            TimeInterval::Closed { start, end } => {
+                write!(f, "[{}, {}]", start, end)
+            }
+            TimeInterval::Open { start, end } => {
+                write!(f, "({}, {})", start, end)
+            }
         }
     }
 }
