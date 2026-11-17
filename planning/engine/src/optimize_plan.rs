@@ -395,7 +395,7 @@ pub fn encode_plan_optimization_problem(
 
     // enforce all elements of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)
+        let eff = convert_effect(x, model, &mut sched, &global_scope, &mut encoding)
             .with_info(|| model.env.node(x).info("when processing"))?;
         sched.add_effect(eff);
     }
@@ -410,7 +410,7 @@ pub fn encode_plan_optimization_problem(
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
         for x in a.effects.iter() {
-            let eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
+            let eff = convert_effect(x, model, &mut sched, bindings, &mut encoding)?;
             // store the effect either in the global pool or in the predicate specific one
             let is_predicate = model
                 .env

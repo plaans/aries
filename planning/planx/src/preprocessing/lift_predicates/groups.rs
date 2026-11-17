@@ -527,7 +527,7 @@ impl<'a> Analyzer<'a> {
                 is_add,
                 args,
                 key,
-                time: e.timing,
+                time: e.transition_start,
             };
             match partitions.iter_mut().find(|p| p[0].key == effect.key) {
                 Some(partition) => partition.push(effect),
@@ -657,7 +657,7 @@ impl<'a> Analyzer<'a> {
                 || !eff.universal_quantification.is_empty()
                 || e.condition.is_some()
                 || !is_delete(&e.operation, env)
-                || !info.timing.le(e.timing, t)
+                || !info.timing.le(e.transition_start, t)
             {
                 continue;
             }
@@ -674,8 +674,8 @@ impl<'a> Analyzer<'a> {
                 KeyArg::Arg(_) => true,
                 KeyArg::Fun(_, i) => Some(*i) == value,
             });
-            let required = info.requirement(fluent, &args, e.timing).is_some();
-            let covering = !group.has_values() && value.is_none() && info.timing.eq(e.timing, t);
+            let required = info.requirement(fluent, &args, e.transition_start).is_some();
+            let covering = !group.has_values() && value.is_none() && info.timing.eq(e.transition_start, t);
             if others.next().is_none() && inputs_are_value && (required || covering) {
                 extensions.push(Member {
                     fluent,

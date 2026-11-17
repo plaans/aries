@@ -10,6 +10,7 @@ use super::{Bounds, NumericBounds};
 pub struct ActionTiming {
     /// Lower and upper bounds on the duration of the action.
     duration: Bounds,
+    dt: RealValue,
 }
 
 impl ActionTiming {
@@ -23,12 +24,17 @@ impl ActionTiming {
             },
             Duration::Subtasks => Bounds::UNKNOWN,
         };
-        Self { duration }
+        Self {
+            duration,
+            dt: bounds.dt,
+        }
     }
 
     /// Returns lower and upper bounds on the delay `t2 - t1`. A bound is `None` if unknown.
-    pub fn delay_bounds(&self, t1: Timestamp, t2: Timestamp) -> (Option<RealValue>, Option<RealValue>) {
+    fn delay_bounds(&self, t1: Timestamp, t2: Timestamp) -> (Option<RealValue>, Option<RealValue>) {
         let offset = t2.delay - t1.delay;
+        let eps = ((t2.num_dt - t1.num_dt) as i64) * self.dt;
+        let offset = offset + eps;
         let Bounds { lb, ub } = self.duration;
         match (t1.reference, t2.reference) {
             (r1, r2) if r1 == r2 => (Some(offset), Some(offset)),
@@ -61,23 +67,13 @@ impl ActionTiming {
     /// This is the case if `t` is in the interval, or if `t` is the upper bound of an open interval:
     /// as the condition holds until `t`, it can only be changed by an effect at `t`.
     pub fn holds_before(&self, itv: TimeInterval, t: Timestamp) -> bool {
-        match itv {
-            TimeInterval::Closed { start, end } => self.le(start, t) && self.le(t, end),
-            TimeInterval::Open { start, end } => self.lt(start, t) && self.le(t, end),
-        }
+        self.le(itv.start, t) && self.le(t, itv.end)
     }
 
     /// True if, in any instance of the action, the two conditions both hold just before one of their bounds.
     pub fn hold_together(&self, a: TimeInterval, b: TimeInterval) -> bool {
-        [bounds(a), bounds(b)]
+        [a.start, a.end, b.start, b.end]
             .into_iter()
-            .flatten()
             .any(|t| self.holds_before(a, t) && self.holds_before(b, t))
-    }
-}
-
-fn bounds(itv: TimeInterval) -> [Timestamp; 2] {
-    match itv {
-        TimeInterval::Closed { start, end } | TimeInterval::Open { start, end } => [start, end],
     }
 }

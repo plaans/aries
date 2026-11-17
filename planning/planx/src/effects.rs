@@ -52,7 +52,11 @@ impl<'env> Display for Env<'env, &EffectOp> {
 
 #[derive(Debug, Clone)]
 pub struct SimpleEffect {
-    pub timing: Timestamp,
+    /// Time at which the effect start its transition for the previous value.
+    /// At `transition_start`, the state variable still has its previous value and will lose it immediately afterwards.
+    pub transition_start: Timestamp,
+    /// Time at which the effect is established.
+    pub transition_end: Timestamp,
     /// If set, corresponds to a conditional effect that is only true if the
     /// conditions holds at `timing`
     pub condition: Option<ExprId>,
@@ -63,7 +67,8 @@ pub struct SimpleEffect {
 impl SimpleEffect {
     pub fn assignement(timing: Timestamp, state_variable: StateVariable, value: ExprId) -> Self {
         SimpleEffect {
-            timing,
+            transition_start: timing,
+            transition_end: timing + Dt,
             condition: None,
             state_variable,
             operation: EffectOp::Assign(value),
@@ -71,7 +76,8 @@ impl SimpleEffect {
     }
     pub fn increase(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
         SimpleEffect {
-            timing,
+            transition_start: timing,
+            transition_end: timing + Dt,
             condition: None,
             state_variable,
             operation: EffectOp::Increase(delta),
@@ -79,7 +85,8 @@ impl SimpleEffect {
     }
     pub fn decrease(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
         SimpleEffect {
-            timing,
+            transition_start: timing,
+            transition_end: timing + Dt,
             condition: None,
             state_variable,
             operation: EffectOp::Decrease(delta),
@@ -115,10 +122,16 @@ impl SimpleEffect {
 
 impl<'env> Display for Env<'env, &SimpleEffect> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.elem.transition_start == self.elem.transition_end {
+            write!(f, "[{}] ", self.elem.transition_start)?;
+        } else if self.elem.transition_start + Dt == self.elem.transition_end {
+            write!(f, "[{}..] ", self.elem.transition_start)?;
+        } else {
+            write!(f, "[{},{}] ", self.elem.transition_start, self.elem.transition_end)?;
+        }
         write!(
             f,
-            "[{}] {} {}",
-            self.elem.timing,
+            "{} {}",
             self.env / &self.elem.state_variable,
             self.env / &self.elem.operation
         )?;

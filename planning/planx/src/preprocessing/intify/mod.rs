@@ -185,12 +185,8 @@ fn build_new_model(mut model: Model, scaling_factors: &SvPrecisions) -> Res<Mode
 }
 
 fn scale_interval(itv: &mut TimeInterval, scalings: &SvPrecisions) {
-    match itv {
-        TimeInterval::Closed { start, end } | TimeInterval::Open { start, end } => {
-            scale_time(start, scalings);
-            scale_time(end, scalings);
-        }
-    }
+    scale_time(&mut itv.start, scalings);
+    scale_time(&mut itv.end, scalings);
 }
 fn scale_time(t: &mut Timestamp, scalings: &SvPrecisions) {
     t.delay *= scalings.time.denom_lcm as i64
@@ -294,7 +290,8 @@ fn update_precision_required_by_effect(eff: &Effect, model: &Model, scalings: &m
             }
         }
     }
-    scalings.add_possible_duration(eff.timing.delay);
+    scalings.add_possible_duration(eff.transition_start.delay);
+    scalings.add_possible_duration(eff.transition_end.delay);
 
     Ok(())
 }
@@ -358,7 +355,8 @@ fn apply_scaling_to_effect(eff: &mut Effect, env: &mut Environment, scalings: &S
             }
         }
     }
-    eff.timing.delay *= scalings.time.denom_lcm as i64;
+    eff.transition_start.delay *= scalings.time.denom_lcm as i64;
+    eff.transition_end.delay *= scalings.time.denom_lcm as i64;
     Ok(())
 }
 

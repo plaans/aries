@@ -282,7 +282,6 @@ pub fn condition_to_constraint_eq(
 /// while initial effects should have their transition time before (to be available at t=0).
 pub fn convert_effect(
     effect: &planx::Effect,
-    transition_time_after: bool,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
@@ -292,8 +291,6 @@ pub fn convert_effect(
         return model.env.node(effect).todo("Unsupported").failed();
     }
     let x = &effect.effect_expression;
-    let t = reify_timing(x.timing, model, sched, bindings)?;
-    let i = TimeItv::at(t);
     let args: Vec<SymAtom> = x
         .state_variable
         .arguments
@@ -304,8 +301,9 @@ pub fn convert_effect(
         fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
         args,
     };
-    let transition_start = if transition_time_after { t } else { t - sched.epsilon };
-    let transition_end = if transition_time_after { t + sched.epsilon } else { t };
+    let transition_start = reify_timing(x.transition_start, model, sched, bindings)?;
+    let transition_end = reify_timing(x.transition_end, model, sched, bindings)?;
+    let i = TimeItv::at(transition_start);
     let (op, mutex_end) = match x.operation {
         planx::EffectOp::Assign(v) => (
             EffectOp::Assign(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
@@ -465,7 +463,7 @@ pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Sc
     let Some(delay) = t.delay.as_integer() else {
         return Message::error("Non integer delay. Consider using the 'intify' transformation.").failed();
     };
-    Ok(tp + delay)
+    Ok(tp + delay + t.num_dt)
 }
 pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<Time> {
     match t {
@@ -477,16 +475,10 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
     }
 }
 pub fn reify_interval(t: TimeInterval, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<TimeItv> {
-    match t {
-        TimeInterval::Closed { start, end } => Ok(TimeItv {
-            start: reify_timing(start, model, sched, binding)?,
-            end: reify_timing(end, model, sched, binding)?,
-        }),
-        TimeInterval::Open { start, end } => Ok(TimeItv {
-            start: reify_timing(start, model, sched, binding)? + 1,
-            end: reify_timing(end, model, sched, binding)? - 1,
-        }),
-    }
+    Ok(TimeItv {
+        start: reify_timing(t.start, model, sched, binding)?,
+        end: reify_timing(t.end, model, sched, binding)?,
+    })
 }
 
 pub fn reify_sym(

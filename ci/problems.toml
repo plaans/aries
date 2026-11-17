@@ -247,16 +247,15 @@ name = "ipc-2004-satellite-time-strips"
 path = "planning/ext/pddl/ipc-2004/domains/satellite-time-strips/instances/instance-1.pddl"
 max_depth = 6
 
-# Problem (BUG?) with timed-initial-literals
-# [[problems]]
-# name = "ipc-2004-satellite-complex-time-windows-strips"
-# path = "planning/ext/pddl/ipc-2004/domains/satellite-complex-time-windows-strips/instances/instance-1.pddl"
-# max_depth = 6
-#
-# [[problems]]
-# name = "ipc-2004-satellite-time-time-windows-strips"
-# path = "planning/ext/pddl/ipc-2004/domains/satellite-time-time-windows-strips/instances/instance-1.pddl"
-# max_depth = 6
+[[problems]]
+name = "ipc-2004-satellite-complex-time-windows-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-complex-time-windows-strips/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2004-satellite-time-time-windows-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-time-time-windows-strips/instances/instance-1.pddl"
+max_depth = 6
 
 # Division in duration
 # [[problems]]

@@ -86,6 +86,7 @@ impl Bounds {
 /// The bounds hold for any evaluation of the expression in which all its state variables are defined.
 pub struct NumericBounds<'a> {
     env: &'a Environment,
+    pub(crate) dt: RealValue,
     /// Bounds on the values of static numeric fluents.
     fluents: HashMap<FluentId, Bounds>,
 }
@@ -98,7 +99,7 @@ impl<'a> NumericBounds<'a> {
             let e = &eff.effect_expression;
             let value = match e.operation {
                 EffectOp::Assign(v)
-                    if e.timing == Timestamp::ORIGIN
+                    if e.transition_start == Timestamp::ORIGIN
                         && e.condition.is_none()
                         && eff.universal_quantification.is_empty() =>
                 {
@@ -131,6 +132,7 @@ impl<'a> NumericBounds<'a> {
             .collect();
         NumericBounds {
             env: &model.env,
+            dt: RealValue::new(1, model.required_temporal_precision.denom_lcm as i64),
             fluents,
         }
     }
