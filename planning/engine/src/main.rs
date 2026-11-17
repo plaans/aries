@@ -4,7 +4,11 @@ pub(crate) mod optimize_plan;
 mod preprocessing;
 mod validate;
 
-use std::{io::IsTerminal, path::PathBuf};
+use std::{
+    io::IsTerminal,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use clap::*;
 use planx::{
@@ -354,6 +358,12 @@ fn build_model(pb_paths: &Problem, cli_objectives: &[Objective]) -> Res<Model> {
 }
 
 fn solve_problem(command: &SolveProblem) -> Res<()> {
+    dbg!(&command.options);
+    let deadline = command
+        .options
+        .timeout_s
+        .map(|dur| Instant::now() + Duration::from_secs_f64(dur));
+
     let model = build_model(&command.pb, &command.options.objectives)?;
     println!("{model}");
 
@@ -362,6 +372,11 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
     let min_depth = command.options.min_depth.unwrap_or(0);
     let max_depth = command.options.max_depth.unwrap_or(u32::MAX);
     for depth in min_depth..=max_depth {
+        if deadline.is_some_and(|deadline| deadline <= Instant::now()) {
+            result.merge_split_solve(PlanGenerationResult::trivial_timeout());
+            println!("Deadline passed...");
+            break;
+        }
         println!("\n ------- Depth: {depth} -------\n");
         let subproblem_result = generate::solve_finite_planning_problem(
             &model,
@@ -369,6 +384,7 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
                 optimize: false,
                 max_instances: depth,
                 plan_file: command.options.plan_file.clone(),
+                deadline,
             },
         )?;
         result.merge_split_solve(subproblem_result);
@@ -376,14 +392,18 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
             break; // not optimizing, stop immediately
         }
     }
+    println!("\n{result}\n");
     if let Some(report_dir) = command.options.report_dir.as_ref() {
         // export a report to store in the associated directory
         // with the filename as identifier (there may be many problems with the same name)
         // and specifies the maximum depth to ensure we have distinct report for different depths.
         let report = result.generate_report(
-            ReportMetadata::new(command.pb.problem.to_string_lossy().to_string(), None)
-                .with_opt_flag("min-depth", command.options.min_depth)
-                .with_opt_flag("max-depth", command.options.max_depth),
+            ReportMetadata::new(
+                command.pb.problem.to_string_lossy().to_string(),
+                command.options.timeout_s.map(Duration::from_secs_f64),
+            )
+            .with_opt_flag("min-depth", command.options.min_depth)
+            .with_opt_flag("max-depth", command.options.max_depth),
         );
         export::export_report_to_dir(report_dir, report)?;
     }
@@ -391,6 +411,11 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
 }
 
 fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
+    let deadline = command
+        .options
+        .timeout_s
+        .map(|dur| Instant::now() + Duration::from_secs_f64(dur));
+
     let model = build_model(&command.pb, &command.options.objectives)?;
     println!("{model}");
 
@@ -400,15 +425,20 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
             optimize: command.options.optimize,
             max_instances: command.options.max_instances,
             plan_file: command.options.plan_file.clone(),
+            deadline,
         },
     )?;
+    println!("\n{result}\n");
     if let Some(report_dir) = command.options.report_dir.as_ref() {
         // export a report to store in the associated directory
         // with the filename as identifier (there may be many problems with the same name)
         // and specifies the maximum depth to ensure we have distinct report for different depths.
         let report = result.generate_report(
-            ReportMetadata::new(command.pb.problem.to_string_lossy().to_string(), None)
-                .with_flag("depth", command.options.max_instances),
+            ReportMetadata::new(
+                command.pb.problem.to_string_lossy().to_string(),
+                command.options.timeout_s.map(Duration::from_secs_f64),
+            )
+            .with_flag("depth", command.options.max_instances),
         );
         export::export_report_to_dir(report_dir, report)?;
     }

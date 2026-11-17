@@ -1,13 +1,18 @@
 use std::{
     collections::BTreeMap,
+    fmt::Display,
     path::PathBuf,
     time::{Duration, Instant},
 };
 
+use aries_bench_data::SolveStatus;
 use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
 use aries_solver::{core::state::Evaluable, prelude::*, solver::stats::Stats};
 use planx::{Model, Res, SolutionPlan};
-use timelines::{Sched, explain::ExplainableSolver};
+use timelines::{
+    Sched,
+    explain::{ExplainableSolver, OptimizeResult},
+};
 
 use crate::{
     export::{self},
@@ -28,6 +33,10 @@ pub struct SolveOptions {
     /// First depth of deepening search
     #[arg(long)]
     pub min_depth: Option<u32>,
+
+    /// Maximum allowed runtime, in seconds.
+    #[arg(short = 't', long = "timeout")]
+    pub timeout_s: Option<f64>,
 
     /// Defines the objective to be minimized (overriding the ones in the problem)
     #[arg(short, long, num_args(0..))]
@@ -50,6 +59,10 @@ pub struct SolveFiniteOptions {
     #[arg(short, long)]
     pub max_instances: u32,
 
+    /// Maximum allowed runtime, in seconds.
+    #[arg(short = 't', long = "timeout")]
+    pub timeout_s: Option<f64>,
+
     /// Defines the objective to be minimized
     #[arg(short, long, num_args(0..))]
     pub objectives: Vec<Objective>,
@@ -71,6 +84,7 @@ pub struct SolveFiniteArgs {
     pub optimize: bool,
     pub max_instances: u32,
     pub plan_file: Option<PathBuf>,
+    pub deadline: Option<Instant>,
 }
 
 pub struct PlanGenerationResult {
@@ -85,6 +99,14 @@ impl PlanGenerationResult {
         Self {
             solution: None,
             status: export::SolveStatus::SolvedUnsat,
+            runtime: Duration::ZERO,
+            solver_stats: Stats::new(),
+        }
+    }
+    pub fn trivial_timeout() -> Self {
+        Self {
+            solution: None,
+            status: export::SolveStatus::Timeout,
             runtime: Duration::ZERO,
             solver_stats: Stats::new(),
         }
@@ -107,6 +129,19 @@ impl PlanGenerationResult {
         };
         self.runtime += next.runtime;
         self.solver_stats += next.solver_stats;
+    }
+}
+
+impl Display for PlanGenerationResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "; status: {:?}", self.status)?;
+        writeln!(f, "; runtime: {:.3}s", self.runtime.as_secs_f64())?;
+        writeln!(f, "; num-conflicts: {}", self.solver_stats.num_conflicts)?;
+        writeln!(f, "; num-decisions: {}", self.solver_stats.num_decisions)?;
+        if let Some(plan) = self.solution.as_ref() {
+            write!(f, "{plan}")?;
+        }
+        Ok(())
     }
 }
 
@@ -134,10 +169,18 @@ pub fn solve_finite_planning_problem(model: &Model, options: &SolveFiniteArgs) -
         println!("{}\n", encoding.plan(sol).export(model).unwrap());
     };
 
-    let solution = solver.find_optimal(solver_objective, &print, []);
+    let deadline = options.deadline.map(SearchLimit::Deadline).unwrap_or(SearchLimit::None);
+    let result = solver.optimize(solver_objective, &print, [], deadline);
 
-    let plan = if let Some(solution) = solution.as_ref() {
-        println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
+    let plan = if let Some(solution) = result.solution() {
+        println!(
+            "\n> Found {}solution:",
+            if result.has_optimal() && options.optimize {
+                "optimal "
+            } else {
+                ""
+            }
+        );
         print(solution);
         let plan = encoding.plan(solution).export(model)?;
         plan.write_to_file(options.plan_file.as_ref())?;
@@ -149,14 +192,12 @@ pub fn solve_finite_planning_problem(model: &Model, options: &SolveFiniteArgs) -
 
     let res = PlanGenerationResult {
         runtime: start.elapsed(),
-        status: if solution.is_some() {
-            if options.optimize {
-                export::SolveStatus::SolvedOpt
-            } else {
-                export::SolveStatus::SolvedSat
-            }
-        } else {
-            export::SolveStatus::SolvedUnsat
+        status: match result {
+            OptimizeResult::Opt(_sol) if options.optimize => SolveStatus::SolvedOpt,
+            OptimizeResult::Opt(_sol) => SolveStatus::SolvedSat,
+            OptimizeResult::Unsat => SolveStatus::SolvedUnsat,
+            OptimizeResult::Timeout(Some(_)) => SolveStatus::SolvedSat,
+            OptimizeResult::Timeout(None) => SolveStatus::Timeout,
         },
         solution: plan,
         solver_stats: solver.get().stats.clone(),

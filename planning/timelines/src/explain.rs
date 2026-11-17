@@ -86,16 +86,42 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
         let res = self
             .solver
-            .minimize_with_assumptions(
-                obj,
-                &assumptions,
-                aries_solver::solver::SearchLimit::None,
-                on_new_solution,
-            )
+            .minimize_with_assumptions(obj, &assumptions, SearchLimit::None, on_new_solution)
             .unwrap();
         self.solver.print_stats();
         self.solver.reset(); // TODO: this should not be needed
         res.ok()
+    }
+    /// Optimize the solution until a timeout or a proven optimality, with all assumptions enforced.
+    /// The method accepts an additional set of assumptions that will be enforced in all solutions.
+    pub fn optimize(
+        &mut self,
+        obj: LinTerm,
+        mut on_new_solution: impl FnMut(&Solution),
+        under_assumptions: impl Into<Vec<Lit>>,
+        deadline: SearchLimit,
+    ) -> OptimizeResult {
+        let mut assumptions = under_assumptions.into();
+        // add assumptions for detecting unsatisfiable constraints
+        for &enabler in self.enablers.keys() {
+            assumptions.push(enabler);
+        }
+        let mut best_solution = None;
+        let callback = |sol: &Solution| {
+            best_solution = Some(sol.clone());
+            on_new_solution(sol);
+        };
+        let res = match self
+            .solver
+            .minimize_with_assumptions(obj, &assumptions, deadline, callback)
+        {
+            Ok(Ok(solution)) => OptimizeResult::Opt(solution),
+            Ok(Err(_explanation)) => OptimizeResult::Unsat,
+            Err(_) => OptimizeResult::Timeout(best_solution),
+        };
+        self.solver.print_stats();
+        self.solver.reset(); // TODO: this should not be needed
+        res
     }
 
     /// Returns an iterator over all MUS and MCS in the model.
@@ -161,5 +187,30 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             self.solver.reset();
         }
         None
+    }
+}
+
+/// Result of [ExplainableSolver::optimize]
+pub enum OptimizeResult {
+    /// A proven optimal solution was found.
+    Opt(Solution),
+    /// The solver proved that no solution exists.
+    Unsat,
+    /// The solver terminated prematurily, possibly with a solution that has not been proven optimal.
+    Timeout(Option<Solution>),
+}
+
+impl OptimizeResult {
+    /// Return the solution found if any, even if not optimal.
+    pub fn solution(&self) -> Option<&Solution> {
+        match self {
+            OptimizeResult::Opt(solution) | OptimizeResult::Timeout(Some(solution)) => Some(solution),
+            OptimizeResult::Unsat | OptimizeResult::Timeout(None) => None,
+        }
+    }
+
+    /// True if the solution has a proven optimality.
+    pub fn has_optimal(&self) -> bool {
+        matches!(self, OptimizeResult::Opt(_))
     }
 }
