@@ -1,8 +1,10 @@
 pub mod analysis;
+mod erase_unusable_effects;
 mod intify;
 mod lift_predicates;
 mod split_predicates;
 
+pub use erase_unusable_effects::erase_unusable_effects;
 pub use intify::convert_reals_to_int;
 pub use lift_predicates::lift_predicates_to_state_functions;
 pub use split_predicates::split_predicates;
@@ -33,6 +35,8 @@ pub enum ModelTransformation {
     LiftPredicates,
     /// Attempts to remove all non-integer numbers for the model. See [`convert_reals_to_int`].
     Intify,
+    /// Replaces assignment effects whose value can never be read by erase effects. See [`erase_unusable_effects`].
+    EraseUnusableEffects,
 }
 
 /// Applies a built-in transformation to the model.
@@ -47,6 +51,10 @@ pub fn apply_transformation(mut model: Model, transformation: ModelTransformatio
             Ok(model)
         }
         ModelTransformation::Intify => convert_reals_to_int(&model),
+        ModelTransformation::EraseUnusableEffects => {
+            erase_unusable_effects(&mut model)?;
+            Ok(model)
+        }
     }
 }
 

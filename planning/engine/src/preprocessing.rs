@@ -3,6 +3,7 @@ use planx::{Model, Res, SolutionPlan, preprocessing::ModelTransformation};
 /// Model transformations that are applied by default to any model
 /// that requires encoding into the solver (validation, optimization, solving, ...).
 pub const DEFAULT_MODEL_TRANSFORMATIONS: &[ModelTransformation] = &[
+    ModelTransformation::EraseUnusableEffects,
     ModelTransformation::SplitPredicates,
     ModelTransformation::LiftPredicates,
     ModelTransformation::Intify,

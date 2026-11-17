@@ -389,6 +389,12 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
                 (&EffectOp::FALSE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => eid > oid,
                 // an add cannot be overriden by a delete
                 (&EffectOp::TRUE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => false,
+                // an erase behaves as a delete: it is overriden by an add, and by an (equally strong) delete
+                (&EffectOp::Erase, &EffectOp::TRUE_ASSIGNMENT) => true,
+                (&EffectOp::Erase, &EffectOp::FALSE_ASSIGNMENT) => true,
+                (&EffectOp::Erase, &EffectOp::Erase) => eid > oid,
+                // but neither an add nor a delete can be overriden by an erase
+                (&EffectOp::TRUE_ASSIGNMENT | &EffectOp::FALSE_ASSIGNMENT, &EffectOp::Erase) => false,
                 (_, _) => todo!("Not a boolean state variable or non-constant assignment"), // TODO: make it truly unreachable
             };
 
