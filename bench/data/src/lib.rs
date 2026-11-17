@@ -35,6 +35,15 @@ impl Problem {
         self.flags.insert(key.to_string(), value.to_string());
         self
     }
+
+    /// If the value is not `None`, attaches it as a flag to the problem.
+    pub fn with_opt_flag(self, key: impl ToString, value: Option<impl ToString>) -> Self {
+        if let Some(value) = value {
+            self.with_flag(key, value)
+        } else {
+            self
+        }
+    }
     /// A unique identifier of the problem.
     pub fn id(&self) -> String {
         let mut id = self.name.clone();
@@ -106,7 +115,7 @@ impl SolveStatus {
     }
 }
 
-pub type MetricValue = i64;
+pub type MetricValue = f64;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct IntermediateResult {
@@ -203,7 +212,7 @@ mod tests {
             },
             status: SolveStatus::SolvedSat,
             runtime: Duration::from_secs(5),
-            objective_value: Some(42),
+            objective_value: Some(42.0),
             metrics,
             objective_history: vec![],
         }
@@ -224,7 +233,7 @@ mod tests {
         let serialized = result.serialize()?;
         let deserialized = SolveResult::deserialize(&serialized)?;
         assert_eq!(deserialized.problem.name, "test_problem");
-        assert_eq!(deserialized.objective_value, Some(42));
+        assert_eq!(deserialized.objective_value, Some(42.0));
         Ok(())
     }
 

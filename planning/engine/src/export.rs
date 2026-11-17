@@ -15,7 +15,11 @@ impl PlanGenerationResult {
             problem: metadata,
             status: self.status,
             runtime: self.runtime,
-            objective_value: self.objective_value.map(|x| x as i64),
+            objective_value: self
+                .solution
+                .as_ref()
+                .and_then(|sol| sol.metrics.first())
+                .map(|obj| obj.to_f64().unwrap()),
             metrics: Default::default(),
             objective_history: vec![],
         }
