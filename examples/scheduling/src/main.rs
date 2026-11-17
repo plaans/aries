@@ -122,7 +122,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
             println!("New solution with makespan: {}", obj);
             solution_history.push(IntermediateResult {
                 timestamp: start_time.elapsed(),
-                objective: obj as i64,
+                objective: obj as f64,
             });
             best = Some(sol.clone());
         },
@@ -193,7 +193,7 @@ fn solve(kind: ProblemKind, instance: &str, opt: &Opt) -> anyhow::Result<()> {
             problem,
             status,
             runtime: start_time.elapsed(),
-            objective_value: best.map(|sol| sol.value_of(makespan).unwrap() as i64),
+            objective_value: best.map(|sol| sol.value_of(makespan).unwrap() as f64),
             metrics: Default::default(),
             objective_history: solution_history,
         }

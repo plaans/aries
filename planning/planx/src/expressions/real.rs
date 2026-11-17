@@ -5,7 +5,7 @@ use std::{
 };
 
 use num_rational::Rational64;
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, ToPrimitive};
 use smallvec::{SmallVec, smallvec};
 
 /// A real-numbered value, internally represented as a rational.
@@ -51,6 +51,10 @@ impl RealValue {
     /// Quotient, or `None` on overflow or division by zero.
     pub fn checked_div(self, other: RealValue) -> Option<RealValue> {
         self.0.checked_div(&other.0).map(RealValue)
+    }
+
+    pub fn to_f64(self) -> Option<f64> {
+        self.0.to_f64()
     }
 }
 impl Display for RealValue {

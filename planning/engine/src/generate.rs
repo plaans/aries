@@ -1,25 +1,67 @@
-use std::{collections::BTreeMap, path::PathBuf, time::Instant};
+use std::{
+    collections::BTreeMap,
+    fmt::Display,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
+use aries_bench_data::SolveStatus;
 use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
 use aries_solver::{core::state::Evaluable, prelude::*, solver::stats::Stats};
 use planx::{Model, Res, SolutionPlan};
-use timelines::{Sched, explain::ExplainableSolver};
+use timelines::{
+    Sched,
+    explain::{ExplainableSolver, OptimizeResult},
+};
 
 use crate::{
-    export,
+    export::{self},
     optimize_plan::{self, Objective},
 };
 
 pub type RelaxableConstraint = Tag;
 
 #[derive(clap::Args, Debug, Clone)]
-pub struct Options {
+pub struct SolveOptions {
+    /// Defines the maximum number of instances per action template.
+    ///
+    /// For example, if set to 3, the resulting plan may have *at most* three instances
+    /// of a `pick` action and at most 3 instances of a `drop` action.
+    #[arg(short, long)]
+    pub max_depth: Option<u32>,
+
+    /// First depth of deepening search
+    #[arg(long)]
+    pub min_depth: Option<u32>,
+
+    /// Maximum allowed runtime, in seconds.
+    #[arg(short = 't', long = "timeout")]
+    pub timeout_s: Option<f64>,
+
+    /// Defines the objective to be minimized (overriding the ones in the problem)
+    #[arg(short, long, num_args(0..))]
+    pub objectives: Vec<Objective>,
+
+    /// If provided, the final plan will be written to this file.
+    #[arg(short = 'w', long = "write-plan")]
+    pub plan_file: Option<PathBuf>,
+
+    /// If provided, the benchmark report will be written to a file in this directory.
+    #[arg(short = 'r', long = "write-report")]
+    pub report_dir: Option<PathBuf>,
+}
+#[derive(clap::Args, Debug, Clone)]
+pub struct SolveFiniteOptions {
     /// Defines the maximum number of instances per action template.
     ///
     /// For instance, if set to 3, the resulting plan may have *at most* three instances
     /// of a `pick` action and at most 3 instances of a `drop` action.
     #[arg(short, long)]
     pub max_instances: u32,
+
+    /// Maximum allowed runtime, in seconds.
+    #[arg(short = 't', long = "timeout")]
+    pub timeout_s: Option<f64>,
 
     /// Defines the objective to be minimized
     #[arg(short, long, num_args(0..))]
@@ -38,18 +80,72 @@ pub struct Options {
     pub report_dir: Option<PathBuf>,
 }
 
+pub struct SolveFiniteArgs {
+    pub optimize: bool,
+    pub max_instances: u32,
+    pub plan_file: Option<PathBuf>,
+    pub deadline: Option<Instant>,
+}
+
 pub struct PlanGenerationResult {
-    #[allow(unused)]
-    pub encoding: Encoding,
-    #[allow(unused)]
-    pub solution: Option<Solution>,
-    pub objective_value: Option<IntCst>,
+    pub solution: Option<SolutionPlan>,
     pub status: export::SolveStatus,
     pub runtime: std::time::Duration,
     pub solver_stats: Stats,
 }
 
-pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<PlanGenerationResult> {
+impl PlanGenerationResult {
+    pub fn trivial_unsat() -> Self {
+        Self {
+            solution: None,
+            status: export::SolveStatus::SolvedUnsat,
+            runtime: Duration::ZERO,
+            solver_stats: Stats::new(),
+        }
+    }
+    pub fn trivial_timeout() -> Self {
+        Self {
+            solution: None,
+            status: export::SolveStatus::Timeout,
+            runtime: Duration::ZERO,
+            solver_stats: Stats::new(),
+        }
+    }
+
+    /// Merge two results over two subproblems.
+    pub fn merge_split_solve(&mut self, next: PlanGenerationResult) {
+        if next.solution.is_some() {
+            // assumes a new solution is always better (we can't check without knowing wether it is a maximization or minimzation problem)
+            self.solution = next.solution;
+        }
+        use aries_bench_data::SolveStatus::*;
+        self.status = match (self.status, next.status) {
+            (Timeout, SolvedUnsat) => Timeout,
+            (SolvedUnsat, other) | (other, SolvedUnsat) => other,
+            (SolvedSat, _) | (_, SolvedSat) => SolvedSat, // we have a solution but loose any optimality guarantee
+            (Timeout, SolvedOpt) | (SolvedOpt, Timeout) => SolvedSat,
+            (SolvedOpt, SolvedOpt) => SolvedOpt,
+            (Timeout, Timeout) => Timeout,
+        };
+        self.runtime += next.runtime;
+        self.solver_stats += next.solver_stats;
+    }
+}
+
+impl Display for PlanGenerationResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "; status: {:?}", self.status)?;
+        writeln!(f, "; runtime: {:.3}s", self.runtime.as_secs_f64())?;
+        writeln!(f, "; num-conflicts: {}", self.solver_stats.num_conflicts)?;
+        writeln!(f, "; num-decisions: {}", self.solver_stats.num_decisions)?;
+        if let Some(plan) = self.solution.as_ref() {
+            write!(f, "{plan}")?;
+        }
+        Ok(())
+    }
+}
+
+pub fn solve_finite_planning_problem(model: &Model, options: &SolveFiniteArgs) -> Res<PlanGenerationResult> {
     // create a dummy plan with the appropriate number of actions
     // this is temporary a workaround to reuse the existing `optimize_plan` facilities
     let plan = SolutionPlan::empty();
@@ -73,35 +169,37 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<Pl
         println!("{}\n", encoding.plan(sol).export(model).unwrap());
     };
 
-    let solution = solver.find_optimal(solver_objective, &print, []);
+    let deadline = options.deadline.map(SearchLimit::Deadline).unwrap_or(SearchLimit::None);
+    let result = solver.optimize(solver_objective, &print, [], deadline);
 
-    if let Some(solution) = solution.as_ref() {
-        println!("\n> Found {}solution:", if options.optimize { "optimal " } else { "" });
+    let plan = if let Some(solution) = result.solution() {
+        println!(
+            "\n> Found {}solution:",
+            if result.has_optimal() && options.optimize {
+                "optimal "
+            } else {
+                ""
+            }
+        );
         print(solution);
-        encoding
-            .plan(solution)
-            .export(model)?
-            .write_to_file(options.plan_file.as_ref())?;
+        let plan = encoding.plan(solution).export(model)?;
+        plan.write_to_file(options.plan_file.as_ref())?;
+        Some(plan)
     } else {
         println!("No solution !!!!");
-    }
-
-    let objective_value = solution.as_ref().and_then(|sol| objective.evaluate(sol));
+        None
+    };
 
     let res = PlanGenerationResult {
-        objective_value,
         runtime: start.elapsed(),
-        status: if solution.is_some() {
-            if options.optimize {
-                export::SolveStatus::SolvedOpt
-            } else {
-                export::SolveStatus::SolvedSat
-            }
-        } else {
-            export::SolveStatus::SolvedUnsat
+        status: match result {
+            OptimizeResult::Opt(_sol) if options.optimize => SolveStatus::SolvedOpt,
+            OptimizeResult::Opt(_sol) => SolveStatus::SolvedSat,
+            OptimizeResult::Unsat => SolveStatus::SolvedUnsat,
+            OptimizeResult::Timeout(Some(_)) => SolveStatus::SolvedSat,
+            OptimizeResult::Timeout(None) => SolveStatus::Timeout,
         },
-        solution,
-        encoding,
+        solution: plan,
         solver_stats: solver.get().stats.clone(),
     };
 
@@ -111,7 +209,7 @@ pub fn solve_finite_planning_problem(model: &Model, options: &Options) -> Res<Pl
 fn encode_finite_planning_problem(
     model: &Model,
     plan: &SolutionPlan,
-    options: &Options,
+    options: &SolveFiniteArgs,
 ) -> Res<(ExplainableSolver<RelaxableConstraint>, Encoding, Sched)> {
     // TODO: make specific function.
     // - ability to specify explanations vocabulary via RelaxableConstraint (Tag), including removing (pre)conditions (like in domain repair).
