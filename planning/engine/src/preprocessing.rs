@@ -6,6 +6,7 @@ pub const DEFAULT_MODEL_TRANSFORMATIONS: &[ModelTransformation] = &[
     ModelTransformation::EraseUnusableEffects,
     ModelTransformation::SplitPredicates,
     ModelTransformation::LiftPredicates,
+    ModelTransformation::MergeEraseAssign,
     ModelTransformation::Intify,
 ];
 
