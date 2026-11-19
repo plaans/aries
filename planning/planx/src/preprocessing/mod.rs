@@ -1,10 +1,12 @@
 pub mod analysis;
+mod annotate_transitions;
 mod erase_unusable_effects;
 mod intify;
 mod lift_predicates;
 mod merge_erase_assign;
 mod split_predicates;
 
+pub use annotate_transitions::annotate_transitions;
 pub use erase_unusable_effects::erase_unusable_effects;
 pub use intify::convert_reals_to_int;
 pub use lift_predicates::lift_predicates_to_state_functions;
@@ -41,6 +43,8 @@ pub enum ModelTransformation {
     EraseUnusableEffects,
     /// Merges an erase effect and a later assignment into a single durative effect. See [`merge_erase_assign_effects`].
     MergeEraseAssign,
+    /// Annotates conditions and effects forming transitions and borrows. See [`annotate_transitions`].
+    AnnotateTransitions,
 }
 
 /// Applies a built-in transformation to the model.
@@ -61,6 +65,10 @@ pub fn apply_transformation(mut model: Model, transformation: ModelTransformatio
         }
         ModelTransformation::MergeEraseAssign => {
             merge_erase_assign_effects(&mut model)?;
+            Ok(model)
+        }
+        ModelTransformation::AnnotateTransitions => {
+            annotate_transitions(&mut model)?;
             Ok(model)
         }
     }

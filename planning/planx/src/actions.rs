@@ -215,8 +215,22 @@ impl<'env> Display for Env<'env, &Action> {
             Duration::Subtasks => write!(f, ": span of subtasks")?,
         }
 
-        fs(f, "conditions:", &self.elem.conditions, self.env)?;
-        fs(f, "effects:", &self.elem.effects, self.env)?;
+        let (action, env) = (self.elem, self.env);
+        // conditions and effects that are part of a transition are only displayed in the dedicated sections
+        fs(
+            f,
+            "conditions:",
+            (action.conditions.iter()).filter(|c| action.transition_of_condition(c, env).is_none()),
+            env,
+        )?;
+        fs(
+            f,
+            "effects:",
+            (action.effects.iter()).filter(|e| action.transition_of_effect(e, env).is_none()),
+            env,
+        )?;
+        fs(f, "transitions:", action.transitions(env).filter(|t| !t.borrow), env)?;
+        fs(f, "borrows:", action.transitions(env).filter(|t| t.borrow), env)?;
         fs(f, "preferences:", self.elem.preferences.iter(), self.env)?;
         fs(f, "vars:", self.elem.subtasks.variables.iter(), self.env)?;
         fs(f, "subtasks:", self.elem.subtasks.iter(), self.env)?;

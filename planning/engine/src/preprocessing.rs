@@ -7,6 +7,7 @@ pub const DEFAULT_MODEL_TRANSFORMATIONS: &[ModelTransformation] = &[
     ModelTransformation::SplitPredicates,
     ModelTransformation::LiftPredicates,
     ModelTransformation::MergeEraseAssign,
+    ModelTransformation::AnnotateTransitions,
     ModelTransformation::Intify,
 ];
 

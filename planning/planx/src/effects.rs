@@ -108,6 +108,8 @@ impl SimpleEffect {
             universal_quantification: vars,
             effect_expression: self,
             span: None,
+            id: EffectId::fresh(),
+            annotations: Default::default(),
         }
     }
 
@@ -116,6 +118,8 @@ impl SimpleEffect {
             universal_quantification: Vec::new(),
             effect_expression: self,
             span: None,
+            id: EffectId::fresh(),
+            annotations: Default::default(),
         }
     }
 }
@@ -149,6 +153,10 @@ pub struct Effect {
     pub universal_quantification: Vec<Param>,
     pub effect_expression: SimpleEffect,
     pub span: Option<Span>,
+    /// Identifier of the effect, unique within its action (preserved by cloning).
+    pub id: EffectId,
+    /// Additional information on the effect, typically set by preprocessing steps.
+    pub annotations: EffectAnnotations,
 }
 
 impl Effect {
@@ -165,6 +173,8 @@ impl Effect {
             universal_quantification: self.universal_quantification,
             effect_expression: self.effect_expression.with_condition(cond),
             span: self.span,
+            id: self.id,
+            annotations: self.annotations,
         }
     }
 
