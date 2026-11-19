@@ -19,7 +19,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::preprocessing::analysis::Term;
+use crate::preprocessing::analysis::{ActionTiming, RequiredValue, Term, required_value};
 use crate::*;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
@@ -62,15 +62,15 @@ pub struct EffectAnnotations {
     pub(crate) transition: Option<ConditionId>,
 }
 
-/// A condition immediately followed by an assignment of the same state variable.
+/// A condition immediately followed by an assignment (or erasure) of the same state variable.
 #[derive(Copy, Clone, Debug)]
 pub struct Transition<'a> {
     pub condition: &'a Condition,
     pub effect: &'a Effect,
     /// The value required by the condition.
     pub required: RequiredValue,
-    /// The value assigned by the effect.
-    pub value: ExprId,
+    /// The value assigned by the effect, or `None` if the effect is an erasure.
+    pub value: Option<ExprId>,
     /// True if the effect establishes the value required by the condition.
     pub borrow: bool,
 }
@@ -136,7 +136,10 @@ impl Action {
                 cond.annotations.transition == Some(eff.id) && eff.annotations.transition == Some(cond.id),
                 "Transition annotation is not symmetric: {cond:?} / {eff:?}"
             );
-            check_transition(self, cond, eff, env).unwrap_or_else(|| {
+            let transition = (transition_parts(cond, eff, env))
+                .filter(|_| same_state_variable(cond, eff, env) && !provably_distinct(self, cond.interval.end, eff.effect_expression.transition_start, env))
+                .filter(|t| t.shape_ok());
+            transition.unwrap_or_else(|| {
                 panic!(
                     "Invalid transition annotation in action {}: {} / {}",
                     self.name,
@@ -152,41 +155,86 @@ impl Action {
 
 /// Returns the transition formed by the condition and effect of the action, if:
 ///  - the condition is an atom on a state variable with simple arguments: `sv`, `(not sv)`, `(= sv v)` or `(= v sv)`;
-///  - the effect is an unconditional and unquantified assignment to the same state variable;
-///  - the condition's interval ends when the effect's transition starts.
+///  - the effect is an unconditional and unquantified assignment or erasure of the same state variable;
+///  - the condition's interval ends when the effect's transition starts, in any instance of the action.
 ///
 /// It is a borrow if the required and assigned values are syntactically identical simple values.
 pub(crate) fn check_transition<'a>(
-    action: &Action,
+    timing: &ActionTiming,
     condition: &'a Condition,
     effect: &'a Effect,
     env: &Environment,
 ) -> Option<Transition<'a>> {
-    let e = &effect.effect_expression;
-    if e.condition.is_some() || !effect.universal_quantification.is_empty() {
+    if !same_state_variable(condition, effect, env)
+        || !timing.eq(condition.interval.end, effect.effect_expression.transition_start)
+    {
         return None;
     }
-    let (csv, _) = required_value(condition.cond, env)?;
-    let csv = state_variable(csv, env)?;
-    let esv = (e.state_variable.fluent, Term::all_of(&e.state_variable.arguments, env)?);
-    if csv != esv || !simultaneous(action, condition.interval.end, e.transition_start) {
-        return None;
-    }
-    transition_parts(condition, effect, env)
+    transition_parts(condition, effect, env).filter(|t| t.shape_ok())
 }
 
-/// Builds the transition of a condition and an assignment, *assuming* they form a transition.
-/// Returns `None` if the condition is not on a state variable or the effect not an assignment.
+impl Transition<'_> {
+    /// True if the effect is unconditional and unquantified.
+    fn shape_ok(&self) -> bool {
+        self.effect.effect_expression.condition.is_none() && self.effect.universal_quantification.is_empty()
+    }
+}
+
+/// True if the condition is on the state variable (with simple arguments) affected by the effect.
+fn same_state_variable(condition: &Condition, effect: &Effect, env: &Environment) -> bool {
+    let sv = |e: ExprId| match env.node(e).expr() {
+        Expr::StateVariable(fluent, args) => Some((*fluent, Term::all_of(args, env)?)),
+        _ => None,
+    };
+    let esv = &effect.effect_expression.state_variable;
+    let esv = Term::all_of(&esv.arguments, env).map(|args| (esv.fluent, args));
+    esv.is_some() && required_value(condition.cond, env).and_then(|(csv, _)| sv(csv)) == esv
+}
+
+/// True if the two timestamps of the action are provably distinct, whatever the value of `dt`.
+///
+/// Used to check transitions in debug builds, where the bounds on the duration of the action are not available
+/// (only a constant duration is exploited): this may miss some invalid transitions but never rejects a valid one.
+fn provably_distinct(action: &Action, t1: Timestamp, t2: Timestamp, env: &Environment) -> bool {
+    let duration = match action.duration {
+        Duration::Instantaneous => Some(RealValue::ZERO),
+        Duration::Fixed(d) => match env.node(d).expr() {
+            Expr::Real(d) => Some(*d),
+            _ => None,
+        },
+        Duration::Bounded(..) | Duration::Subtasks => None,
+    };
+    // t2 - t1 = offset + num_dt * dt
+    let delay = t2.delay - t1.delay;
+    let offset = match (t1.reference, t2.reference) {
+        (r1, r2) if r1 == r2 => Some(delay),
+        (TimeRef::ActionStart, TimeRef::ActionEnd) => duration.map(|d| delay + d),
+        (TimeRef::ActionEnd, TimeRef::ActionStart) => duration.map(|d| delay - d),
+        _ => None,
+    };
+    let Some(offset) = offset else {
+        return false;
+    };
+    let num_dt = t2.num_dt - t1.num_dt;
+    let zero = RealValue::ZERO;
+    // the two terms cannot cancel each other for any `dt > 0`
+    (offset == zero) != (num_dt == 0) || (offset > zero && num_dt > 0) || (offset < zero && num_dt < 0)
+}
+
+/// Builds the transition of a condition and an effect, *assuming* they form a transition.
+/// Returns `None` if the condition is not on a state variable or the effect neither an assignment nor an erasure.
 fn transition_parts<'a>(condition: &'a Condition, effect: &'a Effect, env: &Environment) -> Option<Transition<'a>> {
     let (_, required) = required_value(condition.cond, env)?;
-    let EffectOp::Assign(value) = effect.effect_expression.operation else {
-        return None;
+    let value = match effect.effect_expression.operation {
+        EffectOp::Assign(value) => Some(value),
+        EffectOp::Erase => None,
+        EffectOp::Increase(_) | EffectOp::Decrease(_) => return None,
     };
     let required_simple = match required {
         RequiredValue::Bool(b) => Some(Value::Bool(b)),
         RequiredValue::Expr(e) => Value::of(e, env),
     };
-    let borrow = required_simple.is_some() && required_simple == Value::of(value, env);
+    let borrow = required_simple.is_some() && value.is_some_and(|v| Value::of(v, env) == required_simple);
     Some(Transition {
         condition,
         effect,
@@ -194,55 +242,6 @@ fn transition_parts<'a>(condition: &'a Condition, effect: &'a Effect, env: &Envi
         value,
         borrow,
     })
-}
-
-/// True if the two timepoints of the action are the same instant in any instance of the action.
-fn simultaneous(action: &Action, t1: Timestamp, t2: Timestamp) -> bool {
-    let instantaneous = match action.duration {
-        Duration::Instantaneous => true,
-        Duration::Fixed(_) | Duration::Bounded(..) | Duration::Subtasks => false,
-    };
-    // in an instantaneous action, the end is the start
-    let normalize = |t: Timestamp| match t.reference {
-        TimeRef::ActionEnd if instantaneous => Timestamp {
-            reference: TimeRef::ActionStart,
-            ..t
-        },
-        _ => t,
-    };
-    normalize(t1) == normalize(t2)
-}
-
-/// The value required by a condition on a state variable.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum RequiredValue {
-    /// Implicit value of a boolean atom: `true` for `sv` and `false` for `(not sv)`.
-    Bool(bool),
-    /// Explicit value `v` of an equality `(= sv v)` or `(= v sv)`.
-    Expr(ExprId),
-}
-
-/// If the condition is of the form `sv`, `(not sv)`, `(= sv v)` or `(= v sv)`, returns the state variable and the
-/// required value.
-fn required_value(cond: ExprId, env: &Environment) -> Option<(ExprId, RequiredValue)> {
-    let is_sv = |e: ExprId| matches!(env.node(e).expr(), Expr::StateVariable(..));
-    match env.node(cond).expr() {
-        Expr::StateVariable(..) => Some((cond, RequiredValue::Bool(true))),
-        Expr::App(Fun::Not, args) if args.len() == 1 && is_sv(args[0]) => Some((args[0], RequiredValue::Bool(false))),
-        Expr::App(Fun::Eq, args) if args.len() == 2 => match (is_sv(args[0]), is_sv(args[1])) {
-            (true, false) => Some((args[0], RequiredValue::Expr(args[1]))),
-            (false, true) => Some((args[1], RequiredValue::Expr(args[0]))),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn state_variable(expr: ExprId, env: &Environment) -> Option<(FluentId, Vec<Term>)> {
-    match env.node(expr).expr() {
-        Expr::StateVariable(fluent, args) => Some((*fluent, Term::all_of(args, env)?)),
-        _ => None,
-    }
 }
 
 /// A simple value, that can be syntactically compared.
@@ -269,6 +268,7 @@ impl Value {
 ///   [start, end..] at(?r) : ?l1 =~> ?l2         (transition)
 ///   [start, end..] available(?x) =~= true       (borrow)
 ///   [start..end, end..] p(?x) : true =~> false  (durative condition)
+///   [start..] p(?x) : true =~> ∅                (erasure)
 /// ```
 ///
 /// The interval is `[<condition>, <end of the effect's transition>]` where the condition is either an instant or a
@@ -307,14 +307,18 @@ impl<'env> std::fmt::Display for Env<'env, Transition<'_>> {
         }
 
         write!(f, "{}", self.env / &eff.state_variable)?;
-        if borrow {
-            write!(f, " =~= {}", self.env / value)
-        } else {
-            match required {
-                RequiredValue::Bool(b) => write!(f, " : {b}")?,
-                RequiredValue::Expr(e) => write!(f, " : {}", self.env / e)?,
+        match value {
+            Some(value) if borrow => write!(f, " =~= {}", self.env / value),
+            _ => {
+                match required {
+                    RequiredValue::Bool(b) => write!(f, " : {b}")?,
+                    RequiredValue::Expr(e) => write!(f, " : {}", self.env / e)?,
+                }
+                match value {
+                    Some(value) => write!(f, " =~> {}", self.env / value),
+                    None => write!(f, " =~> ∅"),
+                }
             }
-            write!(f, " =~> {}", self.env / value)
         }
     }
 }

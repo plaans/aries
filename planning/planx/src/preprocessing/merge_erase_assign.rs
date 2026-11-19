@@ -18,8 +18,9 @@
 //!  - (P1) `E₁` is an erase and `E₂` an assignment, both unconditional and not quantified, on the same state
 //!    variable `sv` (syntactically the same simple arguments);
 //!  - (P2) `E₂` transitions after `E₁`: `end(E₁) ≤ start(E₂)` in any instance of `A`
-//!    (see [`ActionTiming`]);
-//!  - (P3) `E₁` is *guarded*: `A` requires `sv` to be defined at `start(E₁)` (see [`required_state_variables`]);
+//!    (see [`ActionTiming`](crate::preprocessing::analysis::ActionTiming));
+//!  - (P3) `E₁` is *guarded*: `A` requires `sv` to be defined just before `start(E₁)`
+//!    (see the [`guards`](crate::preprocessing::analysis::ActionGuards) analysis);
 //!  - (P4) the pairing is unambiguous: `E₂` is the only assignment satisfying (P1, P2) for `E₁` and vice versa.
 //!
 //! The pairs on a fluent `f` are merged only if:
@@ -51,9 +52,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 
-use crate::preprocessing::analysis::{
-    ActionTiming, NumericBounds, RequiredStateVariable, Term, required_state_variables,
-};
+use crate::preprocessing::analysis::{ActionGuards, NumericBounds, Term};
 use crate::*;
 
 /// Merges erase effects with a later assignment of the same state variable into a single durative effect,
@@ -76,8 +75,7 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
     let mut pairs: Vec<Vec<(usize, usize)>> = Vec::new();
     for action in model.actions.iter() {
         let info = &ActionInfo {
-            timing: ActionTiming::new(action, &bounds),
-            requirements: required_state_variables(action, env),
+            guards: ActionGuards::new(action, env, &bounds),
             env,
         };
         let effects = &action.effects;
@@ -96,7 +94,7 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
                     .filter(move |(_, e2)| {
                         pairable(e2, false)
                             && info.state_variable(e2) == sv
-                            && (info.timing).le(
+                            && (info.guards.timing).le(
                                 e1.effect_expression.transition_end,
                                 e2.effect_expression.transition_start,
                             )
@@ -163,8 +161,7 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
 }
 
 struct ActionInfo<'a> {
-    timing: ActionTiming,
-    requirements: Vec<RequiredStateVariable>,
+    guards: ActionGuards,
     env: &'a Environment,
 }
 
@@ -180,12 +177,9 @@ impl ActionInfo<'_> {
 
     /// True if the action requires the state variable of the effect to be defined when its transition starts.
     fn is_guarded(&self, eff: &Effect) -> bool {
-        let Some((fluent, args)) = self.state_variable(eff) else {
-            return false;
-        };
-        let t = eff.effect_expression.transition_start;
-        (self.requirements.iter())
-            .any(|r| r.fluent == fluent && r.args == args && self.timing.holds_before(r.interval, t))
+        self.state_variable(eff).is_some_and(|(fluent, args)| {
+            (self.guards).is_guarded(fluent, &args, eff.effect_expression.transition_start)
+        })
     }
 }
 

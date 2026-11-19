@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::*;
 
-use super::{ExprContext, Term, children, conjuncts, expression_roots, state_variables};
+use super::{ExprContext, children, expression_roots, state_variables};
 
 /// Returns the fluents that appear in an expression somewhere else than as a *positive* atom of a requirement
 /// (condition, goal, constraint).
@@ -71,40 +71,4 @@ pub fn fluents_read(model: &Model) -> HashSet<FluentId> {
             _ => None,
         })
         .collect()
-}
-
-/// A state variable whose value an action requires to be defined over an interval,
-/// because a condition of the action reads it as a top-level conjunct (e.g. `p(?x)` or `(= f(?x) ?v)`).
-#[derive(Clone, Debug)]
-pub struct RequiredStateVariable {
-    pub interval: TimeInterval,
-    pub fluent: FluentId,
-    pub args: Vec<Term>,
-}
-
-/// Returns all state variables (with simple arguments) that the action requires to be defined, with the interval
-/// over which they are required (see [`RequiredStateVariable`]).
-pub fn required_state_variables(action: &Action, env: &Environment) -> Vec<RequiredStateVariable> {
-    let mut res = Vec::new();
-    let mut push = |interval: TimeInterval, sv: ExprId| {
-        if let Expr::StateVariable(fluent, args) = env.node(sv).expr()
-            && let Some(args) = Term::all_of(args, env)
-        {
-            res.push(RequiredStateVariable {
-                interval,
-                fluent: *fluent,
-                args,
-            });
-        }
-    };
-    for c in &action.conditions {
-        for e in conjuncts(c.cond, env) {
-            match env.node(e).expr() {
-                Expr::StateVariable(..) => push(c.interval, e),
-                Expr::App(Fun::Eq, args) if args.len() == 2 => args.iter().for_each(|&a| push(c.interval, a)),
-                _ => {}
-            }
-        }
-    }
-    res
 }

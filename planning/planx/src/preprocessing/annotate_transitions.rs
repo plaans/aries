@@ -1,7 +1,8 @@
 //! Annotation of the *transition* and *borrow* patterns in actions.
 //!
-//! A **transition** is a condition on a state variable that is immediately followed by an assignment of the same
-//! state variable: the condition's interval ends exactly when the effect's transition starts. For instance,
+//! A **transition** is a condition on a state variable that is immediately followed by an assignment (or an erasure)
+//! of the same state variable: the condition's interval ends exactly when the effect's transition starts
+//! (in any instance of the action, see [`ActionTiming`]). For instance,
 //!
 //! ```text
 //!   [start]       =(at(?r), ?from)
@@ -27,16 +28,19 @@
 use itertools::Itertools;
 
 use crate::annotations::check_transition;
+use crate::preprocessing::analysis::{ActionTiming, NumericBounds};
 use crate::*;
 
 /// Annotates the conditions and effects of all actions that form a transition or a borrow (see the module documentation).
 ///
 /// Any previous transition annotation is replaced. Returns the number of transitions found (including borrows).
 pub fn annotate_transitions(model: &mut Model) -> Res<usize> {
-    let env = &model.env;
+    let bounds = NumericBounds::new(model);
+    let pairs = (model.actions.iter())
+        .map(|a| transitions(a, &ActionTiming::new(a, &bounds), &model.env))
+        .collect::<Vec<_>>();
     let mut count = 0;
-    for action in model.actions.iter_mut() {
-        let pairs = transitions(action, env);
+    for (action, pairs) in model.actions.iter_mut().zip(pairs) {
         count += pairs.len();
         action
             .conditions
@@ -52,10 +56,10 @@ pub fn annotate_transitions(model: &mut Model) -> Res<usize> {
 }
 
 /// Returns the unambiguous transitions of the action, as `(condition index, effect index)`.
-fn transitions(action: &Action, env: &Environment) -> Vec<(usize, usize)> {
+fn transitions(action: &Action, timing: &ActionTiming, env: &Environment) -> Vec<(usize, usize)> {
     let candidates = (0..action.conditions.len())
         .cartesian_product(0..action.effects.len())
-        .filter(|&(i, j)| check_transition(action, &action.conditions[i], &action.effects[j], env).is_some())
+        .filter(|&(i, j)| check_transition(timing, &action.conditions[i], &action.effects[j], env).is_some())
         .collect_vec();
     (candidates.iter())
         .filter(|(i, j)| (candidates.iter()).filter(|(i2, j2)| i2 == i || j2 == j).count() == 1)
@@ -222,14 +226,20 @@ mod tests {
     }
 
     #[test]
-    fn no_transition_without_merge() {
-        // without merging, `available` is erased at start and assigned at end: no assignment follows the condition
+    fn transition_to_erase_without_merge() {
+        // without merging, `available` is erased at start (transition) and assigned at end (independently)
         let mut model = build(DOMAIN, PB);
         erase_unusable_effects(&mut model).unwrap();
         annotate_transitions(&mut model).unwrap();
+        let a = action(&model, "use");
         assert_eq!(
-            transitions(&model, action(&model, "use")),
-            [("fresh".to_string(), false)]
+            transitions(&model, a),
+            [("available".to_string(), false), ("fresh".to_string(), false)]
+        );
+        let erasure = a.transitions(&model.env).find(|t| t.value.is_none()).unwrap();
+        assert_eq!(
+            format!("{}", model.env.node(erasure)),
+            "[start..] available(?x) : true =~> ∅"
         );
     }
 }
