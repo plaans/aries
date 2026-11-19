@@ -65,6 +65,10 @@ impl Fluents {
         self.fluents.get(id).unwrap()
     }
 
+    pub fn get_mut(&mut self, id: FluentId) -> &mut Fluent {
+        self.fluents.get_mut(id).unwrap()
+    }
+
     pub fn get_by_name(&self, name: impl AsRef<str>) -> Option<FluentId> {
         self.fluents
             .iter()

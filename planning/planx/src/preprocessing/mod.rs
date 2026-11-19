@@ -1,4 +1,5 @@
 pub mod analysis;
+mod annotate_fluents;
 mod annotate_transitions;
 mod erase_unusable_effects;
 pub(crate) mod intify;
@@ -8,6 +9,7 @@ mod merge_effect_condition;
 mod merge_erase_assign;
 mod split_predicates;
 
+pub use annotate_fluents::annotate_fluents;
 pub use annotate_transitions::annotate_transitions;
 pub use erase_unusable_effects::erase_unusable_effects;
 pub use intify::convert_reals_to_int;
@@ -54,6 +56,8 @@ pub enum ModelTransformation {
     MergeEraseAssign,
     /// Annotates conditions and effects forming transitions and borrows. See [`annotate_transitions`].
     AnnotateTransitions,
+    /// Annotates fluents with properties derived from their usage. See [`annotate_fluents`].
+    AnnotateFluents,
 }
 
 /// Applies a built-in transformation to the model.
@@ -86,6 +90,10 @@ pub fn apply_transformation(mut model: Model, transformation: ModelTransformatio
         }
         ModelTransformation::AnnotateTransitions => {
             annotate_transitions(&mut model)?;
+            Ok(model)
+        }
+        ModelTransformation::AnnotateFluents => {
+            annotate_fluents(&mut model)?;
             Ok(model)
         }
     }
