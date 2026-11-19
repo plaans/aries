@@ -178,6 +178,51 @@ pub(crate) fn check_transition<'a>(
 }
 
 impl Transition<'_> {
+    /// Checks that a borrow can be encoded as a condition over the whole borrow, together with an exclusion of all
+    /// other conditions on the state variable (instead of an assignment effect).
+    /// Returns the reason why it cannot otherwise.
+    ///
+    /// This requires that:
+    ///  - the effect has a non-instantaneous transition (`start < end`), so that the condition can be extended to `end - ε`;
+    ///  - the state variable is not numeric (increase and decrease effects rely on the window of an assignment);
+    ///  - no other effect of the action on the fluent (with arguments that may unify) may start during the transition
+    ///    `[start, end]` of the borrow's effect (it would be cancelled by, or cancel, the borrow's effect under the
+    ///    PDDL add-after-delete semantics, or be excluded by its window).
+    ///
+    /// Only borrows satisfying these requirements are annotated by
+    /// [`annotate_transitions`](crate::preprocessing::annotate_transitions).
+    pub fn borrow_requirements(&self, action: &Action, timing: &ActionTiming, env: &Environment) -> Result<(), &'static str> {
+        let e = &self.effect.effect_expression;
+        let sv = &e.state_variable;
+        let may_unify = |a: &[ExprId], b: &[ExprId]| {
+            a.len() == b.len()
+                && a.iter().zip(b).all(|(&x, &y)| match (Term::of(x, env), Term::of(y, env)) {
+                    (Some(x), Some(y)) => x.may_unify(&y),
+                    _ => true,
+                })
+        };
+        if !self.borrow {
+            Err("not a borrow")
+        } else if !self.shape_ok() {
+            Err("conditional or quantified effect")
+        } else if !timing.lt(e.transition_start, e.transition_end) {
+            Err("possibly instantaneous transition")
+        } else if env.fluents.get(sv.fluent).return_type.is_numeric() {
+            Err("numeric state variable")
+        } else if action.effects.iter().any(|other| {
+            let o = &other.effect_expression;
+            !std::ptr::eq(other, self.effect)
+                && o.state_variable.fluent == sv.fluent
+                && may_unify(&o.state_variable.arguments, &sv.arguments)
+                && !timing.lt(o.transition_start, e.transition_start)
+                && !timing.lt(e.transition_end, o.transition_start)
+        }) {
+            Err("another effect of the action on the state variable may start during the borrow")
+        } else {
+            Ok(())
+        }
+    }
+
     /// True if the effect is unconditional and unquantified.
     fn shape_ok(&self) -> bool {
         self.effect.effect_expression.condition.is_none() && self.effect.universal_quantification.is_empty()

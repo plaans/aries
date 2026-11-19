@@ -24,6 +24,10 @@
 //!
 //! A condition and an effect are paired if they form a transition (see [`Transition`]) and the pairing is
 //! unambiguous: the condition forms a transition with no other effect, and the effect with no other condition.
+//!
+//! A borrow is only annotated if it can be encoded as such (see [`Transition::borrow_requirements`]): otherwise the
+//! pair is not annotated at all (neither as a borrow nor as a transition), so that every annotated borrow is
+//! guaranteed to be exploited by the encoding.
 
 use itertools::Itertools;
 
@@ -59,7 +63,10 @@ pub fn annotate_transitions(model: &mut Model) -> Res<usize> {
 fn transitions(action: &Action, timing: &ActionTiming, env: &Environment) -> Vec<(usize, usize)> {
     let candidates = (0..action.conditions.len())
         .cartesian_product(0..action.effects.len())
-        .filter(|&(i, j)| check_transition(timing, &action.conditions[i], &action.effects[j], env).is_some())
+        .filter(|&(i, j)| {
+            check_transition(timing, &action.conditions[i], &action.effects[j], env)
+                .is_some_and(|t| !t.borrow || t.borrow_requirements(action, timing, env).is_ok())
+        })
         .collect_vec();
     (candidates.iter())
         .filter(|(i, j)| (candidates.iter()).filter(|(i2, j2)| i2 == i || j2 == j).count() == 1)
@@ -246,5 +253,29 @@ mod tests {
             format!("{}", model.env.node(erasure)),
             "[start..] available(?x) : true =~> ∅"
         );
+    }
+
+    #[test]
+    fn unencodable_borrows_are_not_annotated() {
+        let domain = "(define (domain d) (:requirements :typing :numeric-fluents)
+            (:types r)
+            (:predicates (p ?x - r) (q ?x - r))
+            (:functions (level ?x - r))
+            (:action ok :parameters (?x - r)
+              :precondition (p ?x) :effect (and (p ?x) (q ?x)))
+            (:action clash :parameters (?x ?y - r)
+              :precondition (p ?x) :effect (and (p ?x) (not (p ?y))))
+            (:action numeric :parameters (?x - r)
+              :precondition (= (level ?x) 3) :effect (assign (level ?x) 3)))";
+        let pb = "(define (problem p) (:domain d) (:objects a b - r)
+            (:init (p a) (= (level a) 3) (= (level b) 0)) (:goal (q a)))";
+        let mut model = build(domain, pb);
+        annotate_transitions(&mut model).unwrap();
+        println!("{model}");
+        assert_eq!(transitions(&model, action(&model, "ok")), [("p".to_string(), true)]);
+        // another effect on the state variable, at the same time as the borrow
+        assert_eq!(transitions(&model, action(&model, "clash")), []);
+        // numeric state variable
+        assert_eq!(transitions(&model, action(&model, "numeric")), []);
     }
 }

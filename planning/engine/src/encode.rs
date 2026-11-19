@@ -17,8 +17,8 @@ use itertools::Itertools;
 use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeInterval, TimeRef, Timestamp, Type, errors::*};
 use smallvec::SmallVec;
 use timelines::{
-    Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time, TimeItv,
-    boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
+    Borrow, Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    TimeItv, boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 
 use crate::encode::{
@@ -156,6 +156,7 @@ pub fn condition_to_constraint(
                 period: timepoint,
                 prez: bindings.presence,
                 source: bindings.source,
+                borrow: None,
             };
             ConditionExpression::HasValue(c).scoped(bindings.presence)
         }
@@ -250,6 +251,7 @@ pub fn condition_to_constraint_eq(
                     period: timepoint,
                     prez: bindings.presence,
                     source: bindings.source,
+                    borrow: None,
                 };
                 Ok(Some(ConditionExpression::HasValue(c).scoped(bindings.presence)))
             } else {
@@ -272,6 +274,76 @@ pub fn condition_to_constraint_eq(
         let e2 = reify_expression(rhs, Some(timepoint), model, sched, bindings, encoding)?;
         Ok(ConditionExpression::EqZero(e1 - e2).scoped(bindings.presence))
     }
+}
+
+/// Encodes a borrow (a condition immediately followed by an assignment of the required value, see [`planx::Transition`])
+/// as a condition that must hold until the end of the effect's transition (excluded), and a [`timelines::Borrow`]
+/// preventing any other condition from reading the state variable during the transition.
+///
+/// The effect of the borrow must *not* be encoded. See [`planx::Action::encodable_borrows`] for the requirements.
+pub fn borrow_to_constraint(
+    borrow: &planx::Transition,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<ConditionConstraint> {
+    let eff = &borrow.effect.effect_expression;
+    if !borrow.borrow {
+        return invalid_borrow(borrow, model, "not a borrow").failed();
+    }
+    if !borrow.effect.universal_quantification.is_empty() || eff.condition.is_some() {
+        return invalid_borrow(borrow, model, "the effect of the borrow is quantified or conditional").failed();
+    }
+    // the condition must be supported until the value is (in the original model) re-established by the effect
+    let interval = TimeInterval {
+        start: borrow.condition.interval.start,
+        end: eff.transition_end - planx::Dt,
+    };
+    let mut constraint = condition_to_constraint(interval, borrow.condition.cond, model, sched, bindings, encoding)?;
+    let ConditionExpression::HasValue(condition) = &mut constraint.constraint else {
+        return invalid_borrow(
+            borrow,
+            model,
+            "the condition of the borrow is not encoded as the value of a state variable",
+        )
+        .failed();
+    };
+    // the borrow (and its exclusion) is present iff the condition is
+    if constraint.scope != bindings.presence || condition.prez != bindings.presence {
+        return invalid_borrow(
+            borrow,
+            model,
+            "the condition of the borrow is not scoped by the presence of the action",
+        )
+        .failed();
+    }
+    let start = reify_timing(eff.transition_start, model, sched, bindings)?;
+    let end = reify_timing(eff.transition_end - planx::Dt, model, sched, bindings)?;
+    let id = sched.add_borrow(Borrow {
+        state_var: condition.state_var.clone(),
+        start,
+        end,
+        prez: bindings.presence,
+        source: bindings.source,
+    });
+    condition.borrow = Some(id);
+    Ok(constraint)
+}
+
+/// Error for a borrow annotation that cannot be exploited by the encoding, pointing to its condition and effect.
+///
+/// This denotes an invalid annotation of the model, i.e., a bug in the preprocessing.
+pub fn invalid_borrow(borrow: &planx::Transition, model: &Model, reason: impl std::fmt::Display) -> Message {
+    model
+        .env
+        .node(borrow.condition.cond)
+        .invalid(format!("invalid borrow annotation ({reason})"))
+        .snippet(model.env.node(borrow.effect).info("effect of the borrow"))
+        .title(format!(
+            "Invalid borrow annotation (bug in the preprocessing): {}",
+            &model.env / *borrow
+        ))
 }
 
 /// Converts a [`planx::Effect`] into a [`timelines::Effect`]
@@ -597,6 +669,7 @@ pub fn reify_expression_impl(
                 period: time,
                 prez: binding.presence,
                 source: binding.source,
+                borrow: None,
             };
             let reif = ConditionExpression::HasValue(reif).scoped(binding.presence);
             reif.constraint
