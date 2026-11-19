@@ -1,3 +1,4 @@
+mod analyze;
 mod export;
 mod generate;
 pub(crate) mod optimize_plan;
@@ -62,6 +63,9 @@ enum Commands {
     /// (Finite) planning problem solving (plan generation):
     /// find a solution plan using, at most, a given finite number of action instances for each template (schema).
     SolveFinite(SolveFiniteProblem),
+    /// Analysis of the problem: annotations of the model (fluent properties, supports, reachability, usefulness) and
+    /// constraints on the number of instances of each action template.
+    Analyze(analyze::Analyze),
     FindDomain(FindDomain),
     FindProblem(FindProblem),
 }
@@ -176,6 +180,7 @@ fn main() -> Res<()> {
         Commands::OptimizePlan(command) => optimize_plan(command)?,
         Commands::Solve(command) => solve_problem(command)?,
         Commands::SolveFinite(command) => solve_finite_problem(command)?,
+        Commands::Analyze(command) => analyze::analyze(command)?,
     }
 
     Ok(())

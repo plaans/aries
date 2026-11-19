@@ -1,0 +1,126 @@
+//! The `analyze` command: runs the analysis passes on a problem and reports their results.
+
+use std::{collections::HashMap, path::PathBuf};
+
+use itertools::Itertools;
+use planx::{
+    Message, Res,
+    errors::*,
+    pddl::{self, input::Input},
+    preprocessing::{
+        ModelTransformation,
+        analysis::{CountConstraints, PlanScope},
+    },
+};
+
+use crate::preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess_model};
+
+/// Analysis passes, applied after the default transformations.
+const ANALYSIS_TRANSFORMATIONS: &[ModelTransformation] = &[
+    ModelTransformation::AnnotateFluents,
+    ModelTransformation::AnnotateSupports,
+];
+
+#[derive(clap::Parser, Debug)]
+pub struct Analyze {
+    /// Path to the problem file
+    problem_file: PathBuf,
+    /// Path to the PDDL domain file.
+    /// If not specified, we will attempt to automatically infer it based on the problem file.
+    #[arg(short, long)]
+    domain: Option<PathBuf>,
+    /// Do not print the annotated model.
+    #[arg(short, long)]
+    quiet: bool,
+    /// Plans (of the problem) against which to check the constraints. Each violated constraint is reported on a line
+    /// starting with `VIOLATION`.
+    #[arg(short, long)]
+    plan: Vec<PathBuf>,
+}
+
+pub fn analyze(command: &Analyze) -> Res<()> {
+    let problem_file = &command.problem_file;
+    if !problem_file.exists() {
+        return Err(Message::error(format!(
+            "Problem file {} does not exist",
+            problem_file.display()
+        )));
+    }
+    let problem_file = problem_file.canonicalize().unwrap();
+    let domain_file = match command.domain.as_ref() {
+        Some(name) => name.clone(),
+        None => pddl::find_domain_of(&problem_file).title(
+            "Unable to automatically find the domain file. Consider specifying the domain with the option -d/--domain",
+        )?,
+    };
+    let domain = pddl::parse_pddl_domain(Input::from_file(&domain_file)?)?;
+    let problem = pddl::parse_pddl_problem(Input::from_file(&problem_file)?)?;
+    let raw_model = pddl::build_model(&domain, &problem)?;
+    let model = preprocess_model(raw_model.clone(), DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let model = preprocess_model(model, ANALYSIS_TRANSFORMATIONS)?;
+
+    if !command.quiet {
+        println!("===== Annotated model =====\n\n{model}");
+        println!("Goal identifiers:");
+        for g in &model.goals {
+            println!("  {}: {}", g.id, model.env.node(g));
+        }
+        println!();
+    }
+
+    let constraints = CountConstraints::new(&model);
+    println!("===== Constraints on the number of instances =====\n");
+    println!("[scope] generator  constraint  -- explanation");
+    println!(
+        "  scopes: all = any valid plan, NR = non-redundant plans, NR+ = NR plans without mutually cancelling actions\n"
+    );
+    print!("{constraints}");
+
+    println!("\n===== Bounds (simple propagation, for information) =====\n");
+    let scopes = [
+        PlanScope::AllPlans,
+        PlanScope::NonRedundant,
+        PlanScope::NonRedundantPlus,
+    ];
+    let bounds = scopes.map(|s| constraints.propagate(s));
+    let width = constraints
+        .templates
+        .iter()
+        .map(|t| t.to_string().len())
+        .max()
+        .unwrap_or(0);
+    println!("{:width$}   {:>12} {:>12} {:>12}", "", "all", "NR", "NR+");
+    for t in &constraints.templates {
+        let cells = bounds.iter().map(|b| match b {
+            None => "infeasible".to_string(),
+            Some(b) => {
+                let (lb, ub) = b[t];
+                format!("[{lb}, {}]", ub.map_or("inf".to_string(), |u| u.to_string()))
+            }
+        });
+        println!(
+            "{:width$}   {}",
+            t.to_string(),
+            cells.map(|c| format!("{c:>12}")).join(" ")
+        );
+    }
+
+    for plan_file in &command.plan {
+        let plan = pddl::parse_plan(Input::from_file(plan_file)?)?;
+        let plan = pddl::build_plan(&plan, &raw_model)?;
+        let counts: HashMap<_, i64> = (plan.operations.iter())
+            .map(|op| op.action_ref.clone())
+            .counts()
+            .into_iter()
+            .map(|(a, n)| (a, n as i64))
+            .collect();
+        println!("\n===== Plan {} =====\n", plan_file.display());
+        for t in &constraints.templates {
+            println!("  n({t}) = {}", counts.get(t).copied().unwrap_or(0));
+        }
+        for c in constraints.violations(&counts) {
+            println!("VIOLATION {c}");
+        }
+    }
+    Ok(())
+}
