@@ -1,4 +1,4 @@
-use derive_more::derive::Display;
+use std::fmt::Display;
 use thiserror::Error;
 
 use crate::{env::Environment, errors::ToEnvMessage, utils::disp_iter, *};
@@ -84,6 +84,7 @@ impl Fluents {
             parameters,
             return_type,
             source,
+            annotations: Default::default(),
         };
         if let Some(other) = self.get_by_name(fluent.name()) {
             let other_sym = self.fluents.get(other).unwrap().name().clone();
@@ -120,14 +121,25 @@ impl Fluents {
     }
 }
 
-#[derive(Clone, Debug, Display)]
-#[display("{}{:?} -> {}", name, parameters, return_type)]
+#[derive(Clone, Debug)]
 pub struct Fluent {
     pub name: Sym,
     pub parameters: Vec<Param>,
     pub return_type: Type,
     // source of the declaration of the fluent
     pub source: Option<Span>,
+    /// Additional information on the fluent, typically set by preprocessing steps.
+    pub annotations: FluentAnnotations,
+}
+
+impl Display for Fluent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{:?} -> {}", self.name, self.parameters, self.return_type)?;
+        if let Some(props) = &self.annotations.properties {
+            write!(f, "    {props}")?;
+        }
+        Ok(())
+    }
 }
 
 impl Fluent {

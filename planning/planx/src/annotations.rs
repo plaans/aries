@@ -2,7 +2,8 @@
 //!
 //! Annotations record information on the role of a condition or effect in its action (e.g. being part of a
 //! transition), typically computed by a preprocessing step to be exploited by later ones or by the encoding.
-//! Each kind of annotation is a field of [`ConditionAnnotations`] or [`EffectAnnotations`].
+//! Each kind of annotation is a field of [`FluentAnnotations`], [`ActionAnnotations`], [`ConditionAnnotations`] or
+//! [`EffectAnnotations`].
 //!
 //! # Robustness to model transformations
 //!
@@ -18,6 +19,8 @@
 //! the annotated pattern still holds and panic otherwise. These checks are skipped in release builds.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use itertools::Itertools;
 
 use crate::preprocessing::analysis::{ActionTiming, RequiredValue, Term, required_value, requires_value};
 use crate::*;
@@ -46,12 +49,123 @@ impl EffectId {
     }
 }
 
+/// Identifier of a [`Goal`], unique within its model.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GoalId(u64);
+
+impl GoalId {
+    /// A new identifier, distinct from all previously created ones.
+    pub fn fresh() -> Self {
+        GoalId(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl std::fmt::Display for GoalId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "goal#{}", self.0)
+    }
+}
+
+/// Reference to a condition of an action of the model.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CondRef {
+    pub action: ActionRef,
+    pub condition: ConditionId,
+}
+
+/// Reference to an effect of an action of the model.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct EffRef {
+    pub action: ActionRef,
+    pub effect: EffectId,
+}
+
+/// Annotations of a fluent (one field per kind of annotation).
+#[derive(Clone, Debug, Default)]
+pub struct FluentAnnotations {
+    /// Properties of the fluent (see [`annotate_fluents`](crate::preprocessing::annotate_fluents)).
+    /// `None` if not computed.
+    pub properties: Option<FluentProperties>,
+}
+
+/// Properties of a fluent, derived from the way it is used in the model (and, for static fluents, from its initial
+/// values).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FluentProperties {
+    /// True if the fluent is never the target of an action effect: its value is entirely determined by the problem
+    /// definition.
+    pub is_static: bool,
+    /// True if the fluent is read somewhere in the model (condition, goal, metric, effect argument or value, ...).
+    pub read: bool,
+    /// True if the fluent is read somewhere else than in a *simple requirement*, i.e. a top-level conjunct `sv`,
+    /// `(not sv)`, `(= sv v)` of an action condition or of an unquantified goal, where all arguments of `sv` and the
+    /// value `v` are parameters or constants.
+    ///
+    /// Reasoning on which effect can support which requirement is only possible for non-opaque fluents.
+    pub opaque: bool,
+    /// For a static boolean binary relation, the positions of the arguments that functionally determine the other
+    /// one (see [`StaticFunctions`](crate::preprocessing::analysis::StaticFunctions)).
+    pub functional_inputs: Vec<usize>,
+    /// For a static boolean binary relation whose two arguments have the same type: `Some(n)` if the relation
+    /// (as a graph over objects) has no cycle, `n` being the number of edges of its longest path.
+    pub acyclic: Option<usize>,
+    /// For a numeric fluent, the impact of increasing or decreasing it.
+    pub numeric: Option<NumericProperties>,
+}
+
+/// Impact of changing a numeric fluent in a given direction.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum DirectionImpact {
+    /// The fluent is never read: changing it has no impact.
+    Neutral,
+    /// Changing the fluent in this direction can only make requirements easier to satisfy and the metric better.
+    Helpful,
+    /// Changing the fluent in this direction can only make requirements harder to satisfy and the metric worse.
+    Harmful,
+    /// Unknown or both helpful and harmful.
+    Mixed,
+}
+
+/// Properties of a numeric fluent.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NumericProperties {
+    /// Impact of increasing the fluent.
+    pub increase: DirectionImpact,
+    /// Impact of decreasing the fluent.
+    pub decrease: DirectionImpact,
+    /// True if no action effect increases the fluent (decrease or assignment of a smaller constant are allowed).
+    pub never_increased: bool,
+    /// True if no action effect decreases the fluent.
+    pub never_decreased: bool,
+}
+
+/// Annotations of an action (one field per kind of annotation).
+#[derive(Clone, Debug, Default)]
+pub struct ActionAnnotations {
+    /// Reachability and usefulness of the action (see [`annotate_supports`](crate::preprocessing::annotate_supports)).
+    /// `None` if not computed.
+    pub status: Option<ActionStatus>,
+}
+
+/// Reachability and usefulness of an action.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ActionStatus {
+    /// False if the action cannot appear in any valid plan, because some of its requirements cannot be supported.
+    pub reachable: bool,
+    /// False if the action cannot contribute to the goals or metric, even indirectly: it does not appear in any
+    /// *non-redundant* plan (plan in which each action contributes to the goals or metric).
+    pub useful: bool,
+}
+
 /// Annotations of a condition of an action (one field per kind of annotation).
 #[derive(Clone, Debug, Default)]
 pub struct ConditionAnnotations {
     /// Effect forming a transition with this condition (see [`annotate_transitions`](crate::preprocessing::annotate_transitions)).
     /// Only read through [`Action::transition_of_condition`], which checks that it is still valid.
     pub(crate) transition: Option<EffectId>,
+    /// Elements that may support the condition (see [`annotate_supports`](crate::preprocessing::annotate_supports)).
+    /// `None` if not computed or if the condition is not a simple requirement.
+    pub supporters: Option<Supporters>,
 }
 
 /// Annotations of an effect of an action (one field per kind of annotation).
@@ -60,6 +174,46 @@ pub struct EffectAnnotations {
     /// Condition forming a transition with this effect (see [`annotate_transitions`](crate::preprocessing::annotate_transitions)).
     /// Only read through [`Action::transition_of_effect`], which checks that it is still valid.
     pub(crate) transition: Option<ConditionId>,
+    /// Requirements the effect may support (see [`annotate_supports`](crate::preprocessing::annotate_supports)).
+    /// `None` if not computed.
+    pub supports: Option<Supports>,
+}
+
+/// Requirements that an effect may support, i.e. the requirements of the model it may be the reason of an action for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Supports {
+    /// The effect is on a fluent that is not only read in simple requirements: it may be useful for anything.
+    Opaque,
+    /// The effect may only support these requirements (an empty list means that the effect is never useful).
+    Targets(Vec<SupportTarget>),
+}
+
+impl Supports {
+    /// True if the effect cannot support anything.
+    pub fn is_useless(&self) -> bool {
+        matches!(self, Supports::Targets(ts) if ts.is_empty())
+    }
+}
+
+/// A requirement that an effect may support.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SupportTarget {
+    /// A condition of an action.
+    ///
+    /// `undo` is true if the condition is part of a transition that (when supported by the effect) restores the value
+    /// that the effect's own transition consumed: supporting it only makes sense if the two actions cancel each other.
+    Condition { cond: CondRef, undo: bool },
+    /// A goal of the model. `atoms` is the number of atoms of the goal that the effect may support.
+    Goal { goal: GoalId, atoms: usize },
+}
+
+/// Elements that may support a condition.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Supporters {
+    /// True if the condition may be supported by the problem definition (initial state or timed effects).
+    pub init: bool,
+    /// Effects of actions that may support the condition.
+    pub effects: Vec<EffRef>,
 }
 
 /// A condition immediately followed by an assignment (or erasure) of the same state variable.
@@ -76,6 +230,12 @@ pub struct Transition<'a> {
 }
 
 impl Action {
+    /// True if the condition is consumed by the action: it is the condition of a transition that is not a borrow, so
+    /// that the value it requires is replaced by the action just after being required.
+    pub fn is_consuming(&self, cond: &Condition, env: &Environment) -> bool {
+        self.transition_of_condition(cond, env).is_some_and(|t| !t.borrow)
+    }
+
     /// The condition with the given identifier.
     ///
     /// Identifiers are unique within an action (checked in debug builds).
@@ -346,6 +506,70 @@ impl<'env> std::fmt::Display for Env<'env, Transition<'_>> {
                     None => write!(f, " =~> ∅"),
                 }
             }
+        }
+    }
+}
+
+impl std::fmt::Display for FluentProperties {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut props = Vec::new();
+        if self.is_static {
+            props.push("static".to_string());
+        }
+        if !self.read {
+            props.push("unread".to_string());
+        } else if self.opaque {
+            props.push("opaque".to_string());
+        }
+        if !self.functional_inputs.is_empty() {
+            props.push(format!("functional({})", self.functional_inputs.iter().join(",")));
+        }
+        if let Some(n) = self.acyclic {
+            props.push(format!("acyclic(longest path: {n})"));
+        }
+        if let Some(num) = &self.numeric {
+            props.push(format!("increase: {:?}, decrease: {:?}", num.increase, num.decrease).to_lowercase());
+            if num.never_increased {
+                props.push("never-increased".to_string());
+            }
+            if num.never_decreased {
+                props.push("never-decreased".to_string());
+            }
+        }
+        write!(f, "[{}]", props.join(", "))
+    }
+}
+
+impl std::fmt::Display for SupportTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SupportTarget::Condition { cond, undo: false } => write!(f, "{}", cond.action),
+            SupportTarget::Condition { cond, undo: true } => write!(f, "{}(undo)", cond.action),
+            SupportTarget::Goal { goal, atoms: 1 } => write!(f, "{goal}"),
+            SupportTarget::Goal { goal, atoms } => write!(f, "{goal}(x{atoms})"),
+        }
+    }
+}
+
+impl std::fmt::Display for Supports {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Supports::Opaque => write!(f, "<opaque>"),
+            Supports::Targets(ts) if ts.is_empty() => write!(f, "<nothing>"),
+            Supports::Targets(ts) => write!(f, "{}", ts.iter().join(", ")),
+        }
+    }
+}
+
+impl std::fmt::Display for Supporters {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let init = self.init.then(|| "init".to_string());
+        let effects = self.effects.iter().map(|e| e.action.to_string()).dedup();
+        let all = init.into_iter().chain(effects).collect_vec();
+        if all.is_empty() {
+            write!(f, "<nothing>")
+        } else {
+            write!(f, "{}", all.join(", "))
         }
     }
 }

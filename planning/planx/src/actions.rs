@@ -134,6 +134,8 @@ pub struct Action {
     pub preferences: ActionPreferences,
     /// Set of subtasks of this action (typically for actions representing HTN methods).
     pub subtasks: TaskNet,
+    /// Additional information on the action, typically set by preprocessing steps.
+    pub annotations: ActionAnnotations,
 }
 
 impl Action {
@@ -158,6 +160,7 @@ impl Action {
             effects: Default::default(),
             preferences: Default::default(),
             subtasks: Default::default(),
+            annotations: Default::default(),
         })
     }
     pub fn instantaneous(name: impl Into<Sym>, parameters: Vec<Param>, env: &mut Environment) -> Res<Self> {
@@ -178,6 +181,7 @@ impl Action {
             effects: Default::default(),
             preferences: Default::default(),
             subtasks: Default::default(),
+            annotations: Default::default(),
         }
     }
 
@@ -231,6 +235,30 @@ impl<'env> Display for Env<'env, &Action> {
         )?;
         fs(f, "transitions:", action.transitions(env).filter(|t| !t.borrow), env)?;
         fs(f, "borrows:", action.transitions(env).filter(|t| t.borrow), env)?;
+        // results of the support analysis, if available
+        if let Some(status) = action.annotations.status {
+            let reachable = if status.reachable { "reachable" } else { "unreachable" };
+            let useful = if status.useful { "useful" } else { "useless" };
+            write!(f, "\n        status: {reachable}, {useful}")?;
+        }
+        let supporters = (action.conditions.iter())
+            .filter_map(|c| c.annotations.supporters.as_ref().map(|s| (c, s)))
+            .collect_vec();
+        if !supporters.is_empty() {
+            write!(f, "\n        supported by:")?;
+            for (c, s) in supporters {
+                write!(f, "\n            {} <= {s}", env / c)?;
+            }
+        }
+        let supports = (action.effects.iter())
+            .filter_map(|e| e.annotations.supports.as_ref().map(|s| (e, s)))
+            .collect_vec();
+        if !supports.is_empty() {
+            write!(f, "\n        supports:")?;
+            for (e, s) in supports {
+                write!(f, "\n            {} => {s}", env / e)?;
+            }
+        }
         fs(f, "preferences:", self.elem.preferences.iter(), self.env)?;
         fs(f, "vars:", self.elem.subtasks.variables.iter(), self.env)?;
         fs(f, "subtasks:", self.elem.subtasks.iter(), self.env)?;

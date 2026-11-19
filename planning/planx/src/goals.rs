@@ -3,12 +3,14 @@ use std::fmt::Display;
 use itertools::Itertools;
 
 use crate::{
-    Condition, Env, ExprId, Param, RealValue, Sym, TimeInterval, Timestamp,
+    Condition, Env, ExprId, GoalId, Param, RealValue, Sym, TimeInterval, Timestamp,
     errors::{Span, Spanned},
 };
 
 #[derive(Debug, Clone)]
 pub struct Goal {
+    /// Identifier of the goal, unique within its model (preserved by cloning).
+    pub id: GoalId,
     pub universal_quantification: Vec<Param>,
     pub goal_expression: SimpleGoal,
     pub span: Option<Span>,
@@ -74,6 +76,7 @@ impl SimpleGoal {
     /// If the set of variables is non empy, the variables should correspond to the ones already present in the goal expression.
     pub fn forall(self, vars: Vec<Param>) -> Goal {
         Goal {
+            id: GoalId::fresh(),
             universal_quantification: vars,
             goal_expression: self,
             span: None,
