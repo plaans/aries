@@ -142,3 +142,29 @@ pub fn state_variables(expr: ExprId, env: &Environment) -> Vec<ExprId> {
     }
     res
 }
+
+/// True if the two expressions are syntactically identical (possibly with distinct identifiers).
+///
+/// This is conservative: `false` does not imply that the expressions are semantically distinct.
+pub fn syntactically_equal(a: ExprId, b: ExprId, env: &Environment) -> bool {
+    let all_equal = |xs: &[ExprId], ys: &[ExprId]| {
+        xs.len() == ys.len() && xs.iter().zip(ys).all(|(&x, &y)| syntactically_equal(x, y, env))
+    };
+    a == b
+        || match (env.node(a).expr(), env.node(b).expr()) {
+            (Expr::Real(x), Expr::Real(y)) => x == y,
+            (Expr::Bool(x), Expr::Bool(y)) => x == y,
+            (Expr::Object(x), Expr::Object(y)) => x == y,
+            (Expr::Param(x), Expr::Param(y)) => x == y,
+            (Expr::App(f, xs), Expr::App(g, ys)) => f == g && all_equal(xs, ys),
+            (Expr::StateVariable(f, xs), Expr::StateVariable(g, ys)) => f == g && all_equal(xs, ys),
+            (Expr::Exists(v, x), Expr::Exists(w, y)) | (Expr::Forall(v, x), Expr::Forall(w, y)) => {
+                v == w && syntactically_equal(*x, *y, env)
+            }
+            (Expr::Instant(x), Expr::Instant(y)) => x == y,
+            (Expr::Duration, Expr::Duration)
+            | (Expr::Makespan, Expr::Makespan)
+            | (Expr::PlanLength, Expr::PlanLength) => true,
+            _ => false,
+        }
+}

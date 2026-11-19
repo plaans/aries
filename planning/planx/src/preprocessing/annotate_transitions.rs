@@ -220,7 +220,12 @@ mod tests {
     fn duplication_is_detected() {
         let mut model = annotated();
         let a = action_mut(&mut model, "use");
-        let held = a.effects.iter().find(|e| e.annotations.transition.is_some()).unwrap().clone();
+        let held = a
+            .effects
+            .iter()
+            .find(|e| e.annotations.transition.is_some())
+            .unwrap()
+            .clone();
         a.effects.push(held);
         let _ = transitions(&model, action(&model, "use"));
     }

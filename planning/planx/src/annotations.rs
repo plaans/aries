@@ -19,7 +19,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::preprocessing::analysis::{ActionTiming, RequiredValue, Term, required_value};
+use crate::preprocessing::analysis::{ActionTiming, RequiredValue, Term, required_value, requires_value};
 use crate::*;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
@@ -129,7 +129,8 @@ impl Action {
     fn annotated_transition<'a>(&self, cond: &'a Condition, eff: &'a Effect, env: &Environment) -> Transition<'a> {
         if cfg!(debug_assertions) {
             assert!(
-                self.conditions.iter().any(|c| std::ptr::eq(c, cond)) && self.effects.iter().any(|e| std::ptr::eq(e, eff)),
+                self.conditions.iter().any(|c| std::ptr::eq(c, cond))
+                    && self.effects.iter().any(|e| std::ptr::eq(e, eff)),
                 "Transition of an element that is not part of the action"
             );
             assert!(
@@ -137,7 +138,10 @@ impl Action {
                 "Transition annotation is not symmetric: {cond:?} / {eff:?}"
             );
             let transition = (transition_parts(cond, eff, env))
-                .filter(|_| same_state_variable(cond, eff, env) && !provably_distinct(self, cond.interval.end, eff.effect_expression.transition_start, env))
+                .filter(|_| {
+                    same_state_variable(cond, eff, env)
+                        && !provably_distinct(self, cond.interval.end, eff.effect_expression.transition_start, env)
+                })
                 .filter(|t| t.shape_ok());
             transition.unwrap_or_else(|| {
                 panic!(
@@ -230,11 +234,7 @@ fn transition_parts<'a>(condition: &'a Condition, effect: &'a Effect, env: &Envi
         EffectOp::Erase => None,
         EffectOp::Increase(_) | EffectOp::Decrease(_) => return None,
     };
-    let required_simple = match required {
-        RequiredValue::Bool(b) => Some(Value::Bool(b)),
-        RequiredValue::Expr(e) => Value::of(e, env),
-    };
-    let borrow = required_simple.is_some() && value.is_some_and(|v| Value::of(v, env) == required_simple);
+    let borrow = value.is_some_and(|v| requires_value(required, v, env));
     Some(Transition {
         condition,
         effect,
@@ -242,24 +242,6 @@ fn transition_parts<'a>(condition: &'a Condition, effect: &'a Effect, env: &Envi
         value,
         borrow,
     })
-}
-
-/// A simple value, that can be syntactically compared.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Value {
-    Bool(bool),
-    Real(RealValue),
-    Term(Term),
-}
-
-impl Value {
-    fn of(expr: ExprId, env: &Environment) -> Option<Value> {
-        match env.node(expr).expr() {
-            Expr::Bool(b) => Some(Value::Bool(*b)),
-            Expr::Real(r) => Some(Value::Real(*r)),
-            _ => Term::of(expr, env).map(Value::Term),
-        }
-    }
 }
 
 /// Displays a transition (or borrow) in a compact form:

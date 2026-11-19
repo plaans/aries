@@ -35,13 +35,17 @@ pub fn required_value(cond: ExprId, env: &Environment) -> Option<(ExprId, Requir
 }
 
 /// A state variable whose value an action requires to be defined over an interval,
-/// because a condition of the action reads it as a top-level conjunct: `sv` or `(= sv v)`.
+/// because a condition of the action reads it as a top-level conjunct: `sv`, `(not sv)` or `(= sv v)`.
+///
+/// Note that `(not sv)` requires `sv` to have the value `false` (which is the default value of predicates under
+/// the closed world assumption), and is thus not satisfied by an undefined (erased) state variable.
 #[derive(Clone, Debug)]
 pub struct RequiredStateVariable {
     pub interval: TimeInterval,
     pub fluent: FluentId,
     pub args: Vec<Term>,
-    /// The value required: `Bool(true)` for a positive atom `sv`, `Expr(v)` for an equality `(= sv v)`.
+    /// The value required: `Bool(true)` for a positive atom `sv`, `Bool(false)` for a negative one `(not sv)`
+    /// and `Expr(v)` for an equality `(= sv v)`.
     pub value: RequiredValue,
 }
 
@@ -65,6 +69,7 @@ pub fn required_state_variables(action: &Action, env: &Environment) -> Vec<Requi
         for e in conjuncts(c.cond, env) {
             match env.node(e).expr() {
                 Expr::StateVariable(..) => push(c.interval, e, RequiredValue::Bool(true)),
+                Expr::App(Fun::Not, args) if args.len() == 1 => push(c.interval, args[0], RequiredValue::Bool(false)),
                 Expr::App(Fun::Eq, args) if args.len() == 2 => {
                     push(c.interval, args[0], RequiredValue::Expr(args[1]));
                     push(c.interval, args[1], RequiredValue::Expr(args[0]));
@@ -105,5 +110,52 @@ impl ActionGuards {
     /// True if an effect on `fluent(args)` starting at `t` is guarded.
     pub fn is_guarded(&self, fluent: FluentId, args: &[Term], t: Timestamp) -> bool {
         self.guards(fluent, args, t).next().is_some()
+    }
+}
+
+/// A simple value, that can be syntactically compared.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SimpleValue {
+    Bool(bool),
+    Real(RealValue),
+    Term(Term),
+}
+
+impl SimpleValue {
+    /// The simple value of an expression, if it is one.
+    pub fn of(expr: ExprId, env: &Environment) -> Option<SimpleValue> {
+        match env.node(expr).expr() {
+            Expr::Bool(b) => Some(SimpleValue::Bool(*b)),
+            Expr::Real(r) => Some(SimpleValue::Real(*r)),
+            _ => Term::of(expr, env).map(SimpleValue::Term),
+        }
+    }
+
+    /// The simple value required by a condition, if it is one.
+    pub fn required(required: RequiredValue, env: &Environment) -> Option<SimpleValue> {
+        match required {
+            RequiredValue::Bool(b) => Some(SimpleValue::Bool(b)),
+            RequiredValue::Expr(e) => SimpleValue::of(e, env),
+        }
+    }
+
+    /// True if the two values are guaranteed to be distinct, whatever the values of parameters.
+    pub fn distinct_from(&self, other: &SimpleValue) -> bool {
+        let is_constant = |v: &SimpleValue| !matches!(v, SimpleValue::Term(Term::Param(_)));
+        is_constant(self) && is_constant(other) && self != other
+    }
+}
+
+/// True if the value required by the condition is syntactically the (simple) value `value`.
+pub fn requires_value(required: RequiredValue, value: ExprId, env: &Environment) -> bool {
+    let required = SimpleValue::required(required, env);
+    required.is_some() && required == SimpleValue::of(value, env)
+}
+
+/// True if the value required by the condition is guaranteed to differ from the (simple) value `value`.
+pub fn requires_other_value(required: RequiredValue, value: ExprId, env: &Environment) -> bool {
+    match (SimpleValue::required(required, env), SimpleValue::of(value, env)) {
+        (Some(r), Some(v)) => r.distinct_from(&v),
+        _ => false,
     }
 }

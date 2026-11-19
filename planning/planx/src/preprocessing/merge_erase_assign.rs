@@ -20,19 +20,36 @@
 //!  - (P2) `E₂` transitions after `E₁`: `end(E₁) ≤ start(E₂)` in any instance of `A`
 //!    (see [`ActionTiming`](crate::preprocessing::analysis::ActionTiming));
 //!  - (P3) `E₁` is *guarded*: `A` requires `sv` to be defined just before `start(E₁)`
-//!    (see the [`guards`](crate::preprocessing::analysis::ActionGuards) analysis);
-//!  - (P4) the pairing is unambiguous: `E₂` is the only assignment satisfying (P1, P2) for `E₁` and vice versa.
+//!    (see the [`guards`](crate::preprocessing::analysis::ActionGuards) analysis),
+//!    or the pair is *contiguous*: `end(E₁) = start(E₂)` in any instance of `A`;
+//!  - (P4) the pairing is unambiguous: `E₂` is the only assignment satisfying (P1, P2, P3) for `E₁` and vice versa;
+//!  - (P5) if `sv` is boolean, no other effect of `A` on its fluent may start at `start(E₁)` or `start(E₂)` (it could
+//!    cancel `E₁` or `E₂` under the PDDL add-after-delete semantics, which applies to effects on predicates).
+//!    For other state variables, two simultaneous effects of the same action conflict in both models.
 //!
 //! The pairs on a fluent `f` are merged only if:
-//!  - (F1) every effect on `f` of any action is either guarded, or the assignment of a mergeable pair;
 //!  - (F2) no effect on `f` is an increase or decrease;
+//!
+//! and, unless the pair is contiguous:
+//!  - (F1) every effect on `f` of any action is either guarded, or the assignment of a mergeable pair whose erase is
+//!    guarded;
 //!  - (F3) all effects on `f` in the problem definition are at the time origin (no timed initial literals).
 //!
 //! The pair is rewritten as `E₂` with its transition start set to `start(E₁)`, and `E₁` is removed.
 //!
+//! # Contiguous pairs
+//!
+//! For a contiguous pair, with `s₁ = start(E₁)`, `e₁ = end(E₁) = start(E₂)` and `e₂ = end(E₂)`, the rewriting is an
+//! exact equivalence. Recall that an effect `E` excludes any other effect on its state variable over its
+//! *window* `[start(E) + dt, mutex_end(E)]`, where `mutex_end` is the end of the transition for an erase and any
+//! time after it for an assignment (as long as its value is needed). In both models:
+//!  - the value of `sv` is undefined over `]s₁, e₂[`, then given by `E₂`;
+//!  - the windows are the same: `[s₁ + dt, e₁] ∪ [e₁ + dt, mutex_end(E₂)]`, and so is the transition
+//!    `[s₁, e₂ - dt]` that conditions of other actions may not meet.
+//!
 //! # Why this is correct
 //!
-//! Let `s₁ = start(E₁)`, and `e₂ = end(E₂)`. In the original model, the value of `sv` is undefined over `]s₁, e₂[`
+//! For a non-contiguous pair, let `s₁ = start(E₁)`, and `e₂ = end(E₂)`. In the original model, the value of `sv` is undefined over `]s₁, e₂[`
 //! (erased then transitioning) and `E₂`'s value afterward, which is exactly the case in the rewritten model.
 //! The rewritten model is thus more constrained: its only additional constraint is that
 //! no other effect on `sv` may occur within `]s₁, e₂[`. We show that this never happens in a valid plan of the original model.
@@ -41,7 +58,7 @@
 //! `(E₁, E₂)`, and consider such a *violation* with the smallest `t'`. By (F1) and (F3):
 //!  - either `E'` is guarded: `sv` must be defined at `t'`. As it is undefined after `s₁`, there is some effect
 //!    that gives it a value between `s₁` and `t'`, which is an earlier violation.
-//!  - or `E'` is the assignment of another pair `(E₁', E')`, with `s₁' < t'` (P2). If `s₁ < s₁'`, `E₁'` is an
+//!  - or `E'` is the assignment of another pair `(E₁', E')` with `E₁'` guarded, with `s₁' < t'` (P2). If `s₁ < s₁'`, `E₁'` is an
 //!    earlier violation of `(E₁, E₂)`. Otherwise, `s₁' < s₁` (they cannot be simultaneous) and `E₁` (guarded by (P3))
 //!    is a violation of `(E₁', E')` occurring at `s₁ < t'`.
 //!
@@ -62,22 +79,25 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
     let env = &model.env;
     let bounds = NumericBounds::new(model);
 
-    // fluents on which no pair can be merged
+    // fluents on which no pair can be merged (F2)
     let mut invalid: HashSet<FluentId> = HashSet::new();
+    // fluents on which no non-contiguous pair can be merged (F1, F3)
+    let mut unguarded: HashSet<FluentId> = HashSet::new();
     // (F3)
     for eff in &model.init {
         if eff.effect_expression.transition_start != Timestamp::ORIGIN {
-            invalid.insert(eff.effect_expression.state_variable.fluent);
+            unguarded.insert(eff.effect_expression.state_variable.fluent);
         }
     }
 
-    // for each action, the mergeable pairs of its effects as `(erase_index, assign_index)`
-    let mut pairs: Vec<Vec<(usize, usize)>> = Vec::new();
+    // for each action, the mergeable pairs of its effects as `(erase_index, assign_index, is_contiguous)`
+    let mut pairs: Vec<Vec<(usize, usize, bool)>> = Vec::new();
     for action in model.actions.iter() {
         let info = &ActionInfo {
             guards: ActionGuards::new(action, env, &bounds),
             env,
         };
+        let timing = &info.guards.timing;
         let effects = &action.effects;
         let pairable = &|eff: &Effect, erase: bool| {
             eff.effect_expression.condition.is_none()
@@ -85,38 +105,61 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
                 && matches!(eff.effect_expression.operation, EffectOp::Erase) == erase
                 && matches!(eff.effect_expression.operation, EffectOp::Erase | EffectOp::Assign(_))
         };
-        // candidate assignments for each guarded erase (P1, P2, P3)
+        // candidate assignments for each erase (P1, P2, P3)
         let candidates = (effects.iter().enumerate())
-            .filter(|(_, e1)| pairable(e1, true) && info.is_guarded(e1))
+            .filter(|(_, e1)| pairable(e1, true))
             .flat_map(|(i, e1)| {
                 let sv = info.state_variable(e1);
-                (effects.iter().enumerate())
-                    .filter(move |(_, e2)| {
-                        pairable(e2, false)
-                            && info.state_variable(e2) == sv
-                            && (info.guards.timing).le(
-                                e1.effect_expression.transition_end,
-                                e2.effect_expression.transition_start,
-                            )
-                    })
-                    .map(move |(j, _)| (i, j))
+                let (end1, guarded) = (e1.effect_expression.transition_end, info.is_guarded(e1));
+                (effects.iter().enumerate()).filter_map(move |(j, e2)| {
+                    let start2 = e2.effect_expression.transition_start;
+                    let contiguous = timing.eq(end1, start2);
+                    (pairable(e2, false)
+                        && sv.is_some()
+                        && info.state_variable(e2) == sv
+                        && timing.le(end1, start2)
+                        && (guarded || contiguous))
+                        .then_some((i, j, contiguous))
+                })
             })
             .collect_vec();
         // (P4)
+        let unambiguous = |&&(i, j, _): &&(usize, usize, bool)| {
+            candidates.iter().filter(|(i2, j2, _)| *i2 == i || *j2 == j).count() == 1
+        };
+        // (P5)
+        let may_start_at = |k: usize, t: Timestamp| {
+            let x = &effects[k].effect_expression;
+            !timing.lt(x.transition_start, t) && !timing.lt(t, x.transition_start)
+        };
+        let uncancellable = |&&(i, j, _): &&(usize, usize, bool)| {
+            let x = &effects[i].effect_expression;
+            let (ts1, ts2) = (x.transition_start, effects[j].effect_expression.transition_start);
+            env.fluents.get(x.state_variable.fluent).return_type != Type::Bool
+                || !(0..effects.len()).any(|k| {
+                    let y = &effects[k].effect_expression;
+                    k != i
+                        && k != j
+                        && y.state_variable.fluent == x.state_variable.fluent
+                        && may_unify(&y.state_variable.arguments, &x.state_variable.arguments, env)
+                        && (may_start_at(k, ts1) || may_start_at(k, ts2))
+                })
+        };
         let action_pairs = (candidates.iter())
-            .filter(|(i, j)| candidates.iter().filter(|(i2, j2)| i2 == i || j2 == j).count() == 1)
+            .filter(unambiguous)
+            .filter(uncancellable)
             .copied()
             .collect_vec();
         // (F1, F2)
-        for (j, eff) in effects.iter().enumerate() {
+        for (k, eff) in effects.iter().enumerate() {
             let fluent = eff.effect_expression.state_variable.fluent;
-            let is_paired_assign = action_pairs.iter().any(|(_, j2)| *j2 == j);
+            let is_paired_assign = (action_pairs.iter()).any(|&(i, j, _)| j == k && info.is_guarded(&effects[i]));
             match eff.effect_expression.operation {
                 EffectOp::Increase(_) | EffectOp::Decrease(_) => {
                     invalid.insert(fluent);
                 }
                 EffectOp::Assign(_) | EffectOp::Erase if !is_paired_assign && !info.is_guarded(eff) => {
-                    invalid.insert(fluent);
+                    unguarded.insert(fluent);
                 }
                 _ => {}
             }
@@ -129,15 +172,17 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
         let fluent = |i: usize| action.effects[i].effect_expression.state_variable.fluent;
         let pairs = pairs
             .into_iter()
-            .filter(|(i, _)| !invalid.contains(&fluent(*i)))
+            .filter(|&(i, _, contiguous)| {
+                !invalid.contains(&fluent(i)) && (contiguous || !unguarded.contains(&fluent(i)))
+            })
             .collect_vec();
-        for &(i, j) in &pairs {
+        for &(i, j, _) in &pairs {
             *merged
                 .entry(action.effects[i].effect_expression.state_variable.fluent)
                 .or_default() += 1;
             action.effects[j].effect_expression.transition_start = action.effects[i].effect_expression.transition_start;
         }
-        let erases: HashSet<usize> = pairs.iter().map(|(i, _)| *i).collect();
+        let erases: HashSet<usize> = pairs.iter().map(|(i, _, _)| *i).collect();
         let mut idx = 0;
         action.effects.retain(|_| {
             idx += 1;
@@ -158,6 +203,18 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
         }
     }
     Ok(merged.values().sum())
+}
+
+/// False if the arguments are guaranteed to denote distinct objects.
+fn may_unify(args1: &[ExprId], args2: &[ExprId], env: &Environment) -> bool {
+    args1.len() == args2.len()
+        && args1
+            .iter()
+            .zip(args2)
+            .all(|(&a, &b)| match (Term::of(a, env), Term::of(b, env)) {
+                (Some(a), Some(b)) => a.may_unify(&b),
+                _ => true,
+            })
 }
 
 struct ActionInfo<'a> {

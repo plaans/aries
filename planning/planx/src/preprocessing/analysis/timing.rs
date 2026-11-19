@@ -30,6 +30,15 @@ impl ActionTiming {
         }
     }
 
+    /// Allows comparing timestamps outside of any action (e.g. in the problem definition):
+    /// only timestamps with the same reference can be compared.
+    pub fn global(bounds: &NumericBounds) -> Self {
+        Self {
+            duration: Bounds::UNKNOWN,
+            dt: bounds.dt,
+        }
+    }
+
     /// Returns lower and upper bounds on the delay `t2 - t1`. A bound is `None` if unknown.
     fn delay_bounds(&self, t1: Timestamp, t2: Timestamp) -> (Option<RealValue>, Option<RealValue>) {
         let offset = t2.delay - t1.delay;
