@@ -164,10 +164,10 @@ impl Dtg {
                         count += 1;
                         let pre_value = SimpleValue::required(t.required, env);
                         let pre = pre_value.as_ref().map_or_else(|| all.clone(), |v| dom(a, v));
-                        let allowed = PairFilter::new(a, pre_value.as_ref(), value.as_ref(), env, statics);
+                        let allowed = PairFilter::new(a, pre_value.as_ref(), value.as_ref(), env, statics, &index);
                         for &u in &pre {
                             for &w in &post {
-                                if allowed.accepts(&values[u], &values[w]) {
+                                if allowed.accepts(u, w) {
                                     edges.insert((u, w));
                                 }
                             }
@@ -262,13 +262,17 @@ impl Dtg {
     pub fn reachable(&self) -> BTreeSet<usize> {
         let mut reached: BTreeSet<usize> = (0..self.values.len()).filter(|&v| self.initial[v] > 0).collect();
         reached.extend(self.writers.iter().flat_map(|w| w.values.iter().copied()));
+        let mut succs: HashMap<usize, Vec<usize>> = HashMap::new();
+        for t in &self.transitions {
+            for &(u, w) in &t.edges {
+                succs.entry(u).or_default().push(w);
+            }
+        }
         let mut stack = reached.iter().copied().collect_vec();
         while let Some(u) = stack.pop() {
-            for t in &self.transitions {
-                for &(x, w) in &t.edges {
-                    if x == u && reached.insert(w) {
-                        stack.push(w);
-                    }
+            for &w in succs.get(&u).into_iter().flatten() {
+                if reached.insert(w) {
+                    stack.push(w);
                 }
             }
         }
@@ -460,7 +464,7 @@ impl StaticTables {
 struct PairFilter {
     /// For each static requirement relating the source and/or the target, the allowed (source, target) values
     /// (`None` when the requirement does not constrain one of them).
-    allowed: Vec<HashSet<(Option<DtgValue>, Option<DtgValue>)>>,
+    allowed: Vec<HashSet<(Option<usize>, Option<usize>)>>,
     /// Patterns of the allowed sets: (constrains the source, constrains the target).
     shapes: Vec<(bool, bool)>,
     /// True if the source and target are required to be distinct.
@@ -474,6 +478,7 @@ impl PairFilter {
         post: Option<&SimpleValue>,
         env: &Environment,
         statics: &StaticTables,
+        index: &HashMap<DtgValue, usize>,
     ) -> Self {
         let param = |v: Option<&SimpleValue>| match v {
             Some(SimpleValue::Term(Term::Param(p))) => Some(p.clone()),
@@ -540,8 +545,12 @@ impl PairFilter {
                     for (t, x) in terms.iter().zip(&row_terms) {
                         match t {
                             Some(Term::Object(o)) if x.as_ref() != Some(o) => continue 'rows,
-                            _ if is_param(t, &p) => pv = x.clone().map(DtgValue::Object),
-                            _ if is_param(t, &q) => qv = x.clone().map(DtgValue::Object),
+                            _ if is_param(t, &p) => {
+                                pv = x.clone().and_then(|o| index.get(&DtgValue::Object(o)).copied())
+                            }
+                            _ if is_param(t, &q) => {
+                                qv = x.clone().and_then(|o| index.get(&DtgValue::Object(o)).copied())
+                            }
                             _ => {}
                         }
                     }
@@ -563,7 +572,7 @@ impl PairFilter {
         }
     }
 
-    fn accepts(&self, u: &DtgValue, w: &DtgValue) -> bool {
+    fn accepts(&self, u: usize, w: usize) -> bool {
         if self.distinct && u == w {
             return false;
         }
@@ -571,9 +580,9 @@ impl PairFilter {
             .iter()
             .zip(&self.shapes)
             .all(|(set, &(has_p, has_q))| match (has_p, has_q) {
-                (true, true) => set.contains(&(Some(u.clone()), Some(w.clone()))),
-                (true, false) => set.contains(&(Some(u.clone()), None)),
-                (false, true) => set.contains(&(None, Some(w.clone()))),
+                (true, true) => set.contains(&(Some(u), Some(w))),
+                (true, false) => set.contains(&(Some(u), None)),
+                (false, true) => set.contains(&(None, Some(w))),
                 (false, false) => u == w,
             })
     }

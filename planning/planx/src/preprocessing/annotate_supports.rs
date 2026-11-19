@@ -31,6 +31,7 @@
 //! other transformation).
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::preprocessing::analysis::{
     ActionTiming, NumericBounds, ParamDomains, SimpleRequirement, SimpleValue, StaticFunction, StaticFunctions, Term,
@@ -72,7 +73,7 @@ struct ActionResult {
 #[derive(Clone, Debug)]
 enum Dom {
     Any,
-    Objects(HashSet<Sym>),
+    Objects(Rc<HashSet<Sym>>),
     Bool(bool),
     Real(RealValue),
 }
@@ -81,7 +82,10 @@ impl Dom {
     fn compatible(&self, other: &Dom) -> bool {
         match (self, other) {
             (Dom::Any, _) | (_, Dom::Any) => true,
-            (Dom::Objects(a), Dom::Objects(b)) => a.iter().any(|x| b.contains(x)),
+            (Dom::Objects(a), Dom::Objects(b)) => {
+                let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
+                small.iter().any(|x| large.contains(x))
+            }
             (Dom::Bool(a), Dom::Bool(b)) => a == b,
             (Dom::Real(a), Dom::Real(b)) => a == b,
             _ => false,
@@ -114,13 +118,13 @@ impl Pattern {
 /// Possible values of the parameters in some scope (action parameters and quantified variables).
 #[derive(Clone, Default)]
 struct Scope {
-    params: HashMap<Sym, HashSet<Sym>>,
+    params: HashMap<Sym, Rc<HashSet<Sym>>>,
 }
 
 impl Scope {
     fn term(&self, t: &Term) -> Dom {
         match t {
-            Term::Object(o) => Dom::Objects([o.clone()].into()),
+            Term::Object(o) => Dom::Objects(Rc::new([o.clone()].into())),
             Term::Param(p) => self.params.get(p).cloned().map(Dom::Objects).unwrap_or(Dom::Any),
         }
     }
@@ -144,7 +148,7 @@ impl Scope {
     fn with_vars(&self, vars: &[Param], env: &Environment) -> Scope {
         let mut scope = self.clone();
         for v in vars {
-            scope.params.insert(v.name().clone(), objects_of(v.tpe(), env));
+            scope.params.insert(v.name().clone(), Rc::new(objects_of(v.tpe(), env)));
         }
         scope
     }
@@ -257,6 +261,8 @@ struct SupportAnalysis<'a> {
     /// Static requirements of each action (used to relate parameters of distinct actions).
     statics: Vec<Vec<SimpleRequirement>>,
     functions: StaticFunctions,
+    /// For each effect, true if it supports nothing (computed without undo detection).
+    useless: Vec<Vec<bool>>,
 }
 
 impl<'a> SupportAnalysis<'a> {
@@ -274,7 +280,7 @@ impl<'a> SupportAnalysis<'a> {
         for (i, a) in actions.iter().enumerate() {
             let scope = Scope {
                 params: (a.parameters.iter())
-                    .map(|p| (p.name().clone(), domains.domain(a, p.name(), p.tpe())))
+                    .map(|p| (p.name().clone(), Rc::new(domains.domain(a, p.name(), p.tpe()))))
                     .collect(),
             };
             empty_domain.push(scope.params.values().any(|d| d.is_empty()));
@@ -380,7 +386,7 @@ impl<'a> SupportAnalysis<'a> {
                 })
             }
         }
-        SupportAnalysis {
+        let mut analysis = SupportAnalysis {
             model,
             timings: actions.iter().map(|a| ActionTiming::new(a, &bounds)).collect(),
             bounds,
@@ -394,7 +400,16 @@ impl<'a> SupportAnalysis<'a> {
             numeric: numeric_properties(model),
             statics,
             functions: StaticFunctions::new(model),
-        }
+            useless: Vec::new(),
+        };
+        analysis.useless = (0..analysis.actions.len())
+            .map(|i| {
+                (0..analysis.effects[i].len())
+                    .map(|j| analysis.targets(i, j, false).is_some_and(|ts| ts.is_empty()))
+                    .collect()
+            })
+            .collect();
+        analysis
     }
 
     /// Requirements that the effect (`j`-th of action `i`) may support, `None` if it is opaque.
@@ -472,7 +487,7 @@ impl<'a> SupportAnalysis<'a> {
         // all other effects of `k` must be useless
         let others_useless = (0..b.effects.len())
             .filter(|&j2| b.effects[j2].id != t_b.effect.id)
-            .all(|j2| self.targets(k, j2, false).is_some_and(|ts| ts.is_empty()));
+            .all(|j2| self.useless[k][j2]);
         if !others_useless {
             return false;
         }
