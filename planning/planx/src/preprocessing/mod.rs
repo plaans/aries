@@ -1,5 +1,6 @@
 pub mod analysis;
 mod annotate_fluents;
+mod annotate_supports;
 mod annotate_transitions;
 mod erase_unusable_effects;
 pub(crate) mod intify;
@@ -10,6 +11,7 @@ mod merge_erase_assign;
 mod split_predicates;
 
 pub use annotate_fluents::annotate_fluents;
+pub use annotate_supports::annotate_supports;
 pub use annotate_transitions::annotate_transitions;
 pub use erase_unusable_effects::erase_unusable_effects;
 pub use intify::convert_reals_to_int;
@@ -58,6 +60,9 @@ pub enum ModelTransformation {
     AnnotateTransitions,
     /// Annotates fluents with properties derived from their usage. See [`annotate_fluents`].
     AnnotateFluents,
+    /// Annotates the causal supports between effects and requirements, and the status of actions.
+    /// See [`annotate_supports`]. Should be the last transformation.
+    AnnotateSupports,
 }
 
 /// Applies a built-in transformation to the model.
@@ -94,6 +99,10 @@ pub fn apply_transformation(mut model: Model, transformation: ModelTransformatio
         }
         ModelTransformation::AnnotateFluents => {
             annotate_fluents(&mut model)?;
+            Ok(model)
+        }
+        ModelTransformation::AnnotateSupports => {
+            annotate_supports(&mut model)?;
             Ok(model)
         }
     }

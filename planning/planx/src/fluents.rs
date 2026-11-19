@@ -140,7 +140,10 @@ impl Display for Fluent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{:?} -> {}", self.name, self.parameters, self.return_type)?;
         if let Some(props) = &self.annotations.properties {
-            write!(f, "    {props}")?;
+            let props = props.to_string();
+            if props != "[]" {
+                write!(f, "    {props}")?;
+            }
         }
         Ok(())
     }
