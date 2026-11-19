@@ -9,7 +9,7 @@ use planx::{
     pddl::{self, input::Input},
     preprocessing::{
         ModelTransformation,
-        analysis::{CountConstraints, PlanScope},
+        analysis::{CountConstraints, Dtg, PlanScope},
     },
 };
 
@@ -67,6 +67,21 @@ pub fn analyze(command: &Analyze) -> Res<()> {
         }
         println!();
     }
+
+    println!("===== Domain transition graphs =====\n");
+    let dtgs = Dtg::all(&model, 2000);
+    let (with, without): (Vec<_>, Vec<_>) = dtgs.iter().partition(|d| !d.transitions.is_empty());
+    for dtg in with {
+        println!("{}", model.env.node(dtg));
+    }
+    if !without.is_empty() {
+        let names = without
+            .iter()
+            .map(|d| model.env.node(d.fluent).name().to_string())
+            .join(", ");
+        println!("(fluents without transitions, only changed by writers: {names})");
+    }
+    println!();
 
     let constraints = CountConstraints::new(&model);
     println!("===== Constraints on the number of instances =====\n");
