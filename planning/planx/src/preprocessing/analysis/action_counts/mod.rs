@@ -14,6 +14,7 @@
 //       `u(e) <= capacity(e)`. This would be more precise than the per-template capacity for actions with several
 //       useful effects.
 
+mod numeric;
 mod supports;
 mod transitions;
 
@@ -201,6 +202,7 @@ impl CountConstraints {
         let mut constraints = Vec::new();
         supports::generate(model, &mut constraints);
         transitions::generate(model, &mut constraints);
+        numeric::generate(model, &mut constraints);
         // remove duplicates (keeping the first, i.e. the one with the weakest scope since generators emit
         // constraints of weaker scopes first)
         let mut unique: Vec<CountConstraint> = Vec::new();
@@ -355,6 +357,27 @@ pub(crate) mod tests {
         .unwrap()
     }
 
+    /// Builds a model from PDDL strings, with the default transformations and the analysis annotations.
+    pub(crate) fn from_strings(domain: &str, problem: &str) -> Model {
+        let domain = parser::parse_pddl_domain(Input::from_string(domain)).unwrap();
+        let problem = parser::parse_pddl_problem(Input::from_string(problem)).unwrap();
+        let model = build_model(&domain, &problem).unwrap();
+        use ModelTransformation::*;
+        apply_transformations(
+            model,
+            &[
+                EraseUnusableEffects,
+                SplitPredicates,
+                LiftPredicates,
+                AnnotateTransitions,
+                Intify,
+                AnnotateFluents,
+                AnnotateSupports,
+            ],
+        )
+        .unwrap()
+    }
+
     /// Propagated bounds for the scope, as `name -> "[lb, ub]"`.
     pub(crate) fn bounds(model: &Model, scope: PlanScope) -> BTreeMap<String, String> {
         let constraints = CountConstraints::new(model);
@@ -477,6 +500,31 @@ pub(crate) mod tests {
                 ("unload", "[1, 1]")
             ])
         );
+    }
+
+    #[test]
+    fn numeric_budget() {
+        let domain = "(define (domain d) (:requirements :typing :numeric-fluents)
+            (:types truck place)
+            (:predicates (at ?t - truck ?p - place) (visited ?p - place))
+            (:functions (fuel ?t - truck) (cost))
+            (:action move :parameters (?t - truck ?from - place ?to - place)
+              :precondition (and (at ?t ?from) (>= (fuel ?t) 2))
+              :effect (and (not (at ?t ?from)) (at ?t ?to) (visited ?to) (decrease (fuel ?t) 2) (increase (cost) 1))))";
+        let problem = "(define (problem p) (:domain d)
+            (:objects t1 t2 - truck a b c - place)
+            (:init (at t1 a) (at t2 a) (= (fuel t1) 7) (= (fuel t2) 4) (= (cost) 0))
+            (:goal (and (visited b) (visited c))) (:metric minimize (cost)))";
+        let model = from_strings(domain, problem);
+        let constraints = CountConstraints::new(&model);
+        println!("{constraints}");
+        let budget = (constraints.constraints.iter())
+            .find(|c| c.generator == "numeric-budget")
+            .unwrap();
+        // total fuel: 7 + 4, each move consumes 2
+        assert_eq!(budget.constraint.to_string(), "2*n(move) <= 11");
+        assert_eq!(budget.scope, PlanScope::AllPlans);
+        assert_eq!(bounds(&model, PlanScope::AllPlans)["move"], "[2, 5]");
     }
 
     #[test]
