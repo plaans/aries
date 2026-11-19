@@ -10,7 +10,11 @@
 //!     - effects on *opaque* fluents (see [`FluentProperties::opaque`]) may be useful for anything,
 //!       except numeric changes in a direction that is never helpful (see [`NumericProperties`]);
 //!     - erasures and *borrows* (see [`annotate_transitions`](super::annotate_transitions)) support nothing:
-//!       a borrow restores the value that held just before it, so it never makes anything true that was not already;
+//!       a borrow restores the value that held just before it, so it never makes anything true that was not already.
+//!       This also applies to the restore of a *lock* (a state variable erased by a transition then restored to the
+//!       same value by the same action) when all other effects on the fluent are guarded (transitions), lock
+//!       restores or unguarded assignments of the same constant: while erased, the state variable can then not be
+//!       given another value;
 //!     - a supported condition is flagged as `undo` if it is part of a transition that restores the value consumed by
 //!       the transition of the effect (e.g. `switch_off(?i)` with respect to `switch_on(?i)`).
 //!  - for each condition made of a single simple requirement, the effects that may support it ([`Supporters`]).
@@ -37,7 +41,10 @@ use crate::*;
 /// Annotates the supports, supporters and status of all actions (see the module documentation).
 /// Any previous support annotation is replaced.
 pub fn annotate_supports(model: &mut Model) -> Res<()> {
-    let result = SupportAnalysis::new(model).run();
+    let (result, goals) = SupportAnalysis::new(model).run();
+    for goal in model.goals.iter_mut() {
+        goal.annotations.supporters = goals.get(&goal.id).cloned();
+    }
     for (name, res) in result {
         let action = model.actions.get_action_mut(&name).unwrap();
         action.annotations.status = Some(res.status);
@@ -50,6 +57,9 @@ pub fn annotate_supports(model: &mut Model) -> Res<()> {
     }
     Ok(())
 }
+
+/// Supporters of the simple requirements of each goal.
+type GoalSupporters = HashMap<GoalId, Vec<Supporters>>;
 
 /// Annotations computed for an action.
 struct ActionResult {
@@ -180,11 +190,51 @@ enum Owner {
     Goal(GoalId),
 }
 
+/// True if the effect is the *restore* of a lock: an assignment `sv := v` such that the action has an earlier
+/// transition that requires `sv = v` and erases `sv` (e.g. `available(?c)` erased at start and restored at end).
+///
+/// If no other action can change `sv` while it is erased, the action leaves `sv` unchanged: the restore never makes
+/// anything true that was not already, exactly as a borrow.
+fn lock_restore(action: &Action, eff: &Effect, timing: &ActionTiming, env: &Environment) -> bool {
+    let e = &eff.effect_expression;
+    let (EffectOp::Assign(v), None) = (e.operation.clone(), e.condition) else {
+        return false;
+    };
+    if !eff.universal_quantification.is_empty() {
+        return false;
+    }
+    let Some(args) = Term::all_of(&e.state_variable.arguments, env) else {
+        return false;
+    };
+    let value = SimpleValue::of(v, env);
+    action.transitions(env).any(|t| {
+        let te = &t.effect.effect_expression;
+        t.value.is_none()
+            && te.state_variable.fluent == e.state_variable.fluent
+            && Term::all_of(&te.state_variable.arguments, env).as_ref() == Some(&args)
+            && value.is_some()
+            && SimpleValue::required(t.required, env) == value
+            && timing.le(te.transition_start, e.transition_start)
+    })
+}
+
+/// The value assigned by the effect if it is a constant (not a parameter).
+fn constant_value(eff: &Effect, env: &Environment) -> Option<SimpleValue> {
+    let e = &eff.effect_expression;
+    match e.operation {
+        EffectOp::Assign(v) if e.condition.is_none() && eff.universal_quantification.is_empty() => {
+            SimpleValue::of(v, env).filter(|v| !matches!(v, SimpleValue::Term(Term::Param(_))))
+        }
+        _ => None,
+    }
+}
+
 /// Information on an effect of an action.
 struct EffectInfo {
     id: EffectId,
     pattern: Pattern,
-    /// True if the effect is part of a borrow.
+    /// True if the effect is part of a borrow, or is the restore of a lock that cannot be changed by other actions
+    /// (see [`lock_restore`]).
     borrow: bool,
     /// For an effect that is part of a (non-borrow) transition: the required and assigned values.
     transition: Option<(SimpleValue, SimpleValue)>,
@@ -218,7 +268,7 @@ impl<'a> SupportAnalysis<'a> {
         let modified = fluents_modified_by_actions(model);
         let mut requirements = Vec::new();
         let mut action_requirements = Vec::new();
-        let mut effects = Vec::new();
+        let mut effects: Vec<Vec<EffectInfo>> = Vec::new();
         let mut statics = Vec::new();
         let mut empty_domain = Vec::new();
         for (i, a) in actions.iter().enumerate() {
@@ -264,6 +314,50 @@ impl<'a> SupportAnalysis<'a> {
                     .collect(),
             );
         }
+        // lock restores are equivalent to borrows if no one can change the state variable while it is locked
+        let restores: Vec<Vec<bool>> = (actions.iter())
+            .zip(&effects)
+            .map(|(a, effs)| {
+                let timing = ActionTiming::new(a, &bounds);
+                (a.effects.iter())
+                    .zip(effs)
+                    .map(|(e, info): (&Effect, &EffectInfo)| !info.borrow && lock_restore(a, e, &timing, env))
+                    .collect()
+            })
+            .collect();
+        // values written by unguarded effects (that are not lock restores) on each fluent,
+        // `None` standing for an erasure or a value that is not a constant
+        let mut unguarded: HashMap<FluentId, Vec<Option<SimpleValue>>> = HashMap::new();
+        for (a, rs) in actions.iter().zip(&restores) {
+            for (e, &restore) in a.effects.iter().zip(rs) {
+                if a.transition_of_effect(e, env).is_none() && !restore {
+                    unguarded
+                        .entry(e.effect_expression.state_variable.fluent)
+                        .or_default()
+                        .push(constant_value(e, env));
+                }
+            }
+        }
+        for e in &model.init {
+            if e.effect_expression.transition_start != Timestamp::ORIGIN {
+                unguarded
+                    .entry(e.effect_expression.state_variable.fluent)
+                    .or_default()
+                    .push(None);
+            }
+        }
+        for ((a, effs), rs) in actions.iter().zip(effects.iter_mut()).zip(&restores) {
+            for ((e, info), &restore) in a.effects.iter().zip(effs.iter_mut()).zip(rs) {
+                // safe if no unguarded effect may write another value while the state variable is erased
+                let value = constant_value(e, env);
+                let safe =
+                    (unguarded.get(&info.pattern.fluent).into_iter().flatten()).all(|v| v.is_some() && *v == value);
+                if restore && safe {
+                    info.borrow = true;
+                }
+            }
+        }
+
         for g in &model.goals {
             for req in simple_goal(g, env).unwrap_or_default() {
                 requirements.push(Requirement {
@@ -304,7 +398,8 @@ impl<'a> SupportAnalysis<'a> {
     }
 
     /// Requirements that the effect (`j`-th of action `i`) may support, `None` if it is opaque.
-    fn targets(&self, i: usize, j: usize) -> Option<Vec<SupportTarget>> {
+    /// If `with_undo` is false, no target is flagged as an undo.
+    fn targets(&self, i: usize, j: usize, with_undo: bool) -> Option<Vec<SupportTarget>> {
         let eff = &self.effects[i][j];
         let action = self.actions[i];
         let fluent = eff.pattern.fluent;
@@ -337,7 +432,7 @@ impl<'a> SupportAnalysis<'a> {
                             action: self.actions[*k].name.clone(),
                             condition: *cond,
                         },
-                        undo: self.is_undo(i, j, *k, &r.req),
+                        undo: with_undo && self.is_undo(i, j, *k, &r.req),
                     };
                     if !targets.contains(&target) {
                         targets.push(target);
@@ -358,7 +453,8 @@ impl<'a> SupportAnalysis<'a> {
     }
 
     /// True if the requirement `req` of action `k` is the condition of a transition that, when supported by the
-    /// effect (`j`-th of action `i`), restores the value consumed by the effect's transition.
+    /// effect (`j`-th of action `i`), restores the value consumed by the effect's transition, and if action `k` has no
+    /// other useful effect: the two actions then cancel each other.
     fn is_undo(&self, i: usize, j: usize, k: usize, req: &SimpleRequirement) -> bool {
         let env = &self.model.env;
         let Some((pre_a, post_a)) = &self.effects[i][j].transition else {
@@ -366,13 +462,20 @@ impl<'a> SupportAnalysis<'a> {
         };
         // the transition of `k` whose condition is `req`
         let b = self.actions[k];
-        let Some((_, post_b)) = (b.transitions(env))
+        let Some((t_b, post_b)) = (b.transitions(env))
             .filter(|t| !t.borrow)
             .filter(|t| simple_requirement(t.condition.cond, env).as_ref() == Some(req))
             .find_map(|t| Some((t, SimpleValue::of(t.value?, env)?)))
         else {
             return false;
         };
+        // all other effects of `k` must be useless
+        let others_useless = (0..b.effects.len())
+            .filter(|&j2| b.effects[j2].id != t_b.effect.id)
+            .all(|j2| self.targets(k, j2, false).is_some_and(|ts| ts.is_empty()));
+        if !others_useless {
+            return false;
+        }
         let a_args = &self.actions[i].effects[j].effect_expression.state_variable.arguments;
         let Some(a_args) = Term::all_of(a_args, env) else {
             return false;
@@ -437,12 +540,13 @@ impl<'a> SupportAnalysis<'a> {
         self.init.iter().any(|p| p.may_support(&r.pattern))
     }
 
-    fn run(&self) -> Vec<(ActionRef, ActionResult)> {
+    /// Computes the annotations of each action, and the supporters of the requirements of each goal.
+    fn run(&self) -> (Vec<(ActionRef, ActionResult)>, GoalSupporters) {
         let env = &self.model.env;
         let n = self.actions.len();
         // supports of each effect
         let supports: Vec<Vec<Option<Vec<SupportTarget>>>> = (0..n)
-            .map(|i| (0..self.effects[i].len()).map(|j| self.targets(i, j)).collect())
+            .map(|i| (0..self.effects[i].len()).map(|j| self.targets(i, j, true)).collect())
             .collect();
 
         // potential supporters of each requirement (ignoring opacity, but excluding borrows and erasures)
@@ -460,6 +564,19 @@ impl<'a> SupportAnalysis<'a> {
             })
             .collect();
         let init: Vec<bool> = self.requirements.iter().map(|r| self.supported_by_init(r)).collect();
+        let eff_ref = |(k, j): (usize, usize)| EffRef {
+            action: self.actions[k].name.clone(),
+            effect: self.effects[k][j].id,
+        };
+        let mut goals: HashMap<GoalId, Vec<Supporters>> = HashMap::new();
+        for (r, req) in self.requirements.iter().enumerate() {
+            if let Owner::Goal(g) = req.owner {
+                goals.entry(g).or_default().push(Supporters {
+                    init: init[r],
+                    effects: supporters[r].iter().map(|&s| eff_ref(s)).collect(),
+                });
+            }
+        }
 
         // reachability (least fixpoint)
         let mut reachable = vec![false; n];
@@ -536,12 +653,7 @@ impl<'a> SupportAnalysis<'a> {
                 if let &[r] = reqs.as_slice()
                     && conjuncts(c.cond, env).len() == 1
                 {
-                    let effects = (supporters[r].iter())
-                        .map(|&(k, j)| EffRef {
-                            action: self.actions[k].name.clone(),
-                            effect: self.effects[k][j].id,
-                        })
-                        .collect();
+                    let effects = supporters[r].iter().map(|&s| eff_ref(s)).collect();
                     cond_supporters.insert(c.id, Supporters { init: init[r], effects });
                 }
             }
@@ -566,7 +678,7 @@ impl<'a> SupportAnalysis<'a> {
                 },
             ));
         }
-        results
+        (results, goals)
     }
 }
 

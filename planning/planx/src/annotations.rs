@@ -139,6 +139,15 @@ pub struct NumericProperties {
     pub never_decreased: bool,
 }
 
+/// Annotations of a goal (one field per kind of annotation).
+#[derive(Clone, Debug, Default)]
+pub struct GoalAnnotations {
+    /// For a goal made of simple requirements, the elements that may support each of them (in the order of the
+    /// conjuncts of the goal expression), see [`annotate_supports`](crate::preprocessing::annotate_supports).
+    /// `None` if not computed or if the goal is not made of simple requirements.
+    pub supporters: Option<Vec<Supporters>>,
+}
+
 /// Annotations of an action (one field per kind of annotation).
 #[derive(Clone, Debug, Default)]
 pub struct ActionAnnotations {

@@ -3,7 +3,7 @@ use std::fmt::Display;
 use itertools::Itertools;
 
 use crate::{
-    Condition, Env, ExprId, GoalId, Param, RealValue, Sym, TimeInterval, Timestamp,
+    Condition, Env, ExprId, GoalAnnotations, GoalId, Param, RealValue, Sym, TimeInterval, Timestamp,
     errors::{Span, Spanned},
 };
 
@@ -14,6 +14,8 @@ pub struct Goal {
     pub universal_quantification: Vec<Param>,
     pub goal_expression: SimpleGoal,
     pub span: Option<Span>,
+    /// Additional information on the goal, typically set by preprocessing steps.
+    pub annotations: GoalAnnotations,
 }
 
 impl<'a> Display for Env<'a, &Goal> {
@@ -77,6 +79,7 @@ impl SimpleGoal {
     pub fn forall(self, vars: Vec<Param>) -> Goal {
         Goal {
             id: GoalId::fresh(),
+            annotations: Default::default(),
             universal_quantification: vars,
             goal_expression: self,
             span: None,
