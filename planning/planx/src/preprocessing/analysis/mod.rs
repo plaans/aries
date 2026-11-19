@@ -3,6 +3,7 @@
 mod action_counts;
 mod bounds;
 mod domains;
+mod dtg;
 mod expressions;
 mod guards;
 mod numeric;
@@ -13,6 +14,7 @@ mod usage;
 pub use action_counts::*;
 pub use bounds::*;
 pub use domains::*;
+pub use dtg::*;
 pub use expressions::*;
 pub use guards::*;
 pub use numeric::*;

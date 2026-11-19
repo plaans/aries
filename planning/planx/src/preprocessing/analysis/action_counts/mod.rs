@@ -15,6 +15,7 @@
 //       useful effects.
 
 mod supports;
+mod transitions;
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
@@ -33,8 +34,10 @@ pub enum PlanScope {
     /// in which each action instance is the last establisher of a value read by a requirement (of another action or
     /// a goal) or by an opaque expression.
     NonRedundant,
-    /// Holds for non-redundant plans in which no two actions cancel each other (an action whose only contribution is
-    /// to enable an action that restores the value it consumed).
+    /// Holds for non-redundant plans without a subset of actions that cancel each other (whose removal leaves the plan
+    /// valid), e.g. an action whose only contribution is to enable an action that restores the value it consumed, or
+    /// a sequence of transitions of a state variable that comes back to a previous value without the intermediate
+    /// values being used.
     NonRedundantPlus,
 }
 
@@ -197,6 +200,7 @@ impl CountConstraints {
         let templates = model.actions.iter().map(|a| a.name.clone()).collect();
         let mut constraints = Vec::new();
         supports::generate(model, &mut constraints);
+        transitions::generate(model, &mut constraints);
         // remove duplicates (keeping the first, i.e. the one with the weakest scope since generators emit
         // constraints of weaker scopes first)
         let mut unique: Vec<CountConstraint> = Vec::new();
@@ -322,6 +326,7 @@ pub(crate) mod tests {
     use crate::preprocessing::{ModelTransformation, apply_transformations};
 
     use super::*;
+    use crate::preprocessing::analysis::Dtg;
 
     /// Loads a problem of the UPF benchmark set, with the default transformations and the analysis annotations.
     pub(crate) fn load(dir: &str) -> Model {
@@ -405,10 +410,10 @@ pub(crate) mod tests {
             bounds(&model, PlanScope::NonRedundantPlus),
             expected(&[
                 ("calibrate", "[1, 3]"),
-                ("switch_off", "[0, 6]"),
+                ("switch_off", "[0, 5]"),
                 ("switch_on", "[1, 6]"),
                 ("take_image", "[3, 3]"),
-                ("turn_to", "[0, inf]"),
+                ("turn_to", "[0, 36]"),
             ])
         );
     }
@@ -423,8 +428,8 @@ pub(crate) mod tests {
                 ("communicate_image_data", "[1, 1]"),
                 ("communicate_rock_data", "[1, 1]"),
                 ("communicate_soil_data", "[1, 1]"),
-                ("drop", "[0, 2]"),
-                ("navigate", "[0, inf]"),
+                ("drop", "[1, 2]"),
+                ("navigate", "[0, 21]"),
                 ("sample_rock", "[1, 1]"),
                 ("sample_soil", "[1, 1]"),
                 ("take_image", "[1, 1]"),
@@ -441,19 +446,54 @@ pub(crate) mod tests {
                 ("assemble_sleep_station", "[1, 1]"),
                 ("change_filter", "[1, 1]"),
                 ("conduct_payload_activity", "[0, 0]"),
-                ("exercise", "[1, inf]"),
+                ("exercise", "[1, 2]"),
                 ("finish_rpcm", "[1, 1]"),
-                ("first_reconfigurate_thermal_loops", "[1, 2]"),
-                ("have_meal", "[1, inf]"),
-                ("initialize_day", "[1, inf]"),
+                ("first_reconfigurate_thermal_loops", "[1, 1]"),
+                ("have_meal", "[1, 2]"),
+                ("initialize_day", "[1, 2]"),
                 ("medical_conference", "[0, 0]"),
-                ("post_sleep", "[1, inf]"),
-                ("remove_sleep_station", "[1, 2]"),
-                ("replace_rpcm", "[1, 2]"),
+                ("post_sleep", "[1, 2]"),
+                ("remove_sleep_station", "[1, 1]"),
+                ("replace_rpcm", "[1, 1]"),
                 ("report_payload_activity_at_deadline", "[0, 0]"),
                 ("second_reconfigurate_thermal_loops", "[1, 1]"),
-                ("sleep", "[1, inf]"),
+                ("sleep", "[1, 2]"),
             ])
         );
+        // the day only moves forward: valid for any plan
+        assert_eq!(bounds(&model, PlanScope::AllPlans)["post_sleep"], "[1, 2]");
+    }
+
+    #[test]
+    fn tpp() {
+        // chained transitions on the stock levels (a soundness issue of an earlier prototype)
+        let model = load("ipc2006-tpp-propositional");
+        assert_eq!(
+            bounds(&model, PlanScope::NonRedundantPlus),
+            expected(&[
+                ("buy", "[1, 1]"),
+                ("drive", "[1, 3]"),
+                ("load", "[1, 1]"),
+                ("unload", "[1, 1]")
+            ])
+        );
+    }
+
+    #[test]
+    fn dtgs() {
+        let model = load("ipc2008-crew-planning-temporal-satisficing-strips");
+        let day = model.env.fluents.get_by_name("currentday").unwrap();
+        let dtg = Dtg::all(&model, 100).into_iter().find(|d| d.fluent == day).unwrap();
+        assert_eq!(dtg.longest_path(), Some(2));
+        assert_eq!(dtg.reachable().len(), 3);
+        assert!(dtg.writers.is_empty());
+
+        let model = load("ipc2002-satellite-time-simple-automatic");
+        let power = model.env.fluents.get_by_name("power_avail:power_on").unwrap();
+        let dtg = Dtg::all(&model, 100).into_iter().find(|d| d.fluent == power).unwrap();
+        // the power is either on the satellite or on its single instrument
+        assert_eq!(dtg.reachable().len(), 2);
+        assert_eq!(dtg.longest_path(), None);
+        assert_eq!(dtg.max_simple_path(), 1);
     }
 }
