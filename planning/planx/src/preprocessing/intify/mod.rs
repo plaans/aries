@@ -90,6 +90,14 @@ pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
     Ok(int_model)
 }
 
+/// Precision required to represent all timestamps of the model, as computed by the first round of
+/// [`convert_reals_to_int`]: the time unit of the integer model divides `1 / precision.denom_lcm`.
+///
+/// Returns `None` if the precision cannot be determined.
+pub(crate) fn temporal_precision(model: &Model) -> Option<NumericPrecision> {
+    compute_required_fluent_scalings(model).ok().map(|scalings| scalings.time)
+}
+
 /// Looks at all values assigned/added to each numeric fluent to find out what values it can get.
 fn compute_required_fluent_scalings(model: &Model) -> Res<SvPrecisions> {
     // initialize scaling to default value

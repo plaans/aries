@@ -1,7 +1,7 @@
 pub mod analysis;
 mod annotate_transitions;
 mod erase_unusable_effects;
-mod intify;
+pub(crate) mod intify;
 mod lift_predicates;
 mod merge_conditions;
 mod merge_effect_condition;
