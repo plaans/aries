@@ -3,7 +3,11 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
-use crate::{env::Env, errors::ErrorMessageExt, *};
+use crate::{
+    env::{Env, INDENT},
+    errors::ErrorMessageExt,
+    *,
+};
 
 pub type ActionRef = Sym;
 
@@ -210,6 +214,11 @@ impl<'env> Display for Env<'env, &Action> {
                 .map(|p| format!("{}: {}", p.name(), p.tpe()))
                 .format(", ")
         )?;
+        if let Some(status) = self.elem.annotations.status {
+            let reachable = if status.reachable { "reachable" } else { "unreachable" };
+            let useful = if status.useful { "useful" } else { "useless" };
+            write!(f, "    {}", Discrete(format!("[{reachable}, {useful}]")))?;
+        }
 
         write!(f, "\n        duration")?;
         match self.elem.duration {
@@ -220,44 +229,27 @@ impl<'env> Display for Env<'env, &Action> {
         }
 
         let (action, env) = (self.elem, self.env);
-        // conditions and effects that are part of a transition are only displayed in the dedicated sections
-        fs(
-            f,
-            "conditions:",
-            (action.conditions.iter()).filter(|c| action.transition_of_condition(c, env).is_none()),
-            env,
-        )?;
-        fs(
-            f,
-            "effects:",
-            (action.effects.iter()).filter(|e| action.transition_of_effect(e, env).is_none()),
-            env,
-        )?;
-        fs(f, "transitions:", action.transitions(env).filter(|t| !t.borrow), env)?;
-        fs(f, "borrows:", action.transitions(env).filter(|t| t.borrow), env)?;
-        // results of the support analysis, if available
-        if let Some(status) = action.annotations.status {
-            let reachable = if status.reachable { "reachable" } else { "unreachable" };
-            let useful = if status.useful { "useful" } else { "useless" };
-            write!(f, "\n        status: {reachable}, {useful}")?;
-        }
-        let supporters = (action.conditions.iter())
-            .filter_map(|c| c.annotations.supporters.as_ref().map(|s| (c, s)))
-            .collect_vec();
-        if !supporters.is_empty() {
-            write!(f, "\n        supported by:")?;
-            for (c, s) in supporters {
-                write!(f, "\n            {} <= {s}", env / c)?;
-            }
-        }
-        let supports = (action.effects.iter())
-            .filter_map(|e| e.annotations.supports.as_ref().map(|s| (e, s)))
-            .collect_vec();
-        if !supports.is_empty() {
-            write!(f, "\n        supports:")?;
-            for (e, s) in supports {
-                write!(f, "\n            {} => {s}", env / e)?;
-            }
+        if action.annotations.status.is_none()
+            && action.conditions.iter().all(|c| c.annotations.supporters.is_none())
+            && action.effects.iter().all(|e| e.annotations.supports.is_none())
+        {
+            // conditions and effects that are part of a transition are only displayed in the dedicated sections
+            fs(
+                f,
+                "conditions:",
+                (action.conditions.iter()).filter(|c| action.transition_of_condition(c, env).is_none()),
+                env,
+            )?;
+            fs(
+                f,
+                "effects:",
+                (action.effects.iter()).filter(|e| action.transition_of_effect(e, env).is_none()),
+                env,
+            )?;
+            fs(f, "transitions:", action.transitions(env).filter(|t| !t.borrow), env)?;
+            fs(f, "borrows:", action.transitions(env).filter(|t| t.borrow), env)?;
+        } else {
+            write_annotated_elements(f, action, env)?;
         }
         fs(f, "preferences:", self.elem.preferences.iter(), self.env)?;
         fs(f, "vars:", self.elem.subtasks.variables.iter(), self.env)?;
@@ -270,4 +262,61 @@ impl<'env> Display for Env<'env, &Action> {
         )?;
         Ok(())
     }
+}
+
+/// Displays the conditions, effects and transitions of an action, each one with its identifier and, on the same line,
+/// its annotations (supporters of conditions, supported targets of effects).
+fn write_annotated_elements(f: &mut std::fmt::Formatter<'_>, action: &Action, env: &Environment) -> std::fmt::Result {
+    /// Maximal width to which elements are padded for aligning their annotations.
+    const MAX_ALIGN: usize = 60;
+    let supporters = |c: &Condition| c.annotations.supporters.as_ref().map(|s| format!("<= {s}"));
+    let supports = |e: &Effect| e.annotations.supports.as_ref().map(|s| format!("=> {s}"));
+    // (section, id, element, annotation)
+    let mut lines: Vec<(&str, String, String, String)> = Vec::new();
+    for c in &action.conditions {
+        if action.transition_of_condition(c, env).is_none() {
+            let annot = supporters(c).unwrap_or_default();
+            lines.push(("conditions:", c.id.to_string(), (env / c).to_string(), annot));
+        }
+    }
+    for e in &action.effects {
+        if action.transition_of_effect(e, env).is_none() {
+            let annot = supports(e).unwrap_or_default();
+            lines.push(("effects:", e.id.to_string(), (env / e).to_string(), annot));
+        }
+    }
+    for t in action.transitions(env) {
+        let section = if t.borrow { "borrows:" } else { "transitions:" };
+        let annot = [supporters(t.condition), supports(t.effect)]
+            .into_iter()
+            .flatten()
+            .join("   ");
+        let id = format!("{}/{}", t.condition.id, t.effect.id);
+        lines.push((section, id, (env / t).to_string(), annot));
+    }
+    let id_width = lines.iter().map(|l| l.1.chars().count()).max().unwrap_or(0);
+    let elem_width = (lines.iter().map(|l| l.2.chars().count()))
+        .filter(|&w| w <= MAX_ALIGN)
+        .max()
+        .unwrap_or(0);
+    for section in ["conditions:", "effects:", "transitions:", "borrows:"] {
+        let mut first = true;
+        for (_, id, elem, annot) in lines.iter().filter(|l| l.0 == section) {
+            if first {
+                write!(f, "\n{}{section}", INDENT.repeat(2))?;
+                first = false;
+            }
+            write!(
+                f,
+                "\n{}{} {elem}",
+                INDENT.repeat(3),
+                Discrete(format!("{id:<id_width$}"))
+            )?;
+            if !annot.is_empty() {
+                let pad = elem_width.saturating_sub(elem.chars().count());
+                write!(f, "{}  {}", " ".repeat(pad), Discrete(annot))?;
+            }
+        }
+    }
+    Ok(())
 }

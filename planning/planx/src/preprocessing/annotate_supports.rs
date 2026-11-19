@@ -754,6 +754,8 @@ impl UnionFind {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use crate::pddl::{build_model, input::Input, parser};
     use crate::preprocessing::{ModelTransformation, apply_transformations};
     use crate::*;
@@ -802,7 +804,16 @@ mod tests {
                     .as_ref()
                     .unwrap()
                     .to_string()
-                    .replace(|c: char| c.is_ascii_digit(), "")
+                    .split(", ")
+                    .map(|t| {
+                        t.split('.')
+                            .next()
+                            .unwrap()
+                            .trim_end_matches(|c: char| c.is_ascii_digit())
+                            .to_string()
+                            + if t.ends_with("(undo)") { "(undo)" } else { "" }
+                    })
+                    .join(", ")
             })
             .collect()
     }
@@ -841,7 +852,7 @@ mod tests {
     fn supports_and_status() {
         let model = build(DOMAIN, PROBLEM);
         // goals: one atom each (and a condition of the useless `log`)
-        assert_eq!(supports(&model, "take_image", "have_image"), ["log, goal#, goal#"]);
+        assert_eq!(supports(&model, "take_image", "have_image"), ["log, g, g"]);
         // switch_on restores what switch_off consumed, but not the other way around
         assert_eq!(
             supports(&model, "switch_on", "power_avail:power_on"),
@@ -871,7 +882,11 @@ mod tests {
                         .is_some_and(|r| r.fluent == fluent)
                 })
                 .unwrap();
-            c.annotations.supporters.as_ref().unwrap().to_string()
+            let s = c.annotations.supporters.as_ref().unwrap().to_string();
+            s.split(", ")
+                .map(|t| t.split('.').next().unwrap().to_string())
+                .dedup()
+                .join(", ")
         };
         assert_eq!(sup("calibrated"), "calibrate");
         assert_eq!(sup("pointing"), "init, turn_to");

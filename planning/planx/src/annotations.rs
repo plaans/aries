@@ -18,7 +18,7 @@
 //! An invalid annotation is a bug: in debug builds, the accessors check, on the current state of the action, that
 //! the annotated pattern still holds and panic otherwise. These checks are skipped in release builds.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use itertools::Itertools;
 
@@ -26,6 +26,27 @@ use crate::preprocessing::analysis::{ActionTiming, RequiredValue, Term, required
 use crate::*;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+
+static COLORED: AtomicBool = AtomicBool::new(false);
+
+/// Enables or disables the use of ANSI colors when displaying annotations (disabled by default).
+/// Typically enabled when printing to a terminal.
+pub fn set_colored_annotations(colored: bool) {
+    COLORED.store(colored, Ordering::Relaxed);
+}
+
+/// Displays its content in grey (if colors are enabled), to make annotations visually discrete.
+pub struct Discrete<T>(pub T);
+
+impl<T: std::fmt::Display> std::fmt::Display for Discrete<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if COLORED.load(Ordering::Relaxed) {
+            write!(f, "\x1b[90m{}\x1b[0m", self.0)
+        } else {
+            write!(f, "{}", self.0)
+        }
+    }
+}
 
 /// Identifier of a [`Condition`], unique within its action.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -62,7 +83,31 @@ impl GoalId {
 
 impl std::fmt::Display for GoalId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "goal#{}", self.0)
+        write!(f, "g{}", self.0)
+    }
+}
+
+impl std::fmt::Display for ConditionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c{}", self.0)
+    }
+}
+
+impl std::fmt::Display for EffectId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "e{}", self.0)
+    }
+}
+
+impl std::fmt::Display for CondRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.action, self.condition)
+    }
+}
+
+impl std::fmt::Display for EffRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.action, self.effect)
     }
 }
 
@@ -552,8 +597,8 @@ impl std::fmt::Display for FluentProperties {
 impl std::fmt::Display for SupportTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SupportTarget::Condition { cond, undo: false } => write!(f, "{}", cond.action),
-            SupportTarget::Condition { cond, undo: true } => write!(f, "{}(undo)", cond.action),
+            SupportTarget::Condition { cond, undo: false } => write!(f, "{cond}"),
+            SupportTarget::Condition { cond, undo: true } => write!(f, "{cond}(undo)"),
             SupportTarget::Goal { goal, atoms: 1 } => write!(f, "{goal}"),
             SupportTarget::Goal { goal, atoms } => write!(f, "{goal}(x{atoms})"),
         }
@@ -573,7 +618,7 @@ impl std::fmt::Display for Supports {
 impl std::fmt::Display for Supporters {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let init = self.init.then(|| "init".to_string());
-        let effects = self.effects.iter().map(|e| e.action.to_string()).dedup();
+        let effects = self.effects.iter().map(|e| e.to_string());
         let all = init.into_iter().chain(effects).collect_vec();
         if all.is_empty() {
             write!(f, "<nothing>")

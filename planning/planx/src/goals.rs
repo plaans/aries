@@ -20,6 +20,10 @@ pub struct Goal {
 
 impl<'a> Display for Env<'a, &Goal> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let supporters = self.elem.annotations.supporters.as_ref();
+        if supporters.is_some() {
+            write!(f, "{} ", crate::Discrete(self.elem.id))?;
+        }
         write!(f, "{}", self.env / &self.elem.goal_expression)?;
         if !self.elem.universal_quantification.is_empty() {
             write!(
@@ -27,6 +31,10 @@ impl<'a> Display for Env<'a, &Goal> {
                 " | forall ({}) ",
                 self.elem.universal_quantification.iter().join(", ")
             )?;
+        }
+        if let Some(sups) = supporters {
+            let sups = sups.iter().map(|s| s.to_string()).join(" ; ");
+            write!(f, "  {}", crate::Discrete(format!("<= {sups}")))?;
         }
         Ok(())
     }

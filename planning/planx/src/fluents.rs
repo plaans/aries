@@ -142,7 +142,7 @@ impl Display for Fluent {
         if let Some(props) = &self.annotations.properties {
             let props = props.to_string();
             if props != "[]" {
-                write!(f, "    {props}")?;
+                write!(f, "    {}", crate::Discrete(props))?;
             }
         }
         Ok(())

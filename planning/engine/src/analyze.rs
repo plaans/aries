@@ -1,6 +1,6 @@
 //! The `analyze` command: runs the analysis passes on a problem and reports their results.
 
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, io::IsTerminal, path::PathBuf};
 
 use itertools::Itertools;
 use planx::{
@@ -60,12 +60,8 @@ pub fn analyze(command: &Analyze) -> Res<()> {
     let model = preprocess_model(model, ANALYSIS_TRANSFORMATIONS)?;
 
     if !command.quiet {
+        planx::set_colored_annotations(std::io::stdout().is_terminal());
         println!("===== Annotated model =====\n\n{model}");
-        println!("Goal identifiers:");
-        for g in &model.goals {
-            println!("  {}: {}", g.id, model.env.node(g));
-        }
-        println!();
     }
 
     println!("===== Domain transition graphs =====\n");
