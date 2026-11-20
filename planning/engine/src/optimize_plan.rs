@@ -58,21 +58,27 @@ fn encoded_borrows(action: &planx::Action, model: &Model, bounds: &NumericBounds
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct Options {
+    /// Relaxations allowed on the plan.
     #[arg(short, long, num_args(1..))]
     pub relaxation: Vec<Relaxation>,
 
+    /// Overrides the metrics of the problem. If more than one is specified, the solver will do a lexicographic optimization.
     #[arg(short, long, num_args(0..))]
     pub objectives: Vec<Objective>,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, PartialOrd, Eq, Ord)]
 pub enum Relaxation {
+    /// Allows actions to be removed from the plan (necessary for plan-length optimization)
     ActionPresence,
+    /// Relax the start time of actions, allowing them to be reordered (necessary for makespan optimization).
     StartTime,
 }
 
 #[derive(clap::ValueEnum, Debug, Clone, Copy, Display, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Objective {
+    /// Objectives stated in the model (useful to combine with an other metric)
+    Original,
     /// Number of actions in the plan
     PlanLength,
     /// End time of the latest action
