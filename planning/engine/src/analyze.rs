@@ -94,14 +94,12 @@ pub fn analyze(command: &Analyze) -> Res<()> {
         PlanScope::NonRedundantPlus,
     ];
     let bounds = scopes.map(|s| constraints.propagate(s));
-    let width = constraints
-        .templates
-        .iter()
-        .map(|t| t.to_string().len())
+    let width = (constraints.vars.iter())
+        .map(|(_, t)| t.to_string().len())
         .max()
         .unwrap_or(0);
     println!("{:width$}   {:>12} {:>12} {:>12}", "", "all", "NR", "NR+");
-    for t in &constraints.templates {
+    for (_, t) in constraints.vars.iter() {
         let cells = bounds.iter().map(|b| match b {
             None => "infeasible".to_string(),
             Some(b) => {
@@ -126,11 +124,11 @@ pub fn analyze(command: &Analyze) -> Res<()> {
             .map(|(a, n)| (a, n as i64))
             .collect();
         println!("\n===== Plan {} =====\n", plan_file.display());
-        for t in &constraints.templates {
+        for (_, t) in constraints.vars.iter() {
             println!("  n({t}) = {}", counts.get(t).copied().unwrap_or(0));
         }
         for c in constraints.violations(&counts) {
-            println!("VIOLATION {c}");
+            println!("VIOLATION {}", constraints.vars.display(c));
         }
     }
     Ok(())

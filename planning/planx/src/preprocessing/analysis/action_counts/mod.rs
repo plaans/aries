@@ -52,51 +52,97 @@ impl Display for PlanScope {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Cmp {
-    Le,
-    Ge,
-    Eq,
+pub use aries_linexpr::ComparisonOp as Cmp;
+use aries_linexpr::{CanonicalConstraint, LinExpr, impl_linear_ops};
+
+/// The variable `n(a)`: number of instances of an action template `a` (see [`CountVars`]).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CountVar(u32);
+
+impl_linear_ops!(CountVar, i64);
+
+/// A linear expression over the count variables.
+pub type CountExpr = LinExpr<CountVar, i64>;
+
+/// A linear constraint over the count variables, in canonical form (`sum_i c_i * n(a_i) + k <cmp> 0`).
+pub type Linear = CanonicalConstraint<CountVar, i64>;
+
+/// The count variables of the action templates of a model.
+#[derive(Clone, Debug)]
+pub struct CountVars {
+    templates: Vec<ActionRef>,
+    index: HashMap<ActionRef, CountVar>,
 }
 
-/// A linear constraint `sum_i c_i * n(a_i) <cmp> rhs`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Linear {
-    pub terms: Vec<(i64, ActionRef)>,
-    pub cmp: Cmp,
-    pub rhs: i64,
-}
+impl CountVars {
+    pub fn new(model: &Model) -> Self {
+        Self::from_templates(model.actions.iter().map(|a| a.name.clone()).collect())
+    }
 
-impl Linear {
-    /// Builds a linear constraint, merging the terms on the same action and removing null ones.
-    pub fn new(terms: impl IntoIterator<Item = (i64, ActionRef)>, cmp: Cmp, rhs: i64) -> Self {
-        let mut merged: BTreeMap<ActionRef, i64> = BTreeMap::new();
-        for (c, a) in terms {
-            *merged.entry(a).or_default() += c;
-        }
-        let terms = merged
-            .into_iter()
-            .filter(|(_, c)| *c != 0)
-            .map(|(a, c)| (c, a))
+    pub fn from_templates(templates: Vec<ActionRef>) -> Self {
+        let index = (templates.iter().enumerate())
+            .map(|(i, a)| (a.clone(), CountVar(i as u32)))
             .collect();
-        Linear { terms, cmp, rhs }
+        CountVars { templates, index }
     }
 
-    pub fn eval(&self, counts: &HashMap<ActionRef, i64>) -> bool {
-        let lhs: i64 = (self.terms.iter())
-            .map(|(c, a)| c * counts.get(a).copied().unwrap_or(0))
-            .sum();
-        match self.cmp {
-            Cmp::Le => lhs <= self.rhs,
-            Cmp::Ge => lhs >= self.rhs,
-            Cmp::Eq => lhs == self.rhs,
-        }
+    /// The variable `n(a)` of a template of the model.
+    pub fn n(&self, a: &ActionRef) -> CountVar {
+        self.index[a]
+    }
+
+    /// The template counted by the variable.
+    pub fn template(&self, v: CountVar) -> &ActionRef {
+        &self.templates[v.0 as usize]
+    }
+
+    /// All variables with their template.
+    pub fn iter(&self) -> impl Iterator<Item = (CountVar, &ActionRef)> + '_ {
+        (self.templates.iter().enumerate()).map(|(i, a)| (CountVar(i as u32), a))
+    }
+
+    pub fn len(&self) -> usize {
+        self.templates.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.templates.is_empty()
+    }
+
+    /// The expression `sum_i c_i * n(a_i)` (simplified).
+    pub fn sum(&self, terms: impl IntoIterator<Item = (i64, ActionRef)>) -> CountExpr {
+        let mut e: CountExpr = terms.into_iter().map(|(c, a)| (self.n(&a), c)).collect();
+        e.simplify();
+        e
+    }
+
+    /// The constraint `sum_i c_i * n(a_i) <cmp> rhs`.
+    pub fn linear(&self, terms: impl IntoIterator<Item = (i64, ActionRef)>, cmp: Cmp, rhs: i64) -> Linear {
+        self.sum(terms).into_constraint(cmp, rhs).canonical()
+    }
+
+    /// Coefficient of `n(a)` in the constraint.
+    pub fn coeff(&self, lin: &Linear, a: &ActionRef) -> i64 {
+        let v = self.n(a);
+        lin.expr().iter().filter(|(x, _)| *x == v).map(|(_, c)| c).sum()
+    }
+
+    /// Displays an element (constraint, expression) with the names of the templates.
+    pub fn display<'a, T: ?Sized>(&'a self, elem: &'a T) -> Named<'a, T> {
+        Named { vars: self, elem }
     }
 }
 
-impl Display for Linear {
+/// An element to be displayed with the names of the templates of its variables.
+pub struct Named<'a, T: ?Sized> {
+    vars: &'a CountVars,
+    elem: &'a T,
+}
+
+impl Display for Named<'_, Linear> {
     /// Displays the constraint with positive coefficients on both sides, e.g. `n(a) <= n(b) + n(c) + 2`.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lin = self.elem;
         let side = |terms: Vec<String>, cst: i64| {
             let mut parts = terms;
             if cst != 0 || parts.is_empty() {
@@ -104,27 +150,29 @@ impl Display for Linear {
             }
             parts.join(" + ")
         };
-        let term = |c: i64, a: &ActionRef| {
+        let term = |c: i64, v: CountVar| {
+            let a = self.vars.template(v);
             if c == 1 {
                 format!("n({a})")
             } else {
                 format!("{c}*n({a})")
             }
         };
-        let lhs = (self.terms.iter())
-            .filter(|(c, _)| *c > 0)
-            .map(|(c, a)| term(*c, a))
+        let terms = lin.expr().iter().collect_vec();
+        let lhs = (terms.iter())
+            .filter(|(_, c)| *c > 0)
+            .map(|(v, c)| term(*c, *v))
             .collect();
-        let rhs = (self.terms.iter())
-            .filter(|(c, _)| *c < 0)
-            .map(|(c, a)| term(-c, a))
+        let rhs = (terms.iter())
+            .filter(|(_, c)| *c < 0)
+            .map(|(v, c)| term(-c, *v))
             .collect();
         // constant on the side where it is positive
-        let (lc, rc) = if self.rhs >= 0 { (0, self.rhs) } else { (-self.rhs, 0) };
-        let cmp = match self.cmp {
-            Cmp::Le => "<=",
-            Cmp::Ge => ">=",
+        let k = -lin.expr().constant();
+        let (lc, rc) = if k >= 0 { (0, k) } else { (-k, 0) };
+        let cmp = match lin.comp_op() {
             Cmp::Eq => "=",
+            op => op.symbol(),
         };
         write!(f, "{} {cmp} {}", side(lhs, lc), side(rhs, rc))
     }
@@ -135,27 +183,29 @@ pub enum Constraint {
     Linear(Linear),
     /// If the action is used at least once, then the linear constraint must hold.
     Implies {
-        if_used: ActionRef,
+        if_used: CountVar,
         then: Linear,
     },
 }
 
 impl Constraint {
-    pub fn eval(&self, counts: &HashMap<ActionRef, i64>) -> bool {
+    /// True if the constraint holds, given the value of each count variable.
+    pub fn eval(&self, value: impl Fn(CountVar) -> i64) -> bool {
         match self {
-            Constraint::Linear(l) => l.eval(counts),
-            Constraint::Implies { if_used, then } => {
-                counts.get(if_used).copied().unwrap_or(0) == 0 || then.eval(counts)
-            }
+            Constraint::Linear(l) => l.is_satisfied(value),
+            Constraint::Implies { if_used, then } => value(*if_used) == 0 || then.is_satisfied(value),
         }
     }
 }
 
-impl Display for Constraint {
+impl Display for Named<'_, Constraint> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Constraint::Linear(l) => write!(f, "{l}"),
-            Constraint::Implies { if_used, then } => write!(f, "n({if_used}) >= 1  =>  {then}"),
+        match self.elem {
+            Constraint::Linear(l) => write!(f, "{}", self.vars.display(l)),
+            Constraint::Implies { if_used, then } => {
+                let a = self.vars.template(*if_used);
+                write!(f, "n({a}) >= 1  =>  {}", self.vars.display(then))
+            }
         }
     }
 }
@@ -171,15 +221,16 @@ pub struct CountConstraint {
     pub explanation: String,
 }
 
-impl Display for CountConstraint {
+impl Display for Named<'_, CountConstraint> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c = self.elem;
         write!(
             f,
             "[{:>3}] {:<17} {}    -- {}",
-            self.scope.to_string(),
-            self.generator,
-            self.constraint,
-            self.explanation
+            c.scope.to_string(),
+            c.generator,
+            self.vars.display(&c.constraint),
+            c.explanation
         )
     }
 }
@@ -190,19 +241,26 @@ pub type Ub = Option<i64>;
 /// The constraints on the number of instances of the action templates of a model.
 #[derive(Clone, Debug)]
 pub struct CountConstraints {
-    pub templates: Vec<ActionRef>,
+    pub vars: CountVars,
     pub constraints: Vec<CountConstraint>,
 }
 
 impl CountConstraints {
     /// Runs all generators on the model, that is expected to be annotated (fluents and supports).
     /// Generators relying on missing annotations produce no constraint.
+    ///
+    /// In hierarchical models, actions may be required by the decomposition of tasks without contributing to the
+    /// goals: only the constraints holding for all plans are kept.
     pub fn new(model: &Model) -> Self {
-        let templates = model.actions.iter().map(|a| a.name.clone()).collect();
+        let vars = CountVars::new(model);
         let mut constraints = Vec::new();
-        supports::generate(model, &mut constraints);
-        transitions::generate(model, &mut constraints);
-        numeric::generate(model, &mut constraints);
+        supports::generate(model, &vars, &mut constraints);
+        transitions::generate(model, &vars, &mut constraints);
+        numeric::generate(model, &vars, &mut constraints);
+        let hierarchical = model.task_network.is_some() || model.actions.iter().any(|a| !a.subtasks.is_empty());
+        if hierarchical {
+            constraints.retain(|c| c.scope == PlanScope::AllPlans);
+        }
         // remove duplicates (keeping the first, i.e. the one with the weakest scope since generators emit
         // constraints of weaker scopes first)
         let mut unique: Vec<CountConstraint> = Vec::new();
@@ -215,7 +273,7 @@ impl CountConstraints {
             }
         }
         CountConstraints {
-            templates,
+            vars,
             constraints: unique,
         }
     }
@@ -227,7 +285,10 @@ impl CountConstraints {
 
     /// The constraints (of any scope) violated by a plan with the given number of instances of each template.
     pub fn violations<'a>(&'a self, counts: &HashMap<ActionRef, i64>) -> Vec<&'a CountConstraint> {
-        self.constraints.iter().filter(|c| !c.constraint.eval(counts)).collect()
+        let value = |v: CountVar| counts.get(self.vars.template(v)).copied().unwrap_or(0);
+        (self.constraints.iter())
+            .filter(|c| !c.constraint.eval(value))
+            .collect()
     }
 
     /// Bounds `[lb, ub]` on the number of instances of each template, obtained by a simple (incomplete) bound
@@ -235,8 +296,7 @@ impl CountConstraints {
     ///
     /// Returns `None` if the propagation detects that no plan of this scope exists.
     pub fn propagate(&self, scope: PlanScope) -> Option<BTreeMap<ActionRef, (i64, Ub)>> {
-        let mut bounds: BTreeMap<ActionRef, (i64, Ub)> =
-            self.templates.iter().map(|t| (t.clone(), (0, None))).collect();
+        let mut bounds: Vec<(i64, Ub)> = vec![(0, None); self.vars.len()];
         let constraints = self.holding_for(scope).collect_vec();
         // bound the number of iterations (bounds may increase slowly through cycles)
         for _ in 0..1000 {
@@ -244,40 +304,42 @@ impl CountConstraints {
             for c in &constraints {
                 let lin = match &c.constraint {
                     Constraint::Linear(l) => l,
-                    Constraint::Implies { if_used, then } if bounds.get(if_used).is_some_and(|b| b.0 >= 1) => then,
+                    Constraint::Implies { if_used, then } if bounds[if_used.0 as usize].0 >= 1 => then,
                     Constraint::Implies { .. } => continue,
                 };
-                let (le, ge) = match lin.cmp {
+                let (le, ge) = match lin.comp_op() {
                     Cmp::Le => (true, false),
                     Cmp::Ge => (false, true),
                     Cmp::Eq => (true, true),
                 };
+                let rhs = -lin.expr().constant();
+                let terms = lin.expr().iter().collect_vec();
                 // min and max of `c * n(a)`
-                let range = |bounds: &BTreeMap<ActionRef, (i64, Ub)>, c: i64, a: &ActionRef| -> (Ub, Ub) {
-                    let (lb, ub) = bounds.get(a).copied().unwrap_or((0, None));
+                let range = |bounds: &[(i64, Ub)], v: CountVar, c: i64| -> (Ub, Ub) {
+                    let (lb, ub) = bounds[v.0 as usize];
                     if c >= 0 {
                         (Some(c * lb), ub.map(|ub| c * ub))
                     } else {
                         (ub.map(|ub| c * ub), Some(c * lb))
                     }
                 };
-                for (i, (ci, ai)) in lin.terms.iter().enumerate() {
+                for (i, &(vi, ci)) in terms.iter().enumerate() {
                     // sums of the minimum and maximum of the other terms
                     let (mut min_others, mut max_others) = (Some(0), Some(0));
-                    for (j, (cj, aj)) in lin.terms.iter().enumerate() {
+                    for (j, &(vj, cj)) in terms.iter().enumerate() {
                         if i != j {
-                            let (mn, mx) = range(&bounds, *cj, aj);
+                            let (mn, mx) = range(&bounds, vj, cj);
                             min_others = min_others.zip(mn).map(|(x, y)| x + y);
                             max_others = max_others.zip(mx).map(|(x, y)| x + y);
                         }
                     }
-                    let (lb, ub) = bounds[ai];
+                    let (lb, ub) = bounds[vi.0 as usize];
                     let (mut new_lb, mut new_ub) = (lb, ub);
                     // c_i * n_i <= rhs - min_others   and   c_i * n_i >= rhs - max_others
                     if le && let Some(mn) = min_others {
-                        let r = lin.rhs - mn;
-                        if *ci > 0 {
-                            let v = r.div_euclid(*ci);
+                        let r = rhs - mn;
+                        if ci > 0 {
+                            let v = r.div_euclid(ci);
                             new_ub = Some(new_ub.map_or(v, |u| u.min(v)));
                         } else {
                             let v = (-r + (-ci) - 1).div_euclid(-ci); // ceil(r / c_i) with c_i < 0
@@ -285,9 +347,9 @@ impl CountConstraints {
                         }
                     }
                     if ge && let Some(mx) = max_others {
-                        let r = lin.rhs - mx;
-                        if *ci > 0 {
-                            let v = (r + ci - 1).div_euclid(*ci); // ceil
+                        let r = rhs - mx;
+                        if ci > 0 {
+                            let v = (r + ci - 1).div_euclid(ci); // ceil
                             new_lb = new_lb.max(v);
                         } else {
                             let v = (-r).div_euclid(-ci); // floor(r / c_i) with c_i < 0
@@ -298,7 +360,7 @@ impl CountConstraints {
                         if new_ub.is_some_and(|u| u < new_lb) {
                             return None;
                         }
-                        bounds.insert(ai.clone(), (new_lb, new_ub));
+                        bounds[vi.0 as usize] = (new_lb, new_ub);
                         changed = true;
                     }
                 }
@@ -307,14 +369,18 @@ impl CountConstraints {
                 break;
             }
         }
-        Some(bounds)
+        Some(
+            (self.vars.iter())
+                .map(|(v, a)| (a.clone(), bounds[v.0 as usize]))
+                .collect(),
+        )
     }
 }
 
 impl Display for CountConstraints {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for c in &self.constraints {
-            writeln!(f, "{c}")?;
+            writeln!(f, "{}", self.vars.display(c))?;
         }
         Ok(())
     }
@@ -400,27 +466,32 @@ pub(crate) mod tests {
     fn display_and_propagation() {
         let a = || Sym::from("a");
         let b = || Sym::from("b");
-        let l = Linear::new([(1, a()), (-2, b()), (1, a())], Cmp::Le, 3);
-        assert_eq!(l.to_string(), "2*n(a) <= 2*n(b) + 3");
-        let l = Linear::new([(1, a()), (-1, b())], Cmp::Ge, -1);
-        assert_eq!(l.to_string(), "n(a) + 1 >= n(b)");
+        let vars = CountVars::from_templates(vec![a(), b()]);
+        let l = vars.linear([(1, a()), (-2, b()), (1, a())], Cmp::Le, 3);
+        assert_eq!(vars.display(&l).to_string(), "2*n(a) <= 2*n(b) + 3");
+        let l = vars.linear([(1, a()), (-1, b())], Cmp::Ge, -1);
+        assert_eq!(vars.display(&l).to_string(), "n(a) + 1 >= n(b)");
+        // built with operators
+        let (na, nb) = (vars.n(&a()), vars.n(&b()));
+        assert_eq!(
+            vars.display(&(2 * na - nb).leq(4).canonical()).to_string(),
+            "2*n(a) <= n(b) + 4"
+        );
         let constraint = |c: Constraint| CountConstraint {
             constraint: c,
             scope: PlanScope::AllPlans,
             generator: "test",
             explanation: String::new(),
         };
-        let cs = CountConstraints {
-            templates: vec![a(), b()],
-            constraints: vec![
-                constraint(Constraint::Linear(Linear::new([(1, a())], Cmp::Ge, 2))),
-                constraint(Constraint::Implies {
-                    if_used: a(),
-                    then: Linear::new([(1, b())], Cmp::Ge, 1),
-                }),
-                constraint(Constraint::Linear(Linear::new([(2, a()), (1, b())], Cmp::Le, 7))),
-            ],
-        };
+        let constraints = vec![
+            constraint(Constraint::Linear(vars.linear([(1, a())], Cmp::Ge, 2))),
+            constraint(Constraint::Implies {
+                if_used: na,
+                then: vars.linear([(1, b())], Cmp::Ge, 1),
+            }),
+            constraint(Constraint::Linear(vars.linear([(2, a()), (1, b())], Cmp::Le, 7))),
+        ];
+        let cs = CountConstraints { vars, constraints };
         let bounds = cs.propagate(PlanScope::AllPlans).unwrap();
         assert_eq!(bounds[&a()], (2, Some(3)));
         assert_eq!(bounds[&b()], (1, Some(3)));
@@ -522,7 +593,10 @@ pub(crate) mod tests {
             .find(|c| c.generator == "numeric-budget")
             .unwrap();
         // total fuel: 7 + 4, each move consumes 2
-        assert_eq!(budget.constraint.to_string(), "2*n(move) <= 11");
+        assert_eq!(
+            constraints.vars.display(&budget.constraint).to_string(),
+            "2*n(move) <= 11"
+        );
         assert_eq!(budget.scope, PlanScope::AllPlans);
         assert_eq!(bounds(&model, PlanScope::AllPlans)["move"], "[2, 5]");
     }

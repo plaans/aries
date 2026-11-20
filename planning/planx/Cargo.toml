@@ -23,6 +23,7 @@ compact_str = { workspace = true }
 arcstr = { workspace = true }
 tracing = { workspace = true }
 aries-env-param = { path = "../../utils/env_param" }
+aries-linexpr = { path = "../../utils/linexpr" }
 
 [[bin]]
 name = "pddl-parser"

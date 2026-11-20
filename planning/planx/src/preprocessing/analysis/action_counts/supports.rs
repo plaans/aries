@@ -7,13 +7,13 @@ use itertools::Itertools;
 use crate::preprocessing::analysis::{conjuncts, simple_goal};
 use crate::*;
 
-use super::{Cmp, Constraint, CountConstraint, Linear, PlanScope};
+use super::{Cmp, Constraint, CountConstraint, CountVars, PlanScope};
 
-pub(super) fn generate(model: &Model, out: &mut Vec<CountConstraint>) {
-    dead_actions(model, out);
-    goal_demand(model, out);
-    required_and_absent(model, out);
-    support_capacity(model, out);
+pub(super) fn generate(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
+    dead_actions(model, vars, out);
+    goal_demand(model, vars, out);
+    required_and_absent(model, vars, out);
+    support_capacity(model, vars, out);
 }
 
 fn status(model: &Model, a: &ActionRef) -> Option<ActionStatus> {
@@ -30,10 +30,10 @@ fn may_appear(model: &Model, a: &ActionRef, scope: PlanScope) -> bool {
 }
 
 /// Unreachable actions never appear in a plan, useless ones never appear in a non-redundant plan.
-fn dead_actions(model: &Model, out: &mut Vec<CountConstraint>) {
+fn dead_actions(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
     for a in model.actions.iter() {
         let Some(status) = a.annotations.status else { continue };
-        let zero = Constraint::Linear(Linear::new([(1, a.name.clone())], Cmp::Eq, 0));
+        let zero = Constraint::Linear(vars.linear([(1, a.name.clone())], Cmp::Eq, 0));
         if !status.reachable {
             out.push(CountConstraint {
                 constraint: zero,
@@ -54,7 +54,7 @@ fn dead_actions(model: &Model, out: &mut Vec<CountConstraint>) {
 
 /// Each goal atom that may not hold initially must be achieved by some action.
 /// For each goal fluent, the number of such atoms must be achieved by the instances of their supporting actions.
-fn goal_demand(model: &Model, out: &mut Vec<CountConstraint>) {
+fn goal_demand(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
     let env = &model.env;
     // for each fluent, the supporters of each goal atom not initially true
     let mut groups: BTreeMap<FluentId, Vec<&Supporters>> = BTreeMap::new();
@@ -95,7 +95,7 @@ fn goal_demand(model: &Model, out: &mut Vec<CountConstraint>) {
         let all = producers(&mut atoms.iter().flat_map(|s| s.effects.iter()));
         let all_producers = all.keys().cloned().collect_vec();
         out.push(CountConstraint {
-            constraint: Constraint::Linear(Linear::new(
+            constraint: Constraint::Linear(vars.linear(
                 all.into_iter().map(|(a, n)| (n, a)),
                 Cmp::Ge,
                 atoms.len() as i64,
@@ -114,7 +114,7 @@ fn goal_demand(model: &Model, out: &mut Vec<CountConstraint>) {
                 continue; // implied by the previous one
             }
             out.push(CountConstraint {
-                constraint: Constraint::Linear(Linear::new(ps.into_keys().map(|a| (1, a)), Cmp::Ge, 1)),
+                constraint: Constraint::Linear(vars.linear(ps.into_keys().map(|a| (1, a)), Cmp::Ge, 1)),
                 scope: PlanScope::AllPlans,
                 generator: "goal-demand",
                 explanation: format!("a goal atom on `{name}` is not initially true"),
@@ -124,7 +124,7 @@ fn goal_demand(model: &Model, out: &mut Vec<CountConstraint>) {
 }
 
 /// If an action is used and one of its conditions cannot hold initially, then some supporter must be used.
-fn required_and_absent(model: &Model, out: &mut Vec<CountConstraint>) {
+fn required_and_absent(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
     let env = &model.env;
     for b in model.actions.iter() {
         if !may_appear(model, &b.name, PlanScope::AllPlans) {
@@ -144,8 +144,8 @@ fn required_and_absent(model: &Model, out: &mut Vec<CountConstraint>) {
             }
             out.push(CountConstraint {
                 constraint: Constraint::Implies {
-                    if_used: b.name.clone(),
-                    then: Linear::new(producers.into_iter().map(|a| (1, a.clone())), Cmp::Ge, 1),
+                    if_used: vars.n(&b.name),
+                    then: vars.linear(producers.into_iter().map(|a| (1, a.clone())), Cmp::Ge, 1),
                 },
                 scope: PlanScope::AllPlans,
                 generator: "required-absent",
@@ -158,7 +158,7 @@ fn required_and_absent(model: &Model, out: &mut Vec<CountConstraint>) {
 /// In a non-redundant plan, each instance of an action is the last establisher of at least one requirement instance
 /// (of another action or a goal atom), and each requirement instance has a single last establisher.
 /// Thus `n(a) <= sum over the requirements r that a may support of the number of instances of r`.
-fn support_capacity(model: &Model, out: &mut Vec<CountConstraint>) {
+fn support_capacity(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
     let env = &model.env;
     for a in model.actions.iter() {
         if !may_appear(model, &a.name, PlanScope::NonRedundant) {
@@ -215,9 +215,9 @@ fn support_capacity(model: &Model, out: &mut Vec<CountConstraint>) {
                 terms.push((-weight, cond.action.clone()));
                 readers.insert(cond.action.to_string());
             }
-            let lin = Linear::new(terms, Cmp::Le, goal_atoms as i64);
+            let lin = vars.linear(terms, Cmp::Le, goal_atoms as i64);
             // skip constraints where the action supports itself (no bound)
-            if !lin.terms.iter().any(|(c, x)| *c > 0 && *x == a.name) {
+            if vars.coeff(&lin, &a.name) <= 0 {
                 continue;
             }
             let mut readers = readers.into_iter().join(", ");

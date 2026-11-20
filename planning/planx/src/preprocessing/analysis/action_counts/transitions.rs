@@ -5,28 +5,28 @@ use std::collections::BTreeSet;
 use crate::preprocessing::analysis::{Dtg, conjuncts, opaque_fluents, simple_requirement};
 use crate::*;
 
-use super::{Cmp, Constraint, CountConstraint, Linear, PlanScope};
+use super::{Cmp, Constraint, CountConstraint, CountVars, PlanScope};
 
 /// Maximum number of values of a fluent for building its DTG.
 const MAX_VALUES: usize = 2000;
 /// Maximum number of value classes considered for the flow balance of a fluent.
 const MAX_CLASSES: usize = 100;
 
-pub(super) fn generate(model: &Model, out: &mut Vec<CountConstraint>) {
+pub(super) fn generate(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
     let opaque = opaque_fluents(model);
     for dtg in Dtg::all(model, MAX_VALUES) {
-        acyclic(model, &dtg, out);
-        absorbing(model, &dtg, out);
-        balance(model, &dtg, out);
+        acyclic(model, vars, &dtg, out);
+        absorbing(model, vars, &dtg, out);
+        balance(model, vars, &dtg, out);
         if !opaque.contains(&dtg.fluent) {
-            chains(model, &dtg, out);
+            chains(model, vars, &dtg, out);
         }
     }
 }
 
 /// If all changes of the fluent are transitions and its DTG is acyclic, each state variable performs at most
 /// `longest_path` transitions.
-fn acyclic(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
+fn acyclic(model: &Model, vars: &CountVars, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
     if !dtg.writers.is_empty() || dtg.timed_effects || dtg.transitions.is_empty() {
         return;
     }
@@ -34,7 +34,7 @@ fn acyclic(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
     let name = (&model.env / dtg.fluent).name();
     let terms = dtg.transitions.iter().map(|t| (t.count as i64, t.action.clone()));
     out.push(CountConstraint {
-        constraint: Constraint::Linear(Linear::new(
+        constraint: Constraint::Linear(vars.linear(
             terms,
             Cmp::Le,
             (dtg.num_state_variables.saturating_mul(longest)) as i64,
@@ -63,7 +63,7 @@ fn pure_writer(model: &Model, action: &ActionRef, fluent: FluentId) -> bool {
 /// any write of `v` on a state variable that already has the value `v` is not a contribution.
 /// Hence the number of entering transitions and of writes by actions that have no other contribution is bounded by
 /// the number of state variables not initially at `v`.
-fn absorbing(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
+fn absorbing(model: &Model, vars: &CountVars, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
     if dtg.timed_effects {
         return;
     }
@@ -107,7 +107,7 @@ fn absorbing(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
             continue; // an instance may change several state variables
         }
         out.push(CountConstraint {
-            constraint: Constraint::Linear(Linear::new(terms, Cmp::Le, not_initially as i64)),
+            constraint: Constraint::Linear(vars.linear(terms, Cmp::Le, not_initially as i64)),
             scope,
             generator: "absorbing-value",
             explanation: format!(
@@ -121,7 +121,7 @@ fn absorbing(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
 
 /// For a class `C` of values such that each transition either surely enters `C`, surely leaves it or surely does
 /// not change membership to `C`: (entering - leaving) = (number of state variables in `C` at the end) - (initially).
-fn balance(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
+fn balance(model: &Model, vars: &CountVars, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
     if !dtg.writers.is_empty() || dtg.timed_effects || dtg.transitions.iter().any(|t| t.count != 1) {
         return;
     }
@@ -162,13 +162,13 @@ fn balance(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
         if !decided || terms.iter().all(|(s, _)| *s == 0) {
             continue;
         }
-        let lin = Linear::new(terms, Cmp::Eq, 0);
+        let net = vars.sum(terms.iter().cloned());
         // the complement of a class yields the opposite constraint
-        let opposite = Linear::new(lin.terms.iter().map(|(c, a)| (-c, a.clone())), Cmp::Eq, 0);
-        if seen.contains(&lin.terms) || seen.contains(&opposite.terms) {
+        let opposite = vars.sum(terms.iter().map(|(c, a)| (-c, a.clone())));
+        if seen.contains(&net) || seen.contains(&opposite) {
             continue;
         }
-        seen.push(lin.terms.clone());
+        seen.push(net.clone());
         let init: u64 = class.iter().map(|&v| dtg.initial[v]).sum();
         let goal_in: u64 = class.iter().map(|&v| dtg.goals[v]).sum();
         let goal_out: u64 = (0..n).filter(|v| !class.contains(v)).map(|v| dtg.goals[v]).sum();
@@ -186,7 +186,7 @@ fn balance(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
         );
         for (cmp, rhs) in [(Cmp::Ge, lb), (Cmp::Le, ub)] {
             out.push(CountConstraint {
-                constraint: Constraint::Linear(Linear::new(lin.terms.clone(), cmp, rhs)),
+                constraint: Constraint::Linear(net.clone().into_constraint(cmp, rhs).canonical()),
                 scope: PlanScope::AllPlans,
                 generator: "flow-balance",
                 explanation: explanation.clone(),
@@ -199,7 +199,7 @@ fn balance(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
 /// is their transitions on the fluent) never revisit a value of a state variable between two *uses* of it
 /// (a requirement on the fluent, a goal atom, or a writer). Hence at most `D` such transitions per use, where `D` is
 /// the maximum length of a simple path in the DTG.
-fn chains(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
+fn chains(model: &Model, vars: &CountVars, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
     let env = &model.env;
     let fluent = dtg.fluent;
     let name = (env / fluent).name();
@@ -249,12 +249,8 @@ fn chains(model: &Model, dtg: &Dtg, out: &mut Vec<CountConstraint>) {
         users.insert(format!("{} (writer)", w.action));
     }
     let goals: u64 = dtg.goals.iter().sum();
-    let lin = Linear::new(terms, Cmp::Le, d * goals as i64);
-    if !lin
-        .terms
-        .iter()
-        .any(|(c, a)| *c > 0 && pure.iter().any(|(_, p)| &p.name == a))
-    {
+    let lin = vars.linear(terms, Cmp::Le, d * goals as i64);
+    if !pure.iter().any(|(_, p)| vars.coeff(&lin, &p.name) > 0) {
         return;
     }
     let mut uses = users.into_iter().collect::<Vec<_>>().join(", ");

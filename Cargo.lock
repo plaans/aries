@@ -1781,6 +1781,7 @@ dependencies = [
  "annotate-snippets",
  "arcstr",
  "aries-env-param",
+ "aries-linexpr",
  "clap 4.6.1",
  "compact_str",
  "derive_more",

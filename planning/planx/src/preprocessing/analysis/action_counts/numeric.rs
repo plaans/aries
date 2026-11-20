@@ -5,18 +5,18 @@ use std::collections::HashMap;
 use crate::preprocessing::analysis::{ActionTiming, NumericBounds, Term, conjuncts};
 use crate::*;
 
-use super::{Cmp, Constraint, CountConstraint, Linear, PlanScope};
+use super::{Cmp, Constraint, CountConstraint, CountVars, PlanScope};
 
-pub(super) fn generate(model: &Model, out: &mut Vec<CountConstraint>) {
+pub(super) fn generate(model: &Model, vars: &CountVars, out: &mut Vec<CountConstraint>) {
     let bounds = NumericBounds::new(model);
     for (id, fluent) in model.env.fluents.iter_with_id() {
         let Some(num) = fluent.annotations.properties.as_ref().and_then(|p| p.numeric.as_ref()) else {
             continue;
         };
         if num.never_increased && !num.never_decreased {
-            budget(model, id, Direction::Decrease, &bounds, out);
+            budget(model, vars, id, Direction::Decrease, &bounds, out);
         } else if num.never_decreased && !num.never_increased {
-            budget(model, id, Direction::Increase, &bounds, out);
+            budget(model, vars, id, Direction::Increase, &bounds, out);
         }
     }
 }
@@ -35,7 +35,14 @@ fn floor(x: RealValue) -> i64 {
 /// (resp. `f <= g`) just before it: after any change, `f >= lb(g) - ub(delta)` (resp. `f <= ub(g) + ub(delta)`).
 /// Hence the total amount of change of a state variable is bounded by the distance between its initial value and this
 /// threshold.
-fn budget(model: &Model, fluent: FluentId, dir: Direction, bounds: &NumericBounds, out: &mut Vec<CountConstraint>) {
+fn budget(
+    model: &Model,
+    vars: &CountVars,
+    fluent: FluentId,
+    dir: Direction,
+    bounds: &NumericBounds,
+    out: &mut Vec<CountConstraint>,
+) {
     let env = &model.env;
     let name = (env / fluent).name();
     // threshold such that `f >= threshold` (decrease) or `-f >= threshold` (increase) after any change
@@ -116,7 +123,7 @@ fn budget(model: &Model, fluent: FluentId, dir: Direction, bounds: &NumericBound
         "increased"
     };
     out.push(CountConstraint {
-        constraint: Constraint::Linear(Linear::new(terms, Cmp::Le, floor(total))),
+        constraint: Constraint::Linear(vars.linear(terms, Cmp::Le, floor(total))),
         scope: PlanScope::AllPlans,
         generator: "numeric-budget",
         explanation: format!(
