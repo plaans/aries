@@ -4,13 +4,16 @@
 //! Such an effect can be replaced by an `Erase` effect (that leaves the state variable without any value
 //! until the next assignment), without changing the set of valid plans nor their quality.
 //!
-//! Two cases are detected:
+//! Three cases are detected:
 //!  - a fluent that is never read (see [`fluents_read`]): all its assignments are unusable.
 //!    Fluents that are the target of an increase or decrease effect are left untouched, because erasing
 //!    their assignments would leave the increase/decrease effects without a base value.
 //!  - a boolean fluent that only appears as a positive atom of requirements
 //!    (see [`fluents_with_non_positive_occurrences`]): the assignments to `false` (e.g. PDDL delete effects) are unusable,
 //!    because the only thing a condition can require on it is to be `true`, which an erased value cannot satisfy either.
+//!  - an action effect whose assigned value cannot satisfy any requirement of the model, based on the possible values
+//!    of its arguments and value (see [`annotate_supports`](super::annotate_supports)), on a fluent that is only read
+//!    by simple requirements.
 //!
 //! Unusable initial effects (at the time origin) are removed entirely rather than erased: the state variable has
 //! no value before its first effect anyway. Unusable timed effects of the problem definition (e.g. timed initial
@@ -37,6 +40,7 @@ pub fn erase_unusable_effects(model: &mut Model) -> Res<usize> {
         .map(|eff| eff.effect_expression.state_variable.fluent)
         .collect();
 
+    let unreadable = super::annotate_supports::unreadable_assignments(model);
     let env = &model.env;
     let is_unusable = |eff: &Effect| -> bool {
         let eff = &eff.effect_expression;
@@ -54,6 +58,19 @@ pub fn erase_unusable_effects(model: &mut Model) -> Res<usize> {
     };
 
     let mut num_erased = 0;
+    // per-effect detection, on action effects
+    for a in model.actions.iter_mut() {
+        for eff in a.effects.iter_mut() {
+            let ee = &mut eff.effect_expression;
+            if matches!(ee.operation, EffectOp::Assign(_))
+                && !increased.contains(&ee.state_variable.fluent)
+                && unreadable.contains(&(a.name.clone(), eff.id))
+            {
+                ee.operation = EffectOp::Erase;
+                num_erased += 1;
+            }
+        }
+    }
     let mut erase = |eff: &mut Effect| {
         if is_unusable(eff) {
             eff.effect_expression.operation = EffectOp::Erase;
@@ -138,6 +155,25 @@ mod tests {
             })
             .collect();
         assert_eq!(init, ["at"]);
+    }
+
+    #[test]
+    fn erase_unreadable_values() {
+        // `at` is read for rooms only: the assignments of `at` for corridors are unreadable
+        let domain = "(define (domain d) (:requirements :typing)
+            (:types place - object room corridor - place)
+            (:predicates (at ?x - place) (done))
+            (:action go_room :parameters (?from - room ?to - room)
+              :precondition (at ?from) :effect (and (not (at ?from)) (at ?to)))
+            (:action go_corridor :parameters (?from - room ?to - corridor)
+              :precondition (at ?from) :effect (and (not (at ?from)) (at ?to)))
+            (:action finish :parameters (?r - room) :precondition (at ?r) :effect (done)))";
+        let pb = "(define (problem p) (:domain d) (:objects r1 r2 - room c - corridor)
+            (:init (at r1)) (:goal (done)))";
+        let model = erase(domain, pb);
+        assert_eq!(effects(&model, "go_room")[1], ("at".to_string(), false));
+        // (the delete is erased in both cases, since `at` is only required to be true)
+        assert_eq!(effects(&model, "go_corridor")[1], ("at".to_string(), true));
     }
 
     #[test]

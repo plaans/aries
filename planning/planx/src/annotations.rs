@@ -28,6 +28,18 @@ use crate::*;
 static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
 static COLORED: AtomicBool = AtomicBool::new(false);
+static VERBOSE: AtomicBool = AtomicBool::new(false);
+
+/// Enables or disables the display of the detailed annotations, e.g. the requirements threatened by each effect
+/// (disabled by default).
+pub fn set_verbose_annotations(verbose: bool) {
+    VERBOSE.store(verbose, Ordering::Relaxed);
+}
+
+/// True if detailed annotations should be displayed (see [`set_verbose_annotations`]).
+pub fn verbose_annotations() -> bool {
+    VERBOSE.load(Ordering::Relaxed)
+}
 
 /// Enables or disables the use of ANSI colors when displaying annotations (disabled by default).
 /// Typically enabled when printing to a terminal.
@@ -231,6 +243,72 @@ pub struct EffectAnnotations {
     /// Requirements the effect may support (see [`annotate_supports`](crate::preprocessing::annotate_supports)).
     /// `None` if not computed.
     pub supports: Option<Supports>,
+    /// Requirements the effect may falsify (see [`annotate_supports`](crate::preprocessing::annotate_supports)).
+    /// `None` if not computed.
+    pub threats: Option<Threats>,
+}
+
+impl EffectAnnotations {
+    /// Compact summary of the role of the effect, if its supports and threats are known:
+    ///  - `+`: may contribute (support a requirement), never detrimental;
+    ///  - `-`: never contributes, but may falsify a requirement (it must still be encoded);
+    ///  - `±`: may contribute and may falsify a requirement;
+    ///  - `·`: neither contributes nor falsifies a requirement (it may still be needed, e.g. the restore of a lock,
+    ///    whose contribution is counted as null since it only restores the value consumed by its own action);
+    ///  - `?`: unknown (effect on an opaque fluent).
+    pub fn role(&self) -> Option<char> {
+        let useful = match self.supports.as_ref()? {
+            Supports::Opaque => None,
+            Supports::Targets(ts) => Some(!ts.is_empty()),
+        };
+        let harmful = match self.threats.as_ref()? {
+            Threats::Opaque => None,
+            Threats::Targets(ts) => Some(!ts.is_empty()),
+        };
+        Some(match (useful, harmful) {
+            (Some(true), Some(false)) => '+',
+            (Some(false), Some(true)) => '-',
+            (Some(true), Some(true)) => '±',
+            (Some(false), Some(false)) => '·',
+            _ => '?',
+        })
+    }
+}
+
+/// Requirements that an effect may falsify: requirements on a state variable that the effect may give a value
+/// other than the required one, or leave without value (erasure, or during a transition that is not instantaneous).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Threats {
+    /// The effect is on a fluent that is not only read in simple requirements: it may be detrimental to anything.
+    Opaque,
+    /// The effect may only falsify these requirements (an empty list means that it is never detrimental).
+    Targets(Vec<RequirementRef>),
+}
+
+/// A requirement of the model: a condition of an action or a goal.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RequirementRef {
+    Condition(CondRef),
+    Goal(GoalId),
+}
+
+impl std::fmt::Display for RequirementRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RequirementRef::Condition(c) => write!(f, "{c}"),
+            RequirementRef::Goal(g) => write!(f, "{g}"),
+        }
+    }
+}
+
+impl std::fmt::Display for Threats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Threats::Opaque => write!(f, "<opaque>"),
+            Threats::Targets(ts) if ts.is_empty() => write!(f, "<nothing>"),
+            Threats::Targets(ts) => write!(f, "{}", ts.iter().join(", ")),
+        }
+    }
 }
 
 /// Requirements that an effect may support, i.e. the requirements of the model it may be the reason of an action for.

@@ -270,7 +270,21 @@ fn write_annotated_elements(f: &mut std::fmt::Formatter<'_>, action: &Action, en
     /// Maximal width to which elements are padded for aligning their annotations.
     const MAX_ALIGN: usize = 60;
     let supporters = |c: &Condition| c.annotations.supporters.as_ref().map(|s| format!("<= {s}"));
-    let supports = |e: &Effect| e.annotations.supports.as_ref().map(|s| format!("=> {s}"));
+    let supports = |e: &Effect| {
+        let mut parts = Vec::new();
+        if let Some(role) = e.annotations.role() {
+            parts.push(role.to_string());
+        }
+        if let Some(s) = &e.annotations.supports {
+            parts.push(format!("=> {s}"));
+        }
+        if verbose_annotations()
+            && let Some(t) = &e.annotations.threats
+        {
+            parts.push(format!("  !> {t}"));
+        }
+        (!parts.is_empty()).then(|| parts.join(" "))
+    };
     // (section, id, element, annotation)
     let mut lines: Vec<(&str, String, String, String)> = Vec::new();
     for c in &action.conditions {

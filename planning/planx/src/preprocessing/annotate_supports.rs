@@ -17,6 +17,9 @@
 //!       given another value;
 //!     - a supported condition is flagged as `undo` if it is part of a transition that restores the value consumed by
 //!       the transition of the effect (e.g. `switch_off(?i)` with respect to `switch_on(?i)`).
+//!  - for each effect, the requirements it may falsify ([`Threats`]): requirements on a state variable that the effect
+//!    may give another value, or leave without value (erasure, or during a transition that is not instantaneous).
+//!    Effects on opaque fluents may be detrimental to anything.
 //!  - for each condition made of a single simple requirement, the effects that may support it ([`Supporters`]).
 //!  - for each action, its [`ActionStatus`]:
 //!     - *reachable*: least fixpoint where an action is reachable if each of its parameters may take a value, and each
@@ -54,9 +57,26 @@ pub fn annotate_supports(model: &mut Model) -> Res<()> {
         }
         for e in action.effects.iter_mut() {
             e.annotations.supports = res.supports.get(&e.id).cloned();
+            e.annotations.threats = res.threats.get(&e.id).cloned();
         }
     }
     Ok(())
+}
+
+/// The assignments of actions whose value can never be read: the fluent is not opaque and no requirement may be
+/// satisfied by the assigned value. Such an assignment can be replaced by an erasure without changing the set of valid
+/// plans (see [`erase_unusable_effects`](super::erase_unusable_effects)).
+pub(crate) fn unreadable_assignments(model: &Model) -> HashSet<(ActionRef, EffectId)> {
+    let analysis = SupportAnalysis::new(model);
+    let mut res = HashSet::new();
+    for (i, a) in analysis.actions.iter().enumerate() {
+        for (j, e) in a.effects.iter().enumerate() {
+            if matches!(e.effect_expression.operation, EffectOp::Assign(_)) && !analysis.may_be_read(i, j) {
+                res.insert((a.name.clone(), e.id));
+            }
+        }
+    }
+    res
 }
 
 /// Supporters of the simple requirements of each goal.
@@ -67,6 +87,7 @@ struct ActionResult {
     status: ActionStatus,
     supporters: HashMap<ConditionId, Supporters>,
     supports: HashMap<EffectId, Supports>,
+    threats: HashMap<EffectId, Threats>,
 }
 
 /// Over-approximation of the values an argument or value may take.
@@ -91,6 +112,16 @@ impl Dom {
             _ => false,
         }
     }
+
+    /// True if a value of this domain may be different from a value of the other.
+    fn may_differ(&self, other: &Dom) -> bool {
+        match (self, other) {
+            (Dom::Objects(a), Dom::Objects(b)) => !(a.len() == 1 && a == b),
+            (Dom::Bool(a), Dom::Bool(b)) => a != b,
+            (Dom::Real(a), Dom::Real(b)) => a != b,
+            _ => true,
+        }
+    }
 }
 
 /// An atom (state variable and value) whose arguments and value are over-approximated.
@@ -111,6 +142,19 @@ impl Pattern {
             && match (&self.value, &req.value) {
                 (Some(v), Some(r)) => v.compatible(r),
                 _ => false,
+            }
+    }
+
+    /// True if an effect with this pattern may falsify a requirement with the other pattern: same state variable,
+    /// and a value that may differ from the required one, or no value (erasure, or `undefined`: the state variable has
+    /// no value while the effect is in progress).
+    fn may_threaten(&self, req: &Pattern, undefined: bool) -> bool {
+        self.fluent == req.fluent
+            && self.args.len() == req.args.len()
+            && self.args.iter().zip(&req.args).all(|(a, b)| a.compatible(b))
+            && match (&self.value, &req.value) {
+                (Some(v), Some(r)) => undefined || v.may_differ(r),
+                _ => true,
             }
     }
 }
@@ -242,6 +286,8 @@ struct EffectInfo {
     borrow: bool,
     /// For an effect that is part of a (non-borrow) transition: the required and assigned values.
     transition: Option<(SimpleValue, SimpleValue)>,
+    /// True if the state variable has no value during the effect (transition that is not instantaneous).
+    undefined: bool,
 }
 
 struct SupportAnalysis<'a> {
@@ -308,7 +354,10 @@ impl<'a> SupportAnalysis<'a> {
                 (a.effects.iter())
                     .map(|e| {
                         let t = a.transition_of_effect(e, env);
+                        let ee = &e.effect_expression;
+                        let (ts, te) = (ee.transition_start, ee.transition_end);
                         EffectInfo {
+                            undefined: ts != te && ts + Dt != te,
                             id: e.id,
                             pattern: effect_pattern(e, &scope, env),
                             borrow: t.is_some_and(|t| t.borrow),
@@ -550,6 +599,38 @@ impl<'a> SupportAnalysis<'a> {
         uf.find(Key::value(Side::B, &post_b)) == uf.find(Key::value(Side::A, pre_a))
     }
 
+    /// Requirements that the effect (`j`-th of action `i`) may falsify, `None` if it is opaque.
+    fn threats(&self, i: usize, j: usize) -> Option<Vec<RequirementRef>> {
+        let eff = &self.effects[i][j];
+        if self.opaque.contains(&eff.pattern.fluent) {
+            return None;
+        }
+        let mut threats = Vec::new();
+        for r in &self.requirements {
+            if eff.pattern.may_threaten(&r.pattern, eff.undefined) {
+                let t = match &r.owner {
+                    Owner::Action(k, cond) => RequirementRef::Condition(CondRef {
+                        action: self.actions[*k].name.clone(),
+                        condition: *cond,
+                    }),
+                    Owner::Goal(g) => RequirementRef::Goal(*g),
+                };
+                if !threats.contains(&t) {
+                    threats.push(t);
+                }
+            }
+        }
+        Some(threats)
+    }
+
+    /// True if the value assigned by the effect (`j`-th of action `i`) may be read: the fluent is opaque or the
+    /// effect may establish a requirement (ignoring that borrows and lock restores do not count as contributions).
+    fn may_be_read(&self, i: usize, j: usize) -> bool {
+        let eff = &self.effects[i][j];
+        self.opaque.contains(&eff.pattern.fluent)
+            || self.requirements.iter().any(|r| eff.pattern.may_support(&r.pattern))
+    }
+
     /// True if the requirement may be supported by the problem definition.
     fn supported_by_init(&self, r: &Requirement) -> bool {
         self.init.iter().any(|p| p.may_support(&r.pattern))
@@ -672,6 +753,15 @@ impl<'a> SupportAnalysis<'a> {
                     cond_supporters.insert(c.id, Supporters { init: init[r], effects });
                 }
             }
+            let effect_threats = (0..self.effects[i].len())
+                .map(|j| {
+                    let t = match self.threats(i, j) {
+                        None => Threats::Opaque,
+                        Some(ts) => Threats::Targets(ts),
+                    };
+                    (self.effects[i][j].id, t)
+                })
+                .collect();
             let effect_supports = (self.effects[i].iter().zip(&supports[i]))
                 .map(|(e, s)| {
                     let s = match s {
@@ -690,6 +780,7 @@ impl<'a> SupportAnalysis<'a> {
                     },
                     supporters: cond_supporters,
                     supports: effect_supports,
+                    threats: effect_threats,
                 },
             ));
         }
@@ -790,6 +881,43 @@ mod tests {
     fn status(model: &Model, name: &str) -> (bool, bool) {
         let s = action(model, name).annotations.status.unwrap();
         (s.reachable, s.useful)
+    }
+
+    /// Role (see [`EffectAnnotations::role`]) and threats (without identifiers) of the effects of an action on a
+    /// fluent.
+    fn roles(model: &Model, name: &str, fluent: &str) -> Vec<String> {
+        let a = action(model, name);
+        let fluent = model.env.fluents.get_by_name(fluent).unwrap();
+        (a.effects.iter())
+            .filter(|e| e.effect_expression.state_variable.fluent == fluent)
+            .map(|e| {
+                let threats = e.annotations.threats.as_ref().unwrap().to_string();
+                let threats = threats.split(", ").map(|t| t.split('.').next().unwrap()).join(", ");
+                format!("{} {threats}", e.annotations.role().unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn roles_and_threats() {
+        let model = build(DOMAIN, PROBLEM);
+        let pa = "power_avail:power_on";
+        // a transition consuming the value required by others
+        assert_eq!(
+            roles(&model, "switch_on", pa),
+            ["± calibrate, switch_off, switch_on, take_image"]
+        );
+        // switch_off writes the constant required by switch_on: no threat to it
+        assert_eq!(roles(&model, "switch_off", pa), ["± calibrate, switch_off, take_image"]);
+        // the (erased) delete of `calibrated` supports nothing but must be kept
+        assert_eq!(roles(&model, "switch_on", "calibrated"), ["- take_image"]);
+        assert_eq!(roles(&model, "calibrate", "calibrated"), ["+ <nothing>"]);
+        // the borrow of `free` contributes nothing, and prevents concurrent images
+        assert_eq!(roles(&model, "take_image", "free"), ["- take_image"]);
+        assert_eq!(roles(&model, "take_image", "have_image"), ["+ <nothing>"]);
+        assert_eq!(roles(&model, "turn_to", "pointing"), ["± take_image, turn_to"]);
+        // never read
+        assert_eq!(roles(&model, "log", "logged"), ["· <nothing>"]);
     }
 
     /// Supports of the effects of an action on a fluent, as displayed.

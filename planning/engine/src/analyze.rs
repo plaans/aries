@@ -23,6 +23,9 @@ pub struct Analyze {
     /// Do not print the annotated model.
     #[arg(short, long)]
     quiet: bool,
+    /// Print detailed annotations in the model (e.g. the requirements each effect may falsify).
+    #[arg(short, long)]
+    verbose: bool,
     /// Plans (of the problem) against which to check the constraints. Each violated constraint is reported on a line
     /// starting with `VIOLATION`.
     #[arg(short, long)]
@@ -52,6 +55,7 @@ pub fn analyze(command: &Analyze) -> Res<()> {
 
     if !command.quiet {
         planx::set_colored_annotations(std::io::stdout().is_terminal());
+        planx::set_verbose_annotations(command.verbose);
         println!("===== Annotated model =====\n\n{model}");
     }
 
