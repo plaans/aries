@@ -26,8 +26,8 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries_solver::model::Model<Sym>;
-use crate::boxes::Segment;
 pub use crate::borrows::*;
+use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
 use crate::explain::ExplainableSolver;
@@ -283,7 +283,11 @@ impl Sched {
                 format!(
                     "{}({}): [{},{}]",
                     b.state_var.fluent,
-                    b.state_var.args.iter().map(|arg| arg.evaluate(sol).unwrap()).format(", "),
+                    b.state_var
+                        .args
+                        .iter()
+                        .map(|arg| arg.evaluate(sol).unwrap())
+                        .format(", "),
                     b.start.evaluate(sol).unwrap(),
                     b.end.evaluate(sol).unwrap(),
                 )

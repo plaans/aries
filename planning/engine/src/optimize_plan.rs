@@ -19,9 +19,9 @@ use aries_solver::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 
-use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use aries_env_param::EnvParam;
 use planx::preprocessing::analysis::{ActionTiming, NumericBounds};
+use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use std::path::Path;
 use timelines::{ConstraintID, IntExp, Sched, SymAtom, Task, Time, TimeItv, explain::ExplainableSolver};
 

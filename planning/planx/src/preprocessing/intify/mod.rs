@@ -95,7 +95,9 @@ pub fn convert_reals_to_int(model: &Model) -> Res<Model> {
 ///
 /// Returns `None` if the precision cannot be determined.
 pub(crate) fn temporal_precision(model: &Model) -> Option<NumericPrecision> {
-    compute_required_fluent_scalings(model).ok().map(|scalings| scalings.time)
+    compute_required_fluent_scalings(model)
+        .ok()
+        .map(|scalings| scalings.time)
 }
 
 /// Looks at all values assigned/added to each numeric fluent to find out what values it can get.

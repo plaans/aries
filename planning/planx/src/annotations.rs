@@ -191,15 +191,22 @@ impl Transition<'_> {
     ///
     /// Only borrows satisfying these requirements are annotated by
     /// [`annotate_transitions`](crate::preprocessing::annotate_transitions).
-    pub fn borrow_requirements(&self, action: &Action, timing: &ActionTiming, env: &Environment) -> Result<(), &'static str> {
+    pub fn borrow_requirements(
+        &self,
+        action: &Action,
+        timing: &ActionTiming,
+        env: &Environment,
+    ) -> Result<(), &'static str> {
         let e = &self.effect.effect_expression;
         let sv = &e.state_variable;
         let may_unify = |a: &[ExprId], b: &[ExprId]| {
             a.len() == b.len()
-                && a.iter().zip(b).all(|(&x, &y)| match (Term::of(x, env), Term::of(y, env)) {
-                    (Some(x), Some(y)) => x.may_unify(&y),
-                    _ => true,
-                })
+                && a.iter()
+                    .zip(b)
+                    .all(|(&x, &y)| match (Term::of(x, env), Term::of(y, env)) {
+                        (Some(x), Some(y)) => x.may_unify(&y),
+                        _ => true,
+                    })
         };
         if !self.borrow {
             Err("not a borrow")
