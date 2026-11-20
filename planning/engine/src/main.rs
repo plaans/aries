@@ -257,11 +257,15 @@ fn find_problem(command: &FindProblem) -> Res<()> {
 
 /// Overrides the metrics of the model.
 fn set_metric(model: &mut planx::Model, metrics: &[optimize_plan::Objective]) -> Res<()> {
-    model.metrics.clear();
+    let original = std::mem::take(&mut model.metrics);
     for obj in metrics {
         let expr = match obj {
             optimize_plan::Objective::PlanLength => planx::Expr::PlanLength,
             optimize_plan::Objective::Makespan => planx::Expr::Makespan,
+            optimize_plan::Objective::Original => {
+                model.metrics.extend_from_slice(&original);
+                continue;
+            }
         };
         let expr = model.env.intern(expr, None)?;
         model.metrics.push(planx::Metric::Minimize(expr));
