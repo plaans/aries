@@ -213,6 +213,8 @@ pub struct HasValueAt {
     /// that an aciton must not rely on a value that is immediately delete by *another* action.
     /// (mutex conditions).
     pub source: Option<TaskId>,
+    /// If set, this condition is the one of a [`Borrow`]: it is not excluded by this borrow.
+    pub borrow: Option<BorrowId>,
 }
 
 impl HasValueAt {
@@ -380,6 +382,47 @@ impl BoolExpr<SchedEncoder> for HasValueAt {
                     };
                     exclu.opt_enforce_if(l, ctx);
                 }
+            }
+        }
+
+        {
+            let _span = tracing::debug_span!("Borrows");
+            let _span = _span.enter();
+            // a borrowed state variable cannot be read by other conditions:
+            // the condition must not overlap the interval `[borrow.start, borrow.end]`
+            // (or `[borrow.start + ε, borrow.end]` for a condition of the same source, that is evaluated before the borrow starts)
+            let itv_cond = IntervalOnStateVariable {
+                state_var: &self.state_var,
+                start: self.period.start,
+                end: self.period.end,
+                presence: self.prez,
+            };
+            let box_without_value = value_box.as_ref().drop_tail(1);
+            for borrow_id in sched
+                .borrows
+                .potentially_overlapping(&self.state_var.fluent, box_without_value)
+            {
+                if self.borrow == Some(borrow_id) {
+                    continue;
+                }
+                let borrow = sched.borrows.get(borrow_id);
+                let same_source = self.source.is_some() && self.source == borrow.source;
+                let start = if same_source {
+                    borrow.start + sched.epsilon
+                } else {
+                    borrow.start
+                };
+                let itv_borrow = IntervalOnStateVariable {
+                    state_var: &borrow.state_var,
+                    start,
+                    end: borrow.end,
+                    presence: borrow.prez,
+                };
+                let exclu = Exclusive {
+                    a: &itv_cond,
+                    b: &itv_borrow,
+                };
+                exclu.opt_enforce_if(l, ctx);
             }
         }
     }

@@ -86,6 +86,11 @@ impl Bounds {
 /// The bounds hold for any evaluation of the expression in which all its state variables are defined.
 pub struct NumericBounds<'a> {
     env: &'a Environment,
+    /// Upper bound on the duration `dt` of a time unit (`None` if unknown).
+    ///
+    /// The time unit of the model is only fixed when it is converted to integers (see `intify`), which may refine
+    /// the precision based on the actions' durations: reasoning on timestamps must hold for any `dt` in `(0, dt_max]`.
+    pub(crate) dt_max: Option<RealValue>,
     /// Bounds on the values of static numeric fluents.
     fluents: HashMap<FluentId, Bounds>,
 }
@@ -98,7 +103,7 @@ impl<'a> NumericBounds<'a> {
             let e = &eff.effect_expression;
             let value = match e.operation {
                 EffectOp::Assign(v)
-                    if e.timing == Timestamp::ORIGIN
+                    if e.transition_start == Timestamp::ORIGIN
                         && e.condition.is_none()
                         && eff.universal_quantification.is_empty() =>
                 {
@@ -131,6 +136,8 @@ impl<'a> NumericBounds<'a> {
             .collect();
         NumericBounds {
             env: &model.env,
+            dt_max: crate::preprocessing::intify::temporal_precision(model)
+                .map(|precision| RealValue::new(1, precision.denom_lcm as i64)),
             fluents,
         }
     }

@@ -71,7 +71,7 @@ fn satellite_time() -> Res<()> {
         let eff = &eff.effect_expression;
         assert_eq!(model.env.fluents.get(eff.state_variable.fluent).name(), "pointing");
         assert_eq!(eff.state_variable.arguments.len(), 1);
-        match eff.timing.reference {
+        match eff.transition_start.reference {
             TimeRef::ActionStart => assert!(matches!(eff.operation, EffectOp::Erase)),
             TimeRef::ActionEnd => assert!(matches!(eff.operation, EffectOp::Assign(_))),
             _ => panic!(),

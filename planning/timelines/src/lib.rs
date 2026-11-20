@@ -1,4 +1,5 @@
 pub mod analysis;
+mod borrows;
 pub mod boxes;
 pub mod constraints;
 mod effects;
@@ -25,6 +26,7 @@ use idmap::DirectIdMap;
 use itertools::Itertools;
 
 pub type Model = aries_solver::model::Model<Sym>;
+pub use crate::borrows::*;
 use crate::boxes::Segment;
 pub use crate::effects::*;
 use crate::encoder::{CausalLinks, SchedEncoder};
@@ -147,6 +149,7 @@ pub struct Sched {
     pub num_actions: VarCst,
     pub tasks: Tasks,
     pub effects: Effects,
+    pub borrows: Borrows,
     constraints: Vec<Constraint>,
 }
 
@@ -171,6 +174,7 @@ impl Sched {
             makespan,
             tasks: Default::default(),
             effects: Default::default(),
+            borrows: Default::default(),
             constraints: vec![
                 Arc::new(MakespanIsMaxTaskEnd),
                 Arc::new(NumActionsIsActionCount),
@@ -185,6 +189,10 @@ impl Sched {
 
     pub fn add_effect(&mut self, eff: Effect) -> EffectId {
         self.effects.add_effect(eff, &self.model)
+    }
+
+    pub fn add_borrow(&mut self, borrow: Borrow) -> BorrowId {
+        self.borrows.add(borrow, &self.model)
     }
 
     pub fn new_timepoint(&mut self) -> Time {
@@ -268,6 +276,25 @@ impl Sched {
         }
         formatted_effects.sort();
         println!("{}", formatted_effects.iter().format("\n"));
+        println!("==== Borrows ====");
+        let mut formatted_borrows = (self.borrows.iter())
+            .filter(|b| sol.entails(b.prez))
+            .map(|b| {
+                format!(
+                    "{}({}): [{},{}]",
+                    b.state_var.fluent,
+                    b.state_var
+                        .args
+                        .iter()
+                        .map(|arg| arg.evaluate(sol).unwrap())
+                        .format(", "),
+                    b.start.evaluate(sol).unwrap(),
+                    b.end.evaluate(sol).unwrap(),
+                )
+            })
+            .collect_vec();
+        formatted_borrows.sort();
+        println!("{}", formatted_borrows.iter().format("\n"));
         println!("Horizon: {}", self.horizon.evaluate(sol).unwrap())
     }
 }

@@ -191,6 +191,13 @@ impl Mul<i64> for RealValue {
         RealValue(self.0 * rhs)
     }
 }
+impl Mul<RealValue> for i64 {
+    type Output = RealValue;
+
+    fn mul(self, rhs: RealValue) -> Self::Output {
+        rhs * self
+    }
+}
 
 impl From<i64> for RealValue {
     fn from(value: i64) -> Self {

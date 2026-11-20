@@ -19,11 +19,42 @@ use aries_solver::{
 use derive_more::derive::Display;
 use itertools::Itertools;
 
+use aries_env_param::EnvParam;
+use planx::preprocessing::analysis::{ActionTiming, NumericBounds};
 use planx::{ActionRef, Duration, Goal, Model, Res, SimpleGoal, SolutionPlan, Sym, Type, errors::*};
 use std::path::Path;
 use timelines::{ConstraintID, IntExp, Sched, SymAtom, Task, Time, TimeItv, explain::ExplainableSolver};
 
 pub type RelaxableConstraint = Tag;
+
+/// If true (default), the borrows of actions (see [`planx::Transition`]) are encoded as a condition that excludes
+/// the other conditions on the state variable, instead of a condition and an assignment effect.
+static ENCODE_BORROWS: EnvParam<bool> = EnvParam::new("ARIES_APE_BORROWS", "true");
+
+/// The borrows of the action that are encoded as such, as `(condition index, effect index)`.
+///
+/// All annotated borrows are encoded (unless disabled by `ARIES_APE_BORROWS=false`).
+///
+/// # Errors
+/// If an annotated borrow does not satisfy the requirements of the encoding (see [`planx::Transition::borrow_requirements`]),
+/// which denotes an invalid annotation of the model.
+fn encoded_borrows(action: &planx::Action, model: &Model, bounds: &NumericBounds) -> Res<Vec<(usize, usize)>> {
+    if !ENCODE_BORROWS.get() {
+        return Ok(Vec::new());
+    }
+    let timing = ActionTiming::new(action, bounds);
+    fn index<T>(elems: &[T], elem: &T) -> usize {
+        elems.iter().position(|e| std::ptr::eq(e, elem)).unwrap()
+    }
+    (action.transitions(&model.env))
+        .filter(|t| t.borrow)
+        .map(|t| {
+            t.borrow_requirements(action, &timing, &model.env)
+                .map_err(|reason| encode::invalid_borrow(&t, model, reason))?;
+            Ok((index(&action.conditions, t.condition), index(&action.effects, t.effect)))
+        })
+        .collect()
+}
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct Options {
@@ -341,10 +372,23 @@ pub fn encode_plan_optimization_problem(
         }
     }
 
+    // borrows of each action template, as (condition index, effect index)
+    let bounds = NumericBounds::new(model);
+    let borrows: BTreeMap<&Sym, Vec<(usize, usize)>> = (model.actions.iter())
+        .map(|a| Ok((&a.name, encoded_borrows(a, model, &bounds)?)))
+        .collect::<Res<_>>()?;
+
     for (a, bindings, op_id) in &operations_scopes {
+        let action_borrows = &borrows[&a.name];
         // for each condition, create a constraint stating it should hold. The constraint is tagged so we can later deactivate it
         for (cond_id, c) in a.conditions.iter().enumerate() {
-            let constraint = condition_to_constraint(c.interval, c.cond, model, &mut sched, bindings, &mut encoding)?;
+            let constraint = match action_borrows.iter().find(|(ci, _)| *ci == cond_id) {
+                Some(&(_, eff_id)) => {
+                    let borrow = a.transition_of_effect(&a.effects[eff_id], &model.env).unwrap();
+                    borrow_to_constraint(&borrow, model, &mut sched, bindings, &mut encoding)?
+                }
+                None => condition_to_constraint(c.interval, c.cond, model, &mut sched, bindings, &mut encoding)?,
+            };
             // update the required values if requested by caller
             constraint.add_required_values(&mut encoding.required_values, model, &sched);
 
@@ -395,7 +439,7 @@ pub fn encode_plan_optimization_problem(
 
     // enforce all elements of the initial state as effects
     for x in &model.init {
-        let eff = convert_effect(x, false, model, &mut sched, &global_scope, &mut encoding)
+        let eff = convert_effect(x, model, &mut sched, &global_scope, &mut encoding)
             .with_info(|| model.env.node(x).info("when processing"))?;
         sched.add_effect(eff);
     }
@@ -409,8 +453,12 @@ pub fn encode_plan_optimization_problem(
 
         // add an effect to the scheduling problem for each effect in the action template
         // the presence of the effect is controlled by the global enabler of the effect in the template
-        for x in a.effects.iter() {
-            let eff = convert_effect(x, true, model, &mut sched, bindings, &mut encoding)?;
+        for (eff_id, x) in a.effects.iter().enumerate() {
+            if borrows[&a.name].iter().any(|(_, e)| *e == eff_id) {
+                // the effect of a borrow is encoded with its condition
+                continue;
+            }
+            let eff = convert_effect(x, model, &mut sched, bindings, &mut encoding)?;
             // store the effect either in the global pool or in the predicate specific one
             let is_predicate = model
                 .env

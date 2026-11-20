@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::*;
 
-use super::{ExprContext, children, expression_roots};
+use super::{ExprContext, children, expression_roots, state_variables};
 
 /// Returns the fluents that appear in an expression somewhere else than as a *positive* atom of a requirement
 /// (condition, goal, constraint).
@@ -54,5 +54,21 @@ pub fn fluents_modified_by_actions(model: &Model) -> HashSet<FluentId> {
         .iter()
         .flat_map(|a| &a.effects)
         .map(|eff| eff.effect_expression.state_variable.fluent)
+        .collect()
+}
+
+/// Returns all fluents that are read somewhere in the model, i.e., that appear in at least one expression
+/// (condition, goal, constraint, preference, effect condition/argument/value, duration, metric, ...).
+///
+/// The fluents *not* in this set are never read: their value has no impact on the validity or quality of a plan.
+/// Note that the target state variable of an effect is not a read.
+pub fn fluents_read(model: &Model) -> HashSet<FluentId> {
+    expression_roots(model)
+        .into_iter()
+        .flat_map(|(root, _)| state_variables(root, &model.env))
+        .filter_map(|e| match model.env.node(e).expr() {
+            Expr::StateVariable(fluent, _) => Some(*fluent),
+            _ => None,
+        })
         .collect()
 }

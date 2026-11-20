@@ -67,6 +67,7 @@ fn solve_routing(pb: &Problem) -> Option<Vec<Op>> {
             period: model.horizon.into(), // at the end of the plan
             prez: Lit::TRUE,              // this must always be true
             source: None,                 // not tied to any task
+            borrow: None,                 // not part of a borrow
         });
 
         // each truck has an action that allows returning to the depot
@@ -155,6 +156,7 @@ fn add_move_to_action(truck: Option<IntCst>, to: IntCst, model: &mut Sched, pb: 
         period: start.into(),        // at the action start
         prez: presence,              // only needs to hold when the action is present
         source: Some(task_id),       // condition introduced as part of the current action
+        borrow: None,                // not part of a borrow
     });
 
     // returns a representation of the action, to allow accessing its parameters

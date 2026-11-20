@@ -473,37 +473,43 @@ fn into_effect(
             expr.loc(),
         ))
     }
-    if let Some([arg]) = expr.as_application("not") {
+    let time = time.into();
+    let mut effect = if let Some([arg]) = expr.as_application("not") {
         let contradiction = env.intern(Expr::Bool(false), None)?;
         let sv = parse_sv(arg, Some(Type::Bool), env, bindings)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, contradiction))
+        SimpleEffect::assignement(time, sv, contradiction)
     } else if let Some([sv, val]) = expr.as_application("=") {
         let sv = parse_sv(sv, None, env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, val))
+        SimpleEffect::assignement(time, sv, val)
     } else if let Some([sv, val]) = expr.as_application("assign") {
         let sv = parse_sv(sv, None, env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, val))
+        SimpleEffect::assignement(time, sv, val)
     } else if let Some([sv, val]) = expr.as_application("increase") {
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::increase(time.into(), sv, val))
+        SimpleEffect::increase(time, sv, val)
     } else if let Some([sv, val]) = expr.as_application("decrease") {
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::decrease(time.into(), sv, val))
+        SimpleEffect::decrease(time, sv, val)
     } else {
         let tautology = env.intern(Expr::Bool(true), None)?;
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, tautology))
-    }
+        SimpleEffect::assignement(time, sv, tautology)
+    };
+    //Initial effects (placed at the Origin) are immediately available
+    if time == Timestamp::ORIGIN {
+        effect.transition_end = Timestamp::ORIGIN;
+    };
+    Ok(effect)
 }
 
 fn parse_subtask(t: &pddl::Task, env: &mut Environment, actions: &Actions, bindings: &Rc<Bindings>) -> Res<Subtask> {

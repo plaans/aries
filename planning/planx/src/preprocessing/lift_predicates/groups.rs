@@ -124,56 +124,43 @@ struct GroupEffect<'g> {
     time: Timestamp,
 }
 
-/// A positive atom required by an action over an interval.
-struct Requirement {
-    itv: TimeInterval,
-    fluent: FluentId,
-    args: Vec<Term>,
-}
-
 struct ActionInfo<'a> {
     action: &'a Action,
     env: &'a Environment,
-    timing: ActionTiming,
-    requirements: Vec<Requirement>,
+    guards: ActionGuards,
     /// Pairs of terms that the action requires to be distinct (`(not (= ?x ?y))`).
     distinct: Vec<(Term, Term)>,
 }
 
 impl<'a> ActionInfo<'a> {
     fn new(action: &'a Action, env: &'a Environment, bounds: &NumericBounds) -> Self {
-        let mut requirements = Vec::new();
         let mut distinct = Vec::new();
         for c in &action.conditions {
             for e in conjuncts(c.cond, env) {
-                match env.node(e).expr() {
-                    Expr::StateVariable(fluent, args) => {
-                        if let Some(args) = Term::all_of(args, env) {
-                            requirements.push(Requirement {
-                                itv: c.interval,
-                                fluent: *fluent,
-                                args,
-                            });
-                        }
-                    }
-                    Expr::App(Fun::Not, args) if args.len() == 1 => {
-                        if let Expr::App(Fun::Eq, args) = env.node(args[0]).expr()
-                            && let Some([a, b]) = Term::all_of(args, env).as_deref()
-                        {
-                            distinct.push((a.clone(), b.clone()));
-                        }
-                    }
-                    _ => {}
+                if let Expr::App(Fun::Not, args) = env.node(e).expr()
+                    && args.len() == 1
+                    && let Expr::App(Fun::Eq, args) = env.node(args[0]).expr()
+                    && let Some([a, b]) = Term::all_of(args, env).as_deref()
+                {
+                    distinct.push((a.clone(), b.clone()));
                 }
             }
         }
         ActionInfo {
             action,
             env,
-            timing: ActionTiming::new(action, bounds),
-            requirements,
+            guards: ActionGuards::new(action, env, bounds),
             distinct,
         }
+    }
+
+    fn timing(&self) -> &ActionTiming {
+        &self.guards.timing
+    }
+
+    /// The positive atoms required by the action.
+    fn atoms(&self) -> impl Iterator<Item = &RequiredStateVariable> {
+        (self.guards.requirements.iter()).filter(|r| r.value == RequiredValue::Bool(true))
     }
 
     /// False if the two terms necessarily denote distinct objects (according to types and inequality conditions).
@@ -204,16 +191,14 @@ impl<'a> ActionInfo<'a> {
 
     /// Value of a static function for the term, as given by a condition of the action.
     fn resolve(&self, f: &StaticFunction, input: &Term) -> Option<Term> {
-        (self.requirements.iter())
+        self.atoms()
             .filter(|r| r.fluent == f.fluent)
             .find_map(|r| f.apply(&r.args, input))
     }
 
-    /// Returns the requirement that ensures that `fluent(args)` is true at `t`.
-    fn requirement(&self, fluent: FluentId, args: &[Term], t: Timestamp) -> Option<&Requirement> {
-        self.requirements
-            .iter()
-            .find(|r| r.fluent == fluent && r.args == args && self.timing.holds_before(r.itv, t))
+    /// Returns the requirement that ensures that `fluent(args)` is true just before `t`.
+    fn requirement(&self, fluent: FluentId, args: &[Term], t: Timestamp) -> Option<&RequiredStateVariable> {
+        (self.guards.guards(fluent, args, t)).find(|r| r.value == RequiredValue::Bool(true))
     }
 }
 
@@ -503,7 +488,7 @@ impl<'a> Analyzer<'a> {
     /// Computes how the effects of the action on the group are rewritten (pattern P of the module documentation).
     fn action_updates(&self, group: &Group, info: &ActionInfo) -> Result<ActionUpdates, Failure> {
         let env = &self.model.env;
-        let timing = &info.timing;
+        let timing = info.timing();
 
         // effects on the group, partitioned by key
         let mut partitions: Vec<Vec<GroupEffect>> = Vec::new();
@@ -527,7 +512,7 @@ impl<'a> Analyzer<'a> {
                 is_add,
                 args,
                 key,
-                time: e.timing,
+                time: e.transition_start,
             };
             match partitions.iter_mut().find(|p| p[0].key == effect.key) {
                 Some(partition) => partition.push(effect),
@@ -559,7 +544,7 @@ impl<'a> Analyzer<'a> {
                     (Some(vi), Some(vj)) => !info.may_unify(&vi, &vj),
                     _ => false,
                 };
-                if !distinct_atoms || !timing.hold_together(ri.itv, rj.itv) {
+                if !distinct_atoms || !timing.hold_together(ri.interval, rj.interval) {
                     return Err(Failure::Invalid("updates on keys that may unify"));
                 }
             }
@@ -574,8 +559,8 @@ impl<'a> Analyzer<'a> {
         group: &Group,
         info: &'i ActionInfo,
         effects: &[GroupEffect],
-    ) -> Result<(KeyUpdate, Option<&'i Requirement>), Failure> {
-        let timing = &info.timing;
+    ) -> Result<(KeyUpdate, Option<&'i RequiredStateVariable>), Failure> {
+        let timing = info.timing();
         let (adds, dels): (Vec<&GroupEffect>, Vec<&GroupEffect>) = effects.iter().partition(|e| e.is_add);
 
         // (P2) a single atom added, at a single time
@@ -657,7 +642,7 @@ impl<'a> Analyzer<'a> {
                 || !eff.universal_quantification.is_empty()
                 || e.condition.is_some()
                 || !is_delete(&e.operation, env)
-                || !info.timing.le(e.timing, t)
+                || !info.timing().le(e.transition_start, t)
             {
                 continue;
             }
@@ -674,8 +659,8 @@ impl<'a> Analyzer<'a> {
                 KeyArg::Arg(_) => true,
                 KeyArg::Fun(_, i) => Some(*i) == value,
             });
-            let required = info.requirement(fluent, &args, e.timing).is_some();
-            let covering = !group.has_values() && value.is_none() && info.timing.eq(e.timing, t);
+            let required = info.requirement(fluent, &args, e.transition_start).is_some();
+            let covering = !group.has_values() && value.is_none() && info.timing().eq(e.transition_start, t);
             if others.next().is_none() && inputs_are_value && (required || covering) {
                 extensions.push(Member {
                     fluent,
@@ -692,7 +677,7 @@ impl<'a> Analyzer<'a> {
     fn key_arg(&self, info: &ActionInfo, args: &[Term], k: &Term) -> Option<KeyArg> {
         match args.iter().positions(|a| a == k).at_most_one().ok()? {
             Some(i) => Some(KeyArg::Arg(i)),
-            None => info.requirements.iter().filter(|r| r.args.len() == 2).find_map(|r| {
+            None => info.atoms().filter(|r| r.args.len() == 2).find_map(|r| {
                 let f = [0, 1]
                     .map(|input| StaticFunction {
                         fluent: r.fluent,
