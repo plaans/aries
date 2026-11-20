@@ -10,7 +10,7 @@ impl_linear_ops!(Var, f64);
 
 /// Evaluates the expression, substituting `values[var.0]` for each variable.
 fn eval_f64(expr: &LinExpr<Var, f64>, values: &[f64]) -> f64 {
-    expr.constant() + expr.iter().map(|(v, c)| c * values[v.0]).sum::<f64>()
+    expr.eval(|v| values[v.0])
 }
 
 #[test]
@@ -175,4 +175,30 @@ fn iterable_constructors_f64() {
     assert_eq!(t.coeff, 3.0);
     let t: VarCoeff<Var, f64> = (&(x, 3.0)).into();
     assert_eq!(t.coeff, 3.0);
+}
+
+#[test]
+fn evaluation_and_equality() {
+    let x = Var(0);
+    let y = Var(1);
+    let values = [1.0, 2.0];
+    let value = |v: Var| values[v.0];
+
+    // 2x + 3y <= 8, i.e. 2 + 6 <= 8
+    let c = (2.0 * x + 3.0 * y).leq(8.0);
+    assert!(c.is_satisfied(value));
+    assert!(c.canonical().is_satisfied(value));
+    let c = (2.0 * x + 3.0 * y).geq(8.5);
+    assert!(!c.is_satisfied(value));
+    assert!(!c.canonical().is_satisfied(value));
+    let c = (x + y).eq(3.0 * x);
+    assert!(c.is_satisfied(value));
+    assert!(c.canonical().is_satisfied(value));
+
+    // canonical forms of constraints built differently are equal
+    let c1 = (2.0 * x + 3.0 * y).leq(4.0);
+    let c2 = (3.0 * y + x - 4.0).leq(-1.0 * x);
+    assert!(c1 != c2);
+    assert!(c1.canonical() == c2.canonical());
+    assert_eq!(ComparisonOp::Le.to_string(), "<=");
 }

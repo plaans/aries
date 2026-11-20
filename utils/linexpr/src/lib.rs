@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 use std::fmt;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, Mul};
 
 use num_traits::{One, Zero};
 
@@ -17,7 +17,7 @@ pub use ops::IntoLinExpr;
 use smallvec::{SmallVec, smallvec};
 
 /// An operator specifying the relation between left-hand and right-hand sides of the constraint.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ComparisonOp {
     /// The == operator (equal to)
     Eq,
@@ -38,17 +38,32 @@ pub const EQ: ComparisonOp = ComparisonOp::Eq;
 
 impl ComparisonOp {
     /// The standard mathematical symbol for this operator.
-    fn symbol(self) -> &'static str {
+    pub fn symbol(self) -> &'static str {
         match self {
             ComparisonOp::Eq => "==",
             ComparisonOp::Le => "<=",
             ComparisonOp::Ge => ">=",
         }
     }
+
+    /// True if `lhs` and `rhs` are in the relation specified by this operator.
+    pub fn holds<Num: PartialOrd>(self, lhs: Num, rhs: Num) -> bool {
+        match self {
+            ComparisonOp::Eq => lhs == rhs,
+            ComparisonOp::Le => lhs <= rhs,
+            ComparisonOp::Ge => lhs >= rhs,
+        }
+    }
+}
+
+impl fmt::Display for ComparisonOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.symbol())
+    }
 }
 
 /// A `var * coeff` term.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VarCoeff<Var, Num> {
     /// Variable of this term.
     pub var: Var,
@@ -145,7 +160,10 @@ fn write_sum_part(f: &mut fmt::Formatter<'_>, first: &mut bool, negative: bool, 
 }
 
 /// A linear expression, composed of a constant and a sum of scaled variables.
-#[derive(Clone)]
+///
+/// Equality is structural: two expressions are equal if they have the same constant and the same terms in the same
+/// order. Use [`Self::simplify`] on both sides beforehand to compare their values.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct LinExpr<Var, Num> {
     constant: Num,
     terms: SmallVec<[VarCoeff<Var, Num>; 2]>,
@@ -196,6 +214,19 @@ impl<Var, Num> LinExpr<Var, Num> {
         Num: Copy,
     {
         self.terms.iter().map(|t| (t.var, t.coeff))
+    }
+
+    /// Value of the expression, given the value of each variable.
+    pub fn eval(&self, mut value: impl FnMut(Var) -> Num) -> Num
+    where
+        Var: Copy,
+        Num: Copy + AddAssign + Mul<Output = Num>,
+    {
+        let mut sum = self.constant;
+        for t in &self.terms {
+            sum += t.coeff * value(t.var);
+        }
+        sum
     }
 
     /// Constraint comparing this  linear expression to `rhs`.
@@ -276,7 +307,10 @@ where
 /// The two sides are kept as they were at construction, which is convenient
 /// for debugging and presentation. Use [`Self::canonical`] to obtain the
 /// equivalent [`CanonicalConstraint`].
-#[derive(Clone)]
+///
+/// Equality is structural (see [`LinExpr`]); compare the canonical forms for a
+/// semantic comparison.
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Constraint<Var, Num> {
     /// The left-hand side of the constraint.
     pub lhs: LinExpr<Var, Num>,
@@ -302,6 +336,15 @@ impl<Var, Num> Constraint<Var, Num> {
         self.cmp
     }
 
+    /// True if the constraint is satisfied, given the value of each variable.
+    pub fn is_satisfied(&self, mut value: impl FnMut(Var) -> Num) -> bool
+    where
+        Var: Copy,
+        Num: Copy + AddAssign + Mul<Output = Num> + PartialOrd,
+    {
+        self.cmp.holds(self.lhs.eval(&mut value), self.rhs.eval(&mut value))
+    }
+
     /// The equivalent constraint in canonical form: the right-hand side is
     /// folded into the constant of the expression, whose terms are sorted by
     /// variable and deduplicated.
@@ -319,7 +362,11 @@ impl<Var, Num> Constraint<Var, Num> {
 /// the expression, whose terms are sorted by variable and deduplicated.
 ///
 /// Obtained from a [`Constraint`] with [`Constraint::canonical`].
-#[derive(Clone)]
+///
+/// Since terms are sorted and deduplicated, two canonical constraints are equal
+/// if they have the same terms, constant and operator (constraints that only
+/// differ by a scaling factor are not considered equal).
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct CanonicalConstraint<Var, Num> {
     /// The expression, compared to zero.
     expr: LinExpr<Var, Num>,
@@ -367,5 +414,14 @@ impl<Var, Num> CanonicalConstraint<Var, Num> {
     /// The comparison operator applied between the expression and zero.
     pub fn comp_op(&self) -> ComparisonOp {
         self.cmp
+    }
+
+    /// True if the constraint is satisfied, given the value of each variable.
+    pub fn is_satisfied(&self, value: impl FnMut(Var) -> Num) -> bool
+    where
+        Var: Copy,
+        Num: Copy + AddAssign + Mul<Output = Num> + PartialOrd + Zero,
+    {
+        self.cmp.holds(self.expr.eval(value), Num::zero())
     }
 }
