@@ -8,7 +8,10 @@ use std::{
 use aries_bench_data::SolveStatus;
 use aries_plan_engine::encode::{encoding::Encoding, tags::Tag};
 use aries_solver::{core::state::Evaluable, prelude::*, solver::stats::Stats};
-use planx::{Model, Res, SolutionPlan};
+use planx::{
+    ActionRef, Model, Res, SolutionPlan,
+    preprocessing::analysis::{CountConstraints, PlanScope},
+};
 use timelines::{
     Sched,
     explain::{ExplainableSolver, OptimizeResult},
@@ -33,6 +36,16 @@ pub struct SolveOptions {
     /// First depth of deepening search
     #[arg(long)]
     pub min_depth: Option<u32>,
+
+    /// Bounds on the number of instances of each action template, derived by the analysis of the model
+    /// (see `ape analyze`), and the plans for which they hold.
+    /// At depth `d`, the number of instances of a template with bounds `[lb, ub]` is `min(lb + d, ub)`.
+    /// Without bounds (`none`), it is `d`.
+    ///
+    /// `nr` and `nr+` only hold for non-redundant plans: they preserve the existence of a plan (any plan can be
+    /// made non-redundant by removing actions) but may exclude the best plans for some metrics.
+    #[arg(long, value_enum, default_value_t = CountBounds::NrPlus)]
+    pub count_bounds: CountBounds,
 
     /// Maximum allowed runtime, in seconds.
     #[arg(short = 't', long = "timeout")]
@@ -80,9 +93,95 @@ pub struct SolveFiniteOptions {
     pub report_dir: Option<PathBuf>,
 }
 
+/// Which bounds on the number of instances of action templates are used.
+#[derive(clap::ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountBounds {
+    /// No bounds.
+    None,
+    /// Bounds holding for all plans.
+    All,
+    /// Bounds holding for non-redundant plans.
+    Nr,
+    /// Bounds holding for non-redundant plans without actions cancelling each other.
+    #[value(name = "nr+")]
+    NrPlus,
+}
+
+impl std::fmt::Display for CountBounds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CountBounds::None => write!(f, "none"),
+            CountBounds::All => write!(f, "all"),
+            CountBounds::Nr => write!(f, "nr"),
+            CountBounds::NrPlus => write!(f, "nr+"),
+        }
+    }
+}
+
+/// Number of instances of each action template allowed at each depth of the deepening search.
+pub struct InstanceLimits {
+    /// Lower and upper bound on the number of instances of each template.
+    bounds: BTreeMap<ActionRef, (u32, Option<u32>)>,
+}
+
+impl InstanceLimits {
+    /// No bounds: `d` instances of each template at depth `d`.
+    pub fn unbounded(model: &Model) -> Self {
+        let bounds = model.actions.iter().map(|a| (a.name.clone(), (0, None))).collect();
+        InstanceLimits { bounds }
+    }
+
+    /// Bounds derived from the count constraints of an annotated model (see `ape analyze`).
+    /// Returns `None` if the constraints show that no plan exists (in the selected scope).
+    pub fn from_constraints(model: &Model, which: CountBounds) -> Option<Self> {
+        let scope = match which {
+            CountBounds::None => return Some(Self::unbounded(model)),
+            CountBounds::All => PlanScope::AllPlans,
+            CountBounds::Nr => PlanScope::NonRedundant,
+            CountBounds::NrPlus => PlanScope::NonRedundantPlus,
+        };
+        let propagated = CountConstraints::new(model).propagate(scope)?;
+        let clamp = |x: i64| x.clamp(0, u32::MAX as i64) as u32;
+        let bounds = (propagated.into_iter())
+            .map(|(a, (lb, ub))| (a, (clamp(lb), ub.map(clamp))))
+            .collect();
+        Some(InstanceLimits { bounds })
+    }
+
+    /// Number of instances of each template at the given depth: `min(lb + depth, ub)`.
+    pub fn at_depth(&self, depth: u32) -> BTreeMap<ActionRef, u32> {
+        (self.bounds.iter())
+            .map(|(a, &(lb, ub))| {
+                let n = lb.saturating_add(depth);
+                (a.clone(), ub.map_or(n, |ub| n.min(ub)))
+            })
+            .collect()
+    }
+
+    /// The smallest depth at which all templates reach their upper bound, if they are all finite.
+    /// Deeper subproblems are identical to this one.
+    pub fn max_depth(&self) -> Option<u32> {
+        (self.bounds.values())
+            .map(|&(lb, ub)| ub.map(|ub| ub.saturating_sub(lb)))
+            .try_fold(0, |acc, d| d.map(|d| acc.max(d)))
+    }
+}
+
+impl Display for InstanceLimits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let width = self.bounds.keys().map(|a| a.to_string().len()).max().unwrap_or(0);
+        for (a, (lb, ub)) in &self.bounds {
+            let ub = ub.map_or("inf".to_string(), |ub| ub.to_string());
+            writeln!(f, "  {:width$}  [{lb}, {ub}]", a.to_string())?;
+        }
+        Ok(())
+    }
+}
+
 pub struct SolveFiniteArgs {
     pub optimize: bool,
-    pub max_instances: u32,
+    /// Maximum number of instances of each action template.
+    pub max_instances: BTreeMap<ActionRef, u32>,
     pub plan_file: Option<PathBuf>,
     pub deadline: Option<Instant>,
 }
@@ -214,8 +313,7 @@ fn encode_finite_planning_problem(
     // TODO: make specific function.
     // - ability to specify explanations vocabulary via RelaxableConstraint (Tag), including removing (pre)conditions (like in domain repair).
 
-    let num_free_instances_per_action =
-        BTreeMap::from_iter(model.actions.iter().map(|a| (a.name.clone(), options.max_instances)));
+    let num_free_instances_per_action = options.max_instances.clone();
 
     optimize_plan::encode_plan_optimization_problem(
         model,

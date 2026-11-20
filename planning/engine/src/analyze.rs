@@ -7,19 +7,10 @@ use planx::{
     Message, Res,
     errors::*,
     pddl::{self, input::Input},
-    preprocessing::{
-        ModelTransformation,
-        analysis::{CountConstraints, Dtg, PlanScope},
-    },
+    preprocessing::analysis::{CountConstraints, Dtg, PlanScope},
 };
 
-use crate::preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess_model};
-
-/// Analysis passes, applied after the default transformations.
-const ANALYSIS_TRANSFORMATIONS: &[ModelTransformation] = &[
-    ModelTransformation::AnnotateFluents,
-    ModelTransformation::AnnotateSupports,
-];
+use crate::preprocessing::{ANALYSIS_TRANSFORMATIONS, DEFAULT_MODEL_TRANSFORMATIONS, preprocess_model};
 
 #[derive(clap::Parser, Debug)]
 pub struct Analyze {

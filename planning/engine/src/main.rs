@@ -20,9 +20,9 @@ use planx::{
 
 use crate::{
     export::ReportMetadata,
-    generate::{PlanGenerationResult, SolveFiniteArgs},
+    generate::{CountBounds, InstanceLimits, PlanGenerationResult, SolveFiniteArgs},
     optimize_plan::Objective,
-    preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess, preprocess_model},
+    preprocessing::{ANALYSIS_TRANSFORMATIONS, DEFAULT_MODEL_TRANSFORMATIONS, preprocess, preprocess_model},
 };
 
 /// Aries Planning Engine (APE)
@@ -370,12 +370,30 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
         .map(|dur| Instant::now() + Duration::from_secs_f64(dur));
 
     let model = build_model(&command.pb, &command.options.objectives)?;
+    let count_bounds = command.options.count_bounds;
+    let model = if count_bounds == CountBounds::None {
+        model
+    } else {
+        preprocess_model(model, ANALYSIS_TRANSFORMATIONS)?
+    };
     println!("{model}");
 
     let mut result = PlanGenerationResult::trivial_unsat();
 
+    let Some(limits) = InstanceLimits::from_constraints(&model, count_bounds) else {
+        println!("\nThe bounds on the number of action instances ({count_bounds}) are infeasible: no plan.");
+        println!("\n{result}\n");
+        return Ok(());
+    };
+    println!("\nBounds on the number of instances ({count_bounds}):\n{limits}");
+
     let min_depth = command.options.min_depth.unwrap_or(0);
-    let max_depth = command.options.max_depth.unwrap_or(u32::MAX);
+    let mut max_depth = command.options.max_depth.unwrap_or(u32::MAX);
+    if let Some(d) = limits.max_depth() {
+        // deeper subproblems are identical
+        max_depth = max_depth.min(d.max(min_depth));
+        println!("All bounds are finite: maximal depth {d}");
+    }
     for depth in min_depth..=max_depth {
         if deadline.is_some_and(|deadline| deadline <= Instant::now()) {
             result.merge_split_solve(PlanGenerationResult::trivial_timeout());
@@ -387,7 +405,7 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
             &model,
             &SolveFiniteArgs {
                 optimize: false,
-                max_instances: depth,
+                max_instances: limits.at_depth(depth),
                 plan_file: command.options.plan_file.clone(),
                 deadline,
             },
@@ -408,7 +426,8 @@ fn solve_problem(command: &SolveProblem) -> Res<()> {
                 command.options.timeout_s.map(Duration::from_secs_f64),
             )
             .with_opt_flag("min-depth", command.options.min_depth)
-            .with_opt_flag("max-depth", command.options.max_depth),
+            .with_opt_flag("max-depth", command.options.max_depth)
+            .with_flag("count-bounds", command.options.count_bounds),
         );
         export::export_report_to_dir(report_dir, report)?;
     }
@@ -428,7 +447,7 @@ fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
         &model,
         &SolveFiniteArgs {
             optimize: command.options.optimize,
-            max_instances: command.options.max_instances,
+            max_instances: InstanceLimits::unbounded(&model).at_depth(command.options.max_instances),
             plan_file: command.options.plan_file.clone(),
             deadline,
         },

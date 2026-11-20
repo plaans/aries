@@ -13,6 +13,13 @@ pub const DEFAULT_MODEL_TRANSFORMATIONS: &[ModelTransformation] = &[
     ModelTransformation::Intify,
 ];
 
+/// Annotations used by the analysis of the model (e.g. for bounding the number of action instances).
+/// To be applied after [`DEFAULT_MODEL_TRANSFORMATIONS`].
+pub const ANALYSIS_TRANSFORMATIONS: &[ModelTransformation] = &[
+    ModelTransformation::AnnotateFluents,
+    ModelTransformation::AnnotateSupports,
+];
+
 /// Applies a sequence of transformations to the model.
 pub fn preprocess_model(model: Model, transformations: &[ModelTransformation]) -> Res<Model> {
     planx::preprocessing::apply_transformations(model, transformations)
