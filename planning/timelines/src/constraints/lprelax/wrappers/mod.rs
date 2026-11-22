@@ -20,6 +20,9 @@ mod tests {
         }
     }
 
+    /// The LP is built right before the first decision.
+    const BUILD_AFTER_CONFLICTS: u64 = 0;
+
     #[test]
     fn test_visitall_line_incr() {
         let sat_pb = &VisitAllLine {
@@ -32,7 +35,7 @@ mod tests {
         {
             println!("Sat instance with lprelax (lprelax mustn't deem it unsat)");
 
-            let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root());
+            let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root(), BUILD_AFTER_CONFLICTS);
             let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
             assert!(
@@ -61,7 +64,7 @@ mod tests {
             );
             assert!(solver.stats.num_decisions > 0);
 
-            let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root());
+            let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root(), BUILD_AFTER_CONFLICTS);
 
             println!("Unsat instance with lprelax (num decisions must be = 0, thanks to lprelax)");
 
@@ -100,7 +103,7 @@ mod tests {
             .flat_map(|(var, value)| [var.geq(value), var.leq(value)])
             .collect::<Vec<_>>();
 
-        let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root());
+        let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root(), BUILD_AFTER_CONFLICTS);
         let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
         assert!(

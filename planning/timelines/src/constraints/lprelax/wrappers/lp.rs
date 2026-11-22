@@ -18,8 +18,8 @@ use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem};
 /// Wrapper over the incremental LP reasoner, specifically for the LP relaxation problem.
 ///
 /// The LP relaxation problem is posted to the reasoner
-/// once the search has started and the model is fully propagated (quiescence),
-/// i.e. before the first decision.
+/// once the search has made a given number of conflicts, when the model is fully propagated (quiescence)
+/// (with 0, right before the first decision), so that the searches that end earlier never build nor check it.
 ///
 /// It is posted in two steps:
 /// - 1st, the [`LpRelaxEncoder`] is built against the domains of the root level,
@@ -40,6 +40,8 @@ pub(crate) struct LpRelaxIncr {
 
     /// Whether the search has started, i.e. all assumptions are posted. The relaxed problem is only built afterwards.
     search_started: bool,
+    /// The number of conflicts of the search after which the relaxed problem is built and posted.
+    build_after_conflicts: u64,
     /// Whether the LP relaxation problem is posted (see [`Self::propagate_at_quiescence_only`]).
     posted: bool,
 }
@@ -50,7 +52,10 @@ impl LpRelaxIncr {
 
     /// Takes the encoding of the main model from `ctx`, except its model, which stays there for the solver
     /// (the LP is built from the domains of the solver's root level).
-    pub(crate) fn new(ctx: &mut SchedEncoder, lp_options: LpOptions) -> Self {
+    ///
+    /// The LP is built and posted once the search has made `build_after_conflicts` conflicts
+    /// (see [`crate::lprelax::ARIES_LP_BUILD_AFTER_CONFLICTS`] for the default).
+    pub(crate) fn new(ctx: &mut SchedEncoder, lp_options: LpOptions, build_after_conflicts: u64) -> Self {
         let mut lp = Lp::new(Self::IDENTITY, lp_options);
         lp.enable();
 
@@ -68,6 +73,7 @@ impl LpRelaxIncr {
                 grounding_tables,
             },
             search_started: false,
+            build_after_conflicts,
             posted: false,
         }
     }
@@ -126,7 +132,7 @@ impl Theory for LpRelaxIncr {
     }
 
     // Until the LP is posted, the wrapper is only propagated at quiescence, i.e. once the model is fully propagated:
-    // the LP is then posted at its first propagation once the search has started, right before the first decision.
+    // the LP is then posted at its first propagation once the search has made enough conflicts.
     fn propagate_at_quiescence_only(&self) -> bool {
         !self.posted || self.lp.propagate_at_quiescence_only()
     }
@@ -137,11 +143,12 @@ impl Theory for LpRelaxIncr {
 
     fn propagate(&mut self, model: &mut Domains) -> Result<(), Contradiction> {
         if !self.posted {
-            if !self.search_started {
+            if !self.search_started || self.lp.num_conflicts() < self.build_after_conflicts {
                 return Ok(());
             }
 
-            // posted once, at the first propagation once the search has started (which is at quiescence)
+            // posted once, at the first propagation (which is at quiescence) once the search has made enough conflicts,
+            // at whatever level it is
             self.posted = true;
             let mut root_doms = model.clone();
             root_doms.restore(DecLvl::ROOT);
@@ -151,6 +158,7 @@ impl Theory for LpRelaxIncr {
             let mut encoder = self.build_encoder(&root_doms);
             self.post_relaxation(&mut encoder, &root_doms, model);
             self.lp.add_time_spent(start.elapsed());
+            self.lp.on_posted();
         }
 
         self.lp.propagate(model)

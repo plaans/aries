@@ -94,7 +94,8 @@ ci-ape-solve timeout="5":
     uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
 
 # Same, with the incremental lprelax reasoner, in all its configurations (soundness checks).
-# The LP gets the default pivot budget (an unlimited one is too slow on the larger problems, e.g. mystery-prime).
+# The LP gets the default pivot budget (an unlimited one is too slow on the larger problems, e.g. mystery-prime),
+# and is built right before the first decision, so that it is checked on every problem.
 ci-ape-solve-lprelax-incr timeout="60":
     #!/usr/bin/env bash
     set -e
@@ -106,7 +107,7 @@ ci-ape-solve-lprelax-incr timeout="60":
                         echo "lprelax incr: MERGE_EQUAL_COLUMNS=$merge WITH_INITIAL_STATE_SUPPORTS=$init WITH_CONDITION_OUT_TRANSITIONS=$cond_out WITH_FLOW_CONSTRS=$flows WITH_ACHIEVERS=$achievers"
 
                         ARIES_LPRELAX_USE=incr \
-                        ARIES_LP_INITIALLY_ALLOWED_PIVOTS=0.0 ARIES_LP_PIVOTS_PER_DECISION=0.1 \
+                        ARIES_LP_BUILD_AFTER_CONFLICTS=0 \
                         ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=$merge \
                         ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS=$init \
                         ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=$cond_out \

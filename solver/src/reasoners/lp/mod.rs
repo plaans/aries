@@ -93,6 +93,12 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_PIVOTS_PER_CONFLICT`].
     pub pivots_per_conflict: f64,
+    /// If true, the pivot budget only counts the solver's conflicts from the moment the LP is posted (see [`Lp::on_posted`]),
+    /// both for the pivots they bring and for their growth, as if the search started then.
+    /// Otherwise, the conflicts before count too: the LP then starts with their pivots on top of its initial ones.
+    ///
+    /// The default value is controlled by [`LP_BUDGET_FROM_BUILD`].
+    pub budget_from_build: bool,
     /// Number of pivots allowed before any decision is taken.
     /// They fund the LP's first check, at the root level: until that check concludes, the LP only runs when it has pivots to spend.
     ///
@@ -165,6 +171,7 @@ impl Default for LpOptions {
             is_explanation_refined: true,
             initially_allowed_pivots: LP_INITIALLY_ALLOWED_PIVOTS.get(),
             pivots_per_conflict: LP_PIVOTS_PER_CONFLICT.get(),
+            budget_from_build: LP_BUDGET_FROM_BUILD.get(),
             max_pivots_per_propagation: LP_MAX_PIVOTS_PER_PROPAGATION.get(),
             activity_decay: LP_ACTIVITY_DECAY.get(),
             min_activity: LP_MIN_ACTIVITY.get(),
@@ -191,6 +198,9 @@ pub static LP_MAX_PIVOTS_PER_PROPAGATION: EnvParam<f64> = EnvParam::new("ARIES_L
 
 /// Number of pivots per conflict of the solver, at the start of the search (see [`LpOptions::pivots_per_conflict`]).
 pub static LP_PIVOTS_PER_CONFLICT: EnvParam<f64> = EnvParam::new("ARIES_LP_PIVOTS_PER_CONFLICT", "0.3");
+
+/// Whether the pivot budget only counts the conflicts from the LP's posting on (see [`LpOptions::budget_from_build`]).
+pub static LP_BUDGET_FROM_BUILD: EnvParam<bool> = EnvParam::new("ARIES_LP_BUDGET_FROM_BUILD", "false");
 
 /// Decay of the LP's activity per conflict of the solver since its last reported infeasibility (see [`LpOptions::activity_decay`]).
 pub static LP_ACTIVITY_DECAY: EnvParam<f64> = EnvParam::new("ARIES_LP_ACTIVITY_DECAY", "0.99");
@@ -365,6 +375,9 @@ pub struct Lp {
     num_conflicts: u64,
     /// The number of conflicts of the solver whose pivots are already counted in [`Self::total_allowed_pivots`].
     num_conflicts_budgeted: u64,
+    /// With [`LpOptions::budget_from_build`], the number of conflicts of the solver before the LP was posted,
+    /// which the budget doesn't count (see [`Self::on_posted`]). 0 otherwise.
+    num_conflicts_before_build: u64,
     /// The number of conflicts of the solver when the LP last reported an infeasibility,
     /// or, until the LP's first conclusion, so far (see [`LpOptions::activity_decay`]).
     num_conflicts_at_last_infeasibility: u64,
@@ -426,11 +439,26 @@ impl Lp {
             pivots_limit_of_propagation: f64::INFINITY,
             num_conflicts: 0,
             num_conflicts_budgeted: 0,
+            num_conflicts_before_build: 0,
             num_conflicts_at_last_infeasibility: 0,
             activity: 1.0,
             run_credit: 0.0,
             time_spent: Default::default(),
             options,
+        }
+    }
+
+    /// The number of conflicts of the solver so far (see [`Theory::on_conflict`]).
+    pub fn num_conflicts(&self) -> u64 {
+        self.num_conflicts
+    }
+
+    /// To be called by the owner of the reasoner once it has posted the LP, which can be after the search started:
+    /// with [`LpOptions::budget_from_build`], the conflicts so far then no longer count for the pivot budget.
+    pub fn on_posted(&mut self) {
+        if self.options.budget_from_build {
+            self.num_conflicts_before_build = self.num_conflicts;
+            self.num_conflicts_budgeted = self.num_conflicts;
         }
     }
 
@@ -456,7 +484,7 @@ impl Lp {
 
         if self.num_conflicts > self.num_conflicts_budgeted {
             let new_conflicts = (self.num_conflicts - self.num_conflicts_budgeted) as f64;
-            let growth = (2.0 + self.num_conflicts as f64 / 1000.0).log2();
+            let growth = (2.0 + (self.num_conflicts - self.num_conflicts_before_build) as f64 / 1000.0).log2();
 
             self.total_allowed_pivots += new_conflicts * self.options.pivots_per_conflict * growth * self.activity;
             self.num_conflicts_budgeted = self.num_conflicts;

@@ -1,5 +1,7 @@
 pub static ARIES_LPRELAX_USE: EnvParam<String> = EnvParam::new("ARIES_LPRELAX_USE", "none");
 pub static ARIES_LPRELAX_LOGS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_LOGS", "false");
+/// The number of conflicts of the search after which the LP relaxation is built and posted (0: right before the first decision).
+pub static ARIES_LP_BUILD_AFTER_CONFLICTS: EnvParam<u64> = EnvParam::new("ARIES_LP_BUILD_AFTER_CONFLICTS", "300");
 pub static ARIES_LPRELAX_MERGE_EQUAL_COLUMNS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_MERGE_EQUAL_COLUMNS", "true");
 pub static ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS: EnvParam<bool> =

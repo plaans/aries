@@ -51,7 +51,11 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
         let mut solver = match crate::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
             "incr" => {
-                let reasoner = LpRelaxIncr::new(&mut encoding, LpOptions::default());
+                let reasoner = LpRelaxIncr::new(
+                    &mut encoding,
+                    LpOptions::default(),
+                    crate::lprelax::ARIES_LP_BUILD_AFTER_CONFLICTS.get(),
+                );
                 Solver::with_extra_reasoners(encoding.store, vec![Box::new(reasoner)])
             }
             _ => Solver::new(encoding.store),
