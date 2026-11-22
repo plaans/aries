@@ -1147,6 +1147,10 @@ impl<Lbl: Label> Solver<Lbl> {
                         self.stats
                             .add_conflict(self.current_decision_level(), clause.len(), lbd);
                         self.stats[i].conflicts += 1;
+                        // notify reasoners that a new conflict was added
+                        for &w in self.reasoners.writers.get() {
+                            self.reasoners.theories.get_mut(w).on_conflict();
+                        }
                         self.stats.propagation_time += global_start.elapsed();
                         self.stats[i].propagation_time += theory_propagation_start.elapsed();
                         return Err(clause);

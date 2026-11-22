@@ -76,6 +76,9 @@ pub trait Theory: Backtrack + Send {
 
     fn on_search_start(&mut self) {}
 
+    /// Called by the solver at each of its conflicts, whichever reasoner raised it, once the conflict is counted in its statistics.
+    fn on_conflict(&mut self) {}
+
     /// If true, the solver only calls [`Self::propagate`] at quiescence
     /// (i.e. in a round of propagation where the reasoners called before it have inferred nothing).
     fn propagate_at_quiescence_only(&self) -> bool {
