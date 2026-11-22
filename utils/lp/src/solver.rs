@@ -93,6 +93,17 @@ pub(crate) struct Solver {
     stalled_pivots: usize,
     perturb_round: u32,
 
+    /// After how many dual pivots of a feasibility check its perturbations may grow
+    /// (see [`SimplexOptions::adaptive_perturbations_after`]), and their current factor: 1, then 10, 100 and 1000
+    /// after each window of 100 such pivots of which 30% or more were degenerate. It only grows, across checks.
+    adaptive_perturbations_after: Option<u64>,
+    perturbation_scale: f64,
+    /// The dual pivots of the current feasibility check (which may span several calls to [`Self::restore_feasibility`]),
+    /// and those of its current window of adaptive perturbations, with how many of the latter were degenerate.
+    check_pivots: u64,
+    adapt_window: u32,
+    adapt_window_degenerate: u32,
+
     // Updated on each pivot
     /// For each var: whether it is basic/non-basic and the corresponding index.
     var_states: Vec<VarState>,
@@ -512,6 +523,11 @@ impl Solver {
             obj_coeffs_perturbed: false,
             stalled_pivots: 0,
             perturb_round: 0,
+            adaptive_perturbations_after: options.adaptive_perturbations_after,
+            perturbation_scale: 1.0,
+            check_pivots: 0,
+            adapt_window: 0,
+            adapt_window_degenerate: 0,
             var_states,
             nb_index: vec![],
             basis_solver: BasisSolver {
@@ -825,11 +841,26 @@ impl Solver {
                 if !self.obj_coeffs_perturbed {
                     self.perturb_obj_coeffs(self.perturb_round);
                 }
-                let pivot_info = self.choose_entering_col_dual(row, leaving_new_val)?;
+                let pivot_info = match self.choose_entering_col_dual(row, leaving_new_val) {
+                    Ok(pivot_info) => pivot_info,
+                    Err(err) => {
+                        // the check ends, with a certificate of infeasibility or a numerical failure
+                        self.end_check();
+                        return Err(err);
+                    }
+                };
                 self.calc_col_coeffs(pivot_info.col);
                 self.pivot(&pivot_info)?;
 
-                if self.cur_obj_val > last_obj_val + EPS * (1.0 + last_obj_val.abs()) {
+                let improved = self.cur_obj_val > last_obj_val + EPS * (1.0 + last_obj_val.abs());
+                self.check_pivots += 1;
+                if self
+                    .adaptive_perturbations_after
+                    .is_some_and(|after| self.check_pivots > after)
+                {
+                    self.adapt_perturbations(!improved);
+                }
+                if improved {
                     self.stalled_pivots = 0;
                 } else {
                     self.stalled_pivots += 1;
@@ -851,8 +882,35 @@ impl Solver {
             }
         }
 
+        self.end_check();
         self.is_primal_feasible = true;
         Ok(())
+    }
+
+    /// Counts a dual pivot in the current window of the adaptive perturbations (see
+    /// [`SimplexOptions::adaptive_perturbations_after`]). After a window of 100 pivots of which 30% or more were
+    /// degenerate, the perturbations grow tenfold (until 1000 times their base size): a new, larger round is added
+    /// on top of the current one.
+    fn adapt_perturbations(&mut self, degenerate: bool) {
+        self.adapt_window += 1;
+        self.adapt_window_degenerate += degenerate as u32;
+        if self.adapt_window >= 100 {
+            if self.adapt_window_degenerate >= 30 && self.perturbation_scale < 1000.0 {
+                self.perturbation_scale *= 10.0;
+                self.perturb_round += 1;
+                self.perturb_obj_coeffs(self.perturb_round);
+            }
+            self.adapt_window = 0;
+            self.adapt_window_degenerate = 0;
+        }
+    }
+
+    /// Ends the current feasibility check: the pivots counted for the adaptive perturbations start again from 0
+    /// (their size is kept).
+    fn end_check(&mut self) {
+        self.check_pivots = 0;
+        self.adapt_window = 0;
+        self.adapt_window_degenerate = 0;
     }
 
     fn time_elapsed(&self, deadline: Deadline) -> bool {
@@ -1839,8 +1897,11 @@ impl Solver {
         // A perturbation in [PERTURBATION, 2 * PERTURBATION), scaled by the magnitude of
         // the true cost so it stays significant next to large costs, while remaining far
         // above EPS (below which it would be rounded away by tolerance checks).
-        let perturbation =
-            PERTURBATION * (1.0 + x as f64 / (1u64 << 53) as f64) * (1.0 + self.orig_obj_coeffs[var].abs());
+        // (It is also scaled by the factor of the adaptive perturbations, 1 without them.)
+        let perturbation = PERTURBATION
+            * self.perturbation_scale
+            * (1.0 + x as f64 / (1u64 << 53) as f64)
+            * (1.0 + self.orig_obj_coeffs[var].abs());
         let perturbation = match self.nb_var_states[col] {
             NonBasicVarState {
                 at_min: true,

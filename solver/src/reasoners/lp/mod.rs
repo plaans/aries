@@ -137,6 +137,18 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_CATCH_UP_FRACTION`].
     pub catch_up_fraction: f64,
+    /// If true, the anti-degeneracy perturbations of the simplex adapt during long feasibility checks:
+    /// once a check has made [`Self::adaptive_perturbations_after_pivots`] dual pivots, they grow tenfold
+    /// (until 1000 times their base size) after each window of 100 dual pivots of which 30% or more were degenerate
+    /// (see [`aries_lp::SimplexOptions::adaptive_perturbations_after`]).
+    /// The idea is to speed up the long checks of large LPs, whose dual pivots are often degenerate (e.g. at the root level).
+    ///
+    /// The default value is controlled by [`LP_ADAPTIVE_PERTURB`].
+    pub adaptive_perturbations: bool,
+    /// See [`Self::adaptive_perturbations`].
+    ///
+    /// The default value is controlled by [`LP_ADAPTIVE_AFTER_PIVOTS`].
+    pub adaptive_perturbations_after_pivots: u64,
     /// If true, the LP reasoner (its learned constraints included) is only propagated at quiescence:
     /// i.e. once the other reasoners have inferred all they could in a round of propagation of the solver
     /// (see [`Theory::propagate_at_quiescence_only`]).
@@ -176,6 +188,8 @@ impl Default for LpOptions {
             activity_decay: LP_ACTIVITY_DECAY.get(),
             min_activity: LP_MIN_ACTIVITY.get(),
             catch_up_fraction: LP_CATCH_UP_FRACTION.get(),
+            adaptive_perturbations: LP_ADAPTIVE_PERTURB.get(),
+            adaptive_perturbations_after_pivots: LP_ADAPTIVE_AFTER_PIVOTS.get(),
             check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
             boolean_value_hints: LP_BOOLEAN_VALUE_HINTS.get(),
             learned_max_terms: LP_LEARNED_MAX_TERMS.get(),
@@ -210,6 +224,12 @@ pub static LP_MIN_ACTIVITY: EnvParam<f64> = EnvParam::new("ARIES_LP_MIN_ACTIVITY
 
 /// How far the LP catches up with the model at each new check (see [`LpOptions::catch_up_fraction`]).
 pub static LP_CATCH_UP_FRACTION: EnvParam<f64> = EnvParam::new("ARIES_LP_CATCH_UP_FRACTION", "0.5");
+
+/// Whether the simplex's perturbations adapt during long feasibility checks (see [`LpOptions::adaptive_perturbations`]).
+pub static LP_ADAPTIVE_PERTURB: EnvParam<bool> = EnvParam::new("ARIES_LP_ADAPTIVE_PERTURB", "false");
+
+/// After how many dual pivots of a check the perturbations adapt (see [`LpOptions::adaptive_perturbations`]).
+pub static LP_ADAPTIVE_AFTER_PIVOTS: EnvParam<u64> = EnvParam::new("ARIES_LP_ADAPTIVE_AFTER_PIVOTS", "500");
 
 /// Whether the LP is only checked at quiescence (see [`LpOptions::check_at_quiescence`]).
 pub static LP_CHECK_AT_QUIESCENCE: EnvParam<bool> = EnvParam::new("ARIES_LP_CHECK_AT_QUIESCENCE", "true");
@@ -417,7 +437,14 @@ impl Lp {
         Self {
             id,
             // (the crash basis suits the LP's rows, most of which reify a sum with a variable of their own)
-            solver: Solver::new(options.is_explanation_refined, SimplexOptions { crash_basis: true }),
+            solver: Solver::new(
+                options.is_explanation_refined,
+                SimplexOptions {
+                    crash_basis: true,
+                    adaptive_perturbations_after: (options.adaptive_perturbations)
+                        .then_some(options.adaptive_perturbations_after_pivots),
+                },
+            ),
 
             bound_constrs: Default::default(),
             learned: LearnedConstraints::new(options.learned_max_terms, options.learned_idle_work_budget),

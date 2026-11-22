@@ -28,6 +28,10 @@ pub struct SimplexOptions {
     /// It makes the checks of LPs with many such rows much faster, but on some LPs it makes the simplex
     /// numerically unstable.
     pub crash_basis: bool,
+    /// If set, the anti-degeneracy perturbations of a feasibility check adapt once it has made that many dual pivots:
+    /// after each window of 100 dual pivots of which 30% or more were degenerate, they grow tenfold,
+    /// until 1000 times their base size.
+    pub adaptive_perturbations_after: Option<u64>,
 }
 
 /// A Linear Program (LP), that can be use to construct the LP and solve it.
