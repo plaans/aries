@@ -1,9 +1,9 @@
 use itertools::Itertools;
 
 use crate::backtrack::Backtrack;
-use crate::core::Lit;
 use crate::core::state::{Cause, DomainsSnapshot, Explainer, InferenceCause};
 use crate::core::state::{Domains, Explanation, InvalidUpdate};
+use crate::core::{IntCst, Lit, Var};
 use crate::reasoners::cp::Cp;
 use crate::reasoners::lp::Lp;
 use crate::reasoners::sat::SatSolver;
@@ -84,6 +84,11 @@ pub trait Theory: Backtrack + Send {
     fn propagate_at_quiescence_only(&self) -> bool {
         false
     }
+
+    /// Moves to `out` the value hints accumulated since the previous call.
+    /// Used to give hints to the brancher on the values to use next when making decisions (on the given variables).
+    /// The brancher receives the hints of a call together, as a batch (see [`crate::solver::search::SearchControl::set_value_hints`]).
+    fn take_value_hints(&mut self, _out: &mut Vec<(Var, IntCst)>) {}
 }
 
 #[derive(Debug)]

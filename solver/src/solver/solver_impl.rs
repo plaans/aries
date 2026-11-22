@@ -121,6 +121,8 @@ pub struct Solver<Lbl> {
     /// A data structure with the various communication channels
     /// needed to receive/send updates and commands.
     sync: Synchro,
+    /// The buffer of value hints from reasoners, on their way to the brancher (empty between decisions).
+    value_hints: Vec<(Var, IntCst)>,
 }
 impl<Lbl: Label> Solver<Lbl> {
     pub fn new(model: Model<Lbl>) -> Solver<Lbl> {
@@ -143,6 +145,7 @@ impl<Lbl: Label> Solver<Lbl> {
             last_assumption_level: DecLvl::ROOT,
             stats,
             sync: Synchro::new(),
+            value_hints: Vec::new(),
         }
     }
 
@@ -692,6 +695,17 @@ impl<Lbl: Label> Solver<Lbl> {
                 // at least one new redundant clause added, go back directly to propagation
                 // to handle it before taking a decision
                 continue;
+            }
+            // each reasoner's hints go to the brancher as a batch
+            for &i in self.reasoners.writers.get() {
+                self.reasoners
+                    .theories
+                    .get_mut(i)
+                    .take_value_hints(&mut self.value_hints);
+                if !self.value_hints.is_empty() {
+                    self.brancher.set_value_hints(&self.value_hints);
+                    self.value_hints.clear();
+                }
             }
             match self.brancher.next_decision(&self.stats, &self.model) {
                 Some(Decision::SetLiteral(lit)) => {
@@ -1245,6 +1259,7 @@ impl<Lbl: Label> Clone for Solver<Lbl> {
             last_assumption_level: self.last_assumption_level,
             stats: self.stats.clone(),
             sync: self.sync.clone(),
+            value_hints: self.value_hints.clone(),
         }
     }
 }

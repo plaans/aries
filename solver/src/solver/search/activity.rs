@@ -79,12 +79,24 @@ pub struct ActivityBrancher<Lbl> {
     heuristic: Arc<dyn Heuristic<Lbl>>,
     heap: VarSelect,
     default_assignment: DefaultValues,
+    /// The values hinted by the reasoners (the last hint of each variable), tried before the default values.
+    value_hints: RefMap<Var, ValueHint>,
+    /// For each batch of hints (see [`SearchControl::set_value_hints`]), whether the state contradicted one of its values.
+    /// In such a case, the batch is refuted as a whole (all its hints are ignored).
+    refuted_hint_batches: Vec<bool>,
     conflicts_at_last_restart: u64,
     num_processed_var: usize,
     /// Associates presence literals to the optional variables
     /// Essentially a `Map<Lit, Set<Var>>`
     presences: Watches<Var>,
     cursor: ObsTrailCursor<Event>,
+}
+
+/// A value hinted by a reasoner for a variable, with the index of the batch it was given in.
+#[derive(Clone, Copy)]
+struct ValueHint {
+    value: IntCst,
+    batch: u32,
 }
 
 #[derive(Clone, Default)]
@@ -114,6 +126,8 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
             heuristic: Arc::new(h),
             heap: VarSelect::new(Default::default()),
             default_assignment: DefaultValues::default(),
+            value_hints: Default::default(),
+            refuted_hint_batches: Vec::new(),
             conflicts_at_last_restart: 0,
             num_processed_var: 0,
             presences: Default::default(),
@@ -147,10 +161,17 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
             self.num_processed_var += count;
             debug_assert_eq!(self.num_processed_var, model.state.num_variables());
         }
-        // process all new events and enqueue the variables that became present
+        // process all new events: enqueue the variables that became present,
+        // and refute the batches whose hints are contradicted by the current bounds
         while let Some(x) = self.cursor.pop(model.state.trail()) {
             for var in self.presences.watches_on(x.new_literal()) {
                 self.heap.enqueue_variable(var);
+            }
+            let var = x.new_literal().variable();
+            if let Some(hint) = self.value_hints.get(var)
+                && !(model.state.lb(var) <= hint.value && hint.value <= model.state.ub(var))
+            {
+                self.refuted_hint_batches[hint.batch as usize] = true;
             }
         }
     }
@@ -203,11 +224,12 @@ impl<Lbl: Label> ActivityBrancher<Lbl> {
                 let IntDomain { lb, ub } = model.var_domain(v);
                 debug_assert!(lb < ub);
 
-                let value = self
-                    .default_assignment
-                    .values
-                    .get(v)
-                    .copied()
+                let hint = (self.value_hints.get(v))
+                    .filter(|hint| !self.refuted_hint_batches[hint.batch as usize])
+                    .map(|hint| hint.value);
+                self.value_hints.remove(v);
+                let value = hint
+                    .or_else(|| self.default_assignment.values.get(v).copied())
                     .unwrap_or(if self.params.prefer_min_value { lb } else { ub });
 
                 let literal = if value < lb || value > ub {
@@ -486,6 +508,14 @@ impl<Lbl: Label> SearchControl<Lbl> for ActivityBrancher<Lbl> {
 
     fn import_vars(&mut self, model: &Model<Lbl>) {
         self.import_vars(model)
+    }
+
+    fn set_value_hints(&mut self, hints: &[(Var, IntCst)]) {
+        let batch = self.refuted_hint_batches.len() as u32;
+        self.refuted_hint_batches.push(false);
+        for &(var, value) in hints {
+            self.value_hints.insert(var, ValueHint { value, batch });
+        }
     }
 
     fn new_assignment_found(&mut self, objective: IntCst, assignment: &Solution) {

@@ -57,4 +57,7 @@ pub trait SearchControl<Lbl>: Backtrack {
     }
 
     fn clone_to_box(&self) -> Brancher<Lbl>;
+
+    /// Notifies the search control that a reasoner hints at some values to try first for a set of variables.
+    fn set_value_hints(&mut self, _hints: &[(Var, IntCst)]) {}
 }
