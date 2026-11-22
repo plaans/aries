@@ -28,8 +28,9 @@ pub(crate) struct Binding {
 
 impl LpRelaxEncoder {
     /// The bindings of the lifted presence columns and support columns (with known activation literal), and of the term grounding columns.
-    pub fn bindings(&self, ctx: &SchedEncoder) -> Vec<Binding> {
-        let presence = |lit: Lit| ctx.store.state.presence(lit);
+    /// (`doms` are the domains of the main model's root level)
+    pub fn bindings(&self, ctx: &SchedEncoder, doms: &aries_solver::core::state::Domains) -> Vec<Binding> {
+        let presence = |lit: Lit| doms.presence(lit);
         let mut bindings = vec![];
 
         // Lifted presences
@@ -86,7 +87,7 @@ impl LpRelaxEncoder {
                 });
                 continue;
             };
-            let var_prez = ctx.store.state.presence(var);
+            let var_prez = doms.presence(var);
 
             let excluding_lits = [
                 x.checked_add(1).map(|above| var.geq(above)),

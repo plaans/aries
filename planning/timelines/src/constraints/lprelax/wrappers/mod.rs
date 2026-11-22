@@ -10,11 +10,12 @@ mod tests {
     use crate::lprelax::tests::visitall::{VisitAllLine, build_and_encode_visitall_line};
     use crate::lprelax::wrappers::LpRelaxIncr;
 
-    /// No limit on the pivots of the LP, so that it can conclude at the root.
+    /// No limit on the pivots of the LP (nor on its runs), so that it can conclude at the root.
     fn unlimited_pivots_only_at_root() -> LpOptions {
         LpOptions {
             initially_allowed_pivots: f64::INFINITY,
-            pivots_per_decision: 0.0,
+            pivots_per_conflict: 0.0,
+            activity_decay: 1.0,
             ..Default::default()
         }
     }
@@ -25,13 +26,13 @@ mod tests {
             num_locs: 4,
             num_moves: 3,
         };
-        let encoder = build_and_encode_visitall_line(sat_pb, false);
+        let mut encoder = build_and_encode_visitall_line(sat_pb, false);
         let model = encoder.sched.clone().encode();
 
         {
             println!("Sat instance with lprelax (lprelax mustn't deem it unsat)");
 
-            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots_only_at_root());
+            let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root());
             let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
             assert!(
@@ -45,7 +46,7 @@ mod tests {
             num_locs: 5,
             num_moves: 3,
         };
-        let encoder = build_and_encode_visitall_line(unsat_pb, false);
+        let mut encoder = build_and_encode_visitall_line(unsat_pb, false);
         let model = encoder.sched.clone().encode();
 
         {
@@ -60,7 +61,7 @@ mod tests {
             );
             assert!(solver.stats.num_decisions > 0);
 
-            let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots_only_at_root());
+            let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root());
 
             println!("Unsat instance with lprelax (num decisions must be = 0, thanks to lprelax)");
 
@@ -84,7 +85,7 @@ mod tests {
         let num_moves = 4;
 
         let pb = &VisitAllLine { num_locs: 4, num_moves };
-        let encoder = build_and_encode_visitall_line(pb, false);
+        let mut encoder = build_and_encode_visitall_line(pb, false);
 
         let model = encoder.sched.clone().encode();
         let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model.clone(), vec![]);
@@ -99,7 +100,7 @@ mod tests {
             .flat_map(|(var, value)| [var.geq(value), var.leq(value)])
             .collect::<Vec<_>>();
 
-        let reasoner = LpRelaxIncr::new(encoder, unlimited_pivots_only_at_root());
+        let reasoner = LpRelaxIncr::new(&mut encoder, unlimited_pivots_only_at_root());
         let mut solver = aries_solver::solver::Solver::with_extra_reasoners(model, vec![Box::new(reasoner)]);
 
         assert!(

@@ -1,6 +1,6 @@
 use aries_linexpr::IntoLinExpr;
 use aries_solver::core::IntCst;
-use aries_solver::core::views::Dom;
+use aries_solver::core::state::Domains;
 use itertools::Itertools;
 
 use crate::SchedEncoder;
@@ -11,7 +11,12 @@ use super::ground::{StateVarGroundingId, TransitionGroundingId};
 use super::problem::{ColTag, LinExpr, LpRelaxProblem, sum};
 
 /// Pushes the "lifted rows"
-pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
+pub(super) fn encode_problem_lifted(
+    encoder: &LpRelaxEncoder,
+    ctx: &SchedEncoder,
+    doms: &Domains,
+    problem: &mut LpRelaxProblem,
+) {
     let supports_sorted = encoder.supports_sorted.as_ref().unwrap();
 
     // "The empty source must be present"
@@ -27,11 +32,11 @@ pub(super) fn encode_problem_lifted(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
                 //
                 // However, the transition's presence literal must always imply the source's.
 
-                debug_assert!(ctx.store.state.implies(
+                debug_assert!(doms.implies(
                     encoder.transitions.get_prez(trans_id, ctx),
                     encoder.get_source_prez(source, ctx)
                 ));
-                let presences_equivalent = ctx.store.state.implies(
+                let presences_equivalent = doms.implies(
                     encoder.get_source_prez(source, ctx),
                     encoder.transitions.get_prez(trans_id, ctx),
                 );
@@ -170,7 +175,12 @@ fn encode_symmetry_breaking_rows(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, p
 }
 
 /// Pushes the "lifted-ground" or "ground rows"
-pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
+pub(super) fn encode_problem_ground(
+    encoder: &LpRelaxEncoder,
+    ctx: &SchedEncoder,
+    doms: &Domains,
+    problem: &mut LpRelaxProblem,
+) {
     let ground = &encoder.ground;
     let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
     let with_achievers = crate::lprelax::ARIES_LPRELAX_WITH_ACHIEVERS.get();
@@ -223,11 +233,11 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
             let presence = ColTag::PresenceTransition(trans_id, Some(trans_grounding_id)).into_linexpr();
             let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
 
-            debug_assert!(ctx.store.state.implies(
+            debug_assert!(doms.implies(
                 encoder.transitions.get_prez(trans_id, ctx),
                 encoder.get_source_prez(source, ctx)
             ));
-            let presences_equivalent = ctx.store.state.implies(
+            let presences_equivalent = doms.implies(
                 encoder.get_source_prez(source, ctx),
                 encoder.transitions.get_prez(trans_id, ctx),
             );
@@ -367,13 +377,8 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
         let source_presences = sum(source_groundings.map(|g| ColTag::PresenceSource(source, Some(g))));
 
         debug_assert!(
-            ctx.store
-                .state
-                .implies(encoder.get_source_prez(source, ctx), ctx.store.presence(term))
-                && ctx
-                    .store
-                    .state
-                    .implies(ctx.store.presence(term), encoder.get_source_prez(source, ctx))
+            doms.implies(encoder.get_source_prez(source, ctx), doms.presence(term))
+                && doms.implies(doms.presence(term), encoder.get_source_prez(source, ctx))
         );
 
         problem.push_row(ColTag::TermGround(term, value).into_linexpr().eq(source_presences));
@@ -673,7 +678,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
     }
 
     if crate::lprelax::ARIES_LPRELAX_WITH_GOAL_COMMODITIES.get() {
-        encode_goal_commodities(encoder, ctx, problem);
+        encode_goal_commodities(encoder, ctx, doms, problem);
     }
 }
 
@@ -692,7 +697,7 @@ pub(super) fn encode_problem_ground(encoder: &LpRelaxEncoder, ctx: &SchedEncoder
 //       its own state variable's argument at that position.
 //       A goal is skipped if one of its groundings has no required value (as the sink must be able to receive from each).
 //       Pure effs (other than the initial state's) let flow in at any value they assign, so they weaken these rows.
-fn encode_goal_commodities(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem: &mut LpRelaxProblem) {
+fn encode_goal_commodities(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, doms: &Domains, problem: &mut LpRelaxProblem) {
     use crate::EffectOp;
     use aries_solver::core::Lit;
     use hashbrown::HashMap;
@@ -749,7 +754,7 @@ fn encode_goal_commodities(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, problem
                     .filter(|&&t| {
                         // (the transition must be present whenever the supporter is)
                         t != supporter
-                            && ctx.store.state.implies(
+                            && doms.implies(
                                 encoder.transitions.get_prez(supporter, ctx),
                                 encoder.transitions.get_prez(t, ctx),
                             )

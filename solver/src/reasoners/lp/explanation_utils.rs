@@ -14,6 +14,7 @@ use crate::{
     },
 };
 
+/// A term `factor * var` of a sum, with a positive factor (the sign is carried by the signed variable).
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub(super) struct SumElem {
     pub factor: i128,
@@ -54,6 +55,7 @@ impl SumElem {
     }
 }
 
+/// The event that set the current lower bound of a term, in a snapshot of the domains.
 pub(super) struct LbBoundEvent<'a> {
     pub elem: SumElem,
     pub event: EventIndex,
@@ -68,8 +70,8 @@ impl<'a> Debug for LbBoundEvent<'a> {
 
 impl<'a> LbBoundEvent<'a> {
     pub fn new(elem: SumElem, domains: &'a DomainsSnapshot) -> Option<Self> {
-        let var_ub = domains.lb(elem.var);
-        let lit = Lit::geq(elem.var, var_ub);
+        let lb = domains.lb(elem.var);
+        let lit = Lit::geq(elem.var, lb);
         let event = domains.implying_event(lit)?;
 
         Some(Self { elem, event, domains })
@@ -129,7 +131,7 @@ impl<'a> Eq for LbBoundEvent<'a> {}
 
 impl<'a> Ord for LbBoundEvent<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Ordering is base on the event ID only
+        // Ordering is based on the event ID only
         // later event is bigger
         self.event.cmp(&other.event)
     }

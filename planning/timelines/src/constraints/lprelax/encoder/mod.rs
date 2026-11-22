@@ -132,21 +132,22 @@ impl LpRelaxEncoder {
         self.sort();
     }
 
-    /// Grounds the sources (see [`Self::ground`]), then encodes the problem's lifted and ground rows.
-    pub fn encode(&mut self, ctx: &SchedEncoder) -> LpRelaxProblem {
+    /// Grounds the sources (see [`Self::ground`]), then encodes the problem's lifted and ground rows
+    /// (with the domains `doms` of the main model's root level).
+    pub fn encode(&mut self, ctx: &SchedEncoder, doms: &aries_solver::core::state::Domains) -> LpRelaxProblem {
         self.ground(ctx);
 
         let mut problem = LpRelaxProblem::default();
 
         let time = std::time::Instant::now();
 
-        encode::encode_problem_lifted(self, ctx, &mut problem);
+        encode::encode_problem_lifted(self, ctx, doms, &mut problem);
 
         lprelax_log!("Collected lifted rows in {}", time.elapsed().as_secs_f64());
 
         let time = std::time::Instant::now();
 
-        encode::encode_problem_ground(self, ctx, &mut problem);
+        encode::encode_problem_ground(self, ctx, doms, &mut problem);
 
         lprelax_log!("Collected ground rows in {}", time.elapsed().as_secs_f64());
 

@@ -137,7 +137,7 @@ fn seed_known_values(
     ctx: &SchedEncoder,
     doms: &Domains,
 ) -> Result<(), Infeasible> {
-    for binding in encoder.bindings(ctx) {
+    for binding in encoder.bindings(ctx, doms) {
         // A binding fixes the value of its column only when it sets it to the column's other bound (e.g. `x <= 0` for `x` in `[0, ub]`).
         let fixes_value = match binding.bound {
             BoundKind::Lower => binding.tag.upper_bound() == Some(binding.value),
