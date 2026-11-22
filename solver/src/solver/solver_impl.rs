@@ -1114,6 +1114,12 @@ impl<Lbl: Label> Solver<Lbl> {
             );
             // propagate all theories
             for &i in self.reasoners.writers.get() {
+                if self.model.state.num_events() != num_events_at_start
+                    && self.reasoners.theories.get(i).propagate_at_quiescence_only()
+                {
+                    // called again in the next round, if the reasoners before it infer nothing then
+                    continue;
+                }
                 let trail_size = self.model.state.trail().len() as u64;
                 let theory_propagation_start = StartCycleCount::now();
                 self.stats[i].propagation_loops += 1;

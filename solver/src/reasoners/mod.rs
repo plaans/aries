@@ -75,6 +75,12 @@ pub trait Theory: Backtrack + Send {
     fn clone_box(&self) -> Box<dyn Theory>;
 
     fn on_search_start(&mut self) {}
+
+    /// If true, the solver only calls [`Self::propagate`] at quiescence
+    /// (i.e. in a round of propagation where the reasoners called before it have inferred nothing).
+    fn propagate_at_quiescence_only(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug)]
