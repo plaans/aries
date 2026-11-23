@@ -21,8 +21,8 @@ then a number of pivots for each conflict of the solver (see [`LpOptions::pivots
 Each propagation of the reasoner finishes at most one feasibility check of the LP, and the first check is at the root level.
 When the budget is small, a check might not reach a conclusion: it then goes on at the next propagations, at the same level,
 while the solver takes new decisions (until the solver backtracks below that level, which drops the check).
-Once a check is finished, the next one is at a level between the solver's level when the finished check started and its current level
-(see [`LpOptions::catch_up_fraction`]), and the levels below it are added to the LP without being checked.
+Once a check is finished, the next one closes part of the LP's lag behind the solver (see [`LpOptions::catch_up_fraction`]),
+and the levels below it are added to the LP without being checked.
 
 As a consequence, the LP is typically lagging behind the CP solver, and may detect unsatisfiability of a subtree that the
 CP solver has already spent many decisions/conflicts in.
@@ -125,12 +125,12 @@ pub struct LpOptions {
     /// The default value is controlled by [`LP_MIN_ACTIVITY`].
     pub min_activity: f64,
     /// Where the LP checks next, once a check is finished:
-    /// at level `min(e, s + catch_up_fraction * (e - s))`, where `s` is the model's level when the finished check started,
-    /// and `e` the model's current level (rounded up, and at least one level above the LP's if the model is above it).
+    /// at level `L + catch_up_fraction * (e - L)`, where `L` is the LP's level and `e` the model's
+    /// (rounded up, and at least one level above `L` if the model is above it).
     /// The levels below it are added to the LP without being checked.
     ///
     /// With 1, each new check is at the model's level.
-    /// With less, the LP only goes part of the way through the levels that the model added since the last check started.
+    /// With less, each new check only closes that fraction of the LP's lag behind the model.
     ///
     /// This is a bet: the feasibility of the skipped levels is unknown, but we bet on most of the checks to be feasible.
     /// If a skipped level is infeasible, the infeasibility will still be found by the check above it.
@@ -157,13 +157,19 @@ pub struct LpOptions {
     ///
     /// The default value is controlled by [`LP_CHECK_AT_QUIESCENCE`].
     pub check_at_quiescence: bool,
-    /// If true, after each feasible check *at the same level as the model*, the LP hints the brancher
-    /// at the values of the unset booleans whose literal alone forces an LP variable between 0 and 1 to 1 (see [`Theory::take_value_hints`]).
+    /// If true, after each feasible check *at most [`Self::boolean_value_hints_max_lag`] levels below the model's level*,
+    /// the LP hints the brancher at the values of the unset booleans whose literal alone forces an LP variable between 0 and 1 to 1
+    /// (see [`Theory::take_value_hints`]).
     /// The thresholds for the value in the LP solution are 0.9 (to be hinted to true) and 0.1 (to be hinted to false).
     /// Otherwise there is no hint.
     ///
     /// The default value is controlled by [`LP_BOOLEAN_VALUE_HINTS`].
     pub boolean_value_hints: bool,
+    /// How many levels the LP may lag behind the model when it hints (see [`Self::boolean_value_hints`]).
+    /// The more it lags, the more decisions its solution ignores, and the more likely its hints are to mislead the search.
+    ///
+    /// The default value is controlled by [`LP_BOOLEAN_VALUE_HINTS_MAX_LAG`].
+    pub boolean_value_hints_max_lag: u32,
     /// Would-be learned constraints from certificates involving more terms aren't learned (but their contradictions are still reported).
     /// The idea is to avoid the constraints that are too costly to check and to explain (both scan all their terms).
     ///
@@ -192,6 +198,7 @@ impl Default for LpOptions {
             adaptive_perturbations_after_pivots: LP_ADAPTIVE_AFTER_PIVOTS.get(),
             check_at_quiescence: LP_CHECK_AT_QUIESCENCE.get(),
             boolean_value_hints: LP_BOOLEAN_VALUE_HINTS.get(),
+            boolean_value_hints_max_lag: LP_BOOLEAN_VALUE_HINTS_MAX_LAG.get(),
             learned_max_terms: LP_LEARNED_MAX_TERMS.get(),
             learned_idle_work_budget: LP_LEARNED_IDLE_WORK_BUDGET.get(),
         }
@@ -236,6 +243,9 @@ pub static LP_CHECK_AT_QUIESCENCE: EnvParam<bool> = EnvParam::new("ARIES_LP_CHEC
 
 /// Whether the LP hints the brancher at the values of booleans, from its solutions (see [`LpOptions::boolean_value_hints`]).
 pub static LP_BOOLEAN_VALUE_HINTS: EnvParam<bool> = EnvParam::new("ARIES_LP_BOOLEAN_VALUE_HINTS", "false");
+
+/// How many levels the LP may lag behind the model when it hints (see [`LpOptions::boolean_value_hints_max_lag`]).
+pub static LP_BOOLEAN_VALUE_HINTS_MAX_LAG: EnvParam<u32> = EnvParam::new("ARIES_LP_BOOLEAN_VALUE_HINTS_MAX_LAG", "1");
 
 /// Maximum number of terms in certificates used to learn constraints (see [`LpOptions::learned_max_terms`]).
 pub static LP_LEARNED_MAX_TERMS: EnvParam<usize> = EnvParam::new("ARIES_LP_LEARNED_MAX_TERMS", "2000");
@@ -413,11 +423,6 @@ pub struct Lp {
     /// The LP level of a check that ran out of pivots: it goes on at that level in the next propagations,
     /// until the model backtracks below it.
     unfinished_check: Option<DecLvl>,
-    /// The LP level of the current check, and the model's level when it started.
-    check_start: Option<(DecLvl, DecLvl)>,
-    /// How far the model was above the LP when the last finished check started, or 0 once the LP has backtracked since
-    /// (see [`LpOptions::catch_up_fraction`]).
-    last_check_start_distance: u32,
     /// With [`LpOptions::boolean_value_hints`]: the literals that alone force an LP variable (between 0 and 1) to 1,
     /// and the hints at their values not given to the brancher yet.
     boolean_hint_lits: Vec<(Lit, Variable)>,
@@ -455,8 +460,6 @@ impl Lp {
             model_decision_level: DecisionLevelTracker::new(),
             check_level: DecLvl::ROOT,
             unfinished_check: None,
-            check_start: None,
-            last_check_start_distance: 0,
             boolean_hint_lits: Vec::new(),
             boolean_value_hints: Vec::new(),
 
@@ -950,23 +953,18 @@ impl Lp {
                 continue;
             }
 
-            if self.check_start.is_none_or(|(lp, _)| lp != self.lp_level()) {
-                self.check_start = Some((self.lp_level(), self.model_level()));
-            }
-
             // check feasibility with a maximum number of pivot operations.
             let feas_result = self.solver.check_feasibility(self.lp_deadline());
 
             match feas_result {
                 Ok(FeasibilityStatus::Feasible) => {
                     // we proved feasibility \o/
-                    // We allow a LP solution to hints at values only when the LP is at the same level as model.
+                    // We allow a LP solution to hint at values only when the LP lags little behind the model.
                     // When the LP is lagging behind, it is not aware of the decisions taken since,
                     // so its hints are more likely to mislead the search.
-                    let can_add_value_hints = self.options.boolean_value_hints && self.lp_level() == self.model_level();
-                    // (the catch-up places the next check from the model's level when this one started)
-                    self.last_check_start_distance = (self.check_start.take())
-                        .map_or(0, |(_, start)| start.to_int().saturating_sub(self.lp_level().to_int()));
+                    let lag = self.model_level().to_int() - self.lp_level().to_int();
+                    let can_add_value_hints =
+                        self.options.boolean_value_hints && lag <= self.options.boolean_value_hints_max_lag;
                     self.unfinished_check = None;
                     self.stats.num_feasible += 1;
                     if can_add_value_hints {
@@ -999,12 +997,7 @@ impl Lp {
     /// The level of the LP's next check, once its last check is finished (see [`LpOptions::catch_up_fraction`]).
     fn next_check_level(&self) -> DecLvl {
         let (lp, model) = (self.lp_level().to_int(), self.model_level().to_int());
-        if model == lp {
-            return self.model_level();
-        }
-        // (with distances from the LP's level, the levels `s` and `e` of the formula being `lp + d_s` and `lp + d_e`)
-        let (d_s, d_e) = (self.last_check_start_distance as f64, (model - lp) as f64);
-        let jump = d_e.min(d_s + self.options.catch_up_fraction * (d_e - d_s)).ceil() as u32;
+        let jump = (self.options.catch_up_fraction * (model - lp) as f64).ceil() as u32;
         DecLvl::new((lp + jump.max(1)).min(model))
     }
 }
@@ -1115,14 +1108,9 @@ impl Backtrack for Lp {
             self.bound_constrs.backtrack_to(self.lp_level());
             debug_assert_eq!(self.model_level(), self.lp_level());
             // the checks at the undone levels are dropped
-            if self.check_start.is_some_and(|(l, _)| self.lp_level() < l) {
-                self.check_start = None;
-            }
             if self.unfinished_check.is_some_and(|l| self.lp_level() < l) {
                 self.unfinished_check = None;
             }
-            // (back at the model's level, the LP's next check starts from there)
-            self.last_check_start_distance = 0;
         }
     }
 }
@@ -1539,6 +1527,7 @@ mod tests {
 
         let mut lp = Lp::default();
         lp.total_allowed_pivots = f64::INFINITY; // unlimited propagation
+        lp.options.catch_up_fraction = 1.0; // each new check at the model's level
         let aux_a: LpVar = lp.create_auxiliary_variable(0, 1);
         let aux_b: LpVar = lp.create_auxiliary_variable(0, 1);
         lp.enable();
@@ -1600,6 +1589,8 @@ mod tests {
         lp.save_state();
         d.set(p.leq(0), Cause::Decision).unwrap();
         d.set(q.leq(0), Cause::Decision).unwrap();
+        // (the LP's first check is at its root level, the next one at the model's level)
+        assert!(lp.propagate(&mut d).is_ok());
         assert!(
             lp.propagate(&mut d).is_ok(),
             "the second bound constraint is out of scope, so its column is still free"
