@@ -71,6 +71,7 @@ impl LpRelaxIncr {
                 causal_links,
                 symmetry_signatures,
                 grounding_tables,
+                grounding_tables_line_vars: Default::default(),
             },
             search_started: false,
             build_after_conflicts,

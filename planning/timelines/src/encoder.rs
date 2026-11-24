@@ -18,6 +18,8 @@ pub struct SchedEncoder {
     pub symmetry_signatures: Vec<Vec<crate::constraints::symmetry::SignatureItem>>,
     /// Recorded when enforcing [`crate::constraints::grounding::TasksUnifyWithGrounding`].
     pub grounding_tables: Option<GroundingTables>,
+    /// The variables of the line literals posted by [`crate::constraints::grounding::TasksUnifyWithGrounding`].
+    pub grounding_tables_line_vars: Vec<Var>,
 }
 
 impl Dom for SchedEncoder {

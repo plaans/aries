@@ -159,7 +159,7 @@ impl Grounder {
             }
 
             let Ok(terms) = collect_effect_datalog_terms(eff) else {
-                continue
+                continue;
             };
             Self::add_domain_facts_for_terms(program, terms.iter(), ctx, cache_seen_doms);
 

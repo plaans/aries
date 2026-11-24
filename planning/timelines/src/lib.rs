@@ -216,8 +216,9 @@ impl Sched {
             sched: Arc::new(self),
             store,
             causal_links: CausalLinks::default(),
-            symmetry_signatures: Vec::new(),
+            symmetry_signatures: Default::default(),
             grounding_tables: None,
+            grounding_tables_line_vars: Default::default(),
         }
     }
 

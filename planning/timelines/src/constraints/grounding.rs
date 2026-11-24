@@ -6,6 +6,7 @@ use aries_solver::{
         constraints::{InTable, Table},
     },
     prelude::*,
+    solver::search::activity::{DefaultHeuristic, Heuristic},
 };
 
 use crate::encoder::SchedEncoder;
@@ -81,7 +82,10 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
             }
             .scoped(task_prez)
             .opt_enforce_if(implicant, ctx);
-            line_lits.insert(task, task_line_lits.into_inner());
+            let task_line_lits = task_line_lits.into_inner();
+            ctx.grounding_tables_line_vars
+                .extend(task_line_lits.iter().map(|l| l.variable()));
+            line_lits.insert(task, task_line_lits);
         }
 
         if crate::lprelax::ARIES_LPRELAX_WITH_TABLE_LITS.get() {
@@ -112,5 +116,23 @@ impl<Ctx: ModelView> BoolExpr<Ctx> for InTableWithLineLits<'_> {
 
     fn conj_scope(&self, ctx: &Ctx) -> Conjunction {
         self.table.conj_scope(ctx)
+    }
+}
+
+/// Whether the brancher decides the line literals of the tables after all other variables, so that the tasks' parameters
+/// are decided first and the lines follow by propagation.
+pub static ARIES_TABLE_LINES_LAST: aries_env_param::EnvParam<bool> =
+    aries_env_param::EnvParam::new("ARIES_TABLE_LINES_LAST", "false");
+
+/// The default branching heuristic, except that the given variables (the line literals of the tables) are decided last.
+pub struct GroundingTablesLinesLastHeuristic(pub std::collections::HashSet<Var>);
+
+impl Heuristic<crate::Sym> for GroundingTablesLinesLastHeuristic {
+    fn decision_stage(&self, var: Var, label: Option<&crate::Sym>, model: &crate::Model) -> u8 {
+        if self.0.contains(&var) {
+            2
+        } else {
+            DefaultHeuristic.decision_stage(var, label, model)
+        }
     }
 }

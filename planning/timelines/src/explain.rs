@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use aries_solver::backtrack::Backtrack;
 use aries_solver::prelude::*;
 use aries_solver::reasoners::lp::LpOptions;
-use aries_solver::{
-    backtrack::Backtrack,
-    solver::{Solver, musmcs::MusMcs},
-};
+use aries_solver::solver::search::activity::ActivityBrancher;
+use aries_solver::solver::{Solver, musmcs::MusMcs};
+
 use itertools::Itertools;
 
 use crate::lprelax::wrappers::LpRelaxIncr;
@@ -44,6 +44,8 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
                 c.enforce(&mut encoding);
             }
         }
+        let grounding_tables_line_vars = std::mem::take(&mut encoding.grounding_tables_line_vars);
+
         let mut solver = match crate::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
             "incr" => {
                 let reasoner = LpRelaxIncr::new(
@@ -55,6 +57,13 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             }
             _ => Solver::new(encoding.store),
         };
+        if crate::constraints::grounding::ARIES_TABLE_LINES_LAST.get() {
+            solver.set_brancher(ActivityBrancher::new_with_heuristic(
+                crate::constraints::grounding::GroundingTablesLinesLastHeuristic(
+                    grounding_tables_line_vars.into_iter().collect(),
+                ),
+            ));
+        }
 
         // enable stronger propagation than default in difference logic solver.
         // this is useful in planning models where bounds are not sufficient to reason on precedence between tasks
