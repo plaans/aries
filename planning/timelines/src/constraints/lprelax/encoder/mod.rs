@@ -41,7 +41,7 @@ impl LpRelaxEncoder {
             &transitions,
             ctx,
             dom,
-            super::ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS.get(),
+            super::LPRELAX_WITH_CONDITION_OUT_TRANSITIONS.get(),
         );
         Self {
             transitions,

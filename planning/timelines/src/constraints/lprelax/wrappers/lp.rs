@@ -11,7 +11,7 @@ use aries_solver::reasoners::{Contradiction, ReasonerId, Theory};
 use aries_solver::reasoners::lp::{BoundRestriction, Lp, LpOptions, LpSum, LpVar};
 
 use crate::SchedEncoder;
-use crate::lprelax::ARIES_LPRELAX_MERGE_EQUAL_COLUMNS;
+use crate::lprelax::LPRELAX_MERGE_EQUAL_COLUMNS;
 use crate::lprelax::encoder::LpRelaxEncoder;
 use crate::lprelax::encoder::problem::{ColTag, LpRelaxProblem};
 
@@ -54,7 +54,7 @@ impl LpRelaxIncr {
     /// (the LP is built from the domains of the solver's root level).
     ///
     /// The LP is built and posted once the search has made `build_after_conflicts` conflicts
-    /// (see [`crate::lprelax::ARIES_LP_BUILD_AFTER_CONFLICTS`] for the default).
+    /// (see [`crate::lprelax::ARIES_LPRELAX_BUILD_AFTER_CONFLICTS`] for the default).
     pub(crate) fn new(ctx: &mut SchedEncoder, lp_options: LpOptions, build_after_conflicts: u64) -> Self {
         let mut lp = Lp::new(Self::IDENTITY, lp_options);
         lp.enable();
@@ -103,7 +103,7 @@ impl LpRelaxIncr {
         let time = std::time::Instant::now();
 
         let mut problem = encoder.encode(&self.ctx, root_doms);
-        problem.seal_simplified(encoder, &self.ctx, root_doms, ARIES_LPRELAX_MERGE_EQUAL_COLUMNS.get());
+        problem.seal_simplified(encoder, &self.ctx, root_doms, LPRELAX_MERGE_EQUAL_COLUMNS.get());
 
         let vars = post_variables_and_rows(&problem, root_doms, &mut self.lp);
         post_bindings(&vars, encoder, &self.ctx, root_doms, &mut self.lp);

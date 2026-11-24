@@ -88,7 +88,7 @@ impl BoolExpr<SchedEncoder> for TasksUnifyWithGrounding {
             line_lits.insert(task, task_line_lits);
         }
 
-        if crate::lprelax::ARIES_LPRELAX_WITH_TABLE_LITS.get() {
+        if crate::lprelax::LPRELAX_WITH_TABLE_LITS.get() {
             ctx.grounding_tables = Some(crate::encoder::GroundingTables {
                 groundings,
                 table_line_lits: line_lits,

@@ -113,7 +113,7 @@ pub(super) fn encode_problem_lifted(
         }
     }
 
-    if crate::lprelax::ARIES_LPRELAX_WITH_SYMMETRY_BREAKING.get() {
+    if crate::lprelax::LPRELAX_WITH_SYMMETRY_BREAKING.get() {
         assert!(
             !encoder.supports.with_condition_out_transitions,
             "the symmetry breaking rows (ARIES_LPRELAX_WITH_SYMMETRY_BREAKING=true) need conds not as out-transitions (ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=false)"
@@ -182,18 +182,18 @@ pub(super) fn encode_problem_ground(
     problem: &mut LpRelaxProblem,
 ) {
     let ground = &encoder.ground;
-    let with_initial_state_supports = crate::lprelax::ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
-    let with_achievers = crate::lprelax::ARIES_LPRELAX_WITH_ACHIEVERS.get();
+    let with_initial_state_supports = crate::lprelax::LPRELAX_WITH_INITIAL_STATE_SUPPORTS.get();
+    let with_achievers = crate::lprelax::LPRELAX_WITH_ACHIEVERS.get();
     let (with_value_graph_flow, with_support_graph_flow) =
-        match crate::lprelax::ARIES_LPRELAX_WITH_FLOW_CONSTRS.get_ref().as_str() {
+        match crate::lprelax::LPRELAX_WITH_FLOW_CONSTRS.get_ref().as_str() {
             "none" => (false, false),
             "valgraph" => (true, false),
             "supgraph" => (false, true),
             other => panic!("unknown ARIES_LPRELAX_WITH_FLOW_CONSTRS: {other} (expected none, valgraph or supgraph)"),
         };
-    let with_ground_supports = crate::lprelax::ARIES_LPRELAX_WITH_GROUND_SUPPORTS.get();
-    let with_net_change_constrs = crate::lprelax::ARIES_LPRELAX_WITH_NET_CHANGE_CONSTRS.get();
-    let with_goal_net_change_constrs = crate::lprelax::ARIES_LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS.get();
+    let with_ground_supports = crate::lprelax::LPRELAX_WITH_GROUND_SUPPORTS.get();
+    let with_net_change_constrs = crate::lprelax::LPRELAX_WITH_NET_CHANGE_CONSTRS.get();
+    let with_goal_net_change_constrs = crate::lprelax::LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS.get();
     assert!(
         with_ground_supports || !with_support_graph_flow,
         "the support graph flow (ARIES_LPRELAX_WITH_FLOW_CONSTRS=supgraph) needs the ground supports (ARIES_LPRELAX_WITH_GROUND_SUPPORTS=true)"
@@ -676,7 +676,7 @@ pub(super) fn encode_problem_ground(
         }
     }
 
-    if crate::lprelax::ARIES_LPRELAX_WITH_GOAL_COMMODITIES.get() {
+    if crate::lprelax::LPRELAX_WITH_GOAL_COMMODITIES.get() {
         encode_goal_commodities(encoder, ctx, doms, problem);
     }
 }

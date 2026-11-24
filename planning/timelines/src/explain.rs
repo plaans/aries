@@ -46,12 +46,12 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         }
         let grounding_tables_line_vars = std::mem::take(&mut encoding.grounding_tables_line_vars);
 
-        let mut solver = match crate::lprelax::ARIES_LPRELAX_USE.get_ref().as_str() {
+        let mut solver = match crate::lprelax::LPRELAX_USE.get_ref().as_str() {
             "incr" => {
                 let reasoner = LpRelaxIncr::new(
                     &mut encoding,
                     LpOptions::default(),
-                    crate::lprelax::ARIES_LP_BUILD_AFTER_CONFLICTS.get(),
+                    crate::lprelax::LPRELAX_BUILD_AFTER_CONFLICTS.get(),
                 );
                 Solver::with_extra_reasoners(encoding.store, vec![Box::new(reasoner)])
             }

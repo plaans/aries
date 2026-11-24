@@ -102,7 +102,7 @@ ci-ape-solve-lprelax-root timeout="60":
     solve() {
         echo "lprelax incr: $*"
         env ARIES_LPRELAX_USE=incr \
-            ARIES_LP_BUILD_AFTER_CONFLICTS=0 \
+            ARIES_LPRELAX_BUILD_AFTER_CONFLICTS=0 \
             ARIES_LP_INITIALLY_ALLOWED_PIVOTS=inf \
             ARIES_LP_MAX_PIVOTS_PER_PROPAGATION=inf \
             ARIES_LP_ACTIVITY_DECAY=0 \
