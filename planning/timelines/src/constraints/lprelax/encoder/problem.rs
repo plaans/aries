@@ -33,7 +33,7 @@ pub enum ColTag {
     /// on a ground state variable.
     SupportGraphFlow(Option<TransitionId>, TransitionId, StateVarGroundingId),
     /// The flow along the value change made by the ground transitions with this grounding:
-    /// on their ground state variable, from their pre-value (which is `None` for effs) to their post-value.
+    /// on their ground state variable, from their pre-value (which is `None` for effs) to their post-value (for non-erase effs).
     ValueGraphFlow(TransitionGroundingId),
     /// The total presence of the ground transitions "entering" a given post-value on a ground state variable
     /// (i.e. the post-value's "achiever" ground transitions).

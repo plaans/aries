@@ -1,25 +1,27 @@
-pub(crate) mod ctags;
 mod export;
 mod generate;
 pub(crate) mod optimize_plan;
 mod preprocessing;
-mod repair;
 mod validate;
 
-use std::{io::IsTerminal, path::PathBuf};
+use std::{
+    io::IsTerminal,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
-use aries_plan_engine::plans::lifted_plan;
 use clap::*;
 use planx::{
-    Message, RealValue, Res,
+    Message, Model, RealValue, Res,
     errors::*,
     pddl::{self, input::Input},
 };
 
 use crate::{
     export::ReportMetadata,
-    preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess},
-    repair::RepairOptions,
+    generate::{PlanGenerationResult, SolveFiniteArgs},
+    optimize_plan::Objective,
+    preprocessing::{DEFAULT_MODEL_TRANSFORMATIONS, preprocess, preprocess_model},
 };
 
 /// Aries Planning Engine (APE)
@@ -55,11 +57,11 @@ enum Commands {
     Validate(Validate),
     /// Plan optimization: specify an input plan, metrics and relaxation options and get an optmized plan.
     OptimizePlan(OptimizePlan),
+    /// Solve the planning problem.
+    Solve(SolveProblem),
     /// (Finite) planning problem solving (plan generation):
     /// find a solution plan using, at most, a given finite number of action instances for each template (schema).
     SolveFinite(SolveFiniteProblem),
-    /// Domain repair: proposing fixes of a domain based on a valid plan.
-    DomRepair(DomRepair),
     FindDomain(FindDomain),
     FindProblem(FindProblem),
 }
@@ -72,6 +74,9 @@ pub struct Parse {
     /// If not specified, we will attempt to automatically infer it based on the plan file.
     #[arg(short, long)]
     domain: Option<PathBuf>,
+    /// If set to true, the default preprocessing passes will be applied before printing the domain.
+    #[arg(short, long)]
+    preprocess: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -132,6 +137,14 @@ pub struct OptimizePlan {
     #[arg(short = 'w', long = "write-plan")]
     plan_file: Option<PathBuf>,
 }
+#[derive(Parser, Debug)]
+pub struct SolveProblem {
+    /// Expanded to provide command line options to get the problem and domain
+    #[command(flatten)]
+    pb: Problem,
+    #[command(flatten)]
+    options: generate::SolveOptions,
+}
 
 #[derive(Parser, Debug)]
 pub struct SolveFiniteProblem {
@@ -139,21 +152,7 @@ pub struct SolveFiniteProblem {
     #[command(flatten)]
     pb: Problem,
     #[command(flatten)]
-    options: generate::Options,
-}
-
-#[derive(Parser, Debug)]
-pub struct DomRepair {
-    /// Expanded to provide command line options to get the plan, problem and domain
-    #[command(flatten)]
-    plan_pb: PlanAndProblem,
-    #[command(flatten)]
-    options: RepairOptions,
-    /// If provided, we will check that the number of repairs found is the one given here.
-    /// If not, we will terminate the process with an error.
-    /// (mainly intended for automated verifications and integration tests)
-    #[arg(short, long)]
-    expected_repairs: Option<usize>,
+    options: generate::SolveFiniteOptions,
 }
 
 fn main() -> Res<()> {
@@ -175,8 +174,8 @@ fn main() -> Res<()> {
         Commands::FindProblem(command) => find_problem(command)?,
         Commands::Validate(command) => validate_plan(command)?,
         Commands::OptimizePlan(command) => optimize_plan(command)?,
+        Commands::Solve(command) => solve_problem(command)?,
         Commands::SolveFinite(command) => solve_finite_problem(command)?,
-        Commands::DomRepair(command) => repair(command)?,
     }
 
     Ok(())
@@ -205,6 +204,12 @@ fn parse(command: &Parse) -> Res<()> {
     let problem = pddl::parse_pddl_problem(problem_file)?;
 
     let model = pddl::build_model(&domain, &problem)?;
+
+    let model = if command.preprocess {
+        crate::preprocessing::preprocess_model(model, DEFAULT_MODEL_TRANSFORMATIONS)?
+    } else {
+        model
+    };
 
     println!("{model}");
     Ok(())
@@ -252,11 +257,15 @@ fn find_problem(command: &FindProblem) -> Res<()> {
 
 /// Overrides the metrics of the model.
 fn set_metric(model: &mut planx::Model, metrics: &[optimize_plan::Objective]) -> Res<()> {
-    model.metrics.clear();
+    let original = std::mem::take(&mut model.metrics);
     for obj in metrics {
         let expr = match obj {
             optimize_plan::Objective::PlanLength => planx::Expr::PlanLength,
             optimize_plan::Objective::Makespan => planx::Expr::Makespan,
+            optimize_plan::Objective::Original => {
+                model.metrics.extend_from_slice(&original);
+                continue;
+            }
         };
         let expr = model.env.intern(expr, None)?;
         model.metrics.push(planx::Metric::Minimize(expr));
@@ -269,12 +278,12 @@ fn validate_plan(command: &Validate) -> Res<()> {
 
     // processed model (from planx)
     let mut model = pddl::build_model(&dom, &pb)?;
+    let plan = pddl::build_plan(&plan, &model)?;
     if model.metrics.is_empty() {
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
-    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let (model, plan) = preprocess(model, plan, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
-    let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     if command.verbose {
         println!("\n===== Model ====\n\n{model}\n");
         println!("\n===== Plan ====\n\n{plan}\n");
@@ -306,6 +315,7 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     let (dom, pb, plan) = command.plan_pb.parse()?;
 
     let mut model = pddl::build_model(&dom, &pb)?;
+    let plan = pddl::build_plan(&plan, &model)?;
     if !command.options.objectives.is_empty() {
         // override provided metrics
         set_metric(&mut model, &command.options.objectives)?;
@@ -313,9 +323,8 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
         // set default metric to plan length
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
-    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let (model, plan) = preprocess(model, plan, DEFAULT_MODEL_TRANSFORMATIONS)?;
 
-    let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
     println!("{model}");
     println!("\n===== Plan ====\n\n{plan}\n");
 
@@ -336,63 +345,106 @@ fn optimize_plan(command: &OptimizePlan) -> Res<()> {
     Ok(())
 }
 
-fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
-    let (dom, pb) = command.pb.parse()?;
+fn build_model(pb_paths: &Problem, cli_objectives: &[Objective]) -> Res<Model> {
+    let (dom, pb) = pb_paths.parse()?;
 
     // processed model (from planx)
     let mut model = pddl::build_model(&dom, &pb)?;
-    if !command.options.objectives.is_empty() {
+    if !cli_objectives.is_empty() {
         // override provided metrics
-        set_metric(&mut model, &command.options.objectives)?;
+        set_metric(&mut model, cli_objectives)?;
     } else if model.metrics.is_empty() {
         // set default metric to plan length
         set_metric(&mut model, &[optimize_plan::Objective::PlanLength])?;
     }
-    let model = preprocess(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    let model = preprocess_model(model, DEFAULT_MODEL_TRANSFORMATIONS)?;
+    Ok(model)
+}
 
-    let model = planx::preprocessing::convert_reals_to_int(&model)?;
+fn solve_problem(command: &SolveProblem) -> Res<()> {
+    dbg!(&command.options);
+    let deadline = command
+        .options
+        .timeout_s
+        .map(|dur| Instant::now() + Duration::from_secs_f64(dur));
+
+    let model = build_model(&command.pb, &command.options.objectives)?;
     println!("{model}");
 
-    let result = generate::solve_finite_planning_problem(&model, &command.options)?;
+    let mut result = PlanGenerationResult::trivial_unsat();
+
+    let min_depth = command.options.min_depth.unwrap_or(0);
+    let max_depth = command.options.max_depth.unwrap_or(u32::MAX);
+    for depth in min_depth..=max_depth {
+        if deadline.is_some_and(|deadline| deadline <= Instant::now()) {
+            result.merge_split_solve(PlanGenerationResult::trivial_timeout());
+            println!("Deadline passed...");
+            break;
+        }
+        println!("\n ------- Depth: {depth} -------\n");
+        let subproblem_result = generate::solve_finite_planning_problem(
+            &model,
+            &SolveFiniteArgs {
+                optimize: false,
+                max_instances: depth,
+                plan_file: command.options.plan_file.clone(),
+                deadline,
+            },
+        )?;
+        result.merge_split_solve(subproblem_result);
+        if result.solution.is_some() {
+            break; // not optimizing, stop immediately
+        }
+    }
+    println!("\n{result}\n");
     if let Some(report_dir) = command.options.report_dir.as_ref() {
         // export a report to store in the associated directory
         // with the filename as identifier (there may be many problems with the same name)
         // and specifies the maximum depth to ensure we have distinct report for different depths.
         let report = result.generate_report(
-            ReportMetadata::new(command.pb.problem.to_string_lossy().to_string(), None)
-                .with_flag("depth", command.options.max_instances),
+            ReportMetadata::new(
+                command.pb.problem.to_string_lossy().to_string(),
+                command.options.timeout_s.map(Duration::from_secs_f64),
+            )
+            .with_opt_flag("min-depth", command.options.min_depth)
+            .with_opt_flag("max-depth", command.options.max_depth),
         );
         export::export_report_to_dir(report_dir, report)?;
     }
-
     Ok(())
 }
 
-fn repair(command: &DomRepair) -> Res<()> {
-    let (dom, pb, plan) = command.plan_pb.parse()?;
+fn solve_finite_problem(command: &SolveFiniteProblem) -> Res<()> {
+    let deadline = command
+        .options
+        .timeout_s
+        .map(|dur| Instant::now() + Duration::from_secs_f64(dur));
 
-    // processed model (from planx)
-    let model = pddl::build_model(&dom, &pb)?;
-    let plan = lifted_plan::parse_lifted_plan(&plan, &model)?;
+    let model = build_model(&command.pb, &command.options.objectives)?;
     println!("{model}");
-    //println!("{plan:?}");
 
-    let report = repair::domain_repair(&model, &plan, &command.options)?;
-    println!(
-        "REPORT {:<90} {}    {:>4} (#actions)",
-        &command.plan_pb.plan.display(),
-        report,
-        plan.operations.len()
-    );
-    if let Some(expected) = command.expected_repairs {
-        match report.status {
-            repair::RepairStatus::ValidPlan => assert_eq!(expected, 0, "Expected a valid plan (no repairs)"),
-            repair::RepairStatus::SmallestFound(num_repairs) => assert_eq!(
-                num_repairs, expected,
-                "Got {num_repairs} instead of the expected {expected}"
-            ),
-            repair::RepairStatus::Unrepairable => panic!(),
-        }
+    let result = generate::solve_finite_planning_problem(
+        &model,
+        &SolveFiniteArgs {
+            optimize: command.options.optimize,
+            max_instances: command.options.max_instances,
+            plan_file: command.options.plan_file.clone(),
+            deadline,
+        },
+    )?;
+    println!("\n{result}\n");
+    if let Some(report_dir) = command.options.report_dir.as_ref() {
+        // export a report to store in the associated directory
+        // with the filename as identifier (there may be many problems with the same name)
+        // and specifies the maximum depth to ensure we have distinct report for different depths.
+        let report = result.generate_report(
+            ReportMetadata::new(
+                command.pb.problem.to_string_lossy().to_string(),
+                command.options.timeout_s.map(Duration::from_secs_f64),
+            )
+            .with_flag("depth", command.options.max_instances),
+        );
+        export::export_report_to_dir(report_dir, report)?;
     }
 
     Ok(())

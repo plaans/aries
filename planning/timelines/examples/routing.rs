@@ -62,11 +62,12 @@ fn solve_routing(pb: &Problem) -> Option<Vec<Op>> {
         // the truck must be at the depot
         // Placing a condition like this forces the solver to find an effect that establishes th required value
         model.add_constraint(HasValueAt {
-            state_var: truck_loc(t),  // the state variable denoting the location of this truck
-            value: pb.depot.into(),   // must have the value `depot`
-            timepoint: model.horizon, // at the end of the plan
-            prez: Lit::TRUE,          // this must always be true
-            source: None,             // not tied to any task
+            state_var: truck_loc(t),      // the state variable denoting the location of this truck
+            value: pb.depot.into(),       // must have the value `depot`
+            period: model.horizon.into(), // at the end of the plan
+            prez: Lit::TRUE,              // this must always be true
+            source: None,                 // not tied to any task
+            borrow: None,                 // not part of a borrow
         });
 
         // each truck has an action that allows returning to the depot
@@ -152,9 +153,10 @@ fn add_move_to_action(truck: Option<IntCst>, to: IntCst, model: &mut Sched, pb: 
     model.add_constraint(HasValueAt {
         state_var: truck_loc(truck), // state variable denoting the location of the truck
         value: from.into(),          // must have the value `from` (action parameter)
-        timepoint: start,            // at the action start
+        period: start.into(),        // at the action start
         prez: presence,              // only needs to hold when the action is present
         source: Some(task_id),       // condition introduced as part of the current action
+        borrow: None,                // not part of a borrow
     });
 
     // returns a representation of the action, to allow accessing its parameters

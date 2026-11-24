@@ -8,7 +8,6 @@ edition = "2024"
 
 [dependencies]
 clap = { workspace = true }
-derivative = { workspace = true }
 derive_more = { workspace = true }
 itertools = { workspace = true }
 im = { workspace = true }
@@ -19,6 +18,7 @@ tracing-subscriber = { workspace = true }
 planx = { path = "../planx" }
 timelines = { package = "aries-timelines", path = "../timelines" }
 aries-solver = { path = "../../solver" }
+aries-env-param = { path = "../../utils/env_param" }
 aries-bench-data = { path = "../../bench/data" }
 
 

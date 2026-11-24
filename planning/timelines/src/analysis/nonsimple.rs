@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// An effect is considered "nonsimple" when one of the following holds:
-/// - it is not an assignment (or an erase (?WARNING?))
+/// - it is not an assignment or an erase
 /// - its non-constant terms (variables) do not all appear in their source's arguments
 ///   (this can happen if it uses a reified variable that is not part of the source's arguments).
 ///
@@ -29,12 +29,18 @@ fn collect_nonsimple_effects(ctx: &SchedEncoder) -> HashSet<EffectId> {
 
     for (eff_id, eff) in ctx.sched.effects.iter().enumerate() {
         match eff.operation {
-            crate::EffectOp::Assign(term) => {
-                if !all_nonconstant_terms_are_included_in_source_terms(
-                    eff.state_var.args.iter().chain(&[term]).copied(),
-                    eff.source,
-                    ctx,
-                ) {
+            crate::EffectOp::Assign(_) | crate::EffectOp::Erase => {
+                let terms =
+                    eff.state_var
+                        .args
+                        .iter()
+                        .copied()
+                        .chain(if let crate::EffectOp::Assign(term) = eff.operation {
+                            Some(term)
+                        } else {
+                            None
+                        });
+                if !all_nonconstant_terms_are_included_in_source_terms(terms, eff.source, ctx) {
                     res.insert(eff_id);
                 }
             }

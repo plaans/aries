@@ -490,7 +490,7 @@ pub(super) fn encode_problem_ground(
     //
     // NOTE: These constraints correspond to a single-commodity flow formulation over the "value graph" of each ground state variable.
     //       Its nodes are the state variable's values and `None`, and its arcs are the value changes made by ground transitions,
-    //       from their pre-value (`None` for effs) to their post-value.
+    //       from their pre-value (`None` for effs) to their post-value (for non-erase effs).
     //       This value graph is similar to a domain transition graph (DTG), which uses (ground) actions as arcs instead of transition groundings.
     //
     //       The constraints are of two types: capacity and balance.
@@ -628,6 +628,8 @@ pub(super) fn encode_problem_ground(
     //       Two goals on a same value can share their arrival, so there is one row per goal.
     //       (Corresponds to the net-change constraints of operator counting, with their goal term)
     //
+    //       Erase effects count as departures.
+    //
     //       The goal term isn't valid for goals before the horizon: a departure after the goal can use up the goal's arrival.
     //       Conditions of the empty source before the horizon are left as other conditions (i.e. out of these rows).
     //
@@ -636,7 +638,7 @@ pub(super) fn encode_problem_ground(
         let is_goal_at_horizon = |trans_id: TransitionId| match encoder.transitions.get(trans_id) {
             Transition::Cond(cond_id) => {
                 encoder.transitions.get_source(trans_id, ctx).is_none()
-                    && ctx.causal_links.conditions.get(cond_id).timepoint == ctx.sched.horizon
+                    && ctx.causal_links.conditions.get(cond_id).period == ctx.sched.horizon.into()
             }
             Transition::Eff(_) | Transition::CondEff(..) => false,
         };
@@ -649,13 +651,10 @@ pub(super) fn encode_problem_ground(
                     terms.push((g.pre_val_assignment.unwrap(), Some(trans_id), presence, -1));
                     continue;
                 }
-                let Some(post_val) = g.post_op_assignment else {
-                    continue;
-                };
-                if g.pre_val_assignment == Some(post_val) {
+                if g.pre_val_assignment.is_some() && g.pre_val_assignment == g.post_op_assignment {
                     continue; // (doesn't change the value)
                 }
-                terms.push((post_val, None, presence, 1));
+                terms.extend(g.post_op_assignment.map(|post_val| (post_val, None, presence, 1)));
                 terms.extend(g.pre_val_assignment.map(|pre_val| (pre_val, None, presence, -1)));
             }
             terms.sort_unstable_by_key(|&(value, goal, _, _)| (value, goal));
@@ -729,6 +728,7 @@ fn encode_goal_commodities(encoder: &LpRelaxEncoder, ctx: &SchedEncoder, doms: &
         Transition::Eff(eff_id) | Transition::CondEff(_, eff_id) => match ctx.sched.effects.get(eff_id).operation {
             EffectOp::Assign(term) => Some(term),
             EffectOp::Step(_) => None,
+            EffectOp::Erase => None,
         },
         Transition::Cond(_) => None,
     };

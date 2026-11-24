@@ -198,11 +198,15 @@ pub fn build_model(dom: &Domain, prob: &Problem) -> Res<Model> {
     Ok(model)
 }
 
-pub fn build_plan(plan: &pddl::Plan, model: &Model) -> Res<Plan> {
+/// Creates a plan from a parsed PDDL plan.
+///
+/// If the operation have no timestamp and duration, these are placed
+/// in appearance order at times 0, 1, 2..., with a duration of 0.
+pub fn build_plan(plan: &pddl::Plan, model: &Model) -> Res<SolutionPlan> {
     match plan {
         pddl::Plan::ActionSequence(action_instances) => {
             let mut operators = Vec::with_capacity(action_instances.len());
-            for a in action_instances {
+            for (i, a) in action_instances.iter().enumerate() {
                 let action = model
                     .actions
                     .get_action(&a.name)
@@ -226,13 +230,19 @@ pub fn build_plan(plan: &pddl::Plan, model: &Model) -> Res<Plan> {
                     }
                     arguments.push(obj);
                 }
-                operators.push(Operator {
+                let op = crate::plan::Operation {
+                    start: a.start.unwrap_or(RealValue::from_integer(i as i64)),
+                    duration: a.duration.unwrap_or(RealValue::ZERO),
                     action_ref: action.name.clone(),
                     arguments,
                     span: Some(a.span.clone()),
-                });
+                };
+                operators.push(op);
             }
-            Ok(Plan::Sequential(operators))
+            Ok(SolutionPlan {
+                operations: operators,
+                metrics: vec![],
+            })
         }
     }
 }
@@ -463,37 +473,43 @@ fn into_effect(
             expr.loc(),
         ))
     }
-    if let Some([arg]) = expr.as_application("not") {
+    let time = time.into();
+    let mut effect = if let Some([arg]) = expr.as_application("not") {
         let contradiction = env.intern(Expr::Bool(false), None)?;
         let sv = parse_sv(arg, Some(Type::Bool), env, bindings)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, contradiction))
+        SimpleEffect::assignement(time, sv, contradiction)
     } else if let Some([sv, val]) = expr.as_application("=") {
         let sv = parse_sv(sv, None, env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, val))
+        SimpleEffect::assignement(time, sv, val)
     } else if let Some([sv, val]) = expr.as_application("assign") {
         let sv = parse_sv(sv, None, env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, val))
+        SimpleEffect::assignement(time, sv, val)
     } else if let Some([sv, val]) = expr.as_application("increase") {
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::increase(time.into(), sv, val))
+        SimpleEffect::increase(time, sv, val)
     } else if let Some([sv, val]) = expr.as_application("decrease") {
         // (increase (fuel-level r1) 2)
         let sv = parse_sv(sv, Some(Type::Real), env, bindings)?;
         let val = parse(val, env, bindings)?;
         env.node(sv.fluent).tpe().accepts(val, env).msg(env)?;
-        Ok(SimpleEffect::decrease(time.into(), sv, val))
+        SimpleEffect::decrease(time, sv, val)
     } else {
         let tautology = env.intern(Expr::Bool(true), None)?;
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
-        Ok(SimpleEffect::assignement(time.into(), sv, tautology))
-    }
+        SimpleEffect::assignement(time, sv, tautology)
+    };
+    //Initial effects (placed at the Origin) are immediately available
+    if time == Timestamp::ORIGIN {
+        effect.transition_end = Timestamp::ORIGIN;
+    };
+    Ok(effect)
 }
 
 fn parse_subtask(t: &pddl::Task, env: &mut Environment, actions: &Actions, bindings: &Rc<Bindings>) -> Res<Subtask> {
@@ -795,7 +811,7 @@ fn timed_sexpr(sexpr: &SExpr) -> Result<(TimeInterval, &SExpr), Message> {
         }
         "over" => {
             items.pop_known_atom("all")?;
-            TimeInterval::closed(TimeRef::ActionStart, TimeRef::ActionEnd)
+            TimeInterval::open(TimeRef::ActionStart, TimeRef::ActionEnd)
         }
         _ => return Err(first.invalid("expected `at` or `over`")),
     };

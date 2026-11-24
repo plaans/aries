@@ -21,7 +21,7 @@ pub type StateVarGroundingId = usize;
 
 /// The id of a transition grounding: its ground state variable (by which it sorts first),
 /// the value it reads (`pre_val_assignment`, `None` for an eff),
-/// and the value it hands over (`post_op_assignment`).
+/// and the value it hands over (`post_op_assignment`, `None` for an erase eff).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TransitionGroundingId {
     pub(super) state_var_grounding_id: StateVarGroundingId,
@@ -533,8 +533,8 @@ impl TransitionsGroundingsInfo {
 }
 
 /// A ground support (between two transitions): the ground state variable, and the value handed over
-/// (the `post_op_assignment` of the out-transition's groundings).
-pub type SupportGroundingId = (StateVarGroundingId, IntCst);
+/// (the `post_op_assignment` of the out-transition's groundings) or `None` if this corresponds to an erase eff.
+pub type SupportGroundingId = (StateVarGroundingId, Option<IntCst>);
 
 /// The groundings of an in-transition that receive the same ground supports:
 /// those with this ground state variable and `pre_val_assignment` (`None`, for an eff, receives any value).
@@ -615,7 +615,7 @@ impl SupportsGroundingsInfo {
                     .map(|&(_, trans_grounding_id, _)| {
                         let support_grounding_id: SupportGroundingId = (
                             trans_grounding_id.state_var_grounding_id,
-                            trans_grounding_id.post_op_assignment.unwrap(),
+                            trans_grounding_id.post_op_assignment,
                         );
                         (
                             out_trans_id,
@@ -630,7 +630,7 @@ impl SupportsGroundingsInfo {
             // shaped as an `InGroupKey` to be joined with those of the in-transitions.
             let out_keys: Vec<InGroupKey> = out[out_len_before..]
                 .iter()
-                .map(|&(_, (state_var_grounding_id, value), _)| (state_var_grounding_id, Some(value)))
+                .map(|&(_, (state_var_grounding_id, value), _)| (state_var_grounding_id, value))
                 .sorted_unstable()
                 .dedup()
                 .collect::<Vec<_>>();
@@ -737,13 +737,13 @@ fn for_each_ground_support(
 ) {
     let in_is_eff = in_keys.first().is_some_and(|&(_, pre_val)| pre_val.is_none());
     if in_is_eff {
-        // An eff needs no value: any value handed over on its ground state variable supports it.
+        // A (non-erase) eff needs no value: any value handed over on its ground state variable supports it.
         for (outs, ins) in
             merge_join_chunks_by_key(out_keys, in_keys, |&(state_var_grounding_id, _)| state_var_grounding_id)
         {
             debug_assert_eq!(ins.len(), 1);
             for &(state_var_grounding_id, value) in outs {
-                f((state_var_grounding_id, value.unwrap()), ins[0]);
+                f((state_var_grounding_id, value), ins[0]);
             }
         }
     } else {
@@ -751,7 +751,7 @@ fn for_each_ground_support(
         for (outs, _) in merge_join_chunks_by_key(out_keys, in_keys, |&key| key) {
             debug_assert_eq!(outs.len(), 1);
             let (state_var_grounding_id, value) = outs[0];
-            f((state_var_grounding_id, value.unwrap()), outs[0]);
+            f((state_var_grounding_id, value), outs[0]);
         }
     }
 }

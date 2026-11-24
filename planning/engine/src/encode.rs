@@ -14,11 +14,11 @@ use aries_solver::{
     prelude::*,
 };
 use itertools::Itertools;
-use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeRef, Timestamp, Type, errors::Spanned};
+use planx::{ExprId, Fun, Message, Model, Res, Sym, TimeInterval, TimeRef, Timestamp, Type, errors::*};
 use smallvec::SmallVec;
 use timelines::{
-    Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
-    boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
+    Borrow, Effect, EffectOp, FluentParam, FluentsEncoding, IntExp, IntTerm, Sched, StateVar, SymAtom, TaskId, Time,
+    TimeItv, boxes::Segment, constraints::HasValueAt, symbols::ObjectEncoding,
 };
 
 use crate::encode::{
@@ -49,9 +49,9 @@ pub fn fluents(model: &Model, objects: &ObjectEncoding) -> Res<FluentsEncoding> 
     for f in model.env.fluents.iter() {
         let params = {
             let mut ps = SmallVec::<[FluentParam; 6]>::new();
-            for tpe in f.parameters.iter().map(|p| p.tpe()) {
+            for p in f.parameters.iter() {
                 ps.push(FluentParam {
-                    range: type_range(tpe, objects)?,
+                    range: type_range(p.tpe(), objects).when_processing(p.name())?,
                 });
             }
             ps
@@ -123,7 +123,7 @@ impl<'a> Scope<'a> {
 /// IMPORTANT: the expression may requires some values that should be identified with [`ConditionConstraint::add_required_values`] method.
 /// Failure to do so means that some effects may incorrectly be optimized away because they are deemed useless.
 pub fn condition_to_constraint(
-    tp: Timestamp,
+    tp: TimeInterval,
     expr: ExprId,
     model: &Model,
     sched: &mut Sched,
@@ -131,7 +131,7 @@ pub fn condition_to_constraint(
     encoding: &mut Encoding,
 ) -> Res<ConditionConstraint> {
     let expr = model.env.node(expr);
-    let timepoint = reify_timing(tp, model, sched, bindings)?;
+    let timepoint = reify_interval(tp, model, sched, bindings)?;
     let constraint = match expr.expr() {
         planx::Expr::Bool(b) => if *b {
             ConditionExpression::LeqZero(LinSum::zero())
@@ -153,9 +153,10 @@ pub fn condition_to_constraint(
             let c = HasValueAt {
                 state_var,
                 value: IntTerm::TRUE,
-                timepoint,
+                period: timepoint,
                 prez: bindings.presence,
                 source: bindings.source,
+                borrow: None,
             };
             ConditionExpression::HasValue(c).scoped(bindings.presence)
         }
@@ -220,7 +221,7 @@ pub fn condition_to_constraint(
 }
 
 pub fn condition_to_constraint_eq(
-    timepoint: Time,
+    timepoint: TimeItv,
     lhs: ExprId,
     rhs: ExprId,
     model: &Model,
@@ -247,9 +248,10 @@ pub fn condition_to_constraint_eq(
                     state_var,
                     value: reify_expression(expr, Some(timepoint), model, sched, bindings, encoding)
                         .map(|arg_expr| flatten_expression(arg_expr, sched, bindings))?,
-                    timepoint,
+                    period: timepoint,
                     prez: bindings.presence,
                     source: bindings.source,
+                    borrow: None,
                 };
                 Ok(Some(ConditionExpression::HasValue(c).scoped(bindings.presence)))
             } else {
@@ -274,6 +276,76 @@ pub fn condition_to_constraint_eq(
     }
 }
 
+/// Encodes a borrow (a condition immediately followed by an assignment of the required value, see [`planx::Transition`])
+/// as a condition that must hold until the end of the effect's transition (excluded), and a [`timelines::Borrow`]
+/// preventing any other condition from reading the state variable during the transition.
+///
+/// The effect of the borrow must *not* be encoded. See [`planx::Action::encodable_borrows`] for the requirements.
+pub fn borrow_to_constraint(
+    borrow: &planx::Transition,
+    model: &Model,
+    sched: &mut Sched,
+    bindings: &Scope,
+    encoding: &mut Encoding,
+) -> Res<ConditionConstraint> {
+    let eff = &borrow.effect.effect_expression;
+    if !borrow.borrow {
+        return invalid_borrow(borrow, model, "not a borrow").failed();
+    }
+    if !borrow.effect.universal_quantification.is_empty() || eff.condition.is_some() {
+        return invalid_borrow(borrow, model, "the effect of the borrow is quantified or conditional").failed();
+    }
+    // the condition must be supported until the value is (in the original model) re-established by the effect
+    let interval = TimeInterval {
+        start: borrow.condition.interval.start,
+        end: eff.transition_end - planx::Dt,
+    };
+    let mut constraint = condition_to_constraint(interval, borrow.condition.cond, model, sched, bindings, encoding)?;
+    let ConditionExpression::HasValue(condition) = &mut constraint.constraint else {
+        return invalid_borrow(
+            borrow,
+            model,
+            "the condition of the borrow is not encoded as the value of a state variable",
+        )
+        .failed();
+    };
+    // the borrow (and its exclusion) is present iff the condition is
+    if constraint.scope != bindings.presence || condition.prez != bindings.presence {
+        return invalid_borrow(
+            borrow,
+            model,
+            "the condition of the borrow is not scoped by the presence of the action",
+        )
+        .failed();
+    }
+    let start = reify_timing(eff.transition_start, model, sched, bindings)?;
+    let end = reify_timing(eff.transition_end - planx::Dt, model, sched, bindings)?;
+    let id = sched.add_borrow(Borrow {
+        state_var: condition.state_var.clone(),
+        start,
+        end,
+        prez: bindings.presence,
+        source: bindings.source,
+    });
+    condition.borrow = Some(id);
+    Ok(constraint)
+}
+
+/// Error for a borrow annotation that cannot be exploited by the encoding, pointing to its condition and effect.
+///
+/// This denotes an invalid annotation of the model, i.e., a bug in the preprocessing.
+pub fn invalid_borrow(borrow: &planx::Transition, model: &Model, reason: impl std::fmt::Display) -> Message {
+    model
+        .env
+        .node(borrow.condition.cond)
+        .invalid(format!("invalid borrow annotation ({reason})"))
+        .snippet(model.env.node(borrow.effect).info("effect of the borrow"))
+        .title(format!(
+            "Invalid borrow annotation (bug in the preprocessing): {}",
+            &model.env / *borrow
+        ))
+}
+
 /// Converts a [`planx::Effect`] into a [`timelines::Effect`]
 ///
 /// The effect will have a transition time of [`Sched::epsilon`], with the `transition_time_after`
@@ -282,7 +354,6 @@ pub fn condition_to_constraint_eq(
 /// while initial effects should have their transition time before (to be available at t=0).
 pub fn convert_effect(
     effect: &planx::Effect,
-    transition_time_after: bool,
     model: &Model,
     sched: &mut Sched,
     bindings: &Scope,
@@ -292,7 +363,6 @@ pub fn convert_effect(
         return model.env.node(effect).todo("Unsupported").failed();
     }
     let x = &effect.effect_expression;
-    let t = reify_timing(x.timing, model, sched, bindings)?;
     let args: Vec<SymAtom> = x
         .state_variable
         .arguments
@@ -303,22 +373,28 @@ pub fn convert_effect(
         fluent: model.env.fluents.get(x.state_variable.fluent).name().to_string(),
         args,
     };
-    let op = match x.operation {
-        planx::EffectOp::Assign(v) => {
-            EffectOp::Assign(reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
-        }
-        planx::EffectOp::Increase(v) => {
-            EffectOp::Step(reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
-        }
-        planx::EffectOp::Decrease(v) => {
-            EffectOp::Step(-reify_expression_to_term(v, Some(t), model, sched, bindings, encoding)?)
-        }
-        planx::EffectOp::Erase => todo!("add EffectOp::Erase in timelines"),
+    let transition_start = reify_timing(x.transition_start, model, sched, bindings)?;
+    let transition_end = reify_timing(x.transition_end, model, sched, bindings)?;
+    let i = TimeItv::at(transition_start);
+    let (op, mutex_end) = match x.operation {
+        planx::EffectOp::Assign(v) => (
+            EffectOp::Assign(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
+            sched.new_opt_timepoint(bindings.presence),
+        ),
+        planx::EffectOp::Increase(v) => (
+            EffectOp::Step(reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
+            sched.new_opt_timepoint(bindings.presence),
+        ),
+        planx::EffectOp::Decrease(v) => (
+            EffectOp::Step(-reify_expression_to_term(v, Some(i), model, sched, bindings, encoding)?),
+            sched.new_opt_timepoint(bindings.presence),
+        ),
+        planx::EffectOp::Erase => (EffectOp::Erase, transition_end),
     };
     let eff = timelines::Effect {
-        transition_start: if transition_time_after { t } else { t - sched.epsilon },
-        transition_end: if transition_time_after { t + sched.epsilon } else { t },
-        mutex_end: sched.new_timepoint(),
+        transition_start,
+        transition_end,
+        mutex_end,
         state_var: sv,
         operation: op,
         prez: bindings.presence,
@@ -385,6 +461,12 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
                 (&EffectOp::FALSE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => eid > oid,
                 // an add cannot be overriden by a delete
                 (&EffectOp::TRUE_ASSIGNMENT, &EffectOp::FALSE_ASSIGNMENT) => false,
+                // an erase behaves as a delete: it is overriden by an add, and by an (equally strong) delete
+                (&EffectOp::Erase, &EffectOp::TRUE_ASSIGNMENT) => true,
+                (&EffectOp::Erase, &EffectOp::FALSE_ASSIGNMENT) => true,
+                (&EffectOp::Erase, &EffectOp::Erase) => eid > oid,
+                // but neither an add nor a delete can be overriden by an erase
+                (&EffectOp::TRUE_ASSIGNMENT | &EffectOp::FALSE_ASSIGNMENT, &EffectOp::Erase) => false,
                 (_, _) => todo!("Not a boolean state variable or non-constant assignment"), // TODO: make it truly unreachable
             };
 
@@ -456,11 +538,10 @@ pub fn convert_to_pddl_set_semantics(effs: Vec<Effect>, sched: &mut Sched) -> Ve
 
 pub fn reify_timing(t: Timestamp, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<Time> {
     let tp = reify_timeref(t.reference, model, sched, binding)?;
-    if *t.delay.numer() == 0 {
-        Ok(tp)
-    } else {
-        Message::todo("unsupported non-zero delay").failed()
-    }
+    let Some(delay) = t.delay.as_integer() else {
+        return Message::error("Non integer delay. Consider using the 'intify' transformation.").failed();
+    };
+    Ok(tp + delay + t.num_dt)
 }
 pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope) -> Res<Time> {
     match t {
@@ -471,6 +552,12 @@ pub fn reify_timeref(t: TimeRef, _model: &Model, sched: &Sched, binding: &Scope)
         _ => Message::todo(format!("unsupported timeref {t:?}")).failed(),
     }
 }
+pub fn reify_interval(t: TimeInterval, model: &Model, sched: &mut Sched, binding: &Scope) -> Res<TimeItv> {
+    Ok(TimeItv {
+        start: reify_timing(t.start, model, sched, binding)?,
+        end: reify_timing(t.end, model, sched, binding)?,
+    })
+}
 
 pub fn reify_sym(
     eid: ExprId,
@@ -479,7 +566,7 @@ pub fn reify_sym(
     binding: &Scope,
     encoding: &mut Encoding,
 ) -> Res<SymAtom> {
-    reify_expression(eid, None, model, sched, binding, encoding).map(|e| flatten_expression(e, sched, binding))
+    reify_expression_impl(eid, None, model, sched, binding, encoding).map(|e| flatten_expression(e, sched, binding))
 }
 
 pub fn reify_constant(
@@ -489,7 +576,7 @@ pub fn reify_constant(
     scope: &Scope,
     encoding: &mut Encoding,
 ) -> Res<IntCst> {
-    let reif = reify_expression(e, None, model, sched, scope, encoding)?;
+    let reif = reify_expression_impl(e, None, model, sched, scope, encoding)?;
     let reif = flatten_expression(reif, sched, scope);
     let cst = IntCst::try_from(reif).map_err(|_| model.env.node(e).todo("non constant term unsupported"))?;
     Ok(cst)
@@ -497,7 +584,7 @@ pub fn reify_constant(
 
 pub fn reify_expression_to_term(
     e: ExprId,
-    time: Option<Time>,
+    time: Option<TimeItv>,
     model: &Model,
     sched: &mut Sched,
     scope: &Scope,
@@ -507,9 +594,19 @@ pub fn reify_expression_to_term(
     Ok(flatten_expression(reif, sched, scope))
 }
 
-pub fn reify_expression(
+pub fn reify_expression<T: Into<TimeItv>>(
     e: ExprId,
-    time: Option<Time>,
+    time: Option<T>,
+    model: &Model,
+    sched: &mut Sched,
+    binding: &Scope,
+    encoding: &mut Encoding,
+) -> Res<IntExp> {
+    reify_expression_impl(e, time.map(|t| t.into()), model, sched, binding, encoding)
+}
+pub fn reify_expression_impl(
+    e: ExprId,
+    time: Option<TimeItv>,
     model: &Model,
     sched: &mut Sched,
     binding: &Scope,
@@ -520,8 +617,8 @@ pub fn reify_expression(
     match e.expr() {
         Bool(true) => Ok(1.into()),
         Bool(false) => Ok(0.into()),
-        Real(r) if r.denom() == &1 => {
-            if let Ok(i) = IntCst::try_from(*r.numer()) {
+        Real(r) if r.denom() == 1 => {
+            if let Ok(i) = IntCst::try_from(r.numer()) {
                 Ok(i.into())
             } else {
                 e.todo(format!(
@@ -569,9 +666,10 @@ pub fn reify_expression(
             let reif = HasValueAt {
                 state_var,
                 value: reified_var.into(),
-                timepoint: time,
+                period: time,
                 prez: binding.presence,
                 source: binding.source,
+                borrow: None,
             };
             let reif = ConditionExpression::HasValue(reif).scoped(binding.presence);
             reif.constraint

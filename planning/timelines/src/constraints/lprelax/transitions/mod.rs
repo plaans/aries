@@ -119,7 +119,8 @@ impl<'a> TransitionView<'a> {
     /// the arguments of its state variable, its pre-value (if any), and the term of its post-operation.
     fn terms(self) -> impl Iterator<Item = IntTerm> + 'a {
         let post_op_term = match self.post_op {
-            EffectOp::Assign(term) => term,
+            EffectOp::Assign(term) => Some(term),
+            EffectOp::Erase => None,
             EffectOp::Step(_) => todo!("step effects (relaxed as nonsimple for now)"),
         };
         self.state_var
@@ -127,7 +128,7 @@ impl<'a> TransitionView<'a> {
             .iter()
             .copied()
             .chain(self.pre_val)
-            .chain([post_op_term])
+            .chain(post_op_term)
     }
 }
 
@@ -209,8 +210,8 @@ impl Transitions {
             (dom.lb(eff.transition_start), dom.ub(eff.mutex_end))
         };
         let condition_span = |cond_id: CondId| {
-            let timepoint = ctx.causal_links.conditions.get(cond_id).timepoint;
-            (dom.lb(timepoint), dom.ub(timepoint))
+            let period = ctx.causal_links.conditions.get(cond_id).period;
+            (dom.lb(period.start), dom.ub(period.end))
         };
         let time_span_bounds = |tr_id| match self.store[tr_id] {
             Transition::Eff(eff_id) => effect_span(eff_id),
@@ -279,7 +280,7 @@ impl Transitions {
                 let paired_cond_id = source.and(conditions.get(source)).and_then(|cs| {
                     let mut conds = cs
                         .iter()
-                        .filter(|(_, c)| matches_effect(&c.state_var, c.prez, c.timepoint));
+                        .filter(|(_, c)| matches_effect(&c.state_var, c.prez, c.period.end));
                     let num_effs = es
                         .iter()
                         .filter(|(_, other)| matches_effect(&other.state_var, other.prez, other.transition_start))

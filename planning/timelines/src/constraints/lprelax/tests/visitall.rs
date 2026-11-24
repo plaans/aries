@@ -109,9 +109,10 @@ pub fn build_visitall_line(pb: &VisitAllLine) -> (Sched, Vec<Move>) {
         model.add_constraint(HasValueAt {
             state_var: state_var("visited", vec![l.into()]),
             value: IntTerm::TRUE,
-            timepoint: model.horizon,
+            period: model.horizon.into(),
             prez: Lit::TRUE,
             source: None,
+            borrow: None,
         });
     }
 
@@ -145,9 +146,10 @@ fn add_move(model: &mut Sched, loc: &[IntCst]) -> Move {
         model.add_constraint(HasValueAt {
             state_var: sv,
             value: IntTerm::TRUE,
-            timepoint: start,
+            period: start.into(),
             prez: presence,
             source: Some(task_id),
+            borrow: None,
         });
     }
 

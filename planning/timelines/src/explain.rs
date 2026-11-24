@@ -11,11 +11,6 @@ use itertools::Itertools;
 use crate::lprelax::wrappers::LpRelaxIncr;
 use crate::{ConstraintID, IntExp, Sched};
 
-/// Stops the search at its first decision, i.e. once the root has been propagated
-/// (to evaluate what the propagation at the root alone can prove).
-static ARIES_STOP_AT_ROOT: aries_env_param::EnvParam<bool> =
-    aries_env_param::EnvParam::new("ARIES_STOP_AT_ROOT", "false");
-
 pub struct ExplainableSolver<T> {
     solver: Solver<crate::Sym>,
     enablers: BTreeMap<Lit, T>,
@@ -101,25 +96,44 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
         for &enabler in self.enablers.keys() {
             assumptions.push(enabler);
         }
-        let limit = if ARIES_STOP_AT_ROOT.get() {
-            // (the limit is checked before each propagation: allowing one decision lets the root be propagated)
-            aries_solver::solver::SearchLimit::NumDecisions(1)
-        } else {
-            aries_solver::solver::SearchLimit::None
-        };
-        let start = std::time::Instant::now();
-        let res = (self.solver).minimize_with_assumptions(obj, &assumptions, limit, on_new_solution);
+        let res = self
+            .solver
+            .minimize_with_assumptions(obj, &assumptions, SearchLimit::None, on_new_solution)
+            .unwrap();
         self.solver.print_stats();
-        if ARIES_STOP_AT_ROOT.get() {
-            // (the solver's stats don't count the time of a search stopped by its limit)
-            println!("Root time: {} s", start.elapsed().as_secs_f64());
-        }
-        let Ok(res) = res else {
-            println!("Stopped at the root (no conclusion)");
-            std::process::exit(0);
-        };
         self.solver.reset(); // TODO: this should not be needed
         res.ok()
+    }
+    /// Optimize the solution until a timeout or a proven optimality, with all assumptions enforced.
+    /// The method accepts an additional set of assumptions that will be enforced in all solutions.
+    pub fn optimize(
+        &mut self,
+        obj: LinTerm,
+        mut on_new_solution: impl FnMut(&Solution),
+        under_assumptions: impl Into<Vec<Lit>>,
+        deadline: SearchLimit,
+    ) -> OptimizeResult {
+        let mut assumptions = under_assumptions.into();
+        // add assumptions for detecting unsatisfiable constraints
+        for &enabler in self.enablers.keys() {
+            assumptions.push(enabler);
+        }
+        let mut best_solution = None;
+        let callback = |sol: &Solution| {
+            best_solution = Some(sol.clone());
+            on_new_solution(sol);
+        };
+        let res = match self
+            .solver
+            .minimize_with_assumptions(obj, &assumptions, deadline, callback)
+        {
+            Ok(Ok(solution)) => OptimizeResult::Opt(solution),
+            Ok(Err(_explanation)) => OptimizeResult::Unsat,
+            Err(_) => OptimizeResult::Timeout(best_solution),
+        };
+        self.solver.print_stats();
+        self.solver.reset(); // TODO: this should not be needed
+        res
     }
 
     /// Returns an iterator over all MUS and MCS in the model.
@@ -185,5 +199,30 @@ impl<T: Ord + Clone> ExplainableSolver<T> {
             self.solver.reset();
         }
         None
+    }
+}
+
+/// Result of [ExplainableSolver::optimize]
+pub enum OptimizeResult {
+    /// A proven optimal solution was found.
+    Opt(Solution),
+    /// The solver proved that no solution exists.
+    Unsat,
+    /// The solver terminated prematurily, possibly with a solution that has not been proven optimal.
+    Timeout(Option<Solution>),
+}
+
+impl OptimizeResult {
+    /// Return the solution found if any, even if not optimal.
+    pub fn solution(&self) -> Option<&Solution> {
+        match self {
+            OptimizeResult::Opt(solution) | OptimizeResult::Timeout(Some(solution)) => Some(solution),
+            OptimizeResult::Unsat | OptimizeResult::Timeout(None) => None,
+        }
+    }
+
+    /// True if the solution has a proven optimality.
+    pub fn has_optimal(&self) -> bool {
+        matches!(self, OptimizeResult::Opt(_))
     }
 }

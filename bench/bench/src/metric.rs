@@ -76,13 +76,12 @@ impl Metric for Ipc {
             .results
             .values()
             .filter_map(|r| r.objective_value)
-            .min();
+            .min_by(f64::total_cmp);
         let Some(best) = best else {
             return 0.0;
         };
-        let best = best as f64;
 
-        result.objective_value.map(|i| best / (i as f64)).unwrap_or(0.0)
+        result.objective_value.map(|i| best / i).unwrap_or(0.0)
     }
 
     fn compare(&self, m1: Self::T, m2: Self::T) -> Ordering {
@@ -122,21 +121,20 @@ impl Metric for IpcHist {
             .results
             .values()
             .filter_map(|r| r.objective_value)
-            .min()
+            .min_by(f64::total_cmp)
         else {
             // no problem with a solution, return a cosntant zero score
             return TimeSerie::constant(0.0, Duration::ZERO, all_results_for_pb.problem.timeout);
         };
-        let best = best as f64;
         // from 0 until the first solution, the IPC score is zero
         let mut hist = vec![(Duration::ZERO, 0.0)];
         for measure in &result.objective_history {
-            let x = best / measure.objective as f64;
+            let x = best / measure.objective;
             assert!(x.is_finite(), "{best} / {}", measure.objective);
-            hist.push((measure.timestamp, best / measure.objective as f64));
+            hist.push((measure.timestamp, best / measure.objective));
         }
         if let Some(final_obj) = result.objective_value {
-            hist.push((result.runtime, best / final_obj as f64));
+            hist.push((result.runtime, best / final_obj));
         }
         TimeSerie::from_constant_per_part(hist, result.problem.timeout)
     }

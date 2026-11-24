@@ -95,6 +95,9 @@ impl Actions {
     pub fn iter(&self) -> impl Iterator<Item = &Action> {
         self.actions.values()
     }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Action> {
+        self.actions.values_mut()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -203,10 +206,31 @@ impl<'env> Display for Env<'env, &Action> {
                 .map(|p| format!("{}: {}", p.name(), p.tpe()))
                 .format(", ")
         )?;
-        write!(f, "\n        duration: {:?}", self.elem.duration)?;
 
-        fs(f, "conditions:", &self.elem.conditions, self.env)?;
-        fs(f, "effects:", &self.elem.effects, self.env)?;
+        write!(f, "\n        duration")?;
+        match self.elem.duration {
+            Duration::Instantaneous => write!(f, ": 0")?,
+            Duration::Fixed(x) => write!(f, ": {}", self.env.node(x))?,
+            Duration::Bounded(lb, ub) => write!(f, " in [{}, {}]", self.env.node(lb), self.env.node(ub))?,
+            Duration::Subtasks => write!(f, ": span of subtasks")?,
+        }
+
+        let (action, env) = (self.elem, self.env);
+        // conditions and effects that are part of a transition are only displayed in the dedicated sections
+        fs(
+            f,
+            "conditions:",
+            (action.conditions.iter()).filter(|c| action.transition_of_condition(c, env).is_none()),
+            env,
+        )?;
+        fs(
+            f,
+            "effects:",
+            (action.effects.iter()).filter(|e| action.transition_of_effect(e, env).is_none()),
+            env,
+        )?;
+        fs(f, "transitions:", action.transitions(env).filter(|t| !t.borrow), env)?;
+        fs(f, "borrows:", action.transitions(env).filter(|t| t.borrow), env)?;
         fs(f, "preferences:", self.elem.preferences.iter(), self.env)?;
         fs(f, "vars:", self.elem.subtasks.variables.iter(), self.env)?;
         fs(f, "subtasks:", self.elem.subtasks.iter(), self.env)?;

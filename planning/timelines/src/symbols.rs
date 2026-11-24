@@ -63,7 +63,7 @@ impl ObjectEncoding {
         objs
     }
     fn process(&mut self, curr: Sym, children: &dyn Fn(&Sym) -> Vec<Sym>, objects: &dyn Fn(&Sym) -> Vec<Sym>) {
-        assert!(!self.types.contains_key(&curr));
+        assert!(!self.types.contains_key(&curr), "Type already declared: {curr}");
 
         let first = self.next_object_id();
         for o in objects(&curr) {

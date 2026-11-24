@@ -7,6 +7,8 @@ pub trait IntExpr<Ctx: ModelView> {
         let scope = scope.into();
         let scope = ctx.conjunctive_scope(scope.literals());
         let (lb, ub) = self.bounds(ctx);
+        debug_assert_eq!(lb, lb.clamp(INT_CST_MIN, INT_CST_MAX));
+        debug_assert_eq!(ub, ub.clamp(INT_CST_MIN, INT_CST_MAX));
         let reif = ctx.new_optional_var(lb, ub, scope);
         let reif = LinTerm::from(reif);
         self.enforce_eq(reif, ctx);
@@ -14,6 +16,8 @@ pub trait IntExpr<Ctx: ModelView> {
     }
 
     /// Returns the lower and upper bounds of the expression.
+    ///
+    /// It must be the case that the bounds are within [`INT_CST_MIN`] and [`INT_CST_MAX`]
     ///
     /// The default implementation just returns the lower bound [`INT_CST_MIN`] and the upper bound  [`INT_CST_MAX`].`
     fn bounds(&self, _ctx: &Ctx) -> (IntCst, IntCst) {

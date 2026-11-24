@@ -5,7 +5,7 @@ use crate::utils::cpu_time::*;
 use aries_env_param::EnvParam;
 use std::collections::BTreeMap;
 use std::fmt::{Display, Error, Formatter};
-use std::ops::{Index, IndexMut};
+use std::ops::{AddAssign, Index, IndexMut};
 use std::time::Duration;
 
 static PRINT_RUNNING_STATS: EnvParam<bool> = EnvParam::new("ARIES_PRINT_RUNNING_STATS", "false");
@@ -29,6 +29,33 @@ pub struct Stats {
     best_cost: Option<IntCst>,
 }
 
+impl AddAssign for Stats {
+    fn add_assign(&mut self, rhs: Self) {
+        self.init_time += rhs.init_time;
+        self.init_cycles += rhs.init_cycles;
+        self.solve_time += rhs.solve_time;
+        self.solve_cycles += rhs.solve_cycles;
+        self.num_decisions += rhs.num_decisions;
+        self.num_conflicts += rhs.num_conflicts;
+        self.num_dom_updates += rhs.num_dom_updates;
+        self.num_restarts += rhs.num_restarts;
+        self.num_solutions += rhs.num_solutions;
+        self.propagation_time += rhs.propagation_time;
+        for (k, v) in &rhs.per_module_stat {
+            *self.per_module_stat.entry(*k).or_default() += v.clone();
+        }
+        // pub per_module_stat: BTreeMap<ReasonerId, ModuleStat>,
+        self.running = RunningStats::default();
+        self.best_cost = if let Some(rhs_best) = rhs.best_cost
+            && rhs_best <= self.best_cost.unwrap_or(IntCst::MAX)
+        {
+            rhs.best_cost
+        } else {
+            self.best_cost
+        };
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ModuleStat {
     pub propagation_time: CycleCount,
@@ -37,13 +64,17 @@ pub struct ModuleStat {
     pub propagation_loops: u64,
 }
 
-impl Stats {
-    pub fn with_reasoners(reasoners: &Reasoners) -> Stats {
-        let mut per_mod = BTreeMap::new();
-        for id in reasoners.writers.get() {
-            per_mod.insert(*id, ModuleStat::default());
-        }
+impl AddAssign for ModuleStat {
+    fn add_assign(&mut self, rhs: Self) {
+        self.propagation_time += rhs.propagation_time;
+        self.conflicts += rhs.conflicts;
+        self.dom_updates += rhs.dom_updates;
+        self.propagation_loops += rhs.propagation_loops;
+    }
+}
 
+impl Stats {
+    pub fn new() -> Stats {
         Stats {
             init_time: Duration::from_micros(0),
             init_cycles: CycleCount::zero(),
@@ -55,10 +86,18 @@ impl Stats {
             num_restarts: 0,
             num_solutions: 0,
             propagation_time: CycleCount::zero(),
-            per_module_stat: per_mod,
+            per_module_stat: BTreeMap::new(),
             running: Default::default(),
             best_cost: None,
         }
+    }
+
+    pub fn with_reasoners(reasoners: &Reasoners) -> Stats {
+        let mut stats = Stats::new();
+        for id in reasoners.writers.get() {
+            stats.per_module_stat.insert(*id, ModuleStat::default());
+        }
+        stats
     }
 
     pub fn add_decision(&mut self, _decision: Lit) {
@@ -106,6 +145,12 @@ impl Stats {
 
     pub fn num_conflicts(&self) -> u64 {
         self.num_conflicts
+    }
+}
+
+impl Default for Stats {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -216,7 +216,7 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
             }
             solution_history.push(IntermediateResult {
                 timestamp: start_time.elapsed(),
-                objective: best_cost.unwrap(),
+                objective: best_cost.unwrap() as f64,
             });
         },
         limit,
@@ -290,7 +290,7 @@ fn solve_tsp(pb: &TspProblem, args: &Opt) -> Option<TspSolution> {
             problem,
             status,
             runtime: start_time.elapsed(),
-            objective_value,
+            objective_value: objective_value.map(|obj| obj as f64),
             metrics: Default::default(),
             objective_history: solution_history,
         }

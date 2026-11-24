@@ -45,14 +45,18 @@ impl<'env> Display for Env<'env, &EffectOp> {
             EffectOp::Assign(expr_id) => write!(f, ":= {}", self.env / *expr_id),
             EffectOp::Increase(delta) => write!(f, "+= {}", self.env / *delta),
             EffectOp::Decrease(delta) => write!(f, "-= {}", self.env / *delta),
-            EffectOp::Erase => write!(f, ":= ⊥"),
+            EffectOp::Erase => write!(f, ":= ∅"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct SimpleEffect {
-    pub timing: Timestamp,
+    /// Time at which the effect start its transition for the previous value.
+    /// At `transition_start`, the state variable still has its previous value and will lose it immediately afterwards.
+    pub transition_start: Timestamp,
+    /// Time at which the effect is established.
+    pub transition_end: Timestamp,
     /// If set, corresponds to a conditional effect that is only true if the
     /// conditions holds at `timing`
     pub condition: Option<ExprId>,
@@ -63,7 +67,8 @@ pub struct SimpleEffect {
 impl SimpleEffect {
     pub fn assignement(timing: Timestamp, state_variable: StateVariable, value: ExprId) -> Self {
         SimpleEffect {
-            timing,
+            transition_start: timing,
+            transition_end: timing + Dt,
             condition: None,
             state_variable,
             operation: EffectOp::Assign(value),
@@ -71,7 +76,8 @@ impl SimpleEffect {
     }
     pub fn increase(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
         SimpleEffect {
-            timing,
+            transition_start: timing,
+            transition_end: timing + Dt,
             condition: None,
             state_variable,
             operation: EffectOp::Increase(delta),
@@ -79,7 +85,8 @@ impl SimpleEffect {
     }
     pub fn decrease(timing: Timestamp, state_variable: StateVariable, delta: ExprId) -> Self {
         SimpleEffect {
-            timing,
+            transition_start: timing,
+            transition_end: timing + Dt,
             condition: None,
             state_variable,
             operation: EffectOp::Decrease(delta),
@@ -101,6 +108,8 @@ impl SimpleEffect {
             universal_quantification: vars,
             effect_expression: self,
             span: None,
+            id: EffectId::fresh(),
+            annotations: Default::default(),
         }
     }
 
@@ -109,16 +118,24 @@ impl SimpleEffect {
             universal_quantification: Vec::new(),
             effect_expression: self,
             span: None,
+            id: EffectId::fresh(),
+            annotations: Default::default(),
         }
     }
 }
 
 impl<'env> Display for Env<'env, &SimpleEffect> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.elem.transition_start == self.elem.transition_end {
+            write!(f, "[{}] ", self.elem.transition_start)?;
+        } else if self.elem.transition_start + Dt == self.elem.transition_end {
+            write!(f, "[{}..] ", self.elem.transition_start)?;
+        } else {
+            write!(f, "[{},{}] ", self.elem.transition_start, self.elem.transition_end)?;
+        }
         write!(
             f,
-            "[{}] {} {}",
-            self.elem.timing,
+            "{} {}",
             self.env / &self.elem.state_variable,
             self.env / &self.elem.operation
         )?;
@@ -136,6 +153,10 @@ pub struct Effect {
     pub universal_quantification: Vec<Param>,
     pub effect_expression: SimpleEffect,
     pub span: Option<Span>,
+    /// Identifier of the effect, unique within its action (preserved by cloning).
+    pub id: EffectId,
+    /// Additional information on the effect, typically set by preprocessing steps.
+    pub annotations: EffectAnnotations,
 }
 
 impl Effect {
@@ -152,6 +173,8 @@ impl Effect {
             universal_quantification: self.universal_quantification,
             effect_expression: self.effect_expression.with_condition(cond),
             span: self.span,
+            id: self.id,
+            annotations: self.annotations,
         }
     }
 

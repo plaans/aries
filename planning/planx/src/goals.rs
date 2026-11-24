@@ -173,6 +173,9 @@ impl<T> Preferences<T> {
     pub fn iter(&self) -> impl Iterator<Item = &Preference<T>> + '_ {
         self.prefs.iter()
     }
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Preference<T>> + '_ {
+        self.prefs.iter_mut()
+    }
 }
 
 impl Display for Env<'_, &Preference<Goal>> {

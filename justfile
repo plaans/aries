@@ -93,32 +93,36 @@ ci-ape-val-opt:
 ci-ape-solve timeout="5":
     uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
 
-# Same, with the incremental lprelax reasoner, in all its configurations (soundness checks).
-# The LP gets the default pivot budget (an unlimited one is too slow on the larger problems, e.g. mystery-prime),
-# and is built right before the first decision, so that it is checked on every problem.
-ci-ape-solve-lprelax-incr timeout="60":
+# Same, with the lprelax reasoner performing a full feasibility check at the root.
+ci-ape-solve-lprelax-root timeout="60":
     #!/usr/bin/env bash
     set -e
-    for merge in false true; do
-        for init in false true; do
-            for cond_out in false true; do
-                for flows in none valgraph supgraph; do
-                    for achievers in false true; do
-                        echo "lprelax incr: MERGE_EQUAL_COLUMNS=$merge WITH_INITIAL_STATE_SUPPORTS=$init WITH_CONDITION_OUT_TRANSITIONS=$cond_out WITH_FLOW_CONSTRS=$flows WITH_ACHIEVERS=$achievers"
+    # The LP is built before the first decision, its first check (at the root) has no pivot limit,
+    # and it stops checking from the next conflict on (its activity drops to 0).
+    solve() {
+        echo "lprelax incr: $*"
+        env ARIES_LPRELAX_USE=incr \
+            ARIES_LP_BUILD_AFTER_CONFLICTS=0 \
+            ARIES_LP_INITIALLY_ALLOWED_PIVOTS=inf \
+            ARIES_LP_MAX_PIVOTS_PER_PROPAGATION=inf \
+            ARIES_LP_ACTIVITY_DECAY=0 \
+            ARIES_LP_MIN_ACTIVITY=0 "$@" \
+            uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
+    }
 
-                        ARIES_LPRELAX_USE=incr \
-                        ARIES_LP_BUILD_AFTER_CONFLICTS=0 \
-                        ARIES_LPRELAX_MERGE_EQUAL_COLUMNS=$merge \
-                        ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS=$init \
-                        ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=$cond_out \
-                        ARIES_LPRELAX_WITH_FLOW_CONSTRS=$flows \
-                        ARIES_LPRELAX_WITH_ACHIEVERS=$achievers \
-                            uv run ci/ape-solve.py -t {{ timeout }} --from-toml ci/problems.toml
-                    done
-                done
+    for init in false true; do
+        for cond_out in false true; do
+            for flows in none valgraph supgraph; do
+                if [ "$flows" = supgraph ]; then ground_supports=true; else ground_supports=false; fi
+                solve ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS=$init \
+                    ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=$cond_out \
+                    ARIES_LPRELAX_WITH_FLOW_CONSTRS=$flows \
+                    ARIES_LPRELAX_WITH_GROUND_SUPPORTS=$ground_supports
             done
         done
     done
+    solve ARIES_LPRELAX_WITH_GOAL_COMMODITIES=true
+    solve ARIES_LPRELAX_WITH_FLOW_CONSTRS=none ARIES_LPRELAX_WITH_SYMMETRY_BREAKING=true
 
 bench-jsp name timeout="10":
     #!/usr/bin/env bash

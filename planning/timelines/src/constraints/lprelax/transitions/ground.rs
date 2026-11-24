@@ -32,7 +32,7 @@ impl TransitionTermsEvaluation {
                 Some(term.constant)
             }
             EffectOp::Step(_) => todo!("step effects (relaxed as nonsimple for now)"),
-            // EffectOp::Erase => None, // TODO ?
+            EffectOp::Erase => None,
         }
     }
 }
@@ -65,10 +65,10 @@ impl Transitions {
             .collect();
 
         // The terms end with the pre-value (if any) and the post-operation's term.
-        let post_op_value = IntTerm::int_cst(values.pop().unwrap());
         let post_op = match view.post_op {
-            EffectOp::Assign(_) => EffectOp::Assign(post_op_value),
+            EffectOp::Assign(_) => EffectOp::Assign(values.pop().unwrap().into()),
             EffectOp::Step(_) => todo!("step effects (relaxed as nonsimple for now)"),
+            EffectOp::Erase => EffectOp::Erase,
         };
         let pre_val = if view.pre_val.is_some() { values.pop() } else { None };
 

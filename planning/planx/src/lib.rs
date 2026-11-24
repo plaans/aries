@@ -1,4 +1,5 @@
 mod actions;
+mod annotations;
 mod effects;
 mod env;
 pub mod errors;
@@ -18,12 +19,15 @@ mod timing;
 mod types;
 pub(crate) mod utils;
 
+pub mod precision;
+
 use std::{
     fmt::{Debug, Display},
     hash::Hash,
 };
 
 pub use actions::*;
+pub use annotations::*;
 pub use effects::*;
 pub use env::*;
 pub use expressions::*;
