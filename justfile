@@ -117,10 +117,12 @@ ci-ape-solve-lprelax-root timeout="60":
                 solve ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS=$init \
                     ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS=$cond_out \
                     ARIES_LPRELAX_WITH_FLOW_CONSTRS=$flows \
-                    ARIES_LPRELAX_WITH_GROUND_SUPPORTS=$ground_supports
+                    ARIES_LPRELAX_WITH_GROUND_SUPPORTS=$ground_supports \
+                    ARIES_LPRELAX_WITH_SYMMETRY_BREAKING=false
             done
         done
     done
+    solve ARIES_LPRELAX_WITH_ACHIEVERS=true
     solve ARIES_LPRELAX_WITH_GOAL_COMMODITIES=true
     solve ARIES_LPRELAX_WITH_FLOW_CONSTRS=none ARIES_LPRELAX_WITH_SYMMETRY_BREAKING=true
 

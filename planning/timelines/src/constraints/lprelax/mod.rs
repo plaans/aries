@@ -6,10 +6,14 @@ pub static LPRELAX_MERGE_EQUAL_COLUMNS: EnvParam<bool> = EnvParam::new("ARIES_LP
 pub static LPRELAX_WITH_INITIAL_STATE_SUPPORTS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_INITIAL_STATE_SUPPORTS", "true");
 pub static LPRELAX_WITH_CONDITION_OUT_TRANSITIONS: EnvParam<bool> =
-    EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "true");
+    EnvParam::new("ARIES_LPRELAX_WITH_CONDITION_OUT_TRANSITIONS", "false");
 /// The flow constraints of the LP relaxation: "none", "valgraph" (value graph) or "supgraph" (support graph).
-pub static LPRELAX_WITH_FLOW_CONSTRS: EnvParam<String> = EnvParam::new("ARIES_LPRELAX_WITH_FLOW_CONSTRS", "valgraph");
-pub static LPRELAX_WITH_ACHIEVERS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_ACHIEVERS", "true");
+pub static LPRELAX_WITH_FLOW_CONSTRS: EnvParam<String> = EnvParam::new("ARIES_LPRELAX_WITH_FLOW_CONSTRS", "none");
+pub static LPRELAX_WITH_ACHIEVERS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_ACHIEVERS", "false");
+/// The goal commodities: for each goal, its presence routed from `None` to its required value (that of one of its groundings),
+/// through value changes of present ground transitions (with exact capacities).
+pub static LPRELAX_WITH_GOAL_COMMODITIES: EnvParam<bool> =
+    EnvParam::new("ARIES_LPRELAX_WITH_GOAL_COMMODITIES", "false");
 /// The ground support rows and columns (the lifted supports are always there). Needed by the support graph flow.
 pub static LPRELAX_WITH_GROUND_SUPPORTS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_GROUND_SUPPORTS", "false");
 /// The net-change rows: on a ground state variable, the number of (present) ground transitions leaving a value is at most the number of those entering it
@@ -22,13 +26,9 @@ pub static LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS: EnvParam<bool> =
     EnvParam::new("ARIES_LPRELAX_WITH_GOAL_NET_CHANGE_CONSTRS", "false");
 /// The linearization of the causal-graph symmetry breaking of the main model (lifted rows, needing conds not as out-transitions).
 pub static LPRELAX_WITH_SYMMETRY_BREAKING: EnvParam<bool> =
-    EnvParam::new("ARIES_LPRELAX_WITH_SYMMETRY_BREAKING", "false");
+    EnvParam::new("ARIES_LPRELAX_WITH_SYMMETRY_BREAKING", "true");
 /// Binds the ground presences of sources to the lines of their grounding tables, which removes the term rows and bindings of single-source terms.
 pub static LPRELAX_WITH_TABLE_LITS: EnvParam<bool> = EnvParam::new("ARIES_LPRELAX_WITH_TABLE_LITS", "true");
-/// The goal commodities: for each goal, its presence routed from `None` to its required value (that of one of its groundings),
-/// through value changes of present ground transitions (with exact capacities).
-pub static LPRELAX_WITH_GOAL_COMMODITIES: EnvParam<bool> =
-    EnvParam::new("ARIES_LPRELAX_WITH_GOAL_COMMODITIES", "false");
 
 macro_rules! lprelax_log {
     ($($arg:tt)*) => {
