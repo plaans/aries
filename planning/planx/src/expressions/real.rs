@@ -107,7 +107,8 @@ impl Display for RealValue {
         let positive = numer > 0;
         numer = numer.abs();
 
-        while numer > 0 {
+        // continue until we have written the dot, to write the leading zeros of values smaller than 0.1 (e.g. `0.002`)
+        while numer > 0 || post_dot_digits > 0 {
             let digit = (numer % 10) as u8;
             numer /= 10;
             digits.push(b'0' + digit); // digit 0 is 48 in ASCII
@@ -243,5 +244,21 @@ mod test {
         check(-10, 100);
         check(123, 1212);
         check(-123, 1212);
+        check(1, 500);
+        check(1, 20);
+        check(-3, 1000);
+        check(100001, 1000);
+    }
+
+    #[test]
+    fn printing_small_values() {
+        let s = |numer: i64, denom: i64| RealValue::new(numer, denom).to_string();
+        assert_eq!(s(1, 500), "0.002");
+        assert_eq!(s(1, 20), "0.05");
+        assert_eq!(s(1, 10), "0.1");
+        assert_eq!(s(-3, 1000), "-0.003");
+        assert_eq!(s(100001, 1000), "100.001");
+        assert_eq!(s(232, 10), "23.2");
+        assert_eq!(s(-1, 10), "-0.1");
     }
 }
