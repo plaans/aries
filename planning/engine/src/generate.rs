@@ -231,3 +231,49 @@ fn encode_finite_planning_problem(
         false,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use planx::pddl::{self, input::Input};
+
+    const NEG_DOMAIN: &str = "(define (domain neg)
+        (:requirements :strips :negative-preconditions)
+        (:predicates (p) (q))
+        (:action a :parameters () :precondition (not (p)) :effect (q)))";
+
+    /// Status of solving the problem with at most 2 instances of each action.
+    fn solve_status(domain: &str, problem: &str) -> SolveStatus {
+        let domain = pddl::parse_pddl_domain(Input::from_string(domain)).unwrap();
+        let problem = pddl::parse_pddl_problem(Input::from_string(problem)).unwrap();
+        let mut model = pddl::build_model(&domain, &problem).unwrap();
+        crate::set_metric(&mut model, &[Objective::PlanLength]).unwrap();
+        let model =
+            crate::preprocessing::preprocess_model(model, crate::preprocessing::DEFAULT_MODEL_TRANSFORMATIONS).unwrap();
+        let args = SolveFiniteArgs {
+            optimize: true,
+            max_instances: 2,
+            plan_file: None,
+            deadline: None,
+        };
+        solve_finite_planning_problem(&model, &args).unwrap().status
+    }
+
+    /// The initial facts hold at the origin: they cannot be overridden by the closed world assumption at that time.
+    #[test]
+    fn initial_facts_hold_at_origin() {
+        // `a` requires `(not (p))` but `p` is initially true and never deleted
+        let pb = "(define (problem neg1) (:domain neg) (:init (p)) (:goal (q)))";
+        assert_eq!(solve_status(NEG_DOMAIN, pb), SolveStatus::SolvedUnsat);
+
+        // the goal `(not p)` does not hold initially and no action deletes `p`
+        let pb = "(define (problem neg2) (:domain neg) (:init (p)) (:goal (not (p))))";
+        assert_eq!(solve_status(NEG_DOMAIN, pb), SolveStatus::SolvedUnsat);
+
+        // sanity checks: closed world assumption on facts absent from the initial state
+        let pb = "(define (problem neg3) (:domain neg) (:init) (:goal (q)))";
+        assert_eq!(solve_status(NEG_DOMAIN, pb), SolveStatus::SolvedOpt);
+        let pb = "(define (problem neg4) (:domain neg) (:init (p)) (:goal (p)))";
+        assert_eq!(solve_status(NEG_DOMAIN, pb), SolveStatus::SolvedOpt);
+    }
+}

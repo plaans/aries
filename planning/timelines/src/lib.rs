@@ -187,7 +187,19 @@ impl Sched {
         self.tasks.insert(task)
     }
 
+    /// Adds an effect to the problem.
+    ///
+    /// # Panics
+    ///
+    /// If the transition of the effect is statically known to be instantaneous (`transition_start >= transition_end`).
+    /// Non-instantaneous transitions are a requirement of effect coherence (otherwise, a previous value could persist until
+    /// the time at which the effect is established).
     pub fn add_effect(&mut self, eff: Effect) -> EffectId {
+        assert!(
+            eff.transition_start.var != eff.transition_end.var || eff.transition_start.shift < eff.transition_end.shift,
+            "Instantaneous effect on {:?}: transitions must take at least one time step, e.g., an effect at `t` should have its transition on `[t-1, t]`",
+            eff.state_var
+        );
         self.effects.add_effect(eff, &self.model)
     }
 

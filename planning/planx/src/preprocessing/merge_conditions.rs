@@ -67,8 +67,7 @@ pub fn merge_conditions(model: &mut Model) -> Res<usize> {
         if matches!(e.operation, EffectOp::Increase(_) | EffectOp::Decrease(_)) {
             stepped.insert(fluent);
         }
-        let at_origin = e.transition_end == Timestamp::ORIGIN;
-        if !at_origin && !timing.lt(e.transition_start, e.transition_end) {
+        if !e.is_initial() && !timing.lt(e.transition_start, e.transition_end) {
             instantaneous.insert(fluent);
         }
     };

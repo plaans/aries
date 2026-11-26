@@ -103,9 +103,7 @@ impl<'a> NumericBounds<'a> {
             let e = &eff.effect_expression;
             let value = match e.operation {
                 EffectOp::Assign(v)
-                    if e.transition_start == Timestamp::ORIGIN
-                        && e.condition.is_none()
-                        && eff.universal_quantification.is_empty() =>
+                    if e.is_initial() && e.condition.is_none() && eff.universal_quantification.is_empty() =>
                 {
                     match model.env.node(v).expr() {
                         Expr::Real(x) => Some(*x),

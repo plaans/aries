@@ -112,8 +112,11 @@ impl BoolExpr<SchedEncoder> for EffectCoherence {
         let _span = _span.enter();
         let sched = ctx.sched.clone();
         for e in sched.effects.iter() {
+            // transitions are never instantaneous. This is required for the coherence constraints below: they ensure that
+            // the intervals `[transition_start + ε, mutex_end]` do not overlap, which would not prevent a previous value from persisting
+            // until the `transition_end` of an instantaneous effect.
             // WARN: this is not guarded by the effect presence (assumption is that this is always true in an effect)
-            leq(e.transition_start, e.transition_end).opt_enforce_if(l, ctx);
+            lt(e.transition_start, e.transition_end).opt_enforce_if(l, ctx);
             // WARN: this is not guarded by the effect presence (assumption is that that the mutex end has the same scope as the effect)
             leq(e.transition_end, e.mutex_end).opt_enforce_if(l, ctx);
 

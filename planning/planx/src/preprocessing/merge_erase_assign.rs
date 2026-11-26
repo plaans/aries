@@ -85,7 +85,7 @@ pub fn merge_erase_assign_effects(model: &mut Model) -> Res<usize> {
     let mut unguarded: HashSet<FluentId> = HashSet::new();
     // (F3)
     for eff in &model.init {
-        if eff.effect_expression.transition_start != Timestamp::ORIGIN {
+        if !eff.effect_expression.is_initial() {
             unguarded.insert(eff.effect_expression.state_variable.fluent);
         }
     }

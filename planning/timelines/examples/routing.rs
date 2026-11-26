@@ -49,7 +49,7 @@ fn solve_routing(pb: &Problem) -> Option<Vec<Op>> {
         // at the temporal origin, the truck is at the depot
         let mutex_end = model.new_timepoint();
         model.add_effect(Effect {
-            transition_start: model.origin, // at origin
+            transition_start: model.origin - 1, // established at origin
             transition_end: model.origin,
             mutex_end,
             state_var: truck_loc(t),                      // the location of this truck

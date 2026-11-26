@@ -505,9 +505,9 @@ fn into_effect(
         let sv = parse_sv(expr, Some(Type::Bool), env, bindings)?;
         SimpleEffect::assignement(time, sv, tautology)
     };
-    //Initial effects (placed at the Origin) are immediately available
+    // Initial effects (placed at the Origin) are immediately available: they are established at the origin
     if time == Timestamp::ORIGIN {
-        effect.transition_end = Timestamp::ORIGIN;
+        effect = effect.as_initial();
     };
     Ok(effect)
 }

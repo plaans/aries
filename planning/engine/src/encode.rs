@@ -405,7 +405,8 @@ pub fn convert_effect(
 
 /// Add all required default negative values as effects just before the origin.
 pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, sched: &mut Sched) {
-    // time at which to place the negative effects. This is -1 so that it can be overrided by an initial effect (at 0).
+    // time at which the negative values are established. This is -1 so that it can be overrided by an initial effect (at 0).
+    // The transition is on `[-2, -1]` because effects cannot be instantaneous
     let t = Time::from(-1);
 
     // all state variables that may require a `0` value, which encodes `false` for predicates
@@ -424,7 +425,7 @@ pub fn add_closed_world_negative_effects(reqs: &RequiredValues, model: &Model, s
         // we manually create the mutex-end since it may have a negative value if canceledd by an initial positive effect
         let mutex_end: Time = sched.model.new_ivar(-1, INT_CST_MAX, "_").into();
         let eff = timelines::Effect {
-            transition_start: t,
+            transition_start: t - sched.epsilon,
             transition_end: t,
             mutex_end,
             state_var: sv,
