@@ -514,6 +514,7 @@ pub fn encode_plan_optimization_problem(
     let equiv = equiv
         .values()
         .map(|class| BTreeSet::from_iter(class.iter().copied()))
+        .sorted() // to make outcome deterministic
         .collect_vec();
     // Add symmetry breaking constraint over the equivalent actions
     sched.add_constraint(timelines::constraints::symmetry::SymmetryBreaking::new(
