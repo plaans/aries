@@ -112,7 +112,7 @@ pub fn init_atom(eff: &Effect, env: &Environment) -> Option<Vec<Term>> {
     let e = &eff.effect_expression;
     let is_plain = eff.universal_quantification.is_empty()
         && e.condition.is_none()
-        && e.transition_start == Timestamp::ORIGIN
+        && e.is_initial()
         && matches!(e.operation, EffectOp::Assign(v) if matches!(env.node(v).expr(), Expr::Bool(true)));
     let args = Term::all_of(&e.state_variable.arguments, env)?;
     (is_plain && args.iter().all(|a| matches!(a, Term::Object(_)))).then_some(args)

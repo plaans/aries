@@ -20,6 +20,9 @@ pub struct Effect {
     /// Time at which the transition to the new value will start
     pub transition_start: Time,
     /// Time at which the transition will end and the value is established.
+    ///
+    /// Transitions cannot be instantaneous: `transition_start < transition_end` must hold.
+    /// An effect establishing a value at time `t` (e.g. an initial fact at the origin) should have its transition on `[t - ε, t]`.
     pub transition_end: Time,
     /// Time until which the effect may persist.
     /// In most cases, it should be be left as a free variable with the same scope as the effect.
@@ -298,5 +301,31 @@ impl Index<EffectId> for Effects {
 
     fn index(&self, index: EffectId) -> &Self::Output {
         self.get(index)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{symbols::ObjectEncoding, *};
+    use aries_solver::prelude::*;
+
+    /// Instantaneous transitions are not supported and must be rejected
+    #[test]
+    #[should_panic(expected = "Instantaneous effect")]
+    fn instantaneous_effects_are_rejected() {
+        let mut sched = Sched::new(1, ObjectEncoding::empty(), FluentsEncoding::empty());
+        let mutex_end = sched.new_timepoint();
+        sched.add_effect(Effect {
+            transition_start: sched.origin,
+            transition_end: sched.origin,
+            mutex_end,
+            state_var: StateVar {
+                fluent: "p".to_string(),
+                args: vec![],
+            },
+            operation: EffectOp::TRUE_ASSIGNMENT,
+            prez: Lit::TRUE,
+            source: None,
+        });
     }
 }

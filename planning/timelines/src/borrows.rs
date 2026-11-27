@@ -99,7 +99,7 @@ mod tests {
             let mut sched = Sched::new(1, ObjectEncoding::empty(), FluentsEncoding::empty());
             let mutex_end = sched.new_timepoint();
             sched.add_effect(Effect {
-                transition_start: sched.origin,
+                transition_start: sched.origin - 1,
                 transition_end: sched.origin,
                 mutex_end,
                 state_var: lock(),

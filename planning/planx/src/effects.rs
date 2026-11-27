@@ -93,6 +93,21 @@ impl SimpleEffect {
         }
     }
 
+    /// Turns the effect into an initial effect, whose value is established at the origin.
+    ///
+    /// Transitions are never instantaneous, so its transition is on `[ORIGIN - dt, ORIGIN]`.
+    pub fn as_initial(mut self) -> Self {
+        self.transition_start = Timestamp::ORIGIN - Dt;
+        self.transition_end = Timestamp::ORIGIN;
+        self
+    }
+
+    /// Returns true if the effect is part of the initial state, i.e., its value is established at the origin
+    /// (see [`SimpleEffect::as_initial`]).
+    pub fn is_initial(&self) -> bool {
+        self.transition_end == Timestamp::ORIGIN
+    }
+
     pub fn with_condition(mut self, cond: ExprId) -> Self {
         assert!(self.condition.is_none());
         self.condition = Some(cond);

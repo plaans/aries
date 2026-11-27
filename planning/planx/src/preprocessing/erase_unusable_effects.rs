@@ -68,7 +68,7 @@ pub fn erase_unusable_effects(model: &mut Model) -> Res<usize> {
     let num_init = model.init.len();
     model
         .init
-        .retain(|eff| eff.effect_expression.transition_start != Timestamp::ORIGIN || !is_unusable(eff));
+        .retain(|eff| !eff.effect_expression.is_initial() || !is_unusable(eff));
     let num_removed = num_init - model.init.len();
     model.init.iter_mut().for_each(&mut erase);
     Ok(num_erased + num_removed)
