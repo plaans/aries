@@ -216,11 +216,10 @@ name = "ipc-2002-satellite-time-simple-automatic"
 path = "planning/ext/pddl/ipc-2002/domains/satellite-time-simple-automatic/instances/instance-1.pddl"
 max_depth = 4
 
-# union types
-# [[problems]]
-# name = "ipc-2002-zenotravel-time-simple-automatic"
-# path = "planning/ext/pddl/ipc-2002/domains/zenotravel-time-simple-automatic/instances/instance-1.pddl"
-# max_depth = 1
+[[problems]]
+name = "ipc-2002-zenotravel-time-simple-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/zenotravel-time-simple-automatic/instances/instance-1.pddl"
+max_depth = 1
 
 # [[problems]]
 # name = "ipc-2004-pipesworld-no-tankage-temporal-deadlines-strips"
@@ -278,11 +277,11 @@ max_depth = 6
 # name = "ipc-2006-storage-preferences-complex"
 # path = "planning/ext/pddl/ipc-2006/domains/storage-preferences-complex/instances/instance-1.pddl"
 # max_depth = 2
-#
-# [[problems]]
-# name = "ipc-2006-storage-time"
-# path = "planning/ext/pddl/ipc-2006/domains/storage-time/instances/instance-1.pddl"
-# max_depth = 1
+
+[[problems]]
+name = "ipc-2006-storage-time"
+path = "planning/ext/pddl/ipc-2006/domains/storage-time/instances/instance-1.pddl"
+max_depth = 1
 
 [[problems]]
 name = "ipc-2006-tpp-metric-time"
@@ -391,3 +390,560 @@ max_depth = 5
 name = "ipc-2023-zenotravel-numeric"
 path = "planning/ext/pddl/ipc-2023/domains/zenotravel-numeric/instances/instance-1.pddl"
 max_depth = 5
+
+# Added by the update-test-problems skill (ape solve, 1s timeout, validated with VAL).
+
+[[problems]]
+name = "ipc-1998-gripper-round-1-adl"
+path = "planning/ext/pddl/ipc-1998/domains/gripper-round-1-adl/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-1998-gripper-round-1-strips"
+path = "planning/ext/pddl/ipc-1998/domains/gripper-round-1-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-1998-logistics-round-2-strips"
+path = "planning/ext/pddl/ipc-1998/domains/logistics-round-2-strips/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-1998-mystery-prime-round-1-strips"
+path = "planning/ext/pddl/ipc-1998/domains/mystery-prime-round-1-strips/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-1998-mystery-prime-round-2-strips"
+path = "planning/ext/pddl/ipc-1998/domains/mystery-prime-round-2-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-1998-mystery-round-1-strips"
+path = "planning/ext/pddl/ipc-1998/domains/mystery-round-1-strips/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2000-blocks-strips-typed"
+path = "planning/ext/pddl/ipc-2000/domains/blocks-strips-typed/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2000-blocks-strips-untyped"
+path = "planning/ext/pddl/ipc-2000/domains/blocks-strips-untyped/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2000-elevator-strips-simple-typed"
+path = "planning/ext/pddl/ipc-2000/domains/elevator-strips-simple-typed/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2000-elevator-strips-simple-untyped"
+path = "planning/ext/pddl/ipc-2000/domains/elevator-strips-simple-untyped/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2000-logistics-strips-typed"
+path = "planning/ext/pddl/ipc-2000/domains/logistics-strips-typed/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2000-logistics-strips-untyped"
+path = "planning/ext/pddl/ipc-2000/domains/logistics-strips-untyped/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2002-depots-numeric-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/depots-numeric-automatic/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2002-depots-strips-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/depots-strips-automatic/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2002-driverlog-numeric-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/driverlog-numeric-automatic/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2002-driverlog-numeric-hard-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/driverlog-numeric-hard-automatic/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2002-driverlog-strips-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/driverlog-strips-automatic/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2002-freecell-strips-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/freecell-strips-automatic/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2002-rovers-numeric-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/rovers-numeric-automatic/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2002-rovers-strips-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/rovers-strips-automatic/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2002-satellite-numeric-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/satellite-numeric-automatic/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2002-satellite-strips-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/satellite-strips-automatic/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2002-zenotravel-numeric-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/zenotravel-numeric-automatic/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2002-zenotravel-strips-automatic"
+path = "planning/ext/pddl/ipc-2002/domains/zenotravel-strips-automatic/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-airport-nontemporal-strips"
+path = "planning/ext/pddl/ipc-2004/domains/airport-nontemporal-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-airport-temporal-strips"
+path = "planning/ext/pddl/ipc-2004/domains/airport-temporal-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-airport-temporal-time-windows-compiled-strips"
+path = "planning/ext/pddl/ipc-2004/domains/airport-temporal-time-windows-compiled-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-airport-temporal-time-windows-strips"
+path = "planning/ext/pddl/ipc-2004/domains/airport-temporal-time-windows-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-pipesworld-no-tankage-nontemporal-strips"
+path = "planning/ext/pddl/ipc-2004/domains/pipesworld-no-tankage-nontemporal-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2004-pipesworld-tankage-nontemporal-strips"
+path = "planning/ext/pddl/ipc-2004/domains/pipesworld-tankage-nontemporal-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2004-promela-dining-philosophers-strips"
+path = "planning/ext/pddl/ipc-2004/domains/promela-dining-philosophers-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-psr-small-strips"
+path = "planning/ext/pddl/ipc-2004/domains/psr-small-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2004-satellite-numeric-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-numeric-strips/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2004-satellite-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2004-umts-flaw-temporal-strips"
+path = "planning/ext/pddl/ipc-2004/domains/umts-flaw-temporal-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-umts-flaw-temporal-time-windows-compiled-strips"
+path = "planning/ext/pddl/ipc-2004/domains/umts-flaw-temporal-time-windows-compiled-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-umts-flaw-temporal-time-windows-strips"
+path = "planning/ext/pddl/ipc-2004/domains/umts-flaw-temporal-time-windows-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-umts-temporal-strips"
+path = "planning/ext/pddl/ipc-2004/domains/umts-temporal-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-umts-temporal-time-windows-compiled-strips"
+path = "planning/ext/pddl/ipc-2004/domains/umts-temporal-time-windows-compiled-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2004-umts-temporal-time-windows-strips"
+path = "planning/ext/pddl/ipc-2004/domains/umts-temporal-time-windows-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2006-openstacks-metric-time-strips"
+path = "planning/ext/pddl/ipc-2006/domains/openstacks-metric-time-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2006-pathways-preferences-complex"
+path = "planning/ext/pddl/ipc-2006/domains/pathways-preferences-complex/instances/instance-1.pddl"
+max_depth = 0
+
+[[problems]]
+name = "ipc-2006-pathways-preferences-simple"
+path = "planning/ext/pddl/ipc-2006/domains/pathways-preferences-simple/instances/instance-1.pddl"
+max_depth = 0
+
+[[problems]]
+name = "ipc-2006-pathways-propositional-strips"
+path = "planning/ext/pddl/ipc-2006/domains/pathways-propositional-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2006-pathways-propositional"
+path = "planning/ext/pddl/ipc-2006/domains/pathways-propositional/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2006-pipesworld-propositional"
+path = "planning/ext/pddl/ipc-2006/domains/pipesworld-propositional/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2006-rovers-metric-preferences-simple"
+path = "planning/ext/pddl/ipc-2006/domains/rovers-metric-preferences-simple/instances/instance-1.pddl"
+max_depth = 0
+
+[[problems]]
+name = "ipc-2006-rovers-propositional-strips"
+path = "planning/ext/pddl/ipc-2006/domains/rovers-propositional-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2006-rovers-propositional"
+path = "planning/ext/pddl/ipc-2006/domains/rovers-propositional/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2006-tpp-preferences-simple-grounded-preferences"
+path = "planning/ext/pddl/ipc-2006/domains/tpp-preferences-simple-grounded-preferences/instances/instance-1.pddl"
+max_depth = 0
+
+[[problems]]
+name = "ipc-2006-tpp-propositional-strips"
+path = "planning/ext/pddl/ipc-2006/domains/tpp-propositional-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2006-tpp-propositional"
+path = "planning/ext/pddl/ipc-2006/domains/tpp-propositional/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2006-trucks-propositional-strips"
+path = "planning/ext/pddl/ipc-2006/domains/trucks-propositional-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2006-trucks-time-strips"
+path = "planning/ext/pddl/ipc-2006/domains/trucks-time-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2008-elevator-sequential-optimal-strips"
+path = "planning/ext/pddl/ipc-2008/domains/elevator-sequential-optimal-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2008-openstacks-sequential-optimal-strips"
+path = "planning/ext/pddl/ipc-2008/domains/openstacks-sequential-optimal-strips/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2008-openstacks-sequential-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/openstacks-sequential-satisficing-strips/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2008-openstacks-temporal-satisficing-numeric-fluents"
+path = "planning/ext/pddl/ipc-2008/domains/openstacks-temporal-satisficing-numeric-fluents/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2008-openstacks-temporal-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/openstacks-temporal-satisficing-strips/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2008-parc-printer-sequential-optimal-strips"
+path = "planning/ext/pddl/ipc-2008/domains/parc-printer-sequential-optimal-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2008-parc-printer-sequential-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/parc-printer-sequential-satisficing-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2008-parc-printer-temporal-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/parc-printer-temporal-satisficing-strips/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2008-peg-solitaire-sequential-optimal-strips"
+path = "planning/ext/pddl/ipc-2008/domains/peg-solitaire-sequential-optimal-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2008-peg-solitaire-sequential-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/peg-solitaire-sequential-satisficing-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2008-transport-sequential-optimal-strips"
+path = "planning/ext/pddl/ipc-2008/domains/transport-sequential-optimal-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2008-transport-sequential-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/transport-sequential-satisficing-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2008-woodworking-sequential-optimal-strips"
+path = "planning/ext/pddl/ipc-2008/domains/woodworking-sequential-optimal-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2008-woodworking-sequential-satisficing-strips"
+path = "planning/ext/pddl/ipc-2008/domains/woodworking-sequential-satisficing-strips/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2011-crew-planning-temporal-satisficing"
+path = "planning/ext/pddl/ipc-2011/domains/crew-planning-temporal-satisficing/instances/instance-1.pddl"
+max_depth = 7
+
+[[problems]]
+name = "ipc-2011-elevator-sequential-optimal"
+path = "planning/ext/pddl/ipc-2011/domains/elevator-sequential-optimal/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2011-parc-printer-sequential-optimal"
+path = "planning/ext/pddl/ipc-2011/domains/parc-printer-sequential-optimal/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2011-scanalyzer-3d-sequential-optimal"
+path = "planning/ext/pddl/ipc-2011/domains/scanalyzer-3d-sequential-optimal/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2011-visit-all-sequential-optimal"
+path = "planning/ext/pddl/ipc-2011/domains/visit-all-sequential-optimal/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc-2011-woodworking-sequential-optimal"
+path = "planning/ext/pddl/ipc-2011/domains/woodworking-sequential-optimal/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2014-child-snack-sequential-optimal"
+path = "planning/ext/pddl/ipc-2014/domains/child-snack-sequential-optimal/instances/instance-1.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc-2014-genome-edit-distances-sequential-optimal"
+path = "planning/ext/pddl/ipc-2014/domains/genome-edit-distances-sequential-optimal/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2014-transport-sequential-optimal"
+path = "planning/ext/pddl/ipc-2014/domains/transport-sequential-optimal/instances/instance-1.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc-2018-airport-temporal-satisficing"
+path = "planning/ext/pddl/ipc-2018/domains/airport-temporal-satisficing/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2018-data-network-sequential-optimal"
+path = "planning/ext/pddl/ipc-2018/domains/data-network-sequential-optimal/instances/instance-1.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc-2018-organic-synthesis-sequential-optimal"
+path = "planning/ext/pddl/ipc-2018/domains/organic-synthesis-sequential-optimal/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2018-organic-synthesis-split-sequential-optimal"
+path = "planning/ext/pddl/ipc-2018/domains/organic-synthesis-split-sequential-optimal/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2018-quantum-circuit-temporal-satisficing"
+path = "planning/ext/pddl/ipc-2018/domains/quantum-circuit-temporal-satisficing/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2023-block-grouping-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/block-grouping-numeric/instances/instance-1.pddl"
+max_depth = 8
+
+[[problems]]
+name = "ipc-2023-rover-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/rover-numeric/instances/instance-1.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc-2023-sugar-numeric"
+path = "planning/ext/pddl/ipc-2023/domains/sugar-numeric/instances/instance-1.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc1998-logistics-round2-strips"
+path = "planning/problems/upf/ipc1998-logistics-round2-strips/problem.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc2002-depots-time-simple-automatic"
+path = "planning/problems/upf/ipc2002-depots-time-simple-automatic/problem.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc2002-driverlog-strips-automatic"
+path = "planning/problems/upf/ipc2002-driverlog-strips-automatic/problem.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc2002-driverlog-time-automatic"
+path = "planning/problems/upf/ipc2002-driverlog-time-automatic/problem.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc2002-driverlog-time-simple-automatic"
+path = "planning/problems/upf/ipc2002-driverlog-time-simple-automatic/problem.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc2002-freecell-strips-automatic"
+path = "planning/problems/upf/ipc2002-freecell-strips-automatic/problem.pddl"
+max_depth = 3
+
+[[problems]]
+name = "ipc2002-rovers-time-simple-automatic"
+path = "planning/problems/upf/ipc2002-rovers-time-simple-automatic/problem.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc2002-satellite-time-simple-automatic"
+path = "planning/problems/upf/ipc2002-satellite-time-simple-automatic/problem.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc2004-umts-flaw-temporal-strips"
+path = "planning/problems/upf/ipc2004-umts-flaw-temporal-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2004-umts-flaw-temporal-time-windows-compiled-strips"
+path = "planning/problems/upf/ipc2004-umts-flaw-temporal-time-windows-compiled-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2004-umts-flaw-temporal-time-windows-strips"
+path = "planning/problems/upf/ipc2004-umts-flaw-temporal-time-windows-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2004-umts-temporal-strips"
+path = "planning/problems/upf/ipc2004-umts-temporal-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2004-umts-temporal-time-windows-compiled-strips"
+path = "planning/problems/upf/ipc2004-umts-temporal-time-windows-compiled-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2004-umts-temporal-time-windows-strips"
+path = "planning/problems/upf/ipc2004-umts-temporal-time-windows-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2006-trucks-propositional-strips"
+path = "planning/problems/upf/ipc2006-trucks-propositional-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2008-crew-planning-temporal-satisficing-strips"
+path = "planning/problems/upf/ipc2008-crew-planning-temporal-satisficing-strips/problem.pddl"
+max_depth = 1
+
+[[problems]]
+name = "ipc2008-elevator-sequential-optimal-strips"
+path = "planning/problems/upf/ipc2008-elevator-sequential-optimal-strips/problem.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc2008-openstacks-sequential-optimal-strips"
+path = "planning/problems/upf/ipc2008-openstacks-sequential-optimal-strips/problem.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc2008-openstacks-sequential-satisficing-strips"
+path = "planning/problems/upf/ipc2008-openstacks-sequential-satisficing-strips/problem.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc2008-openstacks-temporal-satisficing-numeric-fluents"
+path = "planning/problems/upf/ipc2008-openstacks-temporal-satisficing-numeric-fluents/problem.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc2008-openstacks-temporal-satisficing-strips"
+path = "planning/problems/upf/ipc2008-openstacks-temporal-satisficing-strips/problem.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc2008-transport-temporal-satisficing-numeric-fluents"
+path = "planning/problems/upf/ipc2008-transport-temporal-satisficing-numeric-fluents/problem.pddl"
+max_depth = 2
+
+[[problems]]
+name = "ipc2011-elevator-sequential-optimal"
+path = "planning/problems/upf/ipc2011-elevator-sequential-optimal/problem.pddl"
+max_depth = 5
+
+[[problems]]
+name = "ipc2011-match-cellar-temporal-satisficing"
+path = "planning/problems/upf/ipc2011-match-cellar-temporal-satisficing/problem.pddl"
+max_depth = 6
+
+[[problems]]
+name = "ipc2023-block-grouping-numeric"
+path = "planning/problems/upf/ipc2023-block-grouping-numeric/problem.pddl"
+max_depth = 8
+
+[[problems]]
+name = "ipc2023-delivery-numeric"
+path = "planning/problems/upf/ipc2023-delivery-numeric/problem.pddl"
+max_depth = 4
