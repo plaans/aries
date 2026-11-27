@@ -1,7 +1,6 @@
 use crate::backtrack::DecLvl;
 use crate::core::{IntCst, Lit};
-use crate::reasoners::REASONERS;
-use crate::reasoners::ReasonerId;
+use crate::reasoners::{ReasonerId, Reasoners};
 use crate::utils::cpu_time::*;
 use aries_env_param::EnvParam;
 use std::collections::BTreeMap;
@@ -75,9 +74,9 @@ impl AddAssign for ModuleStat {
 }
 
 impl Stats {
-    pub fn new() -> Stats {
+    pub fn with_reasoners(reasoners: &Reasoners) -> Stats {
         let mut per_mod = BTreeMap::new();
-        for id in &REASONERS {
+        for id in reasoners.writers.get() {
             per_mod.insert(*id, ModuleStat::default());
         }
 
@@ -143,12 +142,6 @@ impl Stats {
 
     pub fn num_conflicts(&self) -> u64 {
         self.num_conflicts
-    }
-}
-
-impl Default for Stats {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
