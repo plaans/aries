@@ -1,0 +1,4 @@
+(define (problem p1) (:domain corridor)
+  (:objects r0 r1 r2 - room)
+  (:htn :ordered-subtasks (and (t1 (go r2))))
+  (:init (at r0) (link r0 r1) (link r1 r2)))
