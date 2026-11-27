@@ -256,6 +256,16 @@ name = "ipc-2004-satellite-time-time-windows-strips"
 path = "planning/ext/pddl/ipc-2004/domains/satellite-time-time-windows-strips/instances/instance-1.pddl"
 max_depth = 6
 
+[[problems]]
+name = "ipc-2004-satellite-complex-time-windows-compiled-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-complex-time-windows-compiled-strips/instances/instance-1.pddl"
+max_depth = 4
+
+[[problems]]
+name = "ipc-2004-satellite-time-time-windows-compiled-strips"
+path = "planning/ext/pddl/ipc-2004/domains/satellite-time-time-windows-compiled-strips/instances/instance-1.pddl"
+max_depth = 4
+
 # Division in duration
 # [[problems]]
 # name = "ipc-2006-pipesworld-metric-time"
