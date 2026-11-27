@@ -9,4 +9,4 @@ pytest-cov
 mypy
 pddl
 pre-commit
-black==22.6.0
+black==26.10.1
