@@ -1,3 +1,4 @@
+use crate::chronicles::analysis::hierarchy::is_hierarchical;
 use crate::chronicles::analysis::TemplateID;
 use crate::chronicles::constraints::{encode_constraint, Constraint, ConstraintType, Duration, Table};
 use crate::chronicles::plan::ActionInstance;
@@ -396,6 +397,12 @@ impl Graph {
 }
 
 pub fn rollup_actions(pb: &mut Problem) {
+    if is_hierarchical(pb) {
+        // In hierarchical problems, actions are instantiated as refinements of a subtask.
+        // A rolled-up action would then be allowed to stand for a sequence of actions in a single subtask,
+        // which is not equivalent to the original problem (and the plan extraction would not unroll it).
+        return;
+    }
     println!("Rolling, rolling, rolling... Rawhide!");
     for ch_id in 0..pb.templates.len() {
         let a = &pb.templates[ch_id];

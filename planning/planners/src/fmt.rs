@@ -248,7 +248,15 @@ pub fn extract_plan_actions(
     // if the action corresponds to a rolled-up action, unroll it in the solution
     let roll_compil = match ch.origin {
         ChronicleOrigin::FreeAction { template_id, .. } => problem.meta.action_rolling.get(&template_id),
-        _ => None,
+        ChronicleOrigin::Refinement { template_id, .. } => {
+            // a rolled-up action refining a task would stand for a sequence of actions in a single task
+            ensure!(
+                !problem.meta.action_rolling.contains_key(&template_id),
+                "A rolled-up action was used to refine a task"
+            );
+            None
+        }
+        ChronicleOrigin::Original => None,
     };
     Ok(if let Some(roll_compil) = roll_compil {
         roll_compil.unroll(&instance)
