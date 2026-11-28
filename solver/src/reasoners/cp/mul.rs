@@ -184,18 +184,20 @@ impl MulPropagator {
             return Ok(false);
         }
 
+        // Products are saturated: the bounds of `p` are in `[INT_CST_MIN, INT_CST_MAX]`, which is strictly
+        // within the range of `IntCst`, so a saturated product compares to them as the exact product would.
         // TODO: more elegant solution
-        if f1.lb * f2.lb < p.lb {
+        if f1.lb.saturating_mul(f2.lb) < p.lb {
             // Change guaranteed
             domains.set_lb(self.fact1, 1, cause)?;
             domains.set_lb(self.fact2, 1, cause)?;
-        } else if f1.lb * f2.ub > p.ub {
+        } else if f1.lb.saturating_mul(f2.ub) > p.ub {
             domains.set_lb(self.fact1, 1, cause)?;
             domains.set_ub(self.fact2, -1, cause)?;
-        } else if f1.ub * f2.lb > p.ub {
+        } else if f1.ub.saturating_mul(f2.lb) > p.ub {
             domains.set_lb(self.fact2, 1, cause)?;
             domains.set_ub(self.fact1, -1, cause)?;
-        } else if f1.ub * f2.ub < p.lb {
+        } else if f1.ub.saturating_mul(f2.ub) < p.lb {
             domains.set_ub(self.fact1, -1, cause)?;
             domains.set_ub(self.fact2, -1, cause)?;
         } else {
@@ -514,6 +516,31 @@ mod test {
     }
 
     // === Tests ===
+
+    /// Products of large bounds must not overflow (which panics in debug builds and, in release builds,
+    /// used to wrap around and wrongly remove solutions in the propagation of signs).
+    #[test]
+    fn test_propagation_large_bounds() {
+        let m = INT_CST_MAX;
+        let mut d = Domains::new();
+        let prod = d.new_var(1, m);
+        let fact1 = d.new_var(-m, m);
+        let fact2 = d.new_var(-m, m);
+        let mut prop = MulPropagator {
+            prod,
+            fact1,
+            fact2,
+            active: Lit::TRUE,
+            valid: Lit::TRUE,
+        };
+        prop.propagate(&mut d, Cause::Decision).unwrap();
+        // (-1) * (-1) = 1 and m * 1 = m are solutions
+        for (val_prod, val1, val2) in [(1, -1, -1), (1, 1, 1), (m, m, 1), (m, -1, -m)] {
+            check_in_bounds(&d, prod, val_prod);
+            check_in_bounds(&d, fact1, val1);
+            check_in_bounds(&d, fact2, val2);
+        }
+    }
 
     #[rustfmt::skip]
     #[test]
